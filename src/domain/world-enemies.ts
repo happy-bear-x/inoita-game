@@ -287,5 +287,6 @@ export function applyStoryEnemyRemovals(session:Session,map:string,enemies:reado
       session.removeStoryEnemy(enemy.key);remove(enemy.key);removed.add(enemy.key);
     }
   }
-  session.storyWorld.consumeEnemyRemovals();
+  // 只消费这张地图的命令；其他地图的待处理移除留到它们各自的场景再生效。
+  session.storyWorld.consumeEnemyRemovals(command=>command.map===undefined||command.map===map);
 }

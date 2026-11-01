@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { Session, DEFAULT_ENEMY_RESPAWN_MS } from '../src/domain/session.ts';
-import { WorldEnemyRoster, encounterSpawnId, selectMapSpawns } from '../src/domain/world-enemies.ts';
+import { WorldEnemyRoster, applyStoryEnemyRemovals, encounterSpawnId, selectMapSpawns } from '../src/domain/world-enemies.ts';
 import type { WorldMap } from '../src/domain/content.ts';
 import type { Campaign } from '../src/domain/campaign.ts';
 
@@ -369,6 +369,27 @@ test('event-115 scene commands suppress the hall ghosts until the battle result 
     assert.deepEqual(roster.refresh().added.map(enemy=>enemy.key).sort(),spawnIds);
     assert.deepEqual(roster.spawns.map(spawn=>spawn.id).sort(),spawnIds);
   }
+});
+
+test('pending removals keep commands for maps that were not applied yet',()=>{
+  const mapA={id:'map-a',enemySpawns:[{id:'map-a-spawn',enemyId:'enemy-a',x:0,y:0}]} as unknown as WorldMap;
+  const mapB={id:'map-b',enemySpawns:[{id:'map-b-spawn',enemyId:'enemy-b',x:0,y:0}]} as unknown as WorldMap;
+  const session=new Session(campaign);
+  session.applyStoryCommands([
+    {type:'world',command:{kind:'remove-enemy',enemyId:'enemy-a',map:'map-a',all:true}},
+    {type:'world',command:{kind:'remove-enemy',enemyId:'enemy-b',map:'map-b',all:true}},
+  ]);
+
+  const rosterA=new WorldEnemyRoster(session,mapA,[],1);
+  applyStoryEnemyRemovals(session,'map-a',rosterA.enemies,key=>rosterA.removeEnemy(key));
+  assert.deepEqual(rosterA.enemies,[]);
+  assert.deepEqual(session.storyWorld.pendingEnemyRemovals,[{enemyId:'enemy-b',map:'map-b',all:true}]);
+
+  const rosterB=new WorldEnemyRoster(session,mapB,[],1);
+  assert.equal(rosterB.enemies.some(enemy=>enemy.key==='map-b-spawn'),true);
+  applyStoryEnemyRemovals(session,'map-b',rosterB.enemies,key=>rosterB.removeEnemy(key));
+  assert.deepEqual(rosterB.enemies,[]);
+  assert.deepEqual(session.storyWorld.pendingEnemyRemovals,[]);
 });
 
 test('a second encounter occurrence with the same cast owns fresh enemy resources',()=>{

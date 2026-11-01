@@ -73,7 +73,11 @@ export class StoryWorldState {
   private mapVisit=0;
   private enemyRemovals:{enemyId:string;map?:string;all:boolean}[]=[];
   get pendingEnemyRemovals(){return this.enemyRemovals.map(value=>({...value}));}
-  consumeEnemyRemovals():void{this.enemyRemovals=[];}
+  /** 只清掉本次真正应用过的命令；其他地图的待处理项留到那张图上再生效。 */
+  consumeEnemyRemovals(consumed?:(command:{enemyId:string;map?:string;all:boolean})=>boolean):void{
+    if(!consumed){this.enemyRemovals=[];return;}
+    this.enemyRemovals=this.enemyRemovals.filter(command=>!consumed({...command}));
+  }
   private enemyLocations=new Map<string,{id:string;enemyId:string;map:string;x:number;y:number;mapVisit?:number;respawn?:false}>();
   /** 每次剧情世界变化递增；只读投影可以据此复用上一次的结果。 */
   private revisionValue=0;
