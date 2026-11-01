@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "environments": {
+    "web": { "serverBaseUrl": "" },
+    "androidDebug": { "serverBaseUrl": "http://127.0.0.1:4003" },
+    "androidRelease": { "serverBaseUrl": "https://catgo.online:4002" }
+  }
+}

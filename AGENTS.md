@@ -91,10 +91,11 @@ src/                   游戏源码（规则见 src/AGENTS.md）
 public/                原样复制进构建产物的静态资源和内容
   content/             剧情、任务、地图、战斗、物品、音频等内容 JSON
   assets/              图片与音频素材
+config/                环境服务根地址（Android 调试/发布；网页固定同源）
 tests/                 单元测试（AGENTS.md；helpers、support 另有）
 tools/                 构建、校验、调试现场表生成、静态服务、APK 打包（AGENTS.md；debug-start 另有）
 deploy/                nginx 站点等部署配置
-docs/                  架构、掉落、剧情创作、音频、部署、调试与诊断
+docs/                  架构、掉落、剧情创作、音频、部署、服务地址、调试与诊断
 android/               Android WebView 壳（可选，规则见 AGENTS.md）
 .agents/skills/        Phaser 4 开发技能
 .claude/skills         指向 ../.agents/skills 的符号链接

@@ -118,20 +118,6 @@ function browserSessionStore(): CloudSessionStore {
   };
 }
 
-function injectedEndpoint(): string {
-  const globals = globalThis as {
-    __inoitaCloudEndpoint?: unknown;
-    InotiaNative?: { cloudEndpoint?: () => unknown };
-  };
-  if (typeof globals.__inoitaCloudEndpoint === 'string' && globals.__inoitaCloudEndpoint)
-    return globals.__inoitaCloudEndpoint;
-  try {
-    const value = globals.InotiaNative?.cloudEndpoint?.();
-    if (typeof value === 'string' && value) return value;
-  } catch { /* 旧 WebView 没有桥 */ }
-  return '';
-}
-
 function endpointProblem(base: string): string | undefined {
   if (!base || !/^[a-z][a-z0-9+.-]*:\/\//i.test(base)) return undefined;
   let url: URL;
@@ -246,7 +232,7 @@ export class CloudSaveClient implements CloudSavePort {
   private requestSerial = 0;
 
   constructor(options: CloudSaveClientOptions = {}) {
-    this.baseUrlOption = options.baseUrl ?? injectedEndpoint;
+    this.baseUrlOption = options.baseUrl ?? '';
     this.fetchImpl = options.fetch;
     this.storage = options.storage ?? browserSessionStore();
     try { this.session = this.storage.read(); } catch { this.session = undefined; }

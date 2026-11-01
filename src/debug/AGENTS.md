@@ -14,6 +14,7 @@
 
 - GM 动作只在 `gm-actions.ts` 实现一次；Phaser 面板和无头回放都调用同一入口，不各写一份。
 - 剧情、任务和事件 ID 是存档引用，跳转与回放只读取这些 ID，不改名、不重新编号。
+- GM 的诊断上报地址从 `application/endpoints.ts` 取，不在 `gm-actions.ts` 里写默认域名。
 - 本目录不导入 Phaser，保持能在 Node 下直接运行和测试。
 - 内容改动后运行 `npm run debug-start` 重新生成 GM 任务现场表；提交前用 `npm run debug-start:check` 检查是否过期。
 

@@ -27,6 +27,8 @@ npm run deploy     # typecheck + build + 核对 HTTPS 入口正在提供的版�
 
 云存档的部署顺序是：先上线服务端代码和 `.cloud-save/` 目录并重启 4004，再改 nginx 的 `client_max_body_size 4m` 并 reload，最后构建部署客户端；需要时再打 APK。旧客户端不会调用 `/__cloud`，先服务端最安全。详细接口、数据布局和限制见 [云存档与账号](cloud-save.md)。
 
+客户端服务地址：网页始终同源，本地 4003 和生产 4002 都不写域名；Android/热更新由宿主注入 `__inoitaEndpoints`。环境根地址集中在 `config/endpoints.json`，生产云存档和诊断共用 `https://catgo.online:4002`。规则和调试方式见 [服务地址管理](endpoints.md)。
+
 `npm run deploy` 要求 nginx 与 4004 服务都在运行。没有服务时先执行 `systemctl --user restart inoita-game`（或在本机运行 `npm run serve`），再重试。
 
 ## 缓存与诊断

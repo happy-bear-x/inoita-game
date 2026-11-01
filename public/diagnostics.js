@@ -10,9 +10,13 @@
     catch { return false; }
   })();
   const offlineShell = location.hostname === 'appassets.androidplatform.net';
-  const endpoint = () => typeof globalThis.__inoitaDiagnosticsEndpoint === 'string' && globalThis.__inoitaDiagnosticsEndpoint
-    ? globalThis.__inoitaDiagnosticsEndpoint
-    : localEndpoint;
+  const endpoint = () => {
+    const runtime = globalThis.__inoitaEndpoints;
+    if (runtime && typeof runtime === 'object' && runtime.version === 1
+      && typeof runtime.diagnosticsReport === 'string' && runtime.diagnosticsReport)
+      return runtime.diagnosticsReport;
+    return localEndpoint;
+  };
   const session = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
   let sequence = 0, sending = false, snapshot = () => null;
   let pending = [], recent = [], capturing = false;

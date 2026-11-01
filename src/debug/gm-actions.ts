@@ -21,6 +21,7 @@ import type { Session, SessionState } from '../domain/session.ts';
 import type { StoryDirector } from '../domain/story-director.ts';
 import type { ItemCategory } from '../domain/story-interface.ts';
 import { organizedDebugInventory } from '../domain/inventory.ts';
+import { DIAGNOSTICS_REPORT_PATH, diagnosticsReportUrl } from '../application/endpoints.ts';
 
 export interface GmResult { ok: boolean; reason?: string }
 export interface GmStoryPreview extends GmResult {
@@ -140,13 +141,8 @@ export interface GmPorts {
   ui?: () => unknown;
 }
 
-/** 既有报错收集端点（`public/diagnostics.js` 用的同一个）。只在开发服务挂载。 */
-const DEFAULT_REPORT_ENDPOINT = '/__diagnostics/report';
-/** 离线 APK 由壳在 document-start 注入绝对地址；网页版仍走同源端点。 */
-const reportEndpoint = (): string => {
-  const injected = (globalThis as { __inoitaDiagnosticsEndpoint?: unknown }).__inoitaDiagnosticsEndpoint;
-  return typeof injected === 'string' && injected ? injected : DEFAULT_REPORT_ENDPOINT;
-};
+/** 诊断上报地址由 application/endpoints.ts 统一解析；网页无注入时回退同源固定路径。 */
+const reportEndpoint = (): string => diagnosticsReportUrl();
 /** 端点单条上限 12 KB（`tools/diagnostic-collector.mjs`），留一点余量。 */
 const ENTRY_BUDGET = 11000;
 /** 操作日志环长度：够看清「刚才做了什么」，又不至于把上报撑爆。 */
@@ -449,7 +445,7 @@ export function createGmActions(ports: GmPorts): GmActions {
       // 离线壳没有注入远程地址时，同源端点只是 asset loader 的 204 占位，不能当成已上报。
       if (response.ok && typeof location !== 'undefined'
         && location.hostname === 'appassets.androidplatform.net'
-        && reportEndpoint() === DEFAULT_REPORT_ENDPOINT) return false;
+        && reportEndpoint() === DIAGNOSTICS_REPORT_PATH) return false;
       return response.ok;
     } catch { return false; }
   };
