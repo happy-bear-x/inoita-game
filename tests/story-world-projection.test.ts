@@ -173,6 +173,30 @@ test('a party wipe opens the defeat panel without settling the waiting encounter
   assert.equal(state.encounterResults.size,0,'阵亡不占用胜利结算的去重记录');
 });
 
+test('a story checkpoint does not record while a story encounter is waiting',()=>{
+  let captures=0;
+  const scene=Object.setPrototypeOf({app:{session:{hasWaitingStoryRun:true,hasLivingMember:true},
+    checkpoint:{capture(){captures++;return true;}}}},WorldScene.prototype) as unknown as InstanceType<typeof WorldScene>;
+  scene.checkpointStoryWorld();
+  assert.equal(captures,0);
+});
+
+test('saving refuses a party whose active members are all down',()=>{
+  const scene=Object.setPrototypeOf({app:{session:{debugFocusQuest:undefined,hasLivingMember:false}},map:{id:'home'},player:{},movement:{}},WorldScene.prototype) as unknown as InstanceType<typeof WorldScene>;
+  assert.deepEqual(scene.captureSaveWorld(),{ok:false,reason:'no-survivors'});
+});
+
+test('a defeat restore refuses a checkpoint whose party has no living member',async()=>{
+  let restore:undefined|(()=>Promise<void>);
+  const scene=Object.setPrototypeOf({map:{id:'home'},destroyed:false,resetInput(){},async restoreStoryWorld(){},
+    app:{storySignal:new AbortController().signal,
+      checkpoint:{peek:()=>({session:{hero:{health:0},party:{members:[],slots:['companion-1']}},world:{location:{map:'home'}}})},
+      ui:{showDefeat(actions:{restore():Promise<void>}){restore=actions.restore;},closeDefeat(){}}}},
+  WorldScene.prototype) as unknown as InstanceType<typeof WorldScene>;
+  scene.handleCombatDefeat();assert.ok(restore);
+  await assert.rejects(restore!(),/没有可战斗的队员/);
+});
+
 test('story settlement only regroups friendly units while the formal game world is active',()=>{
   const f=fixture();let settles=0;
   const app=f.state.app as unknown as {ui:{mode:string;setWorldRebuildCover(covered:boolean):void};suspended?:boolean};

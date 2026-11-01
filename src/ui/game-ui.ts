@@ -12,15 +12,13 @@ const TYPE_INTERVAL_MS=24;
 const TYPE_CHARS_PER_INTERVAL=2;
 
 interface DialogueState { text:string; start:number; readTo:number; skipped:boolean }
-type DefeatAction = 'prayer' | 'checkpoint' | 'load';
+type DefeatAction = 'checkpoint' | 'load';
 interface DefeatActions {
-  prayerCount:()=>number;
-  revive:()=>boolean|Promise<boolean>;
   restore:()=>void|Promise<void>;
   /** 打开读档页；返回 false 表示当前打不开，阵亡面板要留在原地。 */
   load?:()=>boolean;
 }
-interface DefeatState { prayerCount:number; confirmation?:DefeatAction; busy:boolean; error?:string }
+interface DefeatState { confirmation?:DefeatAction; busy:boolean; error?:string }
 export interface GameUiView {
   sync(ui:GameUI):void;
   resetInput?():void;
@@ -82,7 +80,7 @@ export class GameUI {
   get defeatState():DefeatState|undefined {
     const flow=this.defeatFlow;
     if(!flow||flow.hidden)return undefined;
-    return {prayerCount:flow.actions.prayerCount(),confirmation:flow.confirmation,busy:flow.busy,error:flow.error};
+    return {confirmation:flow.confirmation,busy:flow.busy,error:flow.error};
   }
   private elapsed=0;
   private pressed?:{id:number;pending:()=>void};
@@ -116,7 +114,6 @@ export class GameUI {
   }
   selectDefeatAction(action:DefeatAction):void {
     const flow=this.defeatFlow;if(this.suspended||!flow||flow.busy)return;
-    if(action==='prayer'&&flow.actions.prayerCount()<1)return;
     if(action==='load'){
       // 读档页自己有「未保存进度会丢失」的确认；这里直接让位，不再叠一层确认。
       if(!flow.actions.load)return;
@@ -139,11 +136,9 @@ export class GameUI {
   }
   async confirmDefeat():Promise<void> {
     const flow=this.defeatFlow;if(this.suspended||!flow?.confirmation||flow.busy)return;
-    const action=flow.confirmation;flow.busy=true;flow.error=undefined;this.resetInput();this.updateControls();
+    flow.busy=true;flow.error=undefined;this.resetInput();this.updateControls();
     try {
-      if(action==='prayer') {
-        if(flow.actions.prayerCount()<1||!await flow.actions.revive())throw new Error('当前无法使用复活圣文');
-      } else await flow.actions.restore();
+      await flow.actions.restore();
       if(this.defeatFlow===flow)this.closeDefeat();
     } catch(error) {
       if(this.defeatFlow!==flow)return;

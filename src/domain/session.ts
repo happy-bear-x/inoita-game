@@ -192,6 +192,11 @@ export class Session {
   focusDebugQuest(id:string|undefined):void { this.debugFocusQuestValue=id; this.emit(); }
   private playerState?: Readonly<StoryPlayerState>;
   get player():Readonly<StoryPlayerState>|undefined { return this.hero?.player ?? this.playerState; }
+  /** 上阵队伍是否至少还有一人活着；没有队伍时看主角。存档和检查点用它挡住全灭状态。 */
+  get hasLivingMember():boolean {
+    if(this.party)return this.party.livingIds.length>0;
+    return (this.player?.health??0)>0;
+  }
   setHealth(value:number):void {
     if(this.hero){this.hero.setHealth(value);return;}
     if(!this.playerState)return;
@@ -276,6 +281,8 @@ export class Session {
   }
   setStoryWorldContext(context:()=>Record<string,StoryWorldValue>):void { this.worldContext=context;this.questProjection=undefined;this.refresh(); }
   get runtimeState():StoryRuntimeSnapshot {return structuredClone(this.runtimeSnapshot);}
+  /** 当前是否有剧情 run 在等待战斗结果；检查点据此避开战斗开局。 */
+  get hasWaitingStoryRun():boolean { return this.runtimeSnapshot.runs.some(run=>run.status==='waiting'); }
   set runtimeState(value:StoryRuntimeSnapshot) {
     const next=this.prepareRuntime(value);this.validateStoryLinks(this.storyWorld.captureState(),next);this.runtimeSnapshot=next;
   }

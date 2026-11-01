@@ -17,19 +17,6 @@ const session=()=>new Session(campaign,undefined,undefined,items);
 const open=(s:Session,id=general,catalog=shops,random=()=>0.1)=>new Storefront(catalog,items,stats,s,id,s.shops.mapId??'shadow-camp',random);
 const offer=(store:Storefront,item:string)=>store.offers.find(offer=>!offer.sold&&offer.instance.item===item)!;
 
-test('only the general merchants carry the party-wipe prayer at its authored price',()=>{
-  const s=session(),store=open(s),id=offer(store,'resurrection-prayer').id;
-  assert.equal(store.buyPrice(id),1000);assert.equal(items.items['resurrection-prayer'].basePrice,1000);
-  s.gainMoney(1000);assert.equal(store.buy(id,1),1000);assert.equal(s.money,0);
-  assert.equal(s.bag.count('resurrection-prayer'),1);
-  const entry=s.bag.entries.find(value=>value.item==='resurrection-prayer')!;
-  assert.throws(()=>store.sell(entry.id,1),/无法出售/);
-  const generalShops=Object.entries(shops.shops).filter(([,shop])=>shop.name==='杂货商人');
-  assert.equal(generalShops.length,5);
-  for(const [key,shop] of Object.entries(shops.shops))
-    assert.equal(shop.fixedStock.includes('resurrection-prayer'),shop.name==='杂货商人',`${key} 的货架与商店类型不一致`);
-});
-
 test('ordinary merchant validates quantities and publishes one complete transaction',()=>{
   const s=session(),store=open(s),id=offer(store,'healing-potion-s').id;
   assert.equal(store.buyPrice(id),15);assert.throws(()=>store.buy(id,1),/金币不足/);
@@ -47,8 +34,8 @@ test('bulk sale validates the whole batch before mutating and settles with one n
   const s=session(),store=open(s),id=offer(store,'healing-potion-s').id;
   s.gainMoney(100);store.buy(id,2);
   const potion=s.bag.entries.find(value=>value.item==='healing-potion-s')!;
-  s.bag.add('resurrection-prayer');
-  const quest=s.bag.entries.find(value=>value.item==='resurrection-prayer')!;
+  s.bag.add('skills-reset-spell');
+  const quest=s.bag.entries.find(value=>value.item==='skills-reset-spell')!;
   const money=s.money,count=s.bag.count('healing-potion-s');
   // 批里只要有一件卖不掉，整批都不落地。
   assert.throws(()=>store.sellMany([{id:potion.id,quantity:1},{id:quest.id,quantity:1}]),/无法出售/);

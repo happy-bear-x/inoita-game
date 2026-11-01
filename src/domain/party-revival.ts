@@ -17,7 +17,7 @@ export function healerRevivalQuote(session:Session):HealerRevivalQuote {
 export function reviveAtHealer(session:Session):HealerRevivalQuote {
   const quote=healerRevivalQuote(session),party=session.party;
   if(!party||!quote.memberIds.length)throw new Error('没有需要复活的队员');
-  if(!party.livingIds.length)throw new Error('全队阵亡时请使用复活圣文或返回检查点');
+  if(!party.livingIds.length)throw new Error('全队阵亡时请返回检查点或读取存档');
   if(session.money<quote.cost)throw new Error('金币不足');
   session.transaction(()=>{
     session.spendMoney(quote.cost);

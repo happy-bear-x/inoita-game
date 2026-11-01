@@ -1564,7 +1564,7 @@ test('saving without a loaded world reports the original refusal and leaves the 
   assert.deepEqual(f.app.saves.inspect(0),{kind:'empty'});
 });
 
-test('save refusal distinguishes a debug scene from map loading and a missing world', t => {
+test('save refusal distinguishes a debug scene, map loading, a missing world and a wiped party', t => {
   const f=fixture();t.after(f.cleanup);
   f.app.captureSaveWorld=()=>({ok:false,reason:'debug'});
   f.menu.show('save');f.scene.click(f.scene.button('存档槽 1'));
@@ -1577,6 +1577,10 @@ test('save refusal distinguishes a debug scene from map loading and a missing wo
   f.app.captureSaveWorld=()=>({ok:false,reason:'not-ready'});
   f.menu.show('save');f.scene.click(f.scene.button('存档槽 1'));
   assert(f.scene.texts().includes('在当前的地图中无法进行存档。'));
+  f.scene.click(f.scene.button('确认'));
+  f.app.captureSaveWorld=()=>({ok:false,reason:'no-survivors'});
+  f.menu.show('save');f.scene.click(f.scene.button('存档槽 1'));
+  assert(f.scene.texts().includes('队伍已经全员阵亡，无法存档。'));
   f.scene.click(f.scene.button('确认'));
   assert.deepEqual(f.app.saves.inspect(0),{kind:'empty'});
 });
@@ -1664,7 +1668,7 @@ test('closing a pending load cancels its preparation and a late error cannot reo
 
 test('the defeat load option opens the real load page and closing it returns to the defeat panel', t => {
   const f=fixture();t.after(f.cleanup);
-  f.controls.showDefeat({prayerCount:()=>0,revive:()=>false,restore:()=>{},load:()=>f.menu.openDefeatLoad()});
+  f.controls.showDefeat({restore:()=>{},load:()=>f.menu.openDefeatLoad()});
   assert.equal(f.controls.locked,true);
   f.controls.selectDefeatAction('load');
   assert.equal(f.internals.page,'load');assert(f.scene.texts().includes('读取存档'));
@@ -1673,7 +1677,8 @@ test('the defeat load option opens the real load page and closing it returns to 
   assert.equal(f.controls.locked,true,'读档页自己锁住世界');
   f.scene.key('Escape');
   assert.ok(f.controls.defeatState,'关掉读档页回到原来的阵亡面板');
-  assert.equal(f.controls.defeatState.prayerCount,0);
+  assert.equal(f.controls.defeatState.confirmation,undefined);
+  assert.equal(f.controls.defeatState.busy,false);
   assert.equal(f.controls.locked,true);
 });
 

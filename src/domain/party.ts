@@ -286,16 +286,7 @@ export class PartyRoster {
   revive(id:string,itemInstanceId:string):ItemResult{
     const entry=this.bag.get(itemInstanceId),use=entry&&this.items.items[entry.item]?.use;
     if(!entry||!this.bag.entries.some(value=>value.id===itemInstanceId)||use?.kind!=='revive')throw new Error('复活道具不可用');
-    if(entry.item==='resurrection-prayer'){
-      const fallen=this.activeIds.filter(member=>!this.alive(member));
-      if(this.livingIds.length||!fallen.length)throw new Error('复活圣文只能在全队阵亡时使用');
-      for(const memberId of fallen){const member=memberId==='player'?this.hero:this.owned.get(memberId)!;
-        member.clearCombatResourceLimits();member.setHealth(member.player.maxHealth);member.setMana(member.player.maxMana);
-      }
-      this.bag.take(itemInstanceId,1);this.changed();
-      return {kind:'revive',title:'队伍复活',message:'队伍成员已复活',rewards:[]};
-    }
-    if(!this.livingIds.length)throw new Error('全队阵亡时需要复活圣文');
+    if(!this.livingIds.length)throw new Error('全队阵亡时请返回检查点或读取存档');
     if(!this.activeIds.includes(id)||this.alive(id))throw new Error('请选择已倒下的上阵队员');
     const member=id==='player'?this.hero:this.owned.get(id)!;
     const full=entry.item==='improved-resurrection-scroll';

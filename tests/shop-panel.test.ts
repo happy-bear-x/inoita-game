@@ -299,11 +299,11 @@ test('both shops keep the bag category column on the right of the bag frame',()=
     pick(labels[0]);
     // 分类真的在筛背包：默认「全部」看得见所有东西，切到武器只剩武器。
     const sellable=(label:string)=>surface.calls.filter(call=>call.kind==='button'&&String(call.node?.label??'')===label).length;
-    session.bag.add('resurrection-prayer');session.bag.add('dagger');draw();
-    assert.equal(sellable('出售 复活圣文'),1,'默认全部里能看到不可出售的物品');
+    session.bag.add('skills-reset-spell');session.bag.add('dagger');draw();
+    assert.equal(sellable('出售 技能初始化卷轴'),1,'默认全部里能看到不可出售的物品');
     (buttons.find(call=>call.node!.label===INVENTORY_LABELS.weapon)!.action as ()=>void)();draw();
     assert.equal(sellable('出售 短剑'),1,'武器分类里有短剑');
-    assert.equal(sellable('出售 复活圣文'),0,'武器分类里没有消耗品');
+    assert.equal(sellable('出售 技能初始化卷轴'),0,'武器分类里没有消耗品');
   }
 });
 
@@ -357,18 +357,18 @@ test('picking an item first opens the description panel on the opposite column',
   assert.equal(description.descriptionBorders.at(-1)!.x,general.leftFrame.x,'卖出时面板落在货架那一栏');
   assert.equal(description.texts(`数量：${session.bag.get(session.bag.entries[0].id)!.quantity}`).length,0,'数量显示在物品格角标中');
   // 不可出售的物品跳过说明面板，仍按原样直接提示。
-  session.bag.add('resurrection-prayer');draw();
-  press(surface,'出售 复活圣文');draw();
+  session.bag.add('skills-reset-spell');draw();
+  press(surface,'出售 技能初始化卷轴');draw();
   assert.equal(surface.texts('此物品无法出售').length,1);
-  assert.equal(description.texts(item('复活圣文').description).length,0);
+  assert.equal(description.texts(item('技能初始化卷轴').description).length,0);
 });
 
 test('batch sale hides unsellable items, toggles picks and sells the whole stack at once',()=>{
   const {surface,session,store,draw}=open('merchandise-dealer-b09d9585');
-  session.bag.add('resurrection-prayer');draw();
+  session.bag.add('skills-reset-spell');draw();
   press(surface,'批量出售');draw();
   assert.ok(surface.buttons.some(call=>String(call.node?.label)==='退出批量'),'开启后按钮变成退出批量');
-  assert.ok(!surface.buttons.some(call=>String(call.node?.label)==='选择 复活圣文'),'批量模式隐藏不可出售物品');
+  assert.ok(!surface.buttons.some(call=>String(call.node?.label)==='选择 技能初始化卷轴'),'批量模式隐藏不可出售物品');
   const entry=session.bag.entries.find(value=>value.item==='healing-potion-s')!;
   const before=session.money,price=store.sellPrice(entry)*entry.quantity;
   press(surface,'选择 恢复药水（小）');draw();
@@ -454,10 +454,10 @@ test('non-stackable and unsellable items skip the quantity box',()=>{
   (boxButton(weapons.description,'购买').action as ()=>void)();weapons.draw();
   const purchase=tradeMessageLayout(1,true);
   assert.deepEqual(popupFrame(weapons.surface),nativePopupFrame(450,purchase.height),'不可堆叠商品直接确认');
-  // 复活圣文不能卖回：点背包格只给提示，且只有一个居中的确定按钮。
+  // 技能初始化卷轴不能卖回：点背包格只给提示，且只有一个居中的确定按钮。
   const general=open('merchandise-dealer-b09d9585');
-  general.session.bag.add('resurrection-prayer');general.draw();
-  press(general.surface,'出售 复活圣文');general.draw();
+  general.session.bag.add('skills-reset-spell');general.draw();
+  press(general.surface,'出售 技能初始化卷轴');general.draw();
   assert.equal(general.surface.texts('此物品无法出售').length,1);
   const notice=tradeMessageLayout(1,false),noticeTop=0;
   assert.deepEqual([boxButton(general.surface,'确定').x,boxButton(general.surface,'确定').y],[(450-125)/2,noticeTop+notice.button.y]);

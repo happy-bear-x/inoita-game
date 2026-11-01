@@ -73,8 +73,10 @@ const SHORTCUT_PROMPT='请选择要设置的快捷键。';
 const SAVE_DONE='保存成功',SAVE_FAILED='保存失败',SAVE_UNAVAILABLE='在当前的地图中无法进行存档。';
 const SAVE_UNAVAILABLE_DEBUG='调试现场不能存档，请先在调试面板点「结束本次调试」。';
 const SAVE_UNAVAILABLE_LOADING='地图正在载入，请稍后再存档。';
+const SAVE_UNAVAILABLE_NO_SURVIVORS='队伍已经全员阵亡，无法存档。';
 const saveUnavailableNotice=(reason:SaveWorldReason):string=>reason==='debug'?SAVE_UNAVAILABLE_DEBUG
-  :reason==='loading'?SAVE_UNAVAILABLE_LOADING:SAVE_UNAVAILABLE;
+  :reason==='loading'?SAVE_UNAVAILABLE_LOADING
+  :reason==='no-survivors'?SAVE_UNAVAILABLE_NO_SURVIVORS:SAVE_UNAVAILABLE;
 /** 菜单内容块的固定原点；说明层与内容块共用同一坐标。 */
 const CONTENT_ORIGIN={x:32,y:172} as const;
 /** 这些使用方式走独立操作面板，不出现在背包的「使用」菜单里。 */
@@ -1295,9 +1297,12 @@ export class StoryUI {
     else if(use?.kind==='recipe'){line('随机展开下列一种配方：');for(const id of use.recipes!)line(`${bag.catalog.recipes[id].name}${bag.learnedRecipes.includes(id)?' · 已收录':''}`);}
     else if(use?.kind==='recruit')line(`加入佣兵名册 · ${use.classId?this.app.storyClasses.classes.find(c=>c.id===use.classId)!.name:'随机职业'}`);
     else if(use?.kind==='revive'){
-      if(entry.item==='resurrection-prayer')line('全队阵亡时，在阵亡界面使用。');
-      else{
-        const party=this.session!.party!,fallen=party.activeIds.filter(id=>!party.alive(id));
+      const party=this.session!.party!;
+      if(!party.livingIds.length){
+        op.member=undefined;
+        line('全队阵亡时无法使用复活卷轴，请返回检查点或读取存档。');
+      }else{
+        const fallen=party.activeIds.filter(id=>!party.alive(id));
         op.member=fallen[0];
         const name=op.member==='player'?this.world!.actors[this.session!.campaign.start.actor].name:op.member?party.get(op.member)!.definition.name:undefined;
         line(name?`复活目标：${name}`:'当前没有阵亡的出战队员');
@@ -1308,7 +1313,7 @@ export class StoryUI {
     if(op.error)line(op.error);this.finishScroll('operation',scroll,y);
     const using=op.kind==='use',skill=entry.skill||op.skill||'';
     const learningBlocked=using&&use?.kind==='learn'&&(!bag.catalog.classSkills[this.member()!.classId]?.includes(skill)||!!this.bookProblem(skill));
-    const revivalBlocked=using&&use?.kind==='revive'&&(entry.item==='resurrection-prayer'||!op.member);
+    const revivalBlocked=using&&use?.kind==='revive'&&!op.member;
     const disabled=op.confirmed||this.busy||(using&&!!this.itemUseProblem(entry))||learningBlocked||revivalBlocked;
     // 底部按钮沿用原版数量框的排布：确定在左、取消在右，125×55。
     v.button('取消',box.button.right,box.button.y,box.button.width,box.button.height,()=>{this.operation=undefined;this.render();});

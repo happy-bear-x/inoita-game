@@ -108,7 +108,7 @@ test('old saves containing removed expansion bags migrate to consumables',()=>{
 });
 
 test('old saves containing removed items drop them and every reference',()=>{
-  for(const legacyItem of ['standard-dice','stats-reset-spell']){
+  for(const legacyItem of ['standard-dice','stats-reset-spell','resurrection-prayer']){
     const saved=record(),bag=saved.session.bag;
     const equipped=new Set([...Object.values(bag.worn),...bag.companionEquipment.flatMap(([,equipment])=>Object.values(equipment))]);
     const entry=bag.instances.find(value=>!equipped.has(value.id))!;
@@ -130,6 +130,16 @@ test('old saves containing removed items drop them and every reference',()=>{
     assert.ok(!restored.shops.stock.some(([,offers])=>offers.some(offer=>offer.instance.item===legacyItem)),`${legacyItem} 商店存货被丢弃`);
     assert.deepEqual(saved,before,'旧档迁移不改写槽里的原件');
   }
+});
+
+test('a save written with a wiped party is repaired before it enters the world',()=>{
+  const saved=record();
+  saved.session.hero!.health=0;
+  const candidate=prepareSavedGame(saved,content);
+  assert.equal(candidate.session.hasLivingMember,true);
+  assert.equal(candidate.session.hero!.player.health,candidate.session.hero!.player.maxHealth);
+  assert.equal(candidate.session.hero!.player.mana,candidate.session.hero!.player.maxMana);
+  assert.equal(saved.session.hero!.health,0,'修复只发生在候选会话，不改写槽里的原件');
 });
 
 test('invalid class, map, position and actors are rejected without changing the saved input',()=>{

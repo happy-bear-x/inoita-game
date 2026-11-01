@@ -154,3 +154,13 @@ test('a death checkpoint does not bring consumed ancient swords back',()=>{
   assert.equal(session.legendaryWeapons.isPulled('map-a','sword-001'),true);
   assert.equal(session.legendaryWeapons.isPulled('map-a','sword-002'),true);
 });
+
+test('a wiped party never replaces the last living checkpoint',()=>{
+  const session=createSession(),hero=session.hero!,checkpoint=new SessionCheckpoint<undefined>();
+  const location={map:campaign.start.map,x:16,y:24};
+  assert.equal(checkpoint.capture(session,location,undefined),true);
+  const snapshot=checkpoint.peek();
+  hero.setHealth(0);
+  assert.equal(checkpoint.capture(session,{...location,x:32},undefined),false);
+  assert.deepEqual(checkpoint.peek(),snapshot);
+});

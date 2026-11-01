@@ -198,15 +198,13 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
       v.text('队伍全员阵亡',480,172,0,34,'#e4c58b').setOrigin(.5,0);
       const guard=()=>!ui.suspended&&!ui.defeatState?.busy;
       if(defeat.confirmation){
-        const prayer=defeat.confirmation==='prayer';
-        v.text(prayer?'消耗 1 张复活圣文，在原地恢复全队生命与魔法？':'返回最近的检查点？此后的物品、经验、金钱和任务进度将回退。',190,242,580,25,'#f5eedf');
+        v.text('返回最近的检查点？此后的物品、经验、金钱和任务进度将回退。',190,242,580,25,'#f5eedf');
         v.button('取消',235,397,220,60,()=>ui.cancelDefeatConfirmation(),{disabled:defeat.busy,guard});
         v.button(defeat.busy?'正在恢复…':'确认',505,397,220,60,()=>{void ui.confirmDefeat();},{disabled:defeat.busy,guard});
       }else{
-        v.text(defeat.error??'选择复活方式',480,230,570,23,defeat.error?'#eb9587':'#f5eedf').setOrigin(.5,0);
-        v.button(`使用复活圣文（${defeat.prayerCount}）`,225,286,510,56,()=>ui.selectDefeatAction('prayer'),{disabled:defeat.prayerCount<1,guard});
-        v.button('返回检查点',225,356,510,56,()=>ui.selectDefeatAction('checkpoint'),{guard});
-        v.button('读取存档',225,426,510,56,()=>ui.selectDefeatAction('load'),{disabled:!this.app.resumeSlot,guard});
+        v.text(defeat.error??'选择处理方式',480,230,570,23,defeat.error?'#eb9587':'#f5eedf').setOrigin(.5,0);
+        v.button('返回检查点',225,301,510,60,()=>ui.selectDefeatAction('checkpoint'),{guard});
+        v.button('读取存档',225,392,510,60,()=>ui.selectDefeatAction('load'),{disabled:!this.app.resumeSlot,guard});
       }
     }
     else if(!cover&&ui.choices&&!ui.quest){

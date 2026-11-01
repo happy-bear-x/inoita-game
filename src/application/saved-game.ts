@@ -120,7 +120,7 @@ function upgradeSavedGame(game:SaveGame<StoryWorldViewSnapshot>):SaveGame<StoryW
  */
 const LEGACY_BAG_REPLACEMENTS:Record<string,string>={
   handbag:'healing-potion-m','small-bag':'healing-potion-l',backpack:'healing-potion-xl','infinity-bag':'elixir'};
-const LEGACY_REMOVED_ITEMS=new Set(['novice-dice','standard-dice','advanced-dice','supreme-dice','chaos-dice','stats-reset-spell']);
+const LEGACY_REMOVED_ITEMS=new Set(['novice-dice','standard-dice','advanced-dice','supreme-dice','chaos-dice','stats-reset-spell','resurrection-prayer']);
 function migrateLegacyItems(game:SaveGame<StoryWorldViewSnapshot>):SaveGame<StoryWorldViewSnapshot>{
   const session=game.session;
   const legacy=(id:string|undefined)=>!!id&&(LEGACY_BAG_REPLACEMENTS[id]!==undefined||LEGACY_REMOVED_ITEMS.has(id));
@@ -182,6 +182,13 @@ export function prepareSavedGame(game:SaveGame<StoryWorldViewSnapshot>,content:S
   const session=newStorySession(content.campaign,content.world.actors[content.campaign.start.actor],selected,
     content.items,content.characterStats,content.battleCatalog,content.companions);
   restoreSaveGame(session,upgraded);
+  // 旧版本可能把全队 0 血写成存档；进世界前恢复上阵队伍，避免读档后立刻弹出阵亡面板。
+  if(!session.hasLivingMember){
+    if(session.party)session.party.recover();else session.hero?.recover();
+    globalThis.storyDiagnostics?.record('save-repaired-no-survivor',{classId:upgraded.summary.classId,level:upgraded.summary.level,map:location.map});
+  }else if(session.party&&!session.party.alive(session.party.controlledId)){
+    session.party.switchControl(session.party.livingIds[0]!);
+  }
   if(world.world)world.world=prepareCombatRestore(world.world,content.battleCatalog,session.party?.activeIds??[]);
   return {session,world,map};
 }

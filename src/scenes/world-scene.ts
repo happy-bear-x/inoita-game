@@ -40,6 +40,7 @@ import { continueProgress, loadEntryPlan } from '../application/entry-loading.ts
 import { potentialMapEnemyIds, type WorldAssetInputs } from '../rendering/map-assets.ts';
 import { uiTexture } from '../ui/phaser/widgets.ts';
 import { storyExitId } from '../domain/story-world.ts';
+import { hasLivingParty } from '../domain/session-checkpoint.ts';
 import type { TravelDestination } from '../domain/content.ts';
 import type {StoryAudioState} from '../application/game-audio.ts';
 
@@ -84,7 +85,7 @@ export interface SceneOptions {
 /** 旧存档没有 `scene`，读档时按 `location` 与剧情世界状态重新投影；新存档始终写入。 */
 export interface StoryWorldViewSnapshot {location:TravelDestination;world?:WorldCombatState;generatedEntities:EntityPlacement[];scene?:SceneSnapshot;audio?:StoryAudioState}
 /** 存档捕获失败的原因；界面据此给出具体提示，而不是一律说“当前地图不能存档”。 */
-export type SaveWorldReason = 'debug' | 'loading' | 'not-ready';
+export type SaveWorldReason = 'debug' | 'loading' | 'not-ready' | 'no-survivors';
 export type SaveWorldResult =
   | { ok: true; map: { id: string; name: string }; world: StoryWorldViewSnapshot }
   | { ok: false; reason: SaveWorldReason };
@@ -1491,15 +1492,21 @@ export class WorldScene extends Phaser.Scene {
     this.controls?.setCooldowns(cooldowns);
     this.skillHud?.setCooldowns(cooldowns);
   }
-  private captureCheckpoint():void {
+  private captureCheckpoint():boolean {
     // 调试现场不是玩家进度：不覆盖检查点，否则死亡/重开会把 GM 现场带回正常流程。
-    if(this.app.session.debugFocusQuest)return;
-    if(!this.map||!this.combat||!this.player||!this.movement)return;
-    this.app.checkpoint.capture(this.app.session,{map:this.map.id,...this.movement.position(this.player)},this.captureStoryWorld());
+    if(this.app.session.debugFocusQuest)return false;
+    // 遭遇正在等待战斗结果时不是安全点；等事件收尾后再记，死亡回检查点才不会直接落回同一场战斗。
+    if(this.app.session.hasWaitingStoryRun)return false;
+    if(!this.map||!this.combat||!this.player||!this.movement)return false;
+    if(!this.app.session.hasLivingMember){
+      globalThis.storyDiagnostics?.record('checkpoint-skipped-no-survivor',{map:this.map.id});
+      return false;
+    }
+    if(!this.app.checkpoint.capture(this.app.session,{map:this.map.id,...this.movement.position(this.player)},this.captureStoryWorld()))return false;
     this.checkpointPending=false;
+    return true;
   }
   checkpointStoryWorld():void{
-    if(!(this.app.session.party?.livingIds.length??this.app.session.player?.health??0))return;
     this.captureCheckpoint();
   }
   async normalizeForStory(signal:AbortSignal):Promise<void>{
@@ -1544,6 +1551,10 @@ captureStoryScene():SceneSnapshot {
     if(this.app.session.debugFocusQuest)return {ok:false,reason:'debug'};
     if(!this.map||!this.player||!this.movement)return {ok:false,reason:'not-ready'};
     if(this.loadingWorld)return {ok:false,reason:'loading'};
+    if(!this.app.session.hasLivingMember){
+      globalThis.storyDiagnostics?.record('save-refused-no-survivor',{map:this.map.id});
+      return {ok:false,reason:'no-survivors'};
+    }
     this.combat?.settleForSave();
     return {ok:true,map:{id:this.map.id,name:this.map.name},world:this.captureStoryWorld()};
   }
@@ -1707,23 +1718,18 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
   /**
    * 全队阵亡只暂停当前战斗，不结算剧情遭遇。
    *
-   * 复活圣文会回到同一场战斗；返回检查点或读取存档会整份回滚。
+   * 返回检查点或读取存档会整份回滚。
    * 两条路都不需要把遭遇判成 `lost`；真正打赢时再由 `completedStoryEncounters` 上报 `won`。
    */
   handleCombatDefeat():void{
     this.showCombatDefeat();
   }
   private showCombatDefeat():void{
-    const prayer=()=>this.app.session.bag.entries.filter(entry=>entry.item==='resurrection-prayer');
     this.app.ui.showDefeat({
-      prayerCount:()=>prayer().reduce((sum,entry)=>sum+entry.quantity,0),
-      revive:()=>{
-        const entry=prayer()[0];if(!entry||!this.combat||this.destroyed)return false;
-        this.combat.revive('player',entry.id);return true;
-      },
       load:()=>this.app.openDefeatLoad?.()??false,
       restore:async()=>{
         const checkpoint=this.app.checkpoint.peek();if(!checkpoint)throw new Error('没有可恢复的检查点');
+        if(!hasLivingParty(checkpoint.session))throw new Error('检查点里没有可战斗的队员');
         const signal=this.app.storySignal??this.request.signal;
         signal.throwIfAborted();this.resetInput();this.app.director.cancel();
         const world=checkpoint.world.world?{...checkpoint.world,world:prepareCombatRestore(checkpoint.world.world,this.app.battleCatalog,checkpoint.session.party?.slots.filter((id):id is string=>!!id)??[])}:checkpoint.world;

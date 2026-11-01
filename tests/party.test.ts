@@ -202,17 +202,18 @@ test('deployment refuses implicit replacement and death selects the next living 
   assert.deepEqual(party.snapshot().living,['player']);
   hero.setHealth(0);assert.equal(party.onDefeat('player'),true);assert.deepEqual(party.snapshot().living,[]);
 });
-test('prayer requires a full wipe and revival consumes once while restoring resources',()=>{
+test('revive scrolls need a living member and restore one fallen companion',()=>{
   const {hero,party}=setup();const first=recruit(party);party.deployFirstAvailable(first.id);
-  party.bag.add('resurrection-prayer');const prayer=party.bag.entries.find(entry=>entry.item==='resurrection-prayer')!;
-  first.setHealth(0);assert.throws(()=>party.revive(first.id,prayer.id),/全队阵亡/);assert.equal(party.bag.count('resurrection-prayer'),1);
-  hero.setHealth(0);party.revive('player',prayer.id);
-  assert.equal(hero.player.health,hero.player.maxHealth);assert.equal(first.player.health,first.player.maxHealth);
-  assert.equal(first.player.mana,first.player.maxMana);assert.equal(party.bag.count('resurrection-prayer'),0);
-  assert.throws(()=>party.revive('player',prayer.id),/不可用/);
-  first.setHealth(0);party.bag.add('improved-resurrection-scroll');
-  party.revive(first.id,party.bag.entries.find(entry=>entry.item==='improved-resurrection-scroll')!.id);
-  assert.equal(first.player.health,first.player.maxHealth);assert.equal(first.player.mana,first.player.maxMana);
+  party.bag.add('improved-resurrection-scroll',2);
+  const scroll=()=>party.bag.entries.find(entry=>entry.item==='improved-resurrection-scroll')!;
+  first.setHealth(0);
+  party.revive(first.id,scroll().id);
+  assert.equal(first.player.health,first.player.maxHealth);
+  assert.equal(first.player.mana,first.player.maxMana);
+  assert.equal(party.bag.count('improved-resurrection-scroll'),1);
+  hero.setHealth(0);first.setHealth(0);
+  assert.throws(()=>party.revive('player',scroll().id),/返回检查点/);
+  assert.equal(party.bag.count('improved-resurrection-scroll'),1,'全灭时复活卷轴不消耗');
 });
 
 test('a restored combat maximum does not grant its resource increase twice',()=>{
