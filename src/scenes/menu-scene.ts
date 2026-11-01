@@ -11,41 +11,74 @@ import { centerModal } from '../ui/phaser/modal-placement.ts';
 import { TextPrompt } from '../ui/text-prompt.ts';
 import { AUTO_SAVE_SLOT, MANUAL_SAVE_SLOT_COUNT, saveSlotLabel, type SaveSlotRef, type SlotSummaryReading } from '../domain/save-game.ts';
 import type { AssetLease } from '../application/assets.ts';
+import { CLOUD_PAGE, type CloudPageActions, type CloudPageState, type CloudPageStatus } from '../ui/cloud-save-layout.ts';
+import { drawCloudSavePage } from '../ui/phaser/cloud-save-panel.ts';
+import {
+  cloudSlotLabel,
+  normalizeCloudAccount,
+  sanitizeCloudAccountInput,
+  validateCloudAccount,
+  validateCloudPassword,
+} from '../domain/cloud-save.ts';
+import { backupLocalSaves, restoreCloudSaves, type CloudSyncResult } from '../application/cloud-save-sync.ts';
 
 const art=(name:string)=>`/assets/ui/title-menu/${name}.png`;
 /** 标题页右下角展示的版本号；等用户要求时再改。 */
 const GAME_VERSION='v0.0.1';
 /** 版本号下方一行；说明作品性质，并提醒支持官方版本。 */
 const FAN_WORK_NOTICE='同人作品 · 仅供个人学习研究 · 请支持官方正版';
+const CLOSE_IMAGE='/assets/ui/menus/close.png';
+const CLOSE_PRESSED='/assets/ui/menus/close-pressed.png';
+
+interface ConfirmRequest {
+  message:string;
+  accept:()=>void;
+  cancel:()=>void;
+}
+
 export class MenuScene extends Phaser.Scene {
   readonly app:MenuContext;
   private surface?:UiSurface;
-  /** 删除确认画在它上面；底下的存档页在确认期间不接受输入。 */
+  /** 确认框画在它上面；底下的页面在确认期间不接受输入。 */
   private modal?:UiSurface;
   private backdrop?:Phaser.GameObjects.Image;
-  private page:'home'|'slots'|'settings'='home';
+  private page:'home'|'slots'|'settings'|'cloud'='home';
   /** 存档槽立绘的租约：每次进存档页按槽里的路径取，离开页面或关场景时释放。 */
   private slotPortraits?:AssetLease;
   private slotRequest?:AbortController;
-  /** 删除确认与改名输入：与游戏内菜单同一套流程，标题页也管得了自己的存档。 */
-  private deleteConfirm?:SaveSlotRef;
+  /** 改名输入与通用确认：标题页的存档管理与云存档覆盖确认共用。 */
   private renameRef?:SaveSlotRef;
   private prompt?:TextPrompt;
+  private confirmAction?:ConfirmRequest;
+  private confirmResolve?:(value:boolean)=>void;
+  /** 云存档请求：离开云页、回主页或场景关闭时 abort；代次防止旧结果覆盖新页面。 */
+  private cloudRequest?:AbortController;
+  private cloudSerial=0;
+  private cloudBusy=false;
+  private cloudAccountInput='';
+  private cloudPassword='';
+  private cloudStatus?:CloudPageStatus;
+  private cloudCount?:number;
   /** 环境设置列表的滚动位置：开关后整页重画，位置要接着上次的来。 */
   private settingsScroll=0;
+  private readonly renderCloudOnResume=():void=>{
+    if(this.page==='cloud'&&this.surface&&this.sys.isActive())this.render();
+  };
   constructor(app:MenuContext){super(SCENE_KEYS.menu);this.app=app;}
   create(options:{page?:'home'|'slots'}={}):void {
     this.page='home';this.app.ui.setMode('menu');this.app.ui.loading('正在准备主菜单…');
     const controller=new AbortController();
-    this.events.once('shutdown',()=>{controller.abort();this.slotRequest?.abort();this.prompt?.close();this.surface?.destroy();this.surface=undefined;this.modal?.destroy();this.modal=undefined;this.slotPortraits?.release();this.slotPortraits=undefined;this.scale.off('resize',this.layout,this);});
+    this.events.once('shutdown',()=>{controller.abort();this.cancelCloudRequest();this.settleConfirm(false,false);this.slotRequest?.abort();this.prompt?.close();this.surface?.destroy();this.surface=undefined;this.modal?.destroy();this.modal=undefined;this.slotPortraits?.release();this.slotPortraits=undefined;this.events.off(Phaser.Scenes.Events.RESUME,this.renderCloudOnResume);this.scale.off('resize',this.layout,this);});
     this.input.keyboard?.on('keydown',(event:KeyboardEvent)=>{
       if(this.app.ui.suspended)return;
-      // 改名输入框开着时键盘归它，场景不再处理按键。
-      if(this.renameRef!==undefined)return;
-      // 确认框打开时 Escape 只关确认框，不退出存档页。
-      if(event.key==='Escape'&&this.deleteConfirm!==undefined){event.preventDefault();this.deleteConfirm=undefined;this.render();return;}
-      if(event.key==='Escape'&&this.page!=='home'){this.showHome();}else this.surface?.key(event);
+      // 改名或账号/密码输入框开着时键盘归它，场景不再处理按键。
+      if(this.renameRef!==undefined||this.prompt?.active)return;
+      // 确认框打开时 Escape 只关确认框，不退出页面。
+      if(event.key==='Escape'&&this.confirmAction!==undefined){event.preventDefault();this.confirmAction.cancel();return;}
+      if(event.key==='Escape'&&this.page!=='home'){event.preventDefault();this.back();return;}
+      this.surface?.key(event);
     });
+    this.events.on(Phaser.Scenes.Events.RESUME,this.renderCloudOnResume);
     this.scale.on('resize',this.layout,this);
     // 浏览器自身的退出（Esc、手势）不会走设置页的按钮，靠事件把开关状态同步回来。
     this.events.once('shutdown',onFullscreenChange(()=>{
@@ -56,8 +89,8 @@ export class MenuScene extends Phaser.Scene {
       this.events.once('shutdown',()=>lease.release());
       this.backdrop=this.add.image(0,0,uiTexture(art('background'))).setOrigin(.5);
       this.surface=new UiSurface(this,1200,640);this.modal=new UiSurface(this,1024,640,200);this.prompt=new TextPrompt();
-      // 确认框打开时存档页整块不响应，确认框自己也只在有确认时响应。
-      this.modal.enabled=()=>this.app.ui.ready&&!this.app.ui.suspended&&this.sys.isActive()&&this.deleteConfirm!==undefined;
+      // 确认框打开时页面整块不响应，确认框自己也只在有确认时响应。
+      this.modal.enabled=()=>this.app.ui.ready&&!this.app.ui.suspended&&this.sys.isActive()&&this.confirmAction!==undefined;
       this.app.ui.menuLoaded();if(options.page==='slots')this.openSlots();else this.render();this.app.syncLifecycle?.();
     },error=>{if(!controller.signal.aborted)this.app.ui.error(String(error),()=>this.scene.restart());});
   }
@@ -85,8 +118,8 @@ export class MenuScene extends Phaser.Scene {
     // 异步目录加载和指针回调可能在场景关闭后才回来；surface 此时已经销毁。
     if(!this.surface||!this.sys.isActive())return;
     const view=this.surface;view.clear();this.modal?.clear();
-    // 删除确认或改名输入开着时，存档页整块不接受输入。
-    const guard=()=>this.app.ui.ready&&!this.app.ui.suspended&&this.sys.isActive()&&this.deleteConfirm===undefined&&this.renameRef===undefined;view.enabled=guard;
+    const guard=()=>this.app.ui.ready&&!this.app.ui.suspended&&this.sys.isActive()&&this.confirmAction===undefined&&this.renameRef===undefined;
+    view.enabled=guard;
     const button=(label:string,x:number,y:number,w:number,h:number,action:()=>void,fontSize=36,parent?:Phaser.GameObjects.Container)=>view.button(label,x,y,w,h,action,{fontSize,guard,parent});
     if(this.page==='home'){
       view.image(art('logo'),291,52,617,353);view.image(art('subtitle-left'),305,385,undefined,122);view.image(art('subtitle-right'),601,385,undefined,122);
@@ -94,10 +127,13 @@ export class MenuScene extends Phaser.Scene {
       button('环境设置',65,472,300,92,()=>{this.page='settings';this.render();});
       view.button('挑战模式',835,472,300,92,()=>{},{fontSize:36,disabled:true});
       this.addVersion(view);
+    }else if(this.page==='cloud'){
+      drawCloudSavePage(view,this.cloudState(),this.cloudActions(),{frame:art('slot'),close:CLOSE_IMAGE,closePressed:CLOSE_PRESSED});
     }else{
-      view.button('',28,21,67,67,()=>this.showHome(),{image:'/assets/ui/menus/close.png',pressed:'/assets/ui/menus/close-pressed.png',guard}).setData('label','返回主菜单');
+      view.button('',28,21,67,67,()=>this.showHome(),{image:CLOSE_IMAGE,pressed:CLOSE_PRESSED,guard}).setData('label','返回主菜单');
       if(this.page==='slots'){
         view.text('存档槽',600,20,760,49).setOrigin(.5,0);
+        view.button('云存档',CLOUD_PAGE.entry.x,CLOUD_PAGE.entry.y,CLOUD_PAGE.entry.width,CLOUD_PAGE.entry.height,()=>this.openCloud(),{fontSize:26,guard});
         const assets={frame:art('slot'),empty:art('slot-empty')};
         const origin=saveBoardOrigin(view.width);
         // 自动存档固定一行置顶；它没有改名与删除。
@@ -154,14 +190,36 @@ export class MenuScene extends Phaser.Scene {
         list.scrollTop=this.settingsScroll;
       }
     }
-    if(this.deleteConfirm!==undefined){
-      const ref=this.deleteConfirm,modal=this.modal!;
+    if(this.confirmAction){
+      const action=this.confirmAction,modal=this.modal!;
       // 先按父画布的缩放放好弹层，横带才能按实际可见范围铺满屏幕。
       centerModal(modal,view,1024,640);
-      drawNativeMessage(modal,TITLE_MESSAGE_ASSETS,'删除后无法恢复，确定删除这个存档？',
-        ()=>this.deleteSlot(ref),()=>{this.deleteConfirm=undefined;this.render();});
+      drawNativeMessage(modal,TITLE_MESSAGE_ASSETS,action.message,()=>action.accept(),()=>action.cancel());
     }
     this.layout();
+  }
+  private cloudState():CloudPageState {
+    return {
+      available:!!this.app.cloud,
+      account:this.cloudAccountInput,
+      passwordSet:!!this.cloudPassword,
+      loggedIn:!!this.app.cloud?.loggedIn,
+      busy:this.cloudBusy,
+      cloudCount:this.cloudCount,
+      status:this.cloudStatus,
+    };
+  }
+  private cloudActions():CloudPageActions {
+    return {
+      back:()=>this.openSlots(),
+      account:()=>this.editCloudAccount(),
+      password:()=>this.editCloudPassword(),
+      login:()=>{void this.submitCloud('login');},
+      register:()=>{void this.submitCloud('register');},
+      upload:()=>{void this.backupCloud();},
+      download:()=>{void this.restoreCloud();},
+      logout:()=>{void this.logoutCloud();},
+    };
   }
   /** 手动槽的行内控件：有效存档可改名与删除，坏档只能删；自动槽永远没有。 */
   private slotControls(ref:SaveSlotRef,reading:SlotSummaryReading):{controls?:SaveBoardControl[]}{
@@ -177,12 +235,17 @@ export class MenuScene extends Phaser.Scene {
   }
   private requestDelete(ref:SaveSlotRef):void{
     if(ref===AUTO_SAVE_SLOT||this.app.saves.peek(ref).kind==='empty')return;
-    this.deleteConfirm=ref;this.render();
+    this.confirmAction={
+      message:'删除后无法恢复，确定删除这个存档？',
+      accept:()=>this.deleteSlot(ref),
+      cancel:()=>this.settleConfirm(false),
+    };
+    this.render();
   }
   private deleteSlot(ref:SaveSlotRef):void{
     try{this.app.saves.erase(ref);this.app.audio?.ui('select');}
     catch(error){console.warn('删除存档失败',error);}
-    this.deleteConfirm=undefined;this.render();
+    this.settleConfirm(true);
   }
   /** 改名：手机系统键盘输入，只收中文、英文、数字；确认后只改摘要里的名字。 */
   private renameSlot(ref:SaveSlotRef):void{
@@ -197,10 +260,251 @@ export class MenuScene extends Phaser.Scene {
       this.renameRef=undefined;this.render();
     };
     // 测试没有 DOM 输入框，直接注入一个返回值。
-    if(this.app.promptText){void this.app.promptText(reading.summary.name??'').then(apply);return;}
+    if(this.app.promptText){void this.app.promptText(reading.summary.name??'').then(apply,()=>{});return;}
     this.renameRef=ref;this.render();
     this.prompt?.show({title:'存档名称',initial:reading.summary.name??'',
       onConfirm:value=>apply(value),onCancel:()=>apply(undefined)});
+  }
+  private settleConfirm(value:boolean,render=true):void{
+    const resolve=this.confirmResolve;
+    this.confirmResolve=undefined;
+    this.confirmAction=undefined;
+    if(render&&this.surface&&this.sys.isActive())this.render();
+    resolve?.(value);
+  }
+  /** 云存档覆盖确认：返回 Promise，取消、Escape、离开云页或场景关闭时都会落地为 false。 */
+  private confirmCloud(message:string):Promise<boolean>{
+    if(this.confirmResolve){const previous=this.confirmResolve;this.confirmResolve=undefined;previous(false);}
+    return new Promise<boolean>(resolve=>{
+      this.confirmResolve=resolve;
+      this.confirmAction={
+        message,
+        accept:()=>this.settleConfirm(true),
+        cancel:()=>this.settleConfirm(false),
+      };
+      this.render();
+    });
+  }
+  private cancelCloudRequest():void{
+    this.cloudRequest?.abort();
+    this.cloudRequest=undefined;
+    this.cloudSerial+=1;
+    this.cloudBusy=false;
+    this.cloudPassword='';
+    this.cloudStatus=undefined;
+  }
+  private openCloud():void{
+    this.closeDialogs();
+    this.slotRequest?.abort();
+    this.slotPortraits?.release();this.slotPortraits=undefined;
+    this.cancelCloudRequest();
+    const request=new AbortController();this.cloudRequest=request;
+    const serial=++this.cloudSerial;
+    this.page='cloud';
+    this.cloudCount=undefined;
+    this.render();
+    const cloud=this.app.cloud;
+    if(!cloud){
+      this.cloudStatus={kind:'error',text:'云存档暂不可用，本机存档不受影响。'};
+      this.render();
+      return;
+    }
+    if(cloud.account)this.cloudAccountInput=cloud.account;
+    if(!cloud.loggedIn){this.render();return;}
+    void this.refreshCloud(request,serial);
+  }
+  private async refreshCloud(request:AbortController,serial:number):Promise<void>{
+    const cloud=this.app.cloud;if(!cloud)return;
+    const account=cloud.account;
+    this.cloudBusy=true;
+    this.cloudStatus={kind:'info',text:'正在读取云端存档…'};
+    this.render();
+    const result=await cloud.list(request.signal);
+    if(request.signal.aborted||serial!==this.cloudSerial)return;
+    this.cloudBusy=false;
+    if(result.ok){
+      this.cloudCount=result.value.length;
+      this.cloudStatus=undefined;
+    }else{
+      if(result.error.code==='unauthorized'){
+        if(account)this.cloudAccountInput=account;
+        this.cloudCount=undefined;
+        cloud.forget();
+      }
+      this.cloudStatus={kind:'error',text:result.error.message};
+    }
+    if(this.page==='cloud'&&this.sys.isActive())this.render();
+  }
+  private editCloudAccount():void{
+    const apply=(value:string|undefined):void=>{
+      if(value===undefined)return;
+      this.cloudAccountInput=sanitizeCloudAccountInput(value);
+      this.cloudStatus=undefined;
+      if(this.page==='cloud'&&this.sys.isActive())this.render();
+    };
+    if(this.app.promptText){void this.app.promptText(this.cloudAccountInput,'account').then(apply,()=>{});return;}
+    this.prompt?.show({title:'云存档账号',initial:this.cloudAccountInput,purpose:'account',
+      onConfirm:value=>apply(value),onCancel:()=>{}});
+  }
+  private editCloudPassword():void{
+    const apply=(value:string|undefined):void=>{
+      if(value===undefined)return;
+      this.cloudPassword=value;
+      this.cloudStatus=undefined;
+      if(this.page==='cloud'&&this.sys.isActive())this.render();
+    };
+    if(this.app.promptText){void this.app.promptText('','password').then(apply,()=>{});return;}
+    this.prompt?.show({title:'云存档密码',initial:'',purpose:'password',
+      onConfirm:value=>apply(value),onCancel:()=>{}});
+  }
+  private async submitCloud(mode:'login'|'register'):Promise<void>{
+    const cloud=this.app.cloud;
+    if(!cloud||this.cloudBusy)return;
+    const account=normalizeCloudAccount(this.cloudAccountInput);
+    const problem=validateCloudAccount(account)??validateCloudPassword(this.cloudPassword);
+    if(problem){
+      this.cloudStatus={kind:'error',text:problem};
+      this.render();
+      return;
+    }
+    this.cloudAccountInput=account;
+    const request=this.cloudRequest??(this.cloudRequest=new AbortController());
+    const serial=++this.cloudSerial;
+    this.cloudBusy=true;
+    this.cloudStatus={kind:'info',text:mode==='login'?'正在登录…':'正在注册…'};
+    this.render();
+    const result=mode==='login'
+      ? await cloud.login(account,this.cloudPassword,request.signal)
+      : await cloud.register(account,this.cloudPassword,request.signal);
+    if(request.signal.aborted||serial!==this.cloudSerial)return;
+    this.cloudBusy=false;
+    if(!result.ok){
+      this.cloudStatus={kind:'error',text:result.error.message};
+      if(result.error.code==='unauthorized')this.cloudAccountInput=account;
+      if(this.page==='cloud'&&this.sys.isActive())this.render();
+      return;
+    }
+    this.cloudPassword='';
+    this.cloudAccountInput=result.value.account;
+    this.cloudStatus={kind:'success',text:mode==='login'?'登录成功。':'注册成功，已登录。'};
+    if(this.page==='cloud'&&this.sys.isActive())this.render();
+    await this.refreshCloud(request,serial);
+    if(serial===this.cloudSerial&&this.page==='cloud'&&this.sys.isActive()&&this.cloudStatus===undefined&&this.app.cloud?.loggedIn){
+      this.cloudStatus={kind:'success',text:mode==='login'?'登录成功，云端存档已读取。':'注册成功，已登录。'};
+      this.render();
+    }
+  }
+  private async logoutCloud():Promise<void>{
+    const cloud=this.app.cloud;
+    if(!cloud||this.cloudBusy)return;
+    const request=this.cloudRequest??(this.cloudRequest=new AbortController());
+    const serial=++this.cloudSerial;
+    const account=cloud.account;
+    this.cloudBusy=true;
+    this.cloudStatus={kind:'info',text:'正在退出登录…'};
+    this.render();
+    await cloud.logout(request.signal);
+    if(request.signal.aborted||serial!==this.cloudSerial)return;
+    this.cloudBusy=false;
+    this.cloudPassword='';
+    this.cloudCount=undefined;
+    if(account)this.cloudAccountInput=account;
+    this.cloudStatus={kind:'info',text:'已退出登录。'};
+    if(this.page==='cloud'&&this.sys.isActive())this.render();
+  }
+  private async backupCloud():Promise<void>{
+    const cloud=this.app.cloud;
+    if(!cloud||this.cloudBusy)return;
+    const request=this.cloudRequest??(this.cloudRequest=new AbortController());
+    const serial=++this.cloudSerial;
+    this.cloudBusy=true;
+    this.cloudStatus={kind:'info',text:'正在读取本机存档…'};
+    this.render();
+    let result:CloudSyncResult;
+    try{
+      result=await backupLocalSaves({
+        cloud,
+        saves:this.app.saves,
+        confirm:message=>this.confirmCloud(message),
+        progress:message=>{
+          if(serial!==this.cloudSerial)return;
+          this.cloudStatus={kind:'info',text:message};
+          if(this.page==='cloud'&&this.sys.isActive())this.render();
+        },
+        signal:request.signal,
+      });
+    }catch(error){
+      if(request.signal.aborted||serial!==this.cloudSerial)return;
+      this.cloudBusy=false;
+      this.cloudStatus={kind:'error',text:error instanceof Error?error.message:'云存档操作失败。'};
+      if(this.page==='cloud'&&this.sys.isActive())this.render();
+      return;
+    }
+    if(request.signal.aborted||serial!==this.cloudSerial)return;
+    this.cloudBusy=false;
+    this.cloudStatus={kind:this.syncStatusKind(result),text:this.syncMessage(result,'导入')};
+    if(this.page==='cloud'&&this.sys.isActive())this.render();
+    if(result.ok||result.completed>0)void this.refreshCloudCount(request,serial);
+  }
+  private async restoreCloud():Promise<void>{
+    const cloud=this.app.cloud;
+    if(!cloud||this.cloudBusy)return;
+    const request=this.cloudRequest??(this.cloudRequest=new AbortController());
+    const serial=++this.cloudSerial;
+    this.cloudBusy=true;
+    this.cloudStatus={kind:'info',text:'正在读取云端存档…'};
+    this.render();
+    let result:CloudSyncResult;
+    try{
+      result=await restoreCloudSaves({
+        cloud,
+        saves:this.app.saves,
+        confirm:message=>this.confirmCloud(message),
+        progress:message=>{
+          if(serial!==this.cloudSerial)return;
+          this.cloudStatus={kind:'info',text:message};
+          if(this.page==='cloud'&&this.sys.isActive())this.render();
+        },
+        signal:request.signal,
+      });
+    }catch(error){
+      if(request.signal.aborted||serial!==this.cloudSerial)return;
+      this.cloudBusy=false;
+      this.cloudStatus={kind:'error',text:error instanceof Error?error.message:'云存档操作失败。'};
+      if(this.page==='cloud'&&this.sys.isActive())this.render();
+      return;
+    }
+    if(request.signal.aborted||serial!==this.cloudSerial)return;
+    this.cloudBusy=false;
+    this.cloudStatus={kind:this.syncStatusKind(result),text:this.syncMessage(result,'恢复')};
+    if(this.page==='cloud'&&this.sys.isActive())this.render();
+    // 场景暂停期间完成时先留在云页；resume 会重绘，避免切到存档页却没有画出来。
+    if(result.ok&&result.completed>0&&this.sys.isActive())this.openSlots();
+  }
+  private async refreshCloudCount(request:AbortController,serial:number):Promise<void>{
+    const cloud=this.app.cloud;if(!cloud)return;
+    const result=await cloud.list(request.signal);
+    if(request.signal.aborted||serial!==this.cloudSerial)return;
+    if(result.ok){this.cloudCount=result.value.length;if(this.page==='cloud'&&this.sys.isActive())this.render();}
+    else if(result.error.code==='unauthorized'){
+      this.cloudCount=undefined;
+      cloud.forget();
+      this.cloudStatus={kind:'error',text:result.error.message};
+      if(this.page==='cloud'&&this.sys.isActive())this.render();
+    }
+  }
+  private syncStatusKind(result:CloudSyncResult):CloudPageStatus['kind']{
+    if(result.ok)return 'success';
+    return result.cancelled||result.aborted?'info':'error';
+  }
+  private syncMessage(result:CloudSyncResult,verb:string):string{
+    if(result.cancelled)return '已取消。';
+    if(result.aborted)return '操作已取消。';
+    if(result.error)return result.error;
+    if(result.total===0)return '没有可处理的存档。';
+    const details=result.failures.map(failure=>`${cloudSlotLabel(failure.slot)}：${failure.reason}`).join('；');
+    const summary=`${verb}成功 ${result.completed} 个`;
+    return details?`${summary}，${result.failures.length} 个失败（${details}）`:`${summary}。`;
   }
   /**
    * 存档页要按槽里的立绘路径补加载图片。先画出文字行，立绘到位后再画一次：
@@ -208,6 +512,7 @@ export class MenuScene extends Phaser.Scene {
    */
   private openSlots():void{
     this.slotRequest?.abort();this.slotPortraits?.release();this.slotPortraits=undefined;
+    this.cancelCloudRequest();
     this.closeDialogs();
     const request=new AbortController();this.slotRequest=request;
     this.page='slots';this.render();
@@ -232,8 +537,21 @@ export class MenuScene extends Phaser.Scene {
       this.app.ui.error(error instanceof Error?error.message:String(error),()=>{this.app.ui.menuLoaded();this.openSlots();});
     });
   }
-  private showHome():void {this.closeDialogs();this.slotRequest?.abort();this.slotPortraits?.release();this.slotPortraits=undefined;this.page='home';this.render();}
-  /** 离开存档页或重进时收掉确认框与改名输入，免得残留状态一直挡住输入。 */
-  private closeDialogs():void {this.deleteConfirm=undefined;this.renameRef=undefined;this.prompt?.close();}
-  private layout():void {if(this.backdrop){const source=this.backdrop.texture.getSourceImage(),factor=Math.max(this.scale.width/source.width,this.scale.height/source.height);this.backdrop.setPosition(this.scale.width/2,this.scale.height/2).setScale(factor);}this.surface?.layout();if(this.surface&&this.modal&&this.deleteConfirm!==undefined)centerModal(this.modal,this.surface,1024,640);}
+  private back():void {if(this.page==='cloud')this.openSlots();else this.showHome();}
+  private showHome():void {
+    this.cancelCloudRequest();
+    this.closeDialogs();this.slotRequest?.abort();this.slotPortraits?.release();this.slotPortraits=undefined;
+    this.page='home';this.render();
+  }
+  /** 离开页面或重进时收掉确认框、改名输入和密码输入，免得残留状态一直挡住输入。 */
+  private closeDialogs():void {
+    this.settleConfirm(false,false);
+    this.renameRef=undefined;
+    this.prompt?.close();
+  }
+  private layout():void {
+    if(this.backdrop){const source=this.backdrop.texture.getSourceImage(),factor=Math.max(this.scale.width/source.width,this.scale.height/source.height);this.backdrop.setPosition(this.scale.width/2,this.scale.height/2).setScale(factor);}
+    this.surface?.layout();
+    if(this.surface&&this.modal&&this.confirmAction!==undefined)centerModal(this.modal,this.surface,1024,640);
+  }
 }

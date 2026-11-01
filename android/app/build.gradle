@@ -21,6 +21,8 @@ android {
         versionName '1.0.0'
         // 诊断与 GM 状态上报地址；改服务器地址时同步 res/xml/network_security_config.xml。
         buildConfigField 'String', 'DIAGNOSTICS_URL', '"http://64.83.41.39:4002/__diagnostics/report"'
+        // 云存档走 HTTPS；网页版用同源 /__cloud，只有离线 APK 需要这个绝对地址。
+        buildConfigField 'String', 'CLOUD_SAVE_URL', '"https://catgo.online:4002/__cloud"'
     }
 
     sourceSets {

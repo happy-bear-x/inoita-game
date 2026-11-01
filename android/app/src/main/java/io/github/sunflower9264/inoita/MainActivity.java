@@ -2,6 +2,7 @@ package io.github.sunflower9264.inoita;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.graphics.Bitmap;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.SystemClock;
@@ -128,12 +129,22 @@ public class MainActivity extends Activity {
         // 在 diagnostics.js 之前把上报地址交给页面；网页版没有这个全局变量，仍用相对路径。
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             WebViewCompat.addDocumentStartJavaScript(webView,
-                    "globalThis.__inoitaDiagnosticsEndpoint=" + JSONObject.quote(BuildConfig.DIAGNOSTICS_URL) + ";",
+                    "globalThis.__inoitaDiagnosticsEndpoint=" + JSONObject.quote(BuildConfig.DIAGNOSTICS_URL)
+                    + ";globalThis.__inoitaCloudEndpoint=" + JSONObject.quote(BuildConfig.CLOUD_SAVE_URL) + ";",
                     Collections.singleton("*"));
         }
 
         webView.setWebChromeClient(new WebChromeClient());
         webView.setWebViewClient(new WebViewClientCompat() {
+            @Override
+            public void onPageStarted(WebView view, String url, Bitmap favicon) {
+                super.onPageStarted(view, url, favicon);
+                // document-start 不可用的旧 WebView 在页面开始加载时补一次；客户端到点上传/下载时
+                // 才读这个全局变量，所以晚一点注入也能生效。
+                view.evaluateJavascript("globalThis.__inoitaCloudEndpoint=globalThis.__inoitaCloudEndpoint||"
+                        + JSONObject.quote(BuildConfig.CLOUD_SAVE_URL) + ";", null);
+            }
+
             @Override
             public WebResourceResponse shouldInterceptRequest(
                     @NonNull WebView view, @NonNull WebResourceRequest request) {
@@ -163,6 +174,12 @@ public class MainActivity extends Activity {
 
     /** 页面只提交已经组装好的诊断 JSON；地址和发送方式都由原生层固定。 */
     private final class DiagnosticsBridge {
+        /** 旧 WebView 没有 document-start 时的最终回退；只返回固定的云存档地址。 */
+        @JavascriptInterface
+        public String cloudEndpoint() {
+            return BuildConfig.CLOUD_SAVE_URL;
+        }
+
         @JavascriptInterface
         public void report(String body, String requestId) {
             if (body == null || requestId == null || body.isEmpty() || body.length() > 65536) return;

@@ -6,6 +6,7 @@
 .text-prompt{position:fixed;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.65);touch-action:auto}
 .text-prompt form{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;gap:12px;min-width:min(360px,84vw);padding:20px 24px;border-radius:10px;background:#1b262c;box-shadow:0 8px 32px rgba(0,0,0,.6)}
 .text-prompt p{margin:0;font-size:16px;color:var(--gold)}
+.text-prompt .text-prompt-hint{font-size:13px;line-height:1.4;margin-top:-4px;color:#b8ab92}
 .text-prompt input{font:inherit;font-size:16px;padding:10px 12px;border-radius:6px;border:1px solid #6b5a37;background:#0e171c;color:#f5f0df;touch-action:auto;-webkit-user-select:text;user-select:text}
 .text-prompt-actions{display:flex;gap:12px}
 .text-prompt-actions button{flex:1;padding:10px;border-radius:6px;border:1px solid #6b5a37;background:#2a3740;color:#e2c88d;touch-action:manipulation}

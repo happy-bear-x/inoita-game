@@ -6,6 +6,7 @@
 
 - 构建/校验：`build.mjs` 打包入口，`content-build.ts` 把内容 JSON 编译成运行时数据，`validate-content.mjs` 校验内容，`validate-spritesheet.ts` 校验精灵表，`build-version.ts` 计算资源与内容版本，`deploy.ts` 构建后核对 HTTPS 入口版本。
 - 服务/诊断：`serve-built.ts` 提供打包后的静态服务，`diagnostic-collector.mjs` 是诊断上报中间件，`diagnostic-collector.d.mts` 是它的类型声明。
+- 云存档：`cloud-save-store.ts` 负责账号、会话和存档落盘（scrypt、单会话、锁定、配额、原子写），`cloud-save-service.ts` 把 `/__cloud` HTTP 路由、CORS、限流和请求体上限接到静态服务上。
 - 图集/资源：`build-icon-atlas.ts`、`build-prop-atlas.ts`、`build-effect-atlas.ts`、`build-ui-atlas.ts` 生成图集，`build-slot-frames.ts` 生成装备槽帧，`asset-report.ts` 输出素材重复与体积报告。
 - 测试/审计/APK：`test.ts` 是测试入口，`audit-story-actors.ts` 审计剧情角色摆放，`screen-draft-scripts.mjs` 逐段筛选剧情演出草稿，`build-apk.mjs` 与 `verify-apk.mjs` 打包并校验 APK。
 
@@ -16,10 +17,13 @@
 - 改动构建、校验或打包逻辑后运行对应命令验证：`npm run build`、`npm run validate:content`、`npm run test:standalone`，APK 改动用 `npm run apk` 和 `npm run verify:apk`。
 - 生成物 `dist/`、`public/content/debug/start.json`、`src/generated/*` 由脚本产出，内容变化后重跑对应生成命令。
 - 新增脚本在根目录 `package.json` 挂成命令，沿用现有命令命名。
+- 云存档数据目录：生产 `.cloud-save/`，开发 `.cloud-save-dev/`；两者都不进 Git。云服务初始化失败只能让 `/__cloud` 返回 503，不能让 4004 的静态服务起不来。
+- 改 `serve-built.ts` 或云存档服务后需要重启 4004；只改客户端/内容时普通构建即可。
 
 ## 验证
 
 ```bash
 npm run build
 npm run validate:content
+npm test -- tests/cloud-save-store.test.ts tests/cloud-save-service.test.ts
 ```
