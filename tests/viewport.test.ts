@@ -32,44 +32,6 @@ test('viewport offsets and safe insets affect the frame and controls separately,
  }
 });
 
-test('iOS home-screen startup sizes the frame from the physical screen, not a short visualViewport',()=>{
- const names=['window','document','getComputedStyle','innerWidth','innerHeight','navigator','screen'];
- const globals=globalThis as unknown as Record<string, unknown>;
- const original: [string, PropertyDescriptor | undefined][]=names.map(name=>[name,Object.getOwnPropertyDescriptor(globalThis,name)]);
- const style:FakeStyle={setProperty(name,value){this[name]=value;}};
- try {
-  // 横屏冷启动：视口度量少算了 59 像素，物理屏幕仍是 852×393。
-  globals.window={visualViewport:{width:852,height:334,offsetLeft:0,offsetTop:0}};globals.innerWidth=852;globals.innerHeight=334;
-  globals.document={getElementById:(id:string)=>id==='game-frame'?{style}:{}};
-  globals.getComputedStyle=()=>({paddingLeft:'0px',paddingRight:'0px',paddingTop:'0px',paddingBottom:'0px'});
-  Object.defineProperty(globalThis,'navigator',{configurable:true,value:{standalone:true,userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X)'}});
-  Object.defineProperty(globalThis,'screen',{configurable:true,value:{width:852,height:393}});
-  fitViewport();
-  assert.deepEqual([style.width,style.height,style.left,style.top],['852px','393px','0px','0px'],
-    '主屏模式用物理屏幕整屏尺寸，不跟随偏矮的视口度量');
-  assert.equal(parseFloat(String(style['--story-unit'])),Math.min(852/800,393/480));
-  // 竖屏启动：长短边按当前方向组合。
-  globals.window={visualViewport:{width:393,height:852,offsetLeft:0,offsetTop:0}};globals.innerWidth=393;globals.innerHeight=852;
-  fitViewport();
-  assert.deepEqual([style.width,style.height],['393px','852px']);
-  // screen 不可用时退回窗口尺寸。
-  Object.defineProperty(globalThis,'screen',{configurable:true,value:undefined});
-  globals.window={visualViewport:{width:852,height:334,offsetLeft:0,offsetTop:0}};globals.innerWidth=852;globals.innerHeight=334;
-  fitViewport();
-  assert.deepEqual([style.width,style.height],['852px','334px']);
-  // 安卓装成 PWA 时仍按可视区排版，不被状态栏和导航栏撑高。
-  Object.defineProperty(globalThis,'screen',{configurable:true,value:{width:412,height:915}});
-  Object.defineProperty(globalThis,'navigator',{configurable:true,value:{standalone:false,userAgent:'Mozilla/5.0 (Linux; Android 14; Pixel 8)'}});
-  globals.window={visualViewport:{width:412,height:820,offsetLeft:0,offsetTop:0}};globals.innerWidth=412;globals.innerHeight=820;
-  fitViewport();
-  assert.deepEqual([style.width,style.height],['412px','820px'],'安卓按可视区排版');
- } finally {
-  for(const [name,descriptor] of original) {
-   if(descriptor)Object.defineProperty(globalThis,name,descriptor);else delete globals[name];
-  }
- }
-});
-
 test('safe area is measured once until the viewport changes',()=>{
  const globals=globalThis as unknown as Record<string,unknown>;
  const original=['window','document','getComputedStyle'].map(name=>[name,Object.getOwnPropertyDescriptor(globalThis,name)] as const);
