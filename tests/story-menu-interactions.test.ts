@@ -1155,6 +1155,8 @@ test('control editor saves only on release, allows overlap, resets in place and 
   const pointer=f.scene.input.activePointer;
   for(const id of CONTROL_IDS) {
     const object=editingControl(f,id);
+    // 从控件中心按下：这个位置离四角足够远，走的是移动而不是缩放。
+    Object.assign(pointer,{x:object.x,y:object.y});
     object.emit('dragstart',pointer);object.emit('drag',pointer,512,320);
     f.menu.sync();assert.deepEqual([object.x,object.y],[512,320],'普通同步保留正在拖动的位置');
     assert.equal(f.app.controlLayout.snapshot()[id],undefined,'拖动中不保存');
@@ -1169,6 +1171,33 @@ test('control editor saves only on release, allows overlap, resets in place and 
   // 工具栏现在只有“恢复默认”和关闭钮；从“恢复默认”继续往后 Tab 到关闭钮。
   assert(f.scene.key('Tab'));
   assert(f.scene.key('Enter'));assert.equal(f.controls.controlLayoutEditing,false);
+});
+
+test('control editor moves from the center and scales from a corner without switching mid-drag',t=>{
+  const f=fixture();t.after(f.cleanup);
+  f.app.controlLayout.set('attack',{x:.5,y:.5});openControls(f);
+  const pointer=f.scene.input.activePointer,object=editingControl(f,'attack');
+  const placement=()=>resolveControlLayout(controlViewport(f.scene as unknown as Phaser.Scene),f.app.controlLayout.snapshot()).attack;
+  // 中心按下：移动，不写倍率。
+  Object.assign(pointer,{x:object.x,y:object.y});
+  object.emit('dragstart',pointer);object.emit('drag',pointer,700,400);
+  assert.equal(f.app.controlLayout.snapshot().attack?.scale,undefined,'中心按下是移动');
+  object.emit('dragend',pointer);
+  assert.equal(f.app.controlLayout.snapshot().attack?.scale,undefined);
+  // 摆回正中后从右下角附近按下：整次拖动都是缩放，位置保持不变。
+  f.app.controlLayout.set('attack',{x:.5,y:.5});
+  const before=placement(),cornerX=before.x+before.width/2-4,cornerY=before.y+before.height/2-4;
+  Object.assign(pointer,{x:cornerX,y:cornerY});
+  object.emit('dragstart',pointer);
+  Object.assign(pointer,{x:cornerX+60,y:cornerY+60});
+  object.emit('drag',pointer,cornerX+60,cornerY+60);
+  const during=f.app.controlLayout.snapshot().attack;
+  assert.equal(during?.scale,undefined,'拖动中不写存储');
+  object.emit('dragend',pointer);
+  const saved=f.app.controlLayout.snapshot().attack!;
+  assert.ok(saved.scale!==undefined&&saved.scale>1.2,`拖向外侧放大：${saved.scale}`);
+  assert.deepEqual([saved.x,saved.y],[.5,.5],'缩放不改变中心位置');
+  assert.deepEqual([object.x,object.y],[before.x,before.y]);
 });
 
 test('settings cycles operation modes in place and shows the matching editor entry',t=>{
@@ -1210,6 +1239,7 @@ test('control editor cancels unfinished drags on input cancellation, suspension,
   for(const cancel of ['input','suspend','resize','outside','close'] as const) {
     const f=fixture();t.after(f.cleanup);f.app.controlLayout.set('move',{x:.25,y:.65});openControls(f);
     const object=editingControl(f,'move'),pointer=f.scene.input.activePointer;
+    Object.assign(pointer,{x:object.x,y:object.y});
     object.emit('dragstart',pointer);object.emit('drag',pointer,512,320);
     if(cancel==='input')f.controls.resetInput();
     if(cancel==='suspend'){f.controls.suspend(true);f.controls.suspend(false);}

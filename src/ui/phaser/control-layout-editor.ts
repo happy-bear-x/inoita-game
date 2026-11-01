@@ -12,8 +12,10 @@ import { UiSurface } from './widgets.ts';
 
 /** 白色选中框离控件边缘的距离（屏幕像素）。 */
 const SELECTION_BLEED = 4;
-/** 四角把手的可见边长和可点击范围。 */
-const HANDLE_SIZE = 12, HANDLE_HIT = 22;
+/** 四角把手的可见边长；把手只做提示，拖动判定按按下点离角的距离。 */
+const HANDLE_SIZE = 16;
+/** 按下点离控件角多近算缩放：按控件短边取三成，限制在 20–32 像素。 */
+const CORNER_HIT_RATIO = .3, CORNER_HIT_MIN = 20, CORNER_HIT_MAX = 32;
 
 interface ScaleDrag {
   pointer: Phaser.Input.Pointer;
@@ -173,9 +175,14 @@ export class ControlLayoutEditor {
       this.scene.input.setDraggable(object);
       object.on('pointerdown',()=>this.select(id));
       object.on('dragstart',(pointer:Phaser.Input.Pointer)=>{
-        if(this.active&&this.canvas.root.visible&&!this.drags.has(id))this.drags.set(id,{pointer});
+        if(!this.active||!this.canvas.root.visible)return;
+        // 按下点靠近四角就整次拖动都缩放；其余区域照旧移动，不会拖到一半切换。
+        const placement=this.placements?.[id];
+        if(placement&&this.nearCorner(pointer,placement)){this.beginScale(pointer,id,placement);return;}
+        if(!this.drags.has(id))this.drags.set(id,{pointer});
       });
       object.on('drag',(pointer:Phaser.Input.Pointer,x:number,y:number)=>{
+        if(this.scaleDrag?.id===id){this.updateScale(pointer);return;}
         const drag=this.drags.get(id);if(!drag||drag.pointer.id!==pointer.id)return;
         const viewport=controlViewport(this.scene),positions=this.preferences.snapshot(),moveSize=this.moveSize();
         drag.point=normalizeControlPosition(viewport,id,{x,y},positions,moveSize);
@@ -184,6 +191,7 @@ export class ControlLayoutEditor {
         if(this.selected===id)this.drawSelection(position);
       });
       object.on('dragend',(pointer:Phaser.Input.Pointer)=>{
+        if(this.scaleDrag?.id===id){this.endScale(pointer);return;}
         const drag=this.drags.get(id);if(!drag||drag.pointer.id!==pointer.id)return;
         this.drags.delete(id);
         if(drag.point&&this.active&&this.canvas.root.visible)this.preferences.set(id,drag.point);
@@ -193,21 +201,12 @@ export class ControlLayoutEditor {
     this.createSelectionLayer();
   }
 
-  /** 白色空心框和四个角把手；把手最后加入，确保它们压在控件上面接收拖动。 */
+  /** 白色空心框和四个角把手；把手只做视觉提示，拖动统一由控件本体按落点分派。 */
   private createSelectionLayer(): void {
     this.selectionFrame=this.scene.add.graphics().setVisible(false);
     this.canvas.root.add(this.selectionFrame);
     for(let index=0;index<4;index++) {
       const handle=this.scene.add.rectangle(0,0,HANDLE_SIZE,HANDLE_SIZE,0xffffff).setVisible(false).setData('uiAction',true);
-      // 命中区以左上角为原点，中心在 (6,6)；外扩到 22×22 方便按住。
-      const hitLeft=(HANDLE_SIZE-HANDLE_HIT)/2;
-      handle.setInteractive(new Phaser.Geom.Rectangle(hitLeft,hitLeft,HANDLE_HIT,HANDLE_HIT),
-        Phaser.Geom.Rectangle.Contains);
-      handle.on('pointerdown',(_pointer:Phaser.Input.Pointer,_x:number,_y:number,event:Phaser.Types.Input.EventData)=>event.stopPropagation());
-      handle.on('dragstart',(pointer:Phaser.Input.Pointer)=>this.beginScale(pointer));
-      handle.on('drag',(pointer:Phaser.Input.Pointer)=>this.updateScale(pointer));
-      handle.on('dragend',(pointer:Phaser.Input.Pointer)=>this.endScale(pointer));
-      this.scene.input.setDraggable(handle);
       this.canvas.root.add(handle);
       this.handles.push(handle);
     }
@@ -234,21 +233,29 @@ export class ControlLayoutEditor {
     }
     const halfWidth=placement.width/2+SELECTION_BLEED,halfHeight=placement.height/2+SELECTION_BLEED;
     const left=placement.x-halfWidth,top=placement.y-halfHeight,right=left+halfWidth*2,bottom=top+halfHeight*2;
-    frame.clear().lineStyle(2,0xffffff,1).strokeRect(left,top,halfWidth*2,halfHeight*2).setVisible(true);
+    // 进入缩放时线加粗，明确告诉玩家这次拖动在改大小。
+    frame.clear().lineStyle(this.scaleDrag?3:2,0xffffff,1).strokeRect(left,top,halfWidth*2,halfHeight*2).setVisible(true);
     const corners=[[left,top],[right,top],[left,bottom],[right,bottom]];
     corners.forEach(([x,y],index)=>this.handles[index]?.setPosition(x,y).setVisible(true));
   }
 
+  /** 按下点离任意一角足够近就算缩放；热区随控件大小自适应。 */
+  private nearCorner(pointer: Phaser.Input.Pointer, placement: ControlPlacement): boolean {
+    const radius=Phaser.Math.Clamp(Math.min(placement.width,placement.height)*CORNER_HIT_RATIO,CORNER_HIT_MIN,CORNER_HIT_MAX);
+    const halfWidth=placement.width/2,halfHeight=placement.height/2;
+    return [[-1,-1],[1,-1],[-1,1],[1,1]].some(([sx,sy])=>
+      Math.hypot(pointer.x-(placement.x+sx*halfWidth),pointer.y-(placement.y+sy*halfHeight))<=radius);
+  }
+
   /** 记住当前中心和“1 倍时的中心到角距离”，拖动中只换算倍率。 */
-  private beginScale(pointer: Phaser.Input.Pointer): void {
-    const id=this.selected,placement=id&&this.placements?this.placements[id]:undefined;
-    if(!id||!placement)return;
+  private beginScale(pointer: Phaser.Input.Pointer, id: ControlId, placement: ControlPlacement): void {
     const viewport=controlViewport(this.scene),overrides=this.preferences.snapshot(),moveSize=this.moveSize();
     const point=normalizeControlPosition(viewport,id,{x:placement.x,y:placement.y},overrides,moveSize);
     const baseWidth=placement.width/placement.userScale,baseHeight=placement.height/placement.userScale;
     this.scaleDrag={pointer,id,point,center:{x:placement.x,y:placement.y},
       radius:Math.hypot(baseWidth/2,baseHeight/2),max:maxControlScale(viewport,id,overrides,moveSize)};
     this.preview={id,point,scale:placement.userScale};
+    this.paintSelection();
   }
 
   private updateScale(pointer: Phaser.Input.Pointer): void {
@@ -277,7 +284,10 @@ export class ControlLayoutEditor {
     }
     this.drags.clear();
     const scale=this.scaleDrag;
-    if(scale)this.scene.input.setDragState(scale.pointer,0);
+    if(scale) {
+      const object=this.controls.get(scale.id);object?.disableInteractive();object?.setInteractive();
+      this.scene.input.setDragState(scale.pointer,0);
+    }
     this.scaleDrag=undefined;this.preview=undefined;
   }
   private cancel(): void {this.cancelDrags();this.layout();}
