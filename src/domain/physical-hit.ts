@@ -29,6 +29,11 @@ export interface PhysicalFighter {
   conditionalMagicDamageRate?:number;
 }
 export interface PhysicalHit { kind: 'miss' | 'weapon-block' | 'shield-block' | 'hit' | 'critical'; damage: number }
+
+/** 盾牌格挡只在副手真的装着盾时存在：装备词条、被动和增益都加不出虚拟盾。 */
+export function eligibleShieldBlock(value:number,offhandShield:boolean):number {
+  return offhandShield?Math.max(0,value):0;
+}
 const div = (a: number, b: number) => Math.trunc(a / b);
 const clampRoll = (random: () => number, minimum: number, maximum: number) =>
   minimum + Math.min(maximum - minimum, Math.max(0, Math.floor(random() * (maximum - minimum + 1))));

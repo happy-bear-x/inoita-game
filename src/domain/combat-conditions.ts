@@ -1,6 +1,6 @@
 import { applyAttributeModifiers, applyCombatOperation } from './combat-operation.ts';
 import { LOGIC_FRAME_MS,type CombatOperation,type BattleBuffEffect } from './battle.ts';
-import { calculateEffectiveDefense,calculateMagicResistance,type PhysicalFighter } from './physical-hit.ts';
+import { calculateEffectiveDefense,calculateMagicResistance,eligibleShieldBlock,type PhysicalFighter } from './physical-hit.ts';
 import type { PassiveModifier } from './passive-skills.ts';
 import type { BattleBuffKey, BattleStateKey, BattleStatKey } from './battle-semantics.ts';
 import { combatStateCapabilities } from './combat-state.ts';
@@ -380,7 +380,7 @@ export class CombatConditions {
       hitBonus:value('hitBonus',base.hitBonus),hitBase:value('hitBase',base.hitBase),evasionBase:value('evasionBase',base.evasionBase),
       weaponBlock:value('weaponBlock',base.weaponBlock),maxHealth:value('maxHealth',base.maxHealth??0),
       // 原版 GetAttr20 在实际副手不是盾时把盾挡直接清零：技能与增益都加不出虚拟盾。
-      shieldBlock:equipment.offhandShield===false?0:value('shieldBlock',base.shieldBlock)};
+      shieldBlock:eligibleShieldBlock(value('shieldBlock',base.shieldBlock),equipment.offhandShield!==false)};
   }
 }
 

@@ -33,7 +33,8 @@ test('defense, hit, evasion and block modifiers use the same final formulas as c
   assert.ok(effective.hitRate>panel.hitRate);
   assert.ok(effective.evasionRate>panel.evasionRate);
   assert.equal(effective.weaponBlock,50);
-  assert.equal(effective.shieldBlock,10);
+  assert.equal(effective.shieldBlock,0,'没有真实副手盾时被动也加不出盾挡');
+  assert.equal(effectiveCharacterPanel({...panel,offhandShield:true},1,modifiers).shieldBlock,10);
   const conditions=new CombatConditions();
   const fighter=conditions.fighter('player',{level:1,physicalAttack:panel.physicalAttack,defense:panel.baseDefense,defenseRate:panel.defenseRate,
     magicAttack:panel.magicAttack,maxHealth:panel.maxHealth,hitBase:panel.hitBase,hitBonus:panel.hitBonus,evasionBase:panel.evasionBase,

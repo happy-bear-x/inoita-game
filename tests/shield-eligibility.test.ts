@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import type {BattleBuffEffect,BattleCatalog} from '../src/domain/battle.ts';
-import {calculateCharacter,type CharacterStatsCatalog} from '../src/domain/character-stats.ts';
+import {calculateCharacter,effectiveCharacterPanel,type CharacterStatsCatalog} from '../src/domain/character-stats.ts';
 import {CombatConditions} from '../src/domain/combat-conditions.ts';
 import type {ItemCatalog,ItemInstance} from '../src/domain/items.ts';
-import {passiveModifiers} from '../src/domain/passive-skills.ts';
-import type {PhysicalFighter} from '../src/domain/physical-hit.ts';
+import {passiveModifiers,type PassiveModifier} from '../src/domain/passive-skills.ts';
+import {rollPhysicalHit,type PhysicalFighter} from '../src/domain/physical-hit.ts';
 import {hasOffhandShield} from '../src/domain/wardrobe.ts';
 
 const read=(name:string)=>JSON.parse(readFileSync(new URL(`../public/content/${name}.json`,import.meta.url),'utf8'));
@@ -80,4 +80,25 @@ test('the character panel reports the real offhand shield and the wardrobe keeps
   assert.equal(hasOffhandShield(items,{'off-hand':'short-sword'}),false);
   assert.equal(hasOffhandShield(items,{}),false);
   assert.equal(hasOffhandShield(items,{},true),true);
+});
+
+test('an equipment shield-block roll without a real shield never reaches the panel',()=>{
+  const zero={strength:0,dexterity:0,vitality:0,intelligence:0,mentality:0};
+  const rolled:ItemInstance={...entry('crystal-ring'),numbers:{modifiers:[{stat:'shieldBlock',value:20}],gemModifiers:[],magicPercent:0,sockets:0,enhancementUses:0}};
+  const panel=(equipment:Partial<Record<string,ItemInstance>>)=>calculateCharacter(stats,items,'priest',10,zero,equipment);
+  const ringOnly=panel({ring:rolled});
+  assert.equal(ringOnly.offhandShield,false);
+  assert.equal(ringOnly.shieldBlock,0,'戒指词条加不出虚拟盾');
+  const shieldOnly=panel({'off-hand':entry('wooden-shield')});
+  assert.equal(panel({ring:rolled,'off-hand':entry('wooden-shield')}).shieldBlock,shieldOnly.shieldBlock+20);
+  const shieldPassive:PassiveModifier={attribute:'shieldBlock',operation:{kind:'add',amount:30}};
+  assert.equal(effectiveCharacterPanel(ringOnly,10,[shieldPassive]).shieldBlock,0);
+  assert.equal(effectiveCharacterPanel({...ringOnly,offhandShield:true},10,[shieldPassive]).shieldBlock,30);
+});
+
+test('without a real shield accumulated shield block cannot produce a block outcome',()=>{
+  const conditions=new CombatConditions();
+  const target=conditions.fighter('owner',{...base,shieldBlock:300},[],{offhandShield:false});
+  assert.equal(target.shieldBlock,0);
+  for(let roll=0;roll<1000;roll++)assert.notEqual(rollPhysicalHit(base,target,()=>roll/1000).kind,'shield-block');
 });

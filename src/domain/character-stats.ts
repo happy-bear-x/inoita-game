@@ -3,7 +3,7 @@ import type { ItemNotice } from './item-application.ts';
 import { boundedHealth } from './status-hud.ts';
 import { Bag, type BagRules } from './bag.ts';
 import type { Equipment, EquipmentSlot, ItemCatalog, ItemInstance } from './items.ts';
-import { calculateEffectiveDefense,calculateMagicResistance } from './physical-hit.ts';
+import { calculateEffectiveDefense,calculateMagicResistance,eligibleShieldBlock } from './physical-hit.ts';
 import { applyAttributeModifiers, type AttributeModifier } from './combat-operation.ts';
 import { chaosThreshold, doubleThreshold, enhancementOdds, ENHANCEMENT_ROLL_MAX } from './enhancement.ts';
 
@@ -143,7 +143,7 @@ export function effectiveCharacterPanel(panel:CharacterPanel,level:number,modifi
     magicResistance:calculateMagicResistance(value('magicResistance',panel.baseMagicResistance)),
     evasionBonus,evasionRate:evasionRateFor(evasionBonus,panel.attributes.dexterity,level),
     weaponBlock:Math.max(0,value('weaponBlock',panel.weaponBlock)),
-    shieldBlock:Math.max(0,value('shieldBlock',panel.shieldBlock))};
+    shieldBlock:eligibleShieldBlock(value('shieldBlock',panel.shieldBlock),panel.offhandShield)};
 }
 
 /** 固定种子只决定物品实例的初次掷骰；重算面板不会重新生成词条。 */
@@ -192,6 +192,7 @@ export function calculateCharacter(catalog:CharacterStatsCatalog, items:ItemCata
   const baseDefense=defense+attributes.vitality,defenseRate=bonusOf('defenseRate');
   defense=calculateEffectiveDefense(baseDefense,defenseRate);
   const hitBase=HIT_BASE_PER_POINT*(attributes.dexterity+attributes.mentality);
+  const offhandShield=equipped['off-hand']!==undefined&&items.items[equipped['off-hand']!.item]?.kind==='shield';
   return {attributes,maxHealth:BASE_HEALTH+HEALTH_PER_LEVEL*level+HEALTH_PER_VITALITY*attributes.vitality,maxMana:BASE_MAX_MANA+bonusOf('maxMana'),
     physicalAttack,magicAttack,hitBase,hitBonus:Math.max(0,bonusOf('hitBonus')),evasionBase:attributes.dexterity,
     evasionBonus:Math.max(0,Math.min(RATE_CAP,bonusOf('evasionBonus'))),
@@ -202,8 +203,8 @@ export function calculateCharacter(catalog:CharacterStatsCatalog, items:ItemCata
     physicalResistance:physicalResistanceFor(defense,level),baseMagicResistance:bonusOf('magicResistance'),
     magicResistance:calculateMagicResistance(bonusOf('magicResistance')),
     evasionRate:evasionRateFor(bonusOf('evasionBonus'),attributes.dexterity,level),
-    weaponBlock:Math.max(0,DEFAULT_WEAPON_BLOCK+bonusOf('weaponBlock')),shieldBlock:Math.max(0,bonusOf('shieldBlock')),
-    offhandShield:equipped['off-hand']!==undefined&&items.items[equipped['off-hand']!.item]?.kind==='shield'};
+    weaponBlock:Math.max(0,DEFAULT_WEAPON_BLOCK+bonusOf('weaponBlock')),shieldBlock:eligibleShieldBlock(bonusOf('shieldBlock'),offhandShield),
+    offhandShield};
 }
 
 /**
