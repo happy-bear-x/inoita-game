@@ -12,11 +12,13 @@ const TYPE_INTERVAL_MS=24;
 const TYPE_CHARS_PER_INTERVAL=2;
 
 interface DialogueState { text:string; start:number; readTo:number; skipped:boolean }
-type DefeatAction = 'prayer' | 'checkpoint';
+type DefeatAction = 'prayer' | 'checkpoint' | 'load';
 interface DefeatActions {
   prayerCount:()=>number;
   revive:()=>boolean|Promise<boolean>;
   restore:()=>void|Promise<void>;
+  /** 打开读档页；返回 false 表示当前打不开，阵亡面板要留在原地。 */
+  load?:()=>boolean;
 }
 interface DefeatState { prayerCount:number; confirmation?:DefeatAction; busy:boolean; error?:string }
 export interface GameUiView {
@@ -75,11 +77,12 @@ export class GameUI {
   pending:(()=>void)|null=null; page=''; revealed=0; pageEnd=0; dialogueState:DialogueState|null=null;
   drawPortrait?:(actor:string|null,portrait?:string|null,signal?:AbortSignal)=>void|Promise<void>;
   portraitToken?:symbol; playerActor='';
-  private defeatFlow?:{actions:DefeatActions;confirmation?:DefeatAction;busy:boolean;error?:string};
+  private defeatFlow?:{actions:DefeatActions;confirmation?:DefeatAction;busy:boolean;error?:string;hidden?:boolean};
   get defeated():boolean{return !!this.defeatFlow;}
   get defeatState():DefeatState|undefined {
     const flow=this.defeatFlow;
-    return flow?{prayerCount:flow.actions.prayerCount(),confirmation:flow.confirmation,busy:flow.busy,error:flow.error}:undefined;
+    if(!flow||flow.hidden)return undefined;
+    return {prayerCount:flow.actions.prayerCount(),confirmation:flow.confirmation,busy:flow.busy,error:flow.error};
   }
   private elapsed=0;
   private pressed?:{id:number;pending:()=>void};
@@ -114,7 +117,21 @@ export class GameUI {
   selectDefeatAction(action:DefeatAction):void {
     const flow=this.defeatFlow;if(this.suspended||!flow||flow.busy)return;
     if(action==='prayer'&&flow.actions.prayerCount()<1)return;
+    if(action==='load'){
+      // 读档页自己有「未保存进度会丢失」的确认；这里直接让位，不再叠一层确认。
+      if(!flow.actions.load)return;
+      flow.hidden=true;this.lock(false,'defeat');
+      let opened=false;
+      try{opened=flow.actions.load()!==false;}catch(error){globalThis.storyDiagnostics?.record('defeat-load-failed',{message:error instanceof Error?error.message:String(error)});}
+      if(!opened)this.revealDefeat();
+      return;
+    }
     flow.confirmation=action;flow.error=undefined;this.resetInput();this.updateControls();
+  }
+  /** 读档页关掉后回到原来的阵亡面板；只有面板被读档选项临时藏起来时才生效。 */
+  revealDefeat():void {
+    const flow=this.defeatFlow;if(!flow?.hidden)return;
+    flow.hidden=false;this.lock(true,'defeat');this.resetInput();this.updateControls();
   }
   cancelDefeatConfirmation():void {
     const flow=this.defeatFlow;if(this.suspended||!flow||flow.busy)return;

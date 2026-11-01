@@ -1662,6 +1662,21 @@ test('closing a pending load cancels its preparation and a late error cannot reo
   assert.equal(f.internals.surface.root.visible,false);assert(!f.scene.texts().includes('late failure'));
 });
 
+test('the defeat load option opens the real load page and closing it returns to the defeat panel', t => {
+  const f=fixture();t.after(f.cleanup);
+  f.controls.showDefeat({prayerCount:()=>0,revive:()=>false,restore:()=>{},load:()=>f.menu.openDefeatLoad()});
+  assert.equal(f.controls.locked,true);
+  f.controls.selectDefeatAction('load');
+  assert.equal(f.internals.page,'load');assert(f.scene.texts().includes('读取存档'));
+  assert.equal(f.controls.defeated,true,'阵亡流程没有被读档页顶掉');
+  assert.equal(!!f.controls.defeatState,false,'读档页在阵亡面板之上时不再画阵亡面板');
+  assert.equal(f.controls.locked,true,'读档页自己锁住世界');
+  f.scene.key('Escape');
+  assert.ok(f.controls.defeatState,'关掉读档页回到原来的阵亡面板');
+  assert.equal(f.controls.defeatState.prayerCount,0);
+  assert.equal(f.controls.locked,true);
+});
+
 test('the GM story page lists tasks and enters the selected one without exposing identifiers', async t => {
   const f=fixture();t.after(f.cleanup);
   const gm=createGmActions({session:f.session,campaign,report:async()=>true});

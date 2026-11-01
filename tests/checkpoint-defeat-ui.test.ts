@@ -48,3 +48,28 @@ test('a new wipeout replaces a stale defeat flow instead of being ignored',()=>{
   assert.equal(ui.defeatState!.prayerCount,3);
   assert.equal(ui.locked,true);
 });
+
+test('the defeat screen hands off to the load page and restores itself when the page closes',()=>{
+  const ui=new GameUI();let opened=0;
+  ui.showDefeat({prayerCount:()=>0,revive:()=>false,restore:()=>{},load:()=>{opened++;return true;}});
+  ui.selectDefeatAction('load');
+  assert.equal(opened,1);
+  assert.equal(ui.defeated,true,'阵亡流程还在');
+  assert.equal(ui.defeatState,undefined,'读档页打开时不再画阵亡面板');
+  assert.equal(ui.locked,false,'读档页需要能打开菜单');
+  ui.revealDefeat();
+  assert.ok(ui.defeatState);
+  assert.equal(ui.locked,true);
+});
+
+test('a load page that cannot open leaves the defeat screen usable',()=>{
+  for(const load of [()=>false,()=>{throw new Error('no ui');}]){
+    const ui=new GameUI();
+    ui.showDefeat({prayerCount:()=>0,revive:()=>false,restore:()=>{},load});
+    ui.selectDefeatAction('load');
+    assert.ok(ui.defeatState,'打开失败要回到阵亡面板');
+    assert.equal(ui.locked,true);
+    ui.selectDefeatAction('checkpoint');
+    assert.equal(ui.defeatState!.confirmation,'checkpoint');
+  }
+});

@@ -81,6 +81,8 @@ export class StoryApp {
   residentCombatReady=false;
   residentCombatAssets?: AssetLease;
   residentCombatClassId?: string;
+  /** 阵亡界面的读档入口；世界场景通过 `StoryContext` 调用。 */
+  openDefeatLoad():boolean { return this.storyUI?.openDefeatLoad()??false; }
   /** 释放常驻包并重置会话标记；重复调用幂等。 */
   releaseResidentCombat(): void {
     this.residentCombatAssets?.release();

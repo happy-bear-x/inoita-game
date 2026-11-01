@@ -182,8 +182,8 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     }
     this.signature=signature;this.dialogueShell=false;
     const v=this.surface;v.clear();v.layout(0);this.dialogueRuns=[];this.dialogueLayout=undefined;this.progressBar=undefined;v.visible(true);
-    const modal=portrait||!!ui.loadingState||ui.defeated||cover;
-    this.background.setVisible(modal).setSize(this.scale.width,this.scale.height).setFillStyle(0x000000,ui.defeated&&!portrait&&!ui.loadingState&&!cover ? .65:1);
+    const modal=portrait||!!ui.loadingState||!!defeat||cover;
+    this.background.setVisible(modal).setSize(this.scale.width,this.scale.height).setFillStyle(0x000000,!!defeat&&!portrait&&!ui.loadingState&&!cover ? .65:1);
     this.blocker.setVisible((modal||!!ui.quest||!!ui.dialogueLine||!!ui.choices)).setSize(this.scale.width,this.scale.height);if(this.blocker.input)this.blocker.input.hitArea.setSize(this.scale.width,this.scale.height);
     this.cover?.destroy();this.cover=undefined;
     const block=()=>{const zone=this.add.zone(0,0,960,640).setOrigin(0).setInteractive();v.root.add(zone);};
@@ -204,8 +204,9 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
         v.button(defeat.busy?'正在恢复…':'确认',505,397,220,60,()=>{void ui.confirmDefeat();},{disabled:defeat.busy,guard});
       }else{
         v.text(defeat.error??'选择复活方式',480,230,570,23,defeat.error?'#eb9587':'#f5eedf').setOrigin(.5,0);
-        v.button(`使用复活圣文（${defeat.prayerCount}）`,225,301,510,60,()=>ui.selectDefeatAction('prayer'),{disabled:defeat.prayerCount<1,guard});
-        v.button('返回检查点',225,392,510,60,()=>ui.selectDefeatAction('checkpoint'),{guard});
+        v.button(`使用复活圣文（${defeat.prayerCount}）`,225,286,510,56,()=>ui.selectDefeatAction('prayer'),{disabled:defeat.prayerCount<1,guard});
+        v.button('返回检查点',225,356,510,56,()=>ui.selectDefeatAction('checkpoint'),{guard});
+        v.button('读取存档',225,426,510,56,()=>ui.selectDefeatAction('load'),{disabled:!this.app.resumeSlot,guard});
       }
     }
     else if(!cover&&ui.choices&&!ui.quest){

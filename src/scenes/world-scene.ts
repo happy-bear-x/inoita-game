@@ -1721,6 +1721,7 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
         const entry=prayer()[0];if(!entry||!this.combat||this.destroyed)return false;
         this.combat.revive('player',entry.id);return true;
       },
+      load:()=>this.app.openDefeatLoad?.()??false,
       restore:async()=>{
         const checkpoint=this.app.checkpoint.peek();if(!checkpoint)throw new Error('没有可恢复的检查点');
         const signal=this.app.storySignal??this.request.signal;

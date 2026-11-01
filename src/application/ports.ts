@@ -47,6 +47,8 @@ export interface StoryContext {
   readonly crafting?: CraftingCatalog;
   openShop(shopId:string,mapId:string):void;
   openCrafting?(actorId:string):void;
+  /** 阵亡界面打开读档页；返回 false 表示当前打不开，阵亡面板留在原地。 */
+  openDefeatLoad?:()=>boolean;
   readonly wardrobe: WardrobeCatalog;
   readonly battleCatalog: BattleCatalog;
   readonly statusHud:StatusHudSkin;
@@ -107,7 +109,7 @@ export interface StoryUIContext {
   readonly crafting?: CraftingCatalog;
   readonly characterStats: import('../domain/character-stats.ts').CharacterStatsCatalog;
   /** `portrait` 是界面场景按需取图的那个入口。 */
-  readonly ui: Pick<GameUI,'ready'|'locked'|'suspended'|'mode'|'lock'|'resetInput'|'toast'|'showInstant'|'controlLayoutEditing'|'setControlLayoutEditing'|'keyBindingEditing'|'setKeyBindingEditing'|'portrait'>;
+  readonly ui: Pick<GameUI,'ready'|'locked'|'suspended'|'mode'|'lock'|'resetInput'|'toast'|'showInstant'|'controlLayoutEditing'|'setControlLayoutEditing'|'keyBindingEditing'|'setKeyBindingEditing'|'portrait'|'defeated'|'revealDefeat'>;
   returnToMenu?: () => void;
   /** GM（调试）动作层。**只在开关打开时存在**：关闭时没有它，系统页也就没有「调试」入口。 */
   readonly gm?: import('../debug/gm-actions.ts').GmActions;

@@ -100,7 +100,7 @@ export class StoryUI {
   private session?:Session;private world?:WorldIndex;private content?:StoryInterface;private unsubscribe?:()=>void;private unsubscribeFullscreen?:()=>void;
   /** 菜单是否打开；诊断用，和 `locked` 里的 `story-menu` 对应。 */
   get menuOpen():boolean{return this.open;}
-  private page:Page='bag';private open=false;private selectedMemberId='player';private questPanel?:QuestPanel;
+  private page:Page='bag';private open=false;/** 从阵亡面板打开的读档页：关掉时要回到阵亡面板。 */private loadReturnToDefeat=false;private selectedMemberId='player';private questPanel?:QuestPanel;
   private itemResult?:ItemResult;
   private filter:InventoryView='all';private selectedItem?:string;private descSide:'left'|'right'='left';private operation?:Operation;private itemNotice?:string;private busy=false;private request=new AbortController();
   /** 上次整页重绘时当前页依赖的数据签名；会话通知用它判断要不要重绘。 */
@@ -172,6 +172,7 @@ export class StoryUI {
   }
   bind(session:Session,world:WorldIndex,content:StoryInterface):void{
     this.discardAllocation();
+    this.loadReturnToDefeat=false;
     this.close();this.hudButtons?.clear();this.unsubscribe?.();this.session=session;this.world=world;this.content=content;this.page='bag';this.selectedMemberId='player';this.filter='all';this.selectedItem=undefined;this.itemResult=undefined;this.scrollOffsets.clear();this.sessionSignature='';
     this.questPanel=new QuestPanel(session,world,this.app.menuPanels,()=>this.render());
     this.partyPanel?.destroyPreview();this.partyPanel=new PartyPanel(session,world,this.app,()=>this.render(),(id,page)=>this.selectMember(id,page));
@@ -200,6 +201,14 @@ export class StoryUI {
     this.backdrop?.setVisible(this.open&&!this.app.ui.suspended);
     this.controlEditor?.visible(this.open&&this.app.ui.controlLayoutEditing&&!this.app.ui.suspended);
     this.keyBindingEditor?.visible(this.open&&this.app.ui.keyBindingEditing&&!this.app.ui.suspended);this.layout();
+  }
+  /** 阵亡界面的「读取存档」：先让出阵亡面板，再打开已有的读档页；关掉后由 `close` 恢复面板。 */
+  openDefeatLoad():boolean{
+    if(!this.session||!this.app.ui.ready||this.app.ui.mode!=='game'||this.app.ui.suspended)return false;
+    this.loadReturnToDefeat=true;
+    this.show('load');
+    if(!this.open||this.page!=='load'){this.loadReturnToDefeat=false;return false;}
+    return true;
   }
   show(page:Page):void{
     if(!this.session||!this.app.ui.ready||this.app.ui.mode!=='game'||this.app.ui.suspended||(!this.open&&this.app.ui.locked))return;
@@ -277,6 +286,7 @@ export class StoryUI {
     if(this.open&&this.requestAllocationExit(()=>this.close()))return;
     if(!this.open)return;this.controlEditor?.close();this.app.ui.setControlLayoutEditing(false);
     this.keyBindingEditor?.close();this.app.ui.setKeyBindingEditing(false);this.cancelOperation();this.modalActive=false;this.shortcutEdit=undefined;this.shortcutScreen?.clear();this.backTab?.clear();this.shopPanel=undefined;this.bagPortrait?.destroy();this.bagPortrait=undefined;this.partyPanel?.destroyPreview();this.craftingPanel=undefined;this.craftingActor=undefined;this.forge=undefined;this.open=false;this.scrollNames.forEach((scroll,name)=>this.scrollOffsets.set(`${this.page}:${name}`,scroll.scrollTop));this.scrollNames.clear();this.body?.clear();this.description?.clear();if(this.surface&&this.body){this.surface.root.remove(this.body.root);this.surface.clear();this.surface.root.add(this.body.root);}this.keyboardFocus=undefined;this.surface?.visible(false);this.body?.visible(false);this.description?.visible(false);this.modal?.visible(false);this.shortcutScreen?.visible(false);this.backTab?.visible(false);this.backdrop?.setVisible(false);this.app.ui.resetInput();this.app.ui.lock(false,'story-menu');
+    if(this.loadReturnToDefeat){this.loadReturnToDefeat=false;if(this.app.ui.defeated)this.app.ui.revealDefeat();}
   }
   private cancelOperation():void{this.cancelDrag();this.request.abort();this.request=new AbortController();this.busy=false;this.operation=undefined;this.itemNotice=undefined;this.skillReset=false;this.saveConfirm=undefined;this.loadConfirm=undefined;this.deleteConfirm=undefined;this.renameRef=undefined;this.prompt?.close();this.partyPanel?.close();this.craftingPanel?.close();this.forge=undefined;this.modal?.clear();this.modal?.visible(false);}
   private key(event:KeyboardEvent):void{
