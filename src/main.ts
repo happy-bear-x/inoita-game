@@ -67,9 +67,20 @@ function requireWorldScene(): WorldScene {
 
 fitViewport();
 let layoutFrame = 0;
+/**
+ * 手机键盘弹出/收起会改变 visualViewport 的尺寸和偏移，但这不是游戏画布尺寸变化。
+ * 文本输入框聚焦期间保持当前画布、面板和固定输入框的位置；失焦后的键盘收起事件
+ * 会再次触发布局，届时才按恢复后的可视区重排。否则整个菜单会跟着输入框被顶上去。
+ */
+function editingText(): boolean {
+  const active=document.activeElement;
+  return active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement
+    || (active instanceof HTMLElement && active.isContentEditable);
+}
 const scheduleLayout = () => {
   cancelAnimationFrame(layoutFrame);
   layoutFrame = requestAnimationFrame(() => {
+    if(editingText())return;
     fitViewport();
     if(app.game)configureCanvas(app.game);
     app.game?.scale.getParentBounds();
