@@ -34,17 +34,42 @@ export function readSafeArea(): { left: number; right: number; top: number; bott
 }
 
 /**
- * iOS 主屏应用冷启动时，`visualViewport` 可能先给出比实际屏幕矮一截的高度，
- * 页面底部就会露出一条黑边；旋转一次屏幕后 WebKit 才重新测量。
- * 主屏模式改用 CSS 的大视口单位，让 WebKit 按整屏高度排版；普通浏览器继续用
- * `visualViewport`，键盘和地址栏变化时仍能及时收缩。
+ * 主屏应用冷启动、手机已经是横屏时，`visualViewport` 和 `100lvh` 都可能少算
+ * 一条安全区的高度（iPhone 上常见是 59 像素），页面底部就会露出一条黑边；
+ * WebKit 之后不会自己纠正，只有旋转屏幕才重新测量。
+ *
+ * 根因是装了主屏、又带 `viewport-fit=cover` 的应用里，WebKit 的视口度量本身
+ * 就不可靠，换哪个视口单位都一样错。主屏应用铺满整块屏幕，物理屏幕的尺寸才是
+ * 可靠来源：用 `screen` 的宽高结合当前横竖方向还原整屏。普通浏览器有地址栏和
+ * 工具栏，屏幕尺寸会超出可视区，继续用 `visualViewport`。
  */
-function iosHomeScreenApp(): boolean {
-  return typeof navigator !== 'undefined' && (navigator as Navigator & {standalone?: boolean}).standalone === true;
+function iosStandaloneApp(): boolean {
+  if (!iosDevice()) return false;
+  if ((navigator as Navigator & {standalone?: boolean}).standalone === true) return true;
+  return typeof matchMedia === 'function'
+    && (matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches);
 }
-function fullViewportHeightUnit(): string {
-  const supports = typeof CSS !== 'undefined' && typeof CSS.supports === 'function';
-  return supports && CSS.supports('height', '100lvh') ? '100lvh' : '100vh';
+
+/**
+ * 这套按物理屏幕排版的逻辑只给 iOS：安卓和 WebView 的视口度量本来就是对的，
+ * 装了 PWA 后系统状态栏和导航栏还会占走一部分，照屏幕尺寸铺满会盖住底部。
+ * iPadOS 13 起 UA 伪装成 Mac，用触点数把它认回来。
+ */
+function iosDevice(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent;
+  return /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+}
+
+/** 整块屏幕的 CSS 像素尺寸；拿不到物理屏幕尺寸时退回窗口尺寸。 */
+function screenSize(): { width: number; height: number } {
+  const screenWidth = typeof screen === 'undefined' ? 0 : screen.width;
+  const screenHeight = typeof screen === 'undefined' ? 0 : screen.height;
+  if (!(screenWidth > 0 && screenHeight > 0)) {
+    return { width: Math.max(1, innerWidth), height: Math.max(1, innerHeight) };
+  }
+  const long = Math.max(screenWidth, screenHeight), short = Math.min(screenWidth, screenHeight);
+  return innerWidth >= innerHeight ? { width: long, height: short } : { width: short, height: long };
 }
 export function fitViewport(): void {
   // 只有视口重建时安全区才可能变；布局每帧读取时直接复用这次测量。
@@ -53,11 +78,11 @@ export function fitViewport(): void {
   const { left, right, top, bottom } = readSafeArea();
   const frame = element('game-frame');
   let width: number, height: number;
-  if (iosHomeScreenApp()) {
-    Object.assign(frame.style, { width: '100vw', height: fullViewportHeightUnit(), left: '0px', top: '0px' });
-    const bounds = frame.getBoundingClientRect();
-    width = Math.max(1, bounds.width || innerWidth);
-    height = Math.max(1, bounds.height || innerHeight);
+  if (iosStandaloneApp()) {
+    const size = screenSize();
+    width = size.width;
+    height = size.height;
+    Object.assign(frame.style, { width: `${width}px`, height: `${height}px`, left: '0px', top: '0px' });
   } else {
     width = Math.max(1, viewport?.width ?? innerWidth);
     height = Math.max(1, viewport?.height ?? innerHeight);
