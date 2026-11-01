@@ -1419,6 +1419,24 @@ test('fusion menu selects or drags equipment, confirms once and blocks underlyin
   f.menu.close();assert.equal(f.controls.locked,false);
 });
 
+test('fusion recipe detail stays open and crafts again on the next 组合', t => {
+  const f=fixture();t.after(f.cleanup);
+  f.session.gainMoney(10);f.add('leaf-of-life',6);
+  const machine=Object.keys(world.actors).find(id=>world.actors[id].service==='fusion-machine')!;
+  f.menu.openCrafting(machine);
+  const recipe=f.session.bag.catalog.recipes['mix-healing-potion-s']!;
+  f.scene.click(f.scene.buttons(recipe.name).find(button=>button.input?.hitArea.width===390)!);
+  const potions=()=>f.session.bag.count('healing-potion-s'),before=potions();
+  for(const round of [1,2]){
+    f.scene.click(f.scene.button('组合'));
+    assert(f.scene.texts().includes('是否以当前的配方来合成？'),`第 ${round} 次组合仍弹确认框`);
+    f.scene.click(f.scene.button('是'));
+    assert.equal(potions(),before+round,`第 ${round} 次合成产出`);
+    assert.equal(f.scene.buttons('组合').length,1,'成功后仍停在配方详情页');
+  }
+  assert.equal(f.session.bag.count('leaf-of-life'),0,'两次合成各扣 3 个材料');
+});
+
 test('fusion socket creation only accepts hole-less equipment and creates the rolled sockets', t => {
   const f=fixture();t.after(f.cleanup);const bag=f.session.bag;
   const target=bag.equipment['main-hand']!;bag.unequip('main-hand');

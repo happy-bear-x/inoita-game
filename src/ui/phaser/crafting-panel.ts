@@ -69,12 +69,12 @@ export class CraftingPanel {
     try {
       if(confirmation.kind==='chaos')this.crafting.commit(confirmation.quote);
       else if(confirmation.kind==='socket')this.crafting.socketCommit(confirmation.quote);
-      else {this.crafting.recipeCommit(confirmation.quote);this.recipe=undefined;}
+      else this.crafting.recipeCommit(confirmation.quote);
       this.sound();committed=true;
     }
     catch(error){if(confirmation.kind!=='recipe')this.target=target;if(error instanceof CraftingError)this.message=this.panels.itemMessages[error.notice];else throw error;}
     finally {this.committing=false;}
-    // 成功时 session 通知已经用“目标已清空”的状态重画过；失败才本地重画显示错误。
+    // 成功时 session 通知已经重画过；配方保持不变，可以留在详情页连续合成。失败才本地重画显示错误。
     if(!committed)this.changed();
   }
   render(v:UiSurface,modal:UiSurface,placeModal:(width:number,height:number)=>void,startDrag:(pointer:Phaser.Input.Pointer,entry:string,scroll:ScrollArea)=>void):void {
