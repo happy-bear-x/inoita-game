@@ -6,6 +6,8 @@ import {newStorySession} from '../src/domain/story-class.ts';
 import {captureSaveGame,saveSummary} from '../src/domain/save-game.ts';
 import type {StoryWorldViewSnapshot} from '../src/scenes/world-scene.ts';
 import {emptyShortcutRow} from '../src/domain/shortcut-bar.ts';
+import type {WorldMap} from '../src/domain/content.ts';
+import {WorldEnemyRoster} from '../src/domain/world-enemies.ts';
 const read=<T>(name:string):T=>JSON.parse(readFileSync(new URL(`../public/content/${name}.json`,import.meta.url),'utf8')) as T;
 const content:SavedGameContent={campaign:read('campaign'),world:read('world'),storyClasses:read('story-classes'),
   items:read('items'),characterStats:read('character-stats'),battleCatalog:read('battle'),companions:read('companions')};
@@ -189,4 +191,58 @@ test('current saves keep the per-map consumed sword list',()=>{
   const saved=record();saved.session.legendaryWeapons={used:['map-a:sword-001','map-a:sword-005']};
   const candidate=prepareSavedGame(saved,content);
   assert.deepEqual(candidate.session.legendaryWeapons.captureState(),{used:['map-a:sword-001','map-a:sword-005']});
+});
+
+const HALL_MAP='noxious-sanctum-main-hall-2e80d907',CURSED_GHOST='enemy-cursed-ghost-1';
+const ghostSpawns=Array.from({length:7},(_,index)=>`${HALL_MAP}-spawn-${String(index+1).padStart(3,'0')}`);
+const hallMap=read<WorldMap>(`maps/${HALL_MAP}`);
+const permanent=(id:string):[string,{health:number;deadUntil:'permanent'}]=>[id,{health:0,deadUntil:'permanent'}];
+/** 复现 39 版旧档：event-115 的 remove-enemy 把这 7 只写成了永久死亡。 */
+function legacyGhostSave(runtime:(saved:ReturnType<typeof record>)=>void){
+  const saved=record();saved.format=39;
+  saved.session.enemies.push(...ghostSpawns.map(permanent),permanent('enemy-boss-permanent'));
+  saved.session.storyWorld.entities.push(...ghostSpawns.map(id=>({id,removed:true})));
+  saved.session.storyWorld.enemyRemovals=[
+    {enemyId:CURSED_GHOST,map:HALL_MAP,all:true},
+    {enemyId:'enemy-other-map',map:'another-map',all:true},
+  ];
+  saved.session.storyWorld.flags.push(...[...ghostSpawns,CURSED_GHOST]
+    .map(enemyId=>JSON.stringify(['absent-enemy',HALL_MAP,enemyId])));
+  runtime(saved);
+  return saved;
+}
+
+test('format 39 saves restore event-115 hall ghosts after the event completed',()=>{
+  const saved=legacyGhostSave(value=>{value.session.runtime.completedEvents.push('event-115');});
+  const before=structuredClone(saved),candidate=prepareSavedGame(saved,content);
+  for(const id of ghostSpawns)assert.equal(candidate.session.enemyVitals(id).deadUntil,undefined);
+  assert.equal(candidate.session.enemyVitals('enemy-boss-permanent').deadUntil,'permanent','其他敌人的永久死亡保持不变');
+  assert.equal(candidate.session.storyWorld.enemyAvailable(HALL_MAP,CURSED_GHOST),true);
+  for(const id of ghostSpawns)assert.equal(candidate.session.storyWorld.entity(id),undefined);
+  assert.deepEqual(candidate.session.storyWorld.pendingEnemyRemovals,
+    [{enemyId:'enemy-other-map',map:'another-map',all:true}],'只清掉大厅的清场命令');
+  const roster=new WorldEnemyRoster(candidate.session,hallMap,[],1,undefined,()=>0.9);
+  assert.deepEqual(roster.spawns.map(spawn=>spawn.id).sort(),[...ghostSpawns].sort());
+  assert.deepEqual(saved,before,'升级不改写槽里的原件');
+});
+
+test('format 39 saves taken during event-115 keep the hall ghosts suppressed',()=>{
+  const saved=legacyGhostSave(value=>{
+    value.session.runtime.runs.push({id:'legacy-event-115',eventId:'event-115',occurrence:'region:event-115',
+      cursor:{script:'event-115',node:'done'},status:'running'});
+  });
+  const candidate=prepareSavedGame(saved,content);
+  for(const id of ghostSpawns)assert.equal(candidate.session.enemyVitals(id).deadUntil,undefined);
+  assert.equal(candidate.session.storyWorld.enemyAvailable(HALL_MAP,CURSED_GHOST),false);
+  assert.equal(candidate.session.enemyVitals('enemy-boss-permanent').deadUntil,'permanent');
+  assert.deepEqual(new WorldEnemyRoster(candidate.session,hallMap,[],1,undefined,()=>0.9).spawns,[]);
+});
+
+test('format 39 saves that never started event-115 restore the hall ghosts without suppression',()=>{
+  const saved=legacyGhostSave(()=>{});
+  const candidate=prepareSavedGame(saved,content);
+  assert.equal(candidate.session.storyWorld.enemyAvailable(HALL_MAP,CURSED_GHOST),true);
+  assert.equal(candidate.session.enemyVitals('enemy-boss-permanent').deadUntil,'permanent');
+  const roster=new WorldEnemyRoster(candidate.session,hallMap,[],1,undefined,()=>0.9);
+  assert.deepEqual(roster.spawns.map(spawn=>spawn.id).sort(),[...ghostSpawns].sort());
 });

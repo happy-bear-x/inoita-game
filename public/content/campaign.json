@@ -69740,10 +69740,10 @@
             {
               "type": "world",
               "command": {
-                "kind": "remove-enemy",
+                "kind": "enemy-availability",
+                "map": "noxious-sanctum-main-hall-2e80d907",
                 "enemyId": "enemy-cursed-ghost-1",
-                "all": true,
-                "map": "noxious-sanctum-main-hall-2e80d907"
+                "available": false
               }
             },
             {
@@ -70190,7 +70190,17 @@
         {
           "id": "battle-won",
           "presentation": [],
-          "commands": [],
+          "commands": [
+            {
+              "type": "world",
+              "command": {
+                "kind": "enemy-availability",
+                "map": "noxious-sanctum-main-hall-2e80d907",
+                "enemyId": "enemy-cursed-ghost-1",
+                "available": true
+              }
+            }
+          ],
           "exit": {
             "type": "end"
           }
@@ -70198,7 +70208,17 @@
         {
           "id": "battle-lost",
           "presentation": [],
-          "commands": [],
+          "commands": [
+            {
+              "type": "world",
+              "command": {
+                "kind": "enemy-availability",
+                "map": "noxious-sanctum-main-hall-2e80d907",
+                "enemyId": "enemy-cursed-ghost-1",
+                "available": true
+              }
+            }
+          ],
           "exit": {
             "type": "end"
           }

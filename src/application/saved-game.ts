@@ -18,6 +18,18 @@ export interface SavedGameContent {
 }
 type SaveUpgrade = (game:SaveGame<StoryWorldViewSnapshot>)=>void;
 interface LegacyStoryRun {stage?:Record<string,unknown>}
+/** 40 版迁移只针对「被污染的神殿大堂」这 7 只常驻恶灵，其他敌人的永久死亡原样保留。 */
+const NOXIOUS_HALL_MAP='noxious-sanctum-main-hall-2e80d907';
+const CURSED_GHOST_ENEMY='enemy-cursed-ghost-1';
+const CURSED_GHOST_SPAWNS=new Set(Array.from({length:7},(_,index)=>
+  `${NOXIOUS_HALL_MAP}-spawn-${String(index+1).padStart(3,'0')}`));
+const absentEnemyFlag=(map:string,enemyId:string)=>JSON.stringify(['absent-enemy',map,enemyId]);
+interface SavedStoryRuntime {runs?:{eventId?:string;status?:string}[];completedEvents?:string[]}
+/** 事件已结束或从未开始时不压制；只有它正在演出或等待战斗时才保留清场标记。 */
+function eventInProgress(runtime:SavedStoryRuntime|undefined,eventId:string):boolean {
+  if(!runtime||runtime.completedEvents?.includes(eventId))return false;
+  return (runtime.runs??[]).some(run=>run.eventId===eventId&&(run.status==='running'||run.status==='waiting'));
+}
 type LegacyScene = {actors?:unknown};
 function duplicateSceneActors(scene:unknown):SceneActorState[][] {
   if(!scene||typeof scene!=='object')return [];
@@ -102,6 +114,25 @@ const SAVE_UPGRADES:Record<number,SaveUpgrade>={
     // 38 → 39：记录每张地图已拔出的古老武器；旧档视为一把都没拔。
     game.session.legendaryWeapons={used:[]};
     game.format=39;
+  },
+  /**
+   * 39 → 40：event-115 以前用 remove-enemy 把这 7 只常驻恶灵写成永久死亡，
+   * 换图、读档、检查点都不恢复。这里只撤销这 7 个固定 spawn 的永久状态，
+   * 其他敌人的永久死亡原样保留；事件正在演出或等待战斗时改为「暂时不可生成」，
+   * 事件结束后由 battle-won / battle-lost 的正常命令解除压制。
+   */
+  39:game=>{
+    const session=game.session,world=session.storyWorld;
+    session.enemies=session.enemies.filter(([id,enemy])=>!(CURSED_GHOST_SPAWNS.has(id)&&enemy.deadUntil==='permanent'));
+    world.entities=world.entities.filter(entity=>!(CURSED_GHOST_SPAWNS.has(entity.id)&&entity.removed));
+    if(world.enemyRemovals)world.enemyRemovals=world.enemyRemovals.filter(removal=>
+      !(removal.map===NOXIOUS_HALL_MAP&&removal.enemyId===CURSED_GHOST_ENEMY));
+    const staleFlags=new Set([...CURSED_GHOST_SPAWNS].map(id=>absentEnemyFlag(NOXIOUS_HALL_MAP,id)));
+    staleFlags.add(absentEnemyFlag(NOXIOUS_HALL_MAP,CURSED_GHOST_ENEMY));
+    world.flags=world.flags.filter(flag=>!staleFlags.has(flag));
+    if(eventInProgress(session.runtime,'event-115'))
+      world.flags.push(absentEnemyFlag(NOXIOUS_HALL_MAP,CURSED_GHOST_ENEMY));
+    game.format=40;
   },
 };
 function upgradeSavedGame(game:SaveGame<StoryWorldViewSnapshot>):SaveGame<StoryWorldViewSnapshot>{

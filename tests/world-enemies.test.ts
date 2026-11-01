@@ -327,6 +327,50 @@ test('a same-key identity change does not reroll the breakable cache',()=>{
   assert.equal(roster.source('slot')?.enemyId,'enemy-jar-1');
 });
 
+test('event-115 availability clears and restores all hall ghosts including a breakable slot',()=>{
+  const map=content('maps/noxious-sanctum-main-hall-2e80d907.json') as WorldMap;
+  const spawnIds=map.enemySpawns!.map(spawn=>spawn.id).sort();
+  const session=new Session(campaign);
+  const availability=(available:boolean)=>session.applyStoryCommands([{type:'world',
+    command:{kind:'enemy-availability',map:map.id,enemyId:'enemy-cursed-ghost-1',available}}]);
+  const rolls=[0,0.9,0.9,0.9,0.9,0.9,0.9];
+  let roll=0;
+
+  availability(false);
+  const roster=new WorldEnemyRoster(session,map,[],1,undefined,()=>rolls[roll++]??0.9);
+  assert.equal(roster.spawns.length,0);
+  assert.deepEqual(roster.refresh().added,[]);
+
+  availability(true);
+  assert.deepEqual(roster.refresh().added.map(enemy=>enemy.key).sort(),spawnIds);
+  assert.deepEqual(roster.spawns.map(spawn=>spawn.id).sort(),spawnIds);
+  assert.equal(roster.source(spawnIds[0]!)?.enemyId,'enemy-jar-1','可破坏物槽也被压制后重新掷出替换结果');
+
+  availability(false);
+  assert.deepEqual(roster.spawns,[]);
+  assert.deepEqual(roster.refresh().removed.sort(),spawnIds,'恢复后的替换槽同样会被清场');
+});
+
+test('event-115 scene commands suppress the hall ghosts until the battle result restores them',()=>{
+  const map=content('maps/noxious-sanctum-main-hall-2e80d907.json') as WorldMap;
+  const script=campaign.scripts['event-115']!;
+  const commands=(node:string)=>script.nodes.find(entry=>entry.id===node)!.commands;
+  const spawnIds=map.enemySpawns!.map(spawn=>spawn.id).sort();
+  for(const result of ['battle-won','battle-lost']){
+    const session=new Session(campaign);
+    const roster=new WorldEnemyRoster(session,map,[],1,undefined,()=>0.9);
+    assert.deepEqual(roster.spawns.map(spawn=>spawn.id).sort(),spawnIds);
+
+    session.applyStoryCommands(commands('scene-1'));
+    assert.equal(roster.spawns.length,0);
+    assert.deepEqual(roster.refresh().removed.sort(),spawnIds);
+
+    session.applyStoryCommands(commands(result));
+    assert.deepEqual(roster.refresh().added.map(enemy=>enemy.key).sort(),spawnIds);
+    assert.deepEqual(roster.spawns.map(spawn=>spawn.id).sort(),spawnIds);
+  }
+});
+
 test('a second encounter occurrence with the same cast owns fresh enemy resources',()=>{
   const session=new Session(campaign),map=content('maps/shadow-forest-west.json') as WorldMap;
   const roster=new WorldEnemyRoster(session,map,[],1),enemyId=roster.spawns[0].enemyId;
