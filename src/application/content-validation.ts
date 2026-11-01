@@ -38,6 +38,7 @@ function requireValue(condition: unknown, path: string, message: string): assert
   if(!condition)throw new Error(`内容无效 ${path}: ${message}`);
 }
 const text:Check=(v,p)=>requireValue(typeof v==='string',p,'需要文字');
+const nonEmptyText:Check=(v,p)=>{text(v,p);requireValue((v as string).length>0,p,'不能为空');};
 const number:Check=(v,p)=>requireValue(typeof v==='number'&&Number.isFinite(v),p,'需要有限数字');
 const positive:Check=(v,p)=>{number(v,p);requireValue((v as number)>0,p,'必须大于零');};
 const integer:Check=(v,p)=>{number(v,p);requireValue(Number.isInteger(v)&&(v as number)>=0,p,'需要非负整数');};
@@ -665,7 +666,7 @@ const campaign=shape<Campaign>({debugStory:optional(debugStory),version:(v,p)=>r
   quests:array(object({id:text,title:text,description:text,giver:optional(text),giverCharacterId:optional(text),delivery:optional(text),deliveryCharacterId:optional(text),places:optional(object({available:optional(storyPlace),active:optional(storyPlace),ready:optional(storyPlace)})),guidance:object({available:text,active:text,counterLabel:optional(text)}),
     targetChanges:optional(array(object({goal:text,enemyId:text,actor:text,removeAfterInteraction:boolean,changedText:text,interactText:text}))),
     descriptionTargets:optional(array(object({target:text,characterId:optional(text),label:optional(text)}))),
-    goals:array(object({id:text,kind:oneOf('talk','item','interact','defeat','recruit'),target:text,characterId:optional(text),quantity:count,label:optional(text)})),
+    goals:array(object({id:text,kind:oneOf('talk','item','interact','defeat','recruit'),target:text,characterId:optional(text),quantity:count,label:optional(text),feedbackText:optional(nonEmptyText)})),
     availableWhen:optional(storyCondition),completion:oneOf('talk','all','story','internal'),hidden:optional(boolean),repeat:optional(boolean),
     onAcceptItems:optional(array(object({item:text,quantity:count}))),handoverItems:optional(array(object({item:text,quantity:count,removal:optional(oneOf('quantity','all-matching'))}))),
     itemCompletion:optional(oneOf('all','equipped-item-shortcut')),acceptance:optional(oneOf('automatic','optional')),

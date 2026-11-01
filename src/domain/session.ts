@@ -19,7 +19,7 @@ import type { ActorDefinition, CampaignEnemyPlacement, EnemySpawn, MapExit, Ques
 /** 落位修正需要的边界信息；调用方持有完整地图时直接传地图对象。 */
 export type MapBoundary=Pick<WorldMap,'width'|'height'> & {exits?:readonly MapExit[]};
 import type { Campaign, CampaignQuest } from './campaign.ts';
-import { QuestBook, sideQuestIds, type QuestBookCheckpoint, type QuestBookState, type QuestProgress, type QuestFact, type QuestSettlement } from './quest-book.ts';
+import { QuestBook, sideQuestIds, type QuestBookCheckpoint, type QuestBookState, type QuestGoal, type QuestProgress, type QuestFact, type QuestSettlement } from './quest-book.ts';
 import { evaluateStoryCondition, storyConditionReferences, type StoryCondition, type StoryConditionContext, type StoryWorldValue } from './story-condition.ts';
 import { StoryWorldState, type StoryWorldSnapshot } from './story-world.ts';
 import type { StoryCommand } from './story-graph.ts';
@@ -572,38 +572,53 @@ export class Session {
     this.applyStoryCommands([{type:'quest',command:{type:'accept',quest:id,cycle:this.questBook.state(id)!.cycle}}]);return true;
   }
   /**
-   * 进行中的任务里指到这个目标的目标。`talk` 与 `interact` 两类目标导出后都落在 NPC 的 `actor`
-   * 上（与摆放点 `objective` 的写法同一口径），对玩家是同一件事：走过去跟它交互。
+   * 进行中的任务里指到这个目标、且还没记满的目标。
+   * `talk` 与 `interact` 两类目标导出后都落在 NPC 的 `actor` 上（与摆放点 `objective` 的写法同一口径），
+   * 对玩家是同一件事：走过去跟它交互。
    */
-  private waitingGoals(target:string,characterId?:string):{kind:'talk'|'interact';target:string}[] {
-    const goals:{kind:'talk'|'interact';target:string}[]=[];
+  private waitingGoalEntries(target:string,characterId?:string):{kind:'talk'|'interact';target:string;quest:CampaignQuest;goal:QuestGoal}[] {
+    const goals:{kind:'talk'|'interact';target:string;quest:CampaignQuest;goal:QuestGoal}[]=[];
     for(const quest of this.campaign.quests){
       if(this.status(quest.id)!=='active')continue;
-      for(const goal of quest.goals)
-        if((characterId!==undefined&&goal.characterId!==undefined?goal.characterId===characterId:goal.target===target)
-          &&(goal.kind==='talk'||goal.kind==='interact'))goals.push({kind:goal.kind,target:goal.target});
+      const progress=this.questBook.state(quest.id)?.goals;
+      for(const goal of quest.goals){
+        if(goal.kind!=='talk'&&goal.kind!=='interact')continue;
+        if(!(characterId!==undefined&&goal.characterId!==undefined?goal.characterId===characterId:goal.target===target))continue;
+        // 已记满的目标不再进入候选：同一根号角不能重复触发，多数量目标则一直可交互到记满为止。
+        if((progress?.[goal.id]??0)>=goal.quantity)continue;
+        goals.push({kind:goal.kind,target:goal.target,quest,goal});
+      }
     }
     return goals;
   }
+  private waitingGoals(target:string,characterId?:string):{kind:'talk'|'interact';target:string}[] {
+    return this.waitingGoalEntries(target,characterId).map(({kind,target})=>({kind,target}));
+  }
   /**
    * 摆放点这次交互能不能推进任务：`objective` 声明的目标或 NPC 自己的 `actor`，
-   * 只要有一条进行中的任务指着它就算。场景用它把没有别的用途的摆放点也算成可交互对象。
+   * 只要有一条进行中的任务指着它、且目标还没记满就算。场景用它把没有别的用途的摆放点也算成可交互对象。
    */
   canInteract(target:string,_instance:string,characterId?:string):boolean {
     return this.waitingGoals(target,characterId).length>0;
   }
   /**
    * 玩家跟一个目标交互一次。原版里「去跟某人说话」「去对某个东西用一次」本身就是任务目标：
-   * 进行中任务里指到这个目标的按类型各记一次事实，任务日志与头顶标记随之更新。
+   * 进行中任务里指到这个目标、还没记满的按类型各记一次事实，任务日志与头顶标记随之更新。
+   * 已经记满的目标不再是候选，重复交互既不计数也不再产生任务事实。
    * 剧情事件接管这次交互时由剧情脚本自己推进目标，这里不记账（见 `StoryDirector.interact`）。
+   *
+   * `advanced` 表示这次交互有没有真的增加目标计数；`feedback` 是这些目标带的提示文本。
    */
-  interact(target:string,instance:string,characterId?:string):boolean {
+  interactWithFeedback(target:string,instance:string,characterId?:string):{advanced:boolean;feedback:string[]} {
     if(instance.startsWith('quest-target:')){
       const source=this.enemyStates.get(instance.slice('quest-target:'.length))?.capture,entity=this.storyWorld.entity(instance);
-      if(!source||source.visit!==this.storyWorld.visit||!entity||!this.storyWorld.visible(instance))return false;
+      if(!source||source.visit!==this.storyWorld.visit||!entity||!this.storyWorld.visible(instance))return {advanced:false,feedback:[]};
     }
-    const kinds=[...new Set(this.waitingGoals(target,characterId).map(goal=>goal.kind))];
-    if(!kinds.length)return false;
+    const entries=this.waitingGoalEntries(target,characterId);
+    if(!entries.length)return {advanced:false,feedback:[]};
+    const progressKey=(quest:CampaignQuest,goal:QuestGoal)=>quest.id+'\0'+goal.id;
+    const before=new Map(entries.map(entry=>[progressKey(entry.quest,entry.goal),this.questBook.state(entry.quest.id)?.goals[entry.goal.id]??0]));
+    const kinds=[...new Set(entries.map(entry=>entry.kind))];
     const remove=instance.startsWith('quest-target:')&&this.campaign.quests.some(quest=>this.status(quest.id)==='active'
       &&quest.targetChanges?.some(change=>change.actor===target&&change.removeAfterInteraction));
     const commands:StoryCommand[]=[
@@ -614,7 +629,20 @@ export class Session {
     this.transaction(()=>{
       this.applyStoryCommands(commands);
     });
-    return true;
+    const feedback:string[]=[];
+    let advanced=false;
+    for(const entry of entries){
+      const after=this.questBook.state(entry.quest.id)?.goals[entry.goal.id]??0;
+      if(after<=(before.get(progressKey(entry.quest,entry.goal))??0))continue;
+      advanced=true;
+      // 隐藏任务照常计数，但和任务面板、场景标记一样不在玩家眼前提示。
+      if(entry.quest.hidden||!entry.goal.feedbackText||feedback.includes(entry.goal.feedbackText))continue;
+      feedback.push(entry.goal.feedbackText);
+    }
+    return {advanced,feedback};
+  }
+  interact(target:string,instance:string,characterId?:string):boolean {
+    return this.interactWithFeedback(target,instance,characterId).advanced;
   }
   nextQuestFact(kind:QuestFact['kind'],target:string,source:string=kind):QuestFact {
     // 两个来源都要看：会话级 `factSequences` 是提交时同步的镜像，任务簿里那份才是权威。

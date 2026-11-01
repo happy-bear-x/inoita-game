@@ -26,13 +26,15 @@ export function questIsVisible(definition: QuestRules): boolean {
 
 interface QuestItemAmount { item: string; quantity: number }
 interface QuestHandoverItem extends QuestItemAmount { removal?: 'quantity' | 'all-matching' }
-interface QuestGoal {
+export interface QuestGoal {
   id: string;
   kind: 'talk' | 'item' | 'interact' | 'defeat' | 'recruit';
   target: string;
   characterId?: string;
   quantity: number;
   label?: string;
+  /** 交互推进这个目标时给玩家的屏幕提示；缺省不提示。 */
+  feedbackText?: string;
 }
 /** QuestDefinition adds presentation fields to this single set of domain rules. */
 export interface QuestRules {
