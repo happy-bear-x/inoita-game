@@ -79,6 +79,57 @@ export function verifyBagState(state: BagState, catalog: ItemCatalog): void {
   for (const recipe of state.recipes) if (knownItems && !catalog.recipes[recipe]) throw new Error('背包配方引用不存在');
 }
 
+/** 实例是否带有只属于单件物品的状态；带状态就不能把多件并成一条。 */
+function holdsInstanceState(entry: ItemInstance): boolean {
+  return !!entry.skill || entry.numbers !== undefined || entry.enhancement > 0 || entry.gems.length > 0;
+}
+/** 这件实例能否参与同 id 合并：目录允许叠加，且没有独立状态。 */
+function isStackableInstance(entry: ItemInstance, catalog: ItemCatalog): boolean {
+  const definition = catalog.items[entry.item];
+  return !!definition?.stackable && !definition.equipment && !holdsInstanceState(entry);
+}
+/**
+ * 把背包里同 id、可叠加、没有实例状态的多条实例并成一条：
+ * 数量加到保留的那条上，其余实例从袋页与全部页的格位里换成它的 id。
+ * 不修改传入的状态；没有可合并的条目时原样返回。
+ *
+ * 旧存档在可叠加物品还是逐件存放时，会把同一件物品散在多个格位里；读档时用它收拢。
+ * 带强化、宝石、词条或绑定技能（`skill`）的实例各算一件，不参与合并。
+ */
+export function mergeStackableInstances(state: BagState, catalog: ItemCatalog): BagState {
+  const seen = new Set<string>();
+  let mergeable = false;
+  for (const entry of state.instances) {
+    if (!isStackableInstance(entry, catalog)) continue;
+    if (seen.has(entry.item)) { mergeable = true; break; }
+    seen.add(entry.item);
+  }
+  if (!mergeable) return state;
+  const merged = structuredClone(state), keep = new Map<string, ItemInstance>(), dropped = new Map<string, string>(), instances: ItemInstance[] = [];
+  for (const entry of merged.instances) {
+    if (!isStackableInstance(entry, catalog)) { instances.push(entry); continue; }
+    const canonical = keep.get(entry.item);
+    if (!canonical) { keep.set(entry.item, entry); instances.push(entry); continue; }
+    canonical.quantity += entry.quantity;
+    dropped.set(entry.id, canonical.id);
+  }
+  merged.instances = instances;
+  // 同一页里可能同时留下保留实例和它原先的旧格位；每页只保留第一处引用，其余格位清空。
+  const rewrite = (cells: (string | undefined)[]): (string | undefined)[] => {
+    const next = cells.map(id => id === undefined ? undefined : dropped.get(id) ?? id), present = new Set<string>();
+    for (let index = 0; index < next.length; index += 1) {
+      const id = next[index];
+      if (id === undefined) continue;
+      if (present.has(id)) { next[index] = undefined; continue; }
+      present.add(id);
+    }
+    return next;
+  };
+  for (const pouch of INVENTORY_POUCHES) merged.pouches[pouch] = rewrite(merged.pouches[pouch]);
+  merged.allCells = rewrite(merged.allCells);
+  return merged;
+}
+
 /** Inventory transactions own both loose items and equipped instances. */
 export class Bag {
   readonly catalog: ItemCatalog;
@@ -128,6 +179,15 @@ export class Bag {
     // 先验克隆体再覆盖：抛错时现有背包原样保留，不会留下改了一半的状态。
     verifyBagState(restored,this.catalog);
     this.writeState(restored);
+  }
+
+  /** 读档后收拢旧档里分散的同 id 可叠加实例；没有可合并的条目时什么都不做。 */
+  mergeStackedInstances(): void {
+    const state = this.snapshot();
+    const merged = mergeStackableInstances(state, this.catalog);
+    if (merged === state) return;
+    verifyBagState(merged, this.catalog);
+    this.writeState(merged);
   }
   private snapshot(): BagState {
     return structuredClone({instances:[...this.instances.values()],pouches:this.pouches,allCells:this.all,worn:this.worn,
@@ -246,7 +306,7 @@ export class Bag {
     this.revision++;
     const stackable = this.catalog.items[item]?.stackable ?? true;
     if (stackable && !skill) {
-      const existing=this.orderedIds().map(id=>this.instances.get(id)!).find(entry=>entry.item===item&&!entry.skill);
+      const existing=this.orderedIds().map(id=>this.instances.get(id)!).find(entry=>entry.item===item&&!holdsInstanceState(entry));
       if(existing){existing.quantity+=quantity;return;}
       const entry=this.create(item);entry.quantity=quantity;this.put(entry.id);
     } else for(let index=0;index<quantity;index++)this.put(this.create(item,skill).id);
@@ -260,7 +320,7 @@ export class Bag {
   }
   receiveDrop(prepared:ItemInstance):void {
     if(!this.catalog.items[prepared.item]||this.catalog.items[prepared.item].pickup||prepared.quantity!==1)throw new Error('地面物品无效');
-    if(this.catalog.items[prepared.item].stackable&&!prepared.numbers){this.add(prepared.item);return;}
+    if(this.catalog.items[prepared.item].stackable&&!holdsInstanceState(prepared)){this.add(prepared.item);return;}
     const entry={...copy(prepared),id:`owned-${++this.serial}`};
     this.instances.set(entry.id,entry);this.put(entry.id);this.revision++;
   }

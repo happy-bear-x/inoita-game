@@ -114,6 +114,8 @@ export function captureSaveGame<World>(session:Session, world:World, summary:Sav
 /** 把存档灌回一个同职业的新会话。校验全部交给 `Session.restoreState`：它对背包、技能、任务、队伍逐项验。 */
 export function restoreSaveGame<World>(session:Session, game:SaveGame<World>):World {
   session.restoreState(game.session);
+  // 校验通过后再收拢：旧档里分散的同 id 可叠加实例并成一条；数量非法仍在上一行按原规则报错。
+  session.bag.mergeStackedInstances();
   return game.world;
 }
 
