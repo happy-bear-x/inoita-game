@@ -15,8 +15,9 @@ export const CLOUD_LOCK_DURATION_MS = 15 * 60 * 1000;
 /** 单个云存档和单账号总量上限；前者也是服务端请求体上限。 */
 export const CLOUD_SAVE_MAX_BYTES = 2 * 1024 * 1024;
 export const CLOUD_ACCOUNT_SAVE_QUOTA_BYTES = 16 * 1024 * 1024;
-/** 公开注册的兜底上限，防止被刷爆磁盘。 */
-export const CLOUD_MAX_ACCOUNTS = 500;
+
+export const CLOUD_NEW_PASSWORD_SAME_MESSAGE = '新密码不能与当前密码相同。';
+export const CLOUD_PASSWORD_CHANGED_MESSAGE = '密码已修改，其他设备需要重新登录。';
 
 const ACCOUNT_CHARACTER = /[\p{L}\p{N}_]/u;
 
@@ -79,6 +80,10 @@ export function cloudLockedMessage(retryAfterSeconds: number): string {
 
 export function cloudWrongPasswordMessage(remainingAttempts: number): string {
   return `账号或密码错误，还可尝试 ${Math.max(0, remainingAttempts)} 次。`;
+}
+
+export function cloudWrongCurrentPasswordMessage(remainingAttempts: number): string {
+  return `当前密码错误，还可尝试 ${Math.max(0, remainingAttempts)} 次。`;
 }
 
 export function cloudRateLimitedMessage(retryAfterSeconds: number): string {

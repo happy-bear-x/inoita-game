@@ -64,7 +64,8 @@ export function drawCloudSavePage(
     drawStatus(view, state, left, y + 84, width);
   } else {
     let y = panel.y + 55;
-    view.text(`已登录：${state.account}`, left, y, width, 30);
+    view.text(`已登录：${state.account}`, left, y, width - 180, 30);
+    view.button('修改密码', right - 160, panel.y + 40, 160, 56, actions.changePassword, { fontSize: 22, disabled });
     y += 48;
     view.text(state.cloudCount === undefined ? '云端存档：正在读取…' : `云端存档：${state.cloudCount} 个`,
       left, y, width, 22, TEXT_COLORS.secondary);

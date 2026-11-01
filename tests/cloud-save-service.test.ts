@@ -188,3 +188,28 @@ test('register rate limiting returns 429 with a retry hint',async t=>{
   assert.equal(JSON.parse(limited.body.toString()).error,'rate-limited');
   assert.ok(Number(limited.headers['retry-after'])>0);
 });
+
+test('password change verifies the current password and rotates the token',async t=>{
+  const f=await fixture();t.after(()=>f.close());
+  const registered=await request(f.port,'/__cloud/register',post({account:'Player_1',password:'secret1'}));
+  const first=JSON.parse(registered.body.toString()) as {token:string};
+  const auth={authorization:`Bearer ${first.token}`};
+  const wrong=await request(f.port,'/__cloud/password',{
+    method:'POST',headers:{'content-type':'application/json',...auth},
+    body:JSON.stringify({currentPassword:'wrong1',newPassword:'secret2'}),
+  });
+  assert.equal(wrong.status,401);
+  assert.equal(JSON.parse(wrong.body.toString()).remainingAttempts,2);
+  assert.equal((await request(f.port,'/__cloud/saves',{headers:auth})).status,200,'当前密码错误不清 token');
+  const changed=await request(f.port,'/__cloud/password',{
+    method:'POST',headers:{'content-type':'application/json',...auth},
+    body:JSON.stringify({currentPassword:'secret1',newPassword:'secret2'}),
+  });
+  assert.equal(changed.status,200);
+  const second=JSON.parse(changed.body.toString()) as {token:string};
+  assert.notEqual(second.token,first.token);
+  assert.equal((await request(f.port,'/__cloud/saves',{headers:auth})).status,401);
+  assert.equal((await request(f.port,'/__cloud/saves',{headers:{authorization:`Bearer ${second.token}`}})).status,200);
+  assert.equal((await request(f.port,'/__cloud/login',post({account:'Player_1',password:'secret1'}))).status,401);
+  assert.equal((await request(f.port,'/__cloud/login',post({account:'Player_1',password:'secret2'}))).status,200);
+});

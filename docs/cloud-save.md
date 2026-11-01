@@ -9,6 +9,7 @@
 3. 已登录后：
    - 「导入本机存档」把本机自动槽和 10 个手动槽里能读取的存档上传到云端。
    - 「下载云存档」把云端同号槽位写回本机；覆盖前会确认。
+   - 「修改密码」输入当前密码、新密码和确认新密码；成功后换发新 token，旧 token 立即失效。
 4. 返回或 Escape 回到存档槽页。
 
 同一账号只允许一个有效 token。在另一台设备成功登录后，旧设备的 token 立即失效；旧设备下次云操作会提示重新登录，但本机存档和游戏不受影响。输错密码或账号锁定不会踢掉当前已登录的会话。
@@ -19,6 +20,8 @@
 - 密码 6–64 个码点，区分大小写；没有找回渠道，界面会明确提示。
 - 连续输错 3 次锁定 15 分钟；锁定期内即使密码正确也返回锁定。锁状态写入账号文件，服务重启不会重置。
 - 成功登录清零失败计数；错误密码只增加计数，不替换当前会话。
+- 修改密码要验证当前密码；新密码不能与当前密码相同。当前密码输错也计入 3 次锁定；改密成功换发新 token，旧 token（包括发起请求的那个）失效。
+- token 30 天绝对过期，不续期；重新登录或改密会签发新的 30 天 token。
 
 ## HTTP 接口
 
@@ -28,6 +31,7 @@
 |---|---|---|---|
 | POST | `/__cloud/register` | 无 | 注册并返回 token |
 | POST | `/__cloud/login` | 无 | 登录；返回新 token，旧 token 失效 |
+| POST | `/__cloud/password` | Bearer | 修改密码；验证当前密码，返回新 token |
 | POST | `/__cloud/logout` | Bearer | 删除当前会话 |
 | GET | `/__cloud/saves` | Bearer | 列出云端槽位摘要；兼作 token 校验 |
 | PUT | `/__cloud/saves/:slot` | Bearer | 上传一个槽位；`:slot` 是 `auto` 或 `0..9` |
@@ -36,7 +40,7 @@
 错误响应统一是 `{ error, message, ... }`：
 
 - `400 invalid-input`：账号、密码、请求体或存档结构不合法。
-- `401 invalid-credentials`：密码错误，带 `remainingAttempts`。
+- `401 invalid-credentials`：密码错误（登录或改密的当前密码），带 `remainingAttempts`。
 - `401 unauthorized`：token 无效、过期或被新登录替换。
 - `404 save-not-found`：云端没有该槽。
 - `409 account-exists`：注册重名。
@@ -44,7 +48,6 @@
 - `415 unsupported-media-type`：不是 `application/json`。
 - `423 locked`：账号锁定，带 `retryAfterSeconds` 和 `Retry-After`。
 - `429 too-many-requests`：认证接口限流，带 `retryAfterSeconds` 和 `Retry-After`。
-- `503 cloud-full`：全局账号上限。
 - `503 cloud-unavailable`：云服务初始化失败。
 - `507 storage-full`：账号存档配额或磁盘空间不足。
 
@@ -65,8 +68,8 @@
 - 存档文件是 `{version:1, slot, format, bytes, summary, savedAt, updatedAt, game}`。
 - `sessions.json` 只保存 token 哈希、账号和过期时间；每账号最多一条。
 - 文件权限 0600，目录 0700；写入用同目录临时文件 + rename。
-- 单账号最多 11 个槽，单档 2 MiB，账号总配额 16 MiB；全局账号上限 500。
-- 会话 30 天绝对过期；每账号只保留一个有效会话；全局会话受账号上限约束。
+- 单账号最多 11 个槽，单档 2 MiB，账号总配额 16 MiB。
+- 会话 30 天绝对过期，不续期；每账号只保留一个有效会话。
 
 ## 安全
 
@@ -114,7 +117,7 @@ node tools/serve-built.ts --port 4104 --host 127.0.0.1 --cloud-data /tmp/inoita-
 
 ## 限制
 
-- 没有密码找回、修改密码、邮箱或手机号验证；忘记密码只能重新注册。
+- 没有密码找回、邮箱或手机号验证；忘记密码只能重新注册。修改密码需要当前密码。
 - 没有自动同步和冲突合并；同槽写入是 last-write-wins。
 - 没有逐槽手动操作界面，v1 是批量导入/下载并确认覆盖。
 - 不支持多个 Node 进程同时写同一个数据目录。

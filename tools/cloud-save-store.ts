@@ -9,7 +9,7 @@ import {
   CLOUD_ACCOUNT_SAVE_QUOTA_BYTES,
   CLOUD_LOGIN_MAX_FAILURES,
   CLOUD_LOCK_DURATION_MS,
-  CLOUD_MAX_ACCOUNTS,
+  CLOUD_NEW_PASSWORD_SAME_MESSAGE,
   CLOUD_SAVE_MAX_BYTES,
   cloudAccountIdentity,
   cloudSaveSlotId,
@@ -39,7 +39,6 @@ export type CloudStoreErrorCode =
   | 'save-not-found'
   | 'too-large'
   | 'storage-full'
-  | 'cloud-full'
   | 'cloud-unavailable'
   | 'server';
 
@@ -92,9 +91,8 @@ export interface CloudAuthResult {
 export interface CloudSaveStoreOptions {
   dataDir: string;
   now?: () => number;
-  /** 测试用：缩小配额和上限，避免造几十 MB 的存档。 */
+  /** 测试用：缩小配额，避免造几十 MB 的存档。 */
   saveQuotaBytes?: number;
-  maxAccounts?: number;
   sessionTtlMs?: number;
 }
 
@@ -103,6 +101,7 @@ export interface CloudSaveStore {
   readonly ready: Promise<void>;
   register(account: string, password: string): Promise<CloudAuthResult>;
   login(account: string, password: string): Promise<CloudAuthResult>;
+  changePassword(accountKey: string, currentPassword: string, newPassword: string): Promise<CloudAuthResult>;
   logout(token: string): Promise<void>;
   authenticate(token: string): Promise<{ accountKey: string; account: string }>;
   listSaves(accountKey: string): Promise<CloudSaveEntry[]>;
@@ -280,7 +279,6 @@ class CloudSaveStoreImpl implements CloudSaveStore {
   private readonly sessionFile: string;
   private readonly now: () => number;
   private readonly saveQuotaBytes: number;
-  private readonly maxAccounts: number;
   private readonly sessionTtlMs: number;
   private readonly sessionsByAccount = new Map<string, CloudSessionRecord>();
   private readonly sessionsByToken = new Map<string, CloudSessionRecord>();
@@ -298,7 +296,6 @@ class CloudSaveStoreImpl implements CloudSaveStore {
     this.sessionFile = path.join(this.dataDir, 'sessions.json');
     this.now = options.now ?? Date.now;
     this.saveQuotaBytes = options.saveQuotaBytes ?? CLOUD_ACCOUNT_SAVE_QUOTA_BYTES;
-    this.maxAccounts = options.maxAccounts ?? CLOUD_MAX_ACCOUNTS;
     this.sessionTtlMs = options.sessionTtlMs ?? SESSION_TTL_MS;
     this.ready = this.loadSessions().catch(error => {
       console.warn('云存档会话加载失败，按空会话启动', error);
@@ -352,15 +349,6 @@ class CloudSaveStoreImpl implements CloudSaveStore {
   private async writeAccount(key: string, record: CloudAccountRecord): Promise<void> {
     await mkdir(this.accountsDir, { recursive: true, mode: 0o700 });
     await atomicWrite(this.accountFile(key), JSON.stringify(record));
-  }
-
-  private async ensureAccountCapacity(): Promise<void> {
-    let files: string[];
-    try { files = await readdir(this.accountsDir); }
-    catch (error) { if (isMissing(error)) return; throw error; }
-    if (files.filter(file => file.endsWith('.json')).length >= this.maxAccounts) {
-      throw new CloudStoreError('cloud-full', '云端账号数量已达上限，请联系管理员。');
-    }
   }
 
   private async loadSessions(): Promise<void> {
@@ -433,7 +421,6 @@ class CloudSaveStoreImpl implements CloudSaveStore {
     const key = accountKey(normalized);
     return this.withLock('register', async () => {
       if (await this.readAccount(key)) throw new CloudStoreError('account-exists', '这个账号已被注册，请直接登录。');
-      await this.ensureAccountCapacity();
       const record: CloudAccountRecord = {
         version: 1,
         account: normalized,
@@ -491,6 +478,41 @@ class CloudSaveStoreImpl implements CloudSaveStore {
       throw new CloudStoreError('locked', '密码连续输错 3 次，账号已锁定。', { retryAfterSeconds: outcome.retryAfterSeconds });
     }
     return this.replaceSession(key, outcome.account);
+  }
+
+  async changePassword(key: string, currentPassword: string, newPassword: string): Promise<CloudAuthResult> {
+    await this.ready;
+    const problem = validateCloudPassword(newPassword);
+    if (problem) throw new CloudStoreError('invalid-input', problem);
+    return this.withLock(key, async () => {
+      const record = await this.readAccount(key);
+      if (!record) throw new CloudStoreError('unauthorized', '登录已失效，请重新登录。');
+      const nowMs = this.now();
+      if (!(await verifyPassword(currentPassword, record.passwordHash))) {
+        record.failedAttempts += 1;
+        if (record.failedAttempts >= CLOUD_LOGIN_MAX_FAILURES) {
+          record.lockedUntil = nowMs + CLOUD_LOCK_DURATION_MS;
+          try { await this.writeAccount(key, record); }
+          catch { throw new CloudStoreError('server', '账号锁定状态保存失败，请稍后重试。'); }
+          throw new CloudStoreError('locked', '密码连续输错 3 次，账号已锁定。', {
+            retryAfterSeconds: Math.ceil(CLOUD_LOCK_DURATION_MS / 1000),
+          });
+        }
+        try { await this.writeAccount(key, record); }
+        catch { throw new CloudStoreError('server', '账号状态保存失败，请稍后重试。'); }
+        throw new CloudStoreError('invalid-credentials', '当前密码错误。', {
+          remainingAttempts: CLOUD_LOGIN_MAX_FAILURES - record.failedAttempts,
+        });
+      }
+      if (newPassword === currentPassword) throw new CloudStoreError('invalid-input', CLOUD_NEW_PASSWORD_SAME_MESSAGE);
+      record.passwordHash = await hashPassword(newPassword);
+      record.failedAttempts = 0;
+      record.lockedUntil = 0;
+      try { await this.writeAccount(key, record); }
+      catch { throw new CloudStoreError('server', '密码保存失败，请稍后重试。'); }
+      // 改密后换发新 token，旧 token（包括发起这次请求的那个）立即失效。
+      return this.replaceSession(key, record.account);
+    });
   }
 
   async logout(token: string): Promise<void> {

@@ -45,6 +45,7 @@ function cloudStub(options:{
     get account(){return 'Player_1';},
     login:async()=>({ok:false,error:{code:'server',message:'unused'}}),
     register:async()=>({ok:false,error:{code:'server',message:'unused'}}),
+    changePassword:async()=>({ok:false,error:{code:'server',message:'unused'}}),
     logout:async()=>({ok:true,value:undefined}),
     list:async()=>({ok:true,value:entries}),
     upload:async(slot,game)=>{

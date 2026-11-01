@@ -31,7 +31,6 @@ const STORE_STATUS: Record<CloudStoreErrorCode, number> = {
   'save-not-found': 404,
   'too-large': 413,
   'storage-full': 507,
-  'cloud-full': 503,
   'cloud-unavailable': 503,
   server: 500,
 };
@@ -50,7 +49,6 @@ export interface CloudSaveServiceOptions {
   /** 测试用：注入 store，或缩小配额避免造大文件。 */
   store?: CloudSaveStore;
   saveQuotaBytes?: number;
-  maxAccounts?: number;
   sessionTtlMs?: number;
 }
 
@@ -235,7 +233,6 @@ export function createCloudSaveService(options: CloudSaveServiceOptions): CloudS
         dataDir: options.dataDir,
         now: options.now,
         saveQuotaBytes: options.saveQuotaBytes,
-        maxAccounts: options.maxAccounts,
         sessionTtlMs: options.sessionTtlMs,
       });
     } catch (error) {
@@ -300,6 +297,26 @@ export function createCloudSaveService(options: CloudSaveServiceOptions): CloudS
         if (!limited.ok) { rateLimited(res, limited.retryAfterSeconds); return; }
       }
       const result = await activeStore.login(credentials.account, credentials.password);
+      sendJson(res, 200, { token: result.token, account: result.account, expiresAt: result.expiresAt });
+      return;
+    }
+    if (pathname === '/__cloud/password' && req.method === 'POST') {
+      const auth = await authenticate(req, activeStore);
+      if (!requireJson(req, res)) return;
+      const body = await readBody(req, res, AUTH_BODY_LIMIT);
+      if (!body.ok) return;
+      const value = body.value && typeof body.value === 'object' && !Array.isArray(body.value)
+        ? body.value as { currentPassword?: unknown; newPassword?: unknown }
+        : {};
+      if (typeof value.currentPassword !== 'string' || typeof value.newPassword !== 'string') {
+        sendJson(res, 400, { error: 'invalid-input', message: '当前密码和新密码不能为空。' });
+        return;
+      }
+      if (rateLimit) {
+        const limited = checkRate(loginLimits, clientIp(req), rateLimit.login, LOGIN_WINDOW_MS, now());
+        if (!limited.ok) { rateLimited(res, limited.retryAfterSeconds); return; }
+      }
+      const result = await activeStore.changePassword(auth.accountKey, value.currentPassword, value.newPassword);
       sendJson(res, 200, { token: result.token, account: result.account, expiresAt: result.expiresAt });
       return;
     }

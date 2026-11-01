@@ -45,8 +45,7 @@ function reasonOf(reading: SaveRawReading): string {
 function stopBatch(error: CloudSaveError): boolean {
   return error.code === 'network' || error.code === 'timeout' || error.code === 'aborted'
     || error.code === 'unauthorized' || error.code === 'locked' || error.code === 'rate-limited'
-    || error.code === 'server' || error.code === 'unsupported' || error.code === 'storage-full'
-    || error.code === 'cloud-full';
+    || error.code === 'server' || error.code === 'unsupported' || error.code === 'storage-full';
 }
 
 function isQuotaError(error: unknown): boolean {

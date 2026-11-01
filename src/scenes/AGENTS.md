@@ -7,7 +7,7 @@ Phaser 场景层：驱动生命周期、转发输入，把 domain、rendering、
 - `world-scene.ts`：主世界，负责地图加载、角色移动、镜头与地图内交互。
 - `world-combat.ts`：世界内战斗的装配与更新，把战斗规则接到场景表现。
 - `story-stage-scene.ts`：剧情舞台，承接对白、选项和演出期间的输入锁定。
-- `menu-scene.ts`：标题与主菜单，含存档槽、云存档账号页与覆盖确认。
+- `menu-scene.ts`：标题与主菜单，含存档槽、云存档账号/改密页与覆盖确认。
 - `story-class-scene.ts`：新游戏的职业选择与角色预览。
 - `formal-ui-scene.ts`：正式 UI 场景，承载 HUD、背包装备、商店等菜单面板。
 - `audio-scene.ts`：音频设置页；跨场景常驻，切换场景不打断播放。

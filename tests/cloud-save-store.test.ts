@@ -19,7 +19,6 @@ async function fixture(): Promise<Fixture> {
     dataDir: root,
     now: () => clock.value,
     saveQuotaBytes: 64 * 1024,
-    maxAccounts: 8,
     sessionTtlMs: 60_000,
   });
   await store.ready;
@@ -137,4 +136,31 @@ test('a non-directory data dir fails closed instead of serving a half-initialize
   const file=path.join(root,'not-a-dir');
   await writeFile(file,'x');
   assert.throws(()=>createCloudSaveStore({dataDir:file}),/数据目录不可用/);
+});
+
+test('changing the password rotates the token and invalidates the old password',async t=>{
+  const f=await fixture();t.after(()=>rm(f.root,{recursive:true,force:true}));
+  const first=await f.store.register('Player_1','secret1');
+  const auth=await f.store.authenticate(first.token);
+  const changed=await f.store.changePassword(auth.accountKey,'secret1','secret2');
+  assert.notEqual(changed.token,first.token);
+  await expectError(f.store.authenticate(first.token),'unauthorized');
+  assert.equal((await f.store.authenticate(changed.token)).account,'Player_1');
+  const oldLogin=await expectError(f.store.login('Player_1','secret1'),'invalid-credentials');
+  assert.equal(oldLogin.remainingAttempts,2);
+  const logged=await f.store.login('Player_1','secret2');
+  assert.equal((await f.store.authenticate(logged.token)).account,'Player_1');
+});
+
+test('password change rejects same/invalid new passwords and wrong current passwords count toward the lock',async t=>{
+  const f=await fixture();t.after(()=>rm(f.root,{recursive:true,force:true}));
+  const first=await f.store.register('Player_1','secret1');
+  const auth=await f.store.authenticate(first.token);
+  await expectError(f.store.changePassword(auth.accountKey,'secret1','secret1'),'invalid-input');
+  await expectError(f.store.changePassword(auth.accountKey,'secret1','12345'),'invalid-input');
+  const firstWrong=await expectError(f.store.changePassword(auth.accountKey,'wrong1','secret2'),'invalid-credentials');
+  assert.equal(firstWrong.remainingAttempts,2);
+  await expectError(f.store.changePassword(auth.accountKey,'wrong2','secret2'),'invalid-credentials');
+  await expectError(f.store.changePassword(auth.accountKey,'wrong3','secret2'),'locked');
+  await f.store.authenticate(first.token);
 });

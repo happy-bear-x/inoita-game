@@ -264,6 +264,7 @@ interface CloudStubOptions {
   account?:string;
   entries?:CloudSaveEntry[];
   login?:CloudSavePort['login'];
+  changePassword?:CloudSavePort['changePassword'];
   list?:CloudSavePort['list'];
   upload?:CloudSavePort['upload'];
   download?:CloudSavePort['download'];
@@ -287,6 +288,13 @@ function cloudStub(options:CloudStubOptions={}):CloudHarness {
       calls.push('register');
       state.loggedIn=true;state.account=account;
       const session:CloudSession={account,token:`token-${account}`,expiresAt:1};
+      return {ok:true,value:session};
+    },
+    changePassword:async(currentPassword,newPassword)=>{
+      calls.push('change-password');
+      if(options.changePassword)return options.changePassword(currentPassword,newPassword);
+      state.loggedIn=true;
+      const session:CloudSession={account:state.account??'hero',token:'new-token',expiresAt:2};
       return {ok:true,value:session};
     },
     logout:async()=>{calls.push('logout');state.loggedIn=false;state.account=undefined;return {ok:true,value:undefined};},
@@ -396,4 +404,18 @@ test('cloud backup asks before overwriting and does not upload when cancelled',a
   assert.equal(cloud.uploads.length,0,'确认前不上传');
   f.clickModal('是');await settle();
   assert.deepEqual(cloud.uploads.map(item=>item.slot),[0]);
+});
+
+test('cloud password change uses the password form hook and keeps the player signed in',async()=>{
+  const cloud=cloudStub({loggedIn:true});
+  const f=fixture(undefined,cloud.port);
+  let asked=0;
+  f.app.promptPasswordChange=async()=>{asked+=1;return {currentPassword:'secret1',newPassword:'secret2'};};
+  f.click('开始游戏');f.click('云存档');await settle();
+  assert(f.view.buttons.some(button=>button.getData('label')==='修改密码'));
+  f.click('修改密码');await settle();
+  assert.equal(asked,1);
+  assert.ok(cloud.calls.includes('change-password'));
+  assert(f.view.texts.some(text=>text.includes('密码已修改')));
+  assert(f.view.buttons.some(button=>button.getData('label')==='导入本机存档'));
 });

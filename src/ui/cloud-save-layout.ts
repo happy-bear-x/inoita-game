@@ -32,6 +32,7 @@ export interface CloudPageActions {
   register(): void;
   upload(): void;
   download(): void;
+  changePassword(): void;
   logout(): void;
 }
 

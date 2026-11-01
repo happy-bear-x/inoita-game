@@ -138,3 +138,27 @@ test('storage failures only lose persistence, not the in-memory session',async()
   client.forget();
   assert.equal(client.loggedIn,false);
 });
+
+test('password change updates the stored token while a wrong current password keeps the session',async()=>{
+  const store=memoryStore();
+  let mode:'wrong'|'ok'='wrong';
+  const fake=fakeFetch(call=>{
+    if(call.url.endsWith('/login'))return json({account:'Player_1',token:validToken,expiresAt:1});
+    if(mode==='wrong')return json({error:'invalid-credentials',remainingAttempts:2},401);
+    return json({account:'Player_1',token:'n'.repeat(43),expiresAt:2});
+  });
+  const client=new CloudSaveClient({baseUrl:base,fetch:fake.fetch,storage:store});
+  assert.ok((await client.login('Player_1','secret1')).ok);
+  const wrong=await client.changePassword('wrong1','secret2');
+  assert.equal(wrong.ok,false);if(wrong.ok)return;
+  assert.equal(wrong.error.code,'invalid-credentials');
+  assert.equal(wrong.error.remainingAttempts,2);
+  assert.match(wrong.error.message,/当前密码错误/);
+  assert.equal(client.loggedIn,true);
+  assert.equal(store.value?.token,validToken,'当前密码错误不清 token');
+  mode='ok';
+  const changed=await client.changePassword('secret1','secret2');
+  assert.ok(changed.ok);
+  assert.equal(store.value?.token,'n'.repeat(43));
+  assert.equal(client.loggedIn,true);
+});

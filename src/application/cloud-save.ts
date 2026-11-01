@@ -4,6 +4,7 @@ import {
   cloudLockedMessage,
   cloudRateLimitedMessage,
   cloudSaveSlotId,
+  cloudWrongCurrentPasswordMessage,
   cloudWrongPasswordMessage,
   parseCloudSaveSlotId,
 } from '../domain/cloud-save.ts';
@@ -25,7 +26,6 @@ export type CloudSaveErrorCode =
   | 'invalid-input'
   | 'too-large'
   | 'storage-full'
-  | 'cloud-full'
   | 'not-found'
   | 'server';
 
@@ -60,6 +60,7 @@ export interface CloudSavePort {
   readonly loggedIn: boolean;
   login(account: string, password: string, signal?: AbortSignal): Promise<CloudResult<CloudSession>>;
   register(account: string, password: string, signal?: AbortSignal): Promise<CloudResult<CloudSession>>;
+  changePassword(currentPassword: string, newPassword: string, signal?: AbortSignal): Promise<CloudResult<CloudSession>>;
   logout(signal?: AbortSignal): Promise<CloudResult<void>>;
   list(signal?: AbortSignal): Promise<CloudResult<CloudSaveEntry[]>>;
   upload(slot: SaveSlotRef, game: unknown, signal?: AbortSignal): Promise<CloudResult<CloudSaveEntry>>;
@@ -168,8 +169,6 @@ function errorFromResponse(status: number, data: unknown): CloudSaveError {
       return { code: 'too-large', message: message ?? '存档过大，无法上传。' };
     case 'storage-full':
       return { code: 'storage-full', message: message ?? '云端存档空间不足。' };
-    case 'cloud-full':
-      return { code: 'cloud-full', message: message ?? '云端账号数量已达上限。' };
     case 'save-not-found':
     case 'not-found':
       return { code: 'not-found', message: message ?? '云端没有这个存档。' };
@@ -298,8 +297,12 @@ export class CloudSaveClient implements CloudSavePort {
         try { data = JSON.parse(text); } catch { data = undefined; }
       }
       if (!response.ok) {
-        if (response.status === 401 && options.auth && serial === this.requestSerial) this.forget();
-        return { ok: false, error: errorFromResponse(response.status, data) };
+        const error = errorFromResponse(response.status, data);
+        // 改密时“当前密码错误”也是 401，但 token 本身有效，不能把玩家踢下线。
+        if (response.status === 401 && options.auth && serial === this.requestSerial && error.code !== 'invalid-credentials') {
+          this.forget();
+        }
+        return { ok: false, error };
       }
       return { ok: true, value: data as T };
     } catch {
@@ -332,6 +335,25 @@ export class CloudSaveClient implements CloudSavePort {
   async register(account: string, password: string, signal?: AbortSignal): Promise<CloudResult<CloudSession>> {
     const result = await this.request<unknown>('/register', { method: 'POST', body: { account, password }, signal });
     if (!result.ok) return result;
+    const session = this.sessionFrom(result.value);
+    if (!session) return fail('server', '云存档服务返回了无效的登录信息。');
+    this.setSession(session);
+    return { ok: true, value: session };
+  }
+
+  async changePassword(currentPassword: string, newPassword: string, signal?: AbortSignal): Promise<CloudResult<CloudSession>> {
+    const result = await this.request<unknown>('/password', {
+      method: 'POST', body: { currentPassword, newPassword }, auth: true, signal,
+    });
+    if (!result.ok) {
+      if (result.error.code === 'invalid-credentials') {
+        return {
+          ok: false,
+          error: { ...result.error, message: cloudWrongCurrentPasswordMessage(result.error.remainingAttempts ?? 1) },
+        };
+      }
+      return result;
+    }
     const session = this.sessionFrom(result.value);
     if (!session) return fail('server', '云存档服务返回了无效的登录信息。');
     this.setSession(session);
