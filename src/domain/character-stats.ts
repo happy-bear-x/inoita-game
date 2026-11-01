@@ -3,7 +3,7 @@ import type { ItemNotice } from './item-application.ts';
 import { boundedHealth } from './status-hud.ts';
 import { Bag, type BagRules } from './bag.ts';
 import type { Equipment, EquipmentSlot, ItemCatalog, ItemInstance } from './items.ts';
-import { calculateEffectiveDefense,calculateMagicResistance,eligibleShieldBlock } from './physical-hit.ts';
+import { calculateEffectiveDefense,calculateMagicResistance,eligibleShieldBlock,type PhysicalFighter } from './physical-hit.ts';
 import { applyAttributeModifiers, type AttributeModifier } from './combat-operation.ts';
 import { chaosThreshold, doubleThreshold, enhancementOdds, ENHANCEMENT_ROLL_MAX } from './enhancement.ts';
 
@@ -205,6 +205,17 @@ export function calculateCharacter(catalog:CharacterStatsCatalog, items:ItemCata
     evasionRate:evasionRateFor(bonusOf('evasionBonus'),attributes.dexterity,level),
     weaponBlock:Math.max(0,DEFAULT_WEAPON_BLOCK+bonusOf('weaponBlock')),shieldBlock:eligibleShieldBlock(bonusOf('shieldBlock'),offhandShield),
     offhandShield};
+}
+
+/** 角色面板转成战斗取值的基础形态；被动、增益和副手资格由战斗条件继续叠加。 */
+export function fighterBaseFromPanel(panel:CharacterPanel,level:number,zealotRate=0):PhysicalFighter {
+  return {level,physicalAttack:panel.physicalAttack,defense:panel.baseDefense,defenseRate:panel.defenseRate,
+    magicAttack:panel.magicAttack,maxHealth:panel.maxHealth,hitBase:panel.hitBase,hitBonus:panel.hitBonus,
+    evasionBase:panel.evasionBase,evasionBonus:panel.evasionBonus,criticalRate:panel.criticalRate,
+    criticalResistance:panel.criticalResistance,criticalDamage:panel.criticalDamage,
+    criticalDamageResistance:panel.criticalDamageResistance,weaponBlock:panel.weaponBlock,
+    shieldBlock:panel.shieldBlock,physicalResistance:panel.physicalResistance,
+    magicResistance:panel.baseMagicResistance,zealotRate};
 }
 
 /**

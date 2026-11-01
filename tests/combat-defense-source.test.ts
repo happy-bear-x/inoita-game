@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {registerHooks} from 'node:module';
 import test from 'node:test';
-import {calculateCharacter,type CharacterPanel,type CharacterStatsCatalog} from '../src/domain/character-stats.ts';
+import {calculateCharacter,fighterBaseFromPanel,type CharacterPanel,type CharacterStatsCatalog} from '../src/domain/character-stats.ts';
 import {CombatConditions} from '../src/domain/combat-conditions.ts';
 import {calculateEffectiveDefense,type PhysicalFighter} from '../src/domain/physical-hit.ts';
 import type {BattleBuffEffect} from '../src/domain/battle.ts';
@@ -41,7 +41,8 @@ function host(memberPanel:CharacterPanel,conditions=new CombatConditions(),passi
   const context={conditions,memberOf:(id:string)=>id==='player'?member:undefined,
     hero:{level:99,get panel():never{throw new Error('Enemy defense must not read the hero panel');}},
     arena:[{key:'enemy',definition:{}}],roster:{enemySnapshot:()=>enemy},partyPassives:()=>passives};
-  return {conditions,enemy,context,fighter:()=>method('partyFighter').call(context,'player') as PhysicalFighter,
+  return {conditions,enemy,context,
+    fighter:()=>conditions.fighter('player',fighterBaseFromPanel(memberPanel,10),passives,{offhandShield:memberPanel.offhandShield}),
     attribute:(id:string,key:string)=>method('actorAttribute').call(context,id,key) as number};
 }
 

@@ -75,7 +75,7 @@ import { skillClipName, skillClips, skillPlaybackEvents, skillSoundNames } from 
 import { costumeRecipe, hasOffhandShield } from '../domain/wardrobe.ts';
 import type { ActorDefinition, ClipName, Facing } from '../domain/content.ts';
 import type { BattleCharacter } from '../domain/character-stats.ts';
-import { equipmentPower } from '../domain/character-stats.ts';
+import { equipmentPower, fighterBaseFromPanel } from '../domain/character-stats.ts';
 import { baseOffhandAttackChance,chooseDualWield,offhandPhysicalAttack } from '../domain/dual-wield.ts';
 import { adjacentLivingMember, type CompanionMember } from '../domain/party.ts';
 import type { Point } from '../domain/navigation.ts';
@@ -1608,12 +1608,8 @@ captureStoryActors():SceneActorState[] {
   }
   private partyFighter(id:string):PhysicalFighter|undefined {
     const member=this.memberOf(id);if(!member||member.player.health<=0&&!this.hitResolution?.isAwaitingDefeat(id))return;
-    const panel=member.panel,level=member.level,passives=this.partyPassives(id);
-    return this.conditions.fighter(id,{level,physicalAttack:panel.physicalAttack,defense:panel.baseDefense,defenseRate:panel.defenseRate,magicAttack:panel.magicAttack,maxHealth:panel.maxHealth,hitBase:panel.hitBase,hitBonus:panel.hitBonus,
-      evasionBase:panel.evasionBase,evasionBonus:panel.evasionBonus,criticalRate:panel.criticalRate,criticalResistance:panel.criticalResistance,
-      criticalDamage:panel.criticalDamage,criticalDamageResistance:panel.criticalDamageResistance,
-      weaponBlock:panel.weaponBlock,shieldBlock:panel.shieldBlock,physicalResistance:panel.physicalResistance,magicResistance:panel.baseMagicResistance,
-      zealotRate:this.combatProcs(id).zealotRate},passives,
+    const panel=member.panel,passives=this.partyPassives(id);
+    return this.conditions.fighter(id,fighterBaseFromPanel(panel,member.level,this.combatProcs(id).zealotRate),passives,
       {offhandShield:panel.offhandShield});
   }
   private actorAttributes(id:string):CombatActorAttributes|undefined {
