@@ -3,6 +3,7 @@ import Phaser from 'phaser';
 import type { StoryContext } from '../application/ports.ts';
 import type { AssetLease } from '../application/assets.ts';
 import type { ActorDefinition, Facing, WorldMap } from '../domain/content.ts';
+import type { SceneActorState } from '../domain/scene-snapshot.ts';
 import { validateStoryStageSnapshot, type StoryCurtain, type StoryStageSnapshot } from '../domain/story-performance.ts';
 import { assertScenePlan,planScene } from '../domain/scene-plan.ts';
 import { NavigationWorld } from '../domain/navigation-world.ts';
@@ -96,6 +97,22 @@ export class StoryStageScene extends Phaser.Scene {
   }
   /** 舞台画面是否已经完全不透明地盖住正式世界。 */
   get worldCovered(): boolean { return this.covered; }
+  /**
+   * 战斗中的敌人快照只带战斗外观，可能缺少剧情姿态（例如 `demon-lord-attack`）。
+   * 舞台统一用剧情外观绘制敌人；取不到剧情外观时再退回快照里的战斗外观。
+   * 玩家、队员和手写演员仍按原来的顺序选外观。
+   */
+  private appearanceFor(actor: SceneActorState, stage: StoryStageSnapshot, playerAppearance?: ActorDefinition): ActorDefinition | undefined {
+    const storyAppearance = () => this.app.world.actors[this.app.session.storyWorld.actorAppearance(actor.actor)];
+    if (this.isWorldEnemy(actor, stage)) return storyAppearance() ?? actor.appearance;
+    return actor.appearance ?? (actor.id === 'player' ? playerAppearance : undefined) ?? storyAppearance();
+  }
+  private isWorldEnemy(actor: SceneActorState, stage: StoryStageSnapshot): boolean {
+    if (actor.enemyId || actor.enemyKey) return true;
+    const aliases = new Set(stage.bindings.filter(([, id]) => id === actor.id).map(([alias]) => alias));
+    return stage.cast.some(member => member.binding === 'world' && aliases.has(member.id)
+      && (!!member.enemyId || member.actor.startsWith('enemy-')));
+  }
   /** 新地图加载完成前保留上一幅画面；迟到的加载只释放自己的租约。 */
   async showStage(stage: StoryStageSnapshot, signal: AbortSignal, playerAppearance?: ActorDefinition): Promise<void> {
     signal.throwIfAborted(); validateStoryStageSnapshot(stage);
@@ -109,8 +126,7 @@ export class StoryStageScene extends Phaser.Scene {
     const appearances = new Map<string, ActorDefinition>();
     const needed: PendingAsset[] = [...mapSurfaceAssets(map, this.app.world.props), ...effectAssets(this.app.world.storyEffects ?? {})];
     for (const actor of actors) {
-      const appearance = actor.appearance ?? (actor.id === 'player' ? playerAppearance : undefined)
-        ?? this.app.world.actors[this.app.session.storyWorld.actorAppearance(actor.actor)];
+      const appearance = this.appearanceFor(actor, stage, playerAppearance);
       if (!appearance) throw new Error('角色资源缺失：' + actor.actor);
       appearances.set(actor.id, appearance);
       needed.push(...characterAssets(appearance).filter(asset => asset.file));
@@ -212,7 +228,7 @@ export class StoryStageScene extends Phaser.Scene {
     try {
       for (const actor of actors) {
         const existing = this.characters.get(actor.id);
-        const appearance = actor.appearance ?? this.app.world.actors[this.app.session.storyWorld.actorAppearance(actor.actor)];
+        const appearance = this.appearanceFor(actor, stage);
         const equipped = actor.id === 'player' || !!actor.memberId;
         if (existing && existing.entity.actor === actor.actor && (equipped || !appearance
           || existing.actor.id === appearance.id && JSON.stringify(existing.actor.clips) === JSON.stringify(appearance.clips))) continue;
