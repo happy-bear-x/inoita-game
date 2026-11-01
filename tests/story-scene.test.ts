@@ -197,6 +197,18 @@ test('pose reduction preserves a held last frame and resumes idle for a non-held
   assert.deepEqual([player.clip,player.animationProgress,player.animationPlaying],['idle-south',0,true]);
 });
 
+test('a companion without a party instance binds the world entity of the same character',()=>{
+  const snapshot=resolveStoryScene(stage([member('story-olaf',{actor:'story-olaf',characterId:'npc-249',
+    memberId:'story-mercenary-olaf',x:456,y:136})]),source([
+    actor('entity:story-character-npc-249',{actor:'story-olaf',characterId:'npc-249',
+      worldEntityId:'story-character-npc-249',x:456,y:168})
+  ]));
+  assert.equal(boundSceneActor(snapshot,'story-olaf')?.id,'entity:story-character-npc-249');
+  const appeared=applyStorySceneAction(snapshot,{type:'appear',target:'story-olaf',x:456,y:136,facing:'south',
+    worldEntityId:'story-character-npc-249'});
+  assert.equal(appeared.scene.actors.filter(actor=>actor.worldEntityId==='story-character-npc-249'&&actor.visible).length,1);
+});
+
 test('an ambiguous character number fails instead of taking the first matching actor',()=>{
   const snapshot=source([
     actor('entity:left',{actor:'guard',characterId:'guard-character',worldEntityId:'left',x:20,y:20}),

@@ -13,9 +13,13 @@ import {placementAuthority} from './actor-authority.ts';
  */
 export function findSceneActor(scene: SceneSnapshot, member: StoryCastMember): SceneActorState | undefined {
   if (member.worldEntityId) return scene.actors.find(actor => !actor.removed && actor.worldEntityId === member.worldEntityId);
-  const matches = scene.actors.filter(actor => !actor.removed && (member.memberId ? actor.memberId === member.memberId
+  let matches = scene.actors.filter(actor => !actor.removed && (member.memberId ? actor.memberId === member.memberId
     : member.characterId ? actor.characterId === member.characterId
     : member.enemyId ? actor.enemyId === member.enemyId : actor.actor === member.actor));
+  // 剧情伙伴也可能以世界实体的身份留在图上，而没有队伍成员的 memberId。
+  // 队员身份找不到时再按人物编号认同一个人，避免另建一份占位演员再跟它抢同一个世界实例。
+  if (!matches.length && member.memberId && member.characterId)
+    matches = scene.actors.filter(actor => !actor.removed && actor.characterId === member.characterId);
   const positioned = matches.filter(actor => !actor.unpositioned);
   const candidates = positioned.length ? positioned : matches;
   if (candidates.length <= 1) return candidates[0];
