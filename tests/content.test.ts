@@ -23,11 +23,27 @@ function navigationFor(map: WorldMap, entities = map.entities): NavigationWorld 
 const root=fileURLToPath(new URL('../public/',import.meta.url));
 const read=<T = WorldMap>(file: string): T=>JSON.parse(fs.readFileSync(path.join(root,file),'utf8')) as T;
 const world=read<WorldIndex>('content/world.json'),campaign=read<Campaign>('content/campaign.json');
+const storyInterface=read<{portraits:Record<string,string>}>('content/story-interface.json');
 
 test('dialogue portraits resolve to exported files and player identity is separate from NPC professions',()=>{
  assert.equal(world.actors.kiyan.portrait,'kiyan');assert.equal(world.actors.saint.portrait,'saint');
  assert.equal(world.actors.darius.portrait,'darius');assert.equal(world.actors['shadow-soldier'].portrait,null);
- assert.equal(Object.keys(world.portraits).length,12);
+ assert.equal(Object.keys(world.portraits).length,13);
+ const portraitActors:Record<string,string>={
+  'story-alexander-ed2defb7':'alexander-057','story-azad-c7a37952':'azad-053',
+  'story-cornette-db80543f':'cornette-199','story-veteran-eaf2cb52':'veteran-498',
+  'story-eara-e221699c':'saint','story-eara-a64df27b':'saint',
+  'story-eara-7c52b73b':'saint','story-eara-22d61f15':'saint',
+  'story-eara-e221699c-disguise-mask':'saint',
+  'story-olaf-d48a31ff':'olaf','story-olaf-d48a31ff-disguise-mask':'olaf',
+  'mercenary-portia':'portia','mercenary-azad':'azad-053','mercenary-shin':'shinty',
+  'mercenary-stranger-of-hwagan':'azad-053','mercenary-olaf':'olaf',
+ };
+ for(const [actor,portrait] of Object.entries(portraitActors))assert.equal(world.actors[actor].portrait,portrait,actor);
+ for(const actor of ['story-kiyan-815ba0f7','story-eara-0079206d','story-lying-kiyan-75e14e3d','story-the-channel-df7b0415'])assert.equal(world.actors[actor].portrait,null,actor);
+ assert.deepEqual(world.portraits.olaf,{file:'assets/portraits/olaf.png',width:508,height:508});
+ assert.equal(storyInterface.portraits.olaf,'assets/ui/story/portrait-olaf.png');
+ for(const file of [world.portraits.olaf.file,storyInterface.portraits.olaf])assert.ok(fs.existsSync(path.join(root,file)),file);
  for(const portrait of Object.values(world.portraits)) {
   assert.ok(fs.existsSync(path.join(root,portrait.file)),portrait.file);
  }
