@@ -117,7 +117,7 @@
 
 ## 云存档
 
-云存档是旁路能力：`application/cloud-save.ts` 负责 HTTP、token、改密和结果化错误，`application/cloud-save-sync.ts` 负责逐槽上传/下载、覆盖确认和部分失败；`domain/cloud-save.ts` 定义账号、密码、槽位和锁定规则。服务端 `tools/cloud-save-store.ts` 把账号、单会话、scrypt 哈希和存档写到 `.cloud-save/`，`tools/cloud-save-service.ts` 提供 `/__cloud` 路由、CORS、限流和请求体上限。入口在存档槽页右上角，页面由 `ui/cloud-save-layout.ts` 和 `ui/phaser/cloud-save-panel.ts` 绘制。启动和游戏循环不调用云客户端；服务不可达只影响云页。详见 [云存档与账号](cloud-save.md)。
+云存档是旁路能力：`application/cloud-save.ts` 负责 HTTP、token、懒续期、改密和结果化错误，`application/cloud-save-sync.ts` 负责逐槽上传/下载、覆盖确认和部分失败；`domain/cloud-save.ts` 定义账号、密码、槽位和锁定规则。服务端 `tools/cloud-save-store.ts` 把账号、单会话、scrypt 哈希和存档写到 `.cloud-save/`，`tools/cloud-save-service.ts` 提供 `/__cloud` 路由、CORS、限流和请求体上限。入口在存档槽页右上角，页面由 `ui/cloud-save-layout.ts` 和 `ui/phaser/cloud-save-panel.ts` 绘制。启动和游戏循环不调用云客户端；服务不可达只影响云页。详见 [云存档与账号](cloud-save.md)。
 
 ## 构建、缓存与部署
 

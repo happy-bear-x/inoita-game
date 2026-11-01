@@ -262,21 +262,31 @@ const cloudEntry=(slot:SaveSlotRef):CloudSaveEntry=>({
 interface CloudStubOptions {
   loggedIn?:boolean;
   account?:string;
+  expiresAt?:number;
+  absoluteExpiresAt?:number;
   entries?:CloudSaveEntry[];
   login?:CloudSavePort['login'];
   changePassword?:CloudSavePort['changePassword'];
+  refresh?:CloudSavePort['refresh'];
   list?:CloudSavePort['list'];
   upload?:CloudSavePort['upload'];
   download?:CloudSavePort['download'];
 }
 interface CloudHarness {port:CloudSavePort;calls:string[];uploads:{slot:SaveSlotRef;game:unknown}[];downloads:SaveSlotRef[]}
 function cloudStub(options:CloudStubOptions={}):CloudHarness {
-  const state={loggedIn:options.loggedIn??false,account:options.account??(options.loggedIn?'hero':undefined)};
+  const state={
+    loggedIn:options.loggedIn??false,
+    account:options.account??(options.loggedIn?'hero':undefined),
+    expiresAt:options.expiresAt,
+    absoluteExpiresAt:options.absoluteExpiresAt,
+  };
   let entries=options.entries??[];
   const calls:string[]=[],uploads:{slot:SaveSlotRef;game:unknown}[]=[],downloads:SaveSlotRef[]=[];
   const port:CloudSavePort={
     get loggedIn(){return state.loggedIn;},
     get account(){return state.account;},
+    get expiresAt(){return state.expiresAt;},
+    get absoluteExpiresAt(){return state.absoluteExpiresAt;},
     login:async(account,password)=>{
       calls.push('login');
       if(options.login)return options.login(account,password);
@@ -295,6 +305,15 @@ function cloudStub(options:CloudStubOptions={}):CloudHarness {
       if(options.changePassword)return options.changePassword(currentPassword,newPassword);
       state.loggedIn=true;
       const session:CloudSession={account:state.account??'hero',token:'new-token',expiresAt:2};
+      return {ok:true,value:session};
+    },
+    refresh:async()=>{
+      calls.push('refresh');
+      if(options.refresh)return options.refresh();
+      const expiresAt=Date.now()+30*24*60*60*1000;
+      const absoluteExpiresAt=Date.now()+90*24*60*60*1000;
+      state.expiresAt=expiresAt;state.absoluteExpiresAt=absoluteExpiresAt;
+      const session:CloudSession={account:state.account??'hero',token:'renewed-token',expiresAt,absoluteExpiresAt};
       return {ok:true,value:session};
     },
     logout:async()=>{calls.push('logout');state.loggedIn=false;state.account=undefined;return {ok:true,value:undefined};},
@@ -417,5 +436,46 @@ test('cloud password change uses the password form hook and keeps the player sig
   assert.equal(asked,1);
   assert.ok(cloud.calls.includes('change-password'));
   assert(f.view.texts.some(text=>text.includes('密码已修改')));
+  assert(f.view.buttons.some(button=>button.getData('label')==='导入本机存档'));
+});
+
+test('a near-expiry cloud session renews before listing',async()=>{
+  const now=Date.now();
+  const cloud=cloudStub({
+    loggedIn:true,
+    expiresAt:now+24*60*60*1000,
+    absoluteExpiresAt:now+60*24*60*60*1000,
+  });
+  const f=fixture(undefined,cloud.port);
+  f.click('开始游戏');f.click('云存档');await settle();
+  assert.ok(cloud.calls.includes('refresh'));
+  assert.ok(cloud.calls.indexOf('refresh')<cloud.calls.indexOf('list'));
+});
+
+test('a session far from expiry lists without renewal',async()=>{
+  const now=Date.now();
+  const cloud=cloudStub({
+    loggedIn:true,
+    expiresAt:now+30*24*60*60*1000,
+    absoluteExpiresAt:now+90*24*60*60*1000,
+  });
+  const f=fixture(undefined,cloud.port);
+  f.click('开始游戏');f.click('云存档');await settle();
+  assert.ok(!cloud.calls.includes('refresh'));
+  assert.ok(cloud.calls.includes('list'));
+});
+
+test('a network error during renewal still lets the list run',async()=>{
+  const now=Date.now();
+  const cloud=cloudStub({
+    loggedIn:true,
+    expiresAt:now+24*60*60*1000,
+    absoluteExpiresAt:now+60*24*60*60*1000,
+    refresh:async()=>({ok:false,error:{code:'network',message:'无法连接云存档服务，请检查网络。'}}),
+  });
+  const f=fixture(undefined,cloud.port);
+  f.click('开始游戏');f.click('云存档');await settle();
+  assert.ok(cloud.calls.includes('refresh'));
+  assert.ok(cloud.calls.includes('list'));
   assert(f.view.buttons.some(button=>button.getData('label')==='导入本机存档'));
 });

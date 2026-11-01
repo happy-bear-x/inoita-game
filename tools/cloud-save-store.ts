@@ -11,6 +11,9 @@ import {
   CLOUD_LOCK_DURATION_MS,
   CLOUD_NEW_PASSWORD_SAME_MESSAGE,
   CLOUD_SAVE_MAX_BYTES,
+  CLOUD_SESSION_ABSOLUTE_TTL_MS,
+  CLOUD_SESSION_RENEW_WINDOW_MS,
+  CLOUD_SESSION_TTL_MS,
   cloudAccountIdentity,
   cloudSaveSlotId,
   normalizeCloudAccount,
@@ -20,7 +23,6 @@ import {
 } from '../src/domain/cloud-save.ts';
 import type { SaveSlotRef, SaveSummary } from '../src/domain/save-game.ts';
 
-const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const SESSION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const SCRYPT_N = 32768;
 const SCRYPT_R = 8;
@@ -69,8 +71,13 @@ export interface CloudSessionRecord {
   tokenHash: string;
   accountKey: string;
   account: string;
+  /** 当前 token 的签发时刻。 */
   createdAt: number;
+  /** 会话链起点：登录、注册或改密时刻；续期不改变它。 */
+  startedAt: number;
   expiresAt: number;
+  /** 会话链的硬上限；到达后必须重新登录。 */
+  absoluteExpiresAt: number;
 }
 
 export interface CloudSaveEntry {
@@ -86,7 +93,12 @@ export interface CloudAuthResult {
   token: string;
   account: string;
   expiresAt: number;
+  absoluteExpiresAt: number;
 }
+
+export type CloudRefreshResult =
+  | { renewed: true; token: string; account: string; expiresAt: number; absoluteExpiresAt: number }
+  | { renewed: false; account: string; expiresAt: number; absoluteExpiresAt: number };
 
 export interface CloudSaveStoreOptions {
   dataDir: string;
@@ -94,6 +106,7 @@ export interface CloudSaveStoreOptions {
   /** 测试用：缩小配额，避免造几十 MB 的存档。 */
   saveQuotaBytes?: number;
   sessionTtlMs?: number;
+  sessionAbsoluteTtlMs?: number;
 }
 
 export interface CloudSaveStore {
@@ -103,7 +116,8 @@ export interface CloudSaveStore {
   login(account: string, password: string): Promise<CloudAuthResult>;
   changePassword(accountKey: string, currentPassword: string, newPassword: string): Promise<CloudAuthResult>;
   logout(token: string): Promise<void>;
-  authenticate(token: string): Promise<{ accountKey: string; account: string }>;
+  authenticate(token: string): Promise<{ accountKey: string; account: string; tokenHash: string }>;
+  refreshSession(accountKey: string, tokenHash: string): Promise<CloudRefreshResult>;
   listSaves(accountKey: string): Promise<CloudSaveEntry[]>;
   uploadSave(accountKey: string, slot: SaveSlotRef, game: unknown): Promise<CloudSaveEntry>;
   downloadSave(accountKey: string, slot: SaveSlotRef): Promise<unknown>;
@@ -251,12 +265,19 @@ function normalizeSession(value: unknown): CloudSessionRecord | undefined {
   if (typeof record.accountKey !== 'string' || !/^[0-9a-f]{64}$/.test(record.accountKey)) return undefined;
   if (typeof record.account !== 'string' || typeof record.createdAt !== 'number' || typeof record.expiresAt !== 'number') return undefined;
   if (!Number.isFinite(record.createdAt) || !Number.isFinite(record.expiresAt)) return undefined;
+  // 旧会话没有会话链字段：把创建时刻当作链起点，总上限按默认 90 天补。
+  const startedAt = typeof record.startedAt === 'number' && Number.isFinite(record.startedAt)
+    ? record.startedAt : record.createdAt;
+  const absoluteExpiresAt = typeof record.absoluteExpiresAt === 'number' && Number.isFinite(record.absoluteExpiresAt)
+    ? record.absoluteExpiresAt : startedAt + CLOUD_SESSION_ABSOLUTE_TTL_MS;
   return {
     tokenHash: record.tokenHash,
     accountKey: record.accountKey,
     account: record.account,
     createdAt: record.createdAt,
+    startedAt,
     expiresAt: record.expiresAt,
+    absoluteExpiresAt,
   };
 }
 
@@ -280,6 +301,7 @@ class CloudSaveStoreImpl implements CloudSaveStore {
   private readonly now: () => number;
   private readonly saveQuotaBytes: number;
   private readonly sessionTtlMs: number;
+  private readonly sessionAbsoluteTtlMs: number;
   private readonly sessionsByAccount = new Map<string, CloudSessionRecord>();
   private readonly sessionsByToken = new Map<string, CloudSessionRecord>();
   private readonly locks = new Map<string, Promise<void>>();
@@ -296,7 +318,8 @@ class CloudSaveStoreImpl implements CloudSaveStore {
     this.sessionFile = path.join(this.dataDir, 'sessions.json');
     this.now = options.now ?? Date.now;
     this.saveQuotaBytes = options.saveQuotaBytes ?? CLOUD_ACCOUNT_SAVE_QUOTA_BYTES;
-    this.sessionTtlMs = options.sessionTtlMs ?? SESSION_TTL_MS;
+    this.sessionTtlMs = options.sessionTtlMs ?? CLOUD_SESSION_TTL_MS;
+    this.sessionAbsoluteTtlMs = options.sessionAbsoluteTtlMs ?? CLOUD_SESSION_ABSOLUTE_TTL_MS;
     this.ready = this.loadSessions().catch(error => {
       console.warn('云存档会话加载失败，按空会话启动', error);
       this.sessionsByAccount.clear();
@@ -365,7 +388,8 @@ class CloudSaveStoreImpl implements CloudSaveStore {
     }
     for (const entry of value.sessions) {
       const session = normalizeSession(entry);
-      if (!session || session.expiresAt <= this.now()) continue;
+      const nowMs = this.now();
+      if (!session || session.expiresAt <= nowMs || nowMs >= session.absoluteExpiresAt) continue;
       const existing = this.sessionsByAccount.get(session.accountKey);
       if (existing && existing.createdAt >= session.createdAt) continue;
       if (existing) this.sessionsByToken.delete(existing.tokenHash);
@@ -386,13 +410,17 @@ class CloudSaveStoreImpl implements CloudSaveStore {
     await atomicWrite(this.sessionFile, JSON.stringify({ version: 1, sessions }));
   }
 
-  private async replaceSession(key: string, account: string): Promise<CloudAuthResult> {
+  private async replaceSession(key: string, account: string, startedAt?: number): Promise<CloudAuthResult> {
     const token = randomBytes(32).toString('base64url');
     const hash = tokenHash(token);
     const createdAt = this.now();
+    const sessionStartedAt = startedAt ?? createdAt;
+    const absoluteExpiresAt = sessionStartedAt + this.sessionAbsoluteTtlMs;
     const session: CloudSessionRecord = {
       tokenHash: hash, accountKey: key, account, createdAt,
-      expiresAt: createdAt + this.sessionTtlMs,
+      startedAt: sessionStartedAt,
+      expiresAt: Math.min(createdAt + this.sessionTtlMs, absoluteExpiresAt),
+      absoluteExpiresAt,
     };
     const previous = this.sessionsByAccount.get(key);
     if (previous) this.sessionsByToken.delete(previous.tokenHash);
@@ -410,7 +438,7 @@ class CloudSaveStoreImpl implements CloudSaveStore {
       }
       throw new CloudStoreError('server', '登录会话保存失败，请稍后重试。');
     }
-    return { token, account, expiresAt: session.expiresAt };
+    return { token, account, expiresAt: session.expiresAt, absoluteExpiresAt: session.absoluteExpiresAt };
   }
 
   async register(account: string, password: string): Promise<CloudAuthResult> {
@@ -529,21 +557,47 @@ class CloudSaveStoreImpl implements CloudSaveStore {
     catch (error) { console.warn('云存档会话保存失败', error); }
   }
 
-  async authenticate(token: string): Promise<{ accountKey: string; account: string }> {
+  async authenticate(token: string): Promise<{ accountKey: string; account: string; tokenHash: string }> {
     await this.ready;
     if (!SESSION_TOKEN_PATTERN.test(token)) throw new CloudStoreError('unauthorized', '登录已失效，请重新登录。');
     const hash = tokenHash(token);
     const session = this.sessionsByToken.get(hash);
     if (!session) throw new CloudStoreError('unauthorized', '登录已失效，请重新登录。');
-    if (session.expiresAt <= this.now()) {
+    const nowMs = this.now();
+    if (session.expiresAt <= nowMs || nowMs >= session.absoluteExpiresAt) {
       this.sessionsByToken.delete(hash);
       if (this.sessionsByAccount.get(session.accountKey)?.tokenHash === hash) {
         this.sessionsByAccount.delete(session.accountKey);
       }
-      void this.queueSessionWrite().catch(() => {});
-      throw new CloudStoreError('unauthorized', '登录已失效，请重新登录。');
+      // 过期会话的清理是一次性的；等写盘完成再返回 401，测试和部署都不会留下悬空写。
+      try { await this.queueSessionWrite(); } catch { /* 写失败不影响本次 401 */ }
+      throw new CloudStoreError('unauthorized', '登录已到期，请重新登录。');
     }
-    return { accountKey: session.accountKey, account: session.account };
+    return { accountKey: session.accountKey, account: session.account, tokenHash: hash };
+  }
+
+  async refreshSession(key: string, tokenHash: string): Promise<CloudRefreshResult> {
+    await this.ready;
+    return this.withLock(key, async () => {
+      const session = this.sessionsByAccount.get(key);
+      if (!session || session.tokenHash !== tokenHash) {
+        throw new CloudStoreError('unauthorized', '登录已失效，请重新登录。');
+      }
+      const nowMs = this.now();
+      if (session.expiresAt <= nowMs || nowMs >= session.absoluteExpiresAt) {
+        throw new CloudStoreError('unauthorized', '登录已到期，请重新登录。');
+      }
+      if (session.expiresAt - nowMs > CLOUD_SESSION_RENEW_WINDOW_MS) {
+        return {
+          renewed: false as const,
+          account: session.account,
+          expiresAt: session.expiresAt,
+          absoluteExpiresAt: session.absoluteExpiresAt,
+        };
+      }
+      const result = await this.replaceSession(key, session.account, session.startedAt);
+      return { renewed: true as const, ...result };
+    });
   }
 
   private async readStoredSave(key: string, slot: SaveSlotRef): Promise<StoredSave | undefined> {

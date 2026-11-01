@@ -12,6 +12,12 @@ export const CLOUD_PASSWORD_MAX_BYTES = 512;
 /** 连续输错多少次锁定，以及锁定时长。 */
 export const CLOUD_LOGIN_MAX_FAILURES = 3;
 export const CLOUD_LOCK_DURATION_MS = 15 * 60 * 1000;
+/** 会话 token 的有效期；续期后重新计算，但不会超过会话链总上限。 */
+export const CLOUD_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+/** 剩余多少天内打开云页会触发续期。 */
+export const CLOUD_SESSION_RENEW_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+/** 从登录/注册/改密算起的会话链总上限；到达后必须重新登录。 */
+export const CLOUD_SESSION_ABSOLUTE_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 /** 单个云存档和单账号总量上限；前者也是服务端请求体上限。 */
 export const CLOUD_SAVE_MAX_BYTES = 2 * 1024 * 1024;
 export const CLOUD_ACCOUNT_SAVE_QUOTA_BYTES = 16 * 1024 * 1024;

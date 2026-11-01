@@ -30,7 +30,12 @@ interface Fixture {
   close():Promise<void>;
 }
 
-async function fixture(options:{cloudRateLimit?:false|CloudRateLimitOptions;cloudDataDir?:string}={}):Promise<Fixture>{
+async function fixture(options:{
+  cloudRateLimit?:false|CloudRateLimitOptions;
+  cloudDataDir?:string;
+  cloudSessionTtlMs?:number;
+  cloudSessionAbsoluteTtlMs?:number;
+}={}):Promise<Fixture>{
   const root=await mkdtemp(path.join(tmpdir(),'inoita-cloud-service-'));
   const dist=path.join(root,'dist');
   await mkdir(dist,{recursive:true});
@@ -42,6 +47,8 @@ async function fixture(options:{cloudRateLimit?:false|CloudRateLimitOptions;clou
     now:()=>clock,
     cloudRateLimit:options.cloudRateLimit??false,
     ...(options.cloudDataDir?{cloudDataDir:options.cloudDataDir}:{}),
+    ...(options.cloudSessionTtlMs!==undefined?{cloudSessionTtlMs:options.cloudSessionTtlMs}:{}),
+    ...(options.cloudSessionAbsoluteTtlMs!==undefined?{cloudSessionAbsoluteTtlMs:options.cloudSessionAbsoluteTtlMs}:{}),
   });
   await new Promise<void>((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});
   const port=(server.address() as {port:number}).port;
@@ -187,6 +194,37 @@ test('register rate limiting returns 429 with a retry hint',async t=>{
   assert.equal(limited.status,429);
   assert.equal(JSON.parse(limited.body.toString()).error,'rate-limited');
   assert.ok(Number(limited.headers['retry-after'])>0);
+});
+
+test('refresh rotates a due token; a fresh token is a no-op; expired sessions return 401',async t=>{
+  const due=await fixture({cloudSessionTtlMs:1_000,cloudSessionAbsoluteTtlMs:60_000});
+  t.after(()=>due.close());
+  const registered=await request(due.port,'/__cloud/register',post({account:'Player_1',password:'secret1'}));
+  const first=JSON.parse(registered.body.toString()) as {token:string;absoluteExpiresAt:number};
+  const refreshed=await request(due.port,'/__cloud/refresh',{method:'POST',headers:{authorization:`Bearer ${first.token}`}});
+  assert.equal(refreshed.status,200);
+  const renewed=JSON.parse(refreshed.body.toString()) as {renewed:boolean;token:string;absoluteExpiresAt:number};
+  assert.equal(renewed.renewed,true);
+  assert.notEqual(renewed.token,first.token);
+  assert.equal(renewed.absoluteExpiresAt,first.absoluteExpiresAt,'续期不延长会话链');
+  assert.equal((await request(due.port,'/__cloud/saves',{headers:{authorization:`Bearer ${first.token}`}})).status,401);
+  assert.equal((await request(due.port,'/__cloud/saves',{headers:{authorization:`Bearer ${renewed.token}`}})).status,200);
+
+  const fresh=await fixture();t.after(()=>fresh.close());
+  const registeredFresh=await request(fresh.port,'/__cloud/register',post({account:'Player_1',password:'secret1'}));
+  const freshToken=(JSON.parse(registeredFresh.body.toString()) as {token:string}).token;
+  const notDue=await request(fresh.port,'/__cloud/refresh',{method:'POST',headers:{authorization:`Bearer ${freshToken}`}});
+  assert.equal(notDue.status,200);
+  assert.equal(JSON.parse(notDue.body.toString()).renewed,false);
+  assert.equal((await request(fresh.port,'/__cloud/saves',{headers:{authorization:`Bearer ${freshToken}`}})).status,200);
+
+  const capped=await fixture({cloudSessionTtlMs:1_000,cloudSessionAbsoluteTtlMs:2_000});
+  t.after(()=>capped.close());
+  const registeredCapped=await request(capped.port,'/__cloud/register',post({account:'Player_1',password:'secret1'}));
+  const cappedToken=(JSON.parse(registeredCapped.body.toString()) as {token:string}).token;
+  capped.advance(2_001);
+  assert.equal((await request(capped.port,'/__cloud/refresh',{method:'POST',headers:{authorization:`Bearer ${cappedToken}`}})).status,401);
+  assert.equal((await request(capped.port,'/__cloud/saves',{headers:{authorization:`Bearer ${cappedToken}`}})).status,401);
 });
 
 test('password change verifies the current password and rotates the token',async t=>{

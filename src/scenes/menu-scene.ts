@@ -17,6 +17,7 @@ import { drawCloudSavePage } from '../ui/phaser/cloud-save-panel.ts';
 import {
   CLOUD_NEW_PASSWORD_SAME_MESSAGE,
   CLOUD_PASSWORD_CHANGED_MESSAGE,
+  CLOUD_SESSION_RENEW_WINDOW_MS,
   cloudSlotLabel,
   normalizeCloudAccount,
   sanitizeCloudAccountInput,
@@ -24,6 +25,7 @@ import {
   validateCloudPassword,
 } from '../domain/cloud-save.ts';
 import { backupLocalSaves, restoreCloudSaves, type CloudSyncResult } from '../application/cloud-save-sync.ts';
+import type { CloudSavePort } from '../application/cloud-save.ts';
 
 const art=(name:string)=>`/assets/ui/title-menu/${name}.png`;
 /** 标题页右下角展示的版本号；等用户要求时再改。 */
@@ -322,6 +324,15 @@ export class MenuScene extends Phaser.Scene {
     const cloud=this.app.cloud;if(!cloud)return;
     const account=cloud.account;
     this.cloudBusy=true;
+    this.cloudStatus={kind:'info',text:'正在检查登录…'};
+    this.render();
+    if(!await this.renewCloudIfNeeded(cloud,request,serial)){
+      if(request.signal.aborted||serial!==this.cloudSerial)return;
+      this.cloudBusy=false;
+      if(this.page==='cloud'&&this.sys.isActive())this.render();
+      return;
+    }
+    if(request.signal.aborted||serial!==this.cloudSerial)return;
     this.cloudStatus={kind:'info',text:'正在读取云端存档…'};
     this.render();
     const result=await cloud.list(request.signal);
@@ -339,6 +350,32 @@ export class MenuScene extends Phaser.Scene {
       this.cloudStatus={kind:'error',text:result.error.message};
     }
     if(this.page==='cloud'&&this.sys.isActive())this.render();
+  }
+  /**
+   * 打开云页时懒续期：只在 token 剩余不足 7 天时换发新 token。
+   * 不在游戏内定时、不后台轮询；网络失败保留旧 token，让后续请求给出具体错误。
+   */
+  private async renewCloudIfNeeded(cloud:CloudSavePort,request:AbortController,serial:number):Promise<boolean>{
+    const expiresAt=cloud.expiresAt;
+    if(expiresAt===undefined)return true;
+    const nowMs=Date.now();
+    if(expiresAt-nowMs>CLOUD_SESSION_RENEW_WINDOW_MS)return true;
+    const absoluteExpiresAt=cloud.absoluteExpiresAt;
+    if(absoluteExpiresAt!==undefined&&absoluteExpiresAt<=expiresAt)return true;
+    this.cloudStatus={kind:'info',text:'登录即将过期，正在续期…'};
+    if(this.page==='cloud'&&this.sys.isActive())this.render();
+    const result=await cloud.refresh(request.signal);
+    if(request.signal.aborted||serial!==this.cloudSerial)return false;
+    if(result.ok)return true;
+    if(result.error.code==='unauthorized'){
+      this.cloudAccountInput=cloud.account??this.cloudAccountInput;
+      this.cloudCount=undefined;
+      cloud.forget();
+      this.cloudStatus={kind:'error',text:'登录已到期，请重新登录。'};
+      if(this.page==='cloud'&&this.sys.isActive())this.render();
+      return false;
+    }
+    return true;
   }
   private editCloudAccount():void{
     const apply=(value:string|undefined):void=>{

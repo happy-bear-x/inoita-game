@@ -44,6 +44,8 @@ export interface CloudSession {
   account: string;
   token: string;
   expiresAt: number;
+  /** 会话链总上限；旧版本 localStorage 没有这个字段。 */
+  absoluteExpiresAt?: number;
 }
 
 export interface CloudSaveEntry {
@@ -58,9 +60,13 @@ export interface CloudSaveEntry {
 export interface CloudSavePort {
   readonly account?: string;
   readonly loggedIn: boolean;
+  readonly expiresAt?: number;
+  readonly absoluteExpiresAt?: number;
   login(account: string, password: string, signal?: AbortSignal): Promise<CloudResult<CloudSession>>;
   register(account: string, password: string, signal?: AbortSignal): Promise<CloudResult<CloudSession>>;
   changePassword(currentPassword: string, newPassword: string, signal?: AbortSignal): Promise<CloudResult<CloudSession>>;
+  /** 续期：剩余有效期内换发新 token；未到续期窗口时服务端返回 renewed:false。 */
+  refresh(signal?: AbortSignal): Promise<CloudResult<CloudSession>>;
   logout(signal?: AbortSignal): Promise<CloudResult<void>>;
   list(signal?: AbortSignal): Promise<CloudResult<CloudSaveEntry[]>>;
   upload(slot: SaveSlotRef, game: unknown, signal?: AbortSignal): Promise<CloudResult<CloudSaveEntry>>;
@@ -95,7 +101,10 @@ function browserSessionStore(): CloudSessionStore {
         const value = JSON.parse(raw) as Partial<CloudSession>;
         if (typeof value.account !== 'string' || typeof value.token !== 'string' || typeof value.expiresAt !== 'number')
           return undefined;
-        return { account: value.account, token: value.token, expiresAt: value.expiresAt };
+        return {
+          account: value.account, token: value.token, expiresAt: value.expiresAt,
+          ...(typeof value.absoluteExpiresAt === 'number' ? { absoluteExpiresAt: value.absoluteExpiresAt } : {}),
+        };
       } catch { return undefined; }
     },
     write(session) {
@@ -245,6 +254,8 @@ export class CloudSaveClient implements CloudSavePort {
 
   get account(): string | undefined { return this.session?.account; }
   get loggedIn(): boolean { return !!this.session; }
+  get expiresAt(): number | undefined { return this.session?.expiresAt; }
+  get absoluteExpiresAt(): number | undefined { return this.session?.absoluteExpiresAt; }
 
   forget(): void {
     this.session = undefined;
@@ -320,7 +331,10 @@ export class CloudSaveClient implements CloudSavePort {
     const record = value as Partial<CloudSession>;
     if (typeof record.account !== 'string' || typeof record.token !== 'string' || typeof record.expiresAt !== 'number')
       return undefined;
-    return { account: record.account, token: record.token, expiresAt: record.expiresAt };
+    return {
+      account: record.account, token: record.token, expiresAt: record.expiresAt,
+      ...(typeof record.absoluteExpiresAt === 'number' ? { absoluteExpiresAt: record.absoluteExpiresAt } : {}),
+    };
   }
 
   async login(account: string, password: string, signal?: AbortSignal): Promise<CloudResult<CloudSession>> {
@@ -355,6 +369,29 @@ export class CloudSaveClient implements CloudSavePort {
       return result;
     }
     const session = this.sessionFrom(result.value);
+    if (!session) return fail('server', '云存档服务返回了无效的登录信息。');
+    this.setSession(session);
+    return { ok: true, value: session };
+  }
+
+  async refresh(signal?: AbortSignal): Promise<CloudResult<CloudSession>> {
+    if (!this.session) return fail('unauthorized', '登录已失效，请重新登录。');
+    const result = await this.request<unknown>('/refresh', { method: 'POST', auth: true, signal });
+    if (!result.ok) return result;
+    const value = result.value && typeof result.value === 'object' && !Array.isArray(result.value)
+      ? result.value as { renewed?: unknown; account?: unknown; token?: unknown; expiresAt?: unknown; absoluteExpiresAt?: unknown }
+      : {};
+    if (value.renewed === false) {
+      const session: CloudSession = {
+        ...this.session,
+        ...(typeof value.account === 'string' ? { account: value.account } : {}),
+        ...(typeof value.expiresAt === 'number' ? { expiresAt: value.expiresAt } : {}),
+        ...(typeof value.absoluteExpiresAt === 'number' ? { absoluteExpiresAt: value.absoluteExpiresAt } : {}),
+      };
+      this.setSession(session);
+      return { ok: true, value: session };
+    }
+    const session = this.sessionFrom(value);
     if (!session) return fail('server', '云存档服务返回了无效的登录信息。');
     this.setSession(session);
     return { ok: true, value: session };

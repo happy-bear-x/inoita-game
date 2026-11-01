@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -20,6 +21,7 @@ async function fixture(): Promise<Fixture> {
     now: () => clock.value,
     saveQuotaBytes: 64 * 1024,
     sessionTtlMs: 60_000,
+    sessionAbsoluteTtlMs: 120_000,
   });
   await store.ready;
   return { root, store, clock };
@@ -163,4 +165,68 @@ test('password change rejects same/invalid new passwords and wrong current passw
   await expectError(f.store.changePassword(auth.accountKey,'wrong2','secret2'),'invalid-credentials');
   await expectError(f.store.changePassword(auth.accountKey,'wrong3','secret2'),'locked');
   await f.store.authenticate(first.token);
+});
+
+test('refresh rotates a due token without extending the session chain',async t=>{
+  const f=await fixture();t.after(()=>rm(f.root,{recursive:true,force:true}));
+  const first=await f.store.register('Player_1','secret1');
+  const auth=await f.store.authenticate(first.token);
+  const refreshed=await f.store.refreshSession(auth.accountKey,auth.tokenHash);
+  assert.equal(refreshed.renewed,true);
+  if(!refreshed.renewed)return;
+  assert.notEqual(refreshed.token,first.token);
+  assert.equal(refreshed.absoluteExpiresAt,first.absoluteExpiresAt,'续期不延长会话链');
+  await expectError(f.store.authenticate(first.token),'unauthorized');
+  assert.equal((await f.store.authenticate(refreshed.token)).account,'Player_1');
+});
+
+test('refresh is a no-op before the renewal window',async t=>{
+  const root=await mkdtemp(path.join(tmpdir(),'inoita-cloud-store-'));
+  t.after(()=>rm(root,{recursive:true,force:true}));
+  const clock={value:1_000_000};
+  const store=createCloudSaveStore({dataDir:root,now:()=>clock.value});
+  await store.ready;
+  const first=await store.register('Player_1','secret1');
+  const auth=await store.authenticate(first.token);
+  const refreshed=await store.refreshSession(auth.accountKey,auth.tokenHash);
+  assert.equal(refreshed.renewed,false);
+  assert.equal(refreshed.expiresAt,first.expiresAt);
+  assert.equal(refreshed.absoluteExpiresAt,first.absoluteExpiresAt);
+  assert.equal((await store.authenticate(first.token)).account,'Player_1');
+});
+
+test('refresh refuses after the absolute session cap',async t=>{
+  const root=await mkdtemp(path.join(tmpdir(),'inoita-cloud-store-'));
+  t.after(()=>rm(root,{recursive:true,force:true}));
+  const clock={value:1_000_000};
+  const store=createCloudSaveStore({
+    dataDir:root,now:()=>clock.value,sessionTtlMs:1_000,sessionAbsoluteTtlMs:2_000,
+  });
+  await store.ready;
+  const first=await store.register('Player_1','secret1');
+  const auth=await store.authenticate(first.token);
+  clock.value+=2_001;
+  await expectError(store.refreshSession(auth.accountKey,auth.tokenHash),'unauthorized');
+  await expectError(store.authenticate(first.token),'unauthorized');
+});
+
+test('legacy session files default the chain start to createdAt',async t=>{
+  const root=await mkdtemp(path.join(tmpdir(),'inoita-cloud-store-'));
+  t.after(()=>rm(root,{recursive:true,force:true}));
+  const clock={value:1_000_000};
+  const token='t'.repeat(43);
+  const tokenHash=createHash('sha256').update(token).digest('hex');
+  const accountKey=createHash('sha256').update('player_1').digest('hex');
+  const createdAt=clock.value-10_000;
+  await writeFile(path.join(root,'sessions.json'),JSON.stringify({version:1,sessions:[
+    {tokenHash,accountKey,account:'Player_1',createdAt,expiresAt:clock.value+60_000},
+  ]}));
+  const store=createCloudSaveStore({dataDir:root,now:()=>clock.value});
+  await store.ready;
+  const auth=await store.authenticate(token);
+  assert.equal(auth.account,'Player_1');
+  const refreshed=await store.refreshSession(auth.accountKey,auth.tokenHash);
+  assert.equal(refreshed.renewed,true);
+  if(!refreshed.renewed)return;
+  assert.equal(refreshed.absoluteExpiresAt,createdAt+90*24*60*60*1000);
 });

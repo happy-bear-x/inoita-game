@@ -50,6 +50,7 @@ export interface CloudSaveServiceOptions {
   store?: CloudSaveStore;
   saveQuotaBytes?: number;
   sessionTtlMs?: number;
+  sessionAbsoluteTtlMs?: number;
 }
 
 export type CloudSaveMiddleware = (req: IncomingMessage, res: ServerResponse, next: () => void) => void;
@@ -234,6 +235,7 @@ export function createCloudSaveService(options: CloudSaveServiceOptions): CloudS
         now: options.now,
         saveQuotaBytes: options.saveQuotaBytes,
         sessionTtlMs: options.sessionTtlMs,
+        sessionAbsoluteTtlMs: options.sessionAbsoluteTtlMs,
       });
     } catch (error) {
       console.error('云存档存储初始化失败', error);
@@ -264,7 +266,10 @@ export function createCloudSaveService(options: CloudSaveServiceOptions): CloudS
     }, { 'Retry-After': String(retryAfterSeconds) });
   };
 
-  const authenticate = async (req: IncomingMessage, activeStore: CloudSaveStore): Promise<{ accountKey: string; account: string }> => {
+  const authenticate = async (
+    req: IncomingMessage,
+    activeStore: CloudSaveStore,
+  ): Promise<{ accountKey: string; account: string; tokenHash: string }> => {
     const token = bearerToken(req);
     if (!token) throw new CloudStoreError('unauthorized', '登录已失效，请重新登录。');
     return activeStore.authenticate(token);
@@ -283,7 +288,10 @@ export function createCloudSaveService(options: CloudSaveServiceOptions): CloudS
         if (!limited.ok) { rateLimited(res, limited.retryAfterSeconds); return; }
       }
       const result = await activeStore.register(credentials.account, credentials.password);
-      sendJson(res, 201, { token: result.token, account: result.account, expiresAt: result.expiresAt });
+      sendJson(res, 201, {
+        token: result.token, account: result.account,
+        expiresAt: result.expiresAt, absoluteExpiresAt: result.absoluteExpiresAt,
+      });
       return;
     }
     if (pathname === '/__cloud/login' && req.method === 'POST') {
@@ -297,7 +305,10 @@ export function createCloudSaveService(options: CloudSaveServiceOptions): CloudS
         if (!limited.ok) { rateLimited(res, limited.retryAfterSeconds); return; }
       }
       const result = await activeStore.login(credentials.account, credentials.password);
-      sendJson(res, 200, { token: result.token, account: result.account, expiresAt: result.expiresAt });
+      sendJson(res, 200, {
+        token: result.token, account: result.account,
+        expiresAt: result.expiresAt, absoluteExpiresAt: result.absoluteExpiresAt,
+      });
       return;
     }
     if (pathname === '/__cloud/password' && req.method === 'POST') {
@@ -317,7 +328,30 @@ export function createCloudSaveService(options: CloudSaveServiceOptions): CloudS
         if (!limited.ok) { rateLimited(res, limited.retryAfterSeconds); return; }
       }
       const result = await activeStore.changePassword(auth.accountKey, value.currentPassword, value.newPassword);
-      sendJson(res, 200, { token: result.token, account: result.account, expiresAt: result.expiresAt });
+      sendJson(res, 200, {
+        token: result.token, account: result.account,
+        expiresAt: result.expiresAt, absoluteExpiresAt: result.absoluteExpiresAt,
+      });
+      return;
+    }
+    if (pathname === '/__cloud/refresh' && req.method === 'POST') {
+      const auth = await authenticate(req, activeStore);
+      if (rateLimit) {
+        const limited = checkRate(loginLimits, clientIp(req), rateLimit.login, LOGIN_WINDOW_MS, now());
+        if (!limited.ok) { rateLimited(res, limited.retryAfterSeconds); return; }
+      }
+      const result = await activeStore.refreshSession(auth.accountKey, auth.tokenHash);
+      if (result.renewed) {
+        sendJson(res, 200, {
+          renewed: true, token: result.token, account: result.account,
+          expiresAt: result.expiresAt, absoluteExpiresAt: result.absoluteExpiresAt,
+        });
+      } else {
+        sendJson(res, 200, {
+          renewed: false, account: result.account,
+          expiresAt: result.expiresAt, absoluteExpiresAt: result.absoluteExpiresAt,
+        });
+      }
       return;
     }
     if (pathname === '/__cloud/logout' && req.method === 'POST') {

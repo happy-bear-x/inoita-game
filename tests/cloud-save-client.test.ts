@@ -139,6 +139,41 @@ test('storage failures only lose persistence, not the in-memory session',async()
   assert.equal(client.loggedIn,false);
 });
 
+test('refresh updates the stored token, keeps a not-due session and clears on 401',async()=>{
+  const store=memoryStore();
+  let mode:'due'|'not-due'|'unauthorized'='due';
+  const fake=fakeFetch(call=>{
+    if(call.url.endsWith('/login'))
+      return json({account:'Player_1',token:validToken,expiresAt:1,absoluteExpiresAt:100});
+    if(mode==='unauthorized')return json({error:'unauthorized',message:'登录已到期'},401);
+    if(mode==='not-due')return json({renewed:false,account:'Player_1',expiresAt:1,absoluteExpiresAt:100});
+    return json({renewed:true,account:'Player_1',token:'n'.repeat(43),expiresAt:2,absoluteExpiresAt:100});
+  });
+  const client=new CloudSaveClient({baseUrl:base,fetch:fake.fetch,storage:store});
+  assert.ok((await client.login('Player_1','secret1')).ok);
+  assert.equal(client.expiresAt,1);
+  assert.equal(client.absoluteExpiresAt,100);
+
+  const renewed=await client.refresh();
+  assert.ok(renewed.ok);
+  assert.equal(store.value?.token,'n'.repeat(43));
+  assert.equal(client.expiresAt,2);
+
+  mode='not-due';
+  const current=store.value?.token;
+  const noop=await client.refresh();
+  assert.ok(noop.ok);
+  assert.equal(store.value?.token,current,'未到窗口时保留原 token');
+  assert.equal(client.expiresAt,1);
+
+  mode='unauthorized';
+  const expired=await client.refresh();
+  assert.equal(expired.ok,false);if(expired.ok)return;
+  assert.equal(expired.error.code,'unauthorized');
+  assert.equal(client.loggedIn,false);
+  assert.equal(store.value,undefined);
+});
+
 test('password change updates the stored token while a wrong current password keeps the session',async()=>{
   const store=memoryStore();
   let mode:'wrong'|'ok'='wrong';

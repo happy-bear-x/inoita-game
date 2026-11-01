@@ -129,6 +129,8 @@ export interface GameServerOptions {
   now?: () => number;
   cloudDataDir?: string;
   cloudRateLimit?: false | CloudRateLimitOptions;
+  cloudSessionTtlMs?: number;
+  cloudSessionAbsoluteTtlMs?: number;
 }
 
 export function createGameServer(options: GameServerOptions): Server {
@@ -143,6 +145,8 @@ export function createGameServer(options: GameServerOptions): Server {
       dataDir: options.cloudDataDir ?? path.join(projectRoot, '.cloud-save'),
       now,
       rateLimit: options.cloudRateLimit,
+      sessionTtlMs: options.cloudSessionTtlMs,
+      sessionAbsoluteTtlMs: options.cloudSessionAbsoluteTtlMs,
     });
   } catch (error) {
     // 云存档是旁路能力：初始化失败只让 /__cloud 降级，静态服务和游戏继续提供。
