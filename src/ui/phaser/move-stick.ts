@@ -294,7 +294,7 @@ export class MoveStick {
     const moveSize = controlSettings.moveStyle === 'dpad' ? CONTROL_SIZES.moveDpad : CONTROL_SIZES.move;
     const position = resolveControlLayout(controlViewport(this.scene, this.scene.scale.width, height), this.preferences?.snapshot(), moveSize).move;
     this.center = { x: position.x, y: position.y };
-    this.container.setScale(position.scale);
+    this.container.setScale(position.scale * position.userScale);
     this.container.setPosition(position.x, position.y);
     this.reset();
   }

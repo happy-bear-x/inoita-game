@@ -134,7 +134,7 @@ export class ActionControls {
   layout(width:number,height:number):void{
     this.viewportSize={width,height};
     const positions=resolveControlLayout(controlViewport(this.scene,width,height),this.preferences?.snapshot());
-    const place=(control:Control,id:ControlId)=>{const point=positions[id];control.container.setPosition(point.x,point.y).setScale(point.scale);};
+    const place=(control:Control,id:ControlId)=>{const point=positions[id];control.container.setPosition(point.x,point.y).setScale(point.scale * point.userScale);};
     place(this.attack,'attack');
     this.slots.forEach((control,index)=>place(control,`slot-${index}` as ControlId));
     place(this.swap,'swap');

@@ -1023,25 +1023,25 @@ export class StoryUI {
     const edit=this.shortcutEdit,screen=this.shortcutScreen,skin=this.app.controlSkin,scene=this.scene;
     if(!edit||!screen||!scene)return;
     screen.clear();const v=screen,{scale,anchor}=controlPlacement(scene,scene.scale.width,scene.scale.height),slots=this.shortcutBar().page(edit.page),positions=resolveControlLayout(controlViewport(scene),this.app.controlLayout.snapshot());
-    const slotFrame=CONTROL_SIZES.slot.width,swapFrame=CONTROL_SIZES.swap.width;
     // 顶部提示：原版 `GRPX_DrawStringWithFont(TEXTDATABASE[146], 屏宽/2, 110)`，白字居中。
     v.text(SHORTCUT_PROMPT,scene.scale.width/scale/2,110,0,26,TEXT_COLORS.white).setOrigin(.5,0);
-    // 六个圆槽：输入矩形 80×80，阴影与外圈用共享的快捷位槽尺寸（中心对齐），按下态叠加混合。
-    const slotBleed=(slotFrame-80)/2;
-    for(let slot=0;slot<SHORTCUT_SLOT_COUNT;slot++){const point=positions[`slot-${slot}` as ControlId];
-      const hit=v.button('',point.x/scale-40,point.y/scale-40,80,80,()=>this.assignShortcut(slot),
+    // 六个圆槽：输入矩形与槽框都乘设备倍率，换组后沿用同一个槽位的尺寸。
+    for(let slot=0;slot<SHORTCUT_SLOT_COUNT;slot++){const point=positions[`slot-${slot}` as ControlId],userScale=point.userScale;
+      const slotFrame=CONTROL_SIZES.slot.width*userScale,input=80*userScale,slotBleed=(slotFrame-input)/2;
+      const hit=v.button('',point.x/scale-input/2,point.y/scale-input/2,input,input,()=>this.assignShortcut(slot),
         {bare:true,pressed:skin['slot-pressed'],pressedRect:{x:-slotBleed,y:-slotBleed,width:slotFrame,height:slotFrame},pressedAdd:true}).setData('label',`快捷位 ${slot+1}`);
       hit.addAt(v.image(skin['slot-shadow'],-slotBleed,-slotBleed,slotFrame,slotFrame),0);hit.addAt(v.image(skin['slot-ring'],-slotBleed,-slotBleed,slotFrame,slotFrame),1);
-      const entry=slots[slot];if(entry){const size=this.shortcutIconSize(entry),icon=this.shortcutIcon(entry);
-        if(icon)hit.addAt(v.image(icon,(80-size)/2,(80-size)/2,size,size),2);}
+      const entry=slots[slot];if(entry){const size=this.shortcutIconSize(entry)*userScale,icon=this.shortcutIcon(entry);
+        if(icon)hit.addAt(v.image(icon,(input-size)/2,(input-size)/2,size,size),2);}
     }
     // 换组按钮：共享交换键尺寸，动作是整组切换（`UIShortcutMenu_ButtonScrollExe @0x161368`）。
+    const swapUserScale=positions.swap.userScale,swapFrame=CONTROL_SIZES.swap.width*swapUserScale;
     const swap=v.button('',positions.swap.x/scale-swapFrame/2,positions.swap.y/scale-swapFrame/2,swapFrame,swapFrame,
       ()=>{this.shortcutEdit={...edit,page:(edit.page+1)%SHORTCUT_PAGE_COUNT};this.render();},
       {bare:true,pressed:skin['swap-pressed'],pressedAdd:true}).setData('label','切换技能组');
     swap.addAt(v.image(skin.swap,0,0,swapFrame,swapFrame),0);
     // 待登记的对象：原版把它画在一个单独的圆框容器里，位置见 `PENDING_OFFSET`。
-    const size=this.shortcutIconSize(edit),icon=this.shortcutIcon(edit),pending={x:anchor.x+PENDING_OFFSET.x,y:anchor.y+PENDING_OFFSET.y};
+    const slotFrame=CONTROL_SIZES.slot.width,size=this.shortcutIconSize(edit),icon=this.shortcutIcon(edit),pending={x:anchor.x+PENDING_OFFSET.x,y:anchor.y+PENDING_OFFSET.y};
     v.image(skin['slot-shadow'],pending.x-slotFrame/2,pending.y-slotFrame/2,slotFrame,slotFrame);
     v.image(skin['slot-ring'],pending.x-slotFrame/2,pending.y-slotFrame/2,slotFrame,slotFrame);
     if(icon)v.image(icon,pending.x-size/2,pending.y-size/2,size,size);

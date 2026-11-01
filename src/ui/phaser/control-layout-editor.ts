@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
 import { UI_EVENTS } from '../../application/ui-events.ts';
 import type { ControlSkin } from '../../domain/control-skin.ts';
-import { CONTROL_IDS, CONTROL_SIZES, normalizeControlPosition, resolveControlLayout, type ControlId, type ControlPoint } from '../control-layout.ts';
+import { CONTROL_IDS, CONTROL_SCALE_MIN, CONTROL_SIZES, maxControlScale, normalizeControlPosition,
+  resolveControlLayout, type ControlId, type ControlLayoutOverrides, type ControlPlacement, type ControlPoint } from '../control-layout.ts';
 import type { ControlLayoutPreferences } from '../control-layout.ts';
 import { ITEM_ICON_SIZE, SLOT_ICON_SIZE, type ShortcutSlot } from './action-controls.ts';
 import { DPAD_ARROW_OFFSET, DPAD_ARROW_SCALE_NORM, DPAD_BASE_RADIUS, DPAD_RUNE_ALPHA, STICK_KNOB_RADIUS } from './move-stick.ts';
@@ -9,12 +10,35 @@ import { controlSettings } from '../../application/control-settings.ts';
 import { controlViewport } from './control-layout-viewport.ts';
 import { UiSurface } from './widgets.ts';
 
+/** 白色选中框离控件边缘的距离（屏幕像素）。 */
+const SELECTION_BLEED = 4;
+/** 四角把手的可见边长和可点击范围。 */
+const HANDLE_SIZE = 12, HANDLE_HIT = 22;
+
+interface ScaleDrag {
+  pointer: Phaser.Input.Pointer;
+  id: ControlId;
+  /** 缩放只改倍率，中心位置沿用拖动前的归一化坐标。 */
+  point: ControlPoint;
+  center: ControlPoint;
+  /** 倍率为 1 时，控件中心到角的距离。 */
+  radius: number;
+  /** 控件完整留在安全区内允许的最大倍率。 */
+  max: number;
+}
+
 /** 编辑的是独立预览；实际战斗控件继续由菜单锁暂停。 */
 export class ControlLayoutEditor {
   private readonly canvas: UiSurface;
   private readonly toolbar: UiSurface;
   private readonly controls = new Map<ControlId, Phaser.GameObjects.Container>();
   private readonly drags = new Map<ControlId, {pointer: Phaser.Input.Pointer; point?: ControlPoint}>();
+  private readonly handles: Phaser.GameObjects.Rectangle[] = [];
+  private selectionFrame?: Phaser.GameObjects.Graphics;
+  private selected?: ControlId;
+  private placements?: Record<ControlId, ControlPlacement>;
+  private scaleDrag?: ScaleDrag;
+  private preview?: {id: ControlId; point: ControlPoint; scale: number};
   private resetButton?: Phaser.GameObjects.Container;
   private slots: readonly ShortcutSlot[] = [];
   private active = false;
@@ -42,6 +66,7 @@ export class ControlLayoutEditor {
 
   open(slots: readonly ShortcutSlot[]): void {
     this.slots = slots; this.active = true;
+    this.selected = undefined; this.preview = undefined; this.scaleDrag = undefined;
     this.rebuild();
     this.visible(true);this.layout();
   }
@@ -49,19 +74,22 @@ export class ControlLayoutEditor {
   layout(): void {
     const viewport=controlViewport(this.scene),key=JSON.stringify(viewport);
     if(key!==this.viewportKey) {this.viewportKey=key;this.cancelDrags();}
-    const positions=resolveControlLayout(viewport,this.preferences.snapshot(),this.moveSize());
+    const positions=this.resolve(viewport);
+    this.placements=positions;
     for(const [id,object]of this.controls) {
       if(this.drags.has(id))continue;
-      const point=positions[id];object.setPosition(point.x,point.y).setScale(point.scale);
+      const point=positions[id];object.setPosition(point.x,point.y).setScale(point.scale*point.userScale);
     }
     const {insets,width}=viewport,scale=positions.attack.scale;
     this.toolbar.root.setPosition(insets.left,insets.top).setScale(scale);
     this.resetButton?.setPosition((width-insets.left-insets.right)/scale/2-110,12);
+    this.paintSelection();
   }
 
   visible(value: boolean): void {
     if(!value)this.cancel();
     this.canvas.visible(value&&this.active);this.toolbar.visible(value&&this.active);
+    if(!value)this.drawSelection(undefined);
   }
 
   /** 预览框与实战一样按移动样式取尺寸：十字键 274，摇杆 210。 */
@@ -71,7 +99,10 @@ export class ControlLayoutEditor {
 
   key(event: KeyboardEvent): void {this.toolbar.key(event);}
 
-  close(): void {this.active=false;this.visible(false);}
+  close(): void {
+    this.active=false;this.selected=undefined;this.scaleDrag=undefined;this.preview=undefined;
+    this.visible(false);
+  }
 
   destroy(): void {
     this.close();this.unsubscribe();
@@ -80,14 +111,29 @@ export class ControlLayoutEditor {
     this.canvas.destroy();this.toolbar.destroy();this.controls.clear();
   }
 
+  private resolve(viewport = controlViewport(this.scene)): Record<ControlId, ControlPlacement> {
+    return resolveControlLayout(viewport,this.previewOverrides(),this.moveSize());
+  }
+
+  /** 缩放拖动期间用预览倍率参与解析，松手前不写存储。 */
+  private previewOverrides(): ControlLayoutOverrides {
+    const positions=this.preferences.snapshot(),preview=this.preview;
+    return preview?{...positions,[preview.id]:{...preview.point,scale:preview.scale}}:positions;
+  }
+
   private rebuild(): void {
     this.cancelDrags();
     this.canvas.clear();this.controls.clear();
+    this.selectionFrame=undefined;this.handles.length=0;this.placements=undefined;
+    // 点击空白处取消选中；这层透明底板垫在控件下面，不会抢控件的点击。
+    const background=this.scene.add.rectangle(-4000,-4000,8000,8000,0,0).setOrigin(0).setInteractive();
+    background.on('pointerdown',()=>this.select(undefined));
+    this.canvas.root.addAt(background,0);
     for (const id of CONTROL_IDS) {
       const object=this.scene.add.container(0,0).setData('uiAction',true).setData('controlId',id);
       this.canvas.root.add(object);this.controls.set(id,object);
       let width:number=CONTROL_SIZES.slot.width,height:number=CONTROL_SIZES.slot.height;
-      const image=(file:string,w:number,h=w,x=-w/2,y=-h/2)=>this.canvas.image(file,x,y,w,h,object);
+      const image=(file:string,w:number,h:number=w,x=-w/2,y=-h/2)=>this.canvas.image(file,x,y,w,h,object);
       if(id==='move') {
         if (controlSettings.moveStyle === 'dpad') {
           width = height = DPAD_BASE_RADIUS * 2;
@@ -125,6 +171,7 @@ export class ControlLayoutEditor {
       object.setSize(width,height).setInteractive(new Phaser.Geom.Rectangle(0,0,width,height),
         (area:Phaser.Geom.Rectangle,x:number,y:number)=>this.active&&this.canvas.root.visible&&Phaser.Geom.Rectangle.Contains(area,x,y));
       this.scene.input.setDraggable(object);
+      object.on('pointerdown',()=>this.select(id));
       object.on('dragstart',(pointer:Phaser.Input.Pointer)=>{
         if(this.active&&this.canvas.root.visible&&!this.drags.has(id))this.drags.set(id,{pointer});
       });
@@ -134,6 +181,7 @@ export class ControlLayoutEditor {
         drag.point=normalizeControlPosition(viewport,id,{x,y},positions,moveSize);
         const position=resolveControlLayout(viewport,{...positions,[id]:drag.point},moveSize)[id];
         object.setPosition(position.x,position.y);
+        if(this.selected===id)this.drawSelection(position);
       });
       object.on('dragend',(pointer:Phaser.Input.Pointer)=>{
         const drag=this.drags.get(id);if(!drag||drag.pointer.id!==pointer.id)return;
@@ -142,6 +190,83 @@ export class ControlLayoutEditor {
         else this.layout();
       });
     }
+    this.createSelectionLayer();
+  }
+
+  /** 白色空心框和四个角把手；把手最后加入，确保它们压在控件上面接收拖动。 */
+  private createSelectionLayer(): void {
+    this.selectionFrame=this.scene.add.graphics().setVisible(false);
+    this.canvas.root.add(this.selectionFrame);
+    for(let index=0;index<4;index++) {
+      const handle=this.scene.add.rectangle(0,0,HANDLE_SIZE,HANDLE_SIZE,0xffffff).setVisible(false).setData('uiAction',true);
+      // 命中区以左上角为原点，中心在 (6,6)；外扩到 22×22 方便按住。
+      const hitLeft=(HANDLE_SIZE-HANDLE_HIT)/2;
+      handle.setInteractive(new Phaser.Geom.Rectangle(hitLeft,hitLeft,HANDLE_HIT,HANDLE_HIT),
+        Phaser.Geom.Rectangle.Contains);
+      handle.on('pointerdown',(_pointer:Phaser.Input.Pointer,_x:number,_y:number,event:Phaser.Types.Input.EventData)=>event.stopPropagation());
+      handle.on('dragstart',(pointer:Phaser.Input.Pointer)=>this.beginScale(pointer));
+      handle.on('drag',(pointer:Phaser.Input.Pointer)=>this.updateScale(pointer));
+      handle.on('dragend',(pointer:Phaser.Input.Pointer)=>this.endScale(pointer));
+      this.scene.input.setDraggable(handle);
+      this.canvas.root.add(handle);
+      this.handles.push(handle);
+    }
+  }
+
+  private select(id?: ControlId): void {
+    if(!this.active)return;
+    this.selected=id;
+    this.paintSelection();
+  }
+
+  private paintSelection(): void {
+    const placement=this.selected&&this.placements?this.placements[this.selected]:undefined;
+    this.drawSelection(placement);
+  }
+
+  private drawSelection(placement?: ControlPlacement): void {
+    const frame=this.selectionFrame;
+    if(!frame)return;
+    if(!this.active||!placement) {
+      frame.setVisible(false);
+      for(const handle of this.handles)handle.setVisible(false);
+      return;
+    }
+    const halfWidth=placement.width/2+SELECTION_BLEED,halfHeight=placement.height/2+SELECTION_BLEED;
+    const left=placement.x-halfWidth,top=placement.y-halfHeight,right=left+halfWidth*2,bottom=top+halfHeight*2;
+    frame.clear().lineStyle(2,0xffffff,1).strokeRect(left,top,halfWidth*2,halfHeight*2).setVisible(true);
+    const corners=[[left,top],[right,top],[left,bottom],[right,bottom]];
+    corners.forEach(([x,y],index)=>this.handles[index]?.setPosition(x,y).setVisible(true));
+  }
+
+  /** 记住当前中心和“1 倍时的中心到角距离”，拖动中只换算倍率。 */
+  private beginScale(pointer: Phaser.Input.Pointer): void {
+    const id=this.selected,placement=id&&this.placements?this.placements[id]:undefined;
+    if(!id||!placement)return;
+    const viewport=controlViewport(this.scene),overrides=this.preferences.snapshot(),moveSize=this.moveSize();
+    const point=normalizeControlPosition(viewport,id,{x:placement.x,y:placement.y},overrides,moveSize);
+    const baseWidth=placement.width/placement.userScale,baseHeight=placement.height/placement.userScale;
+    this.scaleDrag={pointer,id,point,center:{x:placement.x,y:placement.y},
+      radius:Math.hypot(baseWidth/2,baseHeight/2),max:maxControlScale(viewport,id,overrides,moveSize)};
+    this.preview={id,point,scale:placement.userScale};
+  }
+
+  private updateScale(pointer: Phaser.Input.Pointer): void {
+    const drag=this.scaleDrag;
+    if(!drag||drag.pointer.id!==pointer.id)return;
+    const distance=Math.hypot(pointer.x-drag.center.x,pointer.y-drag.center.y);
+    const scale=Phaser.Math.Clamp(distance/Math.max(1,drag.radius),CONTROL_SCALE_MIN,drag.max);
+    this.preview={id:drag.id,point:drag.point,scale};
+    this.layout();
+  }
+
+  private endScale(pointer: Phaser.Input.Pointer): void {
+    const drag=this.scaleDrag;
+    if(!drag||drag.pointer.id!==pointer.id)return;
+    const scale=this.preview?.scale??1;
+    this.scaleDrag=undefined;this.preview=undefined;
+    if(this.active&&this.canvas.root.visible)this.preferences.set(drag.id,drag.point,scale);
+    this.layout();
   }
 
   private cancelDrags(): void {
@@ -151,6 +276,9 @@ export class ControlLayoutEditor {
       this.scene.input.setDragState(drag.pointer,0);
     }
     this.drags.clear();
+    const scale=this.scaleDrag;
+    if(scale)this.scene.input.setDragState(scale.pointer,0);
+    this.scaleDrag=undefined;this.preview=undefined;
   }
   private cancel(): void {this.cancelDrags();this.layout();}
 }

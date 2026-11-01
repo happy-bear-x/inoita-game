@@ -14,6 +14,7 @@
 - 这里不运行时导入 `phaser`；需要 Phaser 类型时用 `import type`，写法参考 `story-ui.ts`。
 - 文本宽度、换行、选项高度和滚动范围在进入 Phaser 前算完，绘制层只按结果摆放。
 - 控件尺寸从 `control-layout.ts` 的 `CONTROL_SIZES` 取；D-pad 视觉与布局用 `moveDpad` 274×274，摇杆用 `move` 210×210。
+- 用户调过的控件大小按控件位置保存成倍率（`scale`，0.6–2.0），解析时与屏幕适配缩放分开乘。倍率跟着 `slot-0`…`slot-5` 这些位置走，切换技能组或换成技能/物品内容都不改变它。
 - 字体、字号和颜色取 `text-style.ts`，新面板不再另建一套字体栈。
 - 说明面板底部动作 1–3 个排一横排；4 个用 2×2，5–6 个用 3×2，几何由 `descriptionActionLayout` 统一给出。
 - 新增面板先在这里补几何和文本函数，再在 `src/ui/phaser/` 实现绘制。

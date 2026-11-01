@@ -4,11 +4,15 @@ import { GAME_WIDTH, GAME_HEIGHT } from './viewport.ts';
 export const CONTROL_IDS = ['move', 'attack', 'slot-0', 'slot-1', 'slot-2', 'slot-3', 'slot-4', 'slot-5', 'swap'] as const;
 export type ControlId = typeof CONTROL_IDS[number];
 export interface ControlPoint { x: number; y: number }
-/** 中心点相对屏幕安全区的位置，横纵分别为 0–1。缺项使用现有默认位置。 */
-export type ControlLayoutOverrides = Partial<Record<ControlId, ControlPoint>>;
+/** 控件中心相对屏幕安全区的位置（横纵 0–1）和用户缩放倍率；缺项使用默认位置和 1 倍。 */
+export interface ControlOverride extends ControlPoint { scale?: number }
+export type ControlLayoutOverrides = Partial<Record<ControlId, ControlOverride>>;
 export interface StorageLike { getItem(key: string): string | null; setItem(key: string, value: string): void }
 export const CONTROL_LAYOUT_STORAGE_KEY = 'inotia-control-layout';
-const FORMAT = 1;
+/** 用户能拉到的最小和最大倍率；布局解析和编辑器共用。 */
+export const CONTROL_SCALE_MIN = 0.6;
+export const CONTROL_SCALE_MAX = 2;
+const FORMAT = 2;
 
 /** 各类操作控件的基准尺寸（界面单位）；布局解析与绘制层共用这一份。 */
 export const CONTROL_SIZES = {
@@ -30,13 +34,27 @@ export const SWAP_OFFSET = {x:42,y:-210} as const;
 /** 登记页的待登记对象相对默认普攻中心的位置。 */
 export const PENDING_OFFSET = {x:-382,y:-183} as const;
 
+function validScale(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= CONTROL_SCALE_MIN && value <= CONTROL_SCALE_MAX;
+}
 function validPoint(value: unknown): value is ControlPoint {
   if (!value || typeof value !== 'object') return false;
   const point = value as ControlPoint;
   return Number.isFinite(point.x) && Number.isFinite(point.y) && point.x >= 0 && point.x <= 1 && point.y >= 0 && point.y <= 1;
 }
+function validOverride(value: unknown): value is ControlOverride {
+  if (!validPoint(value)) return false;
+  const scale = (value as ControlOverride).scale;
+  return scale === undefined || validScale(scale);
+}
 function clone(positions: ControlLayoutOverrides): ControlLayoutOverrides {
-  return Object.fromEntries(CONTROL_IDS.flatMap(id => positions[id] ? [[id, {...positions[id]}]] : []));
+  return Object.fromEntries(CONTROL_IDS.flatMap(id => {
+    const override = positions[id];
+    if (!override) return [];
+    const copy: ControlOverride = {x: override.x, y: override.y};
+    if (override.scale !== undefined) copy.scale = override.scale;
+    return [[id, copy]];
+  }));
 }
 function deviceStorage(): StorageLike | null {
   try { return typeof localStorage === 'undefined' ? null : localStorage; } catch { return null; }
@@ -52,16 +70,19 @@ export class ControlLayoutPreferences {
       const saved: unknown = JSON.parse(this.storage?.getItem(CONTROL_LAYOUT_STORAGE_KEY) ?? 'null');
       if (!saved || typeof saved !== 'object') return;
       const {version, positions} = saved as {version?: unknown; positions?: unknown};
-      if (version !== FORMAT || !positions || typeof positions !== 'object' || Array.isArray(positions)) return;
+      // 上一版只存位置；没有 scale 的记录按 1 倍读取，写回时统一用新版格式。
+      if ((version !== 1 && version !== FORMAT) || !positions || typeof positions !== 'object' || Array.isArray(positions)) return;
       const entries = Object.entries(positions);
-      if (entries.some(([id, point]) => !CONTROL_IDS.includes(id as ControlId) || !validPoint(point))) return;
+      if (entries.some(([id, point]) => !CONTROL_IDS.includes(id as ControlId) || !validOverride(point))) return;
       this.positions = clone(positions as ControlLayoutOverrides);
     } catch { /* 存储不可读时使用默认布局。 */ }
   }
   snapshot(): ControlLayoutOverrides { return clone(this.positions); }
-  set(id: ControlId, normalizedPoint: ControlPoint): void {
-    if (!CONTROL_IDS.includes(id) || !validPoint(normalizedPoint)) return;
-    this.positions[id] = {...normalizedPoint};
+  /** 写入位置；不传 `scale` 时保留该控件已有的倍率。 */
+  set(id: ControlId, normalizedPoint: ControlPoint, scale?: number): void {
+    if (!CONTROL_IDS.includes(id) || !validPoint(normalizedPoint) || (scale !== undefined && !validScale(scale))) return;
+    const nextScale = scale ?? this.positions[id]?.scale;
+    this.positions[id] = nextScale === undefined ? {...normalizedPoint} : {...normalizedPoint, scale: nextScale};
     this.save();
   }
   reset(): void { this.positions = {}; this.save(); }
@@ -80,7 +101,13 @@ export interface ControlViewport {
   width: number; height: number;
   insets: {left: number; right: number; top: number; bottom: number};
 }
-export interface ControlPlacement extends ControlPoint { scale: number; width: number; height: number }
+export interface ControlPlacement extends ControlPoint {
+  /** 屏幕适配缩放；不含用户倍率。 */
+  scale: number;
+  /** 用户在布局编辑器里调过的倍率，默认 1。 */
+  userScale: number;
+  width: number; height: number;
+}
 
 function safeArea(viewport: ControlViewport) {
   const {width, height, insets} = viewport;
@@ -108,10 +135,11 @@ export function resolveControlLayout(viewport: ControlViewport, overrides: Contr
   const attack = {x: viewport.width - viewport.insets.right - 104 * actionScale,
     y: viewport.height - viewport.insets.bottom - 80 * actionScale};
   const placement = (id: ControlId, point: ControlPoint, scale: number, width: number, height: number): ControlPlacement => {
-    const size = {width: width * scale, height: height * scale};
     const custom = overrides[id];
+    const userScale = custom?.scale ?? 1;
+    const size = {width: width * scale * userScale, height: height * scale * userScale};
     const position = custom ? fitPoint(viewport, {x: safe.left + custom.x * safe.width, y: safe.top + custom.y * safe.height}, size) : point;
-    return {...position, scale, ...size};
+    return {...position, scale, userScale, ...size};
   };
   // 十字键圆盘比摇杆大：中心离安全区边缘至少留出半个直径，避免贴边被裁掉。
   const moveOffset = Math.max(129, moveSize.width / 2) * moveScale;
@@ -125,6 +153,20 @@ export function resolveControlLayout(viewport: ControlViewport, overrides: Contr
     result[id] = placement(id, {x: attack.x + offset.x * actionScale, y: attack.y + offset.y * actionScale}, actionScale, CONTROL_SIZES.slot.width, CONTROL_SIZES.slot.height);
   });
   return result;
+}
+
+/**
+ * 控件中心保持不动时，放大到完整留在安全区内的最大倍率。
+ * 中心越靠近屏幕边缘，可放大的空间越小；结果不会低于最小倍率。
+ */
+export function maxControlScale(viewport: ControlViewport, id: ControlId,
+  overrides: ControlLayoutOverrides = {}, moveSize: {width: number; height: number} = CONTROL_SIZES.move): number {
+  const safe = safeArea(viewport), placement = resolveControlLayout(viewport, overrides, moveSize)[id];
+  const baseWidth = placement.width / placement.userScale, baseHeight = placement.height / placement.userScale;
+  const halfWidth = Math.min(placement.x - safe.left, safe.left + safe.width - placement.x);
+  const halfHeight = Math.min(placement.y - safe.top, safe.top + safe.height - placement.y);
+  return Math.max(CONTROL_SCALE_MIN, Math.min(CONTROL_SCALE_MAX,
+    Math.max(1, halfWidth) / (baseWidth / 2), Math.max(1, halfHeight) / (baseHeight / 2)));
 }
 
 /** 拖动点先限制图片完整留在安全区，再转为可跨尺寸保存的坐标。 */

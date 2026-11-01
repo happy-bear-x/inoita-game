@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { CONTROL_IDS, CONTROL_LAYOUT_STORAGE_KEY, CONTROL_SIZES, ControlLayoutPreferences, normalizeControlPosition, resolveControlLayout,
+import { CONTROL_IDS, CONTROL_LAYOUT_STORAGE_KEY, CONTROL_SIZES, ControlLayoutPreferences, maxControlScale, normalizeControlPosition, resolveControlLayout,
   type ControlLayoutOverrides, type ControlViewport, type StorageLike } from '../src/ui/control-layout.ts';
 import { controlViewport } from '../src/ui/phaser/control-layout-viewport.ts';
 
@@ -55,9 +55,9 @@ test('storage errors and storage disabled keep changes in memory', () => {
 
 test('default positions and sizes preserve the original action arc and movement stick', () => {
   const layout = resolveControlLayout(viewport);
-  assert.deepEqual(layout.move, {x: 129, y: 511, width: 210, height: 210, scale: 1});
-  assert.deepEqual(layout.attack, {x: 856, y: 560, width: 159, height: 160, scale: 1});
-  assert.deepEqual(layout.swap, {x: 898, y: 350, width: 75, height: 75, scale: 1});
+  assert.deepEqual(layout.move, {x: 129, y: 511, width: 210, height: 210, scale: 1, userScale: 1});
+  assert.deepEqual(layout.attack, {x: 856, y: 560, width: 159, height: 160, scale: 1, userScale: 1});
+  assert.deepEqual(layout.swap, {x: 898, y: 350, width: 75, height: 75, scale: 1, userScale: 1});
   assert.deepEqual(Array.from({length: 6}, (_, index) => {
     const placement = layout[`slot-${index}` as keyof typeof layout];
     return [placement.x, placement.y, placement.width, placement.height];
@@ -73,10 +73,10 @@ test('default positions and sizes preserve the original action arc and movement 
 
 test('dpad movement disk uses the 274 diameter and stays inside the safe area', () => {
   const stick = resolveControlLayout(viewport);
-  assert.deepEqual(stick.move, {x: 129, y: 511, width: 210, height: 210, scale: 1});
+  assert.deepEqual(stick.move, {x: 129, y: 511, width: 210, height: 210, scale: 1, userScale: 1});
 
   const dpad = resolveControlLayout(viewport, {}, CONTROL_SIZES.moveDpad);
-  assert.deepEqual(dpad.move, {x: 137, y: 503, width: 274, height: 274, scale: 1});
+  assert.deepEqual(dpad.move, {x: 137, y: 503, width: 274, height: 274, scale: 1, userScale: 1});
   assert.ok(dpad.move.x - dpad.move.width / 2 >= 0);
   assert.ok(dpad.move.y - dpad.move.height / 2 >= 0);
   assert.deepEqual(dpad.attack, stick.attack, '动作区不随移动样式改变');
@@ -85,7 +85,7 @@ test('dpad movement disk uses the 274 diameter and stays inside the safe area', 
     Array.from({length: 6}, (_, index) => stick[`slot-${index}` as keyof typeof stick]));
 
   const insetLayout = resolveControlLayout({...viewport, insets: {left: 30, right: 30, top: 10, bottom: 20}}, {}, CONTROL_SIZES.moveDpad).move;
-  assert.deepEqual(insetLayout, {x: 167, y: 483, width: 274, height: 274, scale: 1});
+  assert.deepEqual(insetLayout, {x: 167, y: 483, width: 274, height: 274, scale: 1, userScale: 1});
   assert.ok(insetLayout.x - insetLayout.width / 2 >= 30);
   assert.ok(insetLayout.y - insetLayout.height / 2 >= 10);
   assert.ok(insetLayout.x + insetLayout.width / 2 <= viewport.width - 30);
@@ -116,6 +116,48 @@ test('dragging clamps each complete control into the safe area, permits overlap 
   const point = {x: 600, y: 700}, normalized = normalizeControlPosition(safeViewport, 'move', point);
   const restored = resolveControlLayout(safeViewport, {move: normalized}).move;
   assert.ok(Math.abs(restored.x - point.x) < 1e-9 && Math.abs(restored.y - point.y) < 1e-9);
+});
+
+test('user scale enlarges one control around its saved center and leaves others alone', () => {
+  const layout = resolveControlLayout(viewport, {attack: {x: .5, y: .5, scale: 1.5}});
+  assert.deepEqual([layout.attack.x, layout.attack.y, layout.attack.width, layout.attack.height],
+    [480, 320, 238.5, 240]);
+  // 屏幕适配缩放和用户倍率分开：前者仍按安全区算。
+  assert.equal(layout.attack.scale, 1);
+  assert.equal(layout.attack.userScale, 1.5);
+  assert.equal(layout['slot-0'].userScale, 1);
+  assert.equal(layout['slot-0'].width, CONTROL_SIZES.slot.width);
+});
+
+test('scaled controls still clamp inside the safe area', () => {
+  const layout = resolveControlLayout(viewport, {attack: {x: 0, y: 0, scale: 2}});
+  assert.equal(layout.attack.width, CONTROL_SIZES.attack.width * 2);
+  assert.equal(layout.attack.x, CONTROL_SIZES.attack.width);
+  assert.equal(layout.attack.y, CONTROL_SIZES.attack.height);
+});
+
+test('max scale keeps the center fixed and only allows what fits the safe area', () => {
+  assert.equal(maxControlScale(viewport, 'attack', {attack: {x: .5, y: .5}}), 2);
+  // 拖到左上角后中心被夹在 (79.5, 80)，水平方向只剩 79.5 的半宽，所以最大只能是 1 倍。
+  assert.ok(Math.abs(maxControlScale(viewport, 'attack', {attack: {x: 0, y: 0}}) - 1) < 1e-9);
+});
+
+test('saved scales roundtrip, survive position changes and read legacy layouts as 1x', () => {
+  const storage = new MemoryStorage(), preferences = new ControlLayoutPreferences(storage);
+  preferences.set('attack', {x: .4, y: .7}, 1.5);
+  assert.deepEqual(preferences.snapshot(), {attack: {x: .4, y: .7, scale: 1.5}});
+  // 只改位置时保留该控件已有的倍率。
+  preferences.set('attack', {x: .5, y: .6});
+  assert.deepEqual(new ControlLayoutPreferences(storage).snapshot(), {attack: {x: .5, y: .6, scale: 1.5}});
+  // 上一版只存位置，读取时按 1 倍处理。
+  storage.data.set(CONTROL_LAYOUT_STORAGE_KEY, JSON.stringify({version: 1, positions: {attack: {x: .2, y: .3}}}));
+  assert.deepEqual(new ControlLayoutPreferences(storage).snapshot(), {attack: {x: .2, y: .3}});
+  // 超出范围的倍率整条记录不采用。
+  storage.data.set(CONTROL_LAYOUT_STORAGE_KEY, JSON.stringify({version: 2, positions: {attack: {x: .2, y: .3, scale: 3}}}));
+  assert.deepEqual(new ControlLayoutPreferences(storage).snapshot(), {});
+  const guarded = new ControlLayoutPreferences(storage);
+  guarded.set('attack', {x: .1, y: .1}, 0.1);
+  assert.deepEqual(guarded.snapshot(), {});
 });
 
 test('resizing projects positions without modifying or persisting saved preferences', () => {
