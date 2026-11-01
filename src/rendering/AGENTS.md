@@ -6,7 +6,7 @@
 
 - 角色/移动：`characters.ts`、`arcade-movement.ts`、`movement-world.ts`、`movement-interpolation.ts`、`character-visibility.ts`、`name-banner.ts`、`control-skin.ts`。
 - 地图/资源：`map-layers.ts`、`map-assets.ts`、`prop-atlas.ts`、`scene-assets.ts`、`story-map-view.ts`、`story-minimap.ts`。
-- 战斗表现：`combat-presenter.ts`、`combat-effects.ts`、`combat-feedback.ts`、`combat-outcomes.ts`、`combat-assets.ts`、`combat-asset-descriptors.ts`、`resident-combat-assets.ts`、`combat-visual-coverage.ts`、`buff-loop-renderer.ts`、`stun-stars.ts`、`status-color.ts`、`status-hud.ts`、`overhead-status.ts`。
+- 战斗表现：`combat-presenter.ts`、`combat-effects.ts`、`combat-feedback.ts`、`combat-outcomes.ts`、`combat-assets.ts`、`combat-asset-descriptors.ts`、`resident-combat-assets.ts`、`combat-visual-coverage.ts`、`buff-loop-renderer.ts`、`state-markers.ts`、`status-color.ts`、`status-hud.ts`、`overhead-status.ts`。
 - 剧情/HUD/其他：`story-presenter.ts`、`hud.ts`、`action-controls.ts`、`ground-loot.ts`、`pickup-messages.ts`、`wardrobe.ts`、`effects.ts`、`effect-animations.ts`、`effect-colors.ts`、`blend-modes.ts`、`webgl-recovery.ts`。
 
 ## 规则
@@ -20,3 +20,4 @@
 
 - `npm run typecheck`：类型检查覆盖本目录。
 - `npm test -- tests/buff-loop-renderer.test.ts`：状态图标循环表现。
+- `npm test -- tests/state-markers.test.ts`：眩晕/睡眠状态标记的创建与销毁。

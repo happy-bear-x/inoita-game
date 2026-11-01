@@ -8,6 +8,7 @@ import {
   type ResolvedBasicAttack
 } from '../domain/battle.ts';
 import { buffEffectNames } from '../domain/buff-effects.ts';
+import type { BattleStateKey } from '../domain/battle-semantics.ts';
 import { feedbackEffects } from '../domain/combat-feedback.ts';
 import { COMBAT_OUTCOME_EFFECTS } from '../domain/combat-outcomes.ts';
 import { skillEffectNames } from '../domain/skill-action.ts';
@@ -21,6 +22,21 @@ import type { PendingAsset } from './scene-assets.ts';
  * 运行时预载、常驻包和构建期覆盖校验共用这里的同一套描述符。
  */
 export type EffectMap = Record<string, AttackEffectDefinition>;
+
+/**
+ * 角色状态标记循环播放的特效：`state-markers.ts` 按这张表建表现，素材闭包按同一张表预载。
+ * 编号对应原版 `CHARACTERSTATEBASE +0`：状态 2（睡眠）→ 8，状态 3（眩晕）→ 84。
+ */
+export const STATE_MARKER_EFFECTS = {
+  sleep: 'state-sleep',
+  stun: 'state-stun'
+} as const satisfies Partial<Record<BattleStateKey, string>>;
+
+export function stateMarkerEffects(catalog: BattleCatalog): EffectMap {
+  return Object.fromEntries(Object.values(STATE_MARKER_EFFECTS)
+    .filter(name => catalog.attackEffects[name])
+    .map(name => [name, catalog.attackEffects[name]]));
+}
 
 export function characterAssets(actor: ActorDefinition): PendingAsset[] {
   return Object.values(actor.clips).flatMap(clip => clip ? clip.layers
@@ -120,7 +136,7 @@ export function classEffects(catalog: BattleCatalog, character: BattleClass, att
   return Object.fromEntries([...names].filter(name => catalog.attackEffects[name]).map(name => [name, catalog.attackEffects[name]]));
 }
 
-/** 所有武器普攻（单手、双持、狂暴）、状态攻击增益会用到的特效。 */
+/** 所有武器普攻（单手、双持、狂暴）、状态攻击增益和状态标记会用到的特效。 */
 export function sharedCombatEffectMap(catalog: BattleCatalog, wardrobe: WardrobeCatalog): EffectMap {
   const effects: EffectMap = {};
   for (const profile of Object.values(wardrobe.attacks)) Object.assign(effects, basicAttackEffects(catalog, profile));
@@ -129,6 +145,7 @@ export function sharedCombatEffectMap(catalog: BattleCatalog, wardrobe: Wardrobe
   for (const value of Object.values(catalog.statusAttackBuffs ?? {}))
     for (const name of buffEffectNames(value))
       if (catalog.attackEffects[name]) effects[name] = catalog.attackEffects[name];
+  Object.assign(effects, stateMarkerEffects(catalog));
   return effects;
 }
 

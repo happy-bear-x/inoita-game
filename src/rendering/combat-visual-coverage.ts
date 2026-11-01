@@ -7,7 +7,7 @@ import { skillForGrowth, type BattleCatalog } from '../domain/battle.ts';
 import type { ActorDefinition, WorldIndex } from '../domain/content.ts';
 import type { CompanionCatalog } from '../domain/party.ts';
 import type { WardrobeCatalog } from '../domain/wardrobe.ts';
-import { basicAttackEffects } from './combat-asset-descriptors.ts';
+import { basicAttackEffects, stateMarkerEffects } from './combat-asset-descriptors.ts';
 import { classSummonEnemyIds, enemyCombatAssets } from './combat-assets.ts';
 import { residentCombatAssets, type ResidentCombatInput } from './resident-combat-assets.ts';
 import { EFFECT_ATLAS_BY_FILE, EFFECT_ATLAS_PAGES } from '../generated/effect-atlas.ts';
@@ -67,6 +67,7 @@ export function residentCombatCoverageGaps(input: CoverageInput): CoverageGaps {
   for (const profile of Object.values(wardrobe.dualWieldAttacks ?? {})) addAttack(profile);
   for (const profile of Object.values(wardrobe.frenzyAttacks ?? {})) addAttack(profile);
   for (const value of Object.values(battle.statusAttackBuffs ?? {})) for (const name of buffEffectNames(value)) effects.add(name);
+  for (const name of Object.keys(stateMarkerEffects(battle))) effects.add(name);
   for (const name of feedbackEffects(battle.feedback)) effects.add(name);
   for (const name of COMBAT_OUTCOME_EFFECTS) effects.add(name);
 
