@@ -12,10 +12,10 @@ import { UiSurface } from './widgets.ts';
 
 /** 白色选中框离控件边缘的距离（屏幕像素）。 */
 const SELECTION_BLEED = 4;
-/** 四角把手的可见边长；把手只做提示，拖动判定按按下点离角的距离。 */
+/** 四角把手只做视觉提示，拖动的含义由工具栏的移动/缩放模式决定。 */
 const HANDLE_SIZE = 16;
-/** 按下点离控件角多近算缩放：按控件短边取三成，限制在 20–32 像素。 */
-const CORNER_HIT_RATIO = .3, CORNER_HIT_MIN = 20, CORNER_HIT_MAX = 32;
+const TOOLBAR_RESET_WIDTH = 220, TOOLBAR_MODE_WIDTH = 120, TOOLBAR_HEIGHT = 66, TOOLBAR_GAP = 12;
+type EditMode = 'move' | 'scale';
 
 interface ScaleDrag {
   pointer: Phaser.Input.Pointer;
@@ -42,6 +42,9 @@ export class ControlLayoutEditor {
   private scaleDrag?: ScaleDrag;
   private preview?: {id: ControlId; point: ControlPoint; scale: number};
   private resetButton?: Phaser.GameObjects.Container;
+  private moveButton?: Phaser.GameObjects.Container;
+  private scaleButton?: Phaser.GameObjects.Container;
+  private mode: EditMode = 'move';
   private slots: readonly ShortcutSlot[] = [];
   private active = false;
   private viewportKey = '';
@@ -49,15 +52,16 @@ export class ControlLayoutEditor {
   private readonly scene: Phaser.Scene;
   private readonly preferences: ControlLayoutPreferences;
   private readonly skin: ControlSkin;
+  private readonly assets: Record<string,string>;
+  private readonly closeEditor: () => void;
 
   constructor(scene: Phaser.Scene, preferences: ControlLayoutPreferences,
     skin: ControlSkin, assets: Record<string,string>, close: () => void) {
-    this.scene=scene;this.preferences=preferences;this.skin=skin;
+    this.scene=scene;this.preferences=preferences;this.skin=skin;this.assets=assets;this.closeEditor=close;
     this.canvas = new UiSurface(scene,960,640,350);
     this.toolbar = new UiSurface(scene,960,640,390);
     this.toolbar.enabled = () => this.active && this.toolbar.root.visible;
-    this.toolbar.button('',12,12,67,67,close,{image:assets.close,pressed:assets['close-pressed']}).setData('label','关闭控件位置');
-    this.resetButton = this.toolbar.button('恢复默认',0,12,220,66,() => {this.cancel();this.preferences.reset();});
+    this.paintToolbar();
 
     this.unsubscribe = preferences.subscribe(() => this.layout());
     scene.game.events.on(UI_EVENTS.cancelInput,this.cancel,this);
@@ -69,6 +73,7 @@ export class ControlLayoutEditor {
   open(slots: readonly ShortcutSlot[]): void {
     this.slots = slots; this.active = true;
     this.selected = undefined; this.preview = undefined; this.scaleDrag = undefined;
+    this.mode = 'move'; this.paintToolbar();
     this.rebuild();
     this.visible(true);this.layout();
   }
@@ -84,7 +89,11 @@ export class ControlLayoutEditor {
     }
     const {insets,width}=viewport,scale=positions.attack.scale;
     this.toolbar.root.setPosition(insets.left,insets.top).setScale(scale);
-    this.resetButton?.setPosition((width-insets.left-insets.right)/scale/2-110,12);
+    const center=(width-insets.left-insets.right)/scale/2;
+    const rowLeft=center-(TOOLBAR_RESET_WIDTH+TOOLBAR_MODE_WIDTH*2+TOOLBAR_GAP*2)/2;
+    this.resetButton?.setPosition(rowLeft,12);
+    this.moveButton?.setPosition(rowLeft+TOOLBAR_RESET_WIDTH+TOOLBAR_GAP,12);
+    this.scaleButton?.setPosition(rowLeft+TOOLBAR_RESET_WIDTH+TOOLBAR_MODE_WIDTH+TOOLBAR_GAP*2,12);
     this.paintSelection();
   }
 
@@ -115,6 +124,23 @@ export class ControlLayoutEditor {
 
   private resolve(viewport = controlViewport(this.scene)): Record<ControlId, ControlPlacement> {
     return resolveControlLayout(viewport,this.previewOverrides(),this.moveSize());
+  }
+
+  /** 工具栏一次画出关闭、恢复默认和移动/缩放两个模式钮；选中的模式常驻高亮。 */
+  private paintToolbar(): void {
+    this.toolbar.clear();
+    this.toolbar.button('',12,12,67,67,this.closeEditor,{image:this.assets.close,pressed:this.assets['close-pressed']}).setData('label','关闭控件位置');
+    this.resetButton=this.toolbar.button('恢复默认',0,12,TOOLBAR_RESET_WIDTH,TOOLBAR_HEIGHT,
+      ()=>{this.cancel();this.preferences.reset();});
+    this.moveButton=this.toolbar.button('移动',0,12,TOOLBAR_MODE_WIDTH,TOOLBAR_HEIGHT,
+      ()=>this.setMode('move'),{selected:this.mode==='move'});
+    this.scaleButton=this.toolbar.button('缩放',0,12,TOOLBAR_MODE_WIDTH,TOOLBAR_HEIGHT,
+      ()=>this.setMode('scale'),{selected:this.mode==='scale'});
+  }
+
+  private setMode(mode: EditMode): void {
+    if(this.mode===mode)return;
+    this.mode=mode;this.cancelDrags();this.paintToolbar();this.layout();
   }
 
   /** 缩放拖动期间用预览倍率参与解析，松手前不写存储。 */
@@ -176,9 +202,12 @@ export class ControlLayoutEditor {
       object.on('pointerdown',()=>this.select(id));
       object.on('dragstart',(pointer:Phaser.Input.Pointer)=>{
         if(!this.active||!this.canvas.root.visible)return;
-        // 按下点靠近四角就整次拖动都缩放；其余区域照旧移动，不会拖到一半切换。
-        const placement=this.placements?.[id];
-        if(placement&&this.nearCorner(pointer,placement)){this.beginScale(pointer,id,placement);return;}
+        // 整次拖动做什么由工具栏当前模式决定，拖动中不会切换。
+        if(this.mode==='scale'){
+          const placement=this.placements?.[id];
+          if(placement)this.beginScale(pointer,id,placement);
+          return;
+        }
         if(!this.drags.has(id))this.drags.set(id,{pointer});
       });
       object.on('drag',(pointer:Phaser.Input.Pointer,x:number,y:number)=>{
@@ -233,18 +262,10 @@ export class ControlLayoutEditor {
     }
     const halfWidth=placement.width/2+SELECTION_BLEED,halfHeight=placement.height/2+SELECTION_BLEED;
     const left=placement.x-halfWidth,top=placement.y-halfHeight,right=left+halfWidth*2,bottom=top+halfHeight*2;
-    // 进入缩放时线加粗，明确告诉玩家这次拖动在改大小。
-    frame.clear().lineStyle(this.scaleDrag?3:2,0xffffff,1).strokeRect(left,top,halfWidth*2,halfHeight*2).setVisible(true);
+    // 缩放模式下线加粗，明确告诉玩家现在拖动改的是大小。
+    frame.clear().lineStyle(this.mode==='scale'?3:2,0xffffff,1).strokeRect(left,top,halfWidth*2,halfHeight*2).setVisible(true);
     const corners=[[left,top],[right,top],[left,bottom],[right,bottom]];
     corners.forEach(([x,y],index)=>this.handles[index]?.setPosition(x,y).setVisible(true));
-  }
-
-  /** 按下点离任意一角足够近就算缩放；热区随控件大小自适应。 */
-  private nearCorner(pointer: Phaser.Input.Pointer, placement: ControlPlacement): boolean {
-    const radius=Phaser.Math.Clamp(Math.min(placement.width,placement.height)*CORNER_HIT_RATIO,CORNER_HIT_MIN,CORNER_HIT_MAX);
-    const halfWidth=placement.width/2,halfHeight=placement.height/2;
-    return [[-1,-1],[1,-1],[-1,1],[1,1]].some(([sx,sy])=>
-      Math.hypot(pointer.x-(placement.x+sx*halfWidth),pointer.y-(placement.y+sy*halfHeight))<=radius);
   }
 
   /** 记住当前中心和“1 倍时的中心到角距离”，拖动中只换算倍率。 */

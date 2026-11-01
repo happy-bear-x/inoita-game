@@ -1168,36 +1168,43 @@ test('control editor saves only on release, allows overlap, resets in place and 
   assert.deepEqual(f.app.controlLayout.snapshot(),{});assert(f.controls.controlLayoutEditing);
   const defaultLayout=resolveControlLayout(controlViewport(f.scene as unknown as Phaser.Scene));
   for(const id of CONTROL_IDS)assert.deepEqual([editingControl(f,id).x,editingControl(f,id).y],[defaultLayout[id].x,defaultLayout[id].y]);
-  // 工具栏现在只有“恢复默认”和关闭钮；从“恢复默认”继续往后 Tab 到关闭钮。
-  assert(f.scene.key('Tab'));
+  // 工具栏依次是关闭、恢复默认、移动、缩放；从“恢复默认”往后 Tab 三次到关闭钮。
+  assert(f.scene.key('Tab'));assert(f.scene.key('Tab'));assert(f.scene.key('Tab'));
   assert(f.scene.key('Enter'));assert.equal(f.controls.controlLayoutEditing,false);
 });
 
-test('control editor moves from the center and scales from a corner without switching mid-drag',t=>{
+test('control editor switches between move and scale modes, defaulting to move',t=>{
   const f=fixture();t.after(f.cleanup);
   f.app.controlLayout.set('attack',{x:.5,y:.5});openControls(f);
   const pointer=f.scene.input.activePointer,object=editingControl(f,'attack');
   const placement=()=>resolveControlLayout(controlViewport(f.scene as unknown as Phaser.Scene),f.app.controlLayout.snapshot()).attack;
-  // 中心按下：移动，不写倍率。
+  // 默认是移动：拖动改位置，不写倍率。
+  assert.equal(f.scene.button('移动').getData('selected'),true);
+  assert.equal(f.scene.button('缩放').getData('selected'),false);
   Object.assign(pointer,{x:object.x,y:object.y});
-  object.emit('dragstart',pointer);object.emit('drag',pointer,700,400);
-  assert.equal(f.app.controlLayout.snapshot().attack?.scale,undefined,'中心按下是移动');
-  object.emit('dragend',pointer);
-  assert.equal(f.app.controlLayout.snapshot().attack?.scale,undefined);
-  // 摆回正中后从右下角附近按下：整次拖动都是缩放，位置保持不变。
+  object.emit('dragstart',pointer);object.emit('drag',pointer,700,400);object.emit('dragend',pointer);
+  assert.equal(f.app.controlLayout.snapshot().attack?.scale,undefined,'默认移动不写倍率');
+  // 切到缩放后，从任何位置拖动都以中心缩放，位置保持不变。
   f.app.controlLayout.set('attack',{x:.5,y:.5});
-  const before=placement(),cornerX=before.x+before.width/2-4,cornerY=before.y+before.height/2-4;
-  Object.assign(pointer,{x:cornerX,y:cornerY});
+  f.scene.click(f.scene.button('缩放'));
+  assert.equal(f.scene.button('缩放').getData('selected'),true);
+  assert.equal(f.scene.button('移动').getData('selected'),false);
+  const before=placement(),startX=before.x,startY=before.y;
+  Object.assign(pointer,{x:startX,y:startY});
   object.emit('dragstart',pointer);
-  Object.assign(pointer,{x:cornerX+60,y:cornerY+60});
-  object.emit('drag',pointer,cornerX+60,cornerY+60);
-  const during=f.app.controlLayout.snapshot().attack;
-  assert.equal(during?.scale,undefined,'拖动中不写存储');
+  Object.assign(pointer,{x:startX+100,y:startY+100});
+  object.emit('drag',pointer,startX+100,startY+100);
+  assert.equal(f.app.controlLayout.snapshot().attack?.scale,undefined,'拖动中不写存储');
   object.emit('dragend',pointer);
   const saved=f.app.controlLayout.snapshot().attack!;
   assert.ok(saved.scale!==undefined&&saved.scale>1.2,`拖向外侧放大：${saved.scale}`);
   assert.deepEqual([saved.x,saved.y],[.5,.5],'缩放不改变中心位置');
   assert.deepEqual([object.x,object.y],[before.x,before.y]);
+  // 切回移动继续改位置，已保存的倍率保持不变。
+  f.scene.click(f.scene.button('移动'));
+  Object.assign(pointer,{x:object.x,y:object.y});
+  object.emit('dragstart',pointer);object.emit('drag',pointer,600,300);object.emit('dragend',pointer);
+  assert.equal(f.app.controlLayout.snapshot().attack?.scale,saved.scale,'移动不改倍率');
 });
 
 test('settings cycles operation modes in place and shows the matching editor entry',t=>{
