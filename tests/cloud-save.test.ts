@@ -15,7 +15,7 @@ import {
   validateCloudAccount,
   validateCloudPassword,
 } from '../src/domain/cloud-save.ts';
-import { AUTO_SAVE_SLOT, SAVE_FORMAT, saveFormatStatus } from '../src/domain/save-game.ts';
+import { AUTO_SAVE_SLOT, LEGACY_SAVE_FORMATS, SAVE_FORMAT, saveFormatStatus } from '../src/domain/save-game.ts';
 
 test('account rules allow Chinese, letters, digits and underscore but not spaces',()=>{
   assert.equal(validateCloudAccount('玩家一'),undefined);
@@ -59,7 +59,7 @@ test('save formats distinguish readable, future and obsolete versions',()=>{
   assert.equal(saveFormatStatus(SAVE_FORMAT),'ok');
   assert.equal(saveFormatStatus(SAVE_FORMAT-1),'ok');
   assert.equal(saveFormatStatus(SAVE_FORMAT+1),'future');
-  assert.equal(saveFormatStatus(SAVE_FORMAT-7),'obsolete');
+  assert.equal(saveFormatStatus(Math.min(...LEGACY_SAVE_FORMATS)-1),'obsolete');
   assert.equal(saveFormatStatus(SAVE_FORMAT-0.5),'unknown');
   assert.equal(saveFormatStatus('39'),'unknown');
 });
