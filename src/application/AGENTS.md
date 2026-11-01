@@ -17,7 +17,7 @@
 - 新能力先在 `ports.ts` 定义接口，由 `src/app.ts` 在启动阶段注入实现。
 - 场景通过 ports 取素材、音频和浏览器能力，加载与 API 调用留在本目录。
 - 云存档是旁路能力：客户端构造不联网，只有打开云页/点击上传下载才请求；网络、token 或存储失败都结果化返回，不能抛到菜单或游戏循环。
-- 云存档和诊断的服务地址只从 `endpoints.ts` 解析。网页留空走同源；Android/热更新由宿主注入 `__inoitaEndpoints`；页面里不再另写域名或读取别的地址变量。
+- 云存档和诊断的服务地址只从 `endpoints.ts` 解析。环境根地址在 `config/endpoints.json`：网页固定同源（空值）；Android 调试指向 `adb reverse` 的 `127.0.0.1:4003`，发布和网页生产共用 `https://catgo.online:4002`。Android/热更新在页面脚本前注入 `__inoitaEndpoints`；页面里不再另写域名或读取别的地址变量。
 - 只有 `game-audio.ts`、`game-timing.ts`、`game-diagnostics.ts` import Phaser，其余文件保持纯 TypeScript。
 - 改存档结构或校验口径时，把 `src/domain/save-game.ts` 的 `SAVE_FORMAT` 加一，并在 `saved-game.ts` 的升级链补旧版到新版的迁移和旧档测试。
 - 内容加载与构建共用 `content-validation.ts` 的校验器，新增内容字段先在这里定校验口径。

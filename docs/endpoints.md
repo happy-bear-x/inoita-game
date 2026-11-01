@@ -1,5 +1,7 @@
 # 服务地址管理
 
+对应规则：`config/AGENTS.md`、`src/application/AGENTS.md`、`src/debug/AGENTS.md` 和 `android/AGENTS.md`。
+
 云存档和诊断上报共用一套服务地址。目标是：网页不写域名，Android/热更新由宿主注入，环境切换只改一处。
 
 ## 决定

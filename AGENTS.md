@@ -35,6 +35,7 @@ Phaser 4.2.1 + TypeScript 的剧情与任务体验版。源码、内容、素材
 - **剧情独立创作**。`public/content/campaign.json` 是剧情、任务和角色摆放的源文件；新增字段先定义游戏含义、单位和消费方式，内容加载和构建共用校验器。
 - **名字用游戏里的概念**。动画叫 `walk-east`、`idle-south`，地图属性叫 `blocked`、`exits`、`entities`，剧情行为叫 `dialogue`、`choice`。
 - **存档兼容上一版**。当前代码必须能读回最近一次发布的存档格式；升级流程见 `src/domain/AGENTS.md`，迁移链在 `src/application/saved-game.ts`。
+- **服务地址分开发与部署**。网页始终同源，页面不写域名；Android/热更新在页面脚本前注入 `__inoitaEndpoints`。环境根地址只维护 `config/endpoints.json`：Android 调试用 `adb reverse` 指向本机 4003，发布和网页生产共用 `https://catgo.online:4002`；云存档 `/__cloud`、诊断 `/__diagnostics/report` 路径固定。细则见 `config/AGENTS.md`、`src/application/AGENTS.md`、`android/AGENTS.md`。
 
 ## 3. 测试与验证
 
@@ -71,6 +72,8 @@ ss -ltnp | grep -E '4002|4003|4004'
 
 在根目录运行 `npm run build` 生成 `dist/`；`npm run deploy` 会做类型检查、构建，并通过 `https://catgo.online:4002` 核对正在提供的版本。4004 静态服务直接读磁盘，构建完成即生效，不需要重启；只有静态服务自身改动才需要重启。
 
+本地调试用 4003；4002/4004 是部署链路。Android 调试通过 `adb reverse tcp:4003 tcp:4003` 复用 4003，不把开发地址写进 release 包。
+
 ## 5. 目录导航
 
 ```text
@@ -91,7 +94,7 @@ src/                   游戏源码（规则见 src/AGENTS.md）
 public/                原样复制进构建产物的静态资源和内容
   content/             剧情、任务、地图、战斗、物品、音频等内容 JSON
   assets/              图片与音频素材
-config/                环境服务根地址（Android 调试/发布；网页固定同源）
+config/                环境服务根地址（AGENTS.md；网页固定同源，Android 调试/发布分环境）
 tests/                 单元测试（AGENTS.md；helpers、support 另有）
 tools/                 构建、校验、调试现场表生成、静态服务、APK 打包（AGENTS.md；debug-start 另有）
 deploy/                nginx 站点等部署配置
