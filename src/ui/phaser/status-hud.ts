@@ -74,13 +74,15 @@ class MemberPanel {
     // 显隐一律走 Hud：面板容器在 Hud 的登记表里，绕过它直接改会被下一次重排翻回来。
     this.hud.setVisible(this.container,this.visible);
     // 会话每次通知都会重设全部面板；数值没变时跳过贴图、字体与槽位重写。
-    const down=!living,downKey=id==='player'?this.skin.assets['player-portrait-down']:this.skin.assets['member-portrait-down'],
-      portraitImage:PortraitRef=down?{key:downKey}:portraitRef(this.scene,portrait)??{key:this.skin.assets['member-portrait']};
-    const content=`${id}|${values.level}|${values.health}/${values.maxHealth}|${values.mana}/${values.maxMana}|${values.experience}/${values.nextLevelExperience}|${portraitRefKey(portraitImage)}`;
+    const down=!living,provided=portraitRef(this.scene,portrait),
+      downKey=id==='player'?this.skin.assets['player-portrait-down']:this.skin.assets['member-portrait-down'],
+      portraitImage:PortraitRef=provided??(down?{key:downKey}:{key:this.skin.assets['member-portrait']});
+    const content=`${id}|${values.level}|${values.health}/${values.maxHealth}|${values.mana}/${values.maxMana}|${values.experience}/${values.nextLevelExperience}|${portraitRefKey(portraitImage)}|${down}`;
     if(content===this.contentSignature)return;
     this.contentSignature=content;
     this.frame.setTexture(this.skin.assets['member-frame']).setDisplaySize(layout.width,layout.height);
-    this.portrait.setTexture(portraitImage.key,portraitImage.frame);
+    // 阵亡仍保留该成员自己的头像，只压暗；不要换成通用的 down 头像。
+    this.portrait.setTexture(portraitImage.key,portraitImage.frame).setTint(down?0x777777:0xffffff);
     const p=layout.portrait;
     this.portrait.setPosition(p.x,p.y).setDisplaySize(p.width,p.height);
     const level=layout.level;

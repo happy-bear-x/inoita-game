@@ -222,11 +222,12 @@ test('the member column stacks below the main panel and never reaches the swap b
 test('member panels hide and return only through the HUD registry', async () => {
   class Node {
     x=0;y=0;width=0;height=0;visible=true;scaleX=1;scaleY=1;list:Node[]=[];style?:{color?:string;fontSize?:number};
+    textureKey?:string;tint?:number;
     setOrigin(){return this;}setDisplaySize(){return this;}setSize(){return this;}
     setPosition(x:number,y:number){this.x=x;this.y=y;return this;}setX(x:number){this.x=x;return this;}
     setScale(x:number,y=x){this.scaleX=x;this.scaleY=y;return this;}
     setVisible(value:boolean){this.visible=value;return this;}
-    setTexture(){return this;}setCrop(){return this;}setText(){return this;}
+    setTexture(key:string){this.textureKey=key;return this;}setTint(tint:number){this.tint=tint;return this;}setCrop(){return this;}setText(){return this;}
     setColor(value:string){if(this.style)this.style.color=value;return this;}
     setData(){return this;}getData(){return undefined;}
     setInteractive(){return this;}disableInteractive(){return this;}on(){return this;}
@@ -262,11 +263,16 @@ test('member panels hide and return only through the HUD registry', async () => 
   try {
     const { StatusHud } = await import('../src/ui/phaser/status-hud.ts');
     const player={level:1,health:100,maxHealth:100,mana:50,maxMana:100,experience:0,nextLevelExperience:100};
-    const party=()=>({active:['player','mercenary'],living:['player','mercenary'],rosterSlots:[null],reserves:[],
+    const party=()=>({active:['player','mercenary'],living:['player'],rosterSlots:[null],reserves:[],
       controlled:'player',members:[{id:'mercenary',...player}]}) as unknown as PartySnapshot;
-    const status=new StatusHud(hud as unknown as Hud,skin,()=>player,()=>()=>{},party);
+    const status=new StatusHud(hud as unknown as Hud,skin,()=>player,()=>()=>{},party,undefined,
+      id=>id==='mercenary'?'assets/ui/status/mercenary-test.png':undefined);
     // 前两个登记项是大面板与目标面板，其余都是队友面板。
     const panels=registered.slice(2);
+    const fallenPortrait=panels[0]!.list.find(node=>node.tint===0x777777);
+    assert.ok(fallenPortrait,'阵亡佣兵仍显示自己的头像');
+    assert.equal(fallenPortrait.textureKey,'interface:assets/ui/status/mercenary-test.png','没有换成通用 down 头像');
+    assert.equal(fallenPortrait.tint,0x777777,'阵亡状态只压暗头像');
     assert.equal(panels.length,skin.member.slots.length,'队友面板全部登记在 Hud 里');
     // 只有第一块有队员，其余是空槽。
     status.setTarget({id:'enemy',name:'狼',level:9,health:10,maxHealth:10,sceneLevel:false});
