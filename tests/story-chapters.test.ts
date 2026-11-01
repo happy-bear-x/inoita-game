@@ -997,13 +997,11 @@ test('the fusion machine collection can be completed twice using warehouse items
       await h.talk('npc-576');
       assert.equal(h.session.status('quest-353'), 'active', `第${round + 1}轮正常接取`);
       await h.travel(warehouse); await h.wait(60);
-      assert.equal(iron().length, 7, '仓库七个原版生成点各产生一个铁块');
-      const first = iron()[0];
+      assert.equal(iron().length, 5, '任务只需要五块，仓库七个原版生成点最多刷五个');
       await h.pickup('paillette');
-      assert.equal(iron().length, 6);
+      assert.equal(iron().length, 4);
       await h.wait((312 + 2 * 151) * LOGIC_FRAME_MS);
-      assert.equal(iron().length, 7, '按原版312帧间隔及共享检查门限刷新已拾取的生成点');
-      assert.ok(iron().some(drop => drop.id !== first.id && drop.x === first.x && drop.y === first.y));
+      assert.equal(iron().length, 4, '背包加地面已经够五块，刷新的生成点不再多产');
       await h.pickup('paillette', 4);
       assert.equal(h.session.status('quest-353'), 'ready');
       await h.travel('shadow-hall'); await h.talk('npc-576');

@@ -1379,6 +1379,12 @@ export class WorldScene extends Phaser.Scene {
     const session=this.app.session;
     if(reward.kind==='money'){session.gainMoney(reward.amount);return true;}
     const item=this.app.items.items[reward.item];
+    // 任务道具按当前需求封顶：有任务还需要它就正常捡，背包够了才留在地上。
+    const questRemaining=item?.category==='quest'?session.questItemPickupRemaining(reward.item):undefined;
+    if(questRemaining!==undefined&&questRemaining<=0){
+      this.app.ui.showInstant('任务道具已经够了，不能再捡。');
+      return false;
+    }
     if(item?.pickup){if(!this.combat)return false;return this.combat.collectMana(item.pickup);}
     if(reward.instance){session.bag.receiveDrop(reward.instance);return true;}
     session.bag.add(reward.item,reward.quantity);return true;

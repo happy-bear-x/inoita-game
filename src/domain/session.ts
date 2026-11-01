@@ -209,7 +209,7 @@ export class Session {
    * 任务掉落必须按「背包 + 地面」计算有效持有量，否则连续击杀时每一只都会再产一件，
    * 一次性捡起后就会超过任务需求。
    */
-  questDropRequirements(pending:ReadonlyMap<string,number>=new Map()):readonly (readonly QuestDropRequirement[])[] {
+  questDropRequirements(pending:ReadonlyMap<string,number>=groundLootFor(this).pendingItemCounts()):readonly (readonly QuestDropRequirement[])[] {
     this.refresh();
     const focus=this.debugFocusQuestValue;
     return this.questBook.runningQuestIds.filter(id=>!focus||id===focus).flatMap(id=>{
@@ -220,6 +220,40 @@ export class Session {
           owned:this.itemCount(goal.target)+(pending.get(goal.target)??0)}));
       return goals.length?[goals]:[];
     });
+  }
+  /** 进行中任务里，这件物品对应的目标；任务没进行或物品不属于它时返回 undefined。 */
+  private questItemGoal(quest:string,item:string):QuestGoal|undefined {
+    const definition=this.definition(quest);
+    if(!definition||this.status(quest)!=='active')return undefined;
+    return definition.goals.find(goal=>goal.kind==='item'&&goal.target===item);
+  }
+  /**
+   * 任务道具还差多少件：需求减去背包数量和地上还没捡的同类物品。
+   * 返回正数表示还能产出；任务没进行、物品不属于它，或数量已经够了时返回 0。
+   */
+  questItemRemaining(quest:string,item:string):number {
+    this.refresh();
+    const goal=this.questItemGoal(quest,item);
+    if(!goal)return 0;
+    const pending=groundLootFor(this).pendingItemCounts().get(item)??0;
+    return Math.max(0,goal.quantity-this.itemCount(item)-pending);
+  }
+  /**
+   * 拾取任务道具前的余量。只算背包：正要捡的这一件本身就在地上，
+   * 若把地面存货也计进去，同类道具会互相挡住，谁也捡不起来。
+   * 没有进行中的任务需要它时返回 undefined（可以正常拾取）；
+   * 返回 0 表示有任务需要，但背包里已经够了。
+   */
+  questItemPickupRemaining(item:string):number|undefined {
+    this.refresh();
+    let needed=false,remaining=0;
+    const held=this.itemCount(item);
+    for(const quest of this.questBook.runningQuestIds){
+      const goal=this.questItemGoal(quest,item);
+      if(!goal)continue;
+      needed=true;remaining=Math.max(remaining,goal.quantity-held);
+    }
+    return needed?remaining:undefined;
   }
 
   /** 任务列表的只读投影；同一任务簿版本内返回同一份，调用方不得改写。 */
@@ -465,7 +499,7 @@ export class Session {
   get combatTick():number { return this.combatClock.currentFrame; }
   advanceCombatFrames(deltaMs:number,step:(frame:number)=>unknown):void {
     this.combatClock.advance(deltaMs,frame=>{
-      this.questItemGenerators.advance(frame,quest=>this.status(quest)==='active',groundLootFor(this));
+      this.questItemGenerators.advance(frame,definition=>this.questItemRemaining(definition.quest,definition.item)>0,groundLootFor(this));
       return step(frame);
     });
   }

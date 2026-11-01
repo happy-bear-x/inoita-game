@@ -26,13 +26,17 @@ export class QuestItemGenerators {
     this.state={map,mapVisit,nextCheckFrame:0,generators:definitions.map(definition=>({id:definition.id,remainingFrames:0,exhausted:false}))};
   }
 
-  advance(frame:number,isActive:(quest:string)=>boolean,ground:GroundLootStore):void {
+  /**
+   * `canProduce` 由会话层按“任务道具还差多少件”判断。
+   * 前一个生成点产出的物品会立刻算进后一个的判断，所以同一帧也会自然停在上限。
+   */
+  advance(frame:number,canProduce:(definition:QuestItemSpawn)=>boolean,ground:GroundLootStore):void {
     if(!this.state.map||this.state.nextCheckFrame>=frame)return;
     for(const generator of this.state.generators){
       if(generator.exhausted||generator.dropId)continue;
       const definition=this.definitions.get(generator.id);if(!definition)continue;
       if(generator.remainingFrames>0)generator.remainingFrames-=150;
-      if(generator.remainingFrames>0||!isActive(definition.quest))continue;
+      if(generator.remainingFrames>0||!canProduce(definition))continue;
       const [drop]=ground.add(this.state.map,definition.x,definition.y,[{kind:'item',item:definition.item,quantity:1}]);
       generator.dropId=drop.id;
     }
