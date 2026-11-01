@@ -644,19 +644,18 @@ export class MenuScene extends Phaser.Scene {
       && !this.passwordPrompt?.active;
   }
 
-  /** 把面板里的两行矩形换算成屏幕坐标；缩放或安全区变化后重新定位。 */
+  /** 把面板里的两行矩形换算成画布坐标；输入框挂在 `#game-frame` 内，画布移动时自动跟随。 */
   private credentialRects():{account:CredentialInputRect;password:CredentialInputRect}|undefined {
     if(!this.surface)return;
-    const canvas=this.game.canvas;
-    const bounds=canvas.getBoundingClientRect();
+    const bounds=this.game.canvas.getBoundingClientRect();
     if(!bounds.width||!bounds.height)return;
     const matrix=this.surface.root.getWorldTransformMatrix();
     const scaleX=bounds.width/this.scale.width, scaleY=bounds.height/this.scale.height;
     const map=(local:{x:number;y:number;width:number;height:number;fontSize:number}):CredentialInputRect=>{
       const point=matrix.transformPoint(local.x,local.y);
       return {
-        left:bounds.left+point.x*scaleX,
-        top:bounds.top+point.y*scaleY,
+        left:point.x*scaleX,
+        top:point.y*scaleY,
         width:local.width*matrix.scaleX*scaleX,
         height:local.height*matrix.scaleY*scaleY,
         fontSize:local.fontSize*matrix.scaleY*scaleY,

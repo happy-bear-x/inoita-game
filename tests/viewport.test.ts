@@ -32,6 +32,31 @@ test('viewport offsets and safe insets affect the frame and controls separately,
  }
 });
 
+test('keepSize follows the visual viewport offset without resizing the frame',()=>{
+ const names=['window','document','getComputedStyle','innerWidth','innerHeight'];
+ const globals=globalThis as unknown as Record<string, unknown>;
+ const original: [string, PropertyDescriptor | undefined][]=names.map(name=>[name,Object.getOwnPropertyDescriptor(globalThis,name)]);
+ const style:FakeStyle={setProperty(name,value){this[name]=value;}};
+ try {
+  globals.window={visualViewport:{width:844,height:390,offsetLeft:0,offsetTop:0}};
+  globals.document={getElementById:(id: string)=>id==='game-frame'?{style}:{}};
+  globals.getComputedStyle=()=>({paddingLeft:'0px',paddingRight:'0px',paddingTop:'0px',paddingBottom:'0px'});
+  globals.innerWidth=844;globals.innerHeight=390;
+  fitViewport();
+  assert.deepEqual([style.width,style.height,style.left,style.top],['844px','390px','0px','0px']);
+  // 键盘弹出：可视区变矮并向上滚动。画布尺寸不动，只跟随位置偏移。
+  globals.window={visualViewport:{width:844,height:250,offsetLeft:0,offsetTop:140}};
+  globals.innerWidth=844;globals.innerHeight=250;
+  fitViewport({keepSize:true});
+  assert.deepEqual([style.width,style.height,style.left,style.top],['844px','390px','0px','140px']);
+  assert.equal(style['--story-unit'],`${Math.min(844/800,390/480)}px`,'界面单位保持原尺寸');
+ } finally {
+  for(const [name,descriptor] of original) {
+   if(descriptor)Object.defineProperty(globalThis,name,descriptor);else delete globals[name];
+  }
+ }
+});
+
 test('safe area is measured once until the viewport changes',()=>{
  const globals=globalThis as unknown as Record<string,unknown>;
  const original=['window','document','getComputedStyle'].map(name=>[name,Object.getOwnPropertyDescriptor(globalThis,name)] as const);

@@ -19,6 +19,9 @@ export interface CloudCredentialsInputOptions {
  * 云存档页的账号/密码输入框。它们是直接盖在面板对应行上的原生 input，
  * 不再是独立的居中弹层；手机系统键盘仍由真实 input 唤起。
  *
+ * 输入框挂在 `#game-frame` 内、使用画布坐标：键盘弹出时画布跟随可视区偏移，
+ * 输入框作为画布的一部分一起移动，永远贴着面板对应行，不会单独被顶走。
+ *
  * 覆盖层只负责输入和定位，值写回场景状态；登录/注册按钮仍由 Phaser 画。
  */
 export class CloudCredentialsInput {
@@ -99,7 +102,8 @@ export class CloudCredentialsInput {
     password.setAttribute('spellcheck', 'false');
 
     root.append(account, password);
-    document.body.append(root);
+    // 画布容器是 fixed 定位；挂在它里面，输入框跟着画布一起跟随可视区偏移。
+    (document.getElementById('game-frame') ?? document.body).append(root);
     this.root = root;
     this.accountInput = account;
     this.passwordInput = password;

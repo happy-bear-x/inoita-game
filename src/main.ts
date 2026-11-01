@@ -80,8 +80,9 @@ function editingText(): boolean {
 const scheduleLayout = () => {
   cancelAnimationFrame(layoutFrame);
   layoutFrame = requestAnimationFrame(() => {
-    if(editingText())return;
-    fitViewport();
+    // 键盘弹出时可视区变矮：画布保持尺寸、只跟随位置偏移，菜单不会被重排。
+    // 键盘收起（输入框已经失焦）后的下一次布局再按恢复后的可视区重算尺寸。
+    fitViewport({ keepSize: editingText() });
     if(app.game)configureCanvas(app.game);
     app.game?.scale.getParentBounds();
     app.game?.scale.refresh();
@@ -612,6 +613,22 @@ function boot(): void {
   installGameDiagnostics(game, runtimeDiagnostics);
   game.events.once('ready', () => {
     configureCanvas(game);
+    // iOS 弹出系统键盘会让窗口短暂失焦。Phaser 把这次失焦当成页面切走：暂停游戏
+    // 循环并挂起音频，键盘收起后不一定恢复。输入框聚焦期间的失焦交给输入框自己
+    // 处理；真正的页面切走仍由 lifecycle 的 visibilitychange 驱动。ready 先于
+    // Phaser 注册 window.onblur，等启动流程走完再接管。
+    window.setTimeout(() => {
+      game.sound.pauseOnBlur = false;
+      window.onblur = () => { if (!editingText()) game.events.emit(Phaser.Core.Events.BLUR); };
+      window.onfocus = () => game.events.emit(Phaser.Core.Events.FOCUS);
+      const sound = game.sound as Phaser.Sound.WebAudioSoundManager;
+      // 系统键盘或来电可能让音频上下文停住；用户下一次触摸或页面回焦时补一次恢复。
+      const resumeAudio = () => {
+        if (sound.context && !sound.locked && sound.context.state !== 'running') void sound.context.resume();
+      };
+      window.addEventListener('pointerdown', resumeAudio);
+      window.addEventListener('focus', resumeAudio);
+    }, 0);
     game.events.on(UI_EVENTS.select,()=>app.audio?.ui('select'));
     game.scene.add(SCENE_KEYS.audio, new AudioScene(app), true);
     game.scene.add(SCENE_KEYS.controlsUi, new ControlsScene(), true);

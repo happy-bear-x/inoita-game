@@ -14,8 +14,8 @@
 .text-prompt-actions button{flex:1;padding:10px;border-radius:6px;border:1px solid #6b5a37;background:#2a3740;color:#e2c88d;touch-action:manipulation}
 .text-prompt-actions button[disabled]{opacity:.45}
 
-/* 云存档登录：账号/密码输入框直接盖在面板对应行上，不再弹独立输入层。 */
-.cloud-credentials{position:fixed;inset:0;z-index:5;display:none;pointer-events:none;touch-action:auto}
-.cloud-credentials input{position:fixed;box-sizing:border-box;padding:0 12px;border:1px solid #6b5a37;border-radius:6px;background:#0e171c;color:#f5f0df;outline:none;pointer-events:auto;touch-action:auto;-webkit-user-select:text;user-select:text;-webkit-appearance:none;appearance:none}
+/* 云存档登录：账号/密码输入框直接盖在面板对应行上，并和画布共用 #game-frame 的坐标。 */
+.cloud-credentials{position:absolute;inset:0;z-index:5;display:none;pointer-events:none;touch-action:auto}
+.cloud-credentials input{position:absolute;box-sizing:border-box;padding:0 12px;border:1px solid #6b5a37;border-radius:6px;background:#0e171c;color:#f5f0df;outline:none;pointer-events:auto;touch-action:auto;-webkit-user-select:text;user-select:text;-webkit-appearance:none;appearance:none}
 .cloud-credentials input::placeholder{color:#7d7462}
 .cloud-credentials input:focus{border-color:var(--gold);box-shadow:0 0 0 2px rgba(226,200,141,.18)}

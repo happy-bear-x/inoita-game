@@ -33,19 +33,25 @@ export function readSafeArea(): { left: number; right: number; top: number; bott
   return value;
 }
 
-export function fitViewport(): void {
-  // 只有视口重建时安全区才可能变；布局每帧读取时直接复用这次测量。
-  safeAreaRevision++;
+/**
+ * 按可视区摆放画布。`keepSize` 只跟随可视区的位置偏移，不按当前可视区重算尺寸：
+ * 手机键盘弹出时可视区会变矮，但画布尺寸不能跟着缩，否则菜单会被重排；位置偏移
+ * 仍要跟随，否则 iOS 为了露出输入框滚动可视区后，fixed 画布会整体上移。
+ */
+export function fitViewport(options?: { keepSize?: boolean }): void {
   const viewport = window.visualViewport;
-  const { left, right, top, bottom } = readSafeArea();
   const frame = element('game-frame');
-  const width = Math.max(1, viewport?.width ?? innerWidth);
-  const height = Math.max(1, viewport?.height ?? innerHeight);
   Object.assign(frame.style, {
-    width: `${width}px`, height: `${height}px`,
     left: `${viewport?.offsetLeft ?? 0}px`,
     top: `${viewport?.offsetTop ?? 0}px`
   });
+  if (options?.keepSize) return;
+  // 只有视口重建时安全区才可能变；布局每帧读取时直接复用这次测量。
+  safeAreaRevision++;
+  const { left, right, top, bottom } = readSafeArea();
+  const width = Math.max(1, viewport?.width ?? innerWidth);
+  const height = Math.max(1, viewport?.height ?? innerHeight);
+  Object.assign(frame.style, { width: `${width}px`, height: `${height}px` });
   frame.style.setProperty('--story-unit', `${Math.min(width / UI_UNIT_WIDTH, height / UI_UNIT_HEIGHT)}px`);
   for (const [side, inset] of Object.entries({left, right, top, bottom})) {
     frame.style.setProperty(`--safe-${side}`, `${inset + 12}px`);
