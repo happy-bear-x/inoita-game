@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {registerHooks} from 'node:module';
-import {SaveSlots,SAVE_FORMAT} from '../src/domain/save-game.ts';
+import {SaveSlots,SAVE_FORMAT,type SaveSlotRef} from '../src/domain/save-game.ts';
 import {displaySettings} from '../src/application/display-settings.ts';
 import type {MenuContext} from '../src/application/ports.ts';
 import type {StoryWorldViewSnapshot} from '../src/scenes/world-scene.ts';
+import type {CloudSaveEntry,CloudSavePort,CloudSession} from '../src/application/cloud-save.ts';
 const hook=registerHooks({resolve(specifier,context,next){return specifier==='phaser'?{url:'data:text/javascript,export default {Scene:class{},BlendModes:{}}',shortCircuit:true}:next(specifier,context);}});
 const {MenuScene}=await import('../src/scenes/menu-scene.ts');
 const {UiSurface}=await import('../src/ui/phaser/widgets.ts');hook.deregister();
@@ -60,13 +61,18 @@ function fakeView(width:number,height:number){
     },
   };
 }
-function fixture(gmMode?:MenuContext['gmMode']){
+function fixture(gmMode?:MenuContext['gmMode'],cloud?:CloudSavePort){
   const entries=new Map<string,string>(),events:string[]=[],signals:AbortSignal[]=[];
   const saves=new SaveSlots<StoryWorldViewSnapshot>({getItem:key=>entries.get(key)??null,setItem:(key,value)=>{entries.set(key,value);},removeItem:key=>{entries.delete(key);}});
-  const app:MenuContext={saves,gmMode,ui:{ready:true,suspended:false,setMode:()=>{},loading:()=>{},menuLoaded:()=>{},error:()=>{}},
+  const app:MenuContext={saves,gmMode,cloud,ui:{ready:true,suspended:false,setMode:()=>{},loading:()=>{},menuLoaded:()=>{},error:()=>{}},
     enterGame:async()=>{events.push('new');},resumeSlot:async(slot,signal)=>{events.push(`load:${slot}`);if(signal)signals.push(signal);}};
   const view=fakeView(1200,640),modal=fakeView(1024,640);
-  const state={app,surface:view,modal,page:'home',sys:{isActive:()=>true},textures:{exists:()=>true}};
+  // 直接借用 MenuScene.prototype 的假场景不会跑字段初始化；这里补上新加的私有状态，
+  // 尤其是 cloudSerial（`++undefined` 会变成 NaN，后续请求代次比较全部失败）。
+  const state={app,surface:view,modal,page:'home',cloudSerial:0,cloudBusy:false,cloudAccountInput:'',cloudPassword:'',
+    cloudStatus:undefined,cloudCount:undefined,cloudRequest:undefined,confirmAction:undefined,confirmResolve:undefined,
+    renameRef:undefined,slotRequest:undefined,slotPortraits:undefined,prompt:undefined,settingsScroll:0,backdrop:undefined,
+    sys:{isActive:()=>true},textures:{exists:()=>true}};
   const scene=Object.setPrototypeOf(state,MenuScene.prototype);
   const call=(name:string,...args:unknown[])=>Reflect.get(MenuScene.prototype,name).call(scene,...args);
   const clickIn=(surface:ReturnType<typeof fakeView>,label:string)=>{
@@ -81,9 +87,9 @@ const saved=(savedAt?:number)=>JSON.stringify({format:SAVE_FORMAT,summary:{...(s
 
 test('start opens one auto row plus ten manual slots and an empty slot launches class selection',()=>{
   const f=fixture();f.click('开始游戏');assert.deepEqual(f.events,[]);
-  // 空自动槽没有动作，所以只有返回钮与十个手动槽。
+  // 空自动槽没有动作，所以只有返回钮、云存档入口与十个手动槽。
   assert.deepEqual(f.view.buttons.map(button=>button.getData('label')),
-    ['返回主菜单',...Array.from({length:10},(_,slot)=>`存档槽 ${slot+1}`)]);
+    ['返回主菜单','云存档',...Array.from({length:10},(_,slot)=>`存档槽 ${slot+1}`)]);
   f.click('存档槽 3');assert.deepEqual(f.events,['new']);
 });
 
@@ -148,8 +154,9 @@ test('the auto save sits on top of the list and a renamed manual slot shows its 
   f.entries.set('inotia4.story.v1.slot0',saved().replace('"classId":"dark-knight"','"name":"第一章","classId":"dark-knight"'));
   f.click('开始游戏');
   const labels=f.view.buttons.map(button=>button.getData('label'));
-  assert.equal(labels[1],'自动存档','自动存档固定在第一位');
-  assert.equal(labels[2],'第一章','手动槽显示自定义名字');
+  assert.equal(labels[1],'云存档','云存档入口在标题栏');
+  assert.equal(labels[2],'自动存档','自动存档固定在存档列表第一位');
+  assert.equal(labels[3],'第一章','手动槽显示自定义名字');
   f.click('自动存档');f.click('第一章');
   assert.deepEqual(f.events,['load:auto','load:0']);
 });
@@ -245,4 +252,230 @@ test('a rejected title load returns to usable slots after dismissing the loading
   await new Promise<void>(resolve=>setImmediate(resolve));assert.equal(ui.ready,false);assert.ok(retry);
   retry();assert.equal(ui.ready,true);assert.equal(f.view.enabled(),true);
   f.click('存档槽 2');assert.deepEqual(f.events,['new']);
+});
+
+const settle=async()=>{for(let index=0;index<12;index+=1)await new Promise(resolve=>setImmediate(resolve));};
+const cloudEntry=(slot:SaveSlotRef):CloudSaveEntry=>({
+  slot,format:SAVE_FORMAT,bytes:100,updatedAt:1,
+  summary:{classId:'dark-knight',className:'黑暗骑士',portrait:'portrait.png',level:1,mapId:'map',mapName:'营地'},
+});
+interface CloudStubOptions {
+  loggedIn?:boolean;
+  account?:string;
+  expiresAt?:number;
+  absoluteExpiresAt?:number;
+  entries?:CloudSaveEntry[];
+  login?:CloudSavePort['login'];
+  changePassword?:CloudSavePort['changePassword'];
+  refresh?:CloudSavePort['refresh'];
+  list?:CloudSavePort['list'];
+  upload?:CloudSavePort['upload'];
+  download?:CloudSavePort['download'];
+}
+interface CloudHarness {port:CloudSavePort;calls:string[];uploads:{slot:SaveSlotRef;game:unknown}[];downloads:SaveSlotRef[]}
+function cloudStub(options:CloudStubOptions={}):CloudHarness {
+  const state={
+    loggedIn:options.loggedIn??false,
+    account:options.account??(options.loggedIn?'hero':undefined),
+    expiresAt:options.expiresAt,
+    absoluteExpiresAt:options.absoluteExpiresAt,
+  };
+  let entries=options.entries??[];
+  const calls:string[]=[],uploads:{slot:SaveSlotRef;game:unknown}[]=[],downloads:SaveSlotRef[]=[];
+  const port:CloudSavePort={
+    get loggedIn(){return state.loggedIn;},
+    get account(){return state.account;},
+    get expiresAt(){return state.expiresAt;},
+    get absoluteExpiresAt(){return state.absoluteExpiresAt;},
+    login:async(account,password)=>{
+      calls.push('login');
+      if(options.login)return options.login(account,password);
+      state.loggedIn=true;state.account=account;
+      const session:CloudSession={account,token:`token-${account}`,expiresAt:1};
+      return {ok:true,value:session};
+    },
+    register:async(account)=>{
+      calls.push('register');
+      state.loggedIn=true;state.account=account;
+      const session:CloudSession={account,token:`token-${account}`,expiresAt:1};
+      return {ok:true,value:session};
+    },
+    changePassword:async(currentPassword,newPassword)=>{
+      calls.push('change-password');
+      if(options.changePassword)return options.changePassword(currentPassword,newPassword);
+      state.loggedIn=true;
+      const session:CloudSession={account:state.account??'hero',token:'new-token',expiresAt:2};
+      return {ok:true,value:session};
+    },
+    refresh:async()=>{
+      calls.push('refresh');
+      if(options.refresh)return options.refresh();
+      const expiresAt=Date.now()+30*24*60*60*1000;
+      const absoluteExpiresAt=Date.now()+90*24*60*60*1000;
+      state.expiresAt=expiresAt;state.absoluteExpiresAt=absoluteExpiresAt;
+      const session:CloudSession={account:state.account??'hero',token:'renewed-token',expiresAt,absoluteExpiresAt};
+      return {ok:true,value:session};
+    },
+    logout:async()=>{calls.push('logout');state.loggedIn=false;state.account=undefined;return {ok:true,value:undefined};},
+    list:async()=>{calls.push('list');if(options.list)return options.list();return {ok:true,value:entries};},
+    upload:async(slot,game)=>{
+      calls.push(`upload:${slot}`);uploads.push({slot,game});
+      if(options.upload)return options.upload(slot,game);
+      return {ok:true,value:cloudEntry(slot)};
+    },
+    download:async(slot)=>{
+      calls.push(`download:${slot}`);downloads.push(slot);
+      if(options.download)return options.download(slot);
+      return {ok:true,value:JSON.parse(saved())};
+    },
+    forget(){state.loggedIn=false;state.account=undefined;},
+  };
+  return {port,calls,uploads,downloads};
+}
+
+test('the cloud entry sits on the slots page and a logged-out page sends no cloud request',async()=>{
+  const cloud=cloudStub();
+  const f=fixture(undefined,cloud.port);
+  f.click('开始游戏');
+  assert(f.view.buttons.some(button=>button.getData('label')==='云存档'));
+  assert.deepEqual(cloud.calls,[],'打开存档页不触发云请求');
+  f.click('云存档');await settle();
+  assert.deepEqual(cloud.calls,[],'未登录时进入云页也不请求服务器');
+  assert(f.view.buttons.some(button=>button.getData('label')==='登录'));
+  assert(f.view.buttons.some(button=>button.getData('label')==='返回存档'));
+});
+
+test('cloud login switches to the signed-in actions',async()=>{
+  const cloud=cloudStub();
+  const f=fixture(undefined,cloud.port);
+  f.app.promptText=async(_initial,purpose)=>{
+    if(purpose==='account')return 'hero';
+    if(purpose==='password')return 'secret1';
+    return '第一章';
+  };
+  f.click('开始游戏');f.click('云存档');await settle();
+  f.click('输入账号');await settle();
+  f.click('输入密码');await settle();
+  f.click('登录');await settle();
+  assert.deepEqual(cloud.calls,['login','list']);
+  assert(f.view.texts.some(text=>text.includes('已登录：hero')));
+  assert(f.view.buttons.some(button=>button.getData('label')==='导入本机存档'));
+  assert(f.view.buttons.some(button=>button.getData('label')==='下载云存档'));
+  assert(f.view.buttons.some(button=>button.getData('label')==='退出登录'));
+});
+
+test('a locked cloud login shows the lock message without entering the signed-in page',async()=>{
+  const cloud=cloudStub({login:async()=>({
+    ok:false,
+    error:{code:'locked',message:'密码连续输错 3 次，账号已锁定，请 15 分钟后再试。',retryAfterSeconds:900},
+  })});
+  const f=fixture(undefined,cloud.port);
+  f.app.promptText=async(_initial,purpose)=>purpose==='account'?'hero':purpose==='password'?'secret1':'';
+  f.click('开始游戏');f.click('云存档');await settle();
+  f.click('输入账号');await settle();f.click('输入密码');await settle();f.click('登录');await settle();
+  assert(f.view.texts.some(text=>text.includes('15 分钟')));
+  assert(f.view.buttons.some(button=>button.getData('label')==='登录'));
+});
+
+test('an unreachable cloud page does not block local saves',async()=>{
+  const cloud=cloudStub({loggedIn:true,list:async()=>({
+    ok:false,error:{code:'network',message:'无法连接云存档服务，请检查网络。'},
+  })});
+  const f=fixture(undefined,cloud.port);
+  f.entries.set('inotia4.story.v1.slot0',saved());
+  f.click('开始游戏');f.click('云存档');await settle();
+  assert(f.view.texts.some(text=>text.includes('无法连接云存档服务')));
+  f.click('返回存档');
+  assert(f.view.buttons.some(button=>button.getData('label')==='存档槽 1'));
+  f.click('存档槽 1');
+  assert.deepEqual(f.events,['load:0'],'本机读档不受云服务影响');
+});
+
+test('cloud backup uploads valid local slots and skips damaged ones',async()=>{
+  const cloud=cloudStub({loggedIn:true});
+  const f=fixture(undefined,cloud.port);
+  f.entries.set('inotia4.story.v1.slot0',saved());
+  f.entries.set('inotia4.story.v1.slot1','{broken');
+  f.click('开始游戏');f.click('云存档');await settle();
+  f.click('导入本机存档');await settle();
+  assert.deepEqual(cloud.uploads.map(item=>item.slot),[0]);
+  assert(f.view.texts.some(text=>text.includes('导入成功 1 个')));
+  assert(f.view.texts.some(text=>text.includes('存档槽 2')));
+});
+
+test('cloud download writes local slots and returns to the save list',async()=>{
+  const cloud=cloudStub({loggedIn:true,entries:[cloudEntry(0)]});
+  const f=fixture(undefined,cloud.port);
+  f.click('开始游戏');f.click('云存档');await settle();
+  f.click('下载云存档');await settle();
+  assert.deepEqual(cloud.downloads,[0]);
+  assert.equal(f.saves.inspect(0).kind,'ok');
+  assert(f.view.buttons.some(button=>button.getData('label')==='存档槽 1'));
+});
+
+test('cloud backup asks before overwriting and does not upload when cancelled',async()=>{
+  const cloud=cloudStub({loggedIn:true,entries:[cloudEntry(0)]});
+  const f=fixture(undefined,cloud.port);
+  f.entries.set('inotia4.story.v1.slot0',saved());
+  f.click('开始游戏');f.click('云存档');await settle();
+  f.click('导入本机存档');await settle();
+  assert(f.modal.texts.some(text=>text.includes('覆盖')));
+  assert.equal(cloud.uploads.length,0,'确认前不上传');
+  f.clickModal('是');await settle();
+  assert.deepEqual(cloud.uploads.map(item=>item.slot),[0]);
+});
+
+test('cloud password change uses the password form hook and keeps the player signed in',async()=>{
+  const cloud=cloudStub({loggedIn:true});
+  const f=fixture(undefined,cloud.port);
+  let asked=0;
+  f.app.promptPasswordChange=async()=>{asked+=1;return {currentPassword:'secret1',newPassword:'secret2'};};
+  f.click('开始游戏');f.click('云存档');await settle();
+  assert(f.view.buttons.some(button=>button.getData('label')==='修改密码'));
+  f.click('修改密码');await settle();
+  assert.equal(asked,1);
+  assert.ok(cloud.calls.includes('change-password'));
+  assert(f.view.texts.some(text=>text.includes('密码已修改')));
+  assert(f.view.buttons.some(button=>button.getData('label')==='导入本机存档'));
+});
+
+test('a near-expiry cloud session renews before listing',async()=>{
+  const now=Date.now();
+  const cloud=cloudStub({
+    loggedIn:true,
+    expiresAt:now+24*60*60*1000,
+    absoluteExpiresAt:now+60*24*60*60*1000,
+  });
+  const f=fixture(undefined,cloud.port);
+  f.click('开始游戏');f.click('云存档');await settle();
+  assert.ok(cloud.calls.includes('refresh'));
+  assert.ok(cloud.calls.indexOf('refresh')<cloud.calls.indexOf('list'));
+});
+
+test('a session far from expiry lists without renewal',async()=>{
+  const now=Date.now();
+  const cloud=cloudStub({
+    loggedIn:true,
+    expiresAt:now+30*24*60*60*1000,
+    absoluteExpiresAt:now+90*24*60*60*1000,
+  });
+  const f=fixture(undefined,cloud.port);
+  f.click('开始游戏');f.click('云存档');await settle();
+  assert.ok(!cloud.calls.includes('refresh'));
+  assert.ok(cloud.calls.includes('list'));
+});
+
+test('a network error during renewal still lets the list run',async()=>{
+  const now=Date.now();
+  const cloud=cloudStub({
+    loggedIn:true,
+    expiresAt:now+24*60*60*1000,
+    absoluteExpiresAt:now+60*24*60*60*1000,
+    refresh:async()=>({ok:false,error:{code:'network',message:'无法连接云存档服务，请检查网络。'}}),
+  });
+  const f=fixture(undefined,cloud.port);
+  f.click('开始游戏');f.click('云存档');await settle();
+  assert.ok(cloud.calls.includes('refresh'));
+  assert.ok(cloud.calls.includes('list'));
+  assert(f.view.buttons.some(button=>button.getData('label')==='导入本机存档'));
 });

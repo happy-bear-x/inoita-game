@@ -4,7 +4,7 @@ Phaser 界面实现层：创建面板、控件和 HUD，绑定输入并完成绘
 
 ## 文件
 
-- 面板：`forge-panel.ts`（强化台）、`crafting-panel.ts`（合成台）、`shop-panel.ts`（商店）、`quest-panel.ts`（任务阅读）、`party-panel.ts`（佣兵队伍）、`description-panel.ts`（说明框）、`save-board.ts`（存档槽）、`gm-panel.ts`（GM 面板）、`popup-panel.ts`（通用弹层）、`quest-popup.ts`（任务窗）、`volume-slider.ts`（音量条）。
+- 面板：`forge-panel.ts`（强化台）、`crafting-panel.ts`（合成台）、`shop-panel.ts`（商店）、`quest-panel.ts`（任务阅读）、`party-panel.ts`（佣兵队伍）、`description-panel.ts`（说明框）、`save-board.ts`（存档槽）、`cloud-save-panel.ts`（云存档账号与同步页）、`gm-panel.ts`（GM 面板）、`popup-panel.ts`（通用弹层）、`quest-popup.ts`（任务窗）、`volume-slider.ts`（音量条）。
 - 控件与输入：`action-controls.ts`（动作按钮）、`keyboard-actions.ts`（键盘派发）、`move-stick.ts`（摇杆与十字键）、`key-binding-editor.ts`（键位编辑）、`control-layout-editor.ts`（布局编辑）、`control-layout-viewport.ts`（安全区换算）。
 - 绘制与组件：`widgets.ts`（公共绘制与纹理键）、`solid-border.ts`（实心边框）、`round-band.ts`（圆角带）、`cooldown-fan.ts`（冷却扇形）、`native-message.ts`（原生提示）、`ui-asset-host.ts`（菜单图片预载）、`status-hud.ts`（队友状态）、`computer-skill-hud.ts`（电脑模式技能行）、`quest-text.ts`（任务文本）、`description-text.ts`（说明文本）、`modal-placement.ts`（弹层定位）。
 

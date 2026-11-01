@@ -63,6 +63,30 @@ function diagnosticCollector(): Plugin {
   };
 }
 
+type CloudMiddleware = (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse, next: () => void) => void;
+
+/**
+ * 开发服务挂同一套云存档接口，数据目录用 `.cloud-save-dev`，与生产 `.cloud-save` 分开。
+ * 动态 import 沿用诊断插件的写法；加载失败只警告，不让 `npm run dev` 起不来。
+ */
+function cloudSaveService(): Plugin {
+  return {
+    name: 'cloud-save',
+    apply: 'serve',
+    async configureServer(server) {
+      try {
+        const moduleUrl = pathToFileURL(path.join(server.config.root, 'tools', 'cloud-save-service.ts')).href;
+        const { createCloudSaveService } = await import(/* @vite-ignore */ moduleUrl) as {
+          createCloudSaveService: (options: { dataDir: string }) => CloudMiddleware;
+        };
+        server.middlewares.use(createCloudSaveService({ dataDir: path.join(server.config.root, '.cloud-save-dev') }));
+      } catch (error) {
+        server.config.logger.warn(`云存档开发服务未启动：${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  };
+}
+
 function versionPublicAssets(assetVersion: string): Plugin {
   return {
     name: 'version-public-assets',
@@ -98,8 +122,14 @@ export default defineConfig(({ command }) => {
       // 生产构建信任构建期校验；dev/test/GM/?validate 走完整校验。
       __STORY_TRUST_CONTENT__: JSON.stringify(command === 'build')
     },
-    plugins: [contentGuard(), diagnosticCollector(), versionPublicAssets(versions.assetVersion)],
-    server: { host: true, port: 4003, strictPort: true },
+    plugins: [contentGuard(), diagnosticCollector(), cloudSaveService(), versionPublicAssets(versions.assetVersion)],
+    server: {
+      host: true,
+      port: 4003,
+      strictPort: true,
+      // 账号、会话和云存档文件不能通过 /@fs/ 被开发服务读出去。
+      fs: { deny: ['.cloud-save/**', '.cloud-save-dev/**', '.env', '.env.*', '*.{crt,pem}', '**/.git/**'] }
+    },
     // 打包产物放进 bundles/，免得和 public/assets/ 里复制过来的地图、立绘混在一起。
     build: { outDir: 'dist', target: 'es2020', assetsDir: 'bundles' }
   };

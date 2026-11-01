@@ -4,8 +4,8 @@
 
 ## 文件
 
-- 布局：`bag-layout.ts`（背包格位）、`choice-layout.ts`（选项竖排）、`control-layout.ts`（控件键位）、`item-layout.ts`（物品格与货币）、`shop-layout.ts`（商店两栏）、`quest-popup-layout.ts`（任务窗）、`description-text-layout.ts`（说明断行）、`text-layout.ts`（通用换行）、`viewport.ts`（画布缩放、安全区与参考分辨率）。
-- 文本与样式：`text-style.ts`（共用字体）、`text-prompt.ts`（系统键盘输入）、`dialogue-text.ts`（对白分页、断行与逐字显示）、`item-detail-lines.ts`（物品说明行）、`skill-detail-lines.ts`（技能说明行）、`item-result-details.ts`（操作结果说明）、`enhancement-odds-lines.ts`（强化结果句与混沌结果表）、`item-name-color.ts`（品质颜色与装备格边框）、`character-values.ts`（角色数值）。
+- 布局：`bag-layout.ts`（背包格位）、`choice-layout.ts`（选项竖排）、`control-layout.ts`（控件键位）、`item-layout.ts`（物品格与货币）、`shop-layout.ts`（商店两栏）、`quest-popup-layout.ts`（任务窗）、`description-text-layout.ts`（说明断行）、`text-layout.ts`（通用换行）、`cloud-save-layout.ts`（云存档页状态、颜色与几何）、`viewport.ts`（画布缩放、安全区与参考分辨率）。
+- 文本与样式：`text-style.ts`（共用字体）、`text-prompt.ts`（系统键盘输入；支持存档名/账号/密码三种用途）、`password-change-prompt.ts`（修改密码的当前/新/确认三项表单）、`dialogue-text.ts`（对白分页、断行与逐字显示）、`item-detail-lines.ts`（物品说明行）、`skill-detail-lines.ts`（技能说明行）、`item-result-details.ts`（操作结果说明）、`enhancement-odds-lines.ts`（强化结果句与混沌结果表）、`item-name-color.ts`（品质颜色与装备格边框）、`character-values.ts`（角色数值）。
 - 接口与交互：`game-ui.ts`（UI 能力与视图接口）、`story-ui.ts`（剧情与菜单 UI 的接口、页面枚举和提示文案）、`action-press-gate.ts`（动作按钮互斥）、`common-button.ts`（通用按钮素材）、`instant-message.ts`（屏幕提示）、`slot-frame.ts`（格子底图）。
 
 ## 规则
@@ -17,6 +17,7 @@
 - 字体、字号和颜色取 `text-style.ts`，新面板不再另建一套字体栈。
 - 说明面板底部动作 1–3 个排一横排；4 个用 2×2，5–6 个用 3×2，几何由 `descriptionActionLayout` 统一给出。
 - 新增面板先在这里补几何和文本函数，再在 `src/ui/phaser/` 实现绘制。
+- 云存档页的状态颜色和面板几何从 `cloud-save-layout.ts` 取；账号/密码输入用 `TextPrompt` 的 `purpose`，不要给存档名输入加密码或账号规则。
 - **强化结果先写人话。** 普通卷轴写成「当前 +N：X% 到 +N+1，Y% 到 +N+2」；混沌卷轴写成三行结果表。概率文案统一由 `enhancement-odds-lines.ts` 生成，面板只负责画。
 - **菜单子页面保留底层。** 强化台、合成台这类从菜单进入的子页面用 `page` 渲染在 `body` 上；`surface`/`body` 继续可见，只把说明层让位，不要隐藏整层再铺纯黑遮罩。
 - **一次操作只重绘一次。** 子页面打开期间（如 `page==='forge'`）`bind` 的会话订阅跳过整页重绘；动作完成后由子页面面板的 `changed` 统一重绘一次。

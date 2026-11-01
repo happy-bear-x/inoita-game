@@ -26,6 +26,8 @@ export const TEXT_COLORS = {
   danger: '#ff6b6b',
   /** 较柔和的错误与阵亡提示。 */
   dangerSoft: '#e6a191',
+  /** 操作成功、云存档已同步等正向提示。 */
+  success: '#8fd18a',
   /** 弱化、未鉴定或占位文字。 */
   muted: '#808080',
   /** 条件或点数不满足时的要求文字。 */

@@ -19,6 +19,7 @@ import type { StoryClassCatalog } from './domain/story-class.ts';
 import type { ItemCatalog, EquipmentSlot, ItemResult } from './domain/items.ts';
 import { SessionCheckpoint } from './domain/session-checkpoint.ts';
 import { SaveSlots } from './domain/save-game.ts';
+import { CloudSaveClient } from './application/cloud-save.ts';
 import type { SaveWorldResult, StoryWorldViewSnapshot } from './scenes/world-scene.ts';
 import type { WardrobeCatalog } from './domain/wardrobe.ts';
 import type { GameAudio } from './application/game-audio.ts';
@@ -38,7 +39,7 @@ import { keyBindings as defaultKeyBindings } from './application/key-bindings.ts
  * **成员不是同时有值的**，按装配时机分六组。排查「这个能力为什么是空的」时先看这里：
  * 可选成员在 `?.` 下会静默跳过，不问一句是哪个阶段，很容易往错的方向查。
  *
- * 1. 构造时就有：`ui`（构造参数）、`content`、`checkpoint`、`saves`。
+ * 1. 构造时就有：`ui`（构造参数）、`content`、`checkpoint`、`saves`、`cloud`。
  * 2. `prepareStory()` 完成后一次 `Object.assign` 写入 13 个内容目录：`world`、`campaign`、
  *    `storyInterface`、`battleCatalog`、`characterStats`、`menuPanels`、`items`、`wardrobe`、
  *    `statusHud`、`controlSkin`、`shops`、`companions`、`crafting`。
@@ -64,6 +65,8 @@ export class StoryApp {
   readonly checkpoint = new SessionCheckpoint<StoryWorldViewSnapshot>();
   /** 三个存档槽的持久化。标题页与游戏内菜单读的是同一份，键在 `domain/save-game.ts`。 */
   readonly saves = new SaveSlots<StoryWorldViewSnapshot>();
+  /** 云存档客户端：构造只读本地 token，不联网；只有打开云存档页才会请求服务器。 */
+  readonly cloud = new CloudSaveClient();
   /** 本次游戏从标题选择或成功读写的手动存档槽序号。 */
   saveSlot?:number;
   /** 自动存档触发口：世界侧把时机交给装配好的 `AutoSaver`。 */

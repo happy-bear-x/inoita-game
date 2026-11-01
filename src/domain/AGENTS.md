@@ -9,7 +9,7 @@
 - 物品/背包：`items.ts`、`inventory.ts`、`bag.ts`、`drops.ts`、`loot-pity.ts`、`ground-loot.ts`、`crafting.ts`、`enhancement.ts`、`equipment-*.ts`、`shop.ts`、`money.ts`（金额拆分与显示文本）。
 - 队伍/召唤：`party*.ts`、`companion-progression.ts`、`friendly-summon-ai.ts`、`summon-*.ts`。
 - 导航/地图：`navigation.ts`、`navigation-world.ts`、`pathfinding.ts`、`path-budget.ts`、`walk-route.ts`、`map-placement.ts`、`minimap.ts`。
-- 存档/状态：`save-game.ts`、`state-application.ts`、`key-bindings.ts`、`control-skin.ts`、`legendary-weapon.ts`（拔剑判定、奖励与已拔状态）、`inns.ts`（旅店休息费用与恢复）。
+- 存档/状态：`save-game.ts`、`cloud-save.ts`（云存档账号、密码、槽位与锁定规则）、`state-application.ts`、`key-bindings.ts`、`control-skin.ts`、`legendary-weapon.ts`（拔剑判定、奖励与已拔状态）、`inns.ts`（旅店休息费用与恢复）。
 - 任务/文本：`quest-*.ts`、`menu-panels.ts`、`text-markup.ts`、`description-text.ts`；其余文件按前缀或符号搜索，例如 `combat-runtime.ts`、`story-entry.ts`。
 
 ## 规则
@@ -24,6 +24,7 @@
 - 恢复泉水的回血、回蓝按每名存活的上阵队员自己的上限结算，数值夹到上限；正面状态同样给所有存活上阵队员。药水病、药效减半、技能封印和攻升防降的疯癫只给喝下泉水的人。技能点只给主角；出怪与队伍组成无关。
 - 组队技能 122「被选择的英雄」在基础拔剑奖励后额外掷一次 uniqueBonus/1000；命中把普通装备或空手失败升级为唯一物品，已经是唯一物品则不重复判定。
 - 剧情、任务、事件 ID 是存档引用，只新增不改名；要改名就配套迁移。
+- 云存档的账号/密码/槽位校验和锁定时长只在 `cloud-save.ts` 写一份，服务端复用同一份规则；云端保存不改 `SAVE_FORMAT`。
 - 单元测试写在 `tests/*.test.ts`。
 
 ## 验证

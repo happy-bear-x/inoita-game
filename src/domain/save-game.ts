@@ -13,6 +13,14 @@ export function isReadableSaveFormat(format: unknown): format is number {
   return typeof format === 'number' && (format === SAVE_FORMAT || LEGACY_SAVE_FORMATS.includes(format));
 }
 
+/** 云存档导入时的格式分类：能读、比当前新、比升级链旧、版本不合法。 */
+export type SaveFormatStatus = 'ok' | 'future' | 'obsolete' | 'unknown';
+export function saveFormatStatus(format: unknown): SaveFormatStatus {
+  if (typeof format !== 'number' || !Number.isSafeInteger(format)) return 'unknown';
+  if (isReadableSaveFormat(format)) return 'ok';
+  return format > SAVE_FORMAT ? 'future' : 'obsolete';
+}
+
 /** 存档写给谁：手动槽用序号（0..9），唯一的自动槽用 `'auto'`。 */
 export type SaveSlotRef = number | typeof AUTO_SAVE_SLOT;
 export const AUTO_SAVE_SLOT = 'auto';
@@ -56,6 +64,17 @@ export type SlotSummaryReading =
   | { kind:'empty' }
   | { kind:'unreadable'; reason:string }
   | { kind:'ok'; summary:SaveSummary };
+
+/**
+ * 云端导入用的原始读档结果。与 `SlotSummaryReading` 不同：这里把“未来版本”和
+ * “升级链之前的旧版本”分开，界面能在上传/下载前告诉玩家具体原因，而不是混成空槽。
+ */
+export type SaveRawReading =
+  | { kind:'ok'; raw:string; summary:SaveSummary; format:number }
+  | { kind:'empty' }
+  | { kind:'future'; reason:string }
+  | { kind:'obsolete'; reason:string }
+  | { kind:'unreadable'; reason:string };
 
 /** 存档要用的那部分 localStorage；测试传内存实现。 */
 export interface SaveStorage {
@@ -170,6 +189,52 @@ export class SaveSlots<World = unknown> {
     if(!summary||typeof summary.classId!=='string'||typeof summary.mapId!=='string'||!Number.isFinite(summary.level))
       return {kind:'unreadable',reason:'存档摘要无效'};
     return {kind:'ok',game:record as SaveGame<World>};
+  }
+  /**
+   * 云端上传前读原始 JSON。有效档原样返回；未来/过旧/损坏分别给出原因，
+   * 调用方据此决定跳过还是提示版本不兼容。
+   */
+  readRaw(ref:SaveSlotRef):SaveRawReading {
+    const key=this.key(ref);
+    let raw:string|null;
+    try { raw=this.storage.getItem(key); }
+    catch { return {kind:'unreadable',reason:'无法读取本地存档'}; }
+    if(raw===null)return {kind:'empty'};
+    return this.rawOf(raw);
+  }
+  private rawOf(raw:string):SaveRawReading {
+    let parsed:unknown;
+    try { parsed=JSON.parse(raw); }
+    catch { return {kind:'unreadable',reason:'存档内容不是有效 JSON'}; }
+    if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))
+      return {kind:'unreadable',reason:'存档内容不是对象'};
+    const record=parsed as Partial<SaveGame<World>>;
+    const status=saveFormatStatus(record.format);
+    if(status==='future')return {kind:'future',reason:`存档版本 ${String(record.format)} 比当前游戏新`};
+    if(status==='obsolete')return {kind:'obsolete',reason:`存档版本 ${String(record.format)} 过旧`};
+    if(status==='unknown')return {kind:'unreadable',reason:'存档缺少有效版本'};
+    if(!record.session||typeof record.session!=='object'||Array.isArray(record.session)||
+      !record.world||typeof record.world!=='object'||Array.isArray(record.world))
+      return {kind:'unreadable',reason:'存档缺少会话或世界状态'};
+    const summary=record.summary;
+    if(!summary||typeof summary.classId!=='string'||typeof summary.mapId!=='string'||!Number.isFinite(summary.level))
+      return {kind:'unreadable',reason:'存档摘要无效'};
+    return {kind:'ok',raw,summary,format:record.format as number};
+  }
+  /**
+   * 写入云端下载的原始 JSON。只接受 `readRaw` 判为有效的档；未来/过旧/损坏不落地。
+   * 不沿用 `write()` 的保留旧名逻辑，云端存档的 `summary.name` 是什么就写什么。
+   */
+  writeRaw(ref:SaveSlotRef, raw:string):void {
+    const reading=this.rawOf(raw);
+    if(reading.kind!=='ok'){
+      const reason=reading.kind==='future'?'云端存档版本比当前游戏新，请先更新游戏'
+        :reading.kind==='obsolete'?'云端存档版本过旧，无法恢复'
+        :reading.kind==='unreadable'?reading.reason
+        :'云端存档为空';
+      throw new Error(reason);
+    }
+    const key=this.key(ref);this.storage.setItem(key,raw);this.summaryCache.delete(key);
   }
   /** 写不进去（容量或隐私模式）就抛错，由界面报「保存失败」。 */
   write(ref:SaveSlotRef, game:SaveGame<World>):void {

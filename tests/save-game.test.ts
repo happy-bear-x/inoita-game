@@ -9,7 +9,7 @@ import type { ActorDefinition } from '../src/domain/content.ts';
 import type { ItemCatalog } from '../src/domain/items.ts';
 import type { CompanionCatalog } from '../src/domain/party.ts';
 import { Session, DEFAULT_ENEMY_RESPAWN_MS } from '../src/domain/session.ts';
-import { AUTO_SAVE_SLOT, MANUAL_SAVE_SLOT_COUNT, SAVE_FORMAT, SaveSlots, captureSaveGame, restoreSaveGame, sanitizeSaveName, saveSummary, type SaveStorage } from '../src/domain/save-game.ts';
+import { AUTO_SAVE_SLOT, LEGACY_SAVE_FORMATS, MANUAL_SAVE_SLOT_COUNT, SAVE_FORMAT, SaveSlots, captureSaveGame, restoreSaveGame, sanitizeSaveName, saveSummary, type SaveStorage } from '../src/domain/save-game.ts';
 
 const read=<T>(name:string):T=>JSON.parse(readFileSync(new URL(`../public/content/${name}.json`,import.meta.url),'utf8')) as T;
 const campaign=read<Campaign>('campaign'),items=read<ItemCatalog>('items'),stats=read<CharacterStatsCatalog>('character-stats');
@@ -195,6 +195,31 @@ test('current saves keep playback state but resolve actor appearances again on l
   assert.deepEqual(restored.runtimeState.runs[0]!.stage,expected);
   delete (saved.game.session.runtime.runs[0]!.stage as Partial<typeof stage>).scene;
   assert.throws(()=>restoreSaveGame(createSession(),saved.game),/场景快照/);
+});
+
+test('raw cloud import distinguishes versions and writes the cloud name without touching local slots on failure',()=>{
+  const storage=memory(),slots=new SaveSlots<World>(storage),session=createSession();
+  slots.write(0,record(session));
+  const raw=slots.readRaw(0);
+  assert.equal(raw.kind,'ok');if(raw.kind!=='ok')return;
+  assert.equal(raw.format,SAVE_FORMAT);
+  const game=JSON.parse(raw.raw) as Record<string,unknown>;
+  storage.setItem('inotia4.story.v1.slot1',JSON.stringify({...game,format:SAVE_FORMAT+1}));
+  assert.equal(slots.readRaw(1).kind,'future');
+  storage.setItem('inotia4.story.v1.slot2',JSON.stringify({...game,format:Math.min(...LEGACY_SAVE_FORMATS)-1}));
+  assert.equal(slots.readRaw(2).kind,'obsolete');
+  storage.setItem('inotia4.story.v1.slot3','{broken');
+  assert.equal(slots.readRaw(3).kind,'unreadable');
+  assert.equal(slots.readRaw(4).kind,'empty');
+
+  const cloudNamed={...game,summary:{...raw.summary,name:'云端名'}};
+  slots.writeRaw(0,JSON.stringify(cloudNamed));
+  const renamed=slots.peek(0);
+  assert.equal(renamed.kind==='ok'?renamed.summary.name:undefined,'云端名','以云端原文的名字为准');
+  assert.throws(()=>slots.writeRaw(0,JSON.stringify({...game,format:SAVE_FORMAT+1})),/更新游戏/);
+  assert.throws(()=>slots.writeRaw(0,JSON.stringify({...game,format:Math.min(...LEGACY_SAVE_FORMATS)-1})),/过旧/);
+  const kept=slots.peek(0);
+  assert.equal(kept.kind==='ok'?kept.summary.name:undefined,'云端名','失败的导入不覆盖原槽');
 });
 
 test('summary reads reuse the parsed summary until the raw save changes',()=>{

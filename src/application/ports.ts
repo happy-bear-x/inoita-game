@@ -20,6 +20,7 @@ import type { ShopCatalog } from '../domain/shop.ts';
 import type { ControlLayoutPreferences } from '../ui/control-layout.ts';
 import type { KeyBindingPreferences } from './key-bindings.ts';
 import type { SaveWorldResult } from '../scenes/world-scene.ts';
+import type { PromptPurpose } from '../ui/text-prompt.ts';
 
 export interface StoryClassContext {
   readonly storyClasses: StoryClassCatalog;
@@ -86,8 +87,8 @@ export interface StoryUIContext {
   readonly keyBindings:KeyBindingPreferences;
   captureControlPreview?:()=>readonly import('../ui/phaser/action-controls.ts').ShortcutSlot[];
   resumeSlot?:(slot:import('../domain/save-game.ts').SaveSlotRef,signal?:AbortSignal)=>Promise<void>;
-  /** 改名输入：默认弹系统键盘输入框；测试注入一个直接返回名字的实现。 */
-  promptText?: (initial:string)=>Promise<string|undefined>;
+  /** 文本输入：默认弹系统键盘输入框；测试注入一个直接返回内容的实现。 */
+  promptText?: (initial:string,purpose?:PromptPurpose)=>Promise<string|undefined>;
   revivePartyMember?: (id:string,item:string)=>import('../domain/items.ts').ItemResult;
   preparePartyMember?: (id:string,signal?:AbortSignal)=>Promise<void>;
   useRecoveryItem?: (entry:string,memberId?:string)=>RecoveryResult;
@@ -124,9 +125,13 @@ export interface MenuContext {
   enterGame?:(slot?:number)=>Promise<void>;
   /** 标题页的「开始游戏」使用同一份存档槽。 */
   readonly saves: import('../domain/save-game.ts').SaveSlots<import('../scenes/world-scene.ts').StoryWorldViewSnapshot>;
+  /** 云存档能力；缺失时云存档页只显示不可用，本机存档照常。 */
+  readonly cloud?: import('./cloud-save.ts').CloudSavePort;
   /** 从某个有效存档槽恢复；空槽通过 enterGame 进入职业选择。 */
   resumeSlot?:(slot:import('../domain/save-game.ts').SaveSlotRef,signal?:AbortSignal)=>Promise<void>;
-  /** 改名输入：默认弹系统键盘输入框；测试注入一个直接返回名字的实现。 */
-  promptText?: (initial:string)=>Promise<string|undefined>;
+  /** 文本输入：默认弹系统键盘输入框；测试注入一个直接返回内容的实现。 */
+  promptText?: (initial:string,purpose?:PromptPurpose)=>Promise<string|undefined>;
+  /** 修改密码：默认弹三项密码表单；测试注入一个直接返回当前/新密码的实现。 */
+  promptPasswordChange?: ()=>Promise<{currentPassword:string;newPassword:string}|undefined>;
   syncLifecycle?:()=>void;
 }

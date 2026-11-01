@@ -8,6 +8,7 @@ import { gzip } from 'node:zlib';
 import { promisify } from 'node:util';
 import { createDiagnosticMiddleware } from './diagnostic-collector.mjs';
 import { BUILD_META_FILENAME, type BuildMeta } from './build-version.ts';
+import { createCloudSaveService, type CloudRateLimitOptions, type CloudSaveMiddleware } from './cloud-save-service.ts';
 
 const gzipAsync = promisify(gzip);
 const META_CACHE_MS = 250;
@@ -126,6 +127,10 @@ export interface GameServerOptions {
   projectRoot: string;
   distDir?: string;
   now?: () => number;
+  cloudDataDir?: string;
+  cloudRateLimit?: false | CloudRateLimitOptions;
+  cloudSessionTtlMs?: number;
+  cloudSessionAbsoluteTtlMs?: number;
 }
 
 export function createGameServer(options: GameServerOptions): Server {
@@ -134,6 +139,29 @@ export function createGameServer(options: GameServerOptions): Server {
   const now = options.now ?? Date.now;
   const startedAt = now();
   const diagnostic = createDiagnosticMiddleware(projectRoot);
+  let cloud: CloudSaveMiddleware;
+  try {
+    cloud = createCloudSaveService({
+      dataDir: options.cloudDataDir ?? path.join(projectRoot, '.cloud-save'),
+      now,
+      rateLimit: options.cloudRateLimit,
+      sessionTtlMs: options.cloudSessionTtlMs,
+      sessionAbsoluteTtlMs: options.cloudSessionAbsoluteTtlMs,
+    });
+  } catch (error) {
+    // 云存档是旁路能力：初始化失败只让 /__cloud 降级，静态服务和游戏继续提供。
+    console.error('云存档服务初始化失败', error);
+    cloud = (req, res, next) => {
+      const pathname = req.url?.split('?')[0] ?? '';
+      if (!pathname.startsWith('/__cloud')) { next(); return; }
+      res.writeHead(503, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff',
+      });
+      res.end(JSON.stringify({ error: 'cloud-unavailable', message: '云存档暂不可用，本机存档不受影响。' }));
+    };
+  }
   const compressed = new Map<string, CompressionEntry>();
   let compressedBytes = 0;
   let metaCache: { at: number; meta: BuildMeta | undefined } | undefined;
@@ -221,7 +249,16 @@ export function createGameServer(options: GameServerOptions): Server {
       try { real = await realpath(resolved); }
       catch { sendError(res, 503, 'Build is being replaced', 1); return; }
     }
-    if (!real.startsWith(distDir + path.sep) && real !== distDir) { sendError(res, 404, 'Not Found'); return; }
+    // `dist/` 可能是符号链接（macOS 的 /var → /private/var、发布目录的软链），比较两侧的
+    // 真实路径，避免把合法文件误判成越界。
+    let distReal: string;
+    try { distReal = await realpath(distDir); }
+    catch {
+      if (isIndex) sendError(res, 503, 'Build is being replaced', 1);
+      else sendError(res, 404, 'Not Found');
+      return;
+    }
+    if (!real.startsWith(distReal + path.sep) && real !== distReal) { sendError(res, 404, 'Not Found'); return; }
     let info = await fileInfo(real);
     if (!info && isIndex) {
       await new Promise(resolve => setTimeout(resolve, 75));
@@ -319,7 +356,7 @@ export function createGameServer(options: GameServerOptions): Server {
       }).catch(() => sendError(res, 500, 'Internal Server Error'));
       return;
     }
-    diagnostic(req, res, () => { void serveStatic(req, res); });
+    cloud(req, res, () => { diagnostic(req, res, () => { void serveStatic(req, res); }); });
   });
   server.on('clientError', (_error, socket) => { socket.end('HTTP/1.1 400 Bad Request\r\n\r\n'); });
   return server;
@@ -341,24 +378,27 @@ export async function startGameServer(options: GameServerOptions & { port?: numb
   return { server, port };
 }
 
-function cliOptions(argv: string[]): { port: number; host: string } {
+function cliOptions(argv: string[]): { port: number; host: string; cloudDataDir?: string } {
   let port = 4004, host = '127.0.0.1';
+  let cloudDataDir: string | undefined;
   for (let index = 0; index < argv.length; index += 1) {
     const value = argv[index]!;
     if (value === '--port') port = Number(argv[++index]);
     else if (value.startsWith('--port=')) port = Number(value.slice('--port='.length));
     else if (value === '--host') host = argv[++index] ?? host;
     else if (value.startsWith('--host=')) host = value.slice('--host='.length);
+    else if (value === '--cloud-data') cloudDataDir = argv[++index];
+    else if (value.startsWith('--cloud-data=')) cloudDataDir = value.slice('--cloud-data='.length);
   }
   if (!Number.isSafeInteger(port) || port < 1 || port > 65535) throw new Error(`端口无效：${port}`);
-  return { port, host };
+  return { port, host, ...(cloudDataDir ? { cloudDataDir } : {}) };
 }
 
 const invoked = process.argv[1] ? path.resolve(process.argv[1]) === fileURLToPath(import.meta.url) : false;
 if (invoked) {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-  const { port, host } = cliOptions(process.argv.slice(2));
-  startGameServer({ projectRoot: root, port, host }).then(({ server }) => {
+  const { port, host, cloudDataDir } = cliOptions(process.argv.slice(2));
+  startGameServer({ projectRoot: root, port, host, ...(cloudDataDir ? { cloudDataDir } : {}) }).then(({ server }) => {
     console.log(`Built game: http://${host === '0.0.0.0' ? 'localhost' : host}:${port}/`);
     const stop = () => { server.close(() => process.exit(0)); setTimeout(() => process.exit(1), 5000).unref(); };
     process.on('SIGINT', stop); process.on('SIGTERM', stop);
