@@ -70,11 +70,20 @@ export function dialoguePages(value: string, options: { width: number; lines: nu
   return pages;
 }
 
-/** 把一页对白排成带色片段；测量函数由调用方提供（浏览器的字体度量）。 */
-export function layoutDialogueText(value: string, base: string, width: number,
+/**
+ * 非对白的多色文本（选项提示、说明）：只按控制码切色并按宽度断行，
+ * 不分页、不逐字。`&N` 是显式换行，`$B` 回到调用方给的基础色。
+ */
+export function layoutMarkupText(value: string, base: string, width: number,
   measure: (text: string) => number): DialogueTextLayout {
   const lines = layoutKeyedText(dialogueTextParts(value, base), width, measure);
   return { lines };
+}
+
+/** 把一页对白排成带色片段；测量函数由调用方提供（浏览器的字体度量）。 */
+export function layoutDialogueText(value: string, base: string, width: number,
+  measure: (text: string) => number): DialogueTextLayout {
+  return layoutMarkupText(value, base, width, measure);
 }
 
 /** 前缀的可见长度——逐字显示到第几个字符。 */

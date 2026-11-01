@@ -5,7 +5,7 @@ import type { StoryApp } from '../app.ts';
 import type { GameUI, GameUiView } from '../ui/game-ui.ts';
 import { UiSurface,loadUiImages,uiTexture,GOLD } from '../ui/phaser/widgets.ts';
 import { FONT } from '../ui/text-style.ts';
-import { dialoguePages, layoutDialogueText, revealedRuns, type DialoguePage, type DialogueTextLayout } from '../ui/dialogue-text.ts';
+import { dialoguePages, layoutDialogueText, layoutMarkupText, revealedRuns, type DialoguePage, type DialogueTextLayout } from '../ui/dialogue-text.ts';
 import { instantMessagePoint } from '../ui/instant-message.ts';
 import { layoutChoicePanel } from '../ui/choice-layout.ts';
 import { SceneUiAssets } from '../ui/phaser/ui-asset-host.ts';
@@ -122,6 +122,14 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     try{return use(text=>probe.context.measureText(text).width,probe.height+5);}
     finally{probe.destroy();}
   }
+  /** 选项等非对白文本：保留色码换色和显式换行，按实际行数算高度。 */
+  private markupLayout(value:string,size:number,width:number):DialogueTextLayout&{lineHeight:number}{
+    return this.dialogueMetrics(size,(measure,lineHeight)=>({...layoutMarkupText(value,GOLD,width,measure),lineHeight}));
+  }
+  private drawMarkup(layout:DialogueTextLayout&{lineHeight:number},x:number,y:number,size:number,parent?:Phaser.GameObjects.Container):void{
+    layout.lines.forEach((line,index)=>line.runs.forEach(run=>
+      this.surface.text(run.text,x+run.x,y+index*layout.lineHeight,0,size,run.key,parent)));
+  }
   paginate(ui:GameUI,text:string):DialoguePage[]{
     const box=this.textBox(ui);
     return this.dialogueMetrics(box.size,measure=>dialoguePages(text,{width:box.width,lines:box.lines,measure}));
@@ -211,18 +219,24 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
       block();const choices=ui.choices;
       // 选项竖排：整行宽度、按钮高度按标签实际换行后的高度算，文字不会压在按钮框外。
       const left=30,width=900,optionFontSize=22;
-      const prompt=v.text(choices.prompt,left,0,width,24);
-      const description=choices.description?v.text(choices.description,left,0,width,22):undefined;
+      // 提示和说明沿用原版控制码：`$X` 换色、`&N` 换行，按色段逐行绘制而不是整段交给一个 Text。
+      const promptLayout=this.markupLayout(choices.prompt,24,width);
+      const descriptionLayout=choices.description?this.markupLayout(choices.description,22,width):undefined;
       const optionTextHeights=choices.options.map(option=>{
         const probe=v.text(option.label,0,0,width-12,optionFontSize),height=probe.height;
         probe.destroy();return height;
       });
-      const layout=layoutChoicePanel({promptHeight:prompt.height,descriptionHeight:description?.height,optionTextHeights});
+      const layout=layoutChoicePanel({
+        promptHeight:promptLayout.lines.length*promptLayout.lineHeight,
+        descriptionHeight:descriptionLayout&&descriptionLayout.lines.length*descriptionLayout.lineHeight,
+        optionTextHeights,
+      });
       const panel=v.rect(0,layout.top,960,layout.panelHeight,0x000000,.86);v.root.sendToBack(panel);
-      prompt.setPosition(left,layout.promptY);
-      if(description&&layout.descriptionY!==undefined&&layout.descriptionView!==undefined){
+      this.drawMarkup(promptLayout,left,layout.promptY,24);
+      if(descriptionLayout&&layout.descriptionY!==undefined&&layout.descriptionView!==undefined){
         const scroll=v.scroll(left,layout.descriptionY,width,layout.descriptionView);
-        v.root.remove(description);scroll.content.add(description);description.setPosition(0,0);scroll.setHeight(description.height);
+        this.drawMarkup(descriptionLayout,0,0,22,scroll.content);
+        scroll.setHeight(descriptionLayout.lines.length*descriptionLayout.lineHeight);
       }
       const list=v.scroll(left,layout.listY,width,layout.listViewport);list.setHeight(layout.contentHeight);
       choices.options.forEach((option,index)=>{

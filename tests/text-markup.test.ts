@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { textRuns, typedIndex, typedLength, typedOffset, visibleIndex, TEXT_COLOR_CODES } from '../src/domain/text-markup.ts';
+import { layoutMarkupText } from '../src/ui/dialogue-text.ts';
 import { plainText } from './support/story-fixtures.ts';
+
+/** 选项面板的基础色（`src/ui/phaser/widgets.ts` 的 GOLD），$B 回到这里。 */
+const CHOICE_GOLD = '#f3deb0';
+const measure = (value: string): number => Array.from(value).length * 10;
 
 test('native color codes map to the libgame palette and $B restores the window base color', () => {
   // 色表来自 libgame.so 的 0xbb9c8（X_TEXTCTRL_GetColorFromCode@0x144f3c）。
@@ -28,6 +33,29 @@ test('visible text drops every control code and keeps the breaks', () => {
   assert.equal(plainText('$S凯恩$B大人。'), '凯恩大人。');
   assert.equal(plainText('有消息说那个$R女人$B从这个方向逃了。&N再让她跑了。'), '有消息说那个女人从这个方向逃了。\n再让她跑了。');
   assert.equal(plainText('$G（竟然在执行$R教团任务$G的时候睡着了）$B'), '（竟然在执行教团任务的时候睡着了）');
+});
+
+test('choice prompts keep native colors and never draw their control codes', () => {
+  // 贝恩的付款选项：$S 蓝、$R 红，$B 回到选项面板的金色，控制码本身不进绘制文本。
+  const prompt = '是否向$S贝恩$B支付$R钱$B来打听进入警卫哨所的方法吗？';
+  const runs = layoutMarkupText(prompt, CHOICE_GOLD, 1000, measure).lines.flatMap(line => line.runs);
+  assert.equal(runs.map(run => run.text).join(''), '是否向贝恩支付钱来打听进入警卫哨所的方法吗？');
+  assert.ok(!runs.some(run => /[$&]/.test(run.text)), '控制码不显示给玩家');
+  assert.equal(runs.find(run => run.text.includes('贝恩'))?.key, '#00b4ff');
+  assert.equal(runs.find(run => run.text.includes('钱'))?.key, '#ff0000');
+  assert.equal(runs.find(run => run.text.startsWith('来打听'))?.key, CHOICE_GOLD, '$B 回到选项基础色');
+  assert.equal(runs.find(run => run.text.startsWith('是否向'))?.key, CHOICE_GOLD, '没写色码的文字保持原观感');
+});
+
+test('choice prompt breaks from &N stay inside their own colored line', () => {
+  const lines = layoutMarkupText('$R第一行$B&N第二行', CHOICE_GOLD, 1000, measure).lines;
+  assert.deepEqual(lines.map(line => line.runs.map(run => run.text).join('')), ['第一行', '第二行']);
+  assert.equal(lines[0]!.runs[0]!.key, '#ff0000');
+  assert.equal(lines[1]!.runs[0]!.key, CHOICE_GOLD);
+  // 控制码不占宽度：同样的可见文字在窄宽度下仍按字符正常换行。
+  const wrapped = layoutMarkupText('$R甲乙丙丁$B', CHOICE_GOLD, 15, measure);
+  assert.equal(wrapped.lines.map(line => line.runs.map(run => run.text).join('')).join(''), '甲乙丙丁');
+  assert.ok(wrapped.lines.length > 1);
 });
 
 test('visible offsets round-trip on every marked line of the real campaign', () => {
