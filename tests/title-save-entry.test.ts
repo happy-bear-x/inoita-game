@@ -6,6 +6,7 @@ import {displaySettings} from '../src/application/display-settings.ts';
 import type {MenuContext} from '../src/application/ports.ts';
 import type {StoryWorldViewSnapshot} from '../src/scenes/world-scene.ts';
 import type {CloudSaveEntry,CloudSavePort,CloudSession} from '../src/application/cloud-save.ts';
+import {CLOUD_PAGE} from '../src/ui/cloud-save-layout.ts';
 const hook=registerHooks({resolve(specifier,context,next){return specifier==='phaser'?{url:'data:text/javascript,export default {Scene:class{},BlendModes:{}}',shortCircuit:true}:next(specifier,context);}});
 const {MenuScene}=await import('../src/scenes/menu-scene.ts');
 const {UiSurface}=await import('../src/ui/phaser/widgets.ts');hook.deregister();
@@ -81,7 +82,7 @@ function fixture(gmMode?:MenuContext['gmMode'],cloud?:CloudSavePort){
   };
   const click=(label:string)=>clickIn(view,label);
   const key=(value:string)=>view.key({key:value,preventDefault:()=>{}} as KeyboardEvent);
-  call('render');return {app,entries,events,signals,view,modal,call,click,clickModal:(label:string)=>clickIn(modal,label),key,saves};
+  call('render');return {app,entries,events,signals,view,modal,state,call,click,clickModal:(label:string)=>clickIn(modal,label),key,saves};
 }
 const saved=(savedAt?:number)=>JSON.stringify({format:SAVE_FORMAT,summary:{...(savedAt===undefined?{}:{savedAt}),classId:'dark-knight',className:'黑暗骑士',level:1,mapId:'map',mapName:'营地',portrait:'portrait.png'},session:{},world:{location:{map:'map',x:0,y:0,facing:'south'},generatedEntities:[]}});
 
@@ -345,17 +346,37 @@ test('the cloud entry sits on the slots page and a logged-out page sends no clou
   assert(f.view.buttons.some(button=>button.getData('label')==='返回存档'));
 });
 
+test('the cloud page keeps labels, inputs and notes inside the framed panel',async()=>{
+  const cloud=cloudStub();
+  const f=fixture(undefined,cloud.port);
+  f.click('开始游戏');f.click('云存档');await settle();
+  const panel=CLOUD_PAGE.panel;
+  // 图框金线内侧至少留 40 像素；内容不能压在边框上，状态说明必须在可滚动区里。
+  const inner={left:panel.x+40,top:panel.y+60,right:panel.x+panel.width-40,bottom:panel.y+panel.height-40};
+  const inside=(left:number,top:number,width:number,height:number)=>left>=inner.left&&top>=inner.top&&left+width<=inner.right&&top+height<=inner.bottom;
+  for(const node of f.view.textNodes.filter(node=>node.value==='账号'||node.value==='密码')){
+    assert(node.x>inner.left&&node.y>inner.top,`${node.value} 贴到了图框`);
+  }
+  for(const label of ['登录','注册']){
+    const button=f.view.buttons.find(button=>button.getData('label')===label);
+    assert.ok(button,label);
+    assert(inside(button.x,button.y,button.width,button.height),`${label} 超出图框`);
+  }
+  for(const rect of [CLOUD_PAGE.accountInput,CLOUD_PAGE.passwordInput]){
+    assert(inside(rect.x,rect.y,rect.width,rect.height),'账号/密码输入框超出图框');
+  }
+  const note=f.view.scrolls.at(-1);
+  assert.ok(note,'说明和状态应放进滚动区');
+  assert(inside(note.x,note.y,note.width,note.height),'滚动区超出图框');
+});
+
 test('cloud login switches to the signed-in actions',async()=>{
   const cloud=cloudStub();
   const f=fixture(undefined,cloud.port);
-  f.app.promptText=async(_initial,purpose)=>{
-    if(purpose==='account')return 'hero';
-    if(purpose==='password')return 'secret1';
-    return '第一章';
-  };
   f.click('开始游戏');f.click('云存档');await settle();
-  f.click('输入账号');await settle();
-  f.click('输入密码');await settle();
+  // 账号/密码现在是云页面板里的内嵌输入框；进入云页后由输入回调写入场景状态。
+  f.state.cloudAccountInput='hero';
+  f.state.cloudPassword='secret1';
   f.click('登录');await settle();
   assert.deepEqual(cloud.calls,['login','list']);
   assert(f.view.texts.some(text=>text.includes('已登录：hero')));
@@ -370,9 +391,10 @@ test('a locked cloud login shows the lock message without entering the signed-in
     error:{code:'locked',message:'密码连续输错 3 次，账号已锁定，请 15 分钟后再试。',retryAfterSeconds:900},
   })});
   const f=fixture(undefined,cloud.port);
-  f.app.promptText=async(_initial,purpose)=>purpose==='account'?'hero':purpose==='password'?'secret1':'';
   f.click('开始游戏');f.click('云存档');await settle();
-  f.click('输入账号');await settle();f.click('输入密码');await settle();f.click('登录');await settle();
+  f.state.cloudAccountInput='hero';
+  f.state.cloudPassword='secret1';
+  f.click('登录');await settle();
   assert(f.view.texts.some(text=>text.includes('15 分钟')));
   assert(f.view.buttons.some(button=>button.getData('label')==='登录'));
 });

@@ -1,3 +1,4 @@
+import type Phaser from 'phaser';
 import { TEXT_COLORS } from '../text-style.ts';
 import {
   CLOUD_PAGE,
@@ -15,10 +16,17 @@ export interface CloudSavePageAssets {
   closePressed: string;
 }
 
-function drawStatus(view: UiSurface, state: CloudPageState, left: number, y: number, width: number): void {
+function drawStatus(
+  view: UiSurface,
+  state: CloudPageState,
+  left: number,
+  y: number,
+  width: number,
+  parent: Phaser.GameObjects.Container,
+): void {
   const text = cloudStatusText(state);
   if (!text) return;
-  view.text(text, left, y, width, 22, cloudStatusColor(cloudStatusKind(state)));
+  view.text(text, left, y, width, 22, cloudStatusColor(cloudStatusKind(state)), parent);
 }
 
 /**
@@ -35,51 +43,57 @@ export function drawCloudSavePage(
     .setData('label', '返回存档');
   view.text('云存档', 600, CLOUD_PAGE.titleY, 760, 49).setOrigin(.5, 0);
   const panel = CLOUD_PAGE.panel;
+  // 原版图框先画，内容全部落在金线内侧的滚动区里。
   view.image(assets.frame, panel.x, panel.y, panel.width, panel.height);
-  const left = panel.x + 40;
-  const right = panel.x + panel.width - 40;
-  const width = right - left;
+  const left = CLOUD_PAGE.content.left;
+  const width = CLOUD_PAGE.content.width;
   const disabled = state.busy || !state.available;
 
   if (!state.loggedIn) {
-    let y = panel.y + 50;
-    view.text('账号', left, y, 80, 28);
-    view.text(state.account || '未填写', left + 90, y, width - 260, 28,
-      state.account ? TEXT_COLORS.primary : TEXT_COLORS.muted);
-    view.button('输入账号', right - 160, y - 14, 160, 56, actions.account, { fontSize: 24, disabled });
-    y += 90;
-    view.text('密码', left, y, 80, 28);
-    view.text(state.passwordSet ? '已填写' : '未填写', left + 90, y, width - 260, 28,
-      state.passwordSet ? TEXT_COLORS.primary : TEXT_COLORS.muted);
-    view.button('输入密码', right - 160, y - 14, 160, 56, actions.password, { fontSize: 24, disabled });
-    y += 90;
-    view.button('登录', left + 100, y, 200, 72, actions.login, { fontSize: 30, disabled });
-    view.button('注册', left + 360, y, 200, 72, actions.register, { fontSize: 30, disabled });
-    y += 100;
+    view.text('账号', CLOUD_PAGE.accountLabel.x, CLOUD_PAGE.accountLabel.y, 80, 28);
+    view.text('密码', CLOUD_PAGE.passwordLabel.x, CLOUD_PAGE.passwordLabel.y, 80, 28);
+    // 两个输入框由 DOM 覆盖层直接盖在标签右侧，不再有单独的输入弹层和入口按钮。
+    view.button('登录', CLOUD_PAGE.login.x, CLOUD_PAGE.login.y, CLOUD_PAGE.login.width, CLOUD_PAGE.login.height,
+      actions.login, { fontSize: 30, disabled });
+    view.button('注册', CLOUD_PAGE.register.x, CLOUD_PAGE.register.y, CLOUD_PAGE.register.width, CLOUD_PAGE.register.height,
+      actions.register, { fontSize: 30, disabled });
+
+    const note = view.scroll(CLOUD_PAGE.note.x, CLOUD_PAGE.note.y, CLOUD_PAGE.note.width, CLOUD_PAGE.note.height);
     view.text(
       '账号 3–24 位字母、数字、下划线或汉字，不区分大小写；密码 6–64 位，区分大小写。'
       + '连续输错 3 次锁定 15 分钟；同一账号只允许一处登录。忘记密码无法找回。',
-      left, y, width, 18, TEXT_COLORS.secondary,
+      0, 0, width, 18, TEXT_COLORS.secondary, note.content,
     );
-    drawStatus(view, state, left, y + 84, width);
+    drawStatus(view, state, 0, 72, width, note.content);
+    if (!state.available && !cloudStatusText(state)) {
+      view.text('云存档暂不可用，本机存档不受影响。', 0, 72, width, 20, TEXT_COLORS.dangerSoft, note.content);
+    }
+    note.setHeight(260);
   } else {
-    let y = panel.y + 55;
-    view.text(`已登录：${state.account}`, left, y, width - 180, 30);
-    view.button('修改密码', right - 160, panel.y + 40, 160, 56, actions.changePassword, { fontSize: 22, disabled });
-    y += 48;
-    view.text(state.cloudCount === undefined ? '云端存档：正在读取…' : `云端存档：${state.cloudCount} 个`,
-      left, y, width, 22, TEXT_COLORS.secondary);
-    y += 58;
-    view.button('导入本机存档', left, y, 220, 72, actions.upload, { fontSize: 23, disabled });
-    view.button('下载云存档', left + 240, y, 220, 72, actions.download, { fontSize: 23, disabled });
-    view.button('退出登录', left + 480, y, 220, 72, actions.logout, { fontSize: 23, disabled });
-    y += 100;
-    view.text('导入：把本机现有存档上传到云端。', left, y, width, 20, TEXT_COLORS.secondary);
+    view.text(`已登录：${state.account}`, left, CLOUD_PAGE.content.top, width - 180, 30);
+    view.button('修改密码', CLOUD_PAGE.changePassword.x, CLOUD_PAGE.changePassword.y,
+      CLOUD_PAGE.changePassword.width, CLOUD_PAGE.changePassword.height, actions.changePassword,
+      { fontSize: 22, disabled });
+    view.text(
+      state.cloudCount === undefined ? '云端存档：正在读取…' : `云端存档：${state.cloudCount} 个`,
+      left, CLOUD_PAGE.content.top + 48, width, 22, TEXT_COLORS.secondary,
+    );
+    view.button('导入本机存档', CLOUD_PAGE.actions.x, CLOUD_PAGE.actions.y,
+      CLOUD_PAGE.actions.width, CLOUD_PAGE.actions.height, actions.upload, { fontSize: 23, disabled });
+    view.button('下载云存档', CLOUD_PAGE.actions.x + CLOUD_PAGE.actions.step, CLOUD_PAGE.actions.y,
+      CLOUD_PAGE.actions.width, CLOUD_PAGE.actions.height, actions.download, { fontSize: 23, disabled });
+    view.button('退出登录', CLOUD_PAGE.actions.x + CLOUD_PAGE.actions.step * 2, CLOUD_PAGE.actions.y,
+      CLOUD_PAGE.actions.width, CLOUD_PAGE.actions.height, actions.logout, { fontSize: 23, disabled });
+
+    const note = view.scroll(CLOUD_PAGE.loggedInNote.x, CLOUD_PAGE.loggedInNote.y,
+      CLOUD_PAGE.loggedInNote.width, CLOUD_PAGE.loggedInNote.height);
+    view.text('导入：把本机现有存档上传到云端。', 0, 0, width, 20, TEXT_COLORS.secondary, note.content);
     view.text('下载：把云端存档写回本机同号槽位；覆盖后本机原内容无法恢复。',
-      left, y + 30, width, 20, TEXT_COLORS.secondary);
-    drawStatus(view, state, left, y + 78, width);
-  }
-  if (!state.available && !cloudStatusText(state)) {
-    view.text('云存档暂不可用，本机存档不受影响。', left, panel.y + panel.height - 48, width, 20, TEXT_COLORS.dangerSoft);
+      0, 30, width, 20, TEXT_COLORS.secondary, note.content);
+    drawStatus(view, state, 0, 72, width, note.content);
+    if (!state.available && !cloudStatusText(state)) {
+      view.text('云存档暂不可用，本机存档不受影响。', 0, 72, width, 20, TEXT_COLORS.dangerSoft, note.content);
+    }
+    note.setHeight(260);
   }
 }

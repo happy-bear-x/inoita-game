@@ -10,6 +10,7 @@ import { drawNativeMessage } from '../ui/phaser/native-message.ts';
 import { centerModal } from '../ui/phaser/modal-placement.ts';
 import { TextPrompt } from '../ui/text-prompt.ts';
 import { PasswordChangePrompt } from '../ui/password-change-prompt.ts';
+import { CloudCredentialsInput, type CredentialInputRect } from '../ui/cloud-credentials-input.ts';
 import { AUTO_SAVE_SLOT, MANUAL_SAVE_SLOT_COUNT, saveSlotLabel, type SaveSlotRef, type SlotSummaryReading } from '../domain/save-game.ts';
 import type { AssetLease } from '../application/assets.ts';
 import { CLOUD_PAGE, type CloudPageActions, type CloudPageState, type CloudPageStatus } from '../ui/cloud-save-layout.ts';
@@ -20,7 +21,6 @@ import {
   CLOUD_SESSION_RENEW_WINDOW_MS,
   cloudSlotLabel,
   normalizeCloudAccount,
-  sanitizeCloudAccountInput,
   validateCloudAccount,
   validateCloudPassword,
 } from '../domain/cloud-save.ts';
@@ -55,6 +55,8 @@ export class MenuScene extends Phaser.Scene {
   private renameRef?:SaveSlotRef;
   private prompt?:TextPrompt;
   private passwordPrompt?:PasswordChangePrompt;
+  /** 云存档登录的账号/密码输入框：直接盖在面板行上，不是独立弹层。 */
+  private credentials?:CloudCredentialsInput;
   private confirmAction?:ConfirmRequest;
   private confirmResolve?:(value:boolean)=>void;
   /** 云存档请求：离开云页、回主页或场景关闭时 abort；代次防止旧结果覆盖新页面。 */
@@ -70,21 +72,26 @@ export class MenuScene extends Phaser.Scene {
   private readonly renderCloudOnResume=():void=>{
     if(this.page==='cloud'&&this.surface&&this.sys.isActive())this.render();
   };
+  private readonly hideCredentials=():void=>{this.credentials?.hide();};
   constructor(app:MenuContext){super(SCENE_KEYS.menu);this.app=app;}
   create(options:{page?:'home'|'slots'}={}):void {
     this.page='home';this.app.ui.setMode('menu');this.app.ui.loading('正在准备主菜单…');
     const controller=new AbortController();
-    this.events.once('shutdown',()=>{controller.abort();this.cancelCloudRequest();this.settleConfirm(false,false);this.slotRequest?.abort();this.prompt?.close();this.passwordPrompt?.close();this.surface?.destroy();this.surface=undefined;this.modal?.destroy();this.modal=undefined;this.slotPortraits?.release();this.slotPortraits=undefined;this.events.off(Phaser.Scenes.Events.RESUME,this.renderCloudOnResume);this.scale.off('resize',this.layout,this);});
+    this.events.once('shutdown',()=>{controller.abort();this.cancelCloudRequest();this.settleConfirm(false,false);this.slotRequest?.abort();this.prompt?.close();this.passwordPrompt?.close();this.credentials?.destroy();this.credentials=undefined;this.surface?.destroy();this.surface=undefined;this.modal?.destroy();this.modal=undefined;this.slotPortraits?.release();this.slotPortraits=undefined;this.events.off(Phaser.Scenes.Events.RESUME,this.renderCloudOnResume);this.events.off(Phaser.Scenes.Events.PAUSE,this.hideCredentials);this.scale.off('resize',this.layout,this);});
     this.input.keyboard?.on('keydown',(event:KeyboardEvent)=>{
       if(this.app.ui.suspended)return;
-      // 改名、账号/密码或修改密码表单开着时键盘归它，场景不再处理按键。
-      if(this.renameRef!==undefined||this.prompt?.active||this.passwordPrompt?.active)return;
+      // 键盘事件来自 DOM 输入框时归输入框；即使输入框刚失焦，也不能让同一次回车/退出触发菜单按钮。
+      const target=event.target as HTMLElement|null;
+      if(target&&(target.tagName==='INPUT'||target.tagName==='TEXTAREA'||target.isContentEditable))return;
+      // 改名、修改密码表单或云存档账号/密码框有焦点时键盘归输入框，场景不再处理按键。
+      if(this.renameRef!==undefined||this.prompt?.active||this.passwordPrompt?.active||this.credentials?.focused)return;
       // 确认框打开时 Escape 只关确认框，不退出页面。
       if(event.key==='Escape'&&this.confirmAction!==undefined){event.preventDefault();this.confirmAction.cancel();return;}
       if(event.key==='Escape'&&this.page!=='home'){event.preventDefault();this.back();return;}
       this.surface?.key(event);
     });
     this.events.on(Phaser.Scenes.Events.RESUME,this.renderCloudOnResume);
+    this.events.on(Phaser.Scenes.Events.PAUSE,this.hideCredentials);
     this.scale.on('resize',this.layout,this);
     // 浏览器自身的退出（Esc、手势）不会走设置页的按钮，靠事件把开关状态同步回来。
     this.events.once('shutdown',onFullscreenChange(()=>{
@@ -95,6 +102,10 @@ export class MenuScene extends Phaser.Scene {
       this.events.once('shutdown',()=>lease.release());
       this.backdrop=this.add.image(0,0,uiTexture(art('background'))).setOrigin(.5);
       this.surface=new UiSurface(this,1200,640);this.modal=new UiSurface(this,1024,640,200);this.prompt=new TextPrompt();this.passwordPrompt=new PasswordChangePrompt();
+      this.credentials=new CloudCredentialsInput({
+        onAccount:value=>{this.cloudAccountInput=value;},
+        onPassword:value=>{this.cloudPassword=value;},
+      });
       // 确认框打开时页面整块不响应，确认框自己也只在有确认时响应。
       this.modal.enabled=()=>this.app.ui.ready&&!this.app.ui.suspended&&this.sys.isActive()&&this.confirmAction!==undefined;
       this.app.ui.menuLoaded();if(options.page==='slots')this.openSlots();else this.render();this.app.syncLifecycle?.();
@@ -208,7 +219,6 @@ export class MenuScene extends Phaser.Scene {
     return {
       available:!!this.app.cloud,
       account:this.cloudAccountInput,
-      passwordSet:!!this.cloudPassword,
       loggedIn:!!this.app.cloud?.loggedIn,
       busy:this.cloudBusy,
       cloudCount:this.cloudCount,
@@ -218,8 +228,6 @@ export class MenuScene extends Phaser.Scene {
   private cloudActions():CloudPageActions {
     return {
       back:()=>this.openSlots(),
-      account:()=>this.editCloudAccount(),
-      password:()=>this.editCloudPassword(),
       login:()=>{void this.submitCloud('login');},
       register:()=>{void this.submitCloud('register');},
       upload:()=>{void this.backupCloud();},
@@ -377,28 +385,6 @@ export class MenuScene extends Phaser.Scene {
     }
     return true;
   }
-  private editCloudAccount():void{
-    const apply=(value:string|undefined):void=>{
-      if(value===undefined)return;
-      this.cloudAccountInput=sanitizeCloudAccountInput(value);
-      this.cloudStatus=undefined;
-      if(this.page==='cloud'&&this.sys.isActive())this.render();
-    };
-    if(this.app.promptText){void this.app.promptText(this.cloudAccountInput,'account').then(apply,()=>{});return;}
-    this.prompt?.show({title:'云存档账号',initial:this.cloudAccountInput,purpose:'account',
-      onConfirm:value=>apply(value),onCancel:()=>{}});
-  }
-  private editCloudPassword():void{
-    const apply=(value:string|undefined):void=>{
-      if(value===undefined)return;
-      this.cloudPassword=value;
-      this.cloudStatus=undefined;
-      if(this.page==='cloud'&&this.sys.isActive())this.render();
-    };
-    if(this.app.promptText){void this.app.promptText('','password').then(apply,()=>{});return;}
-    this.prompt?.show({title:'云存档密码',initial:'',purpose:'password',
-      onConfirm:value=>apply(value),onCancel:()=>{}});
-  }
   private changeCloudPassword():void{
     const cloud=this.app.cloud;
     if(!cloud||this.cloudBusy)return;
@@ -445,6 +431,7 @@ export class MenuScene extends Phaser.Scene {
   private async submitCloud(mode:'login'|'register'):Promise<void>{
     const cloud=this.app.cloud;
     if(!cloud||this.cloudBusy)return;
+    this.credentials?.blur();
     const account=normalizeCloudAccount(this.cloudAccountInput);
     const problem=validateCloudAccount(account)??validateCloudPassword(this.cloudPassword);
     if(problem){
@@ -639,5 +626,53 @@ export class MenuScene extends Phaser.Scene {
     if(this.backdrop){const source=this.backdrop.texture.getSourceImage(),factor=Math.max(this.scale.width/source.width,this.scale.height/source.height);this.backdrop.setPosition(this.scale.width/2,this.scale.height/2).setScale(factor);}
     this.surface?.layout();
     if(this.surface&&this.modal&&this.confirmAction!==undefined)centerModal(this.modal,this.surface,1024,640);
+    this.syncCredentials();
+  }
+
+  /** 云页、确认框和输入弹层互斥；只有账号/密码真正可见时才让 DOM 覆盖层出现。 */
+  private credentialsVisible():boolean {
+    return this.page==='cloud'
+      && !!this.surface
+      && !!this.app.cloud
+      && !this.app.cloud.loggedIn
+      && this.app.ui.ready
+      && !this.app.ui.suspended
+      && this.sys.isActive()
+      && this.confirmAction===undefined
+      && this.renameRef===undefined
+      && !this.prompt?.active
+      && !this.passwordPrompt?.active;
+  }
+
+  /** 把面板里的两行矩形换算成屏幕坐标；缩放或安全区变化后重新定位。 */
+  private credentialRects():{account:CredentialInputRect;password:CredentialInputRect}|undefined {
+    if(!this.surface)return;
+    const canvas=this.game.canvas;
+    const bounds=canvas.getBoundingClientRect();
+    if(!bounds.width||!bounds.height)return;
+    const matrix=this.surface.root.getWorldTransformMatrix();
+    const scaleX=bounds.width/this.scale.width, scaleY=bounds.height/this.scale.height;
+    const map=(local:{x:number;y:number;width:number;height:number;fontSize:number}):CredentialInputRect=>{
+      const point=matrix.transformPoint(local.x,local.y);
+      return {
+        left:bounds.left+point.x*scaleX,
+        top:bounds.top+point.y*scaleY,
+        width:local.width*matrix.scaleX*scaleX,
+        height:local.height*matrix.scaleY*scaleY,
+        fontSize:local.fontSize*matrix.scaleY*scaleY,
+      };
+    };
+    return {account:map(CLOUD_PAGE.accountInput),password:map(CLOUD_PAGE.passwordInput)};
+  }
+
+  private syncCredentials():void {
+    const credentials=this.credentials;
+    if(!credentials)return;
+    if(!this.credentialsVisible()){credentials.hide();return;}
+    const rects=this.credentialRects();
+    if(!rects){credentials.hide();return;}
+    credentials.setRects(rects.account,rects.password);
+    credentials.setValues(this.cloudAccountInput,this.cloudPassword);
+    credentials.show();
   }
 }

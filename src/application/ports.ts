@@ -20,7 +20,6 @@ import type { ShopCatalog } from '../domain/shop.ts';
 import type { ControlLayoutPreferences } from '../ui/control-layout.ts';
 import type { KeyBindingPreferences } from './key-bindings.ts';
 import type { SaveWorldResult } from '../scenes/world-scene.ts';
-import type { PromptPurpose } from '../ui/text-prompt.ts';
 
 export interface StoryClassContext {
   readonly storyClasses: StoryClassCatalog;
@@ -88,7 +87,7 @@ export interface StoryUIContext {
   captureControlPreview?:()=>readonly import('../ui/phaser/action-controls.ts').ShortcutSlot[];
   resumeSlot?:(slot:import('../domain/save-game.ts').SaveSlotRef,signal?:AbortSignal)=>Promise<void>;
   /** 文本输入：默认弹系统键盘输入框；测试注入一个直接返回内容的实现。 */
-  promptText?: (initial:string,purpose?:PromptPurpose)=>Promise<string|undefined>;
+  promptText?: (initial:string)=>Promise<string|undefined>;
   revivePartyMember?: (id:string,item:string)=>import('../domain/items.ts').ItemResult;
   preparePartyMember?: (id:string,signal?:AbortSignal)=>Promise<void>;
   useRecoveryItem?: (entry:string,memberId?:string)=>RecoveryResult;
@@ -130,7 +129,7 @@ export interface MenuContext {
   /** 从某个有效存档槽恢复；空槽通过 enterGame 进入职业选择。 */
   resumeSlot?:(slot:import('../domain/save-game.ts').SaveSlotRef,signal?:AbortSignal)=>Promise<void>;
   /** 文本输入：默认弹系统键盘输入框；测试注入一个直接返回内容的实现。 */
-  promptText?: (initial:string,purpose?:PromptPurpose)=>Promise<string|undefined>;
+  promptText?: (initial:string)=>Promise<string|undefined>;
   /** 修改密码：默认弹三项密码表单；测试注入一个直接返回当前/新密码的实现。 */
   promptPasswordChange?: ()=>Promise<{currentPassword:string;newPassword:string}|undefined>;
   syncLifecycle?:()=>void;
