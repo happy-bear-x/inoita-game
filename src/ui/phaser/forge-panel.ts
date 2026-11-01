@@ -118,7 +118,9 @@ export class ForgePanel {
       const message=this.tab==='enchant'?'背包里没有强化卷轴。':this.tab==='socket'?'背包里没有宝石。':'背包里没有净化之宝石。';
       v.text(message,681,180,0,20,TEXT_COLORS.secondary).setOrigin(.5,0);return;
     }
-    const layout=bagLayout(),grid=layout.grid,scroll=v.scroll(grid.x,grid.y,grid.width,grid.height);this.scroll=scroll;
+    const layout=bagLayout(),grid=layout.grid;
+    // 右栏底部不再写宝石预览：网格一直排到框底边框内沿（431 − 24），多露一行格子且不被边框压住。
+    const scroll=v.scroll(grid.x,grid.y,grid.width,431-24-grid.y);this.scroll=scroll;
     entries.forEach((entry,index)=>{
       const definition=this.bag.catalog.items[entry.item];
       const x=index%4*SLOT_STRIDE,y=Math.floor(index/4)*SLOT_STRIDE;
@@ -220,25 +222,26 @@ export class ForgePanel {
     if(!canAdd&&this.replaceIndex===undefined)this.socketHint(v,'宝石孔已满',TEXT_COLORS.danger,left,hintY);
     else if(this.replaceIndex!==undefined&&!this.selectedItem)this.socketHint(v,'从右侧选择要替换的宝石',TEXT_COLORS.secondary,left,hintY);
     else if(!this.selectedItem)this.socketHint(v,'从右侧选择一颗宝石',TEXT_COLORS.secondary,left,hintY);
+    // 宝石名称和效果放回左栏，右栏底部整块留给背包格子。
+    let selectionBottom=hintY;
     if(this.selectedItem){
       const gem=this.bag.get(this.selectedItem),definition=gem?this.bag.catalog.items[gem.item]:undefined,modifier=gem?.numbers?.modifiers?.[0];
       if(!gem||!definition||!modifier){v.text('宝石数据不完整。',40,hintY,400,14,TEXT_COLORS.danger,left.content);return hintY+18;}
       if(this.replaceIndex!==undefined){
         const index=this.replaceIndex,oldName=this.bag.catalog.items[target.gems[index]!]?.name??`孔${index+1}`;
-        v.text(`替换 孔${index+1} ${oldName} → ${definition.name}`,504,360,355,18,TEXT_COLORS.primary);
-        const outcome=this.socketOutcome(target.id,modifiers,modifiers.map((value,slot)=>slot===index?{...modifier}:value),'替换后');
-        if(outcome)v.text(outcome,504,384,355,18,TEXT_COLORS.primary);
+        v.text(`替换 孔${index+1} ${oldName} → ${definition.name}`,40,hintY,400,14,TEXT_COLORS.primary,left.content);
+        v.text(this.gemEffectText(modifier),40,hintY+20,400,14,TEXT_COLORS.gemModifier,left.content);
+        selectionBottom=hintY+40;
       }else{
-        v.text(`待镶 ${definition.name} · ${this.gemEffectText(modifier)}`,504,360,355,18,TEXT_COLORS.primary);
-        const worn=Object.values(this.bag.equipmentFor(this.memberId)).includes(target.id);
-        const outcome=this.socketOutcome(target.id,modifiers,[...modifiers,{...modifier}],worn?'镶嵌后':'装备后');
-        if(outcome)v.text(outcome,504,384,355,18,TEXT_COLORS.primary);
+        v.text(`${definition.name} · ${this.gemEffectText(modifier)}`,40,hintY,400,14,TEXT_COLORS.primary,left.content);
+        selectionBottom=hintY+20;
       }
     }
-    v.button(this.replaceIndex===undefined?'确认镶嵌':'确认替换',139,actionY,205,55,()=>this.confirmSocket(),{fontSize:20,
+    const buttonY=Math.max(actionY,selectionBottom+4);
+    v.button(this.replaceIndex===undefined?'确认镶嵌':'确认替换',139,buttonY,205,55,()=>this.confirmSocket(),{fontSize:20,
       disabled:!this.selectedItem||!this.bag.get(this.selectedItem)?.numbers?.modifiers?.length||(!canAdd&&this.replaceIndex===undefined),
       parent:left.content,guard:left.guard});
-    return actionY+55;
+    return buttonY+55;
   }
 
   /** 左栏只留一句状态或结果，放在孔位效果列表下面。 */

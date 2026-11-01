@@ -686,8 +686,9 @@ test('forge sockets, removes and replaces gems with confirmation', t => {
   f.scene.click(f.scene.button('镶嵌'));
   assert.ok(f.scene.texts().some(text=>text.includes('从右侧选择一颗宝石')),'空孔提示从右侧选宝石');
   f.scene.click(f.scene.button(`宝石:${first.id}`));
-  assert.ok(f.scene.texts().some(text=>text.includes('待镶')),'选中宝石后显示待镶信息');
-  assert.ok(f.scene.texts().some(text=>text.includes('镶嵌后')),'镶嵌前显示角色面板差值');
+  assert.ok(f.scene.texts().some(text=>text.includes('低级宝石')),'选中宝石后左侧显示宝石信息');
+  assert.ok(!f.scene.texts().some(text=>text.includes('待镶')),'不再显示待镶字样');
+  assert.ok(!f.scene.texts().some(text=>text.includes('角色面板无变化')),'不再显示角色面板差值');
   f.scene.click(f.scene.button('确认镶嵌'));
   assert.equal(f.hero.bag.get(weapon.id)!.gems.length,1);
   assert.equal(f.hero.bag.get(weapon.id)!.numbers!.gemModifiers.length,1);
