@@ -49,7 +49,7 @@ public/             随游戏发布的静态资源
   assets/           地图、角色、UI、特效、音频等素材
 tests/              单元测试与独立构建验收
 tools/              构建、校验、静态服务、APK 打包
-docs/               架构、剧情创作、部署、调试与诊断说明
+docs/               架构、剧情创作、部署、热更新、调试与诊断说明
 android/            Android WebView 壳（可选打包层）
 .agents/skills/     随仓库提供的 Phaser 4 开发技能
 ```
@@ -74,6 +74,7 @@ android/            Android WebView 壳（可选打包层）
 | 改音乐、环境音与音效 | [音频说明](docs/audio.md) → `public/content/audio.json` |
 | 调试游戏或任务 | [GM 调试模式](docs/debugging.md) |
 | 部署与缓存 | [打包服务与部署](docs/deployment.md) |
+| 安卓热更新与分发 | [热更新（Android WebView）](docs/live-update.md) |
 | 收集手机端报错 | [诊断说明](docs/diagnostics.md) |
 
 ## 界面与调试场景
