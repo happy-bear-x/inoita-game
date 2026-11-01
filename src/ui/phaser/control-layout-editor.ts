@@ -255,7 +255,8 @@ export class ControlLayoutEditor {
   private drawSelection(placement?: ControlPlacement): void {
     const frame=this.selectionFrame;
     if(!frame)return;
-    if(!this.active||!placement) {
+    // 白框和四角只在缩放模式出现；移动时直接拖控件，不需要选中提示。
+    if(!this.active||!placement||this.mode!=='scale') {
       frame.setVisible(false);
       for(const handle of this.handles)handle.setVisible(false);
       return;
