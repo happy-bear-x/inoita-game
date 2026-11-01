@@ -61,6 +61,17 @@ test('login stores the session and sends the expected request',async()=>{
   assert.equal(store.value?.token,validToken);
 });
 
+test('same-origin requests without a base URL stay under /__cloud',async()=>{
+  const fake=fakeFetch(call=>{
+    assert.equal(call.url,'/__cloud/login');
+    return json({account:'Player_1',token:validToken,expiresAt:123});
+  });
+  const client=new CloudSaveClient({fetch:fake.fetch,storage:memoryStore()});
+  const result=await client.login('Player_1','secret1');
+  assert.ok(result.ok);
+  assert.equal(fake.calls.length,1);
+});
+
 test('an authenticated 401 clears the token while a network error keeps it',async()=>{
   const store=memoryStore();
   let offline=false;

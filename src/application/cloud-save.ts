@@ -9,6 +9,7 @@ import {
   parseCloudSaveSlotId,
 } from '../domain/cloud-save.ts';
 import type { SaveSlotRef, SaveSummary } from '../domain/save-game.ts';
+import { CLOUD_PATH } from './endpoints.ts';
 
 const SESSION_KEY = 'inotia4.cloud.v1.session';
 const REQUEST_TIMEOUT_MS = 12_000;
@@ -269,7 +270,8 @@ export class CloudSaveClient implements CloudSavePort {
     const fetchImpl = this.fetchImpl ?? (globalThis as { fetch?: typeof fetch }).fetch;
     if (typeof fetchImpl !== 'function') return fail('unsupported', '当前浏览器不支持网络请求。');
     const serial = ++this.requestSerial;
-    const endpoint = base ? `${base}${path}` : path;
+    // 网页同源时 base 为空：接口仍必须落在 /__cloud 下，不能把 /login 发到站点根。
+    const endpoint = base ? `${base}${path}` : `${CLOUD_PATH}${path}`;
     const controller = new AbortController();
     let timedOut = false;
     const timer: ReturnType<typeof setTimeout> = setTimeout(() => { timedOut = true; controller.abort(); }, REQUEST_TIMEOUT_MS);
