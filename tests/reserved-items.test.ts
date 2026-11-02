@@ -8,6 +8,7 @@ import type { CharacterStatsCatalog } from '../src/domain/character-stats.ts';
 import type { Campaign } from '../src/domain/campaign.ts';
 import { Session } from '../src/domain/session.ts';
 import { Storefront } from '../src/domain/shop.ts';
+import { EquipmentCrafting, parseCrafting } from '../src/domain/crafting.ts';
 
 const read = <T>(name: string): T => JSON.parse(readFileSync(new URL(`../public/content/${name}.json`, import.meta.url), 'utf8')) as T;
 const items = parseItemCatalog(read('items'));
@@ -17,16 +18,18 @@ const campaign = read<Campaign>('campaign');
 const stats = read<CharacterStatsCatalog>('character-stats');
 const shops = parseShops(read('shops'));
 const rawDrops = read<DropCatalog>('drops');
+const craftingCatalog = parseCrafting(read('crafting'));
 
 test('paid item list covers the documented 215 items and their containers', () => {
   assert.equal(reserved.size, 215);
+  assert.equal(blocked.size, 230);
   assert.ok(blocked.has('durandal'));
   assert.ok(blocked.has('sword-of-truth'));
-  assert.ok(blocked.has('sealed-weapon-chest'));
-  assert.ok(blocked.has('sealed-armor-chest'));
-  assert.ok(blocked.has('sealed-necklace-chest'));
-  assert.ok(blocked.has('lvl-d-weapon-combo-unit'));
-  assert.ok(blocked.has('s-armor-combo-unit-no-3'));
+  for (const id of ['sealed-weapon-chest', 'sealed-armor-chest', 'sealed-necklace-chest'])
+    assert.ok(blocked.has(id), id);
+  const recipeBooks = Object.entries(items.items).filter(([, item]) => item.use?.kind === 'recipe').map(([id]) => id);
+  assert.equal(recipeBooks.length, 12);
+  for (const id of recipeBooks) assert.ok(blocked.has(id), id);
 });
 
 test('random drops never select a reserved item', () => {
@@ -45,13 +48,42 @@ test('random drops never select a reserved item', () => {
 });
 
 test('shops never offer a reserved item', () => {
-  for (const shopId of ['rare-items-dealer-2d609a7f', 'crooked-street-vendor-582a688d', 'lamp-dealer-007',
-    'weapons-dealer-f31d78ce', 'armor-trader-70af4958']) {
+  for (const shopId of Object.keys(shops.shops)) {
     const session = new Session(campaign, undefined, undefined, items);
     const store = new Storefront(shops, items, stats, session, shopId, 'shadow-camp', () => 0.1);
     const check = () => assert.ok(store.offers.every(offer => !blocked.has(offer.instance.item)), `${shopId} offered a reserved item`);
     check();
     for (const category of store.shop.categories) { store.selectCategory(category); check(); }
+  }
+});
+
+test('old shop stock cannot keep selling reserved items', () => {
+  const session = new Session(campaign, undefined, undefined, items);
+  session.shops.restoreState({
+    mapId: 'shadow-camp',
+    stock: [['rare-items-dealer-2d609a7f', [{
+      id: 'legacy-reserved-offer',
+      instance: { id: 'legacy-reserved-instance', item: 'durandal', quantity: 1, enhancement: 0, gems: [] },
+      limited: true, concealed: false, sold: false
+    }]]],
+    serial: 1
+  });
+  const store = new Storefront(shops, items, stats, session, 'rare-items-dealer-2d609a7f', 'shadow-camp', () => 0.1);
+  assert.ok(store.offers.every(offer => !blocked.has(offer.instance.item)));
+  assert.throws(() => store.buy('legacy-reserved-offer', 1), /不在货架/);
+  assert.ok(!session.shops.captureState().stock.some(([, offers]) => offers.some(offer => blocked.has(offer.instance.item))));
+});
+
+test('every recipe that produces a reserved item is hidden and rejected', () => {
+  const session = new Session(campaign, undefined, undefined, items);
+  const crafting = new EquipmentCrafting(session, craftingCatalog);
+  const reservedRecipes = Object.entries(items.recipes).filter(([, recipe]) => blocked.has(recipe.result));
+  assert.equal(reservedRecipes.length, 55);
+  const available = new Set(crafting.availableRecipes().map(entry => entry.id));
+  for (const [id] of reservedRecipes) {
+    assert.ok(!available.has(id), `${id} is visible`);
+    assert.equal(crafting.recipe(id), undefined, `${id} is readable`);
+    assert.throws(() => crafting.recipeQuote(id), /无法进行合成/, `${id} is craftable`);
   }
 });
 

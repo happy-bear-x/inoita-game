@@ -109,6 +109,16 @@ test('old saves containing removed expansion bags migrate to consumables',()=>{
   assert.deepEqual(saved,before,'旧档迁移不改写槽里的原件');
 });
 
+test('old infinity bags migrate to a potion that is not reserved',()=>{
+  const saved=record(),bag=saved.session.bag;
+  const equipped=new Set([...Object.values(bag.worn),...bag.companionEquipment.flatMap(([,equipment])=>Object.values(equipment))]);
+  const entry=bag.instances.find(value=>!equipped.has(value.id))!;
+  entry.item='infinity-bag';
+  const candidate=prepareSavedGame(saved,content);
+  assert.equal(candidate.session.bag.get(entry.id)?.item,'healing-potion-xl');
+  assert.ok(!(content.items.reservedItems??[]).includes('healing-potion-xl'));
+});
+
 test('old saves containing removed items drop them and every reference',()=>{
   for(const legacyItem of ['standard-dice','stats-reset-spell','resurrection-prayer']){
     const saved=record(),bag=saved.session.bag;

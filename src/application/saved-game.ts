@@ -150,7 +150,7 @@ function upgradeSavedGame(game:SaveGame<StoryWorldViewSnapshot>):SaveGame<StoryW
  * 丢弃时必须同时清掉格位与快捷栏引用，否则背包自检会拒绝整份存档。
  */
 const LEGACY_BAG_REPLACEMENTS:Record<string,string>={
-  handbag:'healing-potion-m','small-bag':'healing-potion-l',backpack:'healing-potion-xl','infinity-bag':'elixir'};
+  handbag:'healing-potion-m','small-bag':'healing-potion-l',backpack:'healing-potion-xl','infinity-bag':'healing-potion-xl'};
 const LEGACY_REMOVED_ITEMS=new Set(['novice-dice','standard-dice','advanced-dice','supreme-dice','chaos-dice','stats-reset-spell','resurrection-prayer']);
 function migrateLegacyItems(game:SaveGame<StoryWorldViewSnapshot>):SaveGame<StoryWorldViewSnapshot>{
   const session=game.session;

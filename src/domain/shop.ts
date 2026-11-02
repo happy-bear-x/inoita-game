@@ -49,6 +49,14 @@ export class ShopVisits {
   restoreState(state:ShopVisitsState):void {
     const restored=structuredClone(state);this.mapId=restored.mapId;this.stock=new Map(restored.stock);this.serial=restored.serial;
   }
+  /** 旧档货架可能保存了后来列为保留的道具；读档后先清掉，不能继续出售。 */
+  removeReserved(reserved:ReadonlySet<string>):void {
+    if(!reserved.size)return;
+    for(const [shopId,offers] of this.stock){
+      const kept=offers.filter(offer=>!reserved.has(offer.instance.item));
+      if(kept.length)this.stock.set(shopId,kept);else this.stock.delete(shopId);
+    }
+  }
   enterMap(map: string): void { if (map !== this.mapId) { this.stock.clear(); this.mapId = map; } }
   identity(): string { return `merchandise-${++this.serial}`; }
   open(id: string, create: (capacity: number) => ShopOffer[]): ShopOffer[] {
@@ -78,6 +86,7 @@ export class Storefront {
     this.shop = shop; this.catalog = catalog; this.items = items; this.stats = stats; this.session = session; this.random = random;
     this.reserved = reservedAcquisitionIds(items);
     session.shops.enterMap(mapId || session.shops.mapId || session.campaign.start.map);
+    session.shops.removeReserved(this.reserved);
     if (shop.categories.length) this.selectCategory(shop.categories[0]);
     else {
       this.stock = shop.fixedStock.filter(id => items.items[id] && !items.items[id].pickup && !this.reserved.has(id)).map(id => this.createOffer(id, false));

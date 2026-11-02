@@ -11,7 +11,7 @@
 
 原版运行时读取的付费商品表是 `game.dat` 表 98 `CHARGEDITEMBASE`，共 **225 条**；表 99 `CHARGEDITEMPRODUCTBASE` 是充值商品。本项目不接入充值商品和付费货币。
 
-表 98 中有 **215 件**道具列入 `public/content/items.json` 的 `reservedItems`，保留给单独获取设计；其余 6 项是功能服务，按第六节的免费规则处理。
+表 98 中有 **215 件**道具列入 `public/content/items.json` 的 `reservedItems`，保留给单独获取设计；另有 6 项功能服务按第六节的免费规则处理。
 
 `site/data/shops.json` 的 `cash_shop` 44 条来自 `CASHITEMBASE`。这张表在原版里只被导出 Excel 的代码读取，不是运行时货架，不能直接当成实际付费清单。本文以表 98 和表 99 为准。
 
@@ -170,7 +170,10 @@
 
 - `public/content/items.json` 的 `reservedItems` 记录 215 件付费道具。
 - `reservedAcquisitionIds` 还会把会开出这些道具的封印宝箱，以及只解锁这些配方的配方书算进来；当前共 230 个条目。
-- `parseDrops` 解析掉落表时剔除这些条目；`Storefront` 不把它们放上货架；`EquipmentCrafting` 不显示也不接受它们的配方；任务奖励和剧情发放由内容校验拒绝。
+- `parseDrops` 解析掉落表时剔除这些条目；`Storefront` 不把它们放上货架，并会清掉旧档货架里已经保存的保留商品；`EquipmentCrafting` 不显示也不接受它们的配方。
+- 任务完成奖励、剧情 `item-give`/`item-drop`、初始物品/装备和商人物品由内容校验拒绝。
+- 当前未拦截的入口：任务接取发放 `onAcceptItems`、剧情 `equip create:true`、地图任务物品生成点 `questItemSpawns`。现有内容没有使用这些入口；后续接入保留道具前需要补校验。
+- 旧存档里已经拥有的保留道具、容器和配方书不追溯清除；旧档扩容背包迁移改为发放非保留的恢复药水（特大）。
 - 这些道具仍然保留完整定义，后续单独设计可以直接引用；恢复普通获取时，把它们从 `reservedItems` 移出即可。
 
 ### 8.3 功能服务的免费化
