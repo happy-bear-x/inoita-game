@@ -1,6 +1,6 @@
 import {rollChaos,type ChaosTier,type ChaosRule} from './chaos-equipment.ts';
 import {DEFAULT_EQUIPMENT_GRADE,type CharacterStatsCatalog} from './character-stats.ts';
-import type {ItemCatalog,ItemInstance,ItemRecipe,ItemReward} from './items.ts';
+import {reservedAcquisitionIds,type ItemCatalog,type ItemInstance,type ItemRecipe,type ItemReward} from './items.ts';
 import type {Session} from './session.ts';
 
 interface CraftingOperationBase {name:string;materials:ItemReward[]}
@@ -49,18 +49,22 @@ export function validateCrafting(catalog:CraftingCatalog,items:ItemCatalog):void
 /** 先核对装备、材料和费用，确认时重新核对，再一次性提交给会话。 */
 export class EquipmentCrafting {
   readonly session:Session;readonly catalog:CraftingCatalog;
-  constructor(session:Session,catalog:CraftingCatalog){this.session=session;this.catalog=catalog;}
-  recipe(id:string):ItemRecipe|undefined { return this.session.bag.catalog.recipes[id]; }
+  private readonly reserved:ReadonlySet<string>;
+  constructor(session:Session,catalog:CraftingCatalog){this.session=session;this.catalog=catalog;this.reserved=reservedAcquisitionIds(session.bag.catalog);}
+  recipe(id:string):ItemRecipe|undefined {
+    const recipe=this.session.bag.catalog.recipes[id];
+    return recipe&&!this.reserved.has(recipe.result)?recipe:undefined;
+  }
   /** 配方书配方只有学会后才进入列表；常备配方（药水、宝石）始终可用。 */
   availableRecipes():{id:string;recipe:ItemRecipe}[] {
     const learned=new Set(this.session.bag.learnedRecipes);
     return Object.entries(this.session.bag.catalog.recipes)
-      .filter(([id,recipe])=>!recipe.book||learned.has(id))
+      .filter(([id,recipe])=>(!recipe.book||learned.has(id))&&!this.reserved.has(recipe.result))
       .map(([id,recipe])=>({id,recipe}));
   }
   recipeQuote(id:string):RecipeQuote {
     const bag=this.session.bag,recipe=bag.catalog.recipes[id];
-    if(!recipe||(recipe.book&&!bag.learnedRecipes.includes(id)))throw new CraftingError('craft-recipe');
+    if(!recipe||(recipe.book&&!bag.learnedRecipes.includes(id))||this.reserved.has(recipe.result))throw new CraftingError('craft-recipe');
     if(recipe.materials.some(m=>bag.count(m.item)<m.quantity))throw new CraftingError('craft-materials');
     if(this.session.money<recipe.cost)throw new CraftingError('craft-money');
     return {recipe:id,revision:bag.revision,cost:recipe.cost};

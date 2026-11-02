@@ -101,10 +101,42 @@ export interface ItemCatalog {
   startingShortcut: string;
   dualWieldClasses: string[];
   merchantItems: string[];
+  /** 原版付费道具，保留给独立获取设计；普通掉落、商店、合成和任务奖励会跳过它们。 */
+  reservedItems?: readonly string[];
   classSkills: Record<string,string[]>;
   skillDescriptions?: Record<string,{name:string;className:string}>;
   recipes: Record<string,ItemRecipe>;
 }
+
+const reservedCache = new WeakMap<ItemCatalog, ReadonlySet<string>>();
+
+/**
+ * 正常获取要跳过的道具：`reservedItems` 里的付费道具，以及会直接产出它们、
+ * 或者只解锁它们配方的容器（礼盒、封印箱、配方书）。
+ * 普通掉落、商店、合成和任务奖励都只看这一份集合，避免各写一份过滤名单。
+ */
+export function reservedAcquisitionIds(catalog: ItemCatalog): ReadonlySet<string> {
+  const cached = reservedCache.get(catalog);
+  if (cached) return cached;
+  const reserved = new Set(catalog.reservedItems ?? []);
+  reservedCache.set(catalog, reserved);
+  if (!reserved.size) return reserved;
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const [id, definition] of Object.entries(catalog.items)) {
+      if (reserved.has(id)) continue;
+      const rewards = definition.use?.rewards ?? [];
+      const recipes = definition.use?.recipes ?? [];
+      if (rewards.some(reward => reserved.has(reward.item)) ||
+        recipes.some(recipe => reserved.has(catalog.recipes[recipe]?.result ?? ''))) {
+        reserved.add(id);
+        changed = true;
+      }
+    }
+  }
+  return reserved;
+}
+
 export interface ItemInstance {
   numbers?: ItemNumbers;
   id: string;

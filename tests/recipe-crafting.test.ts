@@ -17,26 +17,23 @@ function fixture(){
 }
 const notice=(expected:string)=>(error:unknown)=>error instanceof CraftingError&&error.notice===expected;
 
-test('recipe list hides book recipes until learned and always shows potion and jewel recipes',()=>{
+test('reserved book recipes stay hidden even after learning; potion and jewel recipes remain available',()=>{
   const {hero,crafting}=fixture();
   let ids=crafting.availableRecipes().map(entry=>entry.id);
   assert.ok(ids.includes('mix-healing-potion-s'));assert.ok(ids.includes('mix-chaos-jewel'));
   assert.ok(!ids.includes('craft-angurvadel'));
   const state=hero.bag.captureState();state.recipes=[...state.recipes,'craft-angurvadel'];hero.bag.restoreState(state);
   ids=crafting.availableRecipes().map(entry=>entry.id);
-  assert.ok(ids.includes('craft-angurvadel'));
+  assert.ok(!ids.includes('craft-angurvadel'),'保留道具的配方不进入合成列表');
+  assert.equal(crafting.recipe('craft-angurvadel'),undefined);
 });
 
-test('book recipe rejects before learning, then charges materials and money once',()=>{
-  const {hero,session,crafting}=fixture(),bag=hero.bag,recipe=items.recipes['craft-angurvadel'];
-  assert.throws(()=>crafting.recipeQuote('craft-angurvadel'),notice('craft-recipe'));
+test('reserved book recipe rejects even after learning and never charges',()=>{
+  const {hero,session,crafting}=fixture(),bag=hero.bag;
   const state=bag.captureState();state.recipes=[...state.recipes,'craft-angurvadel'];bag.restoreState(state);
-  for(const material of recipe.materials)bag.add(material.item,material.quantity);
-  const before=bag.counts,money=session.money;
-  crafting.recipeCommit(crafting.recipeQuote('craft-angurvadel'));
-  assert.equal(bag.count(recipe.result),1);
-  for(const material of recipe.materials)assert.equal(bag.count(material.item),before.get(material.item)!-material.quantity);
-  assert.equal(session.money,money-recipe.cost);
+  const money=session.money;
+  assert.throws(()=>crafting.recipeQuote('craft-angurvadel'),notice('craft-recipe'));
+  assert.equal(bag.count('angurvadel'),0);assert.equal(session.money,money);
 });
 
 test('always-available potion recipe works without learning and consumes lower potions',()=>{

@@ -57,7 +57,7 @@ test('quest pickup and hand-in update inventory and progress together, without d
   assert.equal(session.status('knight-uniform'),'ready');
   assert.equal(session.complete('knight-uniform'),true);
   assert.equal(session.itemCount('ectoplasm'),0);
-  assert.equal(session.itemCount('supreme-elixir'),1);
+  assert.equal(session.itemCount('supreme-elixir'),0);
   assert.equal(session.complete('knight-uniform'),false);
   assert.deepEqual(updates,[1,2,3,4,5,0]);
   assert.equal(new Session(campaign,content.player).bag.counts.size,0);
@@ -108,7 +108,7 @@ test('main quest rewards grant experience, coins and class armor once',()=>{
     expected.addExperience(1490+298+298+1660);
     session.accept('grafton-mission');session.enemyDefeated({id:'earl',enemyId:'enemy-earl-grafton-1',x:0,y:0});
     assert.equal(session.complete('grafton-mission'),true);
-    assert.equal(session.itemCount('supreme-elixir'),1);
+    assert.equal(session.itemCount('supreme-elixir'),0);
     for(const id of ['cardinal-summons','meet-portia']){session.accept(id);assert.equal(session.complete(id),true);}
     session.accept('knight-uniform');
     for(const spawn of spiritSpawns){session.enemyDefeated(spawn);dropSpirit(session,spawn);collectSpirit(session,spawn);}

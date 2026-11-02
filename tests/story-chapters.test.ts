@@ -1006,7 +1006,7 @@ test('the fusion machine collection can be completed twice using warehouse items
       assert.equal(h.session.status('quest-353'), 'ready');
       await h.travel('shadow-hall'); await h.talk('npc-576');
       assert.equal(h.session.itemCount('paillette'), 0, '交付实际扣除五个铁块');
-      assert.equal(h.session.itemCount('lvl-d-weapon-combo-unit'), rewardBefore + round + 1);
+      assert.equal(h.session.itemCount('lvl-d-weapon-combo-unit'), rewardBefore, '保留道具不再作为任务奖励发放');
     }
   } finally {
     h.director.dispose();

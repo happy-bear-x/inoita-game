@@ -296498,12 +296498,7 @@
       "rewards": {
         "experience": 1490,
         "money": 0,
-        "items": [
-          {
-            "item": "supreme-elixir",
-            "quantity": 1
-          }
-        ]
+        "items": []
       },
       "offerScript": null,
       "completeScript": null,
@@ -326548,10 +326543,6 @@
           {
             "item": "improved-resurrection-scroll",
             "quantity": 1
-          },
-          {
-            "item": "life-potion-xl",
-            "quantity": 5
           }
         ]
       },
@@ -332372,12 +332363,7 @@
       "rewards": {
         "experience": 366,
         "money": 0,
-        "items": [
-          {
-            "item": "lvl-d-weapon-combo-unit",
-            "quantity": 1
-          }
-        ]
+        "items": []
       },
       "offerScript": null,
       "completeScript": null,
@@ -332499,12 +332485,7 @@
       "rewards": {
         "experience": 706,
         "money": 0,
-        "items": [
-          {
-            "item": "d-armor-combo-unit",
-            "quantity": 1
-          }
-        ]
+        "items": []
       },
       "offerScript": null,
       "completeScript": null,
@@ -332638,12 +332619,7 @@
       "rewards": {
         "experience": 1250,
         "money": 0,
-        "items": [
-          {
-            "item": "c-weapon-combo-unit",
-            "quantity": 1
-          }
-        ]
+        "items": []
       },
       "offerScript": null,
       "completeScript": null,
@@ -332731,12 +332707,7 @@
       "rewards": {
         "experience": 1556,
         "money": 0,
-        "items": [
-          {
-            "item": "c-armor-combo-unit",
-            "quantity": 1
-          }
-        ]
+        "items": []
       },
       "offerScript": null,
       "completeScript": null,
@@ -332876,12 +332847,7 @@
       "rewards": {
         "experience": 1998,
         "money": 0,
-        "items": [
-          {
-            "item": "b-weapon-combo-unit",
-            "quantity": 1
-          }
-        ]
+        "items": []
       },
       "offerScript": null,
       "completeScript": null,
@@ -333003,12 +332969,7 @@
       "rewards": {
         "experience": 2338,
         "money": 0,
-        "items": [
-          {
-            "item": "b-armor-combo-unit-no-1",
-            "quantity": 1
-          }
-        ]
+        "items": []
       },
       "offerScript": null,
       "completeScript": null,
@@ -333450,12 +333411,7 @@
       "rewards": {
         "experience": 2542,
         "money": 0,
-        "items": [
-          {
-            "item": "b-armor-combo-unit-no-2",
-            "quantity": 1
-          }
-        ]
+        "items": []
       },
       "offerScript": null,
       "completeScript": null,
@@ -333673,12 +333629,7 @@
       "rewards": {
         "experience": 2780,
         "money": 0,
-        "items": [
-          {
-            "item": "a-weapon-combo-unit",
-            "quantity": 1
-          }
-        ]
+        "items": []
       },
       "offerScript": null,
       "completeScript": null,
@@ -333842,16 +333793,7 @@
       "rewards": {
         "experience": 3358,
         "money": 0,
-        "items": [
-          {
-            "item": "s-weapon-combo-unit",
-            "quantity": 1
-          },
-          {
-            "item": "s-armor-combo-unit-no-1",
-            "quantity": 1
-          }
-        ]
+        "items": []
       },
       "offerScript": null,
       "completeScript": null,
@@ -333962,12 +333904,7 @@
       "rewards": {
         "experience": 3494,
         "money": 0,
-        "items": [
-          {
-            "item": "s-armor-combo-unit-no-2",
-            "quantity": 1
-          }
-        ]
+        "items": []
       },
       "offerScript": null,
       "completeScript": null,
@@ -334113,12 +334050,7 @@
       "rewards": {
         "experience": 3562,
         "money": 0,
-        "items": [
-          {
-            "item": "s-armor-combo-unit-no-3",
-            "quantity": 1
-          }
-        ]
+        "items": []
       },
       "offerScript": null,
       "completeScript": null,
@@ -336119,12 +336051,7 @@
       "rewards": {
         "experience": 0,
         "money": 0,
-        "items": [
-          {
-            "item": "life-potion-xl",
-            "quantity": 3
-          }
-        ]
+        "items": []
       },
       "offerScript": null,
       "completeScript": null,
@@ -348099,12 +348026,7 @@
       "rewards": {
         "experience": 0,
         "money": 0,
-        "items": [
-          {
-            "item": "elixir",
-            "quantity": 5
-          }
-        ]
+        "items": []
       },
       "offerScript": "offer:quest-489",
       "completeScript": "complete:quest-489",
@@ -348680,12 +348602,7 @@
       "rewards": {
         "experience": 16960,
         "money": 755,
-        "items": [
-          {
-            "item": "sealed-necklace-chest",
-            "quantity": 1
-          }
-        ]
+        "items": []
       },
       "offerScript": null,
       "completeScript": null,
@@ -348976,12 +348893,7 @@
       "rewards": {
         "experience": 18320,
         "money": 800,
-        "items": [
-          {
-            "item": "sealed-armor-chest",
-            "quantity": 1
-          }
-        ]
+        "items": []
       },
       "offerScript": null,
       "completeScript": null,
@@ -349550,12 +349462,7 @@
       "rewards": {
         "experience": 18830,
         "money": 900,
-        "items": [
-          {
-            "item": "sealed-weapon-chest",
-            "quantity": 1
-          }
-        ]
+        "items": []
       },
       "offerScript": null,
       "completeScript": "complete:quest-498",
@@ -349647,12 +349554,7 @@
       "rewards": {
         "experience": 16960,
         "money": 1500,
-        "items": [
-          {
-            "item": "sealed-necklace-chest",
-            "quantity": 1
-          }
-        ]
+        "items": []
       },
       "offerScript": null,
       "completeScript": null,
@@ -349989,12 +349891,7 @@
       "rewards": {
         "experience": 9160,
         "money": 0,
-        "items": [
-          {
-            "item": "sealed-armor-chest",
-            "quantity": 1
-          }
-        ]
+        "items": []
       },
       "offerScript": null,
       "completeScript": null,
@@ -350391,12 +350288,7 @@
       "rewards": {
         "experience": 9160,
         "money": 0,
-        "items": [
-          {
-            "item": "sealed-weapon-chest",
-            "quantity": 1
-          }
-        ]
+        "items": []
       },
       "offerScript": null,
       "completeScript": null,

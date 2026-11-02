@@ -1,4 +1,4 @@
-import type { ItemCatalog, ItemInstance } from './items.ts';
+import { reservedAcquisitionIds, type ItemCatalog, type ItemInstance } from './items.ts';
 import type { ChestKind } from './content.ts';
 import type { CharacterStatsCatalog, EquipmentGradeSeed } from './character-stats.ts';
 import { rollGrade, staticGrade, type GradeProfile } from './equipment-grade.ts';
@@ -174,7 +174,34 @@ export function parseDrops(value:unknown,items:ItemCatalog,enemyIds:readonly str
         (rule.minRarity!==undefined&&(!Number.isSafeInteger(rule.minRarity)||rule.minRarity<0||rule.minRarity>4)))
         throw new Error(`宝箱稀有度无效：${owner}`);
   }
-  return catalog;
+  return filterReservedDrops(catalog,reservedAcquisitionIds(items));
+}
+
+/** 保留道具等待单独获取设计；解析后从所有随机掉落入口移除，池子权重保持原样。 */
+function filterReservedDrops(catalog:DropCatalog,reserved:ReadonlySet<string>):DropCatalog {
+  if(!reserved.size)return catalog;
+  const filtered=structuredClone(catalog);
+  for(const pool of Object.values(filtered.pools))for(const kind of poolKinds){
+    const choices=pool[kind];if(!choices)continue;
+    pool[kind]=choices.flatMap(choice=>{
+      if(choice.item&&reserved.has(choice.item))return [];
+      if(!choice.tiers)return [choice];
+      const tiers=choice.tiers.filter(tier=>!tier.item||!reserved.has(tier.item));
+      return tiers.length?[{...choice,tiers}]:[];
+    });
+  }
+  for(const kind of ['weapon','armor','special','unique','epic'] as const)
+    filtered.equipment[kind]=filtered.equipment[kind].filter(choice=>!reserved.has(choice.item));
+  for(const rule of Object.values(filtered.enemies))
+    rule.fixed=rule.fixed.filter(choice=>!reserved.has(choice.item));
+  for(const rule of Object.values(filtered.chests))
+    if(rule)rule.fixed=rule.fixed.filter(choice=>!reserved.has(choice.item));
+  for(const rule of Object.values(filtered.breakables??{}))
+    rule.fixed=rule.fixed.filter(choice=>!reserved.has(choice.item));
+  for(const rules of Object.values(filtered.questItems))
+    for(const rule of rules)
+      if(reserved.has(rule.item))throw new Error(`任务掉落不能是保留道具：${rule.item}`);
+  return filtered;
 }
 
 function draw(random:()=>number,max:number):number {

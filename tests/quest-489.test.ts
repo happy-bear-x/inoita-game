@@ -41,7 +41,7 @@ test('the review quest is a fan-work note with a Bilibili name and no external U
   assert.doesNotMatch(offer.body, /https?:\/\//);
 });
 
-test('accepting makes the quest ready without opening a page; the second talk pays the reward', async () => {
+test('accepting makes the quest ready without opening a page; the second talk completes it without the reserved reward', async () => {
   const { session, director, luna, events, lines } = setup();
   try {
     await director.interact(luna, world.actors[luna.actor]);
@@ -52,7 +52,7 @@ test('accepting makes the quest ready without opening a page; the second talk pa
 
     await director.interact(luna, world.actors[luna.actor]);
     assert.equal(session.status(quest.id), 'completed');
-    assert.equal(session.itemCount('elixir'), 5);
+    assert.equal(session.itemCount('elixir'), 0);
     assert.equal(events.at(-1), 'complete:completed');
     assert.equal(lines.at(-1), quest.completeText);
     assert.match(lines.at(-1)!, /同人作品/);
