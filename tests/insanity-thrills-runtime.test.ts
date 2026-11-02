@@ -46,7 +46,7 @@ function fixture(targets:Combatant[],stance='dagger:empty'){
   let afterHit:(event:AttackContact,hit:PhysicalHit)=>void=()=>{};
   const host=Object.setPrototypeOf({hero:member,conditions,hitResolution:resolution,fallen,pendingDefeats:new Set<string>(),
     arena:targets.filter(actor=>actor.team==='enemy').map(actor=>({key:actor.id,definition:catalog.enemies[0]})),allies:[],
-    app:{battleCatalog:catalog,items,wardrobe,session:{skills,party:{activeIds:['player'],controlledId:'player'}}},
+    app:{battleCatalog:catalog,items,wardrobe,session:{skills,isOneHitKill:()=>false,party:{activeIds:['player'],controlledId:'player'}}},
     scene:{events:{emit:()=>{}}},memberOf:(id:string)=>id==='player'?member:undefined,partyPassives:()=>[],
     combatant:(id:string)=>{const value=actors.get(id);return value&&!fallen.has(id)?{...value,states:conditions.activeStates(id)}:undefined;},
     visualOf:(id:string)=>id==='player'?visual:undefined,
