@@ -99,6 +99,12 @@ test('format 35 saves hide duplicate world actors and drop a duplicate story sta
   assert.deepEqual(saved,before,'迁移不改写原始存档');
 });
 
+test('format 40 saves gain an empty reserved drop state on upgrade',()=>{
+  const saved=record();saved.format=40;
+  const candidate=prepareSavedGame(saved,content);
+  assert.deepEqual(candidate.session.captureState().reservedDrops,{unlockMisses:0,claimed:[]});
+});
+
 test('old saves containing removed expansion bags migrate to consumables',()=>{
   const saved=record(),bag=saved.session.bag;
   const equipped=new Set([...Object.values(bag.worn),...bag.companionEquipment.flatMap(([,equipment])=>Object.values(equipment))]);

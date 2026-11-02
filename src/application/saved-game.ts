@@ -134,6 +134,11 @@ const SAVE_UPGRADES:Record<number,SaveUpgrade>={
       world.flags.push(absentEnemyFlag(NOXIOUS_HALL_MAP,CURSED_GHOST_ENEMY));
     game.format=40;
   },
+  40:game=>{
+    // 40 → 41：付费道具改为独立掉落；旧档只补空的领取/保底状态，不清理已有物品。
+    game.session.reservedDrops={unlockMisses:0,claimed:[]};
+    game.format=41;
+  },
 };
 function upgradeSavedGame(game:SaveGame<StoryWorldViewSnapshot>):SaveGame<StoryWorldViewSnapshot>{
   if(game.format===SAVE_FORMAT)return game;
@@ -213,6 +218,18 @@ export function prepareSavedGame(game:SaveGame<StoryWorldViewSnapshot>,content:S
   const session=newStorySession(content.campaign,content.world.actors[content.campaign.start.actor],selected,
     content.items,content.characterStats,content.battleCatalog,content.companions);
   restoreSaveGame(session,upgraded);
+  // 旧档已经拥有的解锁型道具补领取记录：不删除任何东西，只避免新掉落再给一份。
+  const seeded=new Set<string>();
+  for(const entry of session.bag.entries){
+    const definition=content.items.items[entry.item];
+    if(definition?.use?.kind==='recipe'||definition?.use?.kind==='box'||entry.item.startsWith('sealed-skillbook'))
+      seeded.add(entry.item);
+  }
+  for(const [id,definition] of Object.entries(content.items.items)){
+    if(definition.use?.kind==='recipe'&&definition.use.recipes?.some(recipe=>session.bag.learnedRecipes.includes(recipe)))
+      seeded.add(id);
+  }
+  session.seedReservedClaims(seeded);
   // 旧版本可能把全队 0 血写成存档；进世界前恢复上阵队伍，避免读档后立刻弹出阵亡面板。
   if(!session.hasLivingMember){
     if(session.party)session.party.recover();else session.hero?.recover();

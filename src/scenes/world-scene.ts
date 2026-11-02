@@ -1386,8 +1386,11 @@ export class WorldScene extends Phaser.Scene {
       return false;
     }
     if(item?.pickup){if(!this.combat)return false;return this.combat.collectMana(item.pickup);}
-    if(reward.instance){session.bag.receiveDrop(reward.instance);return true;}
-    session.bag.add(reward.item,reward.quantity);return true;
+    if(reward.instance)session.bag.receiveDrop(reward.instance);
+    else session.bag.add(reward.item,reward.quantity);
+    if(this.dropCatalog?.reservedDrops?.entries.some(entry=>entry.item===reward.item&&entry.once))
+      session.claimReservedDrop(reward.item);
+    return true;
   }
   /** 拾取只有一张共享背包：谁被操控，谁走到掉落上就捡进同一份背包。 */
   private collectGroundLoot(position:{x:number;y:number}):void {

@@ -171,6 +171,7 @@
 - 紫装有三类来源。第一类是独立判定：59 级以上敌人 0.4%，59 级以上宝箱 1%；第二类是 35 个高等级精英/Boss 的 `fixed` 槽，概率 5%，160 条固定条目里有 116 条是紫装；第三类是 4 个任务（`quest-494`、`quest-498`、`quest-501`、`quest-503`）奖励的“被封印的武器盒/铠甲盒”，两个盒子奖励表里共有 33 件 epic，单盒约 46%（武器盒）和 37.5%（铠甲盒）。固定槽和新判定可以掉同一件物品。
 - 紫装池不按职业过滤，可能掉到本职业不能穿的装备；这一点和唯一装备一致。
 - `items.json` 的 `reservedItems` 是原版付费道具保留清单。`parseDrops` 解析后会从消耗品池、唯一/紫装列表和固定掉落里剔除这些道具，以及会开出它们的容器；`drops.json` 原文里仍能看到它们。当前紫装内容表 166 件，其中 54 件是保留道具，运行时随机紫装池不含这 54 件；唯一装备池同理。
+- 保留道具另走 `drops.json` 的 `reservedDrops` 独立通道：只有 `threat: "elite"` / `"boss"`，或标了 `paidDropEligible` 的低等级小 Boss/精英会结算；基础概率精英 45/10000、Boss 55/10000，解锁型连续 25 次未出必出。每次击杀全队只结算一次，使用主角等级；普通怪、宝箱和景物不参与。一次性道具在拾取时写入 `SessionState.reservedDrops.claimed`，掉在地上没捡不算获得。
 - `Session.partyItemChance` 目前没有任何地方赋值，恒为 0，所以全队物品概率乘数这条加成没有实际效果。
 - 宝箱内容在打开那一刻才掷，不是进图预演；进图预演只决定箱子是否出现、长什么样。
 - 18 个敌人标了 `noNormalDrops`，它们的常规掉落直接跳过，但任务掉落仍然照常。
@@ -182,6 +183,7 @@
 | 掉率、池子物品、权重、章节带 | [drops.json](../public/content/drops.json) |
 | 判定顺序、公式、选取逻辑、掉落校验 | [drops.ts](../src/domain/drops.ts) |
 | 紫装基础概率、最低等级、紫装池 | [drops.json](../public/content/drops.json) 的 `epicDrops` 与 `equipment.epic` |
+| 保留道具的等级、来源、权重和保底 | [drops.json](../public/content/drops.json) 的 `reservedDrops`；一次性领取状态在会话存档里 |
 | 黄/紫资格、物品等级上限、选取 | [drops.ts](../src/domain/drops.ts) 的 `specialDropEligibility`、`pickUnique`、`pickEpic` |
 | 保底参数、累计与清账 | [drops.json](../public/content/drops.json) 的 `pity`、[loot-pity.ts](../src/domain/loot-pity.ts) |
 | 地面数量上限、拾取半径、飞行掉落 | [ground-loot.ts](../src/domain/ground-loot.ts) |

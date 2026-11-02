@@ -30,6 +30,8 @@ export interface EnemyDropRule {
   threat?:'normal'|'elite'|'boss';
   /** 原版 MONDATABASE.u16@0x1b bit4：死亡时不走 CHARSYSTEM_DropItem，任务掉落仍保留。 */
   noNormalDrops?:boolean;
+  /** 低等级小 Boss/精英的付费掉落资格；不改变原来的威胁等级和普通掉落。 */
+  paidDropEligible?:boolean;
   chances:Record<DropChance,number>;
   fixed:{item:string;weight:number}[];
 }
@@ -53,6 +55,24 @@ export interface EpicDropsConfig {
 }
 export interface QuestItemDropRule { item:string; threshold:number }
 export interface QuestDropRequirement { item:string; quantity:number; owned:number }
+export type ReservedDropSource = 'elite'|'boss';
+export interface ReservedDropEntry {
+  item:string;
+  minPlayerLevel:number;
+  maxPlayerLevel:number;
+  sources:ReservedDropSource[];
+  weight:number;
+  once:boolean;
+  /** 超过建议等级后权重衰减但不归零，避免一次性道具永久错过。 */
+  softMax?:boolean;
+}
+export interface ReservedDropConfig {
+  version:1;
+  sources:Record<ReservedDropSource,{chancePer10000:number}>;
+  pity:{unlockGuaranteeAfter:number};
+  entries:ReservedDropEntry[];
+}
+export interface ReservedDropState { unlockMisses:number; claimed:string[] }
 export interface DropCatalog {
   version:2|3;
   questItems:Record<string,QuestItemDropRule[]>;
@@ -65,6 +85,8 @@ export interface DropCatalog {
   chapterBands?:ChapterBand[];
   pity?:PityConfig;
   epicDrops?:EpicDropsConfig;
+  /** 付费道具的独立掉落通道：只有精英/Boss 来源，普通池不参与。 */
+  reservedDrops?:ReservedDropConfig;
 }
 interface ChestDropRule extends Omit<EnemyDropRule,'level'|'threat'|'noNormalDrops'> {
   uniqueChance: {numerator:number;levelOffset:number};
@@ -116,6 +138,7 @@ export function parseDrops(value:unknown,items:ItemCatalog,enemyIds:readonly str
     if(!Array.isArray(rule.fixed)||rule.fixed.some(choice=>!itemExists(choice.item)||!Number.isSafeInteger(choice.weight)||choice.weight<1))throw new Error(`固定掉落无效：${enemyId}`);
     if(rule.fixed.length&&rule.fixed.reduce((sum,entry)=>sum+entry.weight,0)!==1000)throw new Error(`固定掉落权重无效：${enemyId}`);
     if(rule.noNormalDrops!==undefined&&typeof rule.noNormalDrops!=='boolean')throw new Error(`敌人无掉落标志无效：${enemyId}`);
+    if(rule.paidDropEligible!==undefined&&typeof rule.paidDropEligible!=='boolean')throw new Error(`敌人付费掉落标志无效：${enemyId}`);
   }
   for(const kind of ['ordinary','improved','boss'] as const){
     const rule=catalog.chests[kind];
@@ -174,7 +197,39 @@ export function parseDrops(value:unknown,items:ItemCatalog,enemyIds:readonly str
         (rule.minRarity!==undefined&&(!Number.isSafeInteger(rule.minRarity)||rule.minRarity<0||rule.minRarity>4)))
         throw new Error(`宝箱稀有度无效：${owner}`);
   }
+  if(catalog.reservedDrops)validateReservedDrops(catalog.reservedDrops,items);
   return filterReservedDrops(catalog,reservedAcquisitionIds(items));
+}
+
+function validateReservedDrops(config:ReservedDropConfig,items:ItemCatalog):void {
+  const blocked=reservedAcquisitionIds(items);
+  if(config.version!==1||!config.sources||!config.pity||!Array.isArray(config.entries))throw new Error('保留掉落配置无效');
+  for(const source of ['elite','boss'] as const){
+    const rate=config.sources[source];
+    if(!rate||!Number.isSafeInteger(rate.chancePer10000)||rate.chancePer10000<0||rate.chancePer10000>10000)
+      throw new Error(`保留掉落概率无效：${source}`);
+  }
+  if(!Number.isSafeInteger(config.pity.unlockGuaranteeAfter)||config.pity.unlockGuaranteeAfter<1)
+    throw new Error('保留掉落保底无效');
+  const seen=new Set<string>();
+  for(const entry of config.entries){
+    if(!entry||typeof entry.item!=='string'||!items.items[entry.item]||!blocked.has(entry.item))
+      throw new Error(`保留掉落物品无效：${String(entry?.item)}`);
+    if(seen.has(entry.item))throw new Error(`保留掉落物品重复：${entry.item}`);
+    seen.add(entry.item);
+    if(!Number.isSafeInteger(entry.minPlayerLevel)||entry.minPlayerLevel<1||entry.minPlayerLevel>105||
+      !Number.isSafeInteger(entry.maxPlayerLevel)||entry.maxPlayerLevel<entry.minPlayerLevel||entry.maxPlayerLevel>105)
+      throw new Error(`保留掉落等级无效：${entry.item}`);
+    if(!Array.isArray(entry.sources)||!entry.sources.length||new Set(entry.sources).size!==entry.sources.length||
+      entry.sources.some(source=>source!=='elite'&&source!=='boss'))
+      throw new Error(`保留掉下来源无效：${entry.item}`);
+    if(!Number.isSafeInteger(entry.weight)||entry.weight<1||entry.weight>10000)
+      throw new Error(`保留掉落权重无效：${entry.item}`);
+    if(typeof entry.once!=='boolean'||(entry.softMax!==undefined&&typeof entry.softMax!=='boolean'))
+      throw new Error(`保留掉落标记无效：${entry.item}`);
+  }
+  if(blocked.size&&(seen.size!==blocked.size||[...blocked].some(item=>!seen.has(item))))
+    throw new Error('保留掉落表必须覆盖全部保留道具');
 }
 
 /** 保留道具等待单独获取设计；解析后从所有随机掉落入口移除，池子权重保持原样。 */
@@ -342,6 +397,54 @@ function pickEpic(catalog:DropCatalog,cap:number,random:()=>number):string|undef
 
 function itemLevelCap(level:number,playerLevel:number,maxItemLevel?:number):number {
   return Math.max(1,Math.min(level,playerLevel,maxItemLevel??level));
+}
+
+export interface ReservedDropRollOptions {
+  source:ReservedDropSource;
+  heroLevel:number;
+  pending?:ReadonlySet<string>;
+  claimed?:ReadonlySet<string>;
+  unlockMisses?:number;
+  random?:()=>number;
+}
+export interface ReservedDropRollResult {
+  rewards:DropReward[];
+  unlockMisses:number;
+  forced:boolean;
+  item?:string;
+}
+
+/**
+ * 付费/保留道具的独立掉落通道。每次全队击杀只调用一次，使用主角等级；
+ * 普通掉落、商店、合成和任务奖励仍由 reservedItems 过滤。
+ */
+export function rollReservedDrops(catalog:DropCatalog,stats:CharacterStatsCatalog,options:ReservedDropRollOptions):ReservedDropRollResult {
+  const config=catalog.reservedDrops;
+  const misses=options.unlockMisses??0;
+  if(!config)return {rewards:[],unlockMisses:misses,forced:false};
+  if(!Number.isSafeInteger(options.heroLevel)||options.heroLevel<1)throw new Error('保留掉落玩家等级无效');
+  const pending=options.pending??new Set<string>();
+  const claimed=options.claimed??new Set<string>();
+  const level=options.heroLevel;
+  const weight=(entry:ReservedDropEntry)=>entry.softMax&&level>entry.maxPlayerLevel?Math.max(1,Math.floor(entry.weight/5)):entry.weight;
+  const candidates=config.entries.filter(entry=>entry.sources.includes(options.source)&&
+    level>=entry.minPlayerLevel&&(level<=entry.maxPlayerLevel||entry.softMax===true)&&
+    (!entry.once||(!claimed.has(entry.item)&&!pending.has(entry.item))));
+  if(!candidates.length)return {rewards:[],unlockMisses:misses,forced:false};
+  const unlockCandidates=candidates.filter(entry=>entry.once);
+  const nextMisses=unlockCandidates.length?Math.min(config.pity.unlockGuaranteeAfter,misses+1):misses;
+  const forced=unlockCandidates.length>0&&nextMisses>=config.pity.unlockGuaranteeAfter;
+  const random=options.random??Math.random;
+  if(!forced&&draw(random,10000)>=config.sources[options.source].chancePer10000)
+    return {rewards:[],unlockMisses:nextMisses,forced:false};
+  const pool=forced?unlockCandidates:candidates;
+  const index=weightedIndex(pool.map(weight),random);
+  if(index<0)return {rewards:[],unlockMisses:nextMisses,forced};
+  const entry=pool[index]!;
+  const equipment=stats.equipment[entry.item];
+  const grade=equipment?staticGrade(stats,equipment):undefined;
+  const reward:DropReward={kind:'item',item:entry.item,quantity:1,...(grade?{roll:{...grade,sockets:false}}:{})};
+  return {rewards:[reward],unlockMisses:nextMisses,forced,item:entry.item};
 }
 
 export interface SpecialDropEligibility { cap:number; withinWindow:boolean; unique:boolean; epic:boolean }

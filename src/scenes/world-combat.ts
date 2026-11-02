@@ -91,7 +91,7 @@ import { isBodyWalking } from '../rendering/arcade-movement.ts';
 import { effectAssets } from '../rendering/effects.ts';
 import { loadSceneAssets, retainLoadedSceneAssets } from '../rendering/scene-assets.ts';
 import { WorldEnemyRoster } from '../domain/world-enemies.ts';
-import { breakableKindOf, firstBossGuarantee, rollBreakableLoot, rollEnemyLoot, rollQuestDrops, specialDropEligibility, type DropCatalog } from '../domain/drops.ts';
+import { breakableKindOf, firstBossGuarantee, rollBreakableLoot, rollEnemyLoot, rollQuestDrops, rollReservedDrops, specialDropEligibility, type DropCatalog, type ReservedDropSource } from '../domain/drops.ts';
 import { PendingEnemyDefeats } from '../domain/combat-outcomes.ts';
 import { CombatHitResolution } from '../domain/combat-hit-resolution.ts';
 import {moltenReflectionDamage,rollMoltenSplash,moltenSplashTargets} from '../domain/molten-armor.ts';
@@ -1184,6 +1184,18 @@ captureStoryActors():SceneActorState[] {
                   const offset=offsets[index%offsets.length]!;
                   this.scene.spawnLootOnMap(map,x+offset,y,rolled.rewards,render&&!this.closed);
                 });
+                const reservedSource:ReservedDropSource|undefined=rule.threat==='boss'?'boss':
+                  rule.threat==='elite'||rule.paidDropEligible?'elite':undefined;
+                if(reservedSource&&this.drops.reservedDrops){
+                  const pending=new Set(groundLootFor(session).forMap(map).flatMap(drop=>
+                    drop.reward.kind==='item'?[drop.reward.item]:[]));
+                  const reserved=rollReservedDrops(this.drops,this.app.characterStats,{
+                    source:reservedSource,heroLevel:session.hero?.level??level,pending,
+                    claimed:session.claimedReservedDrops,unlockMisses:session.reservedDropMisses,random:Math.random
+                  });
+                  session.reservedDropMisses=reserved.unlockMisses;
+                  if(reserved.rewards.length)this.scene.spawnLootOnMap(map,x,y,reserved.rewards,render&&!this.closed);
+                }
               }
               // 任务掉落保持共享：每次击杀最多一件，不随队伍人数翻倍。
               // 已掉在地上还没捡的同类物品也要算进持有量，避免任务需求满了还继续产出。

@@ -14,7 +14,7 @@ import { StorySkillProgression } from './story-skills.ts';
 import { Bag, verifyBagState, type BagState } from './bag.ts';
 import type { SkillConfigurationState } from './skill-configuration.ts';
 import type { ItemCatalog } from './items.ts';
-import type { QuestDropRequirement } from './drops.ts';
+import type { QuestDropRequirement, ReservedDropState } from './drops.ts';
 import type { ActorDefinition, CampaignEnemyPlacement, EnemySpawn, MapExit, QuestItemSpawn, QuestRewardReceipt, QuestStatus, TravelDestination, VisibilityRules, WorldMap } from './content.ts';
 /** 落位修正需要的边界信息；调用方持有完整地图时直接传地图对象。 */
 export type MapBoundary=Pick<WorldMap,'width'|'height'> & {exits?:readonly MapExit[]};
@@ -68,6 +68,8 @@ export interface SessionState {
   questItemGeneration:QuestItemGenerationState;
   /** 温和保底的连续未命中计数与 Boss 首杀记录。 */
   lootPity?:LootPityState;
+  /** 付费道具独立掉落的解锁保底与一次性领取记录。 */
+  reservedDrops?:ReservedDropState;
   /** 队伍物品掉率乘数（千分比）；当前内容没有已验证来源，默认 0。 */
   partyItemChance?:number;
 }
@@ -81,6 +83,9 @@ export class Session {
   readonly questItemGenerators = new QuestItemGenerators();
   /** 掉落保底：按成员记录连续未出装备/稀有，命中后清零。 */
   readonly lootPity = new LootPity();
+  /** 付费道具的解锁保底计数与已经获得的一次性道具。 */
+  reservedDropMisses = 0;
+  readonly claimedReservedDrops = new Set<string>();
   partyItemChance = 0;
   enterMap(map: string, questItemSpawns?:readonly QuestItemSpawn[], boundary?:MapBoundary,
     mapSpawns?:readonly EnemySpawn[]): void {
@@ -360,6 +365,24 @@ export class Session {
       state:this.captureStateWith({version:5,quests:[],runningQuestIds:[],factSequences:[...this.factSequences]})};
   }
   rollbackBatch(baseline:{state:SessionState;quests:QuestBookCheckpoint}):void { this.restoreUnchecked(baseline.state,baseline.quests); }
+  /** 拾取一次性解锁道具：记录后把解锁保底清零。 */
+  claimReservedDrop(item:string):void {
+    this.claimedReservedDrops.add(item);
+    this.reservedDropMisses=0;
+  }
+  /** 旧档里已经拥有的解锁道具只补领取记录，不改动物品，也不清掉当前保底。 */
+  seedReservedClaims(items:Iterable<string>):void {
+    for(const item of items)this.claimedReservedDrops.add(item);
+  }
+  private restoreReservedDrops(state?:ReservedDropState):void {
+    const value=state??{unlockMisses:0,claimed:[]};
+    if(!Number.isSafeInteger(value.unlockMisses)||value.unlockMisses<0||
+      !Array.isArray(value.claimed)||value.claimed.some(item=>typeof item!=='string'))
+      throw new Error('保留掉落状态无效');
+    this.reservedDropMisses=value.unlockMisses;
+    this.claimedReservedDrops.clear();
+    for(const item of value.claimed)this.claimedReservedDrops.add(item);
+  }
   private captureStateWith(questBook:QuestBookState):SessionState {
     // 各子系统自己的 `captureState()` 已经返回新对象，这里只对**按引用共享**的三项做深拷贝：
     // 运行时快照、奖励收据与敌人状态（`player` 是冻结值，标量与字符串不可变）。
@@ -372,7 +395,8 @@ export class Session {
       party:this.party?.captureState(),recovery:this.recovery.captureState(),resourceRecovery:this.resourceRecovery.captureState(),
       combatClock:this.combatClock.captureState(),cooldowns:this.cooldowns.captureState(),frenzyAnimations:this.frenzyAnimations.captureState(),chests:this.chests.captureState(),springs:this.springs.captureState(),legendaryWeapons:this.legendaryWeapons.captureState(),shops:this.shops.captureState(),
       questItemGeneration:this.questItemGenerators.captureState(),groundLoot:groundLootFor(this).captureState(),
-      lootPity:this.lootPity.captureState(),partyItemChance:this.partyItemChance};
+      lootPity:this.lootPity.captureState(),reservedDrops:{unlockMisses:this.reservedDropMisses,claimed:[...this.claimedReservedDrops].sort()},
+      partyItemChance:this.partyItemChance};
   }
   private restoreUnchecked(restored:SessionState,quests?:QuestBookCheckpoint):void {
     this.questProjection=undefined;this.questsProjection=undefined;
@@ -398,6 +422,7 @@ export class Session {
     this.resourceRecovery.restoreState({...restored.resourceRecovery,elapsedMs:clock.frame*LOGIC_FRAME_MS});groundLootFor(this).restoreState(restored.groundLoot);
     this.questItemGenerators.restoreState(restored.questItemGeneration,groundLootFor(this));
     this.lootPity.restoreState(restored.lootPity??{version:2,members:[],chests:[],bossDefeats:[]});
+    this.restoreReservedDrops(restored.reservedDrops);
     this.partyItemChance=restored.partyItemChance??0;
   }
   /**
