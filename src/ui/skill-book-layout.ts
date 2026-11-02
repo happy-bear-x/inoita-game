@@ -23,8 +23,7 @@ export const SKILL_BOOK = {
   message: { x: 520, y: 108, width: 347, size: 16 },
   /** 说明用独立滚动区，底部按钮固定在它下面，长说明不会压住按钮。 */
   scroll: { x: 520, y: 134, width: 347, height: 196 },
-  primary: { x: 520, y: 345, width: 168, height: 55 },
-  secondary: { x: 700, y: 345, width: 100, height: 55 },
+  primary: { x: 609, y: 345, width: 168, height: 55 },
 } as const;
 
 /** 第 index 个技能格左上角；顺序与职业技能列表一致。 */

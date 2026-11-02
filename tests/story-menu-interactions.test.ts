@@ -833,7 +833,7 @@ test('using a skill book opens the icon page and returns to the bag', t => {
   assert.equal(f.session.bag.count('skillbook'), 1, '技能书只消耗一本');
   assert.equal(f.session.skills.level(skillId), rank + 1, '技能提升一级');
   assert.equal(f.internals.page, 'learn', '还有一本时留在页面');
-  f.scene.click(f.scene.button('返回'));
+  f.scene.click(f.scene.button('关闭技能书'));
   assert.equal(f.internals.page, 'bag');
   assert.equal(f.internals.selectedItem, undefined, '返回背包不保留说明面板');
   f.scene.click(f.scene.button(items.items.skillbook.name));
@@ -849,7 +849,7 @@ test('skill book page only lists upgradable skills and has an empty state', t =>
   assert(f.scene.texts().includes('暂无可升级技能'), '没有技能达到上限时显示空状态');
   assert.equal(f.scene.button('使用技能书').input!.enabled, false, '空状态下不能使用');
   for (const id of skills) assert.equal(f.scene.buttons(battle.skills[id].name).length, 0);
-  f.scene.click(f.scene.button('返回'));
+  f.scene.click(f.scene.button('关闭技能书'));
 
   while (f.session.skills.level(capped) < battle.skills[capped].normalMaxLevel) f.session.skills.learn(capped);
   f.menu.debugDescribe(book.id); f.scene.click(f.scene.button('使用'));

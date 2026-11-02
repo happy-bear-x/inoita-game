@@ -131,8 +131,6 @@ export class SkillBookPanel {
     const layout = SKILL_BOOK;
     v.button('使用技能书', layout.primary.x, layout.primary.y, layout.primary.width, layout.primary.height,
       () => this.use(), { disabled: !canUse, fontSize: 20 });
-    v.button('返回', layout.secondary.x, layout.secondary.y, layout.secondary.width, layout.secondary.height,
-      () => this.close(), { fontSize: 20 });
   }
 
   private select(id: string): void {
