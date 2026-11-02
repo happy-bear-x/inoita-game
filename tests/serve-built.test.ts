@@ -6,6 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { gunzipSync } from 'node:zlib';
 import { createGameServer, parseRange } from '../tools/serve-built.ts';
+import { sha256Hex } from '../tools/update-manifest.ts';
 
 interface Response { status: number; headers: http.IncomingHttpHeaders; body: Buffer }
 interface RequestOptions { method?: string; headers?: Record<string, string>; body?: string }
@@ -37,12 +38,35 @@ async function fixture() {
   await writeFile(path.join(dist, 'assets', 'audio', 'test.mp3'), Buffer.alloc(2048, 7));
   const meta = { schema: 1 as const, builtAt: '2026-10-22T00:00:00.000Z', assetVersion: 'asset123', contentVersion: 'content456' };
   await writeFile(path.join(dist, '.build-meta.json'), JSON.stringify(meta));
+
+  const updateBuildId = '0123456789abcdef';
+  const updateManifest = JSON.stringify({
+    schema: 1,
+    buildId: updateBuildId,
+    assetVersion: 'asset123',
+    contentVersion: 'content456',
+    files: [{ p: 'index.html', h: 'a'.repeat(16), s: 1285 }, { p: 'padding.txt', h: 'b'.repeat(16), s: 4096 }],
+    padding: 'x'.repeat(2048),
+  });
+  const updateManifestSha = sha256Hex(Buffer.from(updateManifest));
+  const updatePointer = JSON.stringify({
+    schema: 1, buildId: updateBuildId, builtAt: '2026-11-01T00:00:00.000Z',
+    manifest: `update/${updateBuildId}.json`, manifestSha256: updateManifestSha, minShell: 1,
+  });
+  await mkdir(path.join(dist, 'update'), { recursive: true });
+  await writeFile(path.join(dist, 'update', updateBuildId + '.json'), updateManifest);
+  await writeFile(path.join(dist, 'update', updateBuildId + '.json.sig'), 'c2ln');
+  for (const name of ['latest.json', 'latest-staging.json']) {
+    await writeFile(path.join(dist, 'update', name), updatePointer);
+    await writeFile(path.join(dist, 'update', name + '.sig'), 'c2ln');
+  }
+  await writeFile(path.join(dist, 'update', 'other.json'), '{}');
   let clock = 1_000_000;
   const server = createGameServer({ projectRoot: root, distDir: dist, now: () => clock });
   await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   const port = (server.address() as { port: number }).port;
   return {
-    root, dist, meta, port, server,
+    root, dist, meta, port, server, updateBuildId, updateManifest, updateManifestSha,
     advance(ms: number) { clock += ms; },
     async close() {
       server.closeAllConnections();
@@ -81,6 +105,38 @@ test('cache policy only trusts the current version', async () => {
     assert.match(String(content.headers['cache-control']), /immutable/);
     const wrong = await request(f.port, '/content/x.json?v=asset123');
     assert.equal(wrong.headers['cache-control'], 'no-cache');
+  } finally { await f.close(); }
+});
+
+test('update pointers are never cached and manifests are immutable', async () => {
+  const f = await fixture();
+  try {
+    for (const pointer of ['latest.json', 'latest-staging.json']) {
+      const file = await request(f.port, `/update/${pointer}`);
+      assert.equal(file.headers['cache-control'], 'no-store');
+      const signature = await request(f.port, `/update/${pointer}.sig`);
+      assert.equal(signature.headers['cache-control'], 'no-store');
+    }
+    const manifest = await request(f.port, `/update/${f.updateBuildId}.json`);
+    assert.match(String(manifest.headers['cache-control']), /max-age=31536000, immutable/);
+    const signature = await request(f.port, `/update/${f.updateBuildId}.json.sig`);
+    assert.match(String(signature.headers['cache-control']), /max-age=31536000, immutable/);
+    const other = await request(f.port, '/update/other.json');
+    assert.equal(other.headers['cache-control'], 'no-cache');
+  } finally { await f.close(); }
+});
+
+test('update manifest keeps signed bytes through gzip and identity', async () => {
+  const f = await fixture();
+  try {
+    const compressed = await request(f.port, `/update/${f.updateBuildId}.json`, { headers: { 'accept-encoding': 'gzip' } });
+    assert.equal(compressed.headers['content-encoding'], 'gzip');
+    assert.equal(sha256Hex(gunzipSync(compressed.body)), f.updateManifestSha);
+
+    const identity = await request(f.port, `/update/${f.updateBuildId}.json`, { headers: { 'accept-encoding': 'identity' } });
+    assert.equal(identity.headers['content-encoding'], undefined);
+    assert.equal(sha256Hex(identity.body), f.updateManifestSha);
+    assert.equal(identity.body.toString(), f.updateManifest);
   } finally { await f.close(); }
 });
 

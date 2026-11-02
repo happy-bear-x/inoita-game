@@ -57,6 +57,13 @@ export function acceptsGzip(header: string | undefined): boolean {
 }
 
 export function cachePolicyFor(pathname: string, search: URLSearchParams, meta: BuildMeta | undefined): string {
+  if (pathname.startsWith('/update/')) {
+    // 指针带 builtAt/minShell，每次都要重新取；清单只由内容决定，可按 buildId 永久缓存。
+    if (/^\/update\/(?:latest|latest-staging)\.json(?:\.sig)?$/.test(pathname)) return 'no-store';
+    if (/^\/update\/[0-9a-f]{16}\.json(?:\.sig)?$/.test(pathname))
+      return 'public, max-age=31536000, immutable';
+    return 'no-cache';
+  }
   if (pathname.startsWith('/bundles/')) return 'public, max-age=31536000, immutable';
   if (meta && pathname.startsWith('/assets/') && search.get('v') === meta.assetVersion)
     return 'public, max-age=31536000, immutable';

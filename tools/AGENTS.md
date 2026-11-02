@@ -9,6 +9,7 @@
 - 云存档：`cloud-save-store.ts` 负责账号、会话、续期、改密和存档落盘（scrypt、单会话、锁定、配额、原子写），`cloud-save-service.ts` 把 `/__cloud` HTTP 路由、CORS、限流和请求体上限接到静态服务上。
 - 图集/资源：`build-icon-atlas.ts`、`build-prop-atlas.ts`、`build-effect-atlas.ts`、`build-ui-atlas.ts` 生成图集，`build-slot-frames.ts` 生成装备槽帧，`asset-report.ts` 输出素材重复与体积报告。
 - 测试/审计/APK：`test.ts` 是测试入口，`audit-story-actors.ts` 审计剧情角色摆放，`screen-draft-scripts.mjs` 逐段筛选剧情演出草稿，`build-apk.mjs` 与 `verify-apk.mjs` 打包并校验 APK。
+- 热更新：`update-manifest.ts` 生成、签名和验签逐文件清单，`update-key.ts` 生成签名密钥与公钥，`verify-update.ts` 核对 APK 基线与线上清单的差量。
 
 ## 规则
 
@@ -19,6 +20,7 @@
 - 新增脚本在根目录 `package.json` 挂成命令，沿用现有命令命名。
 - 云存档数据目录：生产 `.cloud-save/`，开发 `.cloud-save-dev/`；两者都不进 Git。云服务初始化失败只能让 `/__cloud` 返回 503，不能让 4004 的静态服务起不来。
 - 改 `serve-built.ts` 或云存档服务后需要重启 4004；只改客户端/内容时普通构建即可。
+- 热更新清单的 `buildId` 只由文件内容决定；`builtAt`、`minShell` 只放指针，清单保持字节稳定。私钥在 `~/.config/inoita/update-signing.pem`，公钥写 `android/update-public-key.txt`；私钥丢失后老客户端只能重装 APK。
 
 ## 验证
 
@@ -26,4 +28,6 @@
 npm run build
 npm run validate:content
 npm test -- tests/cloud-save-store.test.ts tests/cloud-save-service.test.ts
+npm test -- tests/update-manifest.test.ts tests/serve-built.test.ts
+npm run verify:update -- --apk apk-out/Inotia-4-1.0.0.apk --url https://catgo.online:4002
 ```

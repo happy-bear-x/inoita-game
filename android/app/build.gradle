@@ -1,6 +1,21 @@
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
+
 plugins {
     id 'com.android.application'
 }
+
+// 服务地址只在 config/endpoints.json 维护，Gradle、Java 和页面都不写域名。
+def endpointsFile = new File(rootProject.projectDir, '../config/endpoints.json')
+def endpoints = new JsonSlurper().parse(endpointsFile)
+def releaseServerBaseUrl =
+        endpoints.environments.androidRelease.serverBaseUrl.toString().replaceAll('/+$', '')
+def updateChannel = (project.findProperty('updateChannel') ?: 'stable').toString()
+// 公钥文件由 npm run update:key 生成；还没生成时留空，热更检查会自动跳过。
+def updatePublicKeyFile = new File(rootProject.projectDir, 'update-public-key.txt')
+def updatePublicKey = updatePublicKeyFile.exists()
+        ? updatePublicKeyFile.getText('UTF-8').replaceAll('\\s+', '')
+        : ''
 
 def keystorePropertiesFile = rootProject.file('keystore.properties')
 def keystoreProperties = new Properties()
@@ -17,12 +32,19 @@ android {
         applicationId 'io.github.sunflower9264.inoita'
         minSdk 26
         targetSdk 34
-        versionCode 1
+        versionCode 2
         versionName '1.0.0'
-        // 诊断与 GM 状态上报地址；改服务器地址时同步 res/xml/network_security_config.xml。
-        buildConfigField 'String', 'DIAGNOSTICS_URL', '"http://64.83.41.39:4002/__diagnostics/report"'
-        // 云存档走 HTTPS；网页版用同源 /__cloud，只有离线 APK 需要这个绝对地址。
-        buildConfigField 'String', 'CLOUD_SAVE_URL', '"https://catgo.online:4002/__cloud"'
+        // 诊断、云存档和热更都从同一个服务根地址派生；改服务器地址只改 config/endpoints.json。
+        buildConfigField 'String', 'DIAGNOSTICS_URL',
+                JsonOutput.toJson(releaseServerBaseUrl + '/__diagnostics/report')
+        buildConfigField 'String', 'CLOUD_SAVE_URL',
+                JsonOutput.toJson(releaseServerBaseUrl + '/__cloud')
+        // 热更源：正式 latest.json，自测包（-PupdateChannel=staging）用 latest-staging.json。
+        buildConfigField 'String', 'UPDATE_BASE_URL', JsonOutput.toJson(releaseServerBaseUrl)
+        buildConfigField 'String', 'UPDATE_CHANNEL', JsonOutput.toJson(updateChannel)
+        // 改 JS 桥或更新契约时手动加一；服务端用 minShell 拦住不兼容的旧壳。
+        buildConfigField 'int', 'SHELL_VERSION', '1'
+        buildConfigField 'String', 'UPDATE_PUBLIC_KEY', JsonOutput.toJson(updatePublicKey)
     }
 
     sourceSets {

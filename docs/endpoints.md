@@ -64,7 +64,8 @@ globalThis.__inoitaEndpoints = {
 ## 热更新边界
 
 - 热更新会话负责游戏包/页面地址；API 地址由原生宿主注入，不写进热更新包，也不从热更新清单推导。
-- 热更新页面 origin 与 API 不同源时，服务端 CORS 要放行该 origin；同域则不用。
+- 热更新检查地址从 `androidRelease.serverBaseUrl` 派生：正式 `/update/latest.json`，自测 `/update/latest-staging.json`；清单和签名从同一根地址取。
+- 热更新下载由原生 `HttpURLConnection` 发起，不受浏览器同源限制，不需要 CORS。云存档和诊断仍按现有规则。
 - 热更新包替换后仍由宿主注入同一份地址；配置版本和游戏包版本分开。
 - 热更新的产物格式、签名校验和启动回退见 [热更新（Android WebView）](live-update.md)。
 

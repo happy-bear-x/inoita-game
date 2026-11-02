@@ -36,6 +36,8 @@
     "atlas:ui": "node tools/build-ui-atlas.ts",
     "apk": "node tools/build-apk.mjs",
     "verify:apk": "node tools/verify-apk.mjs",
+    "update:key": "node tools/update-key.ts",
+    "verify:update": "node tools/verify-update.ts",
     "test:standalone": "node tests/standalone.mjs"
   },
   "engines": {

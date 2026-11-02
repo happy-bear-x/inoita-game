@@ -1,5 +1,6 @@
 import { SCENE_KEYS } from '../application/scene-keys.ts';
 import { displaySettings } from '../application/display-settings.ts';
+import { notifyBootReady } from '../application/live-update.ts';
 import { fullscreenActive, fullscreenStatus, onFullscreenChange, setFullscreen } from '../application/fullscreen.ts';
 import Phaser from 'phaser';
 import type { MenuContext } from '../application/ports.ts';
@@ -29,7 +30,7 @@ import type { CloudSavePort } from '../application/cloud-save.ts';
 
 const art=(name:string)=>`/assets/ui/title-menu/${name}.png`;
 /** 标题页右下角展示的版本号；等用户要求时再改。 */
-const GAME_VERSION='v0.0.1';
+const GAME_VERSION='v0.0.2';
 /** 版本号下方一行；说明作品性质，并提醒支持官方版本。 */
 const FAN_WORK_NOTICE='同人作品 · 仅供个人学习研究 · 请支持官方正版';
 const CLOSE_IMAGE='/assets/ui/menus/close.png';
@@ -108,7 +109,7 @@ export class MenuScene extends Phaser.Scene {
       });
       // 确认框打开时页面整块不响应，确认框自己也只在有确认时响应。
       this.modal.enabled=()=>this.app.ui.ready&&!this.app.ui.suspended&&this.sys.isActive()&&this.confirmAction!==undefined;
-      this.app.ui.menuLoaded();if(options.page==='slots')this.openSlots();else this.render();this.app.syncLifecycle?.();
+      this.app.ui.menuLoaded();if(options.page==='slots')this.openSlots();else this.render();this.app.syncLifecycle?.();notifyBootReady();
     },error=>{if(!controller.signal.aborted)this.app.ui.error(String(error),()=>this.scene.restart());});
   }
   /**

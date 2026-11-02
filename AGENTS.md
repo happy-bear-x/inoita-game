@@ -35,7 +35,7 @@ Phaser 4.2.1 + TypeScript 的剧情与任务体验版。源码、内容、素材
 - **剧情独立创作**。`public/content/campaign.json` 是剧情、任务和角色摆放的源文件；新增字段先定义游戏含义、单位和消费方式，内容加载和构建共用校验器。
 - **名字用游戏里的概念**。动画叫 `walk-east`、`idle-south`，地图属性叫 `blocked`、`exits`、`entities`，剧情行为叫 `dialogue`、`choice`。
 - **存档兼容上一版**。当前代码必须能读回最近一次发布的存档格式；升级流程见 `src/domain/AGENTS.md`，迁移链在 `src/application/saved-game.ts`。
-- **服务地址分开发与部署**。网页始终同源，页面不写域名；Android/热更新在页面脚本前注入 `__inoitaEndpoints`。环境根地址只维护 `config/endpoints.json`：Android 调试用 `adb reverse` 指向本机 4003，发布和网页生产共用 `https://catgo.online:4002`；云存档 `/__cloud`、诊断 `/__diagnostics/report` 路径固定。细则见 `config/AGENTS.md`、`src/application/AGENTS.md`、`android/AGENTS.md`。
+- **服务地址分开发与部署**。网页始终同源，页面不写域名；Android/热更新在页面脚本前注入 `__inoitaEndpoints`。环境根地址只维护 `config/endpoints.json`：Android 调试用 `adb reverse` 指向本机 4003，发布和网页生产共用 `https://catgo.online:4002`；云存档 `/__cloud`、诊断 `/__diagnostics/report` 路径固定。热更新检查地址从同一根地址派生 `/update/latest.json`，自测通道用 `/update/latest-staging.json`；下载走原生 HTTP，不需要 CORS。细则见 `config/AGENTS.md`、`src/application/AGENTS.md`、`android/AGENTS.md`。
 
 ## 3. 测试与验证
 
@@ -120,4 +120,6 @@ npm run serve                      # 前台启动打包静态服务（默认 400
 npm run dev                        # 开发服务器 http://localhost:4003/
 npm run apk                        # 打包 Android 安装包
 npm run verify:apk                 # 校验 APK 产物
+npm run update:key                 # 首次生成热更新签名密钥（私钥在仓库外）
+npm run verify:update              # 核对 APK 基线与线上清单的差量
 ```

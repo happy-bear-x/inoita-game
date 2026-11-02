@@ -10,6 +10,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseManifest, parsePointer, sha256Hex, verifyBytes, verifyManifestFiles } from './update-manifest.ts';
+import { readUpdatePublicKey } from './update-key.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
@@ -108,6 +110,62 @@ try {
 
   const distFiles = walk(dist).filter(name => name !== '.build-meta.json');
   const apkSet = new Set(apkAssets);
+
+  const updateTemp = fs.mkdtempSync(path.join(os.tmpdir(), 'inoita-verify-apk-'));
+  try {
+    run('unzip', ['-q', apk, '-d', updateTemp]);
+    const updateAssets = path.join(updateTemp, 'assets', 'update');
+    const publicKey = readUpdatePublicKey();
+    const pointerBuilds = [];
+    const seenBuilds = new Set();
+    for (const name of ['latest.json', 'latest-staging.json']) {
+      const pointerPath = path.join(updateAssets, name);
+      const pointerSigPath = `${pointerPath}.sig`;
+      check(`APK 内存在 assets/update/${name} 与 .sig`, fs.existsSync(pointerPath) && fs.existsSync(pointerSigPath));
+      if (!fs.existsSync(pointerPath) || !fs.existsSync(pointerSigPath)) continue;
+      const pointerBytes = fs.readFileSync(pointerPath);
+      check(`${name} 签名有效`, verifyBytes(pointerBytes, fs.readFileSync(pointerSigPath, 'utf8'), publicKey));
+      const pointer = parsePointer(JSON.parse(pointerBytes.toString('utf8')));
+      pointerBuilds.push(pointer.buildId);
+      if (!apkSet.has(pointer.manifest) || !apkSet.has(`${pointer.manifest}.sig`)) {
+        check(`APK 内存在清单 ${pointer.manifest} 与 .sig`, false);
+        continue;
+      }
+      if (seenBuilds.has(pointer.buildId)) continue;
+      seenBuilds.add(pointer.buildId);
+
+      const manifestPath = path.join(updateAssets, `${pointer.buildId}.json`);
+      const manifestSigPath = `${manifestPath}.sig`;
+      const manifestBytes = fs.readFileSync(manifestPath);
+      check(`清单 ${pointer.buildId} SHA-256 与指针一致`, sha256Hex(manifestBytes) === pointer.manifestSha256);
+      check(`清单 ${pointer.buildId} 签名有效`, verifyBytes(manifestBytes, fs.readFileSync(manifestSigPath, 'utf8'), publicKey));
+      const manifest = parseManifest(JSON.parse(manifestBytes.toString('utf8')));
+      check(`清单 buildId 与指针一致`, manifest.buildId === pointer.buildId);
+
+      try {
+        const result = await verifyManifestFiles(path.join(updateTemp, 'assets'), manifest);
+        check(`清单 ${pointer.buildId} 的文件哈希与大小`, true, `${result.checked} 个文件`);
+      } catch (error) {
+        check(`清单 ${pointer.buildId} 的文件哈希与大小`, false, error.message);
+      }
+
+      const distManifest = path.join(dist, pointer.manifest);
+      check(`dist 清单 ${pointer.manifest} 与 APK 一致`,
+        fs.existsSync(distManifest) && fs.readFileSync(distManifest).equals(manifestBytes));
+      const mismatched = manifest.files.filter(file => {
+        const inApk = path.join(updateTemp, 'assets', ...file.p.split('/'));
+        const onDisk = path.join(dist, ...file.p.split('/'));
+        return !fs.existsSync(inApk) || !fs.existsSync(onDisk)
+          || !fs.readFileSync(inApk).equals(fs.readFileSync(onDisk));
+      });
+      check(`清单 ${pointer.buildId} 的文件与 dist 逐字节一致`, mismatched.length === 0,
+        mismatched.length ? `${mismatched.length} 个不同（如 ${mismatched[0].p}）` : `${manifest.files.length} 个文件`);
+    }
+    check('两个更新指针指向同一份清单', pointerBuilds.length > 0 && pointerBuilds.every(id => id === pointerBuilds[0]));
+  } finally {
+    fs.rmSync(updateTemp, { recursive: true, force: true });
+  }
+
   const distSet = new Set(distFiles);
   const missing = distFiles.filter(name => !apkSet.has(name));
   const extra = apkAssets.filter(name => !distSet.has(name));

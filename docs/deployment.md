@@ -21,7 +21,7 @@ npm run build      # 校验 public/、构建 staging、写 .build-meta.json、�
 npm run deploy     # typecheck + build + 核对 HTTPS 入口正在提供的版本
 ```
 
-`npm run deploy` 会读取 `dist/.build-meta.json`，请求 `https://catgo.online:4002/__build` 对比 `builtAt`、`assetVersion`、`contentVersion`，并确认首页和入口 bundle 可访问、版本化资源返回 `immutable` 缓存头。可以用 `--url` 或环境变量 `STORY_DEPLOY_URL` 指定别的入口。
+`npm run deploy` 会读取 `dist/.build-meta.json`，请求 `https://catgo.online:4002/__build` 对比 `builtAt`、`assetVersion`、`contentVersion`，并确认首页和入口 bundle 可访问、版本化资源返回 `immutable` 缓存头。它还会核对线上 `/update/latest.json` 的 `buildId`、`manifestSha256` 与本地一致，并拉清单验签；不一致时返回失败。可以用 `--url` 或环境变量 `STORY_DEPLOY_URL` 指定别的入口。
 
 静态服务直接读磁盘，构建完成即生效，不需要重启进程，也不需要重启 nginx；只有静态服务自身代码改动才需要重启 4004 服务，包括 `tools/serve-built.ts`、它在启动时导入的 `tools/cloud-save-service.ts`、`tools/cloud-save-store.ts`、`tools/diagnostic-collector.mjs` 和 `tools/build-version.ts`。nginx 站点配置改动后运行 `nginx -t` 再 reload。
 
@@ -34,6 +34,7 @@ npm run deploy     # typecheck + build + 核对 HTTPS 入口正在提供的版�
 ## 缓存与诊断
 
 - `/bundles/*` 由 Vite 生成内容哈希，静态服务返回一年 `immutable`。
+- `/update/latest.json`、`/update/latest-staging.json` 及其 `.sig` 用 `no-store`；`/update/<buildId>.json` 和 `.sig` 是内容决定的，用一年 `immutable`。
 - `/assets/*`、`/content/*` 的 URL 带内容版本（`?v=`）；只有版本等于当前 `dist/.build-meta.json` 时才返回 `immutable`，旧版本或无版本返回 `no-cache` + ETag。
 - `index.html`、`diagnostics.js`、`manifest.webmanifest` 始终 `no-cache`，部署后刷新即可拿到新入口。
 - 文本资源（JS/CSS/JSON/HTML/manifest/SVG）按需 gzip；图片与 MP3 不重复压缩。MP3 支持单段 Range（iOS 播放/seek 需要）。
@@ -45,3 +46,5 @@ npm run deploy     # typecheck + build + 核对 HTTPS 入口正在提供的版�
 ## 回滚
 
 内容回滚用 `git revert` 还原对应提交，再重新 `npm run deploy`。`dist/` 被 Git 忽略，不能靠 checkout 恢复；需要旧产物时，切到对应提交重新构建。
+
+Android 热更新客户端不支持降级。已经发出去的更新只能靠发布一个内容正确的新构建来撤回，不能把网站换回旧构建；详见 [热更新（Android WebView）](live-update.md)。

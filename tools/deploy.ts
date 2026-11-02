@@ -1,10 +1,13 @@
 import { spawnSync } from 'node:child_process';
+import type { KeyObject } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import type { BuildMeta } from './build-version.ts';
 import { BUILD_META_FILENAME } from './build-version.ts';
+import { parseManifest, parsePointer, sha256Hex, verifyBytes, type UpdatePointer } from './update-manifest.ts';
+import { readUpdatePublicKey } from './update-key.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -69,6 +72,66 @@ async function verifyServed(base: string, meta: BuildMeta): Promise<void> {
     throw new Error('版本化资源的 Cache-Control 不是 immutable');
 }
 
+async function fetchUpdateBytes(url: string): Promise<Buffer> {
+  // nginx 可能缓存指针；显式要求回源，避免刚部署就比对到上一版。
+  const response = await fetch(url, {
+    headers: { 'cache-control': 'no-cache', pragma: 'no-cache' },
+    signal: AbortSignal.timeout(4000),
+  });
+  if (!response.ok) throw new Error(`${url} 返回 HTTP ${response.status}`);
+  return Buffer.from(await response.arrayBuffer());
+}
+
+async function fetchSignedJson<T>(
+  base: string, relative: string, parse: (value: unknown) => T, publicKey: KeyObject,
+): Promise<{ value: T; bytes: Buffer }> {
+  const [bytes, signature] = await Promise.all([
+    fetchUpdateBytes(`${base}/${relative}`),
+    fetchUpdateBytes(`${base}/${relative}.sig`),
+  ]);
+  if (!verifyBytes(bytes, signature.toString('utf8'), publicKey)) throw new Error(`${relative} 签名无效`);
+  let value: unknown;
+  try { value = JSON.parse(bytes.toString('utf8')); }
+  catch { throw new Error(`${relative} 不是有效 JSON`); }
+  return { value: parse(value), bytes };
+}
+
+async function verifyRemoteUpdate(
+  base: string, pointerName: string, local: UpdatePointer, publicKey: KeyObject, label: string,
+): Promise<UpdatePointer> {
+  const remote = await fetchSignedJson(base, pointerName, parsePointer, publicKey);
+  if (remote.value.buildId !== local.buildId)
+    throw new Error(`${label}指针 buildId 不一致：本地 ${local.buildId}，服务 ${remote.value.buildId}`);
+  if (remote.value.manifestSha256 !== local.manifestSha256)
+    throw new Error(`${label}指针 manifestSha256 与本地不一致`);
+  const manifest = await fetchSignedJson(base, remote.value.manifest, parseManifest, publicKey);
+  if (sha256Hex(manifest.bytes) !== remote.value.manifestSha256)
+    throw new Error(`${label}清单 SHA-256 与指针不一致`);
+  if (manifest.value.buildId !== remote.value.buildId)
+    throw new Error(`${label}清单 buildId 与指针不一致`);
+  console.log(`更新清单已核对：${label} ${remote.value.buildId}，${manifest.value.files.length} 个文件`);
+  return remote.value;
+}
+
+async function verifyUpdate(base: string): Promise<void> {
+  const publicKey = readUpdatePublicKey();
+  let stableBytes: Buffer;
+  try { stableBytes = await readFile(path.join(ROOT, 'dist', 'update', 'latest.json')); }
+  catch { throw new Error('dist/update/latest.json 不存在；先生成私钥并运行 npm run build'); }
+  const localStable = parsePointer(JSON.parse(stableBytes.toString('utf8')));
+  await verifyRemoteUpdate(base, 'update/latest.json', localStable, publicKey, '正式');
+
+  let stagingText: string | undefined;
+  try { stagingText = await readFile(path.join(ROOT, 'dist', 'update', 'latest-staging.json'), 'utf8'); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+  if (stagingText) {
+    const localStaging = parsePointer(JSON.parse(stagingText));
+    const remoteStaging = await verifyRemoteUpdate(base, 'update/latest-staging.json', localStaging, publicKey, '自测');
+    if (remoteStaging.buildId !== localStable.buildId)
+      throw new Error('自测指针与正式指针没有指向同一份清单');
+  }
+}
+
 async function main(): Promise<number> {
   const { base, skipBuild } = parseArgs(process.argv.slice(2));
   if (!skipBuild) {
@@ -101,6 +164,7 @@ async function main(): Promise<number> {
   }
   try {
     await verifyServed(base, local);
+    await verifyUpdate(base);
   } catch (error) {
     console.error(`版本一致，但 HTTP 验收失败：${error instanceof Error ? error.message : String(error)}`);
     return 3;

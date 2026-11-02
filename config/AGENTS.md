@@ -13,6 +13,7 @@
 - 两个接口路径固定：云存档 `/__cloud`，诊断 `/__diagnostics/report`。环境只改根地址。
 - 生产云存档和诊断共用一个 HTTPS 基座：`https://catgo.online:4002`。Android 调试用 `adb reverse tcp:4003 tcp:4003`，根地址写 `http://127.0.0.1:4003`，只允许 debug 包对本机放行明文。
 - 页面只读取宿主注入的 `__inoitaEndpoints`（`version`、`cloudBase`、`diagnosticsReport`），不读取其他地址变量。Android/热更新壳在页面脚本运行前注入；热更新包不写 API 域名。
+- 热更新检查地址从 `androidRelease.serverBaseUrl` 派生：正式 `/update/latest.json`，自测 `/update/latest-staging.json`。下载走原生 HTTP，不需要 CORS。
 - 改这里时同步 `docs/endpoints.md`、`src/application/AGENTS.md`、`android/AGENTS.md`，并运行 `tests/endpoints.test.ts`。
 
 ## 验证

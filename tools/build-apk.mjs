@@ -5,6 +5,7 @@
  * 用法：
  *   node tools/build-apk.mjs              先构建网页产物，再打包
  *   node tools/build-apk.mjs --skip-web   复用现有 dist/，只重新打包 Android 壳
+ *   node tools/build-apk.mjs --channel staging   打自测包，读取 latest-staging.json
  *
  * 工具链装在用户目录（默认 ~/.local/android-sdk），首次运行会自动下载
  * cmdline-tools、Android 34 平台和 build-tools；签名 keystore 只生成一次，
@@ -16,6 +17,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ensureUpdateKey } from './update-key.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const androidDir = path.join(root, 'android');
@@ -161,6 +163,45 @@ function versionName() {
   return match ? match[1] : '1.0.0';
 }
 
+function versionCode() {
+  const gradle = fs.readFileSync(path.join(androidDir, 'app', 'build.gradle'), 'utf8');
+  return gradle.match(/versionCode\s+(\d+)/)?.[1] ?? 'unknown';
+}
+
+function channelFromArgs() {
+  let channel = 'stable';
+  for (let index = 0; index < process.argv.length; index += 1) {
+    const value = process.argv[index];
+    if (value === '--channel') channel = process.argv[++index] ?? '';
+    else if (value.startsWith('--channel=')) channel = value.slice('--channel='.length);
+  }
+  if (channel !== 'stable' && channel !== 'staging')
+    throw new Error(`--channel 只能是 stable 或 staging，收到：${channel || '(空)'}`);
+  return channel;
+}
+
+/** APK 的 assets/update 直接来自 dist/update；缺签名就直接失败，别打出无法热更的包。 */
+function checkUpdateArtifacts() {
+  const updateDir = path.join(root, 'dist', 'update');
+  const requireFile = name => {
+    const file = path.join(updateDir, name);
+    if (!has(file)) throw new Error(`dist/update/${name} 不存在；先运行 npm run update:key 和 npm run build`);
+    return file;
+  };
+  for (const pointer of ['latest.json', 'latest-staging.json']) {
+    requireFile(pointer);
+    requireFile(`${pointer}.sig`);
+  }
+  const latest = JSON.parse(fs.readFileSync(requireFile('latest.json'), 'utf8'));
+  if (typeof latest.buildId !== 'string' || !/^[0-9a-f]{16}$/.test(latest.buildId))
+    throw new Error('dist/update/latest.json 的 buildId 无效');
+  requireFile(`${latest.buildId}.json`);
+  requireFile(`${latest.buildId}.json.sig`);
+  const staging = JSON.parse(fs.readFileSync(requireFile('latest-staging.json'), 'utf8'));
+  if (staging.buildId !== latest.buildId) throw new Error('latest 与 latest-staging 没有指向同一份清单');
+  return latest.buildId;
+}
+
 function gitSummary() {
   const head = run('git', ['rev-parse', '--short', 'HEAD'], { allowFailure: true, capture: true }).stdout?.trim() || 'unknown';
   const dirty = run('git', ['status', '--porcelain'], { allowFailure: true, capture: true }).stdout?.trim();
@@ -168,12 +209,14 @@ function gitSummary() {
 }
 
 try {
+  const channel = channelFromArgs();
   console.log(`[apk] SDK: ${sdk}`);
   console.log(`[apk] JDK: ${javaHome}`);
   if (!sdkReady()) installSdk();
   if (!sdkReady()) throw new Error('Android SDK 安装后仍缺少 platforms 或 build-tools');
 
   ensureKeystore();
+  ensureUpdateKey();
   const gradlew = ensureGradleWrapper();
 
   if (!skipWeb) {
@@ -182,9 +225,11 @@ try {
   } else if (!has(path.join(root, 'dist', 'index.html'))) {
     throw new Error('dist/ 不存在，去掉 --skip-web 先构建网页产物');
   }
+  const buildId = checkUpdateArtifacts();
+  console.log(`[apk] 热更基线: ${buildId}（${channel}）`);
 
   console.log('[apk] Gradle assembleRelease');
-  run(gradlew, [':app:assembleRelease', '--no-daemon'], {
+  run(gradlew, [':app:assembleRelease', '--no-daemon', `-PupdateChannel=${channel}`], {
     cwd: androidDir,
     env: { JAVA_HOME: javaHome, ANDROID_HOME: sdk, ANDROID_SDK_ROOT: sdk },
   });
@@ -202,6 +247,8 @@ try {
   console.log(`  文件: ${target}`);
   console.log(`  大小: ${(bytes / 1024 / 1024).toFixed(1)} MB`);
   console.log(`  sha256: ${sha256}`);
+  console.log(`  热更通道: ${channel}`);
+  console.log(`  versionCode: ${versionCode()}（分发新 APK 前必须递增）`);
   console.log(`  源码: ${gitSummary()}`);
   console.log(`  安装: adb install -r "${target}"`);
 } catch (error) {

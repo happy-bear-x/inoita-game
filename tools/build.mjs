@@ -5,6 +5,7 @@ import { build } from 'vite';
 import { validateContent } from './validate-content.mjs';
 import { BUILD_META_FILENAME, computeVersions, hashTree } from './build-version.ts';
 import { buildContent } from './content-build.ts';
+import { writeUpdateArtifacts } from './update-manifest.ts';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 if(process.argv.length>2)throw new Error('构建命令无需参数');
 const publicDir=path.join(root,'public');
@@ -32,11 +33,14 @@ try{
  const outputVersions=computeVersions(output);
  if(outputVersions.assetVersion!==versions.assetVersion||outputVersions.contentVersion!==versions.contentVersion)
   throw new Error('构建后的 assets/content 与构建期版本不一致，请重新构建');
+ const builtAt=new Date().toISOString();
  await fs.writeFile(path.join(output,BUILD_META_FILENAME),JSON.stringify({
-   schema:1,builtAt:new Date().toISOString(),...versions,
+   schema:1,builtAt,...versions,
  })+'\n');
  validateContent(output);
+ const update=await writeUpdateArtifacts(output,{builtAt,assetVersion:versions.assetVersion,contentVersion:versions.contentVersion});
  try{await fs.rename(dist,previous);moved=true;}catch(error){if(error.code!=='ENOENT')throw error;}
  try{await fs.rename(output,dist);}catch(error){if(moved)await fs.rename(previous,dist);throw error;}
  console.log(`Standalone build: story-game/dist/ (assets ${versions.assetVersion}, content ${versions.contentVersion}; content ${contentStats.files} files, ${contentStats.sourceBytes} -> ${contentStats.outputBytes} bytes; clip keys ${contentStats.clipKeysBefore} -> ${contentStats.clipKeysAfter}, ${contentStats.dedupedLayers} layers deduped)`);
+ console.log(`Update: update/${update.buildId}.json, ${update.fileCount} files${update.signed?'，已签名':'，未签名（缺少私钥）'}`);
 }finally{await fs.rm(staging,{recursive:true,force:true});}
