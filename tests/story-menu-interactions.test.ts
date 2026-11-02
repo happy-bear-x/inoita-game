@@ -228,6 +228,7 @@ const panels = read<MenuPanels>('menu-panels'), content = read<StoryInterface>('
 interface MenuInternals {
   selectedMemberId: string;
   forge?: ForgePanel;
+  skillBook?: { entryId: string; selected?: string };
   page: string;
   operation?: { entry: string; kind: 'use' | 'discard'; quantity: number };
   selectedItem?: string;
@@ -815,21 +816,41 @@ test('hero bag still applies skill reset and supreme elixir', t => {
   }
 });
 
-test('using a skill book closes the item pane so the next one only needs one tap', t => {
+test('using a skill book opens the icon page and returns to the bag', t => {
   const f = fixture(); t.after(f.cleanup); f.hero.addExperience(Number.MAX_SAFE_INTEGER);
-  const skillId = battle.classes.find(value => value.id === f.hero.classId)!.skills[0]!;
+  const skills = battle.classes.find(value => value.id === f.hero.classId)!.skills;
+  const skillId = skills[0]!;
   while (f.session.skills.level(skillId) < battle.skills[skillId].normalMaxLevel) f.session.skills.learn(skillId);
   const book = f.add('skillbook', 2), rank = f.session.skills.level(skillId);
   f.menu.debugDescribe(book.id);
+  f.scene.click(f.scene.button('使用'));
+  assert.equal(f.internals.page, 'learn', '技能书打开独立页面');
+  assert.equal(f.internals.modal.root.visible, false, '不铺弹层');
+  assert.equal(f.internals.skillBook?.entryId, book.id);
+  for (const id of skills) assert.equal(f.scene.buttons(battle.skills[id].name).length, 1, `图标格：${battle.skills[id].name}`);
   f.scene.click(f.scene.button('使用技能书'));
-  f.scene.click(f.scene.button(battle.skills[skillId].name));
-  f.scene.click(f.scene.button('确定'));
   assert.equal(f.session.bag.count('skillbook'), 1, '技能书只消耗一本');
   assert.equal(f.session.skills.level(skillId), rank + 1, '技能提升一级');
-  assert.equal(f.internals.selectedItem, undefined, '使用后收起说明面板');
-  assert.equal(f.internals.itemResult, undefined, '使用结果不占说明面板');
+  assert.equal(f.internals.page, 'learn', '还有一本时留在页面');
+  f.scene.click(f.scene.button('返回'));
+  assert.equal(f.internals.page, 'bag');
+  assert.equal(f.internals.selectedItem, undefined, '返回背包不保留说明面板');
   f.scene.click(f.scene.button(items.items.skillbook.name));
-  assert.equal(f.scene.buttons('使用技能书').length, 1, '下一次点一次技能书就能重新打开说明');
+  assert.equal(f.scene.buttons('使用').length, 1, '下一次点一次技能书就能重新打开说明');
+});
+
+test('skill book page explains why a skill cannot be upgraded', t => {
+  const f = fixture(); t.after(f.cleanup); f.hero.addExperience(Number.MAX_SAFE_INTEGER);
+  const skills = battle.classes.find(value => value.id === f.hero.classId)!.skills;
+  const capped = skills[0]!, uncapped = skills[1]!;
+  while (f.session.skills.level(capped) < battle.skills[capped].normalMaxLevel) f.session.skills.learn(capped);
+  const book = f.add('skillbook');
+  f.menu.debugDescribe(book.id); f.scene.click(f.scene.button('使用'));
+  assert.equal(f.internals.skillBook?.selected, capped, '默认停在可升级的技能上');
+  f.scene.click(f.scene.button(battle.skills[uncapped].name));
+  assert.equal(f.internals.skillBook?.selected, uncapped);
+  assert(f.scene.texts().some(text => text.startsWith(`技能达到 ${battle.skills[uncapped].normalMaxLevel} 级后才能使用技能书`)));
+  assert.equal(f.scene.button('使用技能书').input!.enabled, false, '不可升级时按钮置灰');
 });
 
 test('skill description colors, unchanged comparisons and learning button share native requirements',t=>{

@@ -43,6 +43,7 @@ import { SAVE_BOARD, SAVE_BOARD_LAYOUT, drawSaveBoardRow, newestFirstSlots, save
 import { TextPrompt } from './text-prompt.ts';
 import type { SaveWorldReason, StoryWorldViewSnapshot } from '../scenes/world-scene.ts';
 import { drawPopupPanel } from './phaser/popup-panel.ts';
+import { SkillBookPanel } from './phaser/skill-book-panel.ts';
 import { drawRoundBand } from './phaser/round-band.ts';
 import { drawSolidBorder } from './phaser/solid-border.ts';
 import { centerModal } from './phaser/modal-placement.ts';
@@ -57,7 +58,7 @@ import { TEXT_COLORS } from './text-style.ts';
 import { splitMoney } from '../domain/money.ts';
 import { CharacterPreview } from './phaser/character-preview.ts';
 
-type Page='status'|'bag'|'skills'|'party'|'quests'|'system'|'save'|'load'|'settings'|'shop'|'crafting'|'forge'|'debug';
+type Page='status'|'bag'|'skills'|'party'|'quests'|'system'|'save'|'load'|'settings'|'shop'|'crafting'|'forge'|'learn'|'debug';
 const tabs:[Page,string][]=[['status','人物'],['bag','背包'],['skills','技能'],['party','队伍'],['quests','任务'],['system','系统']];
 /** 设置页「操作方式」一行上显示的当前选择。 */
 const CONTROL_MODE_LABELS:Record<ControlMode,string>={stick:'虚拟摇杆',dpad:'十字按键',keyboard:'电脑模式'};
@@ -81,7 +82,7 @@ const saveUnavailableNotice=(reason:SaveWorldReason):string=>reason==='debug'?SA
 const CONTENT_ORIGIN={x:32,y:172} as const;
 /** 这些使用方式走独立操作面板，不出现在背包的「使用」菜单里。 */
 const NON_MENU_USE_KINDS=new Set(['enchant','socket','purify']);
-interface Operation {entry:string;kind:'use'|'discard';member?:string;skill?:string;quantity:number;confirmed?:boolean;error?:string}
+interface Operation {entry:string;kind:'use'|'discard';member?:string;quantity:number;confirmed?:boolean;error?:string}
 interface BagMenuAction {label:string;run:()=>void;disabled?:boolean}
 /** 正式菜单读取 Session，操作仍由背包、技能、队伍和商店领域对象执行。 */
 export class StoryUI {
@@ -123,7 +124,7 @@ export class StoryUI {
   private allocation?:AttributeAllocation;private allocationExit?:()=>void;private allocationError='';
   /** 能力加点按钮的长按连发；每次重画都会换按钮，所以只记指针和这一步要加的属性。 */
   private allocationHold?:Phaser.Time.TimerEvent;
-  private craftingPanel?:CraftingPanel;private craftingActor?:string;private forge?:ForgePanel;
+  private craftingPanel?:CraftingPanel;private craftingActor?:string;private forge?:ForgePanel;private skillBook?:SkillBookPanel;
   private shopPanel?:ShopPanel;private partyPanel?:PartyPanel;private notice='';
   private keyboardFocus?:Phaser.GameObjects.Container;
   /**
@@ -179,9 +180,9 @@ export class StoryUI {
     this.questPanel=new QuestPanel(session,world,this.app.menuPanels,()=>this.render());
     this.partyPanel?.destroyPreview();this.partyPanel=new PartyPanel(session,world,this.app,()=>this.render(),(id,page)=>this.selectMember(id,page));
     this.unsubscribe=session.subscribe(()=>{
-      // 快捷键登记、控制布局编辑与强化台打开时由各自的界面显式重绘；
-      // 强化台的动作在完成后调 changed 统一重绘一次，避免会话通知再画一遍。
-      if(!this.open||this.busy||this.shortcutEdit||this.app.ui.controlLayoutEditing||this.page==='forge')return;
+      // 快捷键登记、控制布局编辑与强化台/技能书页打开时由各自的界面显式重绘；
+      // 子页面的动作在完成后调 changed 统一重绘一次，避免会话通知再画一遍。
+      if(!this.open||this.busy||this.shortcutEdit||this.app.ui.controlLayoutEditing||this.page==='forge'||this.page==='learn')return;
       const signature=this.sessionDataSignature();
       if(signature===undefined||signature!==this.sessionSignature)this.render();
     });this.sync();
@@ -287,10 +288,10 @@ export class StoryUI {
   close():void{
     if(this.open&&this.requestAllocationExit(()=>this.close()))return;
     if(!this.open)return;this.controlEditor?.close();this.app.ui.setControlLayoutEditing(false);
-    this.keyBindingEditor?.close();this.app.ui.setKeyBindingEditing(false);this.cancelOperation();this.modalActive=false;this.shortcutEdit=undefined;this.shortcutScreen?.clear();this.backTab?.clear();this.shopPanel=undefined;this.bagPortrait?.destroy();this.bagPortrait=undefined;this.partyPanel?.destroyPreview();this.craftingPanel=undefined;this.craftingActor=undefined;this.forge=undefined;this.open=false;this.scrollNames.forEach((scroll,name)=>this.scrollOffsets.set(`${this.page}:${name}`,scroll.scrollTop));this.scrollNames.clear();this.body?.clear();this.description?.clear();if(this.surface&&this.body){this.surface.root.remove(this.body.root);this.surface.clear();this.surface.root.add(this.body.root);}this.keyboardFocus=undefined;this.surface?.visible(false);this.body?.visible(false);this.description?.visible(false);this.modal?.visible(false);this.shortcutScreen?.visible(false);this.backTab?.visible(false);this.backdrop?.setVisible(false);this.app.ui.resetInput();this.app.ui.lock(false,'story-menu');
+    this.keyBindingEditor?.close();this.app.ui.setKeyBindingEditing(false);this.cancelOperation();this.modalActive=false;this.shortcutEdit=undefined;this.shortcutScreen?.clear();this.backTab?.clear();this.shopPanel=undefined;this.bagPortrait?.destroy();this.bagPortrait=undefined;this.partyPanel?.destroyPreview();this.craftingPanel=undefined;this.craftingActor=undefined;this.forge=undefined;this.skillBook=undefined;this.open=false;this.scrollNames.forEach((scroll,name)=>this.scrollOffsets.set(`${this.page}:${name}`,scroll.scrollTop));this.scrollNames.clear();this.body?.clear();this.description?.clear();if(this.surface&&this.body){this.surface.root.remove(this.body.root);this.surface.clear();this.surface.root.add(this.body.root);}this.keyboardFocus=undefined;this.surface?.visible(false);this.body?.visible(false);this.description?.visible(false);this.modal?.visible(false);this.shortcutScreen?.visible(false);this.backTab?.visible(false);this.backdrop?.setVisible(false);this.app.ui.resetInput();this.app.ui.lock(false,'story-menu');
     if(this.loadReturnToDefeat){this.loadReturnToDefeat=false;if(this.app.ui.defeated)this.app.ui.revealDefeat();}
   }
-  private cancelOperation():void{this.cancelDrag();this.request.abort();this.request=new AbortController();this.busy=false;this.operation=undefined;this.itemNotice=undefined;this.skillReset=false;this.saveConfirm=undefined;this.loadConfirm=undefined;this.deleteConfirm=undefined;this.renameRef=undefined;this.prompt?.close();this.partyPanel?.close();this.craftingPanel?.close();this.forge=undefined;this.modal?.clear();this.modal?.visible(false);}
+  private cancelOperation():void{this.cancelDrag();this.request.abort();this.request=new AbortController();this.busy=false;this.operation=undefined;this.itemNotice=undefined;this.skillReset=false;this.saveConfirm=undefined;this.loadConfirm=undefined;this.deleteConfirm=undefined;this.renameRef=undefined;this.prompt?.close();this.partyPanel?.close();this.craftingPanel?.close();this.forge=undefined;this.skillBook=undefined;this.modal?.clear();this.modal?.visible(false);}
   private key(event:KeyboardEvent):void{
     if(this.app.ui.suspended)return;
     // 捕获按键时整块键盘归键位面板：Tab、Enter、空格不再操作菜单。
@@ -311,7 +312,7 @@ export class StoryUI {
     if(event.key==='Escape'&&this.loadConfirm!==undefined){event.preventDefault();this.loadConfirm=undefined;this.render();return;}
     if(event.key==='Escape'&&this.saveConfirm!==undefined){event.preventDefault();this.saveConfirm=undefined;this.render();return;}
     if(event.key==='Escape'&&this.allocationExit){event.preventDefault();this.finishAllocation(false);return;}
-    if(event.key==='Escape'){event.preventDefault();if(this.busy){this.close();return;}if(this.page==='forge'){if(this.forge?.confirming)this.forge.cancelConfirmation();else this.closeForge();return;}if(this.shortcutEdit){this.closeShortcutScreen();return;}if(this.skillReset){this.skillReset=false;this.render();}else if(this.craftingPanel?.modalOpen){this.craftingPanel.cancel();}else if(this.shopPanel?.active){this.shopPanel.cancel();}else if(this.partyPanel?.modalOpen){this.partyPanel.cancel();}else if(this.operation){this.operation=undefined;this.render();}else if(this.page==='bag'&&this.selectedItem){this.selectedItem=undefined;this.render();}else this.close();return;}
+    if(event.key==='Escape'){event.preventDefault();if(this.busy){this.close();return;}if(this.page==='forge'){if(this.forge?.confirming)this.forge.cancelConfirmation();else this.closeForge();return;}if(this.page==='learn'){this.closeSkillBook();return;}if(this.shortcutEdit){this.closeShortcutScreen();return;}if(this.skillReset){this.skillReset=false;this.render();}else if(this.craftingPanel?.modalOpen){this.craftingPanel.cancel();}else if(this.shopPanel?.active){this.shopPanel.cancel();}else if(this.partyPanel?.modalOpen){this.partyPanel.cancel();}else if(this.operation){this.operation=undefined;this.render();}else if(this.page==='bag'&&this.selectedItem){this.selectedItem=undefined;this.render();}else this.close();return;}
     const surfaces=this.operation||this.itemNotice||this.allocationExit||this.skillReset||this.saveConfirm!==undefined||this.loadConfirm!==undefined||this.deleteConfirm!==undefined||this.craftingPanel?.modalOpen||this.shopPanel?.modalOpen||this.partyPanel?.modalOpen||this.forge?.confirming
       ?[this.modal!]:this.shortcutEdit?[this.shortcutScreen!,this.backTab!]:[this.surface!,this.body!,this.description!];
     const buttons=surfaces.flatMap(surface=>surface.focusables());
@@ -448,7 +449,7 @@ export class StoryUI {
   }
   private renderNow():void{
     if(!this.open||!this.surface||!this.body||!this.session)return;
-    this.forge?.captureScroll();this.craftingPanel?.captureScroll();this.shopPanel?.captureScroll();this.questPanel?.captureScroll();this.partyPanel?.captureScroll();this.scrollNames.forEach((scroll,name)=>this.scrollOffsets.set(`${this.page}:${name}`,scroll.scrollTop));this.scrollNames.clear();this.surface.root.remove(this.body.root);this.surface.clear();this.bagPortrait?.detach();this.partyPanel?.detachPreview();this.body.clear();this.description?.clear();this.modal!.clear();this.surface.root.add(this.body.root);this.drops=[];this.keyboardFocus=undefined;
+    this.forge?.captureScroll();this.skillBook?.captureScroll();this.craftingPanel?.captureScroll();this.shopPanel?.captureScroll();this.questPanel?.captureScroll();this.partyPanel?.captureScroll();this.scrollNames.forEach((scroll,name)=>this.scrollOffsets.set(`${this.page}:${name}`,scroll.scrollTop));this.scrollNames.clear();this.surface.root.remove(this.body.root);this.surface.clear();this.bagPortrait?.detach();this.partyPanel?.detachPreview();this.body.clear();this.description?.clear();this.modal!.clear();this.surface.root.add(this.body.root);this.drops=[];this.keyboardFocus=undefined;
     if(!this.member()){this.discardAllocation();this.selectedMemberId='player';}const v=this.surface;
     this.body.root.setPosition(CONTENT_ORIGIN.x,CONTENT_ORIGIN.y);
     // 登记快捷键时菜单本体不画：只重画那一屏（它自己在 `sync` 里显示、菜单整块隐藏）。
@@ -458,16 +459,18 @@ export class StoryUI {
     if(this.page!=='bag'&&this.page!=='shop')this.body.clearStatic();
     const chromeKey=`chrome:${this.page}${this.page==='crafting'?`:${this.craftingActor}`:''}`;
     v.staticLayer(chromeKey,()=>{
-      if(this.page!=='shop'&&this.page!=='crafting'&&this.page!=='forge'&&this.page!=='save'&&this.page!=='load')tabs.forEach(([page,label],index)=>{const button=v.button('',35+index*149,25,102,116,()=>this.show(page),{bare:true,parent:v.staticRoot}).setData('label',label);v.image(this.content!.assets[`tab-${page}`],12,0,78,78,button);v.text(label,51,85,90,20,undefined,button).setOrigin(.5,0);button.setAlpha(this.page===page||(['settings','debug'] as Page[]).includes(this.page)&&page==='system'?1:.65);});
+      if(this.page!=='shop'&&this.page!=='crafting'&&this.page!=='forge'&&this.page!=='learn'&&this.page!=='save'&&this.page!=='load')tabs.forEach(([page,label],index)=>{const button=v.button('',35+index*149,25,102,116,()=>this.show(page),{bare:true,parent:v.staticRoot}).setData('label',label);v.image(this.content!.assets[`tab-${page}`],12,0,78,78,button);v.text(label,51,85,90,20,undefined,button).setOrigin(.5,0);button.setAlpha(this.page===page||(['settings','debug'] as Page[]).includes(this.page)&&page==='system'?1:.65);});
       if(this.page==='crafting'&&this.craftingPanel){
         v.text(this.world!.actors[this.craftingActor!].name,512,25,0,28,undefined,v.staticRoot).setOrigin(.5,0);
       }
       if(this.page==='forge')v.text('装备强化',512,25,0,28,undefined,v.staticRoot).setOrigin(.5,0);
-      v.button('',947,24,51,51,()=>this.page==='forge'?this.closeForge():this.close(),{image:this.content!.assets.close,pressed:this.content!.assets['close-pressed'],parent:v.staticRoot}).setData('label',this.page==='forge'?'关闭强化':'关闭菜单');
+      if(this.page==='learn')v.text('使用技能书',512,25,0,28,undefined,v.staticRoot).setOrigin(.5,0);
+      v.button('',947,24,51,51,()=>this.page==='forge'?this.closeForge():this.page==='learn'?this.closeSkillBook():this.close(),{image:this.content!.assets.close,pressed:this.content!.assets['close-pressed'],parent:v.staticRoot}).setData('label',this.page==='forge'?'关闭强化':this.page==='learn'?'关闭技能书':'关闭菜单');
     });
     if(this.page==='bag')this.renderBag();if(this.page==='status')this.renderStatus();if(this.page==='skills')this.renderSkills();if(this.page==='party')this.renderParty();if(this.page==='quests')this.renderQuests();if(this.page==='shop')this.shopPanel?.render(this.body,this.modal!,this.placeModal,this.description!);
     if(this.page==='crafting'&&this.craftingPanel){this.craftingPanel.render(this.body,this.modal!,this.placeModal,(pointer,entry,scroll)=>this.startDrag(pointer,entry,scroll));this.drops=this.craftingPanel.drops;}
     if(this.page==='forge'&&this.forge)this.forge.render(this.body,this.modal!,this.placeModal);
+    if(this.page==='learn'&&this.skillBook)this.skillBook.render(this.body!);
     if(this.page==='system'){
       const actions:[string,()=>void][]=[['保存游戏',()=>this.show('save')],['读取存档',()=>this.show('load')],['设置',()=>this.show('settings')]];
       // 「调试」只在 GM 打开时出现；关闭时这一项根本不存在，不需要靠权限判断挡住。
@@ -1224,7 +1227,7 @@ export class StoryUI {
     }
     const forgeLabel=this.forgeLabel(entry);
     if(forgeLabel)actions.push({label:forgeLabel,run:()=>this.openForge(entry.id)});
-    if(item.use&&!NON_MENU_USE_KINDS.has(item.use.kind)&&!worn)actions.push({label:USE_LABELS[item.use.kind],run:()=>this.beginOperation(entry.id),disabled:!!this.itemUseProblem(entry)});
+    if(item.use&&!NON_MENU_USE_KINDS.has(item.use.kind)&&!worn)actions.push({label:item.use.kind==='learn'?'使用':USE_LABELS[item.use.kind],run:()=>this.beginOperation(entry.id),disabled:!!this.itemUseProblem(entry)});
     // 快捷键：与技能页同一套文案与同一屏。已配到任一组的这枚按钮改成「取消快捷键」，点了直接清掉
     // （原版 `UIEquip_ButtonRemoveShortCutExe 0x14c514` → `PLAYER_RemoveShortcutAll(char, 2, 物品编号)`）。
     if(item.shortcut&&!worn){
@@ -1264,6 +1267,18 @@ export class StoryUI {
     const targetId=this.forge?.targetId;
     this.forge=undefined;this.page='bag';if(targetId)this.selectedItem=targetId;this.render();
   }
+  /** 技能书走独立页：图标网格选技能，右栏看等级变化，确认后才消耗。 */
+  private openSkillBook(entry:string):void {
+    const bag=this.session?.bag,instance=bag?.get(entry);
+    if(!bag||!instance||this.busy)return;
+    this.cancelDrag();this.operation=undefined;this.itemNotice=undefined;this.notice='';
+    this.skillBook=new SkillBookPanel(bag,this.session!.skills,this.app.battleCatalog,this.app.menuPanels,entry,
+      ()=>this.render(),()=>this.app.audio?.ui('select'),(message)=>this.closeSkillBook(message));
+    this.skillBook.open();this.page='learn';this.render();
+  }
+  private closeSkillBook(message?:string):void {
+    this.skillBook=undefined;this.page='bag';this.selectedItem=undefined;this.notice=message??'';this.render();
+  }
   private async changeEquipment(entry:string|undefined,slot:EquipmentSlot):Promise<void>{
     if(this.busy)return;this.busy=true;this.cancelDrag();const signal=this.request.signal;this.render();
     try{await this.app.changeEquipment!(entry,slot,signal,this.selectedMemberId);if(signal.aborted)return;this.selectedItem=undefined;this.notice='';}
@@ -1274,6 +1289,8 @@ export class StoryUI {
     const instance=this.session!.bag.get(entry)!;
     if(kind==='use'&&this.itemUseProblem(instance))return;
     const use=this.session!.bag.catalog.items[instance.item].use;
+    // 技能书不弹确认框：独立页本身就承担选择与确认。
+    if(kind==='use'&&use?.kind==='learn'){this.openSkillBook(entry);return;}
     // 回血药水与再生药水都走队伍结算：全队生效、共用一个时钟。
     if(kind==='use'&&(use?.kind==='recover-health'||use?.kind==='regenerate')){this.app.useRecoveryItem?.(entry,this.selectedMemberId);this.render();return;}
     if(kind==='use'&&use&&NON_MENU_USE_KINDS.has(use.kind))return;
@@ -1292,7 +1309,6 @@ export class StoryUI {
     const entry=bag.get(op.entry);if(!entry){this.operation=undefined;v.visible(false);return;}const item=bag.catalog.items[entry.item],use=item.use;
     v.text(op.kind==='discard'?'丢弃物品':USE_LABELS[use!.kind],inner.x,inner.y+5,inner.width,26);line(item.name,25);line(item.description||'确认后执行本次操作。');
     if(op.kind==='discard'){line(`确定丢弃 ${item.name}？`);if(entry.quantity>1){v.button('−',0,y,80,48,()=>{op.quantity=Math.max(1,op.quantity-1);this.render();},{parent:scroll.content,guard:scroll.guard});v.text(String(op.quantity),108,y+8,0,24,undefined,scroll.content);v.button('＋',190,y,80,48,()=>{op.quantity=Math.min(entry.quantity,op.quantity+1);this.render();},{parent:scroll.content,guard:scroll.guard});v.button('全部',260,y,inner.width-260,48,()=>{op.quantity=entry.quantity;this.render();},{parent:scroll.content,guard:scroll.guard});y+=64;}}
-    else if(use?.kind==='learn'){const classId=use.classId||this.member()!.classId,skills=this.app.battleCatalog.classes.find(c=>c.id===classId)!.skills;line('请选择技能');for(const id of entry.skill?skills.filter(id=>id===entry.skill):skills){v.button(this.app.battleCatalog.skills[id].name,0,y,inner.width,50,()=>{op.skill=id;this.render();},{selected:(entry.skill||op.skill)===id,disabled:!!this.bookProblem(id),parent:scroll.content,guard:scroll.guard});y+=62;}const selected=entry.skill||op.skill;if(selected)line(this.bookProblem(selected)||'技能提升 1 级，不消耗技能点。');}
     else if(use?.kind==='pack'||use?.kind==='box'){line(use.kind==='pack'?'礼盒内含以下物品：':'获得下列物品中的一种：');reward(use.rewards!);}
     else if(use?.kind==='recipe'){line('随机展开下列一种配方：');for(const id of use.recipes!)line(`${bag.catalog.recipes[id].name}${bag.learnedRecipes.includes(id)?' · 已收录':''}`);}
     else if(use?.kind==='recruit')line(`加入佣兵名册 · ${use.classId?this.app.storyClasses.classes.find(c=>c.id===use.classId)!.name:'随机职业'}`);
@@ -1311,10 +1327,8 @@ export class StoryUI {
     else if(use?.kind==='reset-skills'){line(`确定为${this.world!.actors[this.session!.campaign.start.actor].name}初始化技能？`);line('清空已学技能与快捷栏，返还正常加点；卓越灵药增加的技能点会消失。');}
     else if(entry.item===SKILL_POINT_ITEM)line(`确定对${this.world!.actors[this.session!.campaign.start.actor].name}使用${item.name}？`);
     if(op.error)line(op.error);this.finishScroll('operation',scroll,y);
-    const using=op.kind==='use',skill=entry.skill||op.skill||'';
-    const learningBlocked=using&&use?.kind==='learn'&&(!bag.catalog.classSkills[this.member()!.classId]?.includes(skill)||!!this.bookProblem(skill));
-    const revivalBlocked=using&&use?.kind==='revive'&&!op.member;
-    const disabled=op.confirmed||this.busy||(using&&!!this.itemUseProblem(entry))||learningBlocked||revivalBlocked;
+    const using=op.kind==='use',revivalBlocked=using&&use?.kind==='revive'&&!op.member;
+    const disabled=op.confirmed||this.busy||(using&&!!this.itemUseProblem(entry))||revivalBlocked;
     // 底部按钮沿用原版数量框的排布：确定在左、取消在右，125×55。
     v.button('取消',box.button.right,box.button.y,box.button.width,box.button.height,()=>{this.operation=undefined;this.render();});
     v.button('确定',box.button.left,box.button.y,box.button.width,box.button.height,()=>this.confirmOperation(),{disabled:!!disabled});
@@ -1327,7 +1341,6 @@ export class StoryUI {
     const kind=definition.use?.kind;
     if(this.selectedMemberId!=='player'&&(kind==='reset-skills'||kind==='learn'||entry.item===SKILL_POINT_ITEM))return '该道具仅能用于主角';
   }
-  private bookProblem(id:string):string|undefined{return this.selectedMemberId==='player'?this.session!.skills.bookProblem(id):'主角技能书仅能用于主角';}
   private renderItemResult():void {
     // 与说明面板同一套矩形，免得看结果时又跳回旧位置。
     const v=this.description!,layout=bagLayout(),covered=this.descSide==='left'?layout.leftFrame:layout.bagFrame,
@@ -1361,12 +1374,9 @@ export class StoryUI {
           for(const id of fallen)if(party.alive(id))session.reviveCombatActor(id);
         }
       }else{
-        const result=bag.use(op.entry,undefined,op.skill);
-        // 技能书一次只升一级，用完立即收起说明面板；结果写到页脚，下一次点技能书只需一次。
-        if(kind==='learn'){this.itemResult=undefined;this.notice=result.message;}
-        else this.itemResult=result;
+        this.itemResult=bag.use(op.entry);
       }
-      this.selectedItem=kind==='learn'?undefined:(bag.get(op.entry)?op.entry:undefined);
+      this.selectedItem=bag.get(op.entry)?op.entry:undefined;
       this.operation=undefined;
       if(op.kind==='use'&&kind==='merchant'){this.busy=false;this.openShop(this.app.shops.lampShop,'');return;}
     }
