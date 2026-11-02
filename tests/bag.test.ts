@@ -177,7 +177,6 @@ test('an inconsistent bag state is refused at both boundaries and by the explici
 test('items whose effect is not implemented are refused instead of silently consumed',()=>{
   const bag=create(),definitions=catalog.items;
   // 符文没有任何分支结算；consume 是导出器的兜底 kind，只有卓越灵药实现了用途。
-  // （骰子原先在这里，现在按物品说明「可以重置角色的能力」实现为重置属性，见导出器 item_effects.py。）
   const refused=[
     prepareItem(bag,item=>item.use?.kind==='dungeon'),
     prepareItem(bag,(item,id)=>item.use?.kind==='consume'&&!IMPLEMENTED_CONSUMABLES.includes(id)),

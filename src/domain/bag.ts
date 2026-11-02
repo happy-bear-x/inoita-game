@@ -513,7 +513,7 @@ export class Bag {
     const definition=this.catalog.items[source.item], use=definition.use;
     if(!use)throw new Error('此物品不能直接使用');
     // 两类物品在这里拦下，都不消耗：入口在界面层的（回血、招募、复活）、
-    // 以及用途还没实现的（骰子、符文和多数 consume）。玩家能看到原因，
+    // 以及用途还没实现的（符文和多数 consume）。玩家能看到原因，
     // 而不是拿到一句「已使用XX」却发现没效果。
     if(USE_HANDLING[use.kind]==='ui')throw new Error(USE_INTERFACE_ONLY);
     const unimplemented=unimplementedItemUse(source.item,definition);
