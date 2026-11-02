@@ -1360,8 +1360,13 @@ export class StoryUI {
           party.revive(target,op.entry);
           for(const id of fallen)if(party.alive(id))session.reviveCombatActor(id);
         }
-      }else this.itemResult=bag.use(op.entry,undefined,op.skill);
-      this.selectedItem=bag.get(op.entry)?op.entry:undefined;
+      }else{
+        const result=bag.use(op.entry,undefined,op.skill);
+        // 技能书一次只升一级，用完立即收起说明面板；结果写到页脚，下一次点技能书只需一次。
+        if(kind==='learn'){this.itemResult=undefined;this.notice=result.message;}
+        else this.itemResult=result;
+      }
+      this.selectedItem=kind==='learn'?undefined:(bag.get(op.entry)?op.entry:undefined);
       this.operation=undefined;
       if(op.kind==='use'&&kind==='merchant'){this.busy=false;this.openShop(this.app.shops.lampShop,'');return;}
     }

@@ -230,6 +230,8 @@ interface MenuInternals {
   forge?: ForgePanel;
   page: string;
   operation?: { entry: string; kind: 'use' | 'discard'; quantity: number };
+  selectedItem?: string;
+  itemResult?: unknown;
   keyboardFocus?: Display;
   body: UiSurface;
   surface: UiSurface;
@@ -811,6 +813,23 @@ test('hero bag still applies skill reset and supreme elixir', t => {
     if (item === 'skills-reset-spell') assert.equal(f.session.skills.level(skill), 0);
     if (item === 'supreme-elixir') assert.equal(f.session.skills.points(), points + 1);
   }
+});
+
+test('using a skill book closes the item pane so the next one only needs one tap', t => {
+  const f = fixture(); t.after(f.cleanup); f.hero.addExperience(Number.MAX_SAFE_INTEGER);
+  const skillId = battle.classes.find(value => value.id === f.hero.classId)!.skills[0]!;
+  while (f.session.skills.level(skillId) < battle.skills[skillId].normalMaxLevel) f.session.skills.learn(skillId);
+  const book = f.add('skillbook', 2), rank = f.session.skills.level(skillId);
+  f.menu.debugDescribe(book.id);
+  f.scene.click(f.scene.button('使用技能书'));
+  f.scene.click(f.scene.button(battle.skills[skillId].name));
+  f.scene.click(f.scene.button('确定'));
+  assert.equal(f.session.bag.count('skillbook'), 1, '技能书只消耗一本');
+  assert.equal(f.session.skills.level(skillId), rank + 1, '技能提升一级');
+  assert.equal(f.internals.selectedItem, undefined, '使用后收起说明面板');
+  assert.equal(f.internals.itemResult, undefined, '使用结果不占说明面板');
+  f.scene.click(f.scene.button(items.items.skillbook.name));
+  assert.equal(f.scene.buttons('使用技能书').length, 1, '下一次点一次技能书就能重新打开说明');
 });
 
 test('skill description colors, unchanged comparisons and learning button share native requirements',t=>{
