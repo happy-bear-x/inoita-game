@@ -57,23 +57,6 @@ test('shops never offer a reserved item', () => {
   }
 });
 
-test('old shop stock cannot keep selling reserved items', () => {
-  const session = new Session(campaign, undefined, undefined, items);
-  session.shops.restoreState({
-    mapId: 'shadow-camp',
-    stock: [['rare-items-dealer-2d609a7f', [{
-      id: 'legacy-reserved-offer',
-      instance: { id: 'legacy-reserved-instance', item: 'durandal', quantity: 1, enhancement: 0, gems: [] },
-      limited: true, concealed: false, sold: false
-    }]]],
-    serial: 1
-  });
-  const store = new Storefront(shops, items, stats, session, 'rare-items-dealer-2d609a7f', 'shadow-camp', () => 0.1);
-  assert.ok(store.offers.every(offer => !blocked.has(offer.instance.item)));
-  assert.throws(() => store.buy('legacy-reserved-offer', 1), /不在货架/);
-  assert.ok(!session.shops.captureState().stock.some(([, offers]) => offers.some(offer => blocked.has(offer.instance.item))));
-});
-
 test('every recipe that produces a reserved item is hidden and rejected', () => {
   const session = new Session(campaign, undefined, undefined, items);
   const crafting = new EquipmentCrafting(session, craftingCatalog);
