@@ -18,7 +18,7 @@ export interface SceneActorState {
   y: number;
   facing: Facing;
   visible: boolean;
-  /** 舞台为防重复而临时隐藏；把舞台位置采纳回正式世界时必须跳过。 */
+  /** 舞台临时隐藏：重复副本，或等待本幕出场动作；把舞台位置采纳回正式世界时必须跳过。 */
   stageHidden?: boolean;
   /** 队伍跟随者：主角不可见时默认一并隐藏；被剧情显式显隐后不再跟随。 */
   followsPlayer?: boolean;

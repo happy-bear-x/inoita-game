@@ -8,11 +8,12 @@ import type {SceneSnapshot} from '../domain/scene-snapshot.ts';
 import type {StoryClassCatalog} from '../domain/story-class.ts';
 import type {StoryEvent, StoryNode, StoryTriggerSource} from '../domain/story-graph.ts';
 import type {PerformanceAction, StoryStage, StoryStageSnapshot} from '../domain/story-performance.ts';
+import {pendingEntranceAliases} from '../domain/story-performance.ts';
 import type {StoryEntityState} from '../domain/story-world.ts';
 import type {StoryNodeCommit, StoryPlaybackContext, StoryRuntimePort} from '../domain/story-runtime.ts';
 import {Session, type SessionState} from '../domain/session.ts';
 import {authoredPlacements, baseMapEntities} from '../domain/map-placement.ts';
-import {applyStorySceneAction, resolveStoryScene} from '../domain/story-scene.ts';
+import {applyStorySceneAction, hidePendingEntrances, resolveStoryScene} from '../domain/story-scene.ts';
 import {assertUniqueActorInstances} from '../domain/actor-census.ts';
 import {assertScenePlan,planScene} from '../domain/scene-plan.ts';
 import {storyCommitCommands} from '../domain/story-commit.ts';
@@ -230,7 +231,8 @@ export class HeadlessStory {
 
   private async present(node: StoryNode, context: StoryPlaybackContext): Promise<{choice?: string; stage?: StoryStageSnapshot}> {
     let value: string | undefined;
-    for (const action of node.presentation) {
+    for (let index = 0; index < node.presentation.length; index++) {
+      const action = node.presentation[index]!;
       context.signal.throwIfAborted();
       if (action.type === 'dialogue' || action.type === 'quest-popup') continue;
       if (action.type === 'choice') {
@@ -239,6 +241,7 @@ export class HeadlessStory {
       }
       if (action.type === 'stage') {
         this.stage = this.resolveStage(action);
+        this.stage = hidePendingEntrances(this.stage, action, pendingEntranceAliases(node.presentation.slice(index + 1)));
         assertUniqueActorInstances(this.stage.scene.actors, `无头舞台 ${this.stage.map}/stage`);
         assertScenePlan(planScene(this.stage.scene,this.stage.bindings));
         continue;
@@ -309,7 +312,7 @@ export class HeadlessStory {
     for (const [map, scene] of this.scenes) {
       const before = this.committedScenes.get(map);
       for (const actor of scene.actors) {
-        if (!actor.worldEntityId || actor.unpositioned) continue;
+        if (!actor.worldEntityId || actor.unpositioned || actor.stageHidden) continue;
         const original = before?.actors.find(previous => previous.id === actor.id);
         if (original && original.worldEntityId === actor.worldEntityId && original.actor === actor.actor
           && original.x === actor.x && original.y === actor.y && original.facing === actor.facing

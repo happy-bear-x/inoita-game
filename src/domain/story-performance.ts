@@ -11,7 +11,7 @@ export interface StoryCastMember {
   characterId?: string;
   enemyId?: string;
   memberId?: string;
-  /** 原版对象引用；声明只登记脚本别名，位置和显隐取完整场景。 */
+  /** 原版对象引用；声明登记脚本别名。本幕稍后有 appear/show 时以声明的开场显隐为准，否则沿用场景实例。 */
   binding?: 'world';
   inheritPosition?: boolean;
   /** 尚未获得场内位置；保留离场坐标，走位不能凭空把它带入场内。 */
@@ -19,6 +19,7 @@ export interface StoryCastMember {
   x: number;
   y: number;
   facing: Facing;
+  /** 本幕开场的可见性。本幕稍后有出场动作时，地图上已有的绑定实例也以它为准。 */
   visible: boolean;
 }
 
@@ -84,7 +85,8 @@ export interface StoryPresentationPort {
   /** `deferFirstStage`：首幕舞台动作由随后的 `execute` 画出，避免同一张舞台图建两次。 */
   begin(signal?: AbortSignal, stage?: StoryStage | StoryStageSnapshot, initialCurtain?: StoryCurtain, deferFirstStage?: boolean): void | Promise<void>;
   prefetchMap?(map: string): void;
-  execute(action: Exclude<PerformanceAction, { type: 'parallel' }>, playback: PerformancePlayback): Promise<void>;
+  /** `pendingEntrances`：本幕稍后会出场的别名；舞台开场先隐藏这些演员在地图上的现成实例。 */
+  execute(action: Exclude<PerformanceAction, { type: 'parallel' }>, playback: PerformancePlayback, pendingEntrances?: readonly string[]): Promise<void>;
   parallel?(actions: PerformanceAction[], playback: PerformancePlayback): Promise<void>;
   finish(completed: boolean, signal?: AbortSignal): Promise<void>;
   getStageState?(): StoryStageSnapshot | undefined;
@@ -92,6 +94,26 @@ export interface StoryPresentationPort {
   committed?(): void;
   restoreStage?(stage: StoryStageSnapshot, signal: AbortSignal): Promise<void>;
   release?(): void | Promise<void>;
+}
+
+/**
+ * 本幕稍后会出场的别名。演出动作按顺序执行，所以只看到下一个舞台动作为止：
+ * 下一幕的 appear 属于下一段调度，不能拿来隐藏本幕已经需要出镜的演员。
+ */
+export function pendingEntranceAliases(actions: readonly (PerformanceAction | { type: 'dialogue' | 'choice' | 'quest-popup' })[]): readonly string[] {
+  const aliases: string[] = [], seen = new Set<string>();
+  const walk = (action: PerformanceAction | { type: 'dialogue' | 'choice' | 'quest-popup' }): void => {
+    if (action.type === 'stage') return;
+    if (action.type === 'parallel') { for (const child of action.actions) walk(child); return; }
+    if ((action.type === 'appear' || action.type === 'show') && !seen.has(action.target)) {
+      seen.add(action.target); aliases.push(action.target);
+    }
+  };
+  for (const action of actions) {
+    if (action.type === 'stage') break;
+    walk(action);
+  }
+  return aliases;
 }
 
 export function performanceTargets(action: PerformanceAction): string[] {

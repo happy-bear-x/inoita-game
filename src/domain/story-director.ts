@@ -2,6 +2,7 @@ import { storyCommitCommands } from './story-commit.ts';
 import type { ActorDefinition, ChoiceOption, DialogueLine, EntityPlacement, QuestRewardReceipt, StoryTrigger, TravelDestination } from './content.ts';
 import type { Campaign, CampaignQuest } from './campaign.ts';
 import type { PerformanceAction, StoryPresentationPort, StoryStage, StoryStageSnapshot } from './story-performance.ts';
+import { pendingEntranceAliases } from './story-performance.ts';
 import type { Session, SessionState } from './session.ts';
 import { StoryRuntime } from './story-runtime.ts';
 import type { StoryNodeCommit, StoryOccurrence, StoryPlaybackContext } from './story-runtime.ts';
@@ -314,7 +315,7 @@ export class StoryDirector {
     try { const option = await this.ui.choice(prompt, options, description, signal); signal.throwIfAborted(); return option; }
     finally { this.choosing = false; }
   }
-  private async perform(action: PerformanceAction, signal: AbortSignal): Promise<void> {
+  private async perform(action: PerformanceAction, signal: AbortSignal, pendingEntrances?: readonly string[]): Promise<void> {
     signal.throwIfAborted(); if (!this.presentation) throw new Error('剧情演出尚未装配');
     let drawingFirstStage = false;
     if (!this.presenting && action.type !== 'sound' && action.type !== 'music') {
@@ -336,7 +337,7 @@ export class StoryDirector {
     if (action.type === 'parallel') {
       if (this.presentation.parallel) await this.presentation.parallel(action.actions, playback);
       else await Promise.all(action.actions.map(child => this.perform(child, signal)));
-    } else await this.presentation.execute(action, playback);
+    } else await this.presentation.execute(action, playback, pendingEntrances);
     if (drawingFirstStage) this.markPresentationStarted();
   }
   /** 只回调一次：第一段画面出现即可收起进图加载页。 */
@@ -347,7 +348,8 @@ export class StoryDirector {
   }
   private async present(node: StoryNode, context: StoryPlaybackContext): Promise<{ choice?: string; stage?: StoryStageSnapshot }> {
     let value: string | undefined;
-    for (const action of node.presentation) {
+    for (let index = 0; index < node.presentation.length; index++) {
+      const action = node.presentation[index]!;
       context.signal.throwIfAborted();
       if (action.type === 'dialogue') { this.markPresentationStarted(); await this.dialogue(action, context.signal); }
       else if (action.type === 'choice') {
@@ -364,7 +366,11 @@ export class StoryDirector {
         this.confirming = true;
         try { await this.ui.questPopup(action.kind, quest, receipt, context.signal); }
         finally { this.confirming = false; }
-      } else await this.perform(action, context.signal);
+      } else {
+        // 舞台只需要本幕稍后的出场别名；下一幕的动作在 pendingEntranceAliases 里会被 stage 截断。
+        const pending = action.type === 'stage' ? pendingEntranceAliases(node.presentation.slice(index + 1)) : undefined;
+        await this.perform(action, context.signal, pending);
+      }
     }
     return { choice: value, stage: this.presenting ? this.presentation?.getStageState?.() : undefined };
   }

@@ -7,7 +7,7 @@ import { StoryDirector, type StoryUI } from '../src/domain/story-director.ts';
 import { Session } from '../src/domain/session.ts';
 import { parseCampaign, parseWorld } from '../src/application/content-validation.ts';
 import { validateStoryPerformance } from '../src/application/story-performance-validation.ts';
-import { cameraDuration, type PerformancePlayback, type StoryPresentationPort } from '../src/domain/story-performance.ts';
+import { cameraDuration, pendingEntranceAliases, type PerformancePlayback, type StoryPresentationPort } from '../src/domain/story-performance.ts';
 import { compileScript, storyScriptActions } from './support/story-fixtures.ts';
 import type { Campaign } from '../src/domain/campaign.ts';
 import type { ChoiceOption, ScriptAction } from '../src/domain/content.ts';
@@ -186,4 +186,36 @@ test('a current-scene declaration resolves to the live map and actor positions b
   assert.equal(stage.cast[1].visible,false);
   assert.deepEqual([stage.cast[2].x,stage.cast[2].y],[200,72]);
   assert.equal(declaration.mapFromWorld,true,'解析不能改变内容声明');
+});
+
+test('pending entrances flatten parallels and stop at the next stage', () => {
+  const actions = [
+    { type: 'appear' as const, target: 'now', x: 1, y: 2, facing: 'south' as const },
+    { type: 'parallel' as const, actions: [
+      { type: 'appear' as const, target: 'parallel', x: 3, y: 4, facing: 'south' as const },
+      { type: 'show' as const, target: 'shown' },
+    ] },
+    { type: 'stage' as const, map: 'next', x: 5, y: 6, facing: 'south' as const, playerVisible: true, cast: [] },
+    { type: 'appear' as const, target: 'next-act', x: 7, y: 8, facing: 'south' as const },
+  ];
+  assert.deepEqual(pendingEntranceAliases(actions), ['now', 'parallel', 'shown']);
+});
+
+test('a stage receives the aliases that still have an entrance before the next stage', async () => {
+  const received: (readonly string[] | undefined)[] = [];
+  const h = harness([
+    { type: 'stage', map: 'camp', x: 8, y: 8, facing: 'south', playerVisible: true, cast: [] },
+    { type: 'appear', target: 'guard', x: 16, y: 24, facing: 'south' },
+    { type: 'parallel', actions: [{ type: 'appear', target: 'ally', x: 24, y: 32, facing: 'south' }] },
+    { type: 'stage', map: 'camp', x: 40, y: 48, facing: 'south', playerVisible: true, cast: [] },
+    { type: 'appear', target: 'later', x: 56, y: 64, facing: 'south' },
+  ], {
+    begin() {},
+    async execute(action, _playback, pendingEntrances) {
+      if (action.type === 'stage') received.push(pendingEntrances);
+    },
+    async finish() {},
+  });
+  assert.equal(await h.director.run(() => h.director.script('demo')), true);
+  assert.deepEqual(received, [['guard', 'ally'], ['later']]);
 });

@@ -1,4 +1,4 @@
-import { applyStorySceneAction, hideUnboundStageActors, resolveStoryScene, syncStoryScene } from '../domain/story-scene.ts';
+import { applyStorySceneAction, hidePendingEntrances, hideUnboundStageActors, resolveStoryScene, syncStoryScene } from '../domain/story-scene.ts';
 import { prepareSceneVisit } from '../domain/scene-visit.ts';
 import { assertScenePlan, planScene } from '../domain/scene-plan.ts';
 import { diffSceneActors } from '../domain/scene-delta.ts';
@@ -200,7 +200,7 @@ export class StoryPresenter implements StoryPresentationPort {
     }
     this.toneFilter.setActive(enabled);
   }
-  private async stage(declaration: StoryStage | StoryStageSnapshot, signal: AbortSignal): Promise<void> {
+  private async stage(declaration: StoryStage | StoryStageSnapshot, signal: AbortSignal, pendingEntrances?: readonly string[]): Promise<void> {
     const epoch = ++this.epoch;
     const current = this.captureStage() ?? this.baseline;
     if (current) this.scenes.set(current.map, structuredClone(current.scene));
@@ -235,6 +235,9 @@ export class StoryPresenter implements StoryPresentationPort {
       snapshot = resolveStoryScene({ ...declaration, map }, source);
     }
     snapshot = hideUnboundStageActors(snapshot);
+    // 顺序不能反：hideUnboundStageActors 会按本幕绑定重算 stageHidden，先藏会被它放回来。
+    if (!('scene' in declaration) && pendingEntrances?.length)
+      snapshot = hidePendingEntrances(snapshot, declaration, pendingEntrances);
     assertScenePlan(planScene(snapshot.scene, snapshot.bindings));
     if (!this.appearance) throw new Error('剧情玩家外观尚未准备好');
     await this.scene().showStage(snapshot, signal, this.appearance);
@@ -405,8 +408,11 @@ export class StoryPresenter implements StoryPresentationPort {
       for (const placement of placements) scene.movement!.placeContent(placement.visual, placement.position, placement.enabled);
     } else if (placements.length) scene.movement!.placeAll(placements);
   }
-  async execute(action: VisualAction, playback: PerformancePlayback): Promise<void> { await this.executeAction(action, playback); }
-  private async executeAction(action: VisualAction, playback: PerformancePlayback, batch = false): Promise<void> {
+  async execute(action: VisualAction, playback: PerformancePlayback, pendingEntrances?: readonly string[]): Promise<void> {
+    await this.executeAction(action, playback, false, pendingEntrances);
+  }
+  private async executeAction(action: VisualAction, playback: PerformancePlayback, batch = false,
+    pendingEntrances?: readonly string[]): Promise<void> {
     playback.signal.throwIfAborted();
     const scene = this.scene();
     switch (action.type) {
@@ -420,7 +426,7 @@ export class StoryPresenter implements StoryPresentationPort {
         }
         return;
       }
-      case 'stage': await this.stage(action, playback.signal); return;
+      case 'stage': await this.stage(action, playback.signal, pendingEntrances); return;
       case 'world-object':
         if (action.command.kind === 'place') await scene.prepareActorAssets(action.command.entity.actor, playback.signal);
         playback.signal.throwIfAborted();

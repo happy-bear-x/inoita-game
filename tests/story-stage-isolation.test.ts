@@ -333,6 +333,45 @@ test('deferred first stage inherits the world actor instead of resolving against
   assert.deepEqual([stage.x, stage.y], [40, 168], '主角接正式世界的入口位置，而不是声明的兜底锚点');
 });
 
+test('a pending entrance hides a world-bound actor until appear, then commits the scripted position', async () => {
+  const run=harness(),signal=new AbortController().signal,playback={signal,skipSignal:signal};
+  (run.world as unknown as {characters:unknown[]}).characters.push({
+    entity:{id:'boss',actor:'guard',characterId:'boss-character'},
+    actor:{...appearance,id:'guard'},container:{x:300,y:200,visible:true},layers:[],clipName:'idle-south',
+  });
+  await run.presenter.begin(signal);
+  const stage:StoryStage={type:'stage',map:'home',x:30,y:40,facing:'east',playerVisible:true,retainPlayerPosition:true,
+    cast:[{id:'boss',actor:'guard',binding:'world',characterId:'boss-character',worldEntityId:'boss',x:40,y:50,facing:'south',visible:false}]};
+  await run.presenter.execute(stage,playback,['boss']);
+  assert.equal(run.presenter.captureStage()!.scene.actors.find(actor=>actor.id==='entity:boss')!.visible,false);
+  assert.equal(run.presenter.getWorldChanges().some(change=>change.id==='boss'),false,'临时隐藏不能写回正式世界');
+  await run.presenter.execute({type:'appear',target:'boss',x:40,y:50,facing:'south'},playback);
+  const boss=run.presenter.captureStage()!.scene.actors.find(actor=>actor.id==='entity:boss')!;
+  assert.deepEqual([boss.visible,boss.x,boss.y],[true,40,50]);
+  assert.deepEqual(run.presenter.getWorldChanges(),
+    [{id:'boss',map:'home',actor:'guard',characterId:'boss-character',x:40,y:50,facing:'south',visible:true}]);
+});
+
+test('a create-mode entrance keeps the old map copy hidden and out of world changes', async () => {
+  const run=harness(),signal=new AbortController().signal,playback={signal,skipSignal:signal};
+  (run.world as unknown as {characters:unknown[]}).characters.push({
+    entity:{id:'boss',actor:'guard',characterId:'boss-character'},
+    actor:{...appearance,id:'guard'},container:{x:300,y:200,visible:true},layers:[],clipName:'idle-south',
+  });
+  await run.presenter.begin(signal);
+  const stage:StoryStage={type:'stage',map:'home',x:30,y:40,facing:'east',playerVisible:true,retainPlayerPosition:true,
+    cast:[{id:'boss',actor:'guard',binding:'world',characterId:'boss-character',worldEntityId:'boss',x:40,y:50,facing:'south',visible:false}]};
+  await run.presenter.execute(stage,playback,['boss']);
+  await run.presenter.execute({type:'appear',target:'boss',mode:'create',x:40,y:50,facing:'south'},playback);
+  const snapshot=run.presenter.captureStage()!;
+  const old=snapshot.scene.actors.find(actor=>actor.worldEntityId==='boss')!;
+  assert.deepEqual([old.visible,old.stageHidden],[false,true]);
+  const boundId=snapshot.bindings.find(([alias])=>alias==='boss')![1];
+  assert.notEqual(boundId,old.id);
+  assert.equal(snapshot.scene.actors.find(actor=>actor.id===boundId)!.visible,true);
+  assert.equal(run.presenter.getWorldChanges().some(change=>change.id==='boss'),false);
+});
+
 test('show reveals an already positioned character without moving it', async () => {
   const run = harness(), signal = new AbortController().signal;
   await run.presenter.begin(signal);

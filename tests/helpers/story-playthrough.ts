@@ -10,7 +10,7 @@ import { nearInteractive } from '../../src/domain/chests.ts';
 import { newStorySession } from '../../src/domain/story-class.ts';
 import { StoryDirector, type StoryUI } from '../../src/domain/story-director.ts';
 import { type PerformanceAction, type StoryPresentationPort, type StoryStage, type StoryStageSnapshot } from '../../src/domain/story-performance.ts';
-import { resolveStoryScene, applyStorySceneAction } from '../../src/domain/story-scene.ts';
+import { resolveStoryScene, applyStorySceneAction, hidePendingEntrances } from '../../src/domain/story-scene.ts';
 import { assertUniqueActorInstances } from '../../src/domain/actor-census.ts';
 import { assertScenePlan, planScene } from '../../src/domain/scene-plan.ts';
 import { prepareSceneVisit } from '../../src/domain/scene-visit.ts';
@@ -86,9 +86,12 @@ export function playthrough(saved?:SessionState){
       assertUniqueActorInstances(stage.scene.actors,`剧情舞台 ${stage.map}/begin`);
       assertScenePlan(planScene(stage.scene,stage.bindings));
     },
-    async execute(action){
+    async execute(action, _playback?, pendingEntrances?){
       actions.push(action);
-      if(action.type==='stage')stage=resolve(action);
+      if(action.type==='stage'){
+        stage=resolve(action);
+        if(pendingEntrances?.length)stage=hidePendingEntrances(stage,action,pendingEntrances);
+      }
       else if(stage)stage=applyStorySceneAction(stage,action);
       if(stage){
         assertUniqueActorInstances(stage.scene.actors,`剧情舞台 ${stage.map}/${action.type}`);

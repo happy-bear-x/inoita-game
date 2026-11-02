@@ -69,6 +69,33 @@ export function hideUnboundStageActors(snapshot: StoryStageSnapshot): StoryStage
   return snapshot;
 }
 
+/**
+ * 演员表说本幕开场不可见、且本幕稍后有出场动作时，先藏掉它在地图上的现成实例。
+ *
+ * 舞台接管地图时，普通 NPC、道具和机关沿用世界状态；但剧本已经安排中途出场的人
+ * 不能提前站在旧位置。这里只改舞台快照的显隐，并用 `stageHidden` 阻止这次临时隐藏
+ * 写回正式世界；真正的 `appear`/`show` 会清掉标记并按剧本落位。
+ */
+export function hidePendingEntrances(snapshot: StoryStageSnapshot, declaration: StoryStage,
+  pendingEntrances: readonly string[]): StoryStageSnapshot {
+  if (!pendingEntrances.length) return snapshot;
+  const pending = new Set(pendingEntrances);
+  const declared = new Map(declaration.cast.map(member => [member.id, member]));
+  let hidden = false;
+  for (const [alias, id] of snapshot.bindings) {
+    if (!pending.has(alias)) continue;
+    const member = declared.get(alias);
+    // 只有演员表明确写“开场不可见”才压过世界绑定；visible:true 的演员本幕就该在台上。
+    if (!member || member.visible !== false) continue;
+    const actor = snapshot.scene.actors.find(candidate => candidate.id === id);
+    if (!actor || !actor.visible || actor.unpositioned || actor.removed) continue;
+    actor.visible = false;
+    actor.stageHidden = true;
+    hidden = true;
+  }
+  return hidden ? syncStoryScene(snapshot) : snapshot;
+}
+
 function newId(scene: SceneSnapshot, alias: string): string {
   const base = `story:${alias}`;
   let id = base, index = 1;
@@ -260,11 +287,16 @@ export function applyStorySceneAction(previous: StoryStageSnapshot, action: Perf
     Object.assign(actor, { x: action.x, y: action.y, facing: action.facing, visible: true, unpositioned: false, removed:false });
     actor.clip=`idle-${actor.facing}`;actor.animationProgress=0;actor.animationPlaying=true;
     controlIndependently(actor);
+    // 正式出场：撤销开场的临时隐藏，之后的位置和显隐照常写回正式世界。
+    delete actor.stageHidden;
   } else if (action.type === 'leave') {
     controlIndependently(actor);
     actor.visible = false;
   } else if (action.type === 'show') {
-    if (!actor.unpositioned && !actor.removed) { controlIndependently(actor); actor.visible = true; }
+    if (!actor.unpositioned && !actor.removed) {
+      controlIndependently(actor); actor.visible = true;
+      delete actor.stageHidden;
+    }
   }
   else if (action.type === 'face' && !actor.removed) {
     actor.facing = action.facing;actor.clip=`idle-${actor.facing}`;actor.animationProgress=0;actor.animationPlaying=true;

@@ -3,7 +3,7 @@ import test from 'node:test';
 import type {ActorDefinition} from '../src/domain/content.ts';
 import type {SceneActorState,SceneSnapshot} from '../src/domain/scene-snapshot.ts';
 import type {PerformanceAction,StoryCastMember,StoryStage} from '../src/domain/story-performance.ts';
-import {applyStorySceneAction,boundSceneActor,findSceneActor,hideUnboundStageActors,resolveStoryScene,syncStoryScene} from '../src/domain/story-scene.ts';
+import {applyStorySceneAction,boundSceneActor,findSceneActor,hidePendingEntrances,hideUnboundStageActors,resolveStoryScene,syncStoryScene} from '../src/domain/story-scene.ts';
 
 const actor=(id:string,extra:Partial<SceneActorState>={}):SceneActorState=>({id,actor:id,x:10,y:20,facing:'south',visible:true,...extra});
 const member=(id:string,extra:Partial<StoryCastMember>={}):StoryCastMember=>({id,actor:id,x:0,y:0,facing:'south',visible:false,binding:'world',...extra});
@@ -289,4 +289,86 @@ test('a registered location wins over the older static copy of the same characte
   assert.equal(registered.visible,true);
   assert.equal(stale.visible,false);
   assert.equal(stale.stageHidden,true);
+});
+
+test('pending entrances hide an existing world actor until its scripted appearance', () => {
+  const declaration=stage([member('boss',{actor:'boss',characterId:'boss-character',x:40,y:50,visible:false})]);
+  const snapshot=resolveStoryScene(declaration,source([
+    actor('entity:boss',{actor:'boss',characterId:'boss-character',worldEntityId:'boss',x:300,y:200}),
+  ]));
+  assert.equal(boundSceneActor(snapshot,'boss')!.visible,true,'没有出场规则时仍按地图接管显示');
+  const hidden=hidePendingEntrances(snapshot,declaration,['boss']);
+  const boss=boundSceneActor(hidden,'boss')!;
+  assert.deepEqual([boss.visible,boss.stageHidden,boss.x,boss.y],[false,true,300,200]);
+  assert.equal(hidden.cast.find(candidate=>candidate.id==='boss')!.visible,false);
+  const shown=applyStorySceneAction(hidden,{type:'appear',target:'boss',x:40,y:50,facing:'south'});
+  const appeared=boundSceneActor(shown,'boss')!;
+  assert.deepEqual([appeared.visible,appeared.stageHidden,appeared.x,appeared.y],[true,undefined,40,50]);
+});
+
+test('pending entrances leave non-entrance actors, declared-visible actors and the player alone', () => {
+  const declaration=stage([
+    member('background',{actor:'background',characterId:'background-character'}),
+    member('visible',{actor:'visible',characterId:'visible-character',x:60,y:70,visible:true}),
+  ]);
+  const snapshot=resolveStoryScene(declaration,source([
+    actor('entity:background',{actor:'background',characterId:'background-character',worldEntityId:'background',x:10,y:20}),
+    actor('entity:visible',{actor:'visible',characterId:'visible-character',worldEntityId:'visible',x:30,y:40}),
+  ]));
+  const unchanged=hidePendingEntrances(snapshot,declaration,['visible','player']);
+  assert.equal(boundSceneActor(unchanged,'background')!.visible,true,'没有本幕出场动作的背景角色保持接管');
+  assert.equal(boundSceneActor(unchanged,'visible')!.visible,true,'演员表声明可见的人本幕就该在台上');
+  assert.equal(unchanged.scene.actors.find(candidate=>candidate.id==='entity:background')!.stageHidden,undefined);
+  assert.equal(unchanged.scene.actors.find(candidate=>candidate.id==='player')!.visible,true);
+});
+
+test('show clears a pending entrance; world-object placement stays a pure object move', () => {
+  const declaration=stage([member('boss',{actor:'boss',characterId:'boss-character',x:40,y:50,visible:false})]);
+  const snapshot=resolveStoryScene(declaration,source([
+    actor('entity:boss',{actor:'boss',characterId:'boss-character',worldEntityId:'boss',x:300,y:200}),
+  ]));
+  const hidden=hidePendingEntrances(snapshot,declaration,['boss']);
+  const shown=applyStorySceneAction(hidden,{type:'show',target:'boss'});
+  const afterShow=boundSceneActor(shown,'boss')!;
+  assert.deepEqual([afterShow.visible,afterShow.stageHidden],[true,undefined]);
+  const placed=applyStorySceneAction(hidden,{type:'world-object',target:'boss',mode:'reuse',command:{kind:'place',entity:{
+    id:'boss-registered',map:'camp',actor:'boss',characterId:'boss-character',x:60,y:70}}});
+  const afterPlace=boundSceneActor(placed,'boss')!;
+  assert.equal(afterPlace.visible,true);
+  assert.equal(afterPlace.stageHidden,true,'world-object 只放置物件，不算角色出场');
+});
+
+test('pending entrance hiding runs after the unbound-actor pass', () => {
+  const enemy=actor('enemy:boss',{actor:'boss',enemyId:'boss-enemy',enemyKey:'boss',x:300,y:200});
+  const declaration=stage([member('boss',{actor:'boss',enemyId:'boss-enemy',x:40,y:50,visible:false})]);
+  const snapshot=resolveStoryScene(declaration,source([enemy]));
+  hideUnboundStageActors(snapshot);
+  assert.equal(boundSceneActor(snapshot,'boss')!.stageHidden,false,'点名绑定的敌人不会被 unbound 规则隐藏');
+  const hidden=hidePendingEntrances(snapshot,declaration,['boss']);
+  const boss=boundSceneActor(hidden,'boss')!;
+  assert.deepEqual([boss.visible,boss.stageHidden],[false,true]);
+});
+
+test('a party member already hidden by the declaration is not marked stage-hidden', () => {
+  const declaration=stage([member('ally',{actor:'ally',memberId:'ally',x:40,y:50,visible:false})]);
+  const snapshot=resolveStoryScene(declaration,source([
+    actor('member:ally',{actor:'ally',memberId:'ally',x:300,y:200}),
+  ]));
+  assert.equal(boundSceneActor(snapshot,'ally')!.visible,false,'队员初始显隐按声明');
+  assert.equal(boundSceneActor(snapshot,'ally')!.stageHidden,undefined);
+  const result=hidePendingEntrances(snapshot,declaration,['ally']);
+  assert.equal(boundSceneActor(result,'ally')!.stageHidden,undefined,'已经按声明隐藏的队员不需要再打临时标记');
+});
+
+test('a create-mode appearance reusing its world entity clears the pending entrance', () => {
+  const declaration=stage([member('boss',{actor:'boss',characterId:'boss-character',worldEntityId:'boss',x:40,y:50,visible:false})]);
+  const snapshot=resolveStoryScene(declaration,source([
+    actor('entity:boss',{actor:'boss',characterId:'boss-character',worldEntityId:'boss',x:300,y:200}),
+  ]));
+  const hidden=hidePendingEntrances(snapshot,declaration,['boss']);
+  const before=boundSceneActor(hidden,'boss')!;
+  const shown=applyStorySceneAction(hidden,{type:'appear',target:'boss',mode:'create',worldEntityId:'boss',x:40,y:50,facing:'south'});
+  const after=boundSceneActor(shown,'boss')!;
+  assert.equal(after.id,before.id,'带 worldEntityId 的 create 复用地图实例');
+  assert.deepEqual([after.visible,after.stageHidden,after.x,after.y],[true,undefined,40,50]);
 });
