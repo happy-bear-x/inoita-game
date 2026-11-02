@@ -8,6 +8,7 @@ import {actionDamage} from '../src/domain/action-damage.ts';
 import {actionDamageSource} from '../src/domain/combat-damage-source.ts';
 import {rollPhysicalHit, rollMagicHit} from '../src/domain/physical-hit.ts';
 import {parseBattle, parseWardrobe} from '../src/application/content-validation.ts';
+import {resolveBasicAttack} from '../src/domain/basic-attack.ts';
 
 const read=(name:string)=>JSON.parse(readFileSync(new URL(`../public/content/${name}.json`,import.meta.url),'utf8'));
 const battle=read('battle') as BattleCatalog;
@@ -44,6 +45,20 @@ test('weapon attacks select max normal damage before their physical or magical h
   // A stronger physical candidate is boosted at both native stages.
   assert.equal(hit(wardrobe.attacks['longsword:empty'],{...attributes,magicAttack:0}),225);
   assert.equal(hit(wardrobe.attacks['staff:empty'],{...attributes,magicDamageRate:500}),450);
+});
+
+test('all melee combo steps keep the same best-normal damage formula',()=>{
+  for(const id of ['dark-knight','assassin','priest','warrior']){
+    const character=battle.classes.find(value=>value.id===id)!;
+    const first=resolveBasicAttack(battle,character);
+    assert.equal(first.stepCount,3,id);
+    for(const step of [1,2]){
+      const attack=resolveBasicAttack(battle,character,undefined,step);
+      assert.deepEqual(attack.damage,first.damage,`${id}/${step}`);
+      assert.equal(attack.damage.source,'bestNormalDamage',`${id}/${step}`);
+      assert.equal(hit(attack),hit(first),`${id}/${step}`);
+    }
+  }
 });
 
 test('monster actions retain raw attack sources and the summoned soldier gets its own damage profile',()=>{

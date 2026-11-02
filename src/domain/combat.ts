@@ -2,7 +2,7 @@ import {executeSkillUnits} from './combat-unit-execution.ts';
 import type { BasicAttackSelection, BasicAttackWait, ResolvedBasicAttack, SkillAction, SkillEffectCue, SkillEvent } from './battle.ts';
 import type { ClipName, CollisionBox, Facing } from './content.ts';
 import type { GameRectangle, Point } from './navigation.ts';
-import { attackDistance, faceTarget, targetDistance, targetScore,type BasicAttackHand } from './basic-attack.ts';
+import { BASIC_COMBO_WINDOW_FRAMES, attackDistance, faceTarget, targetDistance, targetScore,type BasicAttackHand } from './basic-attack.ts';
 import { attackSplashTargets,selectAttackSplashCenter } from './attack-splash.ts';
 import { needsTarget, settleSkillRepeat, skillPlaybackEvents, type SkillRepeatState } from './skill-action.ts';
 import { planCharge } from './target-charge.ts';
@@ -84,7 +84,7 @@ export interface CombatPort {
   moveToward(position: Point): void;
   approachTarget?(target:Combatant,range:number):boolean|void;
   canFinishApproach?(targetId:string):boolean;
-  selectBasicAttack?(normal:ResolvedBasicAttack):BasicAttackSelection;
+  selectBasicAttack?(normal:ResolvedBasicAttack, step:number):BasicAttackSelection;
   stop(): void;
   canStand(position: Point, clearanceActorId?: string): boolean;
   /** 强制位移的整盒判定；省略时退回 `canStand` 的窄足底口径。 */
@@ -164,6 +164,8 @@ export class CombatController {
    * 时钟由 `CombatRuntime` 注册角色时注入；没有时钟的纯单元测试不启用。
    */
   private basicReadyAt = 0;
+  /** 上一段普攻完成时的逻辑帧；自动连打在窗口内再次请求就接下一段。 */
+  private lastBasic?: {profileId:string; endedAt:number; step:number};
   private clock?: () => number;
 
   constructor(casterId: string, basic: ResolvedBasicAttack | null, port: CombatPort) {
@@ -257,6 +259,7 @@ export class CombatController {
     if(target&&attackDistance(caster.position,caster.bounds,target.position,target.bounds)>profile.approachDistanceUnits+rangeBonus&&!combatStateCapabilities(caster.states??[]).canAutoApproach)return 'busy';
     if (replaceBasic) this.cancel(false, false);
     if (wanted && !target) return 'no-target';
+    if (skill) this.lastBasic = undefined;
     this.active = { skill, targetId: target?.id, turnToTarget }; if(target)this.selectedId = target.id;
     this.state = 'approaching'; this.publish(); return this.approach()??'started';
   }
@@ -314,7 +317,12 @@ export class CombatController {
     this.port.stop(); this.state = 'attacking';
     if (skill) this.port.cooldowns.start(skill.id,skill.action.cooldownFrames);
     this.publish();
-    const selection=!skill&&this.basic?(this.port.selectBasicAttack?.(this.basic)??this.basic):this.basic;
+    const stepCount=1+(this.basic?.combo?.length??0);
+    const previous=this.lastBasic;
+    const continuing=!!this.basic&&!!previous&&previous.profileId===this.basic.profileId&&
+      (!this.clock||this.clock()-previous.endedAt<=BASIC_COMBO_WINDOW_FRAMES);
+    const nextStep=continuing&&previous?(previous.step+1)%stepCount:0;
+    const selection=!skill&&this.basic?(this.port.selectBasicAttack?.(this.basic,nextStep)??this.basic):this.basic;
     const basicAttackWait=selection&&'kind'in selection?selection:undefined;
     const basicAttack=selection&&'kind'in selection?null:selection;
     this.active.basicAttack=basicAttack;
@@ -430,6 +438,7 @@ export class CombatController {
     this.cancelPlayback = this.port.play(action, frame, () => {
       if (generation !== this.generation) return;
       this.cancelPlayback?.(); this.cancelPlayback = undefined;
+      if(!skill && action.basicAttack) this.lastBasic = {profileId: action.basicAttack.profileId, endedAt: this.clock?.() ?? 0, step: action.basicAttack.step};
       this.state = 'idle'; this.active = undefined; this.port.stop(); this.publish();
     });
     // 节奏锁从真正开始播放时计，经过接近阶段不算；取消这个动作也不会缩短它。
@@ -437,6 +446,7 @@ export class CombatController {
     frame(0);
   }
   cancel(clearEffects = false, clearTarget = true): void {
+    this.lastBasic = undefined;
     if(this.state === 'idle' && (!clearTarget||!this.selectedId) && !clearEffects)return;
     this.generation++; this.cancelPlayback?.(); this.cancelPlayback = undefined;
     this.state = 'idle'; this.active = undefined; if(clearTarget)this.selectedId = undefined;

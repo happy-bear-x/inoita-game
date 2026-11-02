@@ -73,7 +73,7 @@
 
 `CombatUnit` 按 `effect` 区分类型，每类只带自己的字段。五维权重按力量、敏捷、体力、智力、精力具名，先合计贡献再除十截断。`CombatOperation` 分别携带加减值、乘数、除数或千分比。每级 `ranks` 从已学等级减一索引。概率按整数区间与严格小于判断，状态时长以毫秒表示并在内容中取整；具体字段见 `domain/battle.ts` 与共同校验器。
 
-`battle.json.basicAttacks` 保存共用普攻规则，职业及敌人引用 `profileId` 并绑定四向动画。`cycleFrames`、`strikeFrame`、`swingFrame` 以逻辑帧表示；周期不足以包含出手帧时延长到 `strikeFrame + 1`。图集保存源帧，运行时按有效周期重复末帧或截取。修改规则和已有动画绑定只需改内容，新图片才需要补充素材与内容引用。
+`battle.json.basicAttacks` 保存共用普攻规则，职业及敌人引用 `profileId` 并绑定四向动画。`cycleFrames`、`strikeFrame`、`swingFrame` 以逻辑帧表示；周期不足以包含出手帧时延长到 `strikeFrame + 1`。图集保存源帧，运行时按有效周期重复末帧或截取。修改规则和已有动画绑定只需改内容，新图片才需要补充素材与内容引用。`basicAttacks` 的 `combo` 数组描述第二、三段普攻：每段覆盖四向 `clips`、出手/挥击帧和挥击特效，伤害仍继承基础 profile；玩家和伙伴的装备态 profile 走这条路径，敌人即使共用同一 profile 也只解析第一段。
 
 每项技能同时提供主角分支及 `companion` 分支。`skillForMember` 按固定成员身份选择数值：`player` 使用主角成长，其他队员使用佣兵成长，切换操控不改变分支。地狱之兵的受命动作按主人身份选择。免费初始技能、学习、技能书和初始化由 `StorySkillProgression` 管理；快捷栏由 `Bag` 按角色保存两组六格，技能和物品可放进同一排；同一技能只能占一格，登记到新槽会清掉旧槽，再点已登记该技能的槽位会取消该快捷键。
 

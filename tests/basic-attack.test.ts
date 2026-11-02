@@ -8,8 +8,15 @@ import type { BattleCatalog, BattleClass } from '../src/domain/battle.ts';
 import { CombatController } from '../src/domain/combat.ts';
 import type { CombatPort, Combatant } from '../src/domain/combat.ts';
 import { parseBattle } from '../src/application/content-validation.ts';
+import type { BattleCharacter } from '../src/domain/character-stats.ts';
+import type { ItemCatalog } from '../src/domain/items.ts';
+import type { WardrobeCatalog } from '../src/domain/wardrobe.ts';
+import { equipmentAttackFor } from '../src/rendering/combat-assets.ts';
+import { basicAttackEffects } from '../src/rendering/combat-asset-descriptors.ts';
 const publicRoot=new URL('../public/',import.meta.url);
 const catalog:BattleCatalog=JSON.parse(readFileSync(new URL('content/battle.json',publicRoot),'utf8'));
+const wardrobe:WardrobeCatalog=JSON.parse(readFileSync(new URL('content/wardrobe.json',publicRoot),'utf8'));
+const items:ItemCatalog=JSON.parse(readFileSync(new URL('content/items.json',publicRoot),'utf8'));
 const FACINGS=['north','south','east','west'] as const;
 /** 原版六套初始武器的基线：源动画帧数、周期、出手帧、挥击帧、接近距离、搜索半径。 */
 const baseline = {
@@ -40,6 +47,63 @@ test('six initial weapons keep their verified source frames, cycles, events and 
       assert.deepEqual(attack.sequence[facing],Array.from({length:want.cycle},(_,i)=>Math.min(i,want.source-1)),`${id}/${facing}`);
     }
   }
+});
+
+test('melee profiles expose the original three-step combo; ranged profiles stay single-step',()=>{
+  const combos={
+    'dark-knight':{frames:[8,8],swings:['sword-swing-2','sword-swing-3'],cycle:10,strikes:[4,4],swingsFrames:[3,3]},
+    'assassin':{frames:[6,5],swings:['dagger-swing-2','dagger-swing-3'],cycle:8,strikes:[2,2],swingsFrames:[2,2]},
+    'priest':{frames:[8,8],swings:['sword-swing-2','sword-swing-3'],cycle:11,strikes:[4,4],swingsFrames:[3,3]},
+    'warrior':{frames:[11,11],swings:['heavy-swing-2','heavy-swing-3'],cycle:12,strikes:[4,5],swingsFrames:[3,4]}
+  } as const;
+  for(const [id,want] of Object.entries(combos)){
+    const character=classOf(id),first=resolveBasicAttack(catalog,character);
+    assert.equal(first.step,0,id);assert.equal(first.stepCount,3,id);
+    for(const step of [1,2]){
+      const attack=resolveBasicAttack(catalog,character,undefined,step);
+      assert.equal(attack.step,step,id);
+      assert.equal(attack.stepCount,3,id);
+      assert.equal(attack.cycleFrames,want.cycle,`${id}/${step}`);
+      assert.equal(attack.effectiveCycleFrames,want.cycle,`${id}/${step}`);
+      assert.equal(attack.strikeFrame,want.strikes[step-1],`${id}/${step}`);
+      assert.equal(attack.swingFrame,want.swingsFrames[step-1],`${id}/${step}`);
+      assert.equal(attack.swings[0],want.swings[step-1],`${id}/${step}`);
+      assert.deepEqual(attack.damage,first.damage,`${id}/${step}`);
+      for(const facing of FACINGS){
+        assert.equal(attack.clips[facing],`attack-${step+1}-${facing}`,`${id}/${step}/${facing}`);
+        assert.equal(character.actor.clips[attack.clips[facing]]?.frames,want.frames[step-1],`${id}/${step}/${facing}`);
+        assert.equal(attack.sequence[facing].length,want.cycle,`${id}/${step}/${facing}`);
+      }
+    }
+  }
+  for(const id of ['warlock','ranger']){
+    const attack=resolveBasicAttack(catalog,classOf(id));
+    assert.equal(attack.stepCount,1,id);assert.equal(attack.combo,undefined,id);
+    assert.throws(()=>resolveBasicAttack(catalog,classOf(id),undefined,1),/连段超出范围/,id);
+  }
+});
+
+test('equipped longsword resolves combo steps from the wardrobe profile',()=>{
+  const hero={bag:{equipmentFor:()=>({'main-hand':'longsword'}),equipmentItems:()=>({'main-hand':'longsword'})}} as unknown as BattleCharacter;
+  const actor=classOf('dark-knight').actor;
+  const first=equipmentAttackFor(wardrobe,items,hero,actor);
+  assert.equal(first.profileId,'equipped');assert.equal(first.step,0);assert.equal(first.stepCount,3);
+  const second=equipmentAttackFor(wardrobe,items,hero,actor,'player',1);
+  const third=equipmentAttackFor(wardrobe,items,hero,actor,'player',2);
+  assert.equal(second.step,1);assert.equal(third.step,2);
+  assert.equal(second.clips.south,'attack-2-south');
+  assert.equal(third.clips.south,'attack-3-south');
+  assert.deepEqual(second.damage,first.damage);assert.deepEqual(third.damage,first.damage);
+  assert.deepEqual([first.swings[0],second.swings[0],third.swings[0]],['sword-swing','sword-swing-2','sword-swing-3']);
+});
+
+test('combo swing effects are collected with the basic attack profile',()=>{
+  const sword=basicAttackEffects(catalog,wardrobe.attacks['longsword:empty']);
+  assert.ok(sword['sword-swing-2']);assert.ok(sword['sword-swing-3']);
+  const dagger=basicAttackEffects(catalog,wardrobe.attacks['dagger:empty']);
+  assert.ok(dagger['dagger-swing-2']);assert.ok(dagger['dagger-swing-3']);
+  const heavy=basicAttackEffects(catalog,wardrobe.attacks['two-handed:empty']);
+  assert.ok(heavy['heavy-swing-2']);assert.ok(heavy['heavy-swing-3']);
 });
 
 test('extending, shortening and outrunning the source frames all keep events reachable',()=>{

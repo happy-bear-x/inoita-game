@@ -45,6 +45,12 @@ export interface BasicAttackDefinition {
   targetEffects?: SkillVisualEffect[];
   transition?: SkillTransition;
   projectile: { effect: string; stepDistancePx: number; stepDurationMs: number; offsetX: number; offsetY: number } | null;
+  /** 第二段起；第一段继续使用上面的基础字段和 BasicAttackBinding.clips。 */
+  combo?: BasicAttackComboStep[];
+}
+/** 第二、三段普攻：覆盖基础规则里的时序/特效，并绑定这一段的四向动画。 */
+export interface BasicAttackComboStep extends Partial<Omit<BasicAttackDefinition, 'damage' | 'combo'>> {
+  clips: Record<Facing, ClipName>;
 }
 /** 角色对普攻规则的引用：用哪份规则，四方向分别播哪个角色动画。 */
 export interface BasicAttackBinding {
@@ -53,6 +59,10 @@ export interface BasicAttackBinding {
 }
 /** 装配时解析出的普攻：规则、角色动画和按方向展开的逻辑帧序列。 */
 export interface ResolvedBasicAttack extends BasicAttackDefinition {
+  /** 这份规则在普攻连段里的段号（0 起）、总段数和来源 profile。 */
+  readonly profileId: string;
+  readonly step: number;
+  readonly stepCount: number;
   /** 有效周期帧数，不小于配置周期，且一定覆盖出手帧。 */
   readonly effectiveCycleFrames: number;
   readonly clips: Record<Facing, ClipName>;

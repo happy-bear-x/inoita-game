@@ -4,6 +4,9 @@ import type { BasicAttackBinding, BattleCatalog, ResolvedBasicAttack } from './b
 export interface Point { x: number; y: number; }
 export type BasicAttackHand=NonNullable<ResolvedBasicAttack['strikes']>[number]['hand'];
 
+/** 上一击完成后，自动连打在这个逻辑帧窗口内再次发起就视为同一段连击。 */
+export const BASIC_COMBO_WINDOW_FRAMES = 2;
+
 /** 四种朝向的固定顺序，用于遍历四向动画。 */
 export const FACINGS: readonly Facing[] = ['north', 'south', 'east', 'west'];
 
@@ -45,27 +48,31 @@ export function basicAttackStrikesAtFrame(attack:Pick<ResolvedBasicAttack,'strik
  * 逻辑帧序列按每个方向的源动画帧数展开。控制器、表现层和资源收集共用这一份结果。
  * `cycleFrames` 可覆盖普通攻击周期；固定动画始终使用配置的完整素材帧数。
  */
-export function resolveBasicAttack(catalog: Pick<BattleCatalog,'basicAttacks'>, character: { actor: ActorDefinition; basicAttack: BasicAttackBinding | null }, cycleFrames?: number): ResolvedBasicAttack {
+export function resolveBasicAttack(catalog: Pick<BattleCatalog,'basicAttacks'>, character: { actor: ActorDefinition; basicAttack: BasicAttackBinding | null }, cycleFrames?: number, step = 0): ResolvedBasicAttack {
   if (!character.basicAttack) throw new Error(`角色没有普攻：${character.actor.id}`);
   const { profileId, clips } = character.basicAttack;
   const definition = catalog.basicAttacks[profileId];
   if (!definition) throw new Error(`普攻规则缺失：${profileId}`);
-  const configured = definition.timing==='fixed-animation'?definition.cycleFrames:cycleFrames??definition.cycleFrames;
-  const effectiveCycleFrames = Math.max(configured, definition.strikeFrame + 1);
+  const combo = definition.combo ?? [];
+  if (!Number.isInteger(step) || step < 0 || step > combo.length) throw new Error(`普攻连段超出范围：${profileId} step ${step}`);
+  const stage = step === 0 ? undefined : combo[step - 1];
+  const merged = stage ? { ...definition, ...stage } : definition;
+  const configured = merged.timing==='fixed-animation'?merged.cycleFrames:cycleFrames??merged.cycleFrames;
+  const effectiveCycleFrames = Math.max(configured, merged.strikeFrame + 1);
   const resolvedClips = {} as Record<Facing, ClipName>;
   const sequence = {} as Record<Facing, number[]>;
   for (const facing of FACINGS) {
-    const name = clips[facing];
+    const name = stage ? stage.clips[facing] : clips[facing];
     if (!name) throw new Error(`普攻动画绑定缺失：${facing}`);
     const clip = character.actor.clips[name];
     if (!clip) throw new Error(`普攻动画缺失：${name}`);
     if (!Number.isInteger(clip.frames) || clip.frames <= 0) throw new Error(`普攻源动画帧数无效：${name}`);
-    if(definition.timing==='fixed-animation'&&clip.frames!==effectiveCycleFrames)
+    if(merged.timing==='fixed-animation'&&clip.frames!==effectiveCycleFrames)
       throw new Error(`固定普攻周期与素材帧数不匹配：${name}`);
     resolvedClips[facing] = name;
     sequence[facing] = attackSequence(clip.frames, effectiveCycleFrames);
   }
-  return { ...definition, effectiveCycleFrames, clips: resolvedClips, sequence };
+  return { ...merged, profileId, step, stepCount: combo.length + 1, effectiveCycleFrames, clips: resolvedClips, sequence };
 }
 
 /** 选敌使用的整数近似距离；用于选敌和投射物到达判断。 */

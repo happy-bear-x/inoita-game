@@ -20,7 +20,7 @@ function setup(){
  const plays:{action:ActionPlayback;frame:(index:number)=>void;finish:()=>void;cancelled:boolean}[]=[];
  const port:CombatPort={canSelectSkill:()=>true,cooldowns:cooldowns.forActor('player'),actor:id=>[caster,enemy].find(a=>a.id===id),candidates:()=>[caster,enemy],facing:()=> 'east',moveToward:()=>{},stop:()=>{},canStand:()=>true,relocate:()=>{},play:(action,onFrame,onComplete)=>{frame=onFrame;complete=onComplete;const play={action,frame:onFrame,finish:onComplete,cancelled:false};plays.push(play);return ()=>{play.cancelled=true;};},frame:(action,index,contact)=>{fired.push(index);const attack=action.basicAttack;if(!action.skill&&attack&&index===attack.strikeFrame&&!attack.projectile&&!attack.transition&&action.target)contact(action.target.id);},clearEffects:()=>{cleared++;}};
  const combat=new CombatController('player',resolveBasicAttack(catalog,catalog.classes[0]),port);
- return {combat,port,plays,fired,cooldowns,advanceFrames:(frames:number)=>{nowFrame+=frames;},frame:(index:number)=>frame!(index),finish:()=>complete!(),cleared:()=>cleared};
+ return {combat,port,plays,fired,cooldowns,clock:()=>nowFrame,advanceFrames:(frames:number)=>{nowFrame+=frames;},frame:(index:number)=>frame!(index),finish:()=>complete!(),cleared:()=>cleared};
 }
 
 test('active action exposes its own target rather than the previous selection during a self buff',()=>{
@@ -82,6 +82,19 @@ test('basic replacement is selected once at approach completion and its hand pro
   assert.equal(run.combat.request({id:'spell',action:{events:[],requiresTarget:false,
     cooldownFrames:0,approachDistanceUnits:0,searchRadiusPx:64,transition:null}}),'started');
   assert.equal(calls,2);
+});
+
+test('continuous basic attacks advance the melee combo; a gap or cancel resets it',()=>{
+  const run=setup();run.combat.useClock(run.clock);
+  const steps:number[]=[];
+  run.port.selectBasicAttack=(normal,step)=>{assert.equal(normal.profileId,'longsword-slash');steps.push(step);return resolveBasicAttack(catalog,catalog.classes[0],undefined,step);};
+  const attack=()=>{assert.equal(run.combat.requestTarget(enemy.id),'started');run.advanceFrames(10);run.finish();};
+  attack();attack();attack();attack();
+  assert.deepEqual(steps,[0,1,2,0]);
+  // 停 3 个逻辑帧再打：超过连段窗口，回到第一段。
+  run.advanceFrames(3);attack();assert.deepEqual(steps,[0,1,2,0,0]);
+  // 取消也会清掉连段。
+  attack();assert.equal(steps.at(-1),1);run.combat.cancel();attack();assert.equal(steps.at(-1),0);
 });
 
 test('basic contacts deduplicate each hand separately and callbacks from a replaced action stop',()=>{
@@ -355,6 +368,8 @@ test('independent input locks cannot release each other',()=>{
 });
 test('content rejects unknown fields, missing variants and out-of-range event frames',()=>{
  const unknown=structuredClone(catalog);Object.assign(unknown.skills['dark-strike'].action!,{unexpectedField:1});assert.throws(()=>parseBattle(unknown),/unexpectedField/);
+ const unknownCombo=structuredClone(catalog);Object.assign(unknownCombo.basicAttacks['longsword-slash'].combo![0],{unexpectedComboField:1});assert.throws(()=>parseBattle(unknownCombo),/unexpectedComboField/);
+ const missingCombo=structuredClone(catalog);delete (missingCombo.basicAttacks['longsword-slash'].combo![0].clips as unknown as Record<string,string>).east;assert.throws(()=>parseBattle(missingCombo),/clips/);
  const frames=structuredClone(catalog);frames.skills['dark-strike'].action!.events.at(-1)!.frame=10000;assert.throws(()=>parseBattle(frames),/触发帧/);
  const missing=structuredClone(catalog);delete missing.attackEffects[missing.basicAttacks['longsword-slash'].swings[0]].clips.east;assert.throws(()=>parseBattle(missing),/变体/);
  const stationary=structuredClone(catalog);delete stationary.attackEffects['phantom-sword'];assert.throws(()=>parseBattle(stationary),/特效/);

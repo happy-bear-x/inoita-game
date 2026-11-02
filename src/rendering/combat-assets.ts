@@ -56,12 +56,12 @@ export function classSummonEnemyIds(catalog: BattleCatalog, classId: string): st
 }
 
 /** 装配后的普攻；装备只通过 hero.bag 读取，不依赖场景。 */
-export function equipmentAttackFor(wardrobe: WardrobeCatalog, items: ItemCatalog, hero: BattleCharacter, actor: ActorDefinition, memberId = 'player'): ResolvedBasicAttack {
+export function equipmentAttackFor(wardrobe: WardrobeCatalog, items: ItemCatalog, hero: BattleCharacter, actor: ActorDefinition, memberId = 'player', step = 0): ResolvedBasicAttack {
   const { attack } = costumeRecipe(wardrobe, items, hero.bag.equipmentItems(hero.bag.equipmentFor(memberId)));
   return resolveBasicAttack({ basicAttacks: { equipped: attack } }, {
     actor,
     basicAttack: { profileId: 'equipped', clips: { north: 'attack-north' as const, south: 'attack-south' as const, east: 'attack-east' as const, west: 'attack-west' as const } satisfies Record<Facing, string> }
-  });
+  }, undefined, step);
 }
 
 export interface PlayerCombatAssetInput {

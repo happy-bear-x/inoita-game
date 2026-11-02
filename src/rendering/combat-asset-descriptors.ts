@@ -111,6 +111,15 @@ export function basicAttackEffects(catalog: BattleCatalog, attack: BasicAttackDe
   if (attack.projectile) names.add(attack.projectile.effect);
   if (attack.transition?.effect) names.add(attack.transition.effect);
   if (attack.transition?.actionEffect) names.add(attack.transition.actionEffect);
+  for (const step of attack.combo ?? []) {
+    for (const name of step.swings ?? []) names.add(name);
+    for (const name of step.impacts ?? []) names.add(name);
+    for (const effect of step.targetEffects ?? []) names.add(effect.effect);
+    for (const effect of step.dispatch?.casterEffects ?? []) names.add(effect.effect);
+    if (step.projectile) names.add(step.projectile.effect);
+    if (step.transition?.effect) names.add(step.transition.effect);
+    if (step.transition?.actionEffect) names.add(step.transition.actionEffect);
+  }
   return Object.fromEntries([...names].filter(name => catalog.attackEffects[name]).map(name => [name, catalog.attackEffects[name]]));
 }
 

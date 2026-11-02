@@ -1946,7 +1946,7 @@ captureStoryActors():SceneActorState[] {
     const setFacing=(value:Facing)=>{if(id==='player')this.scene.facing=value;else{const ally=combatActor(this.allies,id,actor=>actor.id);if(ally)ally.facing=value;}};
     const port:PartyPort={
       isPaused:()=>this.runtime.paused,cooldowns:this.app.session.cooldowns.forActor(id),
-      selectBasicAttack:normal=>this.selectBasicAttack(id,visual.actor,normal),
+      selectBasicAttack:(normal,step)=>this.selectBasicAttack(id,visual.actor,normal,step),
       actor:key=>this.combatant(key),candidates:()=>this.combatants(),partySlots:()=>this.partyBuffSlots(),
       isAlive:key=>this.isActorAlive(key),
       rangeBonusUnits:key=>this.actorAttribute(key,'attackRangeBonusUnits'),
@@ -2325,23 +2325,24 @@ captureStoryActors():SceneActorState[] {
     this.setPerformanceActive(this.scene.performing);
     this.scene.refreshCombatTarget();
   }
-  private equipmentAttack(actor:ActorDefinition,id='player'){
-    return equipmentAttackFor(this.app.wardrobe,this.app.items,this.hero,actor,id);
+  private equipmentAttack(actor:ActorDefinition,id='player',step=0){
+    return equipmentAttackFor(this.app.wardrobe,this.app.items,this.hero,actor,id,step);
   }
-  private selectBasicAttack(id:string,actor:ActorDefinition,normal:ResolvedBasicAttack):BasicAttackSelection {
+  private selectBasicAttack(id:string,actor:ActorDefinition,normal:ResolvedBasicAttack,step=0):BasicAttackSelection {
     const member=this.memberOf(id);if(!member)return normal;
     const equipment=member.bag.equipmentItems(member.bag.equipmentFor(id));
     const offhand=equipment['off-hand'];
+    const normalStep=()=>step===0?normal:this.equipmentAttack(actor,id,step);
     if(chooseDualWield(member.classId,!!offhand&&this.app.items.items[offhand].equipment?.slot==='main-hand',
       {random:Math.random,chance:()=>this.actorAttribute(id,'offhandAttackChance')})){
       const profile=costumeRecipe(this.app.wardrobe,this.app.items,equipment).dualWieldAttack;
-      if(!profile)return normal;
+      if(!profile)return normalStep();
       return resolveBasicAttack({basicAttacks:{'dual-wield':profile}},
         {actor,basicAttack:{profileId:'dual-wield',clips:profile.clips}});
     }
-    if(this.actorAttribute(id,'frenzyAttackChance')<=0)return normal;
+    if(this.actorAttribute(id,'frenzyAttackChance')<=0)return normalStep();
     const roll=Math.floor(Math.random()*999)+1;
-    if(roll>=this.actorAttribute(id,'frenzyAttackChance'))return normal;
+    if(roll>=this.actorAttribute(id,'frenzyAttackChance'))return normalStep();
     const recipe=costumeRecipe(this.app.wardrobe,this.app.items,member.bag.equipmentItems(member.bag.equipmentFor(id)));
     if(!recipe.frenzyAttack&&recipe.frenzyWaitFrames===undefined)throw new Error('当前装备缺少战栗的狂气动作定义');
     const durationFrames=this.app.session.frenzyAnimations.select(id,recipe.frenzyAttack?.cycleFrames,

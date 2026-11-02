@@ -8,7 +8,7 @@ import { CONTROL_PARTS, type ControlSkin } from '../domain/control-skin.ts';
 import type { ActorDefinition, WorldIndex, WorldMap, AnimationClip, DialogueAction, EffectClip, EffectLayer } from '../domain/content.ts';
 import { STORY_POSE_NAMES } from '../domain/content.ts';
 import type { Campaign } from '../domain/campaign.ts';
-import type { ActionDispatchDefinition, BasicAttackBinding, BasicAttackDefinition, BattleBuffEffect, BattleCatalog, EffectPlacement, EnemyBehavior, ResolvedBasicAttack, SkillAction, SkillAfterimages, SkillCharge, SkillEffectCue, SkillTransition, SkillVisualEffect, StateDurationProfile } from '../domain/battle.ts';
+import type { ActionDispatchDefinition, BasicAttackBinding, BasicAttackComboStep, BasicAttackDefinition, BattleBuffEffect, BattleCatalog, EffectPlacement, EnemyBehavior, ResolvedBasicAttack, SkillAction, SkillAfterimages, SkillCharge, SkillEffectCue, SkillTransition, SkillVisualEffect, StateDurationProfile } from '../domain/battle.ts';
 import { COMBAT_OUTCOME_EFFECTS } from '../domain/combat-outcomes.ts';
 import { ACCEPTED_LEARNED_BUFF_SKILLS, LEARNED_REACTION_SKILLS, enemySkills, LOGIC_FRAME_MS } from '../domain/battle.ts';
 import { BATTLE_BUFF_KEYS, BATTLE_STATE_KEYS, BATTLE_STAT_KEYS } from '../domain/battle-semantics.ts';
@@ -369,6 +369,11 @@ export function parseWardrobe(value:unknown):WardrobeCatalog {
     for(const variant of Object.values(variants))requireValue(result.variants[variant],'wardrobe.equipment','服装样式不存在');
   for(const stance of [...Object.values(result.stances),...Object.values(result.skills)])for(const pose of Object.values(stance))requireValue(result.poses[pose!],'wardrobe.stances','动作不存在');
   for(const id of Object.keys(result.stances))requireValue(result.attacks[id],'wardrobe.attacks','普攻规则缺失');
+  for(const [id,attack]of Object.entries(result.attacks)){
+    requireValue(result.stances[id],'wardrobe.attacks','武器动作缺失');
+    for(const step of attack.combo??[])for(const facing of ['north','south','east','west'] as const)
+      requireValue(result.stances[id][step.clips[facing]],'wardrobe.attacks',`连击人物动作缺失 ${id}.${step.clips[facing]}`);
+  }
   for(const [id,attack]of Object.entries(result.dualWieldAttacks??{})){
     requireValue(result.stances[id],'wardrobe.dualWieldAttacks','武器动作不存在');
     requireValue(attack.strikes?.length===2&&attack.strikes[0].hand==='main-hand'&&attack.strikes[1].hand==='offhand'&&attack.strikes[0].frame===attack.strikeFrame&&attack.strikes[1].frame>attack.strikeFrame,'wardrobe.dualWieldAttacks','双持出手顺序无效');
@@ -413,8 +418,12 @@ export function validateWardrobe(wardrobe:WardrobeCatalog,items:ItemCatalog,batt
         const key=`skill-${id}-${facing}` as const,pose=wardrobe.skills[character.id]?.[key];
         requireValue(pose&&wardrobe.poses[pose]?.frames.length===character.actor.clips[key]?.frames,'wardrobe.skills',`技能动画缺失或时长不匹配 ${key}`);
       }
-    for(const attack of [...Object.values(wardrobe.attacks),...Object.values(wardrobe.dualWieldAttacks??{}),...Object.values(wardrobe.frenzyAttacks??{})])for(const effect of [...attack.swings,...attack.impacts,...attack.projectile?[attack.projectile.effect]:[]])
-      requireValue(battle.attackEffects[effect],'wardrobe.attacks',`普攻特效缺失 ${effect}`);
+    for(const attack of [...Object.values(wardrobe.attacks),...Object.values(wardrobe.dualWieldAttacks??{}),...Object.values(wardrobe.frenzyAttacks??{})]){
+      for(const effect of [...attack.swings,...attack.impacts,...attack.projectile?[attack.projectile.effect]:[]])
+        requireValue(battle.attackEffects[effect],'wardrobe.attacks',`普攻特效缺失 ${effect}`);
+      for(const step of attack.combo??[])for(const effect of [...(step.swings??[]),...(step.impacts??[]),...(step.projectile?[step.projectile.effect]:[])])
+        requireValue(battle.attackEffects[effect],'wardrobe.attacks',`普攻特效缺失 ${effect}`);
+    }
     parseBattle(battle,wardrobe);
   }
 }
@@ -835,7 +844,18 @@ const basicAttackDamage:Check=(value,path)=>{
   requireValue(unit.effect==='physical'||unit.effect==='magic',path+'.effect','普攻需要物理或魔法伤害');
   requireValue(unit.ranks.length===1,path+'.ranks','普攻需要一份等级公式');
 };
-const basicAttackFields=shape<BasicAttackDefinition>({damage:basicAttackDamage,dispatch:optional(actionDispatch),hitEffectStyle:optional(oneOf('weapon','skill')),manaGemDrop:optional(oneOf('skill','weapon')),timing:optional(oneOf('fixed-animation')),targeting:optional(object({target:oneOf('area'),targetRangePx:positive,targetRangeMetric:oneOf('octagonal-grid')})),frameDurationMs:positive,cycleFrames:count,approachDistanceUnits:number,searchRadiusPx:positive,strikeFrame:integer,strikes:optional(array(object({frame:integer,hand:oneOf('main-hand','offhand')}))),swingFrame:nullable(integer),swingOrder:optional(oneOf('after-strike')),projectilePlacement:optional(oneOf('world','above-characters')),swingPlacement:optional(oneOf('world','above-characters')),impactPlacement:optional(oneOf('world','attached')),swings:strings,impacts:strings,targetEffects:optional(array(visualEffect)),transition:optional(transition),projectile:nullable(object({effect:text,stepDistancePx:positive,stepDurationMs:positive,offsetX:number,offsetY:number}))});
+const basicAttackComboStep=shape<BasicAttackComboStep>({
+  clips:object({north:text,south:text,east:text,west:text}),
+  dispatch:optional(actionDispatch),hitEffectStyle:optional(oneOf('weapon','skill')),manaGemDrop:optional(oneOf('skill','weapon')),
+  timing:optional(oneOf('fixed-animation')),targeting:optional(object({target:oneOf('area'),targetRangePx:positive,targetRangeMetric:oneOf('octagonal-grid')})),
+  frameDurationMs:optional(positive),cycleFrames:optional(count),approachDistanceUnits:optional(number),searchRadiusPx:optional(positive),
+  strikeFrame:optional(integer),strikes:optional(array(object({frame:integer,hand:oneOf('main-hand','offhand')}))),
+  swingFrame:optional(nullable(integer)),swingOrder:optional(oneOf('after-strike')),
+  projectilePlacement:optional(oneOf('world','above-characters')),swingPlacement:optional(oneOf('world','above-characters')),impactPlacement:optional(oneOf('world','attached')),
+  swings:optional(strings),impacts:optional(strings),targetEffects:optional(array(visualEffect)),transition:optional(transition),
+  projectile:optional(nullable(object({effect:text,stepDistancePx:positive,stepDurationMs:positive,offsetX:number,offsetY:number}))),
+});
+const basicAttackFields=shape<BasicAttackDefinition>({damage:basicAttackDamage,dispatch:optional(actionDispatch),hitEffectStyle:optional(oneOf('weapon','skill')),manaGemDrop:optional(oneOf('skill','weapon')),timing:optional(oneOf('fixed-animation')),targeting:optional(object({target:oneOf('area'),targetRangePx:positive,targetRangeMetric:oneOf('octagonal-grid')})),frameDurationMs:positive,cycleFrames:count,approachDistanceUnits:number,searchRadiusPx:positive,strikeFrame:integer,strikes:optional(array(object({frame:integer,hand:oneOf('main-hand','offhand')}))),swingFrame:nullable(integer),swingOrder:optional(oneOf('after-strike')),projectilePlacement:optional(oneOf('world','above-characters')),swingPlacement:optional(oneOf('world','above-characters')),impactPlacement:optional(oneOf('world','attached')),swings:strings,impacts:strings,targetEffects:optional(array(visualEffect)),transition:optional(transition),projectile:nullable(object({effect:text,stepDistancePx:positive,stepDurationMs:positive,offsetX:number,offsetY:number})),combo:optional(array(basicAttackComboStep))});
 const basicAttack:Check=(value,path)=>{
   basicAttackFields(value,path);
   const attack=value as BattleCatalog['basicAttacks'][string];
@@ -844,6 +864,19 @@ const basicAttack:Check=(value,path)=>{
     requireValue(attack.swingFrame===null||attack.swingFrame<attack.cycleFrames,`${path}.swingFrame`,'固定动画需要包含挥击帧');
   }
   if(attack.targeting)requireValue(!attack.strikes&&!attack.projectile&&!attack.transition,`${path}.targeting`,'范围普攻需要一次直接出手');
+  if(attack.combo){
+    requireValue(attack.combo.length>0&&attack.combo.length<=2,`${path}.combo`,'普攻最多三段');
+    for(const [index,step] of attack.combo.entries()){
+      const stepPath=`${path}.combo[${index}]`;
+      const cycle=step.cycleFrames??attack.cycleFrames,strike=step.strikeFrame??attack.strikeFrame;
+      const effective=Math.max(cycle,strike+1),swing=step.swingFrame===undefined?attack.swingFrame:step.swingFrame;
+      requireValue(swing===null||swing<effective,`${stepPath}.swingFrame`,'挥击帧超出有效周期');
+      if((step.timing??attack.timing)==='fixed-animation'){
+        requireValue(strike<cycle,`${stepPath}.strikeFrame`,'固定动画需要包含出手帧');
+        requireValue(swing===null||swing<cycle,`${stepPath}.swingFrame`,'固定动画需要包含挥击帧');
+      }
+    }
+  }
 };
 const boundBasicAttack:Check=(value,path)=>{
   const {clips,...attack}=value as Record<string,unknown>;basicAttack(attack,path);
@@ -1009,18 +1042,22 @@ export function parseBattle(value:unknown,wardrobe?:WardrobeCatalog):BattleCatal
   const attachedPlacements:EffectPlacement[]=[];
   const headings=[0,23,45,68,90,112,135,157,180,203,225,248,270,292,315,337].map(angle=>`heading-${angle}`);
   // 普攻用装配时的同一份解析结果校验：规则引用、四向动画和逻辑帧序列都走这里。
-  const resolveAttack=(character:{id:string;actor:ActorDefinition;basicAttack:BasicAttackBinding|null}):ResolvedBasicAttack=>{
-    try{return resolveBasicAttack(result,character);}
-    catch(error){throw new Error(`内容无效 ${character.id}.basicAttack: ${error instanceof Error?error.message:String(error)}`);}
+  const resolveAttack=(character:{id:string;actor:ActorDefinition;basicAttack:BasicAttackBinding|null},step=0):ResolvedBasicAttack=>{
+    try{return resolveBasicAttack(result,character,undefined,step);}
+    catch(error){throw new Error(`内容无效 ${character.id}.basicAttack${step?`.combo[${step-1}]`:''}: ${error instanceof Error?error.message:String(error)}`);}
   };
-  const checkAttack=(character:{id:string;actor:ActorDefinition;basicAttack:BasicAttackBinding|null})=>{
-    const profile=resolveAttack(character),profileId=character.basicAttack!.profileId;
-    requireValue(profile.swingFrame===null||profile.swingFrame<profile.effectiveCycleFrames,`basicAttacks.${profileId}.swingFrame`,`挥击帧超出有效周期 ${profile.effectiveCycleFrames}`);
-    for(const name of profile.swings)effect(name,facings);for(const name of profile.impacts)effect(name,['default']);
-    if(profile.projectile)effect(profile.projectile.effect,headings);
-    for(const item of [...profile.targetEffects??[],...profile.dispatch?.casterEffects??[]]){effect(item.effect,['default']);attachedPlacements.push(item.placement);}
-    if(profile.transition){effect(profile.transition.actionEffect,['default']);effect(profile.transition.effect,profile.transition.kind==='trace'&&profile.transition.directional!==false?headings:['default']);}
-    return profile;
+  const checkAttack=(character:{id:string;actor:ActorDefinition;basicAttack:BasicAttackBinding|null},validateCombo=true)=>{
+    const base=resolveAttack(character),profileId=character.basicAttack!.profileId;
+    for(const step of validateCombo?[0,...(base.combo??[]).map((_,index)=>index+1)]:[0]){
+      const profile=step===0?base:resolveAttack(character,step);
+      const path=step===0?`basicAttacks.${profileId}`:`basicAttacks.${profileId}.combo[${step-1}]`;
+      requireValue(profile.swingFrame===null||profile.swingFrame<profile.effectiveCycleFrames,`${path}.swingFrame`,`挥击帧超出有效周期 ${profile.effectiveCycleFrames}`);
+      for(const name of profile.swings)effect(name,facings);for(const name of profile.impacts)effect(name,['default']);
+      if(profile.projectile)effect(profile.projectile.effect,headings);
+      for(const item of [...profile.targetEffects??[],...profile.dispatch?.casterEffects??[]]){effect(item.effect,['default']);attachedPlacements.push(item.placement);}
+      if(profile.transition){effect(profile.transition.actionEffect,['default']);effect(profile.transition.effect,profile.transition.kind==='trace'&&profile.transition.directional!==false?headings:['default']);}
+    }
+    return base;
   };
   const checkSkill=(id:string,action:SkillAction,actor:ActorDefinition,clips:Record<typeof facings[number], keyof ActorDefinition['clips']>,ranks:number)=>{
       const unitFrames=action.events.filter(event=>event.kind==='units').map(event=>event.frame);
@@ -1101,7 +1138,7 @@ export function parseBattle(value:unknown,wardrobe?:WardrobeCatalog):BattleCatal
       requireValue(enemy.behavior.aggression==='none',enemy.id,'主动或被动敌人需要普攻或可用技能');
       requireValue(enemy.displayOnlyReason?.trim(),enemy.id,'只有展示用途的敌人需要说明原因');
     }else{
-      if(enemy.basicAttack)checkAttack(enemy);
+      if(enemy.basicAttack)checkAttack(enemy,false);
       for(const facing of facings)requireValue(enemy.actor.clips[`idle-${facing}`],enemy.id,`待机动画缺失 ${facing}`);
     }
     if(enemy.behavior.canMove){

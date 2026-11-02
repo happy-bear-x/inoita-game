@@ -36,7 +36,7 @@ function damageAction(effect:'physical'|'magic'='physical',source:NumericCombatU
     combatUnits:[{effect,source,attributeWeights:{...primary},ranks:[{fixedAddition:amount,operation:{kind:'keep'}}]}]};
 }
 function resolved(definition:BasicAttackDefinition):ResolvedBasicAttack {
-  return {...definition,effectiveCycleFrames:definition.cycleFrames,
+  return {...definition,profileId:'test',step:0,stepCount:1,effectiveCycleFrames:definition.cycleFrames,
     clips:{north:'attack-north',south:'attack-south',east:'attack-east',west:'attack-west'},
     sequence:{north:[],south:[],east:[],west:[]}};
 }
