@@ -827,7 +827,8 @@ test('using a skill book opens the icon page and returns to the bag', t => {
   assert.equal(f.internals.page, 'learn', '技能书打开独立页面');
   assert.equal(f.internals.modal.root.visible, false, '不铺弹层');
   assert.equal(f.internals.skillBook?.entryId, book.id);
-  for (const id of skills) assert.equal(f.scene.buttons(battle.skills[id].name).length, 1, `图标格：${battle.skills[id].name}`);
+  assert.equal(f.scene.buttons(battle.skills[skillId].name).length, 1, '可升级技能进图标格');
+  for (const id of skills.slice(1)) assert.equal(f.scene.buttons(battle.skills[id].name).length, 0, '未达上限的技能不显示');
   f.scene.click(f.scene.button('使用技能书'));
   assert.equal(f.session.bag.count('skillbook'), 1, '技能书只消耗一本');
   assert.equal(f.session.skills.level(skillId), rank + 1, '技能提升一级');
@@ -839,18 +840,23 @@ test('using a skill book opens the icon page and returns to the bag', t => {
   assert.equal(f.scene.buttons('使用').length, 1, '下一次点一次技能书就能重新打开说明');
 });
 
-test('skill book page explains why a skill cannot be upgraded', t => {
+test('skill book page only lists upgradable skills and has an empty state', t => {
   const f = fixture(); t.after(f.cleanup); f.hero.addExperience(Number.MAX_SAFE_INTEGER);
   const skills = battle.classes.find(value => value.id === f.hero.classId)!.skills;
-  const capped = skills[0]!, uncapped = skills[1]!;
-  while (f.session.skills.level(capped) < battle.skills[capped].normalMaxLevel) f.session.skills.learn(capped);
+  const capped = skills[0]!;
   const book = f.add('skillbook');
   f.menu.debugDescribe(book.id); f.scene.click(f.scene.button('使用'));
-  assert.equal(f.internals.skillBook?.selected, capped, '默认停在可升级的技能上');
-  f.scene.click(f.scene.button(battle.skills[uncapped].name));
-  assert.equal(f.internals.skillBook?.selected, uncapped);
-  assert(f.scene.texts().some(text => text.startsWith(`技能达到 ${battle.skills[uncapped].normalMaxLevel} 级后才能使用技能书`)));
-  assert.equal(f.scene.button('使用技能书').input!.enabled, false, '不可升级时按钮置灰');
+  assert(f.scene.texts().includes('暂无可升级技能'), '没有技能达到上限时显示空状态');
+  assert.equal(f.scene.button('使用技能书').input!.enabled, false, '空状态下不能使用');
+  for (const id of skills) assert.equal(f.scene.buttons(battle.skills[id].name).length, 0);
+  f.scene.click(f.scene.button('返回'));
+
+  while (f.session.skills.level(capped) < battle.skills[capped].normalMaxLevel) f.session.skills.learn(capped);
+  f.menu.debugDescribe(book.id); f.scene.click(f.scene.button('使用'));
+  assert.equal(f.scene.buttons(battle.skills[capped].name).length, 1, '达到上限的技能出现在图标格');
+  for (const id of skills.slice(1)) assert.equal(f.scene.buttons(battle.skills[id].name).length, 0, '其余技能仍不显示');
+  assert.equal(f.internals.skillBook?.selected, capped, '自动选中唯一的可升级技能');
+  assert.equal(f.scene.button('使用技能书').input!.enabled, true);
 });
 
 test('skill description colors, unchanged comparisons and learning button share native requirements',t=>{

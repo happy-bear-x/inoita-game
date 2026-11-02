@@ -11,9 +11,8 @@ import type { ScrollArea, UiSurface } from './widgets.ts';
 /**
  * 技能书页面：从背包点「使用」进入的独立菜单页，和强化台同级。
  *
- * 左框按技能目录页的图标格铺满本职业全部技能，可用技能挂一枚技能书角标、不可用的压暗；
- * 右框显示所选技能当前等级、使用后的等级变化和下一级数值预览。确认后才真正消耗技能书，
- * 结算走 `Bag.use`，和背包弹层用的是同一条领域路径。
+ * 左框只列当前能升级的技能图标，右框显示所选技能当前等级、使用后的等级变化和下一级数值预览。
+ * 确认后才真正消耗技能书，结算走 `Bag.use`，和背包弹层用的是同一条领域路径。
  */
 export class SkillBookPanel {
   readonly bag: Bag;
@@ -43,8 +42,7 @@ export class SkillBookPanel {
     this.selected = undefined; this.message = ''; this.offset = 0;
     // 绑定了具体技能的书只看那一门；普通技能书默认停在第一个可升级的技能上。
     const bound = this.bag.get(this.entryId)?.skill;
-    this.selected = bound && this.skillIds.includes(bound) ? bound
-      : this.nextEligible() ?? this.skillIds[0];
+    this.selected = bound && !this.problemFor(bound) ? bound : this.nextEligible();
   }
 
   captureScroll(): void {
@@ -56,19 +54,25 @@ export class SkillBookPanel {
     v.border(this.panels.assets, layout.leftFrame.x, layout.leftFrame.y, layout.leftFrame.width, layout.leftFrame.height);
     v.border(this.panels.assets, layout.rightFrame.x, layout.rightFrame.y, layout.rightFrame.width, layout.rightFrame.height);
     this.scroll = undefined;
-    v.text('选择要提升的技能（角标＝可用）', layout.header.x, layout.header.y, layout.header.width, layout.header.size);
     this.renderGrid(v);
     this.renderDetails(v);
   }
 
+  /** 当前能升级的技能；页面只列这些，不能升级的不出现在图标格里。 */
+  private get upgradable(): string[] {
+    return this.skillIds.filter(id => !this.problemFor(id));
+  }
+
   private renderGrid(v: UiSurface): void {
-    const layout = SKILL_BOOK, assets = this.panels.assets;
-    const entry = this.bag.get(this.entryId);
-    const bookIcon = entry ? this.bag.catalog.items[entry.item].icon : undefined;
-    this.skillIds.forEach((id, index) => {
+    const layout = SKILL_BOOK, assets = this.panels.assets, skills = this.upgradable;
+    if (!skills.length) {
+      v.text('暂无可升级技能', layout.empty.x, layout.empty.y, 0, layout.empty.size).setOrigin(.5);
+      return;
+    }
+    skills.forEach((id, index) => {
       const skill = this.catalog.skills[id];
       if (!skill) return;
-      const cellAt = skillBookCell(index), rank = this.skills.level(id), usable = !this.problemFor(id);
+      const cellAt = skillBookCell(index), rank = this.skills.level(id);
       const cell = v.button('', cellAt.x, cellAt.y, layout.grid.size, layout.grid.size, () => this.select(id),
         { image: skill.icon }).setData('label', skill.name);
       cell.addAt(v.image(assets['skill-slot'], layout.slotFrame.x, layout.slotFrame.y,
@@ -79,9 +83,6 @@ export class SkillBookPanel {
         v.image(assets[`skill-rank-${rank}`], layout.rankDigit.x, layout.rankDigit.y,
           layout.rankDigit.width, layout.rankDigit.height, cell);
       }
-      if (usable && bookIcon) v.image(bookIcon, layout.bookBadge.x, layout.bookBadge.y,
-        layout.bookBadge.size, layout.bookBadge.size, cell);
-      if (!usable) cell.setAlpha(.5);
       if (id === this.selected) v.image(assets[rank ? 'skill-selected' : 'skill-selected-ai'],
         layout.selection.x, layout.selection.y, layout.selection.width, layout.selection.height, cell);
     });
@@ -90,7 +91,8 @@ export class SkillBookPanel {
   private renderDetails(v: UiSurface): void {
     const layout = SKILL_BOOK, skill = this.selected ? this.catalog.skills[this.selected] : undefined;
     if (!skill) {
-      v.text('本职业没有可提升的技能。', layout.title.x, layout.title.y, layout.title.width, 20, TEXT_COLORS.primary);
+      if (this.message) v.text(this.message, layout.title.x, layout.title.y, layout.title.width, 20);
+      this.renderButtons(v, false);
       return;
     }
     const rank = this.skills.level(skill.id), problem = this.problemFor(skill.id), entry = this.bag.get(this.entryId);
@@ -122,9 +124,13 @@ export class SkillBookPanel {
     detail.scrollTop = this.offset;
     detail.onScroll = () => { this.offset = detail.scrollTop; };
     this.scroll = detail;
+    this.renderButtons(v, !problem && !!entry);
+  }
 
+  private renderButtons(v: UiSurface, canUse: boolean): void {
+    const layout = SKILL_BOOK;
     v.button('使用技能书', layout.primary.x, layout.primary.y, layout.primary.width, layout.primary.height,
-      () => this.use(), { disabled: !!problem || !entry, fontSize: 20 });
+      () => this.use(), { disabled: !canUse, fontSize: 20 });
     v.button('返回', layout.secondary.x, layout.secondary.y, layout.secondary.width, layout.secondary.height,
       () => this.close(), { fontSize: 20 });
   }
@@ -149,8 +155,8 @@ export class SkillBookPanel {
       this.message = (error as Error).message;
     }
     if (!this.bag.get(this.entryId)) { this.close(this.message); return; }
-    // 还有副本就留在本页；升到顶后自动把光标挪到下一门可升级的技能。
-    if (this.problemFor(id)) this.selected = this.nextEligible() ?? id;
+    // 还有副本就留在本页；升到顶后自动换到下一门可升级的技能，没有就显示空状态。
+    if (this.problemFor(id)) this.selected = this.nextEligible();
     this.offset = 0; this.changed();
   }
 
