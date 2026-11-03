@@ -8,7 +8,7 @@ export function storyActions(campaign: Pick<CampaignScripts, 'scripts'>): StoryN
 
 /**
  * 从这些剧情脚本出发，收集控制流上可能切换到的地图。演出中途到达新地图会触发它的进入事件，
- * 所以进入事件的脚本继续展开——整段进图剧情会经过的每张地图都能在第一次加载里准备资源。
+ * 所以进入事件的脚本继续展开——走到哪个分支都能算出后面可能用到的地图。
  * 分支与选择按所有出口展开；只读脚本，不执行剧情。
  */
 export function storyReachableMaps(

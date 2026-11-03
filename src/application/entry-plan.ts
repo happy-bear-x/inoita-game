@@ -13,8 +13,7 @@ export interface MapEntryPlan {
 
 /**
  * 进图计划只保证落脚图可玩，首次进入世界时额外并入一次全部佣兵候选素材。
- * 后续剧情地图不在这里读取或预取，
- * 由 `StoryDirector.prepare()` → `WorldScene.ensureStoryAssets()` 在开演前按需加载。
+ * 后续剧情地图不在这里读取或预取，换图时由目标图自己的入口加载。
  */
 export interface EntryPlan {
   current: MapEntryPlan;
@@ -25,7 +24,7 @@ export interface EntryPlan {
   sounds: string[];
   /**
    * 本图可能触发的剧情脚本（含读档时运行中的脚本，已经过 call/分支展开）。
-   * 进图加载用它跑一次运行时同款的剧情链预取，开演前就不用再开加载页。
+   * 进图加载用它收集本图这段演出的立绘与音效，开演前就不用再补。
    */
   scripts: string[];
 }
@@ -59,7 +58,7 @@ function mapPlan(map: WorldMap, input: EntryPlanInput, scripts: readonly string[
   return { map, visuals, assets: [...visuals.assets, ...combat] };
 }
 
-/** 一次进图真正要交给加载器的资源；预取和 `open()` 共用这一份口径。 */
+/** 一次进图真正要交给加载器的资源；进入地图和演出前补素材共用这一份口径。 */
 export function entryPlanAssets(plan: EntryPlan): PendingAsset[] {
   return [...plan.shared, ...plan.current.assets, ...(plan.residentCombat ?? [])];
 }
@@ -77,7 +76,7 @@ export function buildEntryPlan(input: EntryPlanInput): EntryPlan {
   });
   const roots = [...new Set([...local, ...(input.activeScripts ?? [])])];
   // 只沿脚本自身的 call/分支展开：这些节点会在本图这段演出里直接执行。
-  // 不展开任务/事件链，也不读取后续地图；跨图素材交给 ensureStoryAssets 开演前兜底。
+  // 不展开任务/事件链，也不读取后续地图；跨图素材由目标图入口在换图时加载。
   const scripts = storyReachableScripts(campaign, roots);
   const presentation = storyPresentationAssets(campaign, scripts, input.inputs);
   return {

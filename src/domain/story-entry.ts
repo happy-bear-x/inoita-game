@@ -14,93 +14,6 @@ function conditionQuestIds(condition: StoryCondition | undefined): string[] {
   return [];
 }
 
-/** 条件里引用的事件 / 选择 id，用于沿剧情链预取后续脚本。 */
-function conditionIds(condition: StoryCondition | undefined, kind: 'event' | 'choice'): string[] {
-  if (!condition) return [];
-  if (kind === 'event' && condition.type === 'event') return [condition.event];
-  if (kind === 'choice' && condition.type === 'choice') return [condition.choice];
-  if (condition.type === 'all' || condition.type === 'any') return condition.conditions.flatMap(child => conditionIds(child, kind));
-  if (condition.type === 'not') return conditionIds(condition.condition, kind);
-  return [];
-}
-
-interface StoryFacts {
-  quests: Set<string>;
-  events: Set<string>;
-  choices: Set<string>;
-  items: Set<string>;
-  /** 剧情生成的人物（actor / characterId）与遭遇战敌人，用于接上 near/interaction/battle。 */
-  actors: Set<string>;
-  enemies: Set<string>;
-}
-
-/**
- * 从这些脚本出发，沿「脚本会产生的触发事实」展开后续事件：完成的任务、完成的事件、
- * 出现过的选择、给出的物品。开演前的运行时兜底据此把同一条剧情链后面的地图
- * 一起加载，避免战斗中推进任务后再现读下一张图。最多展开 `limit` 个脚本。
- */
-export function chainedStoryScripts(
-  campaign: Pick<Campaign, 'scripts' | 'events'>,
-  seeds: Iterable<string>,
-  limit = 256,
-): string[] {
-  const scripts = new Set<string>();
-  const scanned = new Set<string>();
-  const facts: StoryFacts = { quests: new Set(), events: new Set(), choices: new Set(), items: new Set(), actors: new Set(), enemies: new Set() };
-  const queue: string[] = [];
-  const add = (script: string) => { if (campaign.scripts[script] && !scripts.has(script) && scripts.size < limit) { scripts.add(script); queue.push(script); } };
-  for (const seed of seeds) add(seed);
-  for (const event of campaign.events) if (scripts.has(event.script)) facts.events.add(event.id);
-  const absorb = (script: string) => {
-    for (const reachable of storyReachableScripts(campaign, [script])) {
-      if (scanned.has(reachable)) continue;
-      scanned.add(reachable);
-      const definition = campaign.scripts[reachable];
-      if (!definition) continue;
-      for (const node of definition.nodes) {
-        for (const command of node.commands) {
-          if (command.type === 'quest' && 'quest' in command.command) facts.quests.add(command.command.quest);
-          else if (command.type === 'choice') facts.choices.add(command.choice);
-          else if (command.type === 'item-give') facts.items.add(command.item);
-          else if (command.type === 'encounter') for (const spawn of command.encounter.spawns) facts.enemies.add(spawn.enemyId);
-          else if (command.type === 'world') {
-            const change = command.command;
-            if (change.kind === 'place') {
-              if (change.entity.actor) facts.actors.add(change.entity.actor);
-              if (change.entity.characterId) facts.actors.add(change.entity.characterId);
-            }
-          }
-        }
-        // 玩家在这段脚本里可能做过的选择：分支出口的键就是 choice 事件的触发键。
-        if (node.exit.type === 'choice') facts.choices.add(node.exit.choice);
-        // 遭遇战刷出来的敌人：战斗中的 `defeat:`/`health-below-30:` 事件由它们触发，
-        // 不进 facts 的话战斗一开打就会在演出前临时加载。
-        if (node.exit.type === 'waitEncounter') for (const spawn of node.exit.encounter.spawns) facts.enemies.add(spawn.enemyId);
-      }
-    }
-  };
-  while (queue.length) {
-    absorb(queue.shift()!);
-    for (const event of campaign.events) {
-      if (scripts.has(event.script)) continue;
-      const matched = event.source === 'quest' ? conditionQuestIds(event.condition).some(id => facts.quests.has(id))
-        : event.source === 'event' ? (event.key !== undefined && facts.events.has(event.key)) || conditionIds(event.condition, 'event').some(id => facts.events.has(id))
-        : event.source === 'choice' ? (event.key !== undefined && facts.choices.has(event.key)) || conditionIds(event.condition, 'choice').some(id => facts.choices.has(id))
-        : event.source === 'near' ? event.near !== undefined && (facts.actors.has(event.near) || (event.nearCharacterId !== undefined && facts.actors.has(event.nearCharacterId)))
-        : event.source === 'interaction' ? event.key !== undefined && facts.actors.has(event.key)
-        : event.source === 'battle'
-          ? (event.key?.startsWith('defeat:') === true && facts.enemies.has(event.key.slice('defeat:'.length)))
-            || (event.key?.startsWith('health-below-30:') === true && facts.enemies.has(event.key.slice('health-below-30:'.length)))
-        : false;
-      if (!matched) continue;
-      add(event.script);
-      facts.events.add(event.id);
-      if (scripts.size >= limit) break;
-    }
-  }
-  return [...scripts];
-}
-
 export interface LocalStoryScriptsInput {
   campaign: Pick<Campaign, 'events' | 'placements' | 'mapEntryPlacements' | 'quests' | 'scripts'>;
   map: Pick<WorldMap, 'id' | 'entities'>;
@@ -118,7 +31,7 @@ export interface LocalStoryScriptsInput {
  * 这张图上可能触发的剧情脚本。入口加载只阻塞在这里列出的脚本所到达的地图；
  * quest/inventory/choice/event 这类无法静态定位的全局事件由运行时兜底。
  * `quest` 事件在条件引用的任务已经进行中时也算「本图可能出现」：战斗结算把它推进到
- * ready 后就会在这张图上起演，入口阶段把它到达的地图一起预取，避免演出中再弹加载。
+ * ready 后就会在这张图上起演，入口加载据此提前备好它的脚本素材。
  */
 export function localStoryScripts({ campaign, map, entities = [], completedEvents = [], questStatus, enemyIds }: LocalStoryScriptsInput): string[] {
   const scripts = new Set<string>();
@@ -215,18 +128,4 @@ export function storyReachableScripts(campaign: Pick<Campaign, 'scripts'>, scrip
     for (const target of storyExitTargets(node.exit)) queue.push(target);
   }
   return [...result];
-}
-
-export interface DirectStoryMaps {
-  maps: string[];
-  truncated: boolean;
-}
-
-/**
- * 这些脚本控制流上直接到达/演到的地图。多取一张用来判断是否超出预算；
- * 超出部分交给目的地进入时的加载和运行时兜底，不静默丢掉。
- */
-export function directStoryMaps(campaign: Pick<Campaign, 'scripts' | 'events'>, scripts: Iterable<string>, limit = 12): DirectStoryMaps {
-  const found = storyReachableMaps(campaign, scripts, limit + 1);
-  return { maps: found.slice(0, limit), truncated: found.length > limit };
 }

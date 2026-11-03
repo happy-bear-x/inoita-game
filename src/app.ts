@@ -155,7 +155,7 @@ export class StoryApp {
   /** 最近几张地图用到的纹理键，用来释放旧地图占的显存。 */
   private mapAssetHistory: AssetLease[] = [];
   private mapPrefetch?: AssetLease;
-  /** 运行时兜底预取过的剧情地图；进图释放落脚图，返回菜单/读档时整体清空。 */
+  /** 内容声明过的跨地图演出预先备好的地图；进图释放落脚图，返回菜单/读档时整体清空。 */
   private readonly storyPrefetches = new Map<string, AssetLease>();
   retainMapAssets(lease: AssetLease): void {
     this.mapAssetHistory.push(lease);
@@ -173,8 +173,8 @@ export class StoryApp {
   retainStoryPrefetch(id: string, lease: AssetLease): void {
     this.storyPrefetches.get(id)?.release();
     this.storyPrefetches.set(id, lease);
-    // 运行时兜底与进图预取共用这个池；审计过单图并集上限 19 张，留到 20。
-    while (this.storyPrefetches.size > 20) {
+    // 只有声明过的跨地图演出会进这个池：一场演出备一张图，留两张就够，多的是白占显存。
+    while (this.storyPrefetches.size > 2) {
       const oldest = this.storyPrefetches.keys().next().value!;
       this.storyPrefetches.get(oldest)!.release();
       this.storyPrefetches.delete(oldest);

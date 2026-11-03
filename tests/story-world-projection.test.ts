@@ -20,7 +20,6 @@ function fixture(){
     movement:{placeAll:(values:{position:{x:number;y:number}}[])=>{positions.push(values);for(const value of values){player.container.x=value.position.x;player.container.y=value.position.y;}}},
     combat:{regroupPartyAroundHero(){regroups++;},async projectStoryEnemies(){},async restoreState(){},adoptStoryPositions(actors:unknown[]){adopted.push(actors);}},
     loadAssets:async(...args:unknown[])=>{assetLoads.push(args);return {release(){}};},refreshState(){},syncHud(){},setClip(){},syncControlledCharacter(){},
-    entryPrefetches:new Map(),prefetchStoryEntry:async()=>{},
     scene:{isActive(){return stageActive;},get(){return {worldCovered};},restart(options:SceneOptions){restarts++;lastRestart=options;options.onReady?.();},stop(){stops++;}}
   };
   const scene=Object.setPrototypeOf(state,WorldScene.prototype) as unknown as InstanceType<typeof WorldScene>;
@@ -214,20 +213,6 @@ test('cross-map story projection rebuilds the world without covering the stage w
   await f.scene.projectStoryWorld(undefined,new AbortController().signal);
   assert.equal(f.restarts(),1);assert.equal(f.lastRestart()?.silentEntry,true);
   assert.deepEqual(f.coverCalls(),[],'舞台已经遮住世界，不再加 UI 黑幕');
-});
-
-test('a cross-map projection waits for the destination entry prefetch before rebuilding',async()=>{
-  const f=fixture();f.location({map:'destination',x:80,y:90,facing:'south'});
-  let release!:()=>void,requested='';
-  const gate=new Promise<void>(resolve=>{release=resolve;});
-  Object.assign(f.state,{prefetchStoryEntry:(mapId:string)=>{requested=mapId;return gate;}});
-  const load=f.scene.projectStoryWorld(undefined,new AbortController().signal);
-  await Promise.resolve();
-  assert.equal(requested,'destination');
-  assert.equal(f.restarts(),0,'预取完成前不重建');
-  release();
-  await load;
-  assert.equal(f.restarts(),1);
 });
 
 test('a map change without a covering stage uses the UI backdrop',async()=>{

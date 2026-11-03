@@ -415,20 +415,14 @@ function installSession(session: Session): void {
     project: async (stage, signal) => { await worldScene()?.projectStoryWorld(stage, signal); },
     checkpoint: () => worldScene()?.checkpointStoryWorld(),
     settle: () => worldScene()?.settleStoryPlayback(),
-    prepare: async (commands, signal, stage, script) => {
+    prepare: async (_commands, signal, stage, script) => {
       const scene = worldScene();
-      // 完整进图素材在这里只发起、不等待：当前对白/演出不该被整图加载拖住，
-      // 真正换图前由 `projectStoryWorld` 的 `whenEntryPrefetched` 等它落地。
-      const prefetch = (map: string) => {
-        presenter.prefetchMap(map);
-        void scene?.prefetchStoryEntry(map, script, signal);
-      };
-      for (const command of commands) {
-        if (command.type === 'travel') prefetch(command.destination.map);
-        else if (command.type === 'world' && command.command.kind === 'travel') prefetch(command.command.destination.map);
+      // 只预取内容里明确声明的跨地图演出：舞台自带地图、且不是当前世界地图。
+      // 常规换图（travel）不预取，由目标图自己的入口加载。
+      if (stage && !stage.mapFromWorld && stage.map !== scene?.map?.id) {
+        presenter.prefetchMap(stage.map);
+        void scene?.prefetchStoryEntry(stage.map, script, signal);
       }
-      // 舞台自带的地图也会在收尾时变成 `travel`；不预取就会在演出后闪一次加载界面。
-      if (stage?.map) prefetch(stage.map);
       signal.throwIfAborted();
     },
     prefetch: async (scripts, signal) => { await worldScene()?.ensureStoryAssets(scripts, signal); },

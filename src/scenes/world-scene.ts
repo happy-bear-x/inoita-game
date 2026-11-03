@@ -34,10 +34,10 @@ import { pullLegendaryWeapon } from '../domain/legendary-weapon.ts';
 import { GroundLootView } from '../rendering/ground-loot.ts';
 import { PickupMessages } from '../rendering/pickup-messages.ts';
 import { BasicAttackRepeat } from '../domain/basic-attack-repeat.ts';
-import { chainedStoryScripts, directStoryMaps, storyReachableScripts } from '../domain/story-entry.ts';
+import { storyReachableScripts } from '../domain/story-entry.ts';
 import { buildEntryPlan, entryPlanAssets } from '../application/entry-plan.ts';
-import { continueProgress, loadEntryPlan } from '../application/entry-loading.ts';
-import { potentialMapEnemyIds, type WorldAssetInputs } from '../rendering/map-assets.ts';
+import { loadEntryPlan } from '../application/entry-loading.ts';
+import { potentialMapEnemyIds, storyPresentationAssets, type WorldAssetInputs } from '../rendering/map-assets.ts';
 import { uiTexture } from '../ui/phaser/widgets.ts';
 import { storyExitId } from '../domain/story-world.ts';
 import { hasLivingParty } from '../domain/session-checkpoint.ts';
@@ -128,14 +128,12 @@ export class WorldScene extends Phaser.Scene {
   /** 演出舞台已经铺满画面；正式世界这帧不更新、不渲染、物理也不步进。 */
   private stageOccluded = false;
   private readonly storyEntityAssets:AssetLease[]=[];
-  /** 剧情节点明确要去的目标图：prepare 时发起，换图前用 `whenEntryPrefetched` 等待。 */
+  /** 内容里声明了自带地图的演出：prepare 时发起，避免开幕时再等地图。 */
   private entryPrefetches?:Map<string,Promise<void>>;
-  private entryPrefetchScripts?:Map<string,string>;
   private readonly projectedActorIds=new Set<string>();
   private lastProjectedLocation?:string;
   /** 进图加载页还在等这条剧情的第一幕；等待期间的素材补载不另开加载页。 */
   private entryStoryStarted?:() => void;
-  private holdingEntryLoading=false;
   private readonly encounterResults=new Set<string>();
   private baseEntities:EntityPlacement[]=[];
   private readonly occupiedRegions=new Set<string>();
@@ -199,7 +197,7 @@ export class WorldScene extends Phaser.Scene {
     this.dropCatalog=undefined;this.springCatalog=undefined;this.groundLootView=undefined;this.pickupMessages=undefined;this.pickupRecipients.clear();
     this.prefetchTarget = undefined; this.prefetchTask = undefined;
     this.baseEntities=[];this.occupiedRegions.clear();this.encounterResults.clear();
-    this.entryPrefetches?.clear();this.entryPrefetchScripts?.clear();
+    this.entryPrefetches?.clear();
     this.projectedActorIds.clear();
   }
   create(): void {
@@ -496,21 +494,17 @@ export class WorldScene extends Phaser.Scene {
     if(!options.resumeStory)this.app.autoSave?.();
     this.lastProjectedLocation=JSON.stringify(this.app.session.storyWorld.currentLocation);
     this.app.session.setStoryWorldContext(()=>this.storyWorldContext());
-    // 进图时按运行时同一条链预取本图可能触发的剧情素材。开演前的
-    // `ensureStoryAssets` 检查的是整条事件链（后续事件的地图、立绘、音效），
-    // 入口计划只算当前图的脚本；不在这里补齐，交付任务的后续演出就会再开一页加载。
-    // 静默重建发生在演出内部，交给运行时自己的兜底，避免在舞台背后弹加载页。
+    // 进图时补齐本图这段演出要用的立绘与音效。地图素材不在这里预取：
+    // 换图时由目标图自己的入口加载，进图只对落脚图负责。
     // `suppressEntry` 的入口（GM 传送、读档恢复）由调用方接管后续演出，不在这里抢跑。
     if (!options.silentEntry && !options.suppressEntry && plan.scripts.length) {
-      this.holdingEntryLoading=!!ui.loadingState;
       try { await this.ensureStoryAssets(plan.scripts, signal); }
       catch (error) {
         signal.throwIfAborted();
-        // 预取失败不该挡住进图：运行时开演前还会再查一次，错误在那里按正常路径上报。
+        // 补素材失败不该挡住进图：开演前还会再查一次，错误在那里按正常路径上报。
         console.error(error);
         globalThis.storyDiagnostics?.record('story-entry-prefetch-failed', { map: map.id });
       }
-      finally { this.holdingEntryLoading=false; }
     }
     const director=this.app.director;
     let entryStory:(() => Promise<boolean>)|undefined;
@@ -531,12 +525,11 @@ export class WorldScene extends Phaser.Scene {
   /**
    * 进图即触发的剧情：加载页留到第一幕画出来再收。
    *
-   * 世界已经建好但还没露给玩家；演出开演前缺的素材（`ensureStoryAssets`）在
-   * `holdingEntryLoading` 期间直接补在这张加载页后面，不另起一屏。没有剧情时按原样立即收起。
+   * 世界已经建好但还没露给玩家；开演前缺的立绘与音效补在这张加载页后面，不另起一屏。
+   * 没有剧情时按原样立即收起。
    */
   private async holdEntryLoading(entryStory:(() => Promise<boolean>)|undefined, ui:StoryContext['ui']):Promise<void> {
     if (!entryStory) { ui.loaded(); return; }
-    this.holdingEntryLoading=!!ui.loadingState;
     const started=new Promise<void>(resolve=>{this.entryStoryStarted=resolve;});
     this.app.director.onPresentationStarted=()=>this.finishEntryStory();
     const story=this.playStory(entryStory);
@@ -548,7 +541,6 @@ export class WorldScene extends Phaser.Scene {
   private finishEntryStory():void {
     const resolve=this.entryStoryStarted;
     this.entryStoryStarted=undefined;
-    this.holdingEntryLoading=false;
     this.app.director.onPresentationStarted=undefined;
     resolve?.();
   }
@@ -595,102 +587,34 @@ export class WorldScene extends Phaser.Scene {
       .map(run => run.cursor.script);
   }
   /**
-   * 无法静态定位的剧情（quest/inventory/choice/event）在开演前兜底。
-   * 素材齐时直接返回；缺则显示加载页并等加载完成，保证演出结束后不再加载。
+   * 开演前只补说话人的立绘和这一段用到的音效。地图素材不预取：
+   * 演出真要换图时，由目标图自己的入口加载。
    */
   async ensureStoryAssets(scripts: readonly string[], signal: AbortSignal): Promise<void> {
     if (this.loadingWorld || !this.map || this.destroyed) return;
     signal.throwIfAborted();
-    const holding=this.holdingEntryLoading;
-    const inputs = this.assetInputs();
-    const reachable = storyReachableScripts(this.app.campaign, chainedStoryScripts(this.app.campaign, scripts));
-    const pendingMaps: { id: string; assets: PendingAsset[] }[] = [];
-    const portraits = new Set<string>(), sounds = new Set<string>();
-    // 进图预取面对的是本图所有入口脚本的并集；按运行时单事件的 12 张预算会把某条
-    // 事件的图挤掉。审计过的并集上限是 19 张，这里给到 20。
-    const mapBudget = holding ? 20 : 12;
-    const direct = directStoryMaps(this.app.campaign, reachable, mapBudget);
-    if (direct.truncated) globalThis.storyDiagnostics?.record('story-prefetch-truncated', { mapBudget });
-    for (const id of direct.maps) {
-      if (id === this.map.id) continue;
-      const reference = this.app.world.maps.find(entry => entry.id === id);
-      if (!reference) continue;
-      const map = await this.app.content.map(reference.file, signal);
-      // 目标图自己的本地脚本（map-entry / near / region / quest）也要算进来：
-      // 只用当前剧情链的 reachable，会漏掉这些脚本摆出来的人物、伙伴和遭遇敌人。
-      const plan = buildEntryPlan({
-        currentMap: map,
-        inputs,
-        completedEvents: this.app.session.runtimeState.completedEvents,
-        questStatus: questId => this.app.session.status(questId),
-        activeScripts: reachable,
-        includeResidentCombat: !this.app.residentCombatReady,
-      });
-      for (const portrait of plan.portraits) portraits.add(portrait);
-      for (const sound of plan.sounds) sounds.add(sound);
-      const assets = entryPlanAssets(plan);
-      if (missingSceneAssets(this, assets).length) pendingMaps.push({ id, assets });
-    }
-    const missingPortraits = [...portraits].filter(file => !this.textures.exists(uiTexture(file)));
-    const soundList = [...sounds];
-    const needsLoad = pendingMaps.length > 0 || missingPortraits.length > 0;
-    if (!needsLoad) {
-      if (soundList.length) await this.app.audio?.prepareStoryEffects(soundList);
-      return;
-    }
-    // 进图预取复用同一张进图加载页，只更新文案与进度；由 `holding` 决定谁来收页。
-    // holding 时不重置进度和文案：地图加载已经走到哪，就在同一条进度条上接着走，
-    // 玩家看到的是一页加载，而不是「加载地图」「准备剧情」两条进度条。
-    const heldLabel=holding?this.app.ui.loadingState?.label:undefined;
-    const heldProgress=holding?(this.app.ui.loadingState?.progress??0):0;
-    const report=(value:number)=>this.app.ui.loading(heldLabel??'正在准备剧情…',
-      holding?continueProgress(heldProgress,value):value);
-    if(!holding)this.app.ui.loading('正在准备剧情…', 0);
-    try {
-      const total = pendingMaps.length + (missingPortraits.length ? 1 : 0);
-      let done = 0;
-      for (const entry of pendingMaps) {
-        const lease = await loadSceneAssets(this, entry.assets, value => report((done + value) / total), true);
-        if (signal.aborted) { lease.release(); signal.throwIfAborted(); }
-        this.app.retainStoryPrefetch(entry.id, lease);
-        done += 1;
-      }
-      if (missingPortraits.length) {
-        await this.app.ui.preloadPortraits(missingPortraits, signal, value => report((done + value) / total));
-        done += 1;
-      }
-      if (soundList.length) await this.app.audio?.prepareStoryEffects(soundList);
-      signal.throwIfAborted();
-      // 进图加载页由 `holdEntryLoading` 收起；这里提前 loaded 会让世界先露出来。
-      if (!holding) this.app.ui.loaded();
-    } catch (error) {
-      if (signal.aborted && !holding) this.app.ui.loaded();
-      throw error;
-    }
+    const reachable = storyReachableScripts(this.app.campaign, scripts);
+    const presentation = storyPresentationAssets(this.app.campaign, reachable, this.assetInputs());
+    const portraits = presentation.portraits.filter(file => !this.textures.exists(uiTexture(file)));
+    if (portraits.length) await this.app.ui.preloadPortraits(portraits, signal, () => {});
+    if (presentation.sounds.length) await this.app.audio?.prepareStoryEffects(presentation.sounds);
+    signal.throwIfAborted();
   }
   /**
-   * 剧情节点已经明确要去的图：prepare 时先发起完整进图素材加载，但不阻塞当前对白/演出。
-   * 真正换图前由 `whenEntryPrefetched` 等它，保证静默重建时素材已齐。
+   * 内容里明确声明了自带地图的演出（`mapFromWorld:false`）：换场前先把那张图备好，
+   * 开幕时不用再等地图。常规换图不走这里。
    */
   prefetchStoryEntry(mapId: string, script: string | undefined, signal: AbortSignal): Promise<void> {
     if (this.loadingWorld || this.destroyed || !this.map || mapId === this.map.id) return Promise.resolve();
     const prefetches = this.entryPrefetches ??= new Map();
-    const scripts = this.entryPrefetchScripts ??= new Map();
-    if (script) scripts.set(mapId, script);
     const existing = prefetches.get(mapId);
     if (existing) return existing;
-    const task = this.loadStoryEntry(mapId, script ?? scripts.get(mapId), signal).catch(error => {
+    const task = this.loadStoryEntry(mapId, script, signal).catch(error => {
       if (!signal.aborted) globalThis.storyDiagnostics?.record('story-entry-prefetch-failed', { map: mapId, error });
       prefetches.delete(mapId);
     });
     prefetches.set(mapId, task);
     return task;
-  }
-  /** 换图前等目标图预取完；prepare 没发起或已失败时现场补一次。 */
-  async whenEntryPrefetched(mapId: string, signal: AbortSignal): Promise<void> {
-    const pending = this.entryPrefetches?.get(mapId);
-    if (pending) { await pending; return; }
-    await this.prefetchStoryEntry(mapId, this.entryPrefetchScripts?.get(mapId), signal);
   }
   private async loadStoryEntry(mapId: string, script: string | undefined, signal: AbortSignal): Promise<void> {
     const reference = this.app.world.maps.find(entry => entry.id === mapId);
@@ -1632,8 +1556,6 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     const location=this.app.session.storyWorld.currentLocation;
     const signature=JSON.stringify(location);
     if(location&&location.map!==this.map?.id){
-      // 节点 prepare 阶段已经发起目标图预取；这里等它落地，保证换图时素材已齐。
-      await this.whenEntryPrefetched(location.map, signal);
       signal.throwIfAborted();
       // 舞台真的遮住世界（worldCovered）时直接沿用；舞台未启动或仍透明时，
       // 用常驻 UI 层的黑幕盖住重建过程。不能用 isActive 判断，首幕透明时世界仍可见。
@@ -1645,7 +1567,7 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
       }
       const prepared=stage?.scene.map===location.map?stage.scene:undefined;
       try{
-        // 剧情驱动的跨图一律静默；素材缺项由预取/静默加载补，不退回加载页。
+        // 剧情驱动的跨图一律静默；素材由这次静默重建自己加载，不退回加载页。
         await this.restartStoryWorld(location,signal,undefined,undefined,true,prepared);
       }catch(error){
         if(!covered)this.app.ui.setWorldRebuildCover(false);
