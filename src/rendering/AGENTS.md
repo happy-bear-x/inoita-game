@@ -14,7 +14,7 @@
 - 本目录只读取 `domain` 状态并绘制，规则变化和存档写入留在 `domain` 与 `application`。
 - 动画名用游戏概念：`walk-east`、`idle-south`，不拼接帧号或方向偏移。
 - 沿用现有纹理、depth、filter 的组织方式；Phaser 4 写法以 `.agents/skills/` 和 4.2.1 文档为准。
-- 性能敏感的改动先读 `docs/performance.md`，再决定是否新增对象或逐帧逻辑。
+- 性能敏感的改动先用 `?perf` 在 4002/APK 上量基线，再决定是否新增对象或逐帧逻辑。
 
 ## 验证
 
