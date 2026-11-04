@@ -3,8 +3,10 @@ import { stageSnapshot } from './helpers/story-stage.ts';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import type { Campaign } from '../src/domain/campaign.ts';
+import type { CampaignQuest } from '../src/domain/campaign.ts';
 import type { StoryNode } from '../src/domain/story-graph.ts';
 import type { StoryPresentationPort, StoryStage } from '../src/domain/story-performance.ts';
+import type { StoryPlayerState } from '../src/domain/story-interface.ts';
 import { Session } from '../src/domain/session.ts';
 import { StoryDirector, type StoryUI, type StoryWorldPort } from '../src/domain/story-director.ts';
 
@@ -13,10 +15,13 @@ const worldBase=JSON.parse(readFileSync(new URL('../public/content/world.json',i
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const stage:StoryStage={type:'stage',map:base.start.map,x:base.start.x,y:base.start.y,facing:'south',playerVisible:true,cast:[]};
 const node=(id:string,commands:StoryNode['commands']=[],exit:StoryNode['exit']={type:'end'}):StoryNode=>({id,presentation:[],commands,exit});
-function harness(nodes:StoryNode[],presentation?:StoryPresentationPort,world?:StoryWorldPort){
-  const campaign:Campaign={...structuredClone(base),scripts:{...structuredClone(base.scripts),demo:{entry:nodes[0].id,nodes}},
+const quest=(id:string,patch:Partial<CampaignQuest>={}):CampaignQuest=>({id,title:id,description:id,giver:'npc',
+  guidance:{available:'offer',active:'continue'},goals:[],completion:'talk',progressText:'continue',completeText:'thanks',...patch});
+function harness(nodes:StoryNode[],presentation?:StoryPresentationPort,world?:StoryWorldPort,quests:CampaignQuest[]=[],player?:StoryPlayerState){
+  const campaign:Campaign={...structuredClone(base),quests:[...structuredClone(base.quests),...quests],
+    scripts:{...structuredClone(base.scripts),demo:{entry:nodes[0].id,nodes}},
     events:[{id:'demo-event',source:'start',script:'demo'}]};
-  const session=new Session(campaign),locks:boolean[]=[];
+  const session=new Session(campaign,player),locks:boolean[]=[];
   const ui:StoryUI={async dialogue(){},async choice(_prompt,options){return options[0];},async questPopup(){},toast(){},closeDialogue(){},skipDialogue(){}};
   const director=new StoryDirector(campaign,session,ui,value=>locks.push(value),presentation,world);
   return {campaign,session,ui,director,locks};
@@ -240,6 +245,47 @@ test('cancelling an in-flight performance rolls the session back to that playbac
   held=false;release();await tick();await started;
 });
 
+test('cancelling a performance lazily rolls back external quest, coin and health changes',async()=>{
+  const play=node('play',[],{type:'end'});play.presentation=[stage];
+  const questDef=quest('performance-quest',{completion:'all',
+    goals:[{id:'talk',kind:'talk',target:'elder',quantity:1}]});
+  const player:StoryPlayerState={level:1,health:10,maxHealth:20,mana:5,maxMana:10,experience:0,nextLevelExperience:10};
+  const run=()=>{
+    let release!:()=>void,held=true;
+    const presentation:StoryPresentationPort={begin(){},async execute(){},getStageState(){return stageSnapshot(stage);},
+      async finish(completed){if(completed&&held)await new Promise<void>(resolve=>{release=resolve;});},async release(){}};
+    const h=harness([play],presentation,undefined,[questDef],player);
+    h.session.accept('performance-quest');h.session.gainMoney(10);
+    const started=h.director.start();
+    return {h,started,finish:async()=>{held=false;release();await tick();await started;}};
+  };
+  const cancelled=run();
+  for(let index=0;index<10;index++)await tick();
+  // 演出期间由外部交互触发的任务提交没有 deferFinalize，回执已 finalize；取消要靠演出日志回滚。
+  cancelled.h.session.recordQuestFact('talk','elder','test');
+  cancelled.h.session.gainMoney(20);
+  cancelled.h.session.setHealth(3);
+  assert.equal(cancelled.h.session.money,30);
+  assert.equal(cancelled.h.session.player?.health,3);
+  assert.equal(cancelled.h.session.status('performance-quest'),'ready');
+  cancelled.h.director.cancel();
+  assert.equal(cancelled.h.session.money,10,'取消后金币回到演出前');
+  assert.equal(cancelled.h.session.player?.health,10,'取消后血量回到演出前');
+  assert.equal(cancelled.h.session.questBook.state('performance-quest')!.goals.talk,0,'取消后任务进度回到演出前');
+  assert.equal(cancelled.h.session.status('performance-quest'),'active');
+  await cancelled.finish();
+
+  const committed=run();
+  for(let index=0;index<10;index++)await tick();
+  committed.h.session.recordQuestFact('talk','elder','test');
+  committed.h.session.gainMoney(20);
+  committed.h.session.setHealth(3);
+  await committed.finish();
+  assert.equal(committed.h.session.money,30,'正常提交保留演出期间的金币变化');
+  assert.equal(committed.h.session.player?.health,3,'正常提交保留演出期间的血量变化');
+  assert.equal(committed.h.session.questBook.state('performance-quest')!.goals.talk,1,'正常提交保留演出期间的任务进度');
+});
+
 test('a checkpoint restored mid-performance keeps its state under either cancel order',async()=>{
   const build=()=>{
     const play=node('play',[{type:'flag',flag:'published'}]);play.presentation=[stage];
@@ -349,4 +395,47 @@ test('director acknowledges scene changes only after the command batch commits',
     committed(){acknowledged++;},async finish(){},release(){}});
   await assert.rejects(h.director.start());assert.equal(acknowledged,0);
   h.session.gainMoney(1);await h.director.retry();assert.equal(acknowledged,1);
+});
+
+
+test('a branch reads flags set by the same node after the commands land',async()=>{
+  const entry=node('entry',[{type:'flag',flag:'branch-flag'}],{type:'branch',condition:{type:'flag',flag:'branch-flag'},
+    then:{script:'demo',node:'yes'},otherwise:{script:'demo',node:'wrong'}});
+  const wrong=node('wrong',[{type:'flag',flag:'wrong-branch'}]);
+  const h=harness([entry,node('yes'),wrong]);
+  assert.equal(await h.director.start(),true);
+  assert.equal(h.session.flags.has('branch-flag'),true);
+  assert.equal(h.session.flags.has('wrong-branch'),false,'分支看到同节点旗标后应走 then');
+});
+
+test('a branch reads a travel destination applied by the same node',async()=>{
+  const destination={map:'shadow-camp',x:1,y:2,facing:'south' as const};
+  const entry=node('entry',[{type:'travel',destination}],{type:'branch',
+    condition:{type:'world',key:'map',value:'shadow-camp'},then:{script:'demo',node:'yes'},otherwise:{script:'demo',node:'wrong'}});
+  const wrong=node('wrong',[{type:'flag',flag:'wrong-branch'}]);
+  const h=harness([entry,node('yes'),wrong]);
+  assert.equal(await h.director.start(),true);
+  assert.equal(h.session.storyWorld.currentLocation?.map,'shadow-camp');
+  assert.equal(h.session.flags.has('wrong-branch'),false,'分支看到同节点转场后应走 then');
+});
+
+test('a branch reads item grants and quest acceptance applied by the same node',async()=>{
+  const itemQuest=quest('branch-item',{completion:'all',
+    goals:[{id:'letter',kind:'item',target:'letter',quantity:1}]});
+  const itemEntry=node('entry',[{type:'item-give',item:'letter',quantity:1}],{type:'branch',
+    condition:{type:'quest',quest:'branch-item',status:'ready'},then:{script:'demo',node:'yes'},otherwise:{script:'demo',node:'wrong'}});
+  const itemWrong=node('wrong',[{type:'flag',flag:'item-wrong'}]);
+  const item=harness([itemEntry,node('yes'),itemWrong],undefined,undefined,[itemQuest]);
+  item.session.accept('branch-item');
+  assert.equal(await item.director.start(),true);
+  assert.equal(item.session.status('branch-item'),'ready');
+  assert.equal(item.session.flags.has('item-wrong'),false,'分支看到同节点发放的物品后应走 then');
+
+  const acceptEntry=node('entry',[{type:'quest',command:{type:'accept',quest:'branch-accept'}}],{type:'branch',
+    condition:{type:'quest',quest:'branch-accept',status:'active'},then:{script:'demo',node:'yes'},otherwise:{script:'demo',node:'wrong'}});
+  const acceptWrong=node('wrong',[{type:'flag',flag:'accept-wrong'}]);
+  const accept=harness([acceptEntry,node('yes'),acceptWrong],undefined,undefined,[quest('branch-accept',{completion:'story'})]);
+  assert.equal(await accept.director.start(),true);
+  assert.equal(accept.session.status('branch-accept'),'active');
+  assert.equal(accept.session.flags.has('accept-wrong'),false,'分支看到同节点接取的任务后应走 then');
 });

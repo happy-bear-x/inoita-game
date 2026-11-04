@@ -11,7 +11,7 @@ import type {PerformanceAction, StoryStage, StoryStageSnapshot} from '../domain/
 import {pendingEntranceAliases} from '../domain/story-performance.ts';
 import type {StoryEntityState} from '../domain/story-world.ts';
 import type {StoryNodeCommit, StoryPlaybackContext, StoryRuntimePort} from '../domain/story-runtime.ts';
-import {Session, type SessionState} from '../domain/session.ts';
+import {Session, type SessionState, type StoryCommitReceipt} from '../domain/session.ts';
 import {authoredPlacements, baseMapEntities} from '../domain/map-placement.ts';
 import {applyStorySceneAction, hidePendingEntrances, resolveStoryScene} from '../domain/story-scene.ts';
 import {assertUniqueActorInstances} from '../domain/actor-census.ts';
@@ -97,6 +97,7 @@ export class HeadlessStory {
   private decisionSink: ChoiceDecision[] = [];
   private battleSink: BattleDecision[] = [];
   private encounterCounter = 0;
+  private appliedReceipt?: StoryCommitReceipt;
 
   constructor(content: HeadlessContent) {
     const hero = content.world.actors[content.campaign.start.actor];
@@ -221,10 +222,14 @@ export class HeadlessStory {
       capture: () => this.session.captureState(),
       present: (node, context) => this.present(node, context),
       finish: async () => {},
+      apply: commit => this.apply(commit),
       commit: commit => this.commit(commit),
       checkpoint: snapshot => { this.session.runtimeState = snapshot; },
-      rollback: baseline => { this.session.restoreState(baseline as SessionState); },
-      evaluate: (condition, commands) => this.session.evaluateCondition(condition, commands),
+      rollback: baseline => {
+        const receipt=this.appliedReceipt;this.appliedReceipt=undefined;receipt?.rollback();
+        this.session.restoreState(baseline as SessionState);
+      },
+      evaluate: condition => this.session.evaluateCondition(condition),
       onBusy: () => {},
     };
   }
@@ -292,10 +297,15 @@ export class HeadlessStory {
     return resolveStoryScene(declaration, scene);
   }
 
-  private commit(commit: StoryNodeCommit): void {
+  private apply(commit: StoryNodeCommit): void {
     const commands = storyCommitCommands(commit, this.session.storyWorld, this.getWorldChanges(),
       memberId=>!!this.session.party?.get(memberId));
-    this.session.applyStoryCommands(commands, commit.checkpoint);
+    this.appliedReceipt=this.session.applyStoryCommands(commands, commit.checkpoint, {deferFinalize:true});
+  }
+
+  private commit(commit: StoryNodeCommit): void {
+    this.session.adoptRuntime(commit.checkpoint);
+    const receipt=this.appliedReceipt;this.appliedReceipt=undefined;receipt?.finalize();
     this.committed();
   }
 

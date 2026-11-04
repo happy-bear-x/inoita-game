@@ -51,12 +51,15 @@ export interface StoryRuntimePort {
   currentMap?():string|undefined;
   present(node: StoryNode, context: StoryPlaybackContext): Promise<{ choice?: string; stage?: StoryStageSnapshot }>;
   finish(context: StoryPlaybackContext): Promise<void>;
+  /** 把节点命令落到真实状态；分支节点在求值前调用，普通节点后面紧跟 `commit`。 */
+  apply(commit: StoryNodeCommit): void;
+  /** 运行时收尾：认领最终检查点、确认表现层、确认命令回执。 */
   commit(commit: StoryNodeCommit): void;
   afterCommit?(commit: StoryNodeCommit, context: StoryPlaybackContext): Promise<void>;
   recover?(context: StoryPlaybackContext): Promise<void>;
   checkpoint?(snapshot: StoryRuntimeSnapshot): void;
   rollback(baseline: unknown, context: StoryPlaybackContext): void;
-  evaluate(condition: StoryCondition, pendingCommands?: readonly StoryCommand[]): boolean;
+  evaluate(condition: StoryCondition): boolean;
   validOccurrence?(occurrence: StoryOccurrence): boolean;
   onBusy?(busy: boolean): void;
 }
@@ -289,7 +292,12 @@ export class StoryRuntime {
       cursor: { script, node: entryNode ?? this.graph.scripts[script].entry }, status: 'running' };
     this.state.runs.push(run); return run;
   }
-  private publish(commit: StoryNodeCommit): void { this.port.commit(clone(commit)); this.state = commit.checkpoint; }
+  private publish(commit: StoryNodeCommit): void {
+    const portCommit = clone(commit);
+    this.port.apply(portCommit);
+    this.port.commit(portCommit);
+    this.state = commit.checkpoint;
+  }
   private async execute(id: string, signal: AbortSignal, epoch: number): Promise<boolean> {
     let committed = false;
     // 内容环仍受执行预算约束；有出口的循环也可能因条件配置永远走回原处。
@@ -323,7 +331,7 @@ export class StoryRuntime {
             if (nextRun.stack.length > 32) throw new Error('剧情调用层级超过限制');
             nextRun.cursor = clone(node.exit.target); break;
           }
-          case 'branch': nextRun.cursor = clone(this.port.evaluate(node.exit.condition, commands) ? node.exit.then : node.exit.otherwise); break;
+          case 'branch': nextRun.cursor = clone(node.exit.then); break;
           case 'choice': {
             if (result.choice === undefined) throw new Error('剧情选择没有返回结果');
             const target = node.exit.cases[result.choice] ?? node.exit.otherwise;
@@ -359,9 +367,22 @@ export class StoryRuntime {
         const stage = clone(nextRun.stage);
         if (nextRun.status !== 'running' || commands.some(command => command.type === 'travel' || command.type === 'world' && command.command.kind === 'travel')) delete nextRun.stage;
         const commit = { commands, checkpoint: next, eventId: run.eventId, node: clone(run.cursor), runId: id, stage };
-        this.publish(commit);
-        this.active = undefined; committed = true;
-        await this.port.afterCommit?.(commit, context); this.guard(epoch, signal);
+        if (node.exit.type === 'branch') {
+          // 命令先落地，再读真实状态求值；游标写进新的运行时对象，不就地改已交给会话的临时检查点。
+          this.port.apply(clone(commit));
+          const takeThen = this.port.evaluate(node.exit.condition);
+          const final = clone(next);
+          final.runs.find(candidate => candidate.id === id)!.cursor = clone(takeThen ? node.exit.then : node.exit.otherwise);
+          const finalCommit: StoryNodeCommit = { ...commit, checkpoint: final };
+          this.port.commit(clone(finalCommit));
+          this.state = final;
+          this.active = undefined; committed = true;
+          await this.port.afterCommit?.(finalCommit, context); this.guard(epoch, signal);
+        } else {
+          this.publish(commit);
+          this.active = undefined; committed = true;
+          await this.port.afterCommit?.(commit, context); this.guard(epoch, signal);
+        }
       } catch (error) {
         if (this.current(epoch, signal) && this.active) { this.active = undefined; this.port.rollback(baseline, context); }
         throw error;

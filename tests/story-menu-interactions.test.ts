@@ -790,6 +790,20 @@ test('forge repaints the menu once per action', t => {
   assert.equal(render.mock.callCount(),2,'结算只重绘一次，不叠加会话通知');
 });
 
+test('quest page redraws only when the quest book version changes', t => {
+  const f=fixture();t.after(f.cleanup);
+  f.menu.show('quests');
+  const render=t.mock.method(f.menu as any,'render') as any;
+  f.session.gainMoney(1);
+  assert.equal(render.mock.callCount(),0,'金币变化不重绘任务页');
+  f.session.emit();
+  assert.equal(render.mock.callCount(),0,'任务状态没变不重复重绘');
+  assert.equal(f.session.accept('grafton-mission'),true);
+  assert.equal(render.mock.callCount(),1,'任务簿版本变化触发一次重绘');
+  f.session.focusDebugQuest('grafton-mission');
+  assert.equal(render.mock.callCount(),2,'调试焦点变化也重绘任务页');
+});
+
 test('four actions use two rows including the forge entry', async t => {
   const f=fixture();t.after(f.cleanup);f.hero.addExperience(Number.MAX_SAFE_INTEGER);
   const first=f.add('ferrule'),second=f.add('copper-ring'),third=f.add('crystal-ring');

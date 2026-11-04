@@ -508,6 +508,90 @@ test('talk descriptions cannot enter the objective counter model', () => {
   assert.throws(()=>fixture([rules('errand',{goals:[{id:'ask',kind:'talk',target:'elder',quantity:1}]})]),/descriptionTargets/);
 });
 
+test('a bag change refreshes item goals only for running quests', () => {
+  const reads: string[] = [], inventory = new Map<string, number>();
+  const context: QuestContext = { classId: 'priest', itemCount: id => { reads.push(id); return inventory.get(id) ?? 0; },
+    equippedItemCount: () => 0, questStatus: () => 'locked', eventStatus: () => 'idle', choice: () => undefined,
+    flag: () => false, world: () => undefined };
+  const book = new QuestBook([
+    rules('running', { completion: 'all', goals: [{ id: 'ore', kind: 'item', target: 'running-ore', quantity: 2 }] }),
+    rules('sleeping', { completion: 'all', goals: [{ id: 'gem', kind: 'item', target: 'sleeping-gem', quantity: 2 }],
+      availableWhen: { type: 'flag', flag: 'never' } }),
+  ], () => context, new Set());
+  book.commit(book.plan({ type: 'accept', quest: 'running' }));
+  reads.length = 0; inventory.set('running-ore', 2); inventory.set('sleeping-gem', 2);
+  book.refreshChanges({ bagChanged: true });
+  assert.equal(book.status('running'), 'ready');
+  assert.deepEqual(reads, ['running-ore'], '未进行任务不重算物品目标');
+  assert.equal(book.status('sleeping'), 'locked');
+});
+
+test('a condition key change only refreshes quests that reference it', () => {
+  const flagReads: string[] = [], flags = new Set(['door']);
+  const context: QuestContext = { classId: 'priest', itemCount: () => 0, questStatus: () => 'locked',
+    eventStatus: () => 'idle', choice: () => undefined, flag: id => { flagReads.push(id); return flags.has(id); }, world: () => undefined };
+  const book = new QuestBook([
+    rules('door', { availableWhen: { type: 'flag', flag: 'door' } }),
+    rules('gate', { availableWhen: { type: 'flag', flag: 'gate' } }),
+  ], () => context, new Set());
+  flagReads.length = 0;
+  book.refreshChanges({ keys: ['flag:door'] });
+  assert.equal(book.status('door'), 'available');
+  assert.equal(book.status('gate'), 'locked');
+  assert.deepEqual(flagReads, ['door'], '只求值引用变化键的任务');
+});
+
+test('facts and side-quest resets do not scan definitions outside the running pool', () => {
+  const eventReads: string[] = [];
+  const context: QuestContext = { classId: 'priest', itemCount: () => 0, questStatus: () => 'locked',
+    eventStatus: id => { eventReads.push(id); return 'idle'; }, choice: () => undefined, flag: () => false, world: () => undefined };
+  const book = new QuestBook([
+    rules('talker', { completion: 'all', goals: [{ id: 'ask', kind: 'talk', target: 'elder', quantity: 1 }] }),
+    rules('observer', { completion: 'talk', availableWhen: { type: 'event', event: 'probe', status: 'completed' } }),
+    rules('side', { completion: 'talk' }),
+  ], () => context, new Set(['side']));
+  book.commit(book.plan([{ type: 'accept', quest: 'talker' }, { type: 'accept', quest: 'side' }], { stateIsCurrent: true }));
+  eventReads.length = 0;
+  book.commit(book.plan({ type: 'fact', fact: { kind: 'talk', target: 'elder',
+    occurrence: { source: 'talk', sequence: 1 } } }, { stateIsCurrent: true }));
+  assert.equal(book.status('talker'), 'ready');
+  assert.deepEqual(eventReads, [], '事实只处理进行中任务');
+  book.commit(book.plan({ type: 'reset-side-quests' }, { stateIsCurrent: true }));
+  assert.equal(book.status('side'), 'available');
+  assert.deepEqual(eventReads, [], '支线重置不扫未进行任务');
+});
+
+test('stateIsCurrent skips the leading full refresh while the default still performs it', () => {
+  const eventReads: string[] = [];
+  const context: QuestContext = { classId: 'priest', itemCount: () => 0, questStatus: () => 'locked',
+    eventStatus: id => { eventReads.push(id); return 'idle'; }, choice: () => undefined, flag: () => false, world: () => undefined };
+  const book = new QuestBook([
+    rules('target', { completion: 'story' }),
+    rules('observer', { completion: 'talk', availableWhen: { type: 'event', event: 'probe', status: 'completed' } }),
+  ], () => context, new Set());
+  book.commit(book.plan({ type: 'accept', quest: 'target' }, { stateIsCurrent: true }));
+  eventReads.length = 0;
+  book.commit(book.plan({ type: 'script-ready', quest: 'target' }, { stateIsCurrent: true }));
+  assert.equal(eventReads.length, 0, 'stateIsCurrent 不触发全量刷新');
+  book.commit(book.plan({ type: 'script-ready', quest: 'target' }));
+  assert.ok(eventReads.includes('probe'), '缺省参数仍做全量刷新');
+});
+
+test('resetting side quests refreshes other running item goals after taking items back', () => {
+  const h = fixture([
+    rules('side', { completion: 'all', goals: [{ id: 'ore', kind: 'item', target: 'ore', quantity: 1 }],
+      handoverItems: [{ item: 'ore', quantity: 1 }] }),
+    rules('other', { completion: 'all', goals: [{ id: 'ore', kind: 'item', target: 'ore', quantity: 2 }] }),
+  ], ['side']);
+  h.inventory.set('ore', 2);
+  h.commit({ type: 'accept', quest: 'side' }); h.commit({ type: 'accept', quest: 'other' });
+  assert.equal(h.book.state('other')!.goals.ore, 2); assert.equal(h.book.status('other'), 'ready');
+  h.commit({ type: 'reset-side-quests' });
+  assert.equal(h.inventory.get('ore'), 1);
+  assert.equal(h.book.state('other')!.goals.ore, 1, '扣回交付物后其他进行中任务的目标要跟着重算');
+  assert.equal(h.book.status('other'), 'active');
+});
+
 test('experimental pins hold completed objectives active and settlement releases them', () => {
   const definition=rules('hunt',{completion:'all',goals:[{id:'kill',kind:'defeat',target:'wolf',quantity:1}]});
   const {book,commit}=fixture([definition]);

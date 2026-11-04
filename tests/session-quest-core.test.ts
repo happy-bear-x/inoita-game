@@ -9,6 +9,8 @@ import type { BattleCatalog } from '../src/domain/battle.ts';
 import { BattleCharacter, type CharacterStatsCatalog } from '../src/domain/character-stats.ts';
 import type { CompanionCatalog } from '../src/domain/party.ts';
 import { moneyGain } from '../src/domain/economy.ts';
+import { StoryRuntime } from '../src/domain/story-runtime.ts';
+import type { StoryCommand } from '../src/domain/story-graph.ts';
 
 const read=<T>(file:string):T=>JSON.parse(readFileSync(new URL(`../public/content/${file}.json`,import.meta.url),'utf8')) as T;
 const items=read<ItemCatalog>('items'),battle=read<BattleCatalog>('battle'),stats=read<CharacterStatsCatalog>('character-stats'),companions=read<CompanionCatalog>('companions');
@@ -35,12 +37,18 @@ function campaign(quests:CampaignQuest[]):Campaign {
 
 function refreshCounter(t:test.TestContext,session:Session){
   let calls=0;
-  const original=session.questBook.plan.bind(session.questBook);
-  t.mock.method(session.questBook,'plan',(command:Parameters<typeof original>[0])=>{calls++;return original(command);});
+  const originalChanges=session.questBook.refreshChanges.bind(session.questBook);
+  const originalPlan=session.questBook.plan.bind(session.questBook);
+  t.mock.method(session.questBook,'refreshChanges',(changes:Parameters<typeof originalChanges>[0])=>{calls++;return originalChanges(changes);});
+  // 全量刷新（启动、恢复、世界上下文改变）仍走 plan({type:'refresh'})，也要计入“刷新了一次”。
+  t.mock.method(session.questBook,'plan',(command:Parameters<typeof originalPlan>[0],options?:Parameters<typeof originalPlan>[1])=>{
+    if(!Array.isArray(command)&&(command as {type:string}).type==='refresh')calls++;
+    return originalPlan(command,options);
+  });
   return ()=>calls;
 }
 
-test('unchanged quest inputs skip plans across repeated NPC queries and unrelated notifications',t=>{
+test('unchanged quest inputs skip incremental refreshes across repeated NPC queries and unrelated notifications',t=>{
   const hero=new BattleCharacter('dark-knight',stats,items);
   const session=new Session(campaign([quest('one')]),undefined,undefined,items,hero,battle,stats,companions);
   const calls=refreshCounter(t,session);
@@ -112,13 +120,13 @@ test('restores and failed commits leave quest refresh caches coherent',t=>{
   assert.deepEqual(session.captureState(),before);session.refresh();assert.equal(session.status('letter'),'active');
 });
 
-test('a failed refresh plan is retried even when its input versions stay the same',t=>{
+test('a failed incremental refresh is retried even when its input versions stay the same',t=>{
   const session=new Session(campaign([quest('one')]));
-  const original=session.questBook.plan.bind(session.questBook);let fail=true,calls=0;
-  t.mock.method(session.questBook,'plan',(command:Parameters<typeof original>[0])=>{
-    calls++;if(fail)throw new Error('fixture plan failure');return original(command);
+  const original=session.questBook.refreshChanges.bind(session.questBook);let fail=true,calls=0;
+  t.mock.method(session.questBook,'refreshChanges',(changes:Parameters<typeof original>[0])=>{
+    calls++;if(fail)throw new Error('fixture refresh failure');return original(changes);
   });
-  session.bag.add('letter');assert.throws(()=>session.refresh(),/fixture plan failure/);
+  session.bag.add('letter');assert.throws(()=>session.refresh(),/fixture refresh failure/);
   fail=false;session.refresh();session.refresh();assert.equal(calls,2);
 });
 
@@ -210,6 +218,102 @@ test('node batches evaluate earlier flags and item grants before quest acceptanc
     {type:'quest',command:{type:'accept',quest:'delivery'}},{type:'quest',command:{type:'complete',quest:'delivery'}}]);
   assert.equal(updates,1);assert.equal(session.status('delivery'),'completed');assert.equal(session.itemCount('letter'),0);assert.equal(session.money,moneyGain(4));
   assert.equal(session.flags.has('permission'),true);
+});
+
+test('a failed batch restores quest progress refreshed in the middle of the batch',()=>{
+  // item-give 会触发进行中任务的物品目标刷新；随后任务命令失败时，回滚必须回到批次前的
+  // 目标与状态，而不是把中途刷新后的结果当成基线。
+  const session=new Session(campaign([quest('letters',{completion:'all',
+    goals:[{id:'letter',kind:'item',target:'letter',quantity:2}]})]));
+  session.accept('letters');
+  const baseline=session.captureState();
+  assert.equal(session.status('letters'),'active');
+  assert.throws(()=>session.applyStoryCommands([{type:'item-give',item:'letter',quantity:1},
+    {type:'quest',command:{type:'complete',quest:'letters'}}]),/目标尚未达成/);
+  assert.deepEqual(session.captureState(),baseline);
+  assert.equal(session.itemCount('letter'),0);
+  assert.equal(session.questBook.state('letters')!.goals.letter,0);
+});
+
+test('empty batches and internal checkpoints neither copy nor fully validate the session',t=>{
+  const session=new Session(campaign([quest('one')]));
+  const validation=t.mock.method(StoryRuntime.prototype,'prepareRestore',()=>{throw new Error('read-level validation should not run');});
+  const capture=session.captureState.bind(session);let captures=0;
+  t.mock.method(session,'captureState',()=>{captures++;return capture();});
+  const checkpoint=session.runtimeState;
+  session.applyStoryCommands([],checkpoint);
+  assert.equal(validation.mock.callCount(),0);
+  assert.equal(captures,0,'空命令不抓会话快照');
+  assert.deepEqual(capture().runtime,checkpoint);
+  session.applyStoryCommands([{type:'flag',flag:'adopted'}],checkpoint);
+  assert.equal(validation.mock.callCount(),0,'内部检查点不走读档级校验');
+  assert.equal(session.flags.has('adopted'),true);
+});
+
+test('every story command type restores the subsystems it touched when the batch fails late',t=>{
+  const story={...Object.values(companions.definitions)[0],id:'story-atomic',source:'story' as const};
+  const catalog:CompanionCatalog={...companions,definitions:{...companions.definitions,[story.id]:story}};
+  const weapon=items.startingEquipment['dark-knight']['main-hand']!;
+  const create=()=>{
+    const hero=new BattleCharacter('dark-knight',stats,items);
+    const session=new Session(campaign([
+      quest('atomic',{completion:'story'}),
+      quest('atomic-item',{completion:'all',goals:[{id:'key',kind:'item',target:'west-mine-key',quantity:2}]}),
+    ]),undefined,undefined,items,hero,battle,stats,catalog);
+    return session;
+  };
+  const readyItemQuest=(session:Session)=>{
+    session.accept('atomic-item');session.bag.add('west-mine-key',2);session.refresh();
+  };
+  const cases:[string,(session:Session)=>StoryCommand[],((session:Session)=>void)?][]=[
+    ['interaction',()=>[{type:'interaction',target:'npc',instance:'npc'}]],
+    ['talk',()=>[{type:'talk',target:'npc'}]],
+    ['quest accept',()=>[{type:'quest',command:{type:'accept',quest:'atomic'}}]],
+    ['quest complete',()=>[{type:'quest',command:{type:'complete',quest:'atomic-item'}}],readyItemQuest],
+    ['item-give',()=>[{type:'item-give',item:'west-mine-key',quantity:1}]],
+    ['item-take',()=>[{type:'item-take',item:'west-mine-key',quantity:1}],session=>session.bag.add('west-mine-key',2)],
+    ['money-give',()=>[{type:'money-give',amount:5}]],
+    ['money-take',()=>[{type:'money-take',amount:5}]],
+    ['item-drop',()=>[{type:'item-drop',item:'west-mine-key',map:'camp',x:16,y:16,quantity:1}]],
+    ['flag',()=>[{type:'flag',flag:'atomic-flag'}]],
+    ['choice',()=>[{type:'choice',choice:'atomic-choice',value:'yes'}]],
+    ['world',()=>[{type:'world',command:{kind:'hide',id:'atomic-npc'}}]],
+    ['travel',()=>[{type:'travel',destination:{map:'camp',x:16,y:32,facing:'south'}}]],
+    ['encounter',()=>[{type:'encounter',encounter:{id:'atomic-encounter',map:'camp',status:'active',spawns:[]}}]],
+    ['party-join',()=>[{type:'party-join',companion:story.id}]],
+    ['party-leave',()=>[{type:'party-leave',companion:story.id}],session=>{session.party!.joinStory(story.id);}],
+    ['party-control',()=>[{type:'party-control',member:'story-'+story.id}],session=>{session.party!.joinStory(story.id);}],
+    ['health',()=>[{type:'health',member:'player',value:1}]],
+    ['mana',()=>[{type:'mana',member:'player',value:0}]],
+    ['equip',()=>[{type:'equip',member:'player',item:weapon,slot:'main-hand',create:true}]],
+    ['unequip-destroy',()=>[{type:'unequip-destroy',member:'player',item:weapon}]],
+  ];
+  for(const [label,commands,prepare] of cases){
+    const session=create();
+    prepare?.(session);
+    session.gainMoney(10);
+    const baseline=session.captureState();
+    t.mock.method(session,'emit',()=>{throw new Error('fixture late failure');});
+    assert.throws(()=>session.applyStoryCommands(commands(session)),/fixture late failure/,label);
+    assert.deepEqual(session.captureState(),baseline,`${label} 失败后应恢复到批次前`);
+    t.mock.restoreAll();
+  }
+});
+
+test('a deferred commit receipt rolls back the batch while ordinary callers keep their changes',()=>{
+  const session=new Session(campaign([quest('one')]));
+  session.accept('one');
+  const before=session.captureState();
+  const receipt=session.applyStoryCommands([{type:'item-give',item:'letter',quantity:1},
+    {type:'flag',flag:'temporary'}],undefined,{deferFinalize:true});
+  assert.equal(session.itemCount('letter'),1);assert.equal(session.flags.has('temporary'),true);
+  receipt.rollback();
+  assert.deepEqual(session.captureState(),before);
+  // 普通调用方在返回前已经 finalize：再回滚是空操作。
+  const ordinary=session.applyStoryCommands([{type:'flag',flag:'kept'}]);
+  ordinary.rollback();assert.equal(session.flags.has('kept'),true);
+  const deferred=session.applyStoryCommands([{type:'item-give',item:'letter',quantity:1}],undefined,{deferFinalize:true});
+  deferred.finalize();deferred.rollback();assert.equal(session.itemCount('letter'),1);
 });
 
 test('a failed joint handover leaves inventory, quests, receipts and subscribers unchanged',()=>{
@@ -355,15 +459,17 @@ test('declared talk completion publishes typed facts separately from object inte
   assert.equal(session.status('talk-to-both'),'ready');assert.equal(session.captureState().factSequences.find(([source])=>source==='talk')?.[1],2);
 });
 
-test('branches and quest availability see a pending travel destination before formal scene projection',()=>{
+test('branches read the travel destination and quest availability after the commands land',()=>{
   const session=new Session(campaign([quest('destination',{availableWhen:{type:'world',key:'map',value:'next'}})]));
   session.setStoryWorldContext(()=>({map:'camp'}));
   const travel={type:'travel' as const,destination:{map:'next',x:16,y:32,facing:'south' as const}};
   assert.equal(session.status('destination'),'locked');
-  assert.equal(session.evaluateCondition({type:'world',key:'map',value:'next'},[travel]),true);
-  assert.equal(session.evaluateCondition({type:'quest',quest:'destination',status:'available'},[travel]),true);
-  assert.equal(session.status('destination'),'locked');assert.equal(session.storyWorld.currentLocation,undefined);
-  session.applyStoryCommands([travel,{type:'quest',command:{type:'accept',quest:'destination'}},{type:'quest',command:{type:'script-ready',quest:'destination'}}]);
+  // 分支在命令落地后求值：转场一落地，世界键与任务可用性都能被条件读到。
+  session.applyStoryCommands([travel]);
+  assert.equal(session.storyWorld.currentLocation?.map,'next');
+  assert.equal(session.evaluateCondition({type:'world',key:'map',value:'next'}),true);
+  assert.equal(session.status('destination'),'available');
+  session.applyStoryCommands([{type:'quest',command:{type:'accept',quest:'destination'}},{type:'quest',command:{type:'script-ready',quest:'destination'}}]);
   assert.equal(session.status('destination'),'ready');assert.equal(session.evaluateCondition({type:'world',key:'map',value:'next'}),true);
 });
 
