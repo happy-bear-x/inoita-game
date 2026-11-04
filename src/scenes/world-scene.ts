@@ -43,6 +43,7 @@ import { potentialMapEnemyIds, storyPresentationAssets, type WorldAssetInputs } 
 import { uiTexture } from '../ui/phaser/widgets.ts';
 import { storyExitId } from '../domain/story-world.ts';
 import { hasLivingParty } from '../domain/session-checkpoint.ts';
+import { freezeSnapshot, storyDevMode } from '../domain/dev-mode.ts';
 import type { TravelDestination } from '../domain/content.ts';
 import type {StoryAudioState} from '../application/game-audio.ts';
 
@@ -1494,7 +1495,7 @@ captureStoryScene():SceneSnapshot {
         characterId:character.entity.characterId,worldEntityId:player?undefined:character.entity.id,
         authority:player?undefined:character.entity.authority,
         memberId:player?'player':undefined,...this.movement!.position(character),facing:facing??'south',visible,
-        flip:character.entity.flip,appearance:structuredClone(character.actor),clip:character.clipName??undefined,
+        flip:character.entity.flip,appearance:storyDevMode()?freezeSnapshot(character.actor):character.actor,clip:character.clipName??undefined,
         alpha:character.container.alpha,animationProgress:animation.progress,
         animationPlaying:animation.playing};
     });
