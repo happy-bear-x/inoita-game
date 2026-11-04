@@ -14,7 +14,13 @@ export class SkillConfiguration {
   protected loadouts = new Map<string, SkillLoadout>();
   private pages = new Map<string, number>();
   private revision=0;
+  private draftCallCount=0;
   get version():number {return this.revision;}
+  /**
+   * 开发期计数器：每次 `draft` 真正克隆已有配置或按职业构建新配置时 +1，
+   * 命中已有 loadout 也算一次。只读、不持久化，供性能测量比较调用次数。
+   */
+  get draftCalls():number {return this.draftCallCount;}
   /** 技能等级或页码写入后推进版本，供地图快捷栏复用页面内容。 */
   protected markChanged():void {this.revision++;}
   captureState(): SkillConfigurationState { return structuredClone({loadouts:[...this.loadouts],pages:[...this.pages]}); }
@@ -33,9 +39,10 @@ export class SkillConfiguration {
   }
   draft(catalog: BattleCatalog, classId: string): SkillLoadout {
     const existing = this.loadouts.get(classId);
-    if (existing) return structuredClone(existing);
+    if (existing) { this.draftCallCount++; return structuredClone(existing); }
     const character = catalog.classes.find(c => c.id === classId);
     if (!character) throw new Error('职业不存在');
+    this.draftCallCount++;
     return { levels: Object.fromEntries(character.skills.map(id => [id, 1])) };
   }
   /** 该职业已学会的主动技能，按职业技能表次序。默认快捷栏用它排每组前五格。 */

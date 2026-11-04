@@ -149,11 +149,11 @@ export class Session {
     // 永久死亡、任务捕捉、宝箱/遭遇怪不在这份名单里，仍按各自规则保留。
     if(entering&&mapSpawns)this.resetMapEnemies(mapSpawns);
     for(const [id,enemy] of this.enemyStates)if(enemy.capture&&
-      (enemy.capture.map!==map||enemy.capture.visit!==this.storyWorld.visit))this.enemyStates.delete(id);
+      (enemy.capture.map!==map||enemy.capture.visit!==this.storyWorld.visit))this.deleteEnemyState(id);
     if (this.chests.mapId !== map) {
-      for (const spawn of this.chests.spawns) this.enemyStates.delete(spawn.id);
+      for (const spawn of this.chests.spawns) this.deleteEnemyState(spawn.id);
       if (this.chests.mapId !== undefined) {
-        for (const [id, enemy] of this.enemyStates) if (enemy.deadUntil !== 'permanent') this.enemyStates.delete(id);
+        for (const [id, enemy] of this.enemyStates) if (enemy.deadUntil !== 'permanent') this.deleteEnemyState(id);
       }
     }
     this.chests.enterMap(map);
@@ -174,7 +174,7 @@ export class Session {
       if(spawn.respawn===false)continue;
       const state=this.enemyStates.get(spawn.id);
       if(!state||state.deadUntil==='permanent'||state.capture)continue;
-      this.enemyStates.delete(spawn.id);
+      this.deleteEnemyState(spawn.id);
     }
   }
   /** 越界坐标落到出口格或地图中心：原版 SAVE_ReviseCharacterLocation 的判据与兜底（findings 175）。 */
@@ -220,6 +220,24 @@ export class Session {
    * 不能只看选择值有没有变化，否则重复选同一个选项会被当成没发生。
    */
   private readonly choiceWrites = new Map<string,number>();
+  private choiceWriteRevisionValue = 0;
+  private receiptRevisionValue = 0;
+  private enemyRevisionValue = 0;
+  /**
+   * 选择写入次数的修订号：`choiceWrites` 每次写入和在恢复/回滚中重建时推进。
+   * 只用于让按次数增量观察的缓存失效，不写存档。
+   */
+  get choiceWriteRevision():number { return this.choiceWriteRevisionValue; }
+  /**
+   * 任务奖励收据的修订号：可重复任务写入收据、以及恢复/回滚时重建收据表都会推进。
+   * 只用于让存档快照缓存失效，不写存档。
+   */
+  get receiptRevision():number { return this.receiptRevisionValue; }
+  /**
+   * 敌人状态的修订号：`enemyStates` 每次 set/delete 和恢复时重建都会推进。
+   * 只用于让存档快照缓存失效，不写存档。
+   */
+  get enemyRevision():number { return this.enemyRevisionValue; }
   private worldContext:()=>Record<string,StoryWorldValue> = ()=>({});
   /** 任务可用性读的条件输入；带条件键，刷新时只找引用变化键的任务。 */
   private readonly questConditionInputs:{key:string;read:(context:StoryConditionContext)=>StoryWorldValue|undefined}[]=[];
@@ -281,6 +299,13 @@ export class Session {
     this.recordPerformance(['coins']);this.coins-=amount;this.emit();
   }
   private readonly enemyStates = new Map<string, EnemyState>();
+  private setEnemyState(id:string,state:EnemyState):void {
+    // 存档快照按 `enemyRevision` 复用；每次 set 都视为一次新写入。
+    this.enemyStates.set(id,state);this.enemyRevisionValue++;
+  }
+  private deleteEnemyState(id:string):void {
+    if(this.enemyStates.delete(id))this.enemyRevisionValue++;
+  }
   private trackedQuest?: string;
   private debugFocusQuestValue?: string;
   /** 任务组的主线／支线归属；NPC 任务槽按原版先主线后支线的顺序取。 */
@@ -488,12 +513,13 @@ export class Session {
     if(quests)this.questBook.rollbackTo(quests);else this.questBook.restoreState(restored.questBook);
     this.storyWorld.restoreState(restored.storyWorld);
     // 选择写入次数是当前时间线的运行时计数，读档/检查点恢复后从零开始。
-    this.choiceWrites.clear();
+    // 修订号仍要推进，避免按旧次数复用的观察结果把恢复后的空表当成“没变化”。
+    this.choiceWrites.clear();this.choiceWriteRevisionValue++;
     // 外部恢复已在 `prepareRuntime` 校验过；回滚拿到的是本项目刚产出的不可变快照。
     this.runtimeSnapshot=restored.runtime;
-    this.receipts.clear();for(const receipt of restored.receipts)this.receipts.set(JSON.stringify([receipt.quest,receipt.cycle]),structuredClone(receipt));
+    this.receipts.clear();for(const receipt of restored.receipts)this.receipts.set(JSON.stringify([receipt.quest,receipt.cycle]),structuredClone(receipt));this.receiptRevisionValue++;
     this.factSequences.clear();for(const [source,sequence]of restored.factSequences)this.factSequences.set(source,sequence);
-    this.enemyStates.clear();for(const [id,enemy] of restored.enemies)this.enemyStates.set(id,enemy);
+    this.enemyStates.clear();for(const [id,enemy] of restored.enemies)this.enemyStates.set(id,enemy);this.enemyRevisionValue++;
     this.trackedQuest=restored.trackedQuest;this.debugFocusQuestValue=restored.debugFocusQuest;this.playerState=restored.player?Object.freeze({...restored.player}):undefined;
     this.coins=restored.money;this.gameTimeMs=restored.gameTimeMs;
     this.recovery.restoreState(restored.recovery);this.chests.restoreState(restored.chests);this.springs.restoreState(restored.springs);this.legendaryWeapons.restoreState(restored.legendaryWeapons);this.shops.restoreState(restored.shops);
@@ -624,15 +650,15 @@ export class Session {
   }
   /** 召唤物离场时丢弃它的战斗状态；召唤实例的 key 不会被地图生成点复用。 */
   forgetEnemyVitals(id:string):void {
-    this.enemyStates.delete(id);
+    this.deleteEnemyState(id);
   }
   removeStoryEnemy(id:string):void {
     this.storyWorld.apply({kind:'remove',id});
-    this.enemyStates.set(id,{...this.enemyStates.get(id),health:0,deadUntil:'permanent'});
+    this.setEnemyState(id,{...this.enemyStates.get(id),health:0,deadUntil:'permanent'});
     this.emit();
   }
   setEnemyVitals(id:string,health:number,mana:number):void {
-    this.enemyStates.set(id,{...this.enemyStates.get(id),health,mana});
+    this.setEnemyState(id,{...this.enemyStates.get(id),health,mana});
   }
   canSpawnEnemy(spawn:EnemySpawn|CampaignEnemyPlacement):boolean {
     if('activeQuest' in spawn&&this.status(spawn.activeQuest)!=='active')return false;
@@ -640,7 +666,7 @@ export class Session {
     const state=this.enemyStates.get(spawn.id);
     if(state?.deadUntil===undefined)return true;
     if(state.deadUntil==='permanent'||this.gameTimeMs<state.deadUntil)return false;
-    this.enemyStates.delete(spawn.id);return true;
+    this.deleteEnemyState(spawn.id);return true;
   }
   /** 类型 3 任务把低血量的怪物变成同格可交互角色，交互之后才记目标次数。 */
   weakenQuestTarget(enemyId:string,source:{id:string;map:string;x:number;y:number}):boolean {
@@ -658,7 +684,7 @@ export class Session {
           x:source.x,y:source.y,visible:true,hint:match.change.interactText||match.change.changedText}}},
       ]);
       // 转换不会调用原版死亡重置；本次地图仍占用源槽，离图后重新登记。
-      this.enemyStates.set(source.id,{health:1,deadUntil:'permanent',capture:{map:source.map,visit:this.storyWorld.visit}});
+      this.setEnemyState(source.id,{health:1,deadUntil:'permanent',capture:{map:source.map,visit:this.storyWorld.visit}});
       this.emit();
     });
     return true;
@@ -670,7 +696,7 @@ export class Session {
       const commands:StoryCommand[]=[{type:'quest',command:{type:'fact',fact:this.nextQuestFact('defeat',spawn.enemyId,'combat')}}];
       if('activeQuest' in spawn)commands.push({type:'item-give',item:spawn.rewardItem,quantity:1});
       this.applyStoryCommands(commands);
-      this.enemyStates.set(spawn.id,{deadUntil:spawn.respawn===false?'permanent':this.gameTimeMs+respawnMs});
+      this.setEnemyState(spawn.id,{deadUntil:spawn.respawn===false?'permanent':this.gameTimeMs+respawnMs});
       this.emit();
     });
     for (const listener of this.defeatListeners) listener(spawn.enemyId);
@@ -1045,11 +1071,13 @@ export class Session {
     if(touched.has('storyWorld')){
       this.storyWorld.restoreState(baseline.world!);
       this.choiceWrites.clear();for(const[id,count]of baseline.choiceWrites??[])this.choiceWrites.set(id,count);
+      this.choiceWriteRevisionValue++;
     }
     if(touched.has('groundLoot'))groundLootFor(this).restoreState(baseline.loot!);
     if(touched.has('coins'))this.coins=baseline.coins!;
     if(touched.has('receipts')){
       this.receipts.clear();for(const[key,receipt]of baseline.receipts!)this.receipts.set(key,structuredClone(receipt));
+      this.receiptRevisionValue++;
     }
     if(touched.has('lootPity'))this.lootPity.restoreState(baseline.lootPity!);
     if(touched.has('playerState'))this.playerState=baseline.playerState;
@@ -1072,7 +1100,7 @@ export class Session {
       const key=JSON.stringify([receipt.quest,receipt.cycle]);if(this.receipts.has(key))throw new Error('任务奖励已结算');
       if(receipt.reward.experience)this.hero?.addExperience(receipt.reward.experience);
       if(receipt.reward.money)this.gainMoney(receipt.reward.money);
-      this.receipts.set(key,structuredClone(receipt));
+      this.receipts.set(key,structuredClone(receipt));this.receiptRevisionValue++;
     }
     this.questBook.commit(plan);
     // `fact` 也走任务命令；会话级事实序号是提交侧的镜像。
@@ -1147,7 +1175,7 @@ export class Session {
             case 'flag':this.storyWorld.apply({kind:'flag',id:command.flag,value:command.value??true});break;
             case 'choice':
               this.storyWorld.apply({kind:'choice',id:command.choice,value:command.value});
-              this.choiceWrites.set(command.choice,(this.choiceWrites.get(command.choice)??0)+1);break;
+              this.choiceWrites.set(command.choice,(this.choiceWrites.get(command.choice)??0)+1);this.choiceWriteRevisionValue++;break;
             case 'world':this.storyWorld.apply(command.command);break;
             case 'travel':this.storyWorld.apply({kind:'travel',destination:command.destination});break;
             case 'encounter':this.storyWorld.apply({kind:'encounter',encounter:command.encounter});break;

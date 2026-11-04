@@ -82,6 +82,12 @@ export class StoryWorldState {
   /** 每次剧情世界变化递增；只读投影可以据此复用上一次的结果。 */
   private revisionValue=0;
   get revision():number{return this.revisionValue;}
+  private encounterRevisionValue=0;
+  /**
+   * 遭遇集合的修订号：新增遭遇（包括剧情以 `active` 状态新建）和结果变成 `won`/`lost` 时推进；
+   * `restoreState` 替换整份世界也推进。其他世界命令不改变它，遭遇状态缓存可以据此复用。
+   */
+  get encounterRevision():number{return this.encounterRevisionValue;}
   enemySpawns(map:string){return [...this.enemyLocations.values()].filter(value=>value.map===map).map(value=>({...value}));}
   private appearances=new Map<string,string>();
   actorAppearance(actor:string):string{return this.appearances.get(actor)??actor;}
@@ -203,7 +209,7 @@ export class StoryWorldState {
         this.validateEncounter(command.encounter);
         const existing=this.encounters.get(command.encounter.id);
         if(existing)throw new Error('剧情遭遇实例已经存在：'+existing.id);
-        this.encounters.set(command.encounter.id,structuredClone(command.encounter));return;
+        this.encounters.set(command.encounter.id,structuredClone(command.encounter));this.encounterRevisionValue++;return;
       }
       case 'encounter-result':{
         const encounter=this.encounters.get(command.id);
@@ -212,7 +218,7 @@ export class StoryWorldState {
           if(encounter.status!==command.result)throw new Error('剧情遭遇结果冲突：'+command.id);
           return;
         }
-        encounter.status=command.result;return;
+        encounter.status=command.result;this.encounterRevisionValue++;return;
       }
     }
   }
@@ -249,7 +255,7 @@ export class StoryWorldState {
       ||encounter.spawns.some(spawn=>!spawn.id||!spawn.enemyId||!Number.isFinite(spawn.x)||!Number.isFinite(spawn.y)))throw new Error('剧情遭遇快照无效');
   }
   restoreState(state:StoryWorldSnapshot):void{
-    this.revisionValue++;
+    this.revisionValue++;this.encounterRevisionValue++;
     const restored=this.prepareRestore(state);
     this.entities=new Map(restored.entities.map(e=>[e.id,e]));this.exits=new Map(restored.exits);
     this.flags=new Set(restored.flags);this.choices=new Map(restored.choices);

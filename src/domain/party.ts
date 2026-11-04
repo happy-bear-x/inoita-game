@@ -80,16 +80,19 @@ export class CompanionMember {
   readonly bag:Bag;
   private readonly growth:PrimaryAttributes[];
   private readonly changed:()=>void;
+  /** 升级后通知名册推进修订号；直接调用 `addExperience` 的调试入口也会走到这里。 */
+  private readonly onLevelUp?:()=>void;
   private currentLevel:number;
   private currentHealth=0;
   private currentMana=0;
   private currentExperience=0;
   private combatResourceLimits:{maxHealth:number;maxMana:number}|null=null;
   constructor(id:string,definition:CompanionDefinition,source:'story'|'mercenary',level:number,
-    stats:CharacterStatsCatalog,items:ItemCatalog,bag:Bag,growth:PrimaryAttributes[],changed:()=>void,generated:GeneratedCompanion,training:CompanionGenerationRules['training']){
+    stats:CharacterStatsCatalog,items:ItemCatalog,bag:Bag,growth:PrimaryAttributes[],changed:()=>void,generated:GeneratedCompanion,
+    training:CompanionGenerationRules['training'],onLevelUp?:()=>void){
     if(!stats.classes[definition.classId]||growth.length<stats.maxLevel)throw new Error('伙伴职业成长数据缺失');
     this.id=id;this.definition=definition;this.source=source;this.stats=stats;this.items=items;this.bag=bag;
-    this.growth=growth;this.changed=changed;this.currentLevel=Math.min(stats.maxLevel,Math.max(1,level));
+    this.growth=growth;this.changed=changed;this.onLevelUp=onLevelUp;this.currentLevel=Math.min(stats.maxLevel,Math.max(1,level));
     this.generated=structuredClone(generated);this.skills=new CompanionSkillProgression(generated.skillCaps,training);
     this.skills.updateLevel(this.currentLevel);
     this.currentHealth=this.panel.maxHealth;this.currentMana=this.panel.maxMana;
@@ -153,7 +156,7 @@ export class CompanionMember {
       this.currentExperience-=this.stats.experience[this.currentLevel-1]!;this.currentLevel++;levels++;
     }
     if(this.currentLevel===this.stats.maxLevel)this.currentExperience=0;
-    if(levels){this.skills.updateLevel(this.currentLevel);if(this.alive)this.recover();else this.changed();}else this.changed();return levels;
+    if(levels){this.skills.updateLevel(this.currentLevel);this.onLevelUp?.();if(this.alive)this.recover();else this.changed();}else this.changed();return levels;
   }
   setAiFrequency(skillId:string,frequency:number):void{
     if(!Number.isInteger(frequency)||frequency<0||frequency>2)throw new Error('技能频率需要是 0–2');
@@ -202,11 +205,36 @@ export class PartyRoster {
   private selected='player';
   private serial=0;
   private rosterSlots:(string|null)[]=Array.from({length:MERCENARY_SLOT_COUNT},()=>null);
+  private revisionValue=0;
+  private groupModifierVersionValue=0;
+  private heroLevel:number;
+  /**
+   * 队伍展示与战斗输入的修订号：队伍结构、操控者、成员等级和成员装备变化时推进。
+   *
+   * 直接推进的入口：成员加入（`create`）、成员离队（`remove`）、上阵/候补换位（`deploy`、`reserve`）、
+   * 切换操控者（`switchControl`）、阵亡后换人（`onDefeat`）、成员或主角升级、读档（`restoreState`）。
+   * 成员装备变化经 `bag.revision` 带入；背包是成员装备的唯一写入口，因此这里读它而不是再记一份。
+   * 血量、法力、临时战斗上限和经验数值本身不推进，避免每次受击都让缓存失效。
+   */
+  get revision():number{return this.revisionValue+this.bag.revision;}
+  /**
+   * 队伍光环/组队被动的输入版本：只在成员加入、离队、成员升级和读档时推进。
+   * 换位、切人、掉血/回蓝都不改变 `groupModifiers()` 的结果。
+   */
+  get groupModifierVersion():number{return this.groupModifierVersionValue;}
   constructor(hero:BattleCharacter,stats:CharacterStatsCatalog,items:ItemCatalog,catalog:CompanionCatalog,changed:()=>void,onMemberRemoved?:(id:string)=>void,
     onRecruited?:(sourceItem:string,memberId:string)=>void,atomic?:<T>(operation:()=>T)=>T){
     this.hero=hero;this.bag=hero.bag;this.stats=stats;this.items=items;this.catalog=catalog;this.changed=changed;this.onMemberRemoved=onMemberRemoved;
-    this.onRecruited=onRecruited;this.atomic=atomic;
+    this.onRecruited=onRecruited;this.atomic=atomic;this.heroLevel=hero.level;
+    // 主角升级也可能来自任务奖励等不走 `PartyRoster.addExperience` 的入口；订阅时只比较等级，
+    // 掉血/回蓝触发的通知不会推进修订号。
+    hero.subscribe(()=>{
+      if(this.hero.level===this.heroLevel)return;
+      this.heroLevel=this.hero.level;this.revisionValue++;
+    });
   }
+  /** 成员集合或成员等级变化：展示修订号和组队被动版本一起推进。 */
+  private bumpGroupModifiers():void{this.revisionValue++;this.groupModifierVersionValue++;}
   get controlledId():string{return this.selected;}
   get activeIds():string[]{return ['player',...this.slots.filter((id):id is string=>!!id)];}
   /** 已拥有伙伴的外观定义 id（不含主角）；返回只读拷贝，供素材规划使用。 */
@@ -243,7 +271,7 @@ export class PartyRoster {
   private create(definition:CompanionDefinition,source:'story'|'mercenary',id:string,generated:GeneratedCompanion):CompanionMember{
     if(!this.catalog.growth[definition.classId])throw new Error('伙伴成长数据缺失');
     const member=new CompanionMember(id,definition,source,generated.level,this.stats,this.items,this.bag,
-      this.catalog.growth[definition.classId],this.changed,generated,this.catalog.generation.training);
+      this.catalog.growth[definition.classId],this.changed,generated,this.catalog.generation.training,()=>this.bumpGroupModifiers());
     const gear=this.items.startingEquipment[definition.classId]??{};
     try {for(const [slot,item] of Object.entries(gear))this.bag.addEquipped(item!,slot as import('./items.ts').EquipmentSlot,id);}
     catch(error){this.bag.removeOwner(id,false);throw error;}
@@ -251,7 +279,7 @@ export class PartyRoster {
     member.recover();this.owned.set(id,member);
     if(source==='mercenary')this.rosterSlots[this.rosterSlots.indexOf(null)]=id;
     else {const slot=this.slots.findIndex(value=>!value);if(slot>=0)this.slots[slot]=id;}
-    this.changed();return member;
+    this.bumpGroupModifiers();this.changed();return member;
   }
   recruit(itemInstanceId:string,random:()=>number=Math.random):{member:CompanionMember;result:ItemResult}{
     return this.atomic?this.atomic(()=>this.recruitMember(itemInstanceId,random)):this.recruitMember(itemInstanceId,random);
@@ -314,7 +342,7 @@ export class PartyRoster {
   private remove(id:string,returnEquipment:boolean):void{
     this.owned.delete(id);this.onMemberRemoved?.(id);this.rosterSlots=this.rosterSlots.map(value=>value===id?null:value);this.slots=this.slots.map(value=>value===id?undefined:value);
     if(this.selected===id)this.selected=this.livingIds[0]??'player';
-    this.bag.removeOwner(id,returnEquipment);this.changed();
+    this.bag.removeOwner(id,returnEquipment);this.bumpGroupModifiers();this.changed();
   }
   deploy(id:string,slot:1|2):void{
     if(!this.owned.has(id))throw new Error('伙伴不存在');
@@ -325,7 +353,7 @@ export class PartyRoster {
     if(current>=0)this.slots[current]=previous;
     this.slots[index]=id;
     if(previous&&current<0&&this.selected===previous)this.selected=this.livingIds[0]??'player';
-    this.changed();
+    this.revisionValue++;this.changed();
   }
   deployFirstAvailable(id:string):void{
     if(this.activeIds.includes(id))return;
@@ -338,18 +366,18 @@ export class PartyRoster {
     if(!this.alive(id))throw new Error('阵亡队员无法移出队伍');
     this.slots=this.slots.map(value=>value===id?undefined:value);
     if(this.selected===id)this.selected=this.livingIds[0]??'player';
-    this.changed();
+    this.revisionValue++;this.changed();
   }
   switchControl(id:string):boolean{
     if(!this.activeIds.includes(id)||!this.alive(id))return false;
-    if(this.selected===id)return true;this.selected=id;this.changed();return true;
+    if(this.selected===id)return true;this.selected=id;this.revisionValue++;this.changed();return true;
   }
   onDefeat(id:string):boolean{
     if(this.selected===id){const order=['player',...this.slots],start=order.indexOf(id);
-      for(let offset=1;offset<=order.length;offset++){const next=order[(start+offset)%order.length];if(next&&this.alive(next)){this.selected=next;break;}}this.changed();}
+      for(let offset=1;offset<=order.length;offset++){const next=order[(start+offset)%order.length];if(next&&this.alive(next)){this.selected=next;break;}}this.revisionValue++;this.changed();}
     return this.livingIds.length===0;
   }
-  recover():void{this.hero.recover();for(const id of this.activeIds.slice(1))this.owned.get(id)?.recover();this.selected='player';this.changed();}
+  recover():void{const switched=this.selected!=='player';this.hero.recover();for(const id of this.activeIds.slice(1))this.owned.get(id)?.recover();this.selected='player';if(switched)this.revisionValue++;this.changed();}
   addExperience(amount:number):void{
     if(!Number.isSafeInteger(amount)||amount<0)throw new Error('经验奖励无效');
     const heroLevel=this.hero.level,reward=Math.floor(amount*(1000+(this.groupModifiers().experience??0))/1000);
@@ -371,11 +399,13 @@ export class PartyRoster {
     for(const entry of saved.members){
       const definition=this.catalog.definitions[entry.definitionId];if(!definition)throw new Error('检查点中的伙伴不存在');
       const member=new CompanionMember(entry.id,definition,entry.source,entry.level,this.stats,this.items,this.bag,
-        this.catalog.growth[definition.classId],this.changed,entry.generated,this.catalog.generation.training);
+        this.catalog.growth[definition.classId],this.changed,entry.generated,this.catalog.generation.training,()=>this.bumpGroupModifiers());
       member.restoreState(entry);this.owned.set(entry.id,member);
     }
     this.rosterSlots=saved.rosterSlots;this.slots=saved.slots.map(value=>value??undefined);this.selected=saved.selected;this.serial=saved.serial;
     this.heroAiFrequency.clear();for(const [id,value] of saved.heroAiFrequency)this.heroAiFrequency.set(id,value);
+    // 读档整体替换名册：即使内容和当前一致，也要让按版本复用的展示与组队被动缓存失效。
+    this.bumpGroupModifiers();
   }
 
 }
