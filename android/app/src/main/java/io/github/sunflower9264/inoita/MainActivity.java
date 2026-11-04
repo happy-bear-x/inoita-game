@@ -34,6 +34,7 @@ import androidx.webkit.WebViewClientCompat;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayInputStream;
@@ -41,7 +42,9 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.Collections;
+import java.util.UUID;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -260,6 +263,29 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
         }
     }
 
+    /** 把更新生命周期事件写进现有诊断通道；失败只记日志，不影响更新流程。 */
+    private void reportUpdateEvent(String kind, String... keyValues) {
+        try {
+            JSONObject details = new JSONObject();
+            for (int index = 0; index + 1 < keyValues.length; index += 2) {
+                details.put(keyValues[index], keyValues[index + 1]);
+            }
+            JSONObject entry = new JSONObject();
+            entry.put("id", UUID.randomUUID().toString());
+            entry.put("kind", kind);
+            entry.put("time", Instant.now().toString());
+            entry.put("page", "/update");
+            entry.put("details", details);
+            JSONObject root = new JSONObject();
+            root.put("version", 1);
+            root.put("entries", new JSONArray().put(entry));
+            String body = root.toString();
+            diagnosticsExecutor.execute(() -> postDiagnostics(body));
+        } catch (Exception error) {
+            Log.w("InotiaUpdate", "更新事件上报失败: " + error.getMessage());
+        }
+    }
+
     private boolean postDiagnostics(String body) {
         HttpURLConnection connection = null;
         try {
@@ -291,8 +317,10 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
     // ---- 更新界面 ----
 
     @Override
-    public void onUpdateAvailable(int fileCount, long downloadBytes) {
+    public void onUpdateAvailable(String buildId, int fileCount, long downloadBytes) {
         if (isFinishing() || isDestroyed()) return;
+        reportUpdateEvent("update-available", "buildId", buildId,
+                "files", String.valueOf(fileCount), "bytes", String.valueOf(downloadBytes));
         dismissUpdateDialog();
 
         String megabytes = String.format(Locale.US, "%.1f", downloadBytes / 1048576.0);
@@ -301,11 +329,14 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
                 .setMessage(getString(R.string.update_available_message, megabytes, fileCount))
                 .setPositiveButton(R.string.update_now, (dialog, which) -> {
                     updateDialog = null;
+                    reportUpdateEvent("download-start", "buildId", buildId,
+                            "files", String.valueOf(fileCount));
                     showDownloadDialog(fileCount);
                     updateManager.startDownload();
                 })
                 .setNegativeButton(R.string.update_later, (dialog, which) -> {
                     updateDialog = null;
+                    reportUpdateEvent("update-deferred", "buildId", buildId);
                     updateManager.deferUpdate();
                     dialog.dismiss();
                 })
@@ -326,7 +357,23 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
     }
 
     @Override
+    public void onUpdateReady(String buildId) {
+        if (isFinishing() || isDestroyed()) return;
+        reportUpdateEvent("update-ready", "buildId", buildId);
+        dismissUpdateDialog();
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.update_ready_title)
+                .setMessage(R.string.update_ready_message)
+                .setPositiveButton(R.string.update_restart_now,
+                        (dialog, which) -> updateManager.applyReadyUpdate())
+                .setNegativeButton(R.string.update_later,
+                        (dialog, which) -> updateManager.deferUpdate())
+                .show();
+    }
+
+    @Override
     public void onUpdateApplied(String buildId) {
+        reportUpdateEvent("update-applied", "buildId", buildId, "buildInfo", updateManager.buildInfoJson());
         dismissProgressDialog();
         recreateWebView();
         showBootingDialog();
@@ -337,6 +384,8 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
     public void onUpdateFailed(String reason, boolean cancelled) {
         dismissProgressDialog();
         Log.w("InotiaUpdate", "更新未完成: " + reason + (cancelled ? "（已取消）" : ""));
+        reportUpdateEvent("update-failed", "reason", reason == null ? "" : reason,
+                "cancelled", String.valueOf(cancelled), "buildInfo", updateManager.buildInfoJson());
         if (cancelled || isFinishing() || isDestroyed()) return;
         new AlertDialog.Builder(this)
                 .setTitle(R.string.update_failed_title)
@@ -348,6 +397,8 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
 
     @Override
     public void onRollbackComplete(String failedBuildId) {
+        reportUpdateEvent("update-rollback", "failedBuildId", failedBuildId,
+                "buildInfo", updateManager.buildInfoJson());
         stopBootWatchdog();
         dismissBootingDialog();
         recreateWebView();
@@ -363,8 +414,15 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
 
     @Override
     public void onBootCommitted() {
+        reportUpdateEvent("update-boot-ok", "buildInfo", updateManager.buildInfoJson());
         stopBootWatchdog();
         dismissBootingDialog();
+    }
+
+    @Override
+    public void onUpdateCheckResult(String result, String error) {
+        reportUpdateEvent("update-check", "result", result == null ? "" : result,
+                "error", error == null ? "" : error, "buildInfo", updateManager.buildInfoJson());
     }
 
     private void showDownloadDialog(int fileCount) {

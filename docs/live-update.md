@@ -96,7 +96,7 @@ SharedPreferences "inoita-update"
 4. 计算差量。清单是唯一权威：文件指纹等于 APK 基线 → 用 APK 里的；等于 `active` 目录 → 硬链接过来；否则下载。
 5. 弹原生对话框：「发现新版本，需要下载 X MB（N 个文件）」[立即更新] [稍后]。选稍后则本进程内不再提示，下次冷启动会重新检查；如果这个 buildId 曾经启动失败，24 小时内不提示，之后允许重试。
 6. 选立即更新 → 模态进度框（可取消）。3 个线程下载，逐个写 `.part`、算 SHA-256、校验通过再改名；已有 `.part` 用 `Range` 续传。磁盘空间按 `缺失总量 × 1.25 + 16MB` 检查。
-7. 全部完成 → 写完成标记 → `staging/<buildId>` 原子改名为 `builds/<buildId>` → 更新 `previous` / `active` → 销毁并重建 WebView，加载新版本。
+7. 全部文件下载并校验完成 → 记录 `readyBuildId`，保留 staging，弹「更新已准备好，重启后生效」[立即重启] [稍后]；下载和应用拆开。立即重启 → 写完成标记 → `staging/<buildId>` 原子改名为 `builds/<buildId>` → 更新 `previous` / `active` → 销毁并重建 WebView。选稍后或直接杀进程 → 下次冷启动 `initialize()` 时自动应用。
 8. 取消 → 保留 staging 供下次续传，继续用旧版本。下载失败 → 保留 staging，弹出「更新失败」并提供重试；不再静默关闭进度框。
 
 **传输编码必须写死：**
@@ -263,4 +263,6 @@ npm run verify:update -- --apk apk-out/Inotia-4-1.0.0.apk --url https://catgo.on
 - **存储**：应用总占用约为 APK 225MB + 当前版本 225MB；staging 只额外占用缺失文件。安装前按 `缺失总量 × 1.25 + 16MB` 检查剩余空间，空间不足时明确提示，而不是装到一半失败。
 - **清单体积**：约 1.18MB，gzip 后约 170KB，只在确实有更新时下载；常规剧情改动约 1–3MB，修 Phaser 代码约 2.6MB。
 - **首次检查开销**：每次冷启动一个几百字节的请求；失败后 30 秒重试，最多 3 次，不阻塞进游戏。前台恢复时 6 小时间隔检查。
-- **更新状态持久化**：最近检查时间/结果、待处理 buildId、下载失败原因、启动失败 buildId 和时间、启动耗时都写进 SharedPreferences；Activity 重建或进程被杀后能恢复提示和重试，不再只存在内存弹窗里。
+- **更新状态持久化**：最近检查时间/结果、待处理 buildId、已就绪 buildId、下载失败原因、启动失败 buildId 和时间、启动耗时都写进 SharedPreferences；Activity 重建或进程被杀后能恢复提示和重试，不再只存在内存弹窗里。
+- **下载与应用分开**：下载完成只标记 ready，不立刻切 active；玩家可以立即重启，也可以下次冷启动自动应用。冷启动应用仍走 `pendingBoot` / `markBootOk` 回退窗口。
+- **更新生命周期上报**：检查结果、发现更新、开始下载、下载完成、切换版本、启动成功和回退都通过原生诊断桥写入 `kind=update-*` 的事件，细节带 buildId、文件数、失败原因和 `buildInfo`。

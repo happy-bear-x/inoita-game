@@ -42,6 +42,7 @@ final class UpdateState {
     private static final String KEY_PENDING_BOOT = "pendingBootBuildId";
     private static final String KEY_BOOT_STARTED_AT = "bootStartedAt";
     private static final String KEY_LAST_BOOT_MS = "lastBootMs";
+    private static final String KEY_READY_BUILD_ID = "readyBuildId";
     private static final String MANIFEST_COPY = ".manifest.json";
     private static final String BUILT_AT_COPY = ".built-at";
     private static final String COMPLETE_MARKER = ".complete";
@@ -199,6 +200,18 @@ final class UpdateState {
 
     String downloadError() {
         return value(KEY_DOWNLOAD_ERROR);
+    }
+
+    void setReady(String buildId) {
+        preferences.edit().putString(KEY_READY_BUILD_ID, buildId == null ? "" : buildId).commit();
+    }
+
+    void clearReady() {
+        preferences.edit().remove(KEY_READY_BUILD_ID).commit();
+    }
+
+    String readyBuildId() {
+        return value(KEY_READY_BUILD_ID);
     }
 
     void setPendingBoot(String buildId, long startedAt) {

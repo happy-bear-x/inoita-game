@@ -38,13 +38,17 @@ import java.util.concurrent.atomic.AtomicReference;
 final class UpdateManager {
 
     interface Listener {
-        void onUpdateAvailable(int fileCount, long downloadBytes);
+        void onUpdateAvailable(String buildId, int fileCount, long downloadBytes);
+
+        void onUpdateCheckResult(String result, String error);
 
         void onDownloadProgress(int completed, int total);
 
         void onUpdateApplied(String buildId);
 
         void onUpdateFailed(String reason, boolean cancelled);
+
+        void onUpdateReady(String buildId);
 
         void onRollbackComplete(String failedBuildId);
 
@@ -170,6 +174,7 @@ final class UpdateManager {
     private final AtomicBoolean checking = new AtomicBoolean(false);
     private final AtomicBoolean retryScheduled = new AtomicBoolean(false);
     private final AtomicInteger checkFailures = new AtomicInteger(0);
+    private final AtomicBoolean applying = new AtomicBoolean(false);
 
     private volatile Snapshot snapshot = Snapshot.apkOnly("apk");
     private volatile UpdateManifest.Pointer baselinePointer;
@@ -216,6 +221,14 @@ final class UpdateManager {
         }
 
         worker.execute(() -> {
+            // 上次已经下载完成的版本，在下次冷启动时直接切过去；这是一次完整启动，
+            // 会重新走 markBootOk / 回退窗口。
+            try {
+                applyReadyBlocking();
+            } catch (Exception error) {
+                Log.w(TAG, "应用已就绪更新失败，继续使用当前版本", error);
+                state.clearReady();
+            }
             try {
                 loadSnapshot();
             } catch (Exception error) {
@@ -260,7 +273,7 @@ final class UpdateManager {
     /** 回到前台时检查：距离上次检查超过 6 小时才发起，避免频繁请求。 */
     void checkForUpdateOnForeground() {
         if (BuildConfig.DEBUG || BuildConfig.UPDATE_PUBLIC_KEY.isEmpty()) return;
-        if (candidate != null) return;
+        if (candidate != null || !state.readyBuildId().isEmpty()) return;
         if (System.currentTimeMillis() - state.lastCheckAt() < CHECK_INTERVAL_MS) return;
         requestCheck(false);
     }
@@ -380,9 +393,10 @@ final class UpdateManager {
             state.setLastCheck("available", "");
             state.setAvailable(pointer.buildId, fileCount, bytes);
             state.clearDownloadError();
+            String buildId = pointer.buildId;
             postToMain(() -> {
                 Listener current = listener;
-                if (current != null) current.onUpdateAvailable(fileCount, bytes);
+                if (current != null) current.onUpdateAvailable(buildId, fileCount, bytes);
             });
         } catch (Exception error) {
             String message = error.getClass().getSimpleName()
@@ -392,6 +406,12 @@ final class UpdateManager {
             if (checkFailures.incrementAndGet() <= 3) scheduleCheckRetry();
         } finally {
             checking.set(false);
+            String result = state.lastCheckResult();
+            String error = state.lastCheckError();
+            postToMain(() -> {
+                Listener current = listener;
+                if (current != null) current.onUpdateCheckResult(result, error);
+            });
         }
     }
 
@@ -429,6 +449,15 @@ final class UpdateManager {
      * 返回 true 表示当前确实有一个待处理的更新（即使玩家之前点了「稍后」）。
      */
     boolean repostPendingState() {
+        String readyBuildId = state.readyBuildId();
+        if (!readyBuildId.isEmpty()) {
+            if (readyBuildId.equals(deferredBuildId)) return true;
+            postToMain(() -> {
+                Listener current = listener;
+                if (current != null) current.onUpdateReady(readyBuildId);
+            });
+            return true;
+        }
         Candidate ready = candidate;
         if (ready == null) return false;
         if (isBooting()) return true;
@@ -450,9 +479,10 @@ final class UpdateManager {
         if (ready.manifest.buildId.equals(deferredBuildId)) return true;
         int fileCount = ready.plan.downloadCount();
         long bytes = ready.plan.downloadBytes;
+        String buildId = ready.manifest.buildId;
         postToMain(() -> {
             Listener current = listener;
-            if (current != null) current.onUpdateAvailable(fileCount, bytes);
+            if (current != null) current.onUpdateAvailable(buildId, fileCount, bytes);
         });
         return true;
     }
@@ -460,7 +490,7 @@ final class UpdateManager {
     /** 玩家点了「稍后」：本进程内不再重复弹，下次冷启动会重新检查。 */
     void deferUpdate() {
         Candidate ready = candidate;
-        deferredBuildId = ready == null ? "" : ready.manifest.buildId;
+        deferredBuildId = ready == null ? state.readyBuildId() : ready.manifest.buildId;
     }
 
     /** 失败提示里的「重试」：下载失败就续传，检查失败就重新检查。 */
@@ -500,7 +530,7 @@ final class UpdateManager {
         List<UpdateManifest.FileEntry> downloads = ready.plan.downloads;
         int total = downloads.size();
         if (total == 0) {
-            finalizeInstall(ready);
+            markReady(ready);
             return;
         }
 
@@ -570,36 +600,77 @@ final class UpdateManager {
             notifyFailed(failure.get(), false);
             return;
         }
-        finalizeInstall(ready);
+        markReady(ready);
     }
 
-    private void finalizeInstall(Candidate ready) {
-        try {
-            // 先记下待确认的启动窗口；即使进程在切换过程中被杀，下次启动也能识别。
-            state.setPendingBoot(ready.manifest.buildId, System.currentTimeMillis());
-            installer.complete(ready.plan, ready.pointer.builtAt, BuildConfig.UPDATE_CHANNEL);
-            // 新版本已经切换，重建快照后才能加载它。
-            loadSnapshot();
-            synchronized (bootLock) {
-                pendingBoot = true;
-                bootOk = false;
-                bootFailureHandled = false;
-                pendingBuildId = ready.manifest.buildId;
-            }
-            candidate = null;
-            state.clearAvailable();
-            state.clearDownloadError();
-            finishDownload();
-            String buildId = ready.manifest.buildId;
-            postToMain(() -> {
-                Listener current = listener;
-                if (current != null) current.onUpdateApplied(buildId);
-            });
-        } catch (Exception error) {
-            state.clearPendingBoot();
-            finishDownload();
-            notifyFailed(error.getMessage(), false);
+    /** 下载完成：保留 staging，等玩家确认重启或下次冷启动再切换 active。 */
+    private void markReady(Candidate ready) {
+        candidate = null;
+        state.clearAvailable();
+        state.clearDownloadError();
+        state.setReady(ready.manifest.buildId);
+        finishDownload();
+        String buildId = ready.manifest.buildId;
+        postToMain(() -> {
+            Listener current = listener;
+            if (current != null) current.onUpdateReady(buildId);
+        });
+    }
+
+    /**
+     * 把已就绪的 staging 目录切换成 active。必须在 worker 线程调用。
+     * 返回 false 表示当前没有待应用的版本。
+     */
+    private boolean applyReadyBlocking() throws IOException {
+        String buildId = state.readyBuildId();
+        if (buildId.isEmpty()) return false;
+        File staging = state.stagingDir(buildId);
+        File manifestFile = new File(staging, ".manifest.json");
+        File builtAtFile = new File(staging, ".built-at");
+        if (!manifestFile.isFile() || !builtAtFile.isFile()) {
+            throw new IOException("已就绪版本缺少清单或构建时间");
         }
+        UpdateManifest.Manifest manifest = UpdateManifest.parseManifest(readFile(manifestFile));
+        if (!manifest.buildId.equals(buildId)) throw new IOException("已就绪版本 buildId 不一致");
+        String builtAt = new String(readFile(builtAtFile), java.nio.charset.StandardCharsets.UTF_8).trim();
+        UpdateInstaller.Plan plan = new UpdateInstaller.Plan(
+                buildId, manifest, java.util.Collections.emptyList(), 0L, staging);
+        state.setPendingBoot(buildId, System.currentTimeMillis());
+        installer.complete(plan, builtAt, BuildConfig.UPDATE_CHANNEL);
+        state.clearReady();
+        synchronized (bootLock) {
+            pendingBoot = true;
+            bootOk = false;
+            bootFailureHandled = false;
+            pendingBuildId = buildId;
+        }
+        return true;
+    }
+
+    /** 玩家点了「立即重启」：把已下载版本切换过去并重建 WebView。 */
+    void applyReadyUpdate() {
+        if (!applying.compareAndSet(false, true)) return;
+        worker.execute(() -> {
+            try {
+                if (!applyReadyBlocking()) return;
+                loadSnapshot();
+                String buildId = snapshot.buildId();
+                postToMain(() -> {
+                    Listener current = listener;
+                    if (current != null) current.onUpdateApplied(buildId);
+                });
+            } catch (Exception error) {
+                Log.w(TAG, "应用已就绪更新失败", error);
+                state.clearReady();
+                notifyFailed("切换版本失败：" + error.getMessage(), false);
+            } finally {
+                applying.set(false);
+            }
+        });
+    }
+
+    boolean hasReadyUpdate() {
+        return !state.readyBuildId().isEmpty();
     }
 
     private void finishDownload() {
@@ -733,6 +804,7 @@ final class UpdateManager {
             json.put("lastCheckResult", state.lastCheckResult());
             json.put("lastCheckError", state.lastCheckError());
             json.put("availableBuildId", state.availableBuildId());
+            json.put("readyBuildId", state.readyBuildId());
             json.put("availableFiles", state.availableFileCount());
             json.put("availableBytes", state.availableBytes());
             json.put("failedAt", state.failedAt());

@@ -12,6 +12,9 @@
     <string name="update_downloading_title">正在下载更新</string>
     <string name="update_downloading_message">正在下载 %1$d/%2$d</string>
     <string name="update_booting">正在启动…</string>
+    <string name="update_ready_title">更新已准备好</string>
+    <string name="update_ready_message">新版本已下载完成，重启游戏后生效。</string>
+    <string name="update_restart_now">立即重启</string>
     <string name="update_failed_title">更新失败</string>
     <string name="update_failed_message">更新未完成：%1$s</string>
     <string name="update_retry">重试</string>

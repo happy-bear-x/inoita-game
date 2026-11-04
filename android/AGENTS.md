@@ -20,6 +20,8 @@ Android WebView 壳：把 Vite 构建出的 `dist/` 原样打进 APK，提供本
 - 热更通道默认 `stable`，`-PupdateChannel=staging` 选择 `latest-staging.json`；debug 包跳过检查。
 - 更新检查不只做一次：冷启动检查，失败 30 秒后重试（最多 3 次），回到前台且距上次检查超过 6 小时再查。检查时间/结果、待处理 buildId、下载失败原因、失败 buildId 和时间、启动耗时都持久化到 SharedPreferences；Activity 重建后要按持久状态重新显示更新提示或失败重试。
 - 下载失败必须弹「更新失败」并允许重试，不能只关进度框写日志；「稍后」只在本进程内抑制重复提示。
+- 下载和应用分开：下载并校验完成只记录持久化的 `readyBuildId`，弹「更新已准备好，重启后生效」；立即重启才切 active，选稍后或杀进程则在下次冷启动 `initialize()` 时自动应用。
+- 更新生命周期（检查、发现、开始下载、下载完成、切换、启动成功、回退）通过原生诊断桥写 `update-*` 事件，带 buildId、文件数、失败原因和 `buildInfo`。
 - 启动时先完成 `UpdateManager.initialize()`（读清单、发布不可变路径快照），再创建 WebView；加载地址带 `?v=<buildId>`。清单不可用时降级为只读 APK 资源。
 - 版本目录固定为 `filesDir/update/builds/<buildId>` 与 `filesDir/update/staging/<buildId>`，SharedPreferences 用 `inoita-update`。只保留 active 和 previous 两个完整版本。
 - 回退只发生在「新版本重建 WebView 后、标题页调用 `markBootOk()` 前」的 90 秒窗口；正常游玩时 `onRenderProcessGone` 只重建 WebView。回退后弹出提示并允许重试，失败 buildId 有 24 小时冷却而不是永久拉黑。
