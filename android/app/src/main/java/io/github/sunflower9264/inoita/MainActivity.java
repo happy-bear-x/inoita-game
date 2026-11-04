@@ -24,7 +24,6 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.widget.FrameLayout;
-import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.core.view.WindowCompat;
@@ -59,7 +58,8 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
     private static final String ASSET_HOST = "appassets.androidplatform.net";
     private static final String GAME_URL = "https://" + ASSET_HOST + "/index.html";
     private static final long DOUBLE_BACK_MS = 2000;
-    private static final long BOOT_TIMEOUT_MS = 45000;
+    /** 新版本切过去后等待标题页启动信号的窗口；慢设备上 45 秒偏紧，放到 90 秒。 */
+    private static final long BOOT_TIMEOUT_MS = 90000;
 
     private FrameLayout root;
     private WebView webView;
@@ -121,7 +121,8 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
             showBootingDialog();
             startBootWatchdog();
         }
-        updateManager.checkForUpdate();
+        // 先把上次没处理完的更新重新呈现；没有待处理更新才发起新的检查。
+        if (!updateManager.repostPendingState()) updateManager.checkForUpdate();
     }
 
     private void createWebView() {
@@ -305,6 +306,7 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
                 })
                 .setNegativeButton(R.string.update_later, (dialog, which) -> {
                     updateDialog = null;
+                    updateManager.deferUpdate();
                     dialog.dismiss();
                 })
                 .create();
@@ -313,7 +315,10 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
 
     @Override
     public void onDownloadProgress(int completed, int total) {
-        if (downloadDialog == null || isFinishing() || isDestroyed()) return;
+        if (isFinishing() || isDestroyed()) return;
+        // Activity 重建后恢复下载进度框；一直下载中也要能重新显示。
+        if (downloadDialog == null) showDownloadDialog(Math.max(1, total));
+        if (downloadDialog == null) return;
         downloadDialog.setMax(Math.max(1, total));
         downloadDialog.setProgress(Math.min(completed, total));
         downloadDialog.setMessage(getString(
@@ -331,8 +336,14 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
     @Override
     public void onUpdateFailed(String reason, boolean cancelled) {
         dismissProgressDialog();
-        // 按契约：取消或失败只保留旧版本并记日志，不弹错误框。
         Log.w("InotiaUpdate", "更新未完成: " + reason + (cancelled ? "（已取消）" : ""));
+        if (cancelled || isFinishing() || isDestroyed()) return;
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.update_failed_title)
+                .setMessage(getString(R.string.update_failed_message, reason))
+                .setPositiveButton(R.string.update_retry, (dialog, which) -> updateManager.retryAfterFailure())
+                .setNegativeButton(R.string.update_later, null)
+                .show();
     }
 
     @Override
@@ -341,7 +352,12 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
         dismissBootingDialog();
         recreateWebView();
         if (!isFinishing() && !isDestroyed()) {
-            Toast.makeText(this, R.string.update_rollback_toast, Toast.LENGTH_LONG).show();
+            new AlertDialog.Builder(this)
+                    .setTitle(R.string.update_rollback_title)
+                    .setMessage(R.string.update_rollback_message)
+                    .setPositiveButton(R.string.update_retry, (dialog, which) -> updateManager.retryUpdate())
+                    .setNegativeButton(R.string.update_later, null)
+                    .show();
         }
     }
 
@@ -467,6 +483,7 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
                     "window.dispatchEvent(new Event('pageshow'));", null), 50);
         }
         hideSystemBars();
+        if (updateManager != null) updateManager.checkForUpdateOnForeground();
     }
 
     @Override

@@ -143,6 +143,9 @@ final class UpdateManager {
 
     private static final String TAG = "InotiaUpdate";
     private static final int DOWNLOAD_THREADS = 3;
+    private static final long CHECK_INTERVAL_MS = 6L * 60L * 60L * 1000L;
+    private static final long CHECK_RETRY_MS = 30L * 1000L;
+    private static final long FAILED_BUILD_COOLDOWN_MS = 24L * 60L * 60L * 1000L;
     private static volatile UpdateManager instance;
 
     static UpdateManager get(Context context) {
@@ -164,7 +167,9 @@ final class UpdateManager {
     private final UpdateInstaller installer;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
-    private final AtomicBoolean checkStarted = new AtomicBoolean(false);
+    private final AtomicBoolean checking = new AtomicBoolean(false);
+    private final AtomicBoolean retryScheduled = new AtomicBoolean(false);
+    private final AtomicInteger checkFailures = new AtomicInteger(0);
 
     private volatile Snapshot snapshot = Snapshot.apkOnly("apk");
     private volatile UpdateManifest.Pointer baselinePointer;
@@ -173,6 +178,7 @@ final class UpdateManager {
     private volatile String installedBuiltAt = "";
     private volatile Listener listener;
     private volatile Candidate candidate;
+    private volatile String deferredBuildId = "";
 
     private final Object initLock = new Object();
     private boolean initialized;
@@ -182,6 +188,8 @@ final class UpdateManager {
     private final Object downloadLock = new Object();
     private boolean downloading;
     private volatile boolean downloadCancelled;
+    private volatile int downloadCompleted;
+    private volatile int downloadTotal;
 
     private final Object bootLock = new Object();
     private boolean pendingBoot;
@@ -244,21 +252,39 @@ final class UpdateManager {
         if (this.listener == listener) this.listener = null;
     }
 
-    /**
-     * 每个进程只检查一次。debug 包跳过：它指向 Vite 开发服务，没有 /update 目录。
-     * 检查失败只记日志，玩家照常用当前版本进游戏。
-     */
+    /** 冷启动检查：不受上次检查间隔限制，但同一时间只允许一个检查。 */
     void checkForUpdate() {
+        requestCheck(true);
+    }
+
+    /** 回到前台时检查：距离上次检查超过 6 小时才发起，避免频繁请求。 */
+    void checkForUpdateOnForeground() {
+        if (BuildConfig.DEBUG || BuildConfig.UPDATE_PUBLIC_KEY.isEmpty()) return;
+        if (candidate != null) return;
+        if (System.currentTimeMillis() - state.lastCheckAt() < CHECK_INTERVAL_MS) return;
+        requestCheck(false);
+    }
+
+    private void requestCheck(boolean force) {
         if (BuildConfig.DEBUG) {
             Log.i(TAG, "debug 包跳过热更检查");
             return;
         }
-        if (!checkStarted.compareAndSet(false, true)) return;
         if (BuildConfig.UPDATE_PUBLIC_KEY.isEmpty()) {
             Log.w(TAG, "缺少更新公钥，跳过热更检查");
             return;
         }
+        if (!force && System.currentTimeMillis() - state.lastCheckAt() < CHECK_INTERVAL_MS) return;
+        if (!checking.compareAndSet(false, true)) return;
         worker.execute(this::runUpdateCheck);
+    }
+
+    private void scheduleCheckRetry() {
+        if (!retryScheduled.compareAndSet(false, true)) return;
+        mainHandler.postDelayed(() -> {
+            retryScheduled.set(false);
+            requestCheck(true);
+        }, CHECK_RETRY_MS);
     }
 
     private void runUpdateCheck() {
@@ -273,60 +299,99 @@ final class UpdateManager {
             byte[] pointerSignature = http.fetchSignature(pointerPath + ".sig");
             if (!UpdateManifest.verifySignature(
                     pointerBytes, pointerSignature, BuildConfig.UPDATE_PUBLIC_KEY)) {
+                state.setLastCheck("error", "指针签名校验失败");
                 Log.w(TAG, "指针签名校验失败");
+                scheduleCheckRetry();
                 return;
             }
             UpdateManifest.Pointer pointer = UpdateManifest.parsePointer(pointerBytes);
 
-            if (pointer.buildId.equals(snapshot.buildId())) return;
-            if (pointer.buildId.equals(state.failedBuildId())) {
-                Log.i(TAG, "该版本曾启动失败，不再提示: " + pointer.buildId);
+            if (pointer.buildId.equals(snapshot.buildId())) {
+                state.setLastCheck("none", "already-current");
+                state.clearAvailable();
+                state.clearDownloadError();
+                checkFailures.set(0);
                 return;
+            }
+            String failed = state.failedBuildId();
+            if (pointer.buildId.equals(failed)) {
+                long failedAt = state.failedAt();
+                if (failedAt <= 0L || System.currentTimeMillis() - failedAt < FAILED_BUILD_COOLDOWN_MS) {
+                    Log.i(TAG, "该版本启动失败冷却中: " + pointer.buildId);
+                    state.setLastCheck("blocked", "failed-build");
+                    checkFailures.set(0);
+                    return;
+                }
+                state.clearFailedBuildId();
             }
             if (pointer.minShell > BuildConfig.SHELL_VERSION) {
                 Log.i(TAG, "新版本需要更高的壳版本: minShell=" + pointer.minShell);
+                state.setLastCheck("none", "min-shell");
+                state.clearAvailable();
+                state.clearDownloadError();
+                checkFailures.set(0);
                 return;
             }
             long installed = UpdateState.parseMillis(installedBuiltAt);
             if (installed != Long.MIN_VALUE && pointer.builtAtMillis <= installed) {
                 Log.i(TAG, "更新指针不比已安装版本新");
+                state.setLastCheck("none", "not-newer");
+                state.clearAvailable();
+                state.clearDownloadError();
+                checkFailures.set(0);
                 return;
             }
 
             // 清单先验原始字节的 SHA-256，再验签名和 buildId。
             byte[] manifestBytes = http.fetchManifest("/" + pointer.manifest);
             if (!pointer.manifestSha256.equals(UpdateManifest.sha256Hex(manifestBytes))) {
+                state.setLastCheck("error", "清单哈希与指针不一致");
                 Log.w(TAG, "清单哈希与指针不一致");
+                scheduleCheckRetry();
                 return;
             }
             UpdateManifest.Manifest manifest = UpdateManifest.parseManifest(manifestBytes);
             if (!manifest.buildId.equals(pointer.buildId)) {
+                state.setLastCheck("error", "清单 buildId 与指针不一致");
                 Log.w(TAG, "清单 buildId 与指针不一致");
+                scheduleCheckRetry();
                 return;
             }
             byte[] manifestSignature =
                     http.fetchSignature("/" + pointer.manifest + ".sig");
             if (!UpdateManifest.verifySignature(
                     manifestBytes, manifestSignature, BuildConfig.UPDATE_PUBLIC_KEY)) {
+                state.setLastCheck("error", "清单签名校验失败");
                 Log.w(TAG, "清单签名校验失败");
+                scheduleCheckRetry();
                 return;
             }
 
             UpdateInstaller.Plan plan = installer.prepare(
                     manifest, baselineManifest, activeManifest,
                     manifestBytes, pointer.builtAt);
-            installer.requireSpace(plan);
 
             candidate = new Candidate(pointer, manifest, plan);
+            retryScheduled.set(false);
+            checkFailures.set(0);
+            deferredBuildId = "";
             int fileCount = plan.downloadCount();
             long bytes = plan.downloadBytes;
+            state.setLastCheck("available", "");
+            state.setAvailable(pointer.buildId, fileCount, bytes);
+            state.clearDownloadError();
             postToMain(() -> {
                 Listener current = listener;
                 if (current != null) current.onUpdateAvailable(fileCount, bytes);
             });
         } catch (Exception error) {
-            Log.w(TAG, "检查更新失败: " + error.getClass().getSimpleName()
-                    + " " + error.getMessage());
+            String message = error.getClass().getSimpleName()
+                    + " " + error.getMessage();
+            Log.w(TAG, "检查更新失败: " + message);
+            state.setLastCheck("error", message);
+            if (checkFailures.incrementAndGet() <= 3) scheduleCheckRetry();
+        } finally {
+            checking.set(false);
         }
     }
 
@@ -338,8 +403,82 @@ final class UpdateManager {
             if (downloading) return;
             downloading = true;
             downloadCancelled = false;
+            downloadCompleted = 0;
+            downloadTotal = ready.plan.downloadCount();
         }
+        state.clearDownloadError();
         worker.execute(() -> runDownload(ready));
+    }
+
+    boolean isDownloading() {
+        synchronized (downloadLock) {
+            return downloading;
+        }
+    }
+
+    int downloadCompleted() {
+        return downloadCompleted;
+    }
+
+    int downloadTotal() {
+        return downloadTotal;
+    }
+
+    /**
+     * Activity 重建或回到前台后，按持久状态把还没处理的更新重新呈现给玩家。
+     * 返回 true 表示当前确实有一个待处理的更新（即使玩家之前点了「稍后」）。
+     */
+    boolean repostPendingState() {
+        Candidate ready = candidate;
+        if (ready == null) return false;
+        if (isBooting()) return true;
+        if (isDownloading()) {
+            postToMain(() -> {
+                Listener current = listener;
+                if (current != null) current.onDownloadProgress(downloadCompleted, downloadTotal);
+            });
+            return true;
+        }
+        String error = state.downloadError();
+        if (!error.isEmpty()) {
+            postToMain(() -> {
+                Listener current = listener;
+                if (current != null) current.onUpdateFailed(error, false);
+            });
+            return true;
+        }
+        if (ready.manifest.buildId.equals(deferredBuildId)) return true;
+        int fileCount = ready.plan.downloadCount();
+        long bytes = ready.plan.downloadBytes;
+        postToMain(() -> {
+            Listener current = listener;
+            if (current != null) current.onUpdateAvailable(fileCount, bytes);
+        });
+        return true;
+    }
+
+    /** 玩家点了「稍后」：本进程内不再重复弹，下次冷启动会重新检查。 */
+    void deferUpdate() {
+        Candidate ready = candidate;
+        deferredBuildId = ready == null ? "" : ready.manifest.buildId;
+    }
+
+    /** 失败提示里的「重试」：下载失败就续传，检查失败就重新检查。 */
+    void retryAfterFailure() {
+        if (candidate != null) {
+            startDownload();
+            return;
+        }
+        retryUpdate();
+    }
+
+    /** 玩家在失败提示里点「重试」：清掉失败黑名单并立刻重新检查。 */
+    void retryUpdate() {
+        state.clearFailedBuildId();
+        state.clearDownloadError();
+        candidate = null;
+        deferredBuildId = "";
+        requestCheck(true);
     }
 
     void cancelDownload() {
@@ -391,6 +530,7 @@ final class UpdateManager {
                         installer.downloadEntry(ready.plan, entry, http,
                                 () -> downloadCancelled);
                         int done = completed.incrementAndGet();
+                        downloadCompleted = done;
                         postToMain(() -> {
                             Listener current = listener;
                             if (current != null) current.onDownloadProgress(done, total);
@@ -426,6 +566,7 @@ final class UpdateManager {
         }
         if (failed.get()) {
             finishDownload();
+            state.setDownloadError(failure.get());
             notifyFailed(failure.get(), false);
             return;
         }
@@ -434,6 +575,8 @@ final class UpdateManager {
 
     private void finalizeInstall(Candidate ready) {
         try {
+            // 先记下待确认的启动窗口；即使进程在切换过程中被杀，下次启动也能识别。
+            state.setPendingBoot(ready.manifest.buildId, System.currentTimeMillis());
             installer.complete(ready.plan, ready.pointer.builtAt, BuildConfig.UPDATE_CHANNEL);
             // 新版本已经切换，重建快照后才能加载它。
             loadSnapshot();
@@ -444,6 +587,8 @@ final class UpdateManager {
                 pendingBuildId = ready.manifest.buildId;
             }
             candidate = null;
+            state.clearAvailable();
+            state.clearDownloadError();
             finishDownload();
             String buildId = ready.manifest.buildId;
             postToMain(() -> {
@@ -451,6 +596,7 @@ final class UpdateManager {
                 if (current != null) current.onUpdateApplied(buildId);
             });
         } catch (Exception error) {
+            state.clearPendingBoot();
             finishDownload();
             notifyFailed(error.getMessage(), false);
         }
@@ -480,6 +626,9 @@ final class UpdateManager {
             pendingBoot = false;
             buildId = pendingBuildId;
         }
+        long started = state.pendingBootStartedAt();
+        if (started > 0L) state.setLastBootDuration(System.currentTimeMillis() - started);
+        state.clearPendingBoot();
         postToMain(() -> {
             Listener current = listener;
             if (current != null) current.onBootCommitted();
@@ -532,6 +681,7 @@ final class UpdateManager {
         }
         Log.w(TAG, "新版本启动失败(" + reason + ")，回退: " + failed);
 
+        state.clearPendingBoot();
         try {
             String previous = state.previous();
             boolean usable = state.isUsable(previous);
@@ -578,6 +728,15 @@ final class UpdateManager {
             json.put("failedBuildId", state.failedBuildId());
             json.put("builtAt", installedBuiltAt);
             json.put("pendingBoot", isBooting());
+            json.put("lastBootMs", state.lastBootDuration());
+            json.put("lastCheckAt", state.lastCheckAt());
+            json.put("lastCheckResult", state.lastCheckResult());
+            json.put("lastCheckError", state.lastCheckError());
+            json.put("availableBuildId", state.availableBuildId());
+            json.put("availableFiles", state.availableFileCount());
+            json.put("availableBytes", state.availableBytes());
+            json.put("failedAt", state.failedAt());
+            json.put("downloadError", state.downloadError());
             return json.toString();
         } catch (JSONException error) {
             return "{}";
@@ -665,6 +824,21 @@ final class UpdateManager {
         activeManifest = chosenActive;
         installedBuiltAt = builtAt;
         snapshot = Snapshot.build(buildId, chosen, root);
+        // 进程在「切换版本后、markBootOk 前」被杀掉时，下次启动继续处于 boot 窗口：
+        // 给新版本一次重新加载的机会，失败仍然回退。
+        String pending = state.pendingBootBuildId();
+        if (!pending.isEmpty() && pending.equals(buildId)) {
+            pendingBoot = true;
+            bootOk = false;
+            bootFailureHandled = false;
+            pendingBuildId = pending;
+        } else {
+            if (!pending.isEmpty()) state.clearPendingBoot();
+            pendingBoot = false;
+            bootOk = false;
+            bootFailureHandled = false;
+            pendingBuildId = "";
+        }
         state.cleanupBuilds(state.active(), state.previous());
         Log.i(TAG, "当前版本 buildId=" + buildId
                 + "，来源=" + (root == null ? "APK 资源" : root.getName()));

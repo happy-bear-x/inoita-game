@@ -31,6 +31,17 @@ final class UpdateState {
     private static final String KEY_FAILED_BUILD_ID = "failedBuildId";
     private static final String KEY_ACTIVE_BUILT_AT = "activeBuiltAt";
     private static final String KEY_ACTIVE_CHANNEL = "activeChannel";
+    private static final String KEY_LAST_CHECK_AT = "lastCheckAt";
+    private static final String KEY_LAST_CHECK_RESULT = "lastCheckResult";
+    private static final String KEY_LAST_CHECK_ERROR = "lastCheckError";
+    private static final String KEY_AVAILABLE_BUILD_ID = "availableBuildId";
+    private static final String KEY_AVAILABLE_FILES = "availableFiles";
+    private static final String KEY_AVAILABLE_BYTES = "availableBytes";
+    private static final String KEY_DOWNLOAD_ERROR = "downloadError";
+    private static final String KEY_FAILED_AT = "failedAt";
+    private static final String KEY_PENDING_BOOT = "pendingBootBuildId";
+    private static final String KEY_BOOT_STARTED_AT = "bootStartedAt";
+    private static final String KEY_LAST_BOOT_MS = "lastBootMs";
     private static final String MANIFEST_COPY = ".manifest.json";
     private static final String BUILT_AT_COPY = ".built-at";
     private static final String COMPLETE_MARKER = ".complete";
@@ -116,7 +127,105 @@ final class UpdateState {
     }
 
     void setFailedBuildId(String buildId) {
-        preferences.edit().putString(KEY_FAILED_BUILD_ID, buildId == null ? "" : buildId).commit();
+        preferences.edit()
+                .putString(KEY_FAILED_BUILD_ID, buildId == null ? "" : buildId)
+                .putLong(KEY_FAILED_AT, System.currentTimeMillis())
+                .commit();
+    }
+
+    long failedAt() {
+        return preferences.getLong(KEY_FAILED_AT, 0L);
+    }
+
+    void clearFailedBuildId() {
+        preferences.edit().remove(KEY_FAILED_BUILD_ID).remove(KEY_FAILED_AT).commit();
+    }
+
+    long lastCheckAt() {
+        return preferences.getLong(KEY_LAST_CHECK_AT, 0L);
+    }
+
+    String lastCheckResult() {
+        return value(KEY_LAST_CHECK_RESULT);
+    }
+
+    String lastCheckError() {
+        return value(KEY_LAST_CHECK_ERROR);
+    }
+
+    void setLastCheck(String result, String error) {
+        preferences.edit()
+                .putLong(KEY_LAST_CHECK_AT, System.currentTimeMillis())
+                .putString(KEY_LAST_CHECK_RESULT, result == null ? "" : result)
+                .putString(KEY_LAST_CHECK_ERROR, error == null ? "" : error)
+                .commit();
+    }
+
+    void setAvailable(String buildId, int files, long bytes) {
+        preferences.edit()
+                .putString(KEY_AVAILABLE_BUILD_ID, buildId == null ? "" : buildId)
+                .putInt(KEY_AVAILABLE_FILES, files)
+                .putLong(KEY_AVAILABLE_BYTES, bytes)
+                .commit();
+    }
+
+    void clearAvailable() {
+        preferences.edit()
+                .remove(KEY_AVAILABLE_BUILD_ID)
+                .remove(KEY_AVAILABLE_FILES)
+                .remove(KEY_AVAILABLE_BYTES)
+                .commit();
+    }
+
+    String availableBuildId() {
+        return value(KEY_AVAILABLE_BUILD_ID);
+    }
+
+    int availableFileCount() {
+        return preferences.getInt(KEY_AVAILABLE_FILES, 0);
+    }
+
+    long availableBytes() {
+        return preferences.getLong(KEY_AVAILABLE_BYTES, 0L);
+    }
+
+    void setDownloadError(String error) {
+        preferences.edit().putString(KEY_DOWNLOAD_ERROR, error == null ? "" : error).commit();
+    }
+
+    void clearDownloadError() {
+        preferences.edit().remove(KEY_DOWNLOAD_ERROR).commit();
+    }
+
+    String downloadError() {
+        return value(KEY_DOWNLOAD_ERROR);
+    }
+
+    void setPendingBoot(String buildId, long startedAt) {
+        preferences.edit()
+                .putString(KEY_PENDING_BOOT, buildId == null ? "" : buildId)
+                .putLong(KEY_BOOT_STARTED_AT, startedAt)
+                .commit();
+    }
+
+    void clearPendingBoot() {
+        preferences.edit().remove(KEY_PENDING_BOOT).remove(KEY_BOOT_STARTED_AT).commit();
+    }
+
+    String pendingBootBuildId() {
+        return value(KEY_PENDING_BOOT);
+    }
+
+    long pendingBootStartedAt() {
+        return preferences.getLong(KEY_BOOT_STARTED_AT, 0L);
+    }
+
+    void setLastBootDuration(long durationMs) {
+        preferences.edit().putLong(KEY_LAST_BOOT_MS, durationMs).commit();
+    }
+
+    long lastBootDuration() {
+        return preferences.getLong(KEY_LAST_BOOT_MS, 0L);
     }
 
     /** 安装完成后的原子切换：新版本 active，旧 active 降为 previous。 */

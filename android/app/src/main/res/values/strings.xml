@@ -12,5 +12,9 @@
     <string name="update_downloading_title">正在下载更新</string>
     <string name="update_downloading_message">正在下载 %1$d/%2$d</string>
     <string name="update_booting">正在启动…</string>
-    <string name="update_rollback_toast">更新版本启动失败，已回退</string>
+    <string name="update_failed_title">更新失败</string>
+    <string name="update_failed_message">更新未完成：%1$s</string>
+    <string name="update_retry">重试</string>
+    <string name="update_rollback_title">更新未完成</string>
+    <string name="update_rollback_message">新版本启动失败，已回到上一版。你可以重试更新。</string>
 </resources>

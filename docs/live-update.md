@@ -10,7 +10,7 @@ APK 把 Vite 构建的 `dist/`（225MB、12,438 个文件）打进 assets，WebV
 
 ## 决定
 
-- **离线优先**。启动先用本地版本，检查更新在后台进行；网络失败只记日志，不阻塞进游戏。
+- **离线优先**。启动先用本地版本，检查更新在后台进行；检查失败会自动重试，下载或启动失败会给玩家明确提示，不阻塞进游戏。
 - **第一个公开包就带更新器**。现在没有历史安装量，这是唯一一次可以无成本改壳契约的窗口。
 - **自己实现，不引入框架**。壳只做 WebView 宿主；核心机制是版本清单、逐文件哈希、原子切换、启动失败回退。
 - **按文件增量，不整包下载**。`bundles/` 约 2.6MB，`content/` 约 28MB，`assets/` 196MB；修 Phaser 代码通常只动入口 bundle。
@@ -89,15 +89,15 @@ SharedPreferences "inoita-update"
 ## 客户端流程
 
 1. `MainActivity.onCreate` 先完成 `UpdateManager.initialize()`，再创建 WebView，加载当前 `active`（没有就用 APK 资源）；`loadUrl` 的 `?v=` 用当前 buildId，不用 `VERSION_CODE`。
-2. 同一时刻在后台检查，每个进程只查一次：
+2. 冷启动在后台检查；失败后 30 秒重试，最多 3 次；回到前台时距离上次检查超过 6 小时再查一次：
    - 按 `UPDATE_CHANNEL` 取 `latest.json` 或 `latest-staging.json` 及其 `.sig`，验签。连接超时 4 秒、读取超时 8 秒，禁用缓存。
    - buildId 与当前一致 → 结束，不显示任何界面。
-3. 有更新 → 下载清单和 `.sig`，依次校验：清单不超过 16MB；`sha256(raw)` 等于指针里的 `manifestSha256`；buildId 一致；签名通过；指针里的 `minShell ≤ BuildConfig.SHELL_VERSION`；指针里的 `builtAt` 比已安装的新。任何一项失败都静默放弃。
+3. 有更新 → 下载清单和 `.sig`，依次校验：清单不超过 16MB；`sha256(raw)` 等于指针里的 `manifestSha256`；buildId 一致；签名通过；指针里的 `minShell ≤ BuildConfig.SHELL_VERSION`；指针里的 `builtAt` 比已安装的新。检查阶段的失败会记录并自动重试；下载失败会给玩家「重试/稍后」。
 4. 计算差量。清单是唯一权威：文件指纹等于 APK 基线 → 用 APK 里的；等于 `active` 目录 → 硬链接过来；否则下载。
-5. 弹原生对话框：「发现新版本，需要下载 X MB（N 个文件）」[立即更新] [稍后]。选稍后则本次不再提示；如果这个 buildId 曾经启动失败过，也不再提示。
+5. 弹原生对话框：「发现新版本，需要下载 X MB（N 个文件）」[立即更新] [稍后]。选稍后则本进程内不再提示，下次冷启动会重新检查；如果这个 buildId 曾经启动失败，24 小时内不提示，之后允许重试。
 6. 选立即更新 → 模态进度框（可取消）。3 个线程下载，逐个写 `.part`、算 SHA-256、校验通过再改名；已有 `.part` 用 `Range` 续传。磁盘空间按 `缺失总量 × 1.25 + 16MB` 检查。
 7. 全部完成 → 写完成标记 → `staging/<buildId>` 原子改名为 `builds/<buildId>` → 更新 `previous` / `active` → 销毁并重建 WebView，加载新版本。
-8. 取消或失败 → 保留 staging 供下次续传，继续用旧版本，只记日志，不弹错误框。
+8. 取消 → 保留 staging 供下次续传，继续用旧版本。下载失败 → 保留 staging，弹出「更新失败」并提供重试；不再静默关闭进度框。
 
 **传输编码必须写死：**
 
@@ -135,7 +135,7 @@ SharedPreferences "inoita-update"
 - 应用下载版本、重建 WebView 时记 `pendingBoot`；`onRenderProcessGone` 也通知 Manager。
 - **只有 `pendingBoot` 为真、且还没收到 `markBootOk` 时，`onRenderProcessGone` 才触发回退。** 正常游玩时系统回收渲染进程只重建 WebView，不能碰 `active` / `previous`，更不能删除版本目录。
 - 网页侧在标题页资源加载完成时调一次 `InotiaNative.markBootOk()`（`src/scenes/menu-scene.ts:111`，模块级 once，因为回菜单会重新 create）。
-- 看门狗 45 秒（真机冷启动实测后再调）；等待期间显示原生「正在启动」提示。超时或期间渲染进程崩溃：`active = previous`（没有 previous 就回到 APK 基线），删除坏版本目录，记下 `failedBuildId`，重建 WebView，Toast「更新版本启动失败，已回退」。
+- 看门狗 90 秒（慢设备上 45 秒偏紧）；等待期间显示原生「正在启动」提示。超时或期间渲染进程崩溃：`active = previous`（没有 previous 就回到 APK 基线），删除坏版本目录，记下 `failedBuildId` 和失败时间（24 小时冷却），重建 WebView，弹出「新版本启动失败，已回到上一版」并提供重试。启动耗时写入 `lastBootMs`，后续可按真机数据再调。
 - 收到 `markBootOk` 后提交并清理旧目录，不再回退。
 
 这条边界是安全的：存档格式升级只发生在玩家点存档槽之后（`src/application/saved-game.ts:196-225`），那时标题页早已加载成功、已经提交。回退发生时不可能有被升级过的存档。
@@ -262,4 +262,5 @@ npm run verify:update -- --apk apk-out/Inotia-4-1.0.0.apk --url https://catgo.on
 - **不支持降级**：`builtAt` 只增不减。要撤回线上版本时，部署一个内容正确的新构建，而不是把站点换回旧构建。
 - **存储**：应用总占用约为 APK 225MB + 当前版本 225MB；staging 只额外占用缺失文件。安装前按 `缺失总量 × 1.25 + 16MB` 检查剩余空间，空间不足时明确提示，而不是装到一半失败。
 - **清单体积**：约 1.18MB，gzip 后约 170KB，只在确实有更新时下载；常规剧情改动约 1–3MB，修 Phaser 代码约 2.6MB。
-- **首次检查开销**：每次启动一个几百字节的请求；失败静默，不阻塞进游戏。
+- **首次检查开销**：每次冷启动一个几百字节的请求；失败后 30 秒重试，最多 3 次，不阻塞进游戏。前台恢复时 6 小时间隔检查。
+- **更新状态持久化**：最近检查时间/结果、待处理 buildId、下载失败原因、启动失败 buildId 和时间、启动耗时都写进 SharedPreferences；Activity 重建或进程被杀后能恢复提示和重试，不再只存在内存弹窗里。
