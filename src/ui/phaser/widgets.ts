@@ -133,7 +133,7 @@ export class UiSurface {
   rect(x:number,y:number,width:number,height:number,color=0x21190f,alpha=.95,parent=this.root):Phaser.GameObjects.Rectangle {
     const result=this.scene.add.rectangle(x,y,width,height,color,alpha).setOrigin(0);parent.add(result);return result;
   }
-  button(label:string,x:number,y:number,width:number,height:number,action:()=>void,options:{image?:string;pressed?:string;fontSize?:number;disabled?:boolean;selected?:boolean;bare?:boolean;native?:boolean;pressedRect?:{x:number;y:number;width:number;height:number};pressedAdd?:boolean;parent?:Phaser.GameObjects.Container;guard?:()=>boolean}={}):Phaser.GameObjects.Container {
+  button(label:string,x:number,y:number,width:number,height:number,action:()=>void,options:{image?:string;pressed?:string;fontSize?:number;disabled?:boolean;selected?:boolean;bare?:boolean;native?:boolean;pressedRect?:{x:number;y:number;width:number;height:number};pressedAdd?:boolean;parent?:Phaser.GameObjects.Container;guard?:()=>boolean;hold?:{delayMs?:number;intervalMs?:number}}={}):Phaser.GameObjects.Container {
     const parent=options.parent??this.root, result=this.scene.add.container(x,y);parent.add(result);
     // native 让原版按钮图按原始尺寸居中盖在命中区上，命中区保持 w×h。
     const draw=(file:string):Phaser.GameObjects.Image=>{
@@ -155,9 +155,11 @@ export class UiSurface {
     const hitTest=(area:Phaser.Geom.Rectangle,px:number,py:number)=>this.enabled()&&this.root.visible&&Phaser.Geom.Rectangle.Contains(area,px,py)&&this.scrolls.filter(scroll=>scroll.content===parent).every(scroll=>scroll.contains(this.scene.input.activePointer));
     // 可用态要能在运行时改：`disabled` 只是初值，这里把切换动作连同命中闭包一起挂到 data 上，
     // 调用方点加减时只改这一枚按钮，不必重画整个菜单。
+    // 长按重复回调在按钮禁用时必须立刻停掉，避免数量到上限后还在空转。
+    let cancelHold:()=>void=()=>{};
     const setEnabled=(enabled:boolean):void=>{
       if(enabled){result.setInteractive(new Phaser.Geom.Rectangle(0,0,width,height),hitTest);result.setAlpha(1);}
-      else result.disableInteractive().setAlpha(.4);
+      else {cancelHold();result.disableInteractive().setAlpha(.4);}
     };
     highlight?.setVisible(selected);result.setInteractive(new Phaser.Geom.Rectangle(0,0,width,height),hitTest);
     result.setData('uiAction',true);
@@ -165,15 +167,46 @@ export class UiSurface {
       .setData('face',face).setData('highlight',highlight).setData('labelText',text).setData('selected',selected)
       .setData('setEnabled',setEnabled);
     if(options.disabled)setEnabled(false);
-    let press:number|undefined;result.setData('cancelPress',()=>{press=undefined;highlight?.setVisible(selected);});
+    let press:number|undefined, holdTimer:Phaser.Time.TimerEvent|undefined, held=false;
+    const stopHold=():void=>{holdTimer?.remove(false);holdTimer=undefined;};
+    cancelHold=():void=>{held=false;stopHold();};
+    result.setData('cancelPress',()=>{press=undefined;cancelHold();highlight?.setVisible(selected);});
     result.on('pointerdown',(pointer:Phaser.Input.Pointer,_x:number,_y:number,_event:Phaser.Types.Input.EventData)=>{
-      if(!this.enabled())return;press=pointer.id;highlight?.setVisible(true);
+      if(!this.enabled())return;
+      press=pointer.id;held=false;highlight?.setVisible(true);
+      const hold=options.hold;
+      if(!hold)return;
+      // 按住超过 delay 后开始重复；重复期间松手不再额外执行一次点击动作。
+      stopHold();
+      holdTimer=this.scene.time.delayedCall(hold.delayMs??350,()=>{
+        if(press!==pointer.id||!this.enabled())return;
+        held=true;action();
+        holdTimer=this.scene.time.addEvent({delay:hold.intervalMs??80,loop:true,callback:()=>{
+          if(!this.enabled()){cancelHold();return;}
+          action();
+        }});
+      });
     });
-    result.on('pointerout',()=>{press=undefined;highlight?.setVisible(selected);});
+    result.on('pointerout',()=>{press=undefined;cancelHold();highlight?.setVisible(selected);});
+    result.on('pointerupoutside',()=>{press=undefined;cancelHold();highlight?.setVisible(selected);});
     result.on('pointerup',(pointer:Phaser.Input.Pointer,_x:number,_y:number,_event:Phaser.Types.Input.EventData)=>{
       highlight?.setVisible(selected);if(press!==pointer.id)return;press=undefined;
+      const repeated=held;cancelHold();
+      if(repeated)return;
       if(this.enabled()&&(!options.guard||options.guard())&&this.scrollClickAllowed(parent)){this.scene.game.events.emit(UI_EVENTS.select);action();}
     });
+    result.once('destroy',cancelHold);
+    if(options.hold){
+      // 松手点落在按钮外时，按钮自己的 pointerup 可能收不到；这里只停重复计时，
+      // 保留 held 让按钮收到 pointerup 时不会再多执行一次点击动作。
+      const stopRepeatOnRelease=(pointer:Phaser.Input.Pointer):void=>{if(press===pointer.id)stopHold();};
+      this.scene.input.on(Phaser.Input.Events.POINTER_UP,stopRepeatOnRelease);
+      this.scene.input.on(Phaser.Input.Events.POINTER_UP_OUTSIDE,stopRepeatOnRelease);
+      result.once('destroy',()=>{
+        this.scene.input.off(Phaser.Input.Events.POINTER_UP,stopRepeatOnRelease);
+        this.scene.input.off(Phaser.Input.Events.POINTER_UP_OUTSIDE,stopRepeatOnRelease);
+      });
+    }
     this.buttons.push(result);return result;
   }
   /**

@@ -16,6 +16,8 @@ import type { UiSurface, ScrollArea } from './widgets.ts';
 type Selection = {kind:'buy'|'sell'; id:string; step:'description'|'quantity'|'confirm'|'notice'; quantity:number; error?:string};
 
 const SHELF_SLOTS=16;
+/** 数量加减的长按节奏：按住 350ms 后开始，每 80ms 加减一次。 */
+const QUANTITY_HOLD={delayMs:350,intervalMs:80} as const;
 /** 金额的三个单位，顺序与金币那一行的横坐标一致。 */
 const MONEY_UNITS=['gold','silver','copper'] as const;
 const AREA_COLOR=TEXT_COLORS.primary;
@@ -328,9 +330,9 @@ export class ShopPanel {
     drawPopupPanel(v,this.frames,box.width,box.height);
     v.image(icon,box.icon.x,box.icon.y,box.icon.size,box.icon.size);
     const minus=v.button('',field.x,field.y,step.width,step.height,()=>this.stepQuantity(-1),
-      {image:this.catalog.assets['count-left'],pressed:this.catalog.assets['count-left-pressed'],disabled:selection.quantity<=1});
+      {image:this.catalog.assets['count-left'],pressed:this.catalog.assets['count-left-pressed'],disabled:selection.quantity<=1,hold:QUANTITY_HOLD});
     const plus=v.button('',field.x+step.right,field.y,step.width,step.height,()=>this.stepQuantity(1),
-      {image:this.catalog.assets['count-right'],pressed:this.catalog.assets['count-right-pressed'],disabled:selection.quantity>=maximum});
+      {image:this.catalog.assets['count-right'],pressed:this.catalog.assets['count-right-pressed'],disabled:selection.quantity>=maximum,hold:QUANTITY_HOLD});
     this.quantityCount=v.text(String(selection.quantity),box.count.x,box.count.y,0,30,box.count.color);
     v.textPlate(this.catalog.assets['text-plate-left'],this.catalog.assets['text-plate-right'],box.textPlate.x,box.textPlate.y,box.textPlate.width);
     this.quantityButtons={minus,plus};
