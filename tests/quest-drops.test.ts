@@ -136,6 +136,17 @@ test('uncollected task drops count toward the requirement and stop further produ
   assert.equal(run.status('knight-uniform'),'ready');
 });
 
+test('entering another map discards ordinary drops elsewhere but keeps quest drops and the current map',()=>{
+  const run=session(),ground=groundLootFor(run);
+  ground.add('old-map',10,10,[{kind:'item',item:'healing-potion-s',quantity:1},{kind:'money',amount:3}]);
+  ground.add('old-map',20,20,[{kind:'item',item:'special-fishcake',quantity:1}]);
+  ground.add('new-map',30,30,[{kind:'item',item:'healing-potion-s',quantity:1}]);
+  run.enterMap('new-map');
+  assert.deepEqual(ground.forMap('old-map').map(drop=>drop.reward),
+    [{kind:'item',item:'special-fishcake',quantity:1}],'其他地图只留下任务/剧情物品');
+  assert.equal(ground.forMap('new-map').length,1,'当前地图的普通掉落不受影响');
+});
+
 test('session preserves quest boundaries, acceptance order, duplicate items and fulfilled goals',()=>{
   const base=campaign.quests.find(quest=>quest.id==='knight-uniform')!;
   const first={...base,id:'first',hidden:true,handoverItems:[],rewards:undefined,completeScript:null,goals:[

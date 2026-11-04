@@ -32,3 +32,13 @@ test('collectAll follows the same store snapshot as manual pickup',()=>{
   assert.equal(restored.collectAll('camp',()=>true).length,1);
   assert.deepEqual(restored.forMap('camp'),[]);
 });
+
+test('clearOtherMaps removes ordinary drops elsewhere, keeps retained ones and leaves the current map alone',()=>{
+  const store=new GroundLootStore();
+  store.add('camp',1,1,[{kind:'money',amount:5}]);
+  store.add('mine',2,2,[{kind:'money',amount:7},{kind:'item',item:'quest-piece',quantity:1}]);
+  const removed=store.clearOtherMaps('camp',drop=>drop.reward.kind==='item'&&drop.reward.item==='quest-piece');
+  assert.equal(removed,1);
+  assert.deepEqual(store.forMap('camp').map(drop=>drop.reward),[{kind:'money',amount:5}],'当前地图的普通掉落不受影响');
+  assert.deepEqual(store.forMap('mine').map(drop=>drop.reward),[{kind:'item',item:'quest-piece',quantity:1}],'保留判定的掉落留在原图');
+});

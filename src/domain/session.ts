@@ -157,6 +157,9 @@ export class Session {
     this.chests.enterMap(map);
     this.springs.enterMap(map);
     this.shops.enterMap(map);
+    // 普通地面掉落不跨图：换图后别的地图只留任务/剧情物品，任务物品仍由生成点和剧情命令管理。
+    if(entering)groundLootFor(this).clearOtherMaps(map,
+      drop=>drop.reward.kind==='item'&&this.bag.catalog.items[drop.reward.item]?.category==='quest');
     if(entering)for(const {condition,...entity} of this.campaign.mapEntryPlacements??[]){
       if(entity.map===map&&this.evaluateCondition(condition))this.storyWorld.apply({kind:'place',scope:'visit',entity:{...entity,visible:true}});
     }
