@@ -28,6 +28,7 @@ test('interaction distance filters task queries and preserves visibility, opened
   const host={app:{session:{refresh:()=>refreshed++,chests:{isOpened:()=>true},springs:{isEmpty:()=>true}}},map:{id:'map'},
     player:{container:{x:0,y:0}},characters:[far,hidden,chest,spring,decorative,first,tie],near:null as unknown,
     chestOpened:(value:typeof chest)=>value===chest,
+    legendarySwordConsumed:()=>false,
     interactionCandidate:(value:typeof far)=>{queried.push(value.entity.id);return value!==decorative?1:null;}};
   invoke(host,'updateInteractionTarget');
   assert.equal(refreshed,1);assert.deepEqual(queried,['decorative','first','tie']);assert.equal(host.near,first);
@@ -104,17 +105,15 @@ test('entry loading stays up until the entry performance draws its first frame',
     loaded(){calls.push('loaded');},error(){calls.push('error');}};
   const director:{onPresentationStarted?:()=>void}={};
   const host=Object.assign(Object.create(WorldScene.prototype),{
-    app:{ui,director},holdingEntryLoading:false,entryStoryStarted:undefined as (()=>void)|undefined});
+    app:{ui,director},entryStoryStarted:undefined as (()=>void)|undefined});
   const story=new Promise<boolean>(resolve=>{release=()=>resolve(false);});
   const pending=invoke(host,'holdEntryLoading',()=>story,ui) as Promise<void>;
   await new Promise(resolve=>setImmediate(resolve));
   assert.deepEqual(calls,[],'第一幕出现前不能收起加载页');
-  assert.equal(host.holdingEntryLoading,true);
   assert.equal(typeof director.onPresentationStarted,'function');
   director.onPresentationStarted!();
   await pending;
   assert.deepEqual(calls,['loaded']);
-  assert.equal(host.holdingEntryLoading,false);
   assert.equal(director.onPresentationStarted,undefined);
   release();
 });
@@ -125,10 +124,10 @@ test('an entry performance without any drawn frame still ends the loading page o
     loaded(){calls.push('loaded');},error(){calls.push('error');}};
   const director:{onPresentationStarted?:()=>void}={};
   const host=Object.assign(Object.create(WorldScene.prototype),{
-    app:{ui,director},holdingEntryLoading:false,entryStoryStarted:undefined as (()=>void)|undefined});
+    app:{ui,director},entryStoryStarted:undefined as (()=>void)|undefined});
   await (invoke(host,'holdEntryLoading',async()=>false,ui) as Promise<void>);
   assert.deepEqual(calls,['loaded']);
-  assert.equal(host.holdingEntryLoading,false);
+  assert.equal(director.onPresentationStarted,undefined);
 });
 
 test('stage occlusion hides the world camera, pauses physics and restores it on release',()=>{
