@@ -14,7 +14,7 @@
 
 ## 规则
 
-- 会连续修改会话的入口用 `Session.batchNotifications`：它只把多次修改的通知合并成一次，失败不回滚。需要“要么全成、要么全退”的入口用后续的 `atomic`，按这次实际碰到的子系统回滚，不给通知批次套整份会话快照。
+- 会连续修改会话的入口用 `Session.batchNotifications`：它只把多次修改的通知合并成一次，失败不回滚。需要“要么全成、要么全退”的入口用 `Session.atomic(operation, touched)`，按 `touched` 声明实际会碰到的子系统懒抓快照；嵌套调用并入外层，失败只恢复这些子系统并丢弃待发通知，不给通知批次套整份会话快照。
 - 剧情运行时快照不可变：`StoryRuntime` 的写入只替换数组和对象，`snapshot()` 直接返回引用，不做整份深拷贝。内部检查点走 `adoptTrusted`（版本、数组、ID 和重复的廉价检查；开发/测试模式再全量校验），读档、检查点恢复、GM 跳转和云存档走 `prepareRestore`。开发/测试模式用 `dev-mode.ts` 的 `freezeSnapshot` 冻结快照，生产热路径不冻结。
 - 本目录保持零 Phaser 依赖，也不 import `application`、`ui`、`rendering`、`scenes`、`debug`。
 - 新规则写成纯函数或状态迁移，由 `application` 负责适配 Phaser、浏览器和磁盘。

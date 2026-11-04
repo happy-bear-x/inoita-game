@@ -198,16 +198,17 @@ export class PartyRoster {
   private readonly changed:()=>void;
   private readonly onMemberRemoved?:(id:string)=>void;
   private readonly onRecruited?:(sourceItem:string,memberId:string)=>void;
-  private readonly batchNotifications?:<T>(operation:()=>T)=>T;
+  /** 招募会同时改名册、背包和任务事实，由会话层提供的 `atomic` 包成一次全成全退。 */
+  private readonly atomic?:<T>(operation:()=>T)=>T;
   private readonly owned=new Map<string,CompanionMember>();
   private slots:(string|undefined)[]=[undefined,undefined];
   private selected='player';
   private serial=0;
   private rosterSlots:(string|null)[]=Array.from({length:MERCENARY_SLOT_COUNT},()=>null);
   constructor(hero:BattleCharacter,stats:CharacterStatsCatalog,items:ItemCatalog,catalog:CompanionCatalog,changed:()=>void,onMemberRemoved?:(id:string)=>void,
-    onRecruited?:(sourceItem:string,memberId:string)=>void,batchNotifications?:<T>(operation:()=>T)=>T){
+    onRecruited?:(sourceItem:string,memberId:string)=>void,atomic?:<T>(operation:()=>T)=>T){
     this.hero=hero;this.bag=hero.bag;this.stats=stats;this.items=items;this.catalog=catalog;this.changed=changed;this.onMemberRemoved=onMemberRemoved;
-    this.onRecruited=onRecruited;this.batchNotifications=batchNotifications;
+    this.onRecruited=onRecruited;this.atomic=atomic;
   }
   get controlledId():string{return this.selected;}
   get activeIds():string[]{return ['player',...this.slots.filter((id):id is string=>!!id)];}
@@ -261,7 +262,7 @@ export class PartyRoster {
     this.changed();return member;
   }
   recruit(itemInstanceId:string,random:()=>number=Math.random):{member:CompanionMember;result:ItemResult}{
-    return this.batchNotifications?this.batchNotifications(()=>this.recruitMember(itemInstanceId,random)):this.recruitMember(itemInstanceId,random);
+    return this.atomic?this.atomic(()=>this.recruitMember(itemInstanceId,random)):this.recruitMember(itemInstanceId,random);
   }
   private recruitMember(itemInstanceId:string,random:()=>number):{member:CompanionMember;result:ItemResult}{
     const entry=this.bag.get(itemInstanceId);

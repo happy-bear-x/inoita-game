@@ -213,9 +213,12 @@ export class Storefront {
     const total = this.buyPrice(id) * quantity;
     if (!Number.isSafeInteger(total) || total < 1) throw new Error('商品价格无效');
     if (this.session.money < total) throw new Error('金币不足');
-    for (let i = 0; i < quantity; i++) this.session.bag.receiveDrop(offer.instance);
-    if (offer.limited) offer.sold = true;
-    this.session.spendMoney(total);
+    this.session.atomic(()=>{
+      for (let i = 0; i < quantity; i++) this.session.bag.receiveDrop(offer.instance);
+      this.session.spendMoney(total);
+      // 卖出标记放在最后：前面任何一步失败都不该把商品留在已售状态。
+      if (offer.limited) offer.sold = true;
+    },['bag','coins']);
     return total;
   }
   sell(entryId: string, quantity: number): number {
@@ -224,8 +227,10 @@ export class Storefront {
     if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > entry.quantity) throw new Error('出售数量无效');
     const total = this.sellPrice(entry) * quantity;
     if (!Number.isSafeInteger(total) || total < 1 || this.session.money + total > Number.MAX_SAFE_INTEGER) throw new Error('此物品无法出售');
-    this.session.bag.take(entryId, quantity, false);
-    this.session.gainMoney(total);
+    this.session.atomic(()=>{
+      this.session.bag.take(entryId, quantity, false);
+      this.session.gainMoney(total);
+    },['bag','coins']);
     return total;
   }
   /** 批量出售：先整批校验，再一次性扣物品、只通知一次；任意一件无效则整批不落地。 */
@@ -244,8 +249,10 @@ export class Storefront {
       total += price;
       if (!Number.isSafeInteger(total) || this.session.money + total > Number.MAX_SAFE_INTEGER) throw new Error('此物品无法出售');
     }
-    for (const { id, quantity } of entries) this.session.bag.take(id, quantity, false);
-    this.session.gainMoney(total);
+    this.session.atomic(()=>{
+      for (const { id, quantity } of entries) this.session.bag.take(id, quantity, false);
+      this.session.gainMoney(total);
+    },['bag','coins']);
     return total;
   }
 }

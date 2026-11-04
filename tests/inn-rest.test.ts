@@ -6,7 +6,7 @@ import type { Campaign } from '../src/domain/campaign.ts';
 import { BattleCharacter, type CharacterStatsCatalog } from '../src/domain/character-stats.ts';
 import type { WorldIndex } from '../src/domain/content.ts';
 import type { ItemCatalog } from '../src/domain/items.ts';
-import { innRestQuote, restAtInn } from '../src/domain/inns.ts';
+import { innRestQuote, payForInnRest, restAtInn } from '../src/domain/inns.ts';
 import { moneyText } from '../src/domain/money.ts';
 import type { CompanionCatalog } from '../src/domain/party.ts';
 import { Session } from '../src/domain/session.ts';
@@ -51,7 +51,7 @@ test('innkeeper confirmation charges once and cancellation changes nothing',asyn
   session.gainMoney(quote.cost);
   const ui=new GameUI(),director=new StoryDirector(campaign,session,ui,locked=>ui.lock(locked));
   const actor=world.actors['innkeeper-ad05fa66'];
-  const rest=()=>{session.batchNotifications(()=>{session.spendMoney(quote.cost);restAtInn(session,quote);});};
+  const rest=()=>payForInnRest(session,quote);
   const cancelled=director.visitInnkeeper(actor,quote,rest);
   assert.equal(ui.locked,true);assert.match(ui.choices!.description,new RegExp(`休息费用：${moneyText(quote.cost)}`));
   ui.choices!.choose(ui.choices!.options[1]);assert.equal(await cancelled,true);
@@ -60,4 +60,18 @@ test('innkeeper confirmation charges once and cancellation changes nothing',asyn
   ui.choices!.choose(ui.choices!.options[0]);assert.equal(await confirmed,true);
   assert.equal(session.money,0);assert.equal(hero.player.health,hero.player.maxHealth);assert.equal(member.player.health,member.player.maxHealth);
   assert.equal(ui.locked,false);
+});
+
+test('a failure while restoring members rolls back the charge and every heal',()=>{
+  const session=createSession(),hero=session.hero!,party=session.party!;
+  const member=party.joinStory('mercenary-portia');
+  hero.setHealth(1);hero.setMana(1);member.setHealth(1);member.setMana(1);
+  const quote=innRestQuote(session);session.gainMoney(quote.cost);
+  const before=session.captureState();
+  let updates=0;session.subscribe(()=>updates++);
+  const setMana=hero.setMana;
+  hero.setMana=()=>{throw new Error('注入失败');};
+  try{assert.throws(()=>payForInnRest(session,quote),/注入失败/);}finally{hero.setMana=setMana;}
+  assert.deepEqual(session.captureState(),before,'休息失败后金币和已恢复的血量完全回滚');
+  assert.equal(updates,0,'中间状态不通知界面');
 });

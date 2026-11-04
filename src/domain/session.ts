@@ -97,7 +97,11 @@ interface StoryCommandBaseline {
   lootPity?:LootPityState;
   playerState?:Readonly<StoryPlayerState>;
   runtime?:StoryRuntimeSnapshot;
+  shops?:ShopVisitsState;
 }
+/** `atomic` 能回滚的子系统：剧情命令会碰到的全集，再加上商店货架。 */
+type AtomicSubsystem = StorySubsystem | 'shops';
+interface AtomicFrame { touched:Set<AtomicSubsystem>; baseline:StoryCommandBaseline }
 /** 命令静态会碰到的子系统；比运行时实际改动多抓是安全的，少抓会漏回滚。 */
 function storyCommandSubsystems(command:StoryCommand):readonly StorySubsystem[]{
   switch(command.type){
@@ -223,6 +227,8 @@ export class Session {
   private restoreRevision = 0;
   private notificationBatchDepth = 0;
   private pendingNotification = false;
+  /** 正在执行的 `atomic`；只有最外层持有自己的帧，嵌套调用把触碰面并进来。 */
+  private readonly atomicFrames:AtomicFrame[] = [];
   /** 演出期间的按子系统懒回滚日志：第一次碰到某个子系统时才抓旧值。 */
   private performanceLogging = false;
   /** 正在执行导演自己的延迟提交：这些改动由命令回执负责，不进演出日志。 */
@@ -363,7 +369,7 @@ export class Session {
     this.skills = new StorySkillProgression(hero,battle);
     hero?.setSkillUseHandler((item,skill)=>this.skills.applyItem(item,skill));
     this.party=hero&&items&&stats&&companions?new PartyRoster(hero,stats,items,companions,()=>{this.recordPerformance(['party','bag']);this.emit();},id=>{this.cooldowns.removeActor(id);this.frenzyAnimations.removeActor(id);},
-      sourceItem=>this.recordQuestFact('recruit',sourceItem,'recruit'),operation=>this.atomicPartyChange(operation)):undefined;
+      sourceItem=>this.recordQuestFact('recruit',sourceItem,'recruit'),operation=>this.atomic(operation,['bag','party','questBook'])):undefined;
     this.bag = hero?.bag ?? new Bag(()=>{this.recordPerformance(['bag']);this.emit();},items,character?.classId,items?'game':'none');
     const inputs={events:new Set<string>(),choices:new Set<string>(),flags:new Set<string>(),world:new Set<string>()};
     for(const quest of campaign.quests){
@@ -381,13 +387,6 @@ export class Session {
   private questContext() {
     return {...this.conditionContext(),classId:this.hero?.classId??this.character?.classId,itemCount:(id:string)=>this.itemCount(id),
       equippedItemCount:(item:string)=>Object.values(this.bag.equipmentItems(this.bag.equipmentFor(this.party?.controlledId??'player'))).filter(id=>id===item).length};
-  }
-  private atomicPartyChange<T>(operation:()=>T):T {
-    const before=this.captureState(),pending=this.pendingNotification;
-    return this.batchNotifications(()=>{
-      try{return operation();}
-      catch(error){this.restoreUnchecked(before);this.pendingNotification=pending;throw error;}
-    });
   }
   conditionContext():StoryConditionContext {
     return {questStatus:id=>this.status(id),questCompletedCycles:id=>this.questBook?.completedCycles(id)??0,
@@ -670,12 +669,42 @@ export class Session {
   subscribe(listener: SessionListener): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
   /**
    * 只把批次内多次修改的通知合并成一次；失败不回滚已写入的状态。
-   * 需要“全成或全退”的入口由后续的 `atomic` 负责，这里不要当成事务使用。
+   * 需要“全成或全退”的入口用 `atomic`，这里不要当成事务使用。
    */
   batchNotifications<T>(operation:()=>T):T {
     this.notificationBatchDepth++;
     try{return operation();}
     finally{this.notificationBatchDepth--;if(!this.notificationBatchDepth&&this.pendingNotification){this.pendingNotification=false;this.emit();}}
+  }
+  /**
+   * 要么全成、要么全退的入口：失败时只恢复这次声明过的子系统，丢弃批次内待发的通知，
+   * 再把原错误抛给调用方。
+   *
+   * `touched` 是这次操作可能改到的子系统。快照按需抓：第一次碰到某个子系统时才复制它的状态；
+   * 嵌套调用只把 `touched` 并进外层帧，由外层统一回滚一次。剧情提交不使用它，
+   * 继续走 `StoryCommitReceipt` 的检查点回执，避免整份会话快照回来。
+   */
+  atomic<T>(operation:()=>T,touched:readonly AtomicSubsystem[]):T {
+    const outer=this.atomicFrames.length===0;
+    const frame:AtomicFrame=outer?{touched:new Set(),baseline:{}}:this.atomicFrames[0]!;
+    if(outer)this.atomicFrames.push(frame);
+    this.touchAtomic(frame,touched);
+    const pending=this.pendingNotification;
+    try{
+      return this.batchNotifications(()=>{
+        try{return operation();}
+        catch(error){
+          if(outer){this.restoreStoryCommandBaseline(frame.touched,frame.baseline);this.pendingNotification=pending;}
+          throw error;
+        }
+      });
+    }finally{if(outer)this.atomicFrames.pop();}
+  }
+  /** 第一次碰到某个子系统时才抓旧值；同一个子系统只抓一次。 */
+  private touchAtomic(frame:AtomicFrame,subsystems:Iterable<AtomicSubsystem>):void {
+    const fresh=new Set<AtomicSubsystem>();
+    for(const subsystem of subsystems)if(!frame.touched.has(subsystem)){frame.touched.add(subsystem);fresh.add(subsystem);}
+    if(fresh.size)Object.assign(frame.baseline,this.captureStoryCommandBaseline(fresh));
   }
   emit(): void {
     if(this.notificationBatchDepth){this.pendingNotification=true;return;}
@@ -963,7 +992,7 @@ export class Session {
       bag.equip(entry.id,command.slot,command.member,classId,level);
     }
   }
-  private captureStoryCommandBaseline(touched:ReadonlySet<StorySubsystem>):StoryCommandBaseline {
+  private captureStoryCommandBaseline(touched:ReadonlySet<AtomicSubsystem>):StoryCommandBaseline {
     const baseline:StoryCommandBaseline={};
     if(touched.has('bag'))baseline.bag=this.bag.captureState();
     if(touched.has('hero')&&this.hero)baseline.hero=this.hero.captureState();
@@ -977,10 +1006,11 @@ export class Session {
     if(touched.has('lootPity'))baseline.lootPity=this.lootPity.captureState();
     if(touched.has('playerState'))baseline.playerState=this.playerState;
     if(touched.has('runtimeSnapshot'))baseline.runtime=this.runtimeSnapshot;
+    if(touched.has('shops'))baseline.shops=this.shops.captureState();
     return baseline;
   }
   /** 只恢复这次真的碰过的子系统；没碰过的不读也不写。 */
-  private restoreStoryCommandBaseline(touched:ReadonlySet<StorySubsystem>,baseline:StoryCommandBaseline):void {
+  private restoreStoryCommandBaseline(touched:ReadonlySet<AtomicSubsystem>,baseline:StoryCommandBaseline):void {
     if(touched.has('bag'))this.bag.restoreUnchecked(baseline.bag!);
     if(touched.has('hero')&&baseline.hero)this.hero!.restoreState(baseline.hero);
     if(touched.has('skills'))this.skills.restoreState(baseline.skills!);
@@ -999,6 +1029,7 @@ export class Session {
     if(touched.has('lootPity'))this.lootPity.restoreState(baseline.lootPity!);
     if(touched.has('playerState'))this.playerState=baseline.playerState;
     if(touched.has('runtimeSnapshot'))this.runtimeSnapshot=baseline.runtime!;
+    if(touched.has('shops'))this.shops.restoreState(baseline.shops!);
   }
   /**
    * 内部剧情检查点：由 `StoryRuntime` 自己产出，只接收引用并做廉价检查；开发/测试模式再全量校验。
