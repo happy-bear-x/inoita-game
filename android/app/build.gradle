@@ -32,7 +32,7 @@ android {
         applicationId 'io.github.sunflower9264.inoita'
         minSdk 26
         targetSdk 34
-        versionCode 3
+        versionCode 4
         versionName '1.0.1'
         // 诊断、云存档和热更都从同一个服务根地址派生；改服务器地址只改 config/endpoints.json。
         buildConfigField 'String', 'DIAGNOSTICS_URL',
