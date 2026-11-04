@@ -50,6 +50,8 @@ export class MoveStick {
   private readonly hitArea: Phaser.Geom.Circle;
   private center = { x: 0, y: 0 };
   private pointerId = -1;
+  /** 浏览器取消触摸（系统手势、来电、切后台）时 Phaser 不一定补 pointerup，直接回中。 */
+  private readonly onPointerCancel = (): void => this.reset();
   /** 是否允许接输入；与“外观是否显示”分开，电脑模式隐藏外观后键盘仍可用。 */
   private inputEnabled = true;
   private mode: ControlMode;
@@ -118,7 +120,9 @@ export class MoveStick {
     this.container.on('pointerdown', (pointer: Phaser.Input.Pointer, _x: number, _y: number, event: Phaser.Types.Input.EventData) => {
       event.stopPropagation();
       if (!this.inputEnabled || this.mode === 'keyboard') return;
-      if (this.pointerId >= 0 && this.mode === 'stick') return;
+      // 上一次触摸可能在画布外松开、被系统手势取消或窗口失去焦点，pointerup 没到过这里。
+      // 新的按下永远接管：先清掉旧指针，否则旧方向会一直卡住且新触摸也被忽略。
+      if (this.pointerId >= 0) this.reset();
       this.pointerId = pointer.id;
       this.track(pointer);
     });
@@ -140,6 +144,7 @@ export class MoveStick {
     scene.input.on(Phaser.Input.Events.POINTER_UP, this.onUp, this);
     scene.input.on(Phaser.Input.Events.POINTER_UP_OUTSIDE, this.onUp, this);
     scene.input.on('gameout', this.onGameOut, this);
+    scene.game.canvas.addEventListener('pointercancel', this.onPointerCancel);
     // 有 router 时只接 keydown；keyup 仍由摇杆自己处理，松键不会交给其他层。
     if (router) this.unregisterInput = router.register('world', event => this.onKeyDown(event), { active: () => this.inputEnabled });
     else scene.input.keyboard?.on('keydown', this.onKeyDown, this);
@@ -178,7 +183,10 @@ export class MoveStick {
   }
 
   private onMove(pointer: Phaser.Input.Pointer): void {
-    if (pointer.id === this.pointerId) this.track(pointer);
+    if (pointer.id !== this.pointerId) return;
+    // pointerup 丢失后还可能收到同一个指针的移动事件；已经抬起就当场回中。
+    if (!pointer.isDown) { this.reset(); return; }
+    this.track(pointer);
   }
 
   private onUp(pointer: Phaser.Input.Pointer): void {
@@ -186,8 +194,8 @@ export class MoveStick {
   }
 
   private onGameOut(): void {
-    this.keyHistory.length = 0;
-    if (this.pointerId < 0) this.syncKeyAxis();
+    // 指针移出画布或窗口失焦时收不到这一下的 pointerup；触摸轴也必须一起回中。
+    this.reset();
   }
 
   /** 方向键被消费时返回 true；其他按键留给技能快捷位和世界交互。 */
@@ -322,6 +330,7 @@ export class MoveStick {
     this.scene.input.off(Phaser.Input.Events.POINTER_UP, this.onUp, this);
     this.scene.input.off(Phaser.Input.Events.POINTER_UP_OUTSIDE, this.onUp, this);
     this.scene.input.off('gameout', this.onGameOut, this);
+    this.scene.game.canvas.removeEventListener('pointercancel', this.onPointerCancel);
     this.unregisterInput?.();
     this.unregisterInput = undefined;
     this.scene.input.keyboard?.off('keydown', this.onKeyDown, this);
