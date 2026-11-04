@@ -34,7 +34,8 @@ test('a native boss form removal clears the old encounter without awarding a pla
 test('a native encounter without a map condition uses the current scene and finishes after restore',async()=>{
   const session=new Session(campaign),script='event-37',map='shadow-forest-west';
   const port={async prepare(){},currentMap:()=>map,capture:()=>session.captureState(),async present(){return {};},async finish(){},
-    commit(commit:import('../src/domain/story-runtime.ts').StoryNodeCommit){session.applyStoryCommands(commit.commands,commit.checkpoint);},
+    apply(commit:import('../src/domain/story-runtime.ts').StoryNodeCommit){session.applyStoryCommands(commit.commands,commit.checkpoint);},
+    commit(commit:import('../src/domain/story-runtime.ts').StoryNodeCommit){session.adoptRuntime(commit.checkpoint);},
     rollback(value:unknown){session.restoreState(value as ReturnType<Session['captureState']>);},
     evaluate(condition:import('../src/domain/story-condition.ts').StoryCondition){return session.evaluateCondition(condition);}};
   const graph={version:2 as const,scripts:{[script]:campaign.scripts[script]},events:[]};
@@ -62,9 +63,10 @@ function playback(script:string) {
   const session = new Session(campaign);
   const runtime = new StoryRuntime({version:2, scripts:{[script]:campaign.scripts[script]}, events:[]}, {
     async prepare(){}, capture(){return session.captureState();}, async present(){return {};}, async finish(){},
-    commit(commit){session.applyStoryCommands(commit.commands, commit.checkpoint);},
+    apply(commit){session.applyStoryCommands(commit.commands, commit.checkpoint);},
+    commit(commit){session.adoptRuntime(commit.checkpoint);},
     rollback(snapshot){session.restoreState(snapshot as ReturnType<Session['captureState']>);},
-    evaluate(condition, commands){return session.evaluateCondition(condition, commands);},
+    evaluate(condition){return session.evaluateCondition(condition);},
   });
   return {session, runtime};
 }
@@ -151,9 +153,10 @@ test('published native event 27 takes the antidote, accepts quest 31 and hands t
   const runtime = new StoryRuntime({version:2, scripts, events:[]}, {
     // 事件 27 的物件命令带 mapFromStage：舞台没给地图时，运行时回落到当前地图。
     async prepare(){}, currentMap:()=>'spider-s-lair-2-ba4a24b9', capture(){return session.captureState();}, async present(){return {};}, async finish(){},
-    commit(commit){session.applyStoryCommands(commit.commands, commit.checkpoint);},
+    apply(commit){session.applyStoryCommands(commit.commands, commit.checkpoint);},
+    commit(commit){session.adoptRuntime(commit.checkpoint);},
     rollback(snapshot){session.restoreState(snapshot as ReturnType<Session['captureState']>);},
-    evaluate(condition, commands){return session.evaluateCondition(condition, commands);},
+    evaluate(condition){return session.evaluateCondition(condition);},
   });
   // 事件 26 的 0x11 给物品在这里已经发生；事件 27 的 0x44 必须能扣掉同一件，任务与道具链才闭合。
   session.applyStoryCommands([{type:'item-give',item:'robbie-s-special-antidote',quantity:1}]);

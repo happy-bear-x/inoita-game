@@ -459,15 +459,17 @@ test('declared talk completion publishes typed facts separately from object inte
   assert.equal(session.status('talk-to-both'),'ready');assert.equal(session.captureState().factSequences.find(([source])=>source==='talk')?.[1],2);
 });
 
-test('branches and quest availability see a pending travel destination before formal scene projection',()=>{
+test('branches read the travel destination and quest availability after the commands land',()=>{
   const session=new Session(campaign([quest('destination',{availableWhen:{type:'world',key:'map',value:'next'}})]));
   session.setStoryWorldContext(()=>({map:'camp'}));
   const travel={type:'travel' as const,destination:{map:'next',x:16,y:32,facing:'south' as const}};
   assert.equal(session.status('destination'),'locked');
-  assert.equal(session.evaluateCondition({type:'world',key:'map',value:'next'},[travel]),true);
-  assert.equal(session.evaluateCondition({type:'quest',quest:'destination',status:'available'},[travel]),true);
-  assert.equal(session.status('destination'),'locked');assert.equal(session.storyWorld.currentLocation,undefined);
-  session.applyStoryCommands([travel,{type:'quest',command:{type:'accept',quest:'destination'}},{type:'quest',command:{type:'script-ready',quest:'destination'}}]);
+  // 分支在命令落地后求值：转场一落地，世界键与任务可用性都能被条件读到。
+  session.applyStoryCommands([travel]);
+  assert.equal(session.storyWorld.currentLocation?.map,'next');
+  assert.equal(session.evaluateCondition({type:'world',key:'map',value:'next'}),true);
+  assert.equal(session.status('destination'),'available');
+  session.applyStoryCommands([{type:'quest',command:{type:'accept',quest:'destination'}},{type:'quest',command:{type:'script-ready',quest:'destination'}}]);
   assert.equal(session.status('destination'),'ready');assert.equal(session.evaluateCondition({type:'world',key:'map',value:'next'}),true);
 });
 

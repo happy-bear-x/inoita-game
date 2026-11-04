@@ -12,8 +12,8 @@ function harness(data: StoryGraph) {
   const port: StoryRuntimePort = {
     async prepare() {}, capture() { captured++; return balance; },
     async present(action) { played.push(action.id); return {}; }, async finish() {},
-    commit(commit) { for (const command of commit.commands) if (command.type === 'item-give') balance += command.quantity;
-      checkpoint = structuredClone(commit.checkpoint); commits.push(commit); },
+    apply(commit) { for (const command of commit.commands) if (command.type === 'item-give') balance += command.quantity; },
+    commit(commit) { checkpoint = structuredClone(commit.checkpoint); commits.push(commit); },
     rollback(snapshot) { rolledBack++; balance = snapshot as number; }, evaluate(condition) { return condition.type === 'always' && condition.value; },
     onBusy(value) { locks.push(value); }
   };
@@ -199,6 +199,28 @@ test('a conditional cycle that never takes its exit stops at the execution budge
   const h = harness(graph([node('loop', { type: 'branch', condition: { type: 'always', value: true }, then: { script: 'main', node: 'loop' }, otherwise: { script: 'main', node: 'end' } }), node('end')]));
   await assert.rejects(h.runtime.start('main'), /执行预算/);
   assert.equal(h.runtime.busy, false); assert.equal(h.runtime.snapshot().runs[0].status, 'running');
+});
+test('a branch evaluates the real state after the node commands land', async () => {
+  const wrong = node('wrong', { type: 'defer' });
+  const data = graph([node('choose', { type: 'branch', condition: { type: 'always', value: true },
+    then: { script: 'main', node: 'done' }, otherwise: { script: 'main', node: 'wrong' } }), node('done'), wrong]);
+  data.scripts.main.nodes[0].commands = [{ type: 'item-give', item: 'coin', quantity: 4 }];
+  const h = harness(data);
+  h.port.evaluate = () => h.balance() === 4;
+  assert.equal(await h.runtime.start('main'), true);
+  assert.equal(h.balance(), 4);
+  assert.equal(h.runtime.snapshot().runs[0].status, 'completed', '分支看到同一节点发放的物品后走 then');
+});
+test('a branch evaluation failure rolls back the applied command batch', async () => {
+  const data = graph([node('choose', { type: 'branch', condition: { type: 'always', value: true },
+    then: { script: 'main', node: 'done' }, otherwise: { script: 'main', node: 'done' } }), node('done')]);
+  data.scripts.main.nodes[0].commands = [{ type: 'item-give', item: 'coin', quantity: 4 }];
+  const h = harness(data);
+  h.port.evaluate = () => { throw new Error('branch evaluation failed'); };
+  await assert.rejects(h.runtime.start('main'), /branch evaluation failed/);
+  assert.equal(h.balance(), 0, '已落地的命令要随求值失败一起回滚');
+  assert.equal(h.rolledBack(), 1);
+  assert.equal(h.runtime.snapshot().runs[0].status, 'running');
 });
 test('an occurrence that matches nothing never notifies the port', async () => {
   // 队列非空不等于剧情要接管：入队的多数通知筛不到事件。这一条是本次修复的核心判据——

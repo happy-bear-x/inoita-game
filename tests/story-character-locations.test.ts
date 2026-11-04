@@ -16,8 +16,8 @@ test('the native uniform event registers Gunther at the native location and late
     // 生产端口由 presenter 交出解析过地图的舞台（`mapFromStage` 的剧情物件要靠它落图）；桩照它给。
     async present(node){const stage=node.presentation.find(action=>action.type==='stage');return stage?{stage:stageSnapshot(stage)}:{};},async finish(){},
     currentMap:()=>session.storyWorld.currentLocation?.map,
-    commit:commit=>session.applyStoryCommands(commit.commands,commit.checkpoint),rollback:snapshot=>session.restoreState(snapshot as ReturnType<Session['captureState']>),
-    evaluate:(condition,commands)=>session.evaluateCondition(condition,commands)});
+    apply:commit=>session.applyStoryCommands(commit.commands,commit.checkpoint),commit:commit=>session.adoptRuntime(commit.checkpoint),rollback:snapshot=>session.restoreState(snapshot as ReturnType<Session['captureState']>),
+    evaluate:(condition)=>session.evaluateCondition(condition)});
   await runtime.start('event-10');
   assert.equal(session.visible(placement),true);
   const projected=session.storyWorld.projectEntities(placement.map,[placement]);

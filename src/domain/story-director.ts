@@ -3,7 +3,7 @@ import type { ActorDefinition, ChoiceOption, DialogueLine, EntityPlacement, Ques
 import type { Campaign, CampaignQuest } from './campaign.ts';
 import type { PerformanceAction, StoryPresentationPort, StoryStage, StoryStageSnapshot } from './story-performance.ts';
 import { pendingEntranceAliases } from './story-performance.ts';
-import type { Session, SessionState } from './session.ts';
+import type { Session, SessionState, StoryCommitReceipt } from './session.ts';
 import { StoryRuntime } from './story-runtime.ts';
 import type { StoryNodeCommit, StoryOccurrence, StoryPlaybackContext } from './story-runtime.ts';
 import type { StoryCommand, StoryEvent, StoryNode, StoryTriggerSource } from './story-graph.ts';
@@ -63,6 +63,8 @@ export class StoryDirector {
   private cleanup: Promise<void> = Promise.resolve();
   private recovery?: PlaybackBaseline;
   private restoring = false;
+  /** 当前已落地、还没被 `commit` 确认的命令回执；分支求值失败时用它回滚。 */
+  private applied?: { runId: string; receipt: StoryCommitReceipt };
   private restorationVersion: number;
   private disposed = false;
   private unsubscribe: () => void;
@@ -109,6 +111,7 @@ export class StoryDirector {
       },
       present: (node, context) => this.present(node, context),
       finish: async context => { if (this.presenting) await this.presentation!.finish(true, context.signal); },
+      apply: commit => this.apply(commit),
       commit: commit => this.commit(commit),
       afterCommit: async (commit, context) => {
         await this.project(context.signal);
@@ -117,14 +120,20 @@ export class StoryDirector {
       },
       recover: context => this.recover(context.signal),
       checkpoint: snapshot => { this.session.runtimeState = snapshot; },
-      rollback: baseline => {
+      rollback: (baseline, context) => {
         this.restoring = true;
-        try { this.session.restoreState((baseline as PlaybackBaseline).session); }
-        finally { this.restorationVersion = this.session.restorationVersion; this.restoring = false; }
+        try {
+          const applied = this.applied;
+          this.applied = undefined;
+          // 分支求值失败时命令已经落地：用回执只恢复碰到的子系统；
+          // 演出中途取消时命令还没落地，退回整份会话基线。
+          if (applied && applied.runId === context.runId) applied.receipt.rollback();
+          else this.session.restoreState((baseline as PlaybackBaseline).session);
+        } finally { this.restorationVersion = this.session.restorationVersion; this.restoring = false; }
         this.recovery = baseline as PlaybackBaseline;
         this.rollbackPresentation = this.presenting;
       },
-      evaluate: (condition, commands) => this.session.evaluateCondition(condition, commands),
+      evaluate: condition => this.session.evaluateCondition(condition),
       validOccurrence: occurrence => (!occurrence.map || !this.session.storyWorld.currentLocation || occurrence.map === this.session.storyWorld.currentLocation.map)
         && (occurrence.mapVisit === undefined || occurrence.mapVisit === this.session.storyWorld.visit),
       onBusy: busy => {
@@ -374,21 +383,29 @@ export class StoryDirector {
     }
     return { choice: value, stage: this.presenting ? this.presentation?.getStageState?.() : undefined };
   }
-  private commit(commit: StoryNodeCommit): void {
+  /** 把节点命令落到会话；回执保留到 `commit`，供分支求值失败时回滚。 */
+  private apply(commit: StoryNodeCommit): void {
     const commands=storyCommitCommands(commit,this.session.storyWorld,this.presenting?this.presentation?.getWorldChanges?.()??[]:[],
       memberId=>!!this.session.party?.get(memberId));
     const run=commit.checkpoint.runs.find(candidate=>candidate.id===commit.runId);
     const stage=commit.stage??run?.stage;
     const explicitTravel=commit.commands.flatMap(command=>command.type==='travel'?[command.destination]
       :command.type==='world'&&command.command.kind==='travel'?[command.command.destination]:[])[0];
-    this.session.applyStoryCommands(commands, commit.checkpoint);
-    this.presentation?.committed?.();
+    const receipt=this.session.applyStoryCommands(commands, commit.checkpoint, { deferFinalize: true });
+    this.applied={runId:commit.runId,receipt};
     this.projectionStage = stage;
     if (commands.some(command => ['world', 'travel', 'encounter', 'party-join', 'party-leave', 'party-control', 'equip', 'unequip-destroy', 'health', 'mana'].includes(command.type))) this.projectionPending = true;
     if (explicitTravel) {
       this.travelPending = explicitTravel; this.travelApplied = false;
       // The formal travel becomes the new baseline for following nodes.
     }
+  }
+  /** 运行时收尾：认领最终游标（分支节点在这里才确定）、确认表现层与命令回执。 */
+  private commit(commit: StoryNodeCommit): void {
+    this.session.adoptRuntime(commit.checkpoint);
+    this.presentation?.committed?.();
+    const applied=this.applied;
+    if(applied){this.applied=undefined;applied.receipt.finalize();}
   }
   private async project(signal: AbortSignal): Promise<void> {
     if (!this.projectionPending && !this.travelPending) return;

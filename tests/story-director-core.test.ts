@@ -3,6 +3,7 @@ import { stageSnapshot } from './helpers/story-stage.ts';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import type { Campaign } from '../src/domain/campaign.ts';
+import type { CampaignQuest } from '../src/domain/campaign.ts';
 import type { StoryNode } from '../src/domain/story-graph.ts';
 import type { StoryPresentationPort, StoryStage } from '../src/domain/story-performance.ts';
 import { Session } from '../src/domain/session.ts';
@@ -13,8 +14,11 @@ const worldBase=JSON.parse(readFileSync(new URL('../public/content/world.json',i
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const stage:StoryStage={type:'stage',map:base.start.map,x:base.start.x,y:base.start.y,facing:'south',playerVisible:true,cast:[]};
 const node=(id:string,commands:StoryNode['commands']=[],exit:StoryNode['exit']={type:'end'}):StoryNode=>({id,presentation:[],commands,exit});
-function harness(nodes:StoryNode[],presentation?:StoryPresentationPort,world?:StoryWorldPort){
-  const campaign:Campaign={...structuredClone(base),scripts:{...structuredClone(base.scripts),demo:{entry:nodes[0].id,nodes}},
+const quest=(id:string,patch:Partial<CampaignQuest>={}):CampaignQuest=>({id,title:id,description:id,giver:'npc',
+  guidance:{available:'offer',active:'continue'},goals:[],completion:'talk',progressText:'continue',completeText:'thanks',...patch});
+function harness(nodes:StoryNode[],presentation?:StoryPresentationPort,world?:StoryWorldPort,quests:CampaignQuest[]=[]){
+  const campaign:Campaign={...structuredClone(base),quests:[...structuredClone(base.quests),...quests],
+    scripts:{...structuredClone(base.scripts),demo:{entry:nodes[0].id,nodes}},
     events:[{id:'demo-event',source:'start',script:'demo'}]};
   const session=new Session(campaign),locks:boolean[]=[];
   const ui:StoryUI={async dialogue(){},async choice(_prompt,options){return options[0];},async questPopup(){},toast(){},closeDialogue(){},skipDialogue(){}};
@@ -349,4 +353,47 @@ test('director acknowledges scene changes only after the command batch commits',
     committed(){acknowledged++;},async finish(){},release(){}});
   await assert.rejects(h.director.start());assert.equal(acknowledged,0);
   h.session.gainMoney(1);await h.director.retry();assert.equal(acknowledged,1);
+});
+
+
+test('a branch reads flags set by the same node after the commands land',async()=>{
+  const entry=node('entry',[{type:'flag',flag:'branch-flag'}],{type:'branch',condition:{type:'flag',flag:'branch-flag'},
+    then:{script:'demo',node:'yes'},otherwise:{script:'demo',node:'wrong'}});
+  const wrong=node('wrong',[{type:'flag',flag:'wrong-branch'}]);
+  const h=harness([entry,node('yes'),wrong]);
+  assert.equal(await h.director.start(),true);
+  assert.equal(h.session.flags.has('branch-flag'),true);
+  assert.equal(h.session.flags.has('wrong-branch'),false,'分支看到同节点旗标后应走 then');
+});
+
+test('a branch reads a travel destination applied by the same node',async()=>{
+  const destination={map:'shadow-camp',x:1,y:2,facing:'south' as const};
+  const entry=node('entry',[{type:'travel',destination}],{type:'branch',
+    condition:{type:'world',key:'map',value:'shadow-camp'},then:{script:'demo',node:'yes'},otherwise:{script:'demo',node:'wrong'}});
+  const wrong=node('wrong',[{type:'flag',flag:'wrong-branch'}]);
+  const h=harness([entry,node('yes'),wrong]);
+  assert.equal(await h.director.start(),true);
+  assert.equal(h.session.storyWorld.currentLocation?.map,'shadow-camp');
+  assert.equal(h.session.flags.has('wrong-branch'),false,'分支看到同节点转场后应走 then');
+});
+
+test('a branch reads item grants and quest acceptance applied by the same node',async()=>{
+  const itemQuest=quest('branch-item',{completion:'all',
+    goals:[{id:'letter',kind:'item',target:'letter',quantity:1}]});
+  const itemEntry=node('entry',[{type:'item-give',item:'letter',quantity:1}],{type:'branch',
+    condition:{type:'quest',quest:'branch-item',status:'ready'},then:{script:'demo',node:'yes'},otherwise:{script:'demo',node:'wrong'}});
+  const itemWrong=node('wrong',[{type:'flag',flag:'item-wrong'}]);
+  const item=harness([itemEntry,node('yes'),itemWrong],undefined,undefined,[itemQuest]);
+  item.session.accept('branch-item');
+  assert.equal(await item.director.start(),true);
+  assert.equal(item.session.status('branch-item'),'ready');
+  assert.equal(item.session.flags.has('item-wrong'),false,'分支看到同节点发放的物品后应走 then');
+
+  const acceptEntry=node('entry',[{type:'quest',command:{type:'accept',quest:'branch-accept'}}],{type:'branch',
+    condition:{type:'quest',quest:'branch-accept',status:'active'},then:{script:'demo',node:'yes'},otherwise:{script:'demo',node:'wrong'}});
+  const acceptWrong=node('wrong',[{type:'flag',flag:'accept-wrong'}]);
+  const accept=harness([acceptEntry,node('yes'),acceptWrong],undefined,undefined,[quest('branch-accept',{completion:'story'})]);
+  assert.equal(await accept.director.start(),true);
+  assert.equal(accept.session.status('branch-accept'),'active');
+  assert.equal(accept.session.flags.has('accept-wrong'),false,'分支看到同节点接取的任务后应走 then');
 });

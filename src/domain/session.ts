@@ -377,17 +377,11 @@ export class Session {
   }
   private prepareRuntime(snapshot:StoryRuntimeSnapshot):StoryRuntimeSnapshot {
     const runtime=this.runtimeValidator??=new StoryRuntime(this.campaign,{prepare:async()=>{},capture:()=>undefined,present:async()=>({}),finish:async()=>{},
-      commit:()=>{},rollback:()=>{},evaluate:condition=>this.evaluateCondition(condition)});
+      apply:()=>{},commit:()=>{},rollback:()=>{},evaluate:condition=>this.evaluateCondition(condition)});
     return runtime.prepareRestore(snapshot);
   }
-  evaluateCondition(condition:StoryCondition,commands:readonly StoryCommand[]=[]):boolean {
-    if(!commands.length)return evaluateStoryCondition(condition,this.conditionContext());
-    const preview=this.previewStoryCommands(commands);
-    const states=preview.questBook.progressEntries();
-    return evaluateStoryCondition(condition,{...this.conditionContext(),questStatus:id=>states.get(id)?.status??'locked',
-      questCompletedCycles:id=>states.get(id)?.completedCycles??0,flag:id=>preview.world.flags.includes(id),
-      choice:id=>preview.world.choices.find(([key])=>key===id)?.[1],
-      world:key=>key==='map'?preview.world.location?.map??this.worldContext()[key]:this.worldContext()[key]});
+  evaluateCondition(condition:StoryCondition):boolean {
+    return evaluateStoryCondition(condition,this.conditionContext());
   }
   /** 调试准备在独立会话中执行，安装之前不会通知正式导演。 */
   createStorySandbox():Session {
@@ -974,70 +968,6 @@ export class Session {
       ids.add(run.id);
     }
     this.runtimeSnapshot=snapshot;
-  }
-  /**
-   * 分支求值前的窄预演：`StoryRuntime` 目前仍在命令落地前求值分支，这一步用独立沙盒保证
-   * 条件能看到同一节点命令的结果。命令落地后求值完成后会删除这条路径。
-   */
-  private previewStoryCommands(commands:readonly StoryCommand[]) {
-    const world=new StoryWorldState();world.restoreState(this.storyWorld.captureState());
-    const loot=new GroundLootStore();loot.restoreState(groundLootFor(this).captureState());
-    const hero=this.hero?new BattleCharacter(this.hero.classId,this.hero.catalog,this.bag.catalog):undefined;
-    const bag=hero?.bag??new Bag(()=>{},this.bag.catalog,this.bag.classId,'none');bag.restoreState(this.bag.captureState());
-    if(hero)hero.restoreState(this.hero!.captureState());
-    const party=this.party&&hero?new PartyRoster(hero,hero.catalog,this.bag.catalog,this.party.catalog,()=>{}):undefined;
-    if(party)party.restoreState(this.party!.captureState());
-    const fallback=this.playerState?structuredClone(this.playerState):undefined;
-    let coins=this.coins;
-    const book=this.questBook.fork(()=>({...this.questContext(),classId:hero?.classId??this.character?.classId,itemCount:id=>bag.count(id),
-      equippedItemCount:item=>Object.values(bag.equipmentItems(bag.equipmentFor(party?.controlledId??'player'))).filter(id=>id===item).length,
-      flag:id=>world.hasFlag(id),choice:id=>world.choice(id),world:key=>this.worldValue(world,key)}));
-    for(const command of commands){
-      switch(command.type){
-        case 'quest':{
-          const plan=book.plan(command.command);
-          for(const item of plan.itemRemovals)if(!bag.remove(item.item,item.quantity))throw new Error('剧情物品不足');
-          for(const item of plan.itemGrants)bag.add(item.item,item.quantity);
-          for(const receipt of plan.rewards){if(receipt.reward.experience)hero?.addExperience(receipt.reward.experience);coins+=receipt.reward.money;}
-          book.commit(plan);break;
-        }
-        case 'interaction':{
-          if(!command.target||!command.instance)throw new Error('剧情交互目标无效');
-          const sequence=book.factSequence('interaction')+1;
-          book.commit(book.plan({type:'fact',fact:{kind:'interact',target:command.target,occurrence:{source:'interaction',sequence}}}));break;
-        }
-        case 'talk':{
-          if(!command.target)throw new Error('剧情对话目标无效');
-          const sequence=book.factSequence('talk')+1;
-          book.commit(book.plan({type:'fact',fact:{kind:'talk',target:command.target,occurrence:{source:'talk',sequence}}}));break;
-        }
-        case 'item-give':case 'item-take':
-          if(!Number.isSafeInteger(command.quantity)||command.quantity<=0)throw new Error('剧情物品数量无效');
-          if(command.type==='item-give')bag.add(command.item,command.quantity);
-          else if(!(command.allowPartial&&bag.count(command.item)===0)&&!bag.remove(command.item,command.allowPartial?Math.min(command.quantity,bag.count(command.item)):command.quantity))throw new Error('剧情物品不足');break;
-        case 'money-give':case 'money-take':{
-          if(!Number.isSafeInteger(command.amount)||command.amount<=0)throw new Error('剧情金币数量无效');
-          if(command.type==='money-take'){
-            if(command.amount>coins&&!command.allowPartial)throw new Error('剧情金币不足');
-            coins=Math.max(0,coins-command.amount);
-          }else coins+=command.amount;
-          break;
-        }
-        case 'item-drop':
-          if(!this.bag.catalog.items[command.item]||!Number.isSafeInteger(command.quantity)||command.quantity<=0||!Number.isFinite(command.x)||!Number.isFinite(command.y))throw new Error('剧情地面物品无效');
-          loot.add(command.map??world.currentLocation?.map??this.campaign.start.map,command.x,command.y,[{kind:'item',item:command.item,quantity:command.quantity}]);break;
-        case 'flag':world.apply({kind:'flag',id:command.flag,value:command.value??true});break;
-        case 'choice':world.apply({kind:'choice',id:command.choice,value:command.value});break;
-        case 'world':world.apply(command.command);break;
-        case 'travel':world.apply({kind:'travel',destination:command.destination});break;
-        case 'encounter':world.apply({kind:'encounter',encounter:command.encounter});break;
-        case 'party-join':case 'party-leave':case 'party-control':case 'health':case 'mana':case 'equip':case 'unequip-destroy':
-          this.applyActorCommand(command,bag,hero,party,fallback);break;
-        default:throw new Error('未知剧情游戏命令');
-      }
-    }
-    if(commands.at(-1)?.type!=='quest')book.commit(book.plan({type:'refresh'}));
-    return {questBook:book,world:world.captureState()};
   }
   private applyQuestCommand(command:QuestCommand):void {
     const plan=this.questBook.plan(command,{stateIsCurrent:true});
