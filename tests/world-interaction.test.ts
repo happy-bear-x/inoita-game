@@ -9,6 +9,7 @@ import type { ActorDefinition, EntityPlacement, Facing, WorldIndex, WorldMap } f
 import type { DropCatalog } from '../src/domain/drops.ts';
 import type { ItemCatalog } from '../src/domain/items.ts';
 import { Session } from '../src/domain/session.ts';
+import type { ShopCatalog } from '../src/domain/shop.ts';
 
 class Rectangle {
   x:number;y:number;width:number;height:number;
@@ -46,7 +47,7 @@ phaser.deregister();
 const read=<T>(file:string):T=>JSON.parse(readFileSync(new URL(`../public/${file}`,import.meta.url),'utf8')) as T;
 const world=read<WorldIndex>('content/world.json'),campaign=read<Campaign>('content/campaign.json');
 const items=read<ItemCatalog>('content/items.json'),stats=read<CharacterStatsCatalog>('content/character-stats.json');
-const drops=read<DropCatalog>('content/drops.json');
+const drops=read<DropCatalog>('content/drops.json'),shops=read<ShopCatalog>('content/shops.json');
 
 interface Character {entity:EntityPlacement;actor:ActorDefinition;container:Display;marker:null}
 interface SceneHooks {
@@ -74,6 +75,10 @@ function innkeeper(map:WorldMap):EntityPlacement {
   return map.entities.find(entity=>world.actors[entity.actor]?.service==='innkeeper')!;
 }
 
+function merchandiseDealer(map:WorldMap):EntityPlacement {
+  return map.entities.find(entity=>entity.actor==='merchandise-dealer-4156e064')!;
+}
+
 /** 站在融合器正下方，面朝它按一次攻击键。 */
 function pressAttack(mapId:string,current=new Session(campaign,undefined,undefined,items,new BattleCharacter('dark-knight',stats,items)),select=(map:WorldMap)=>machine(map)) {
   const map=mapOf(mapId),entity=select(map),calls:string[]=[],animations=new Set<string>();
@@ -85,7 +90,8 @@ function pressAttack(mapId:string,current=new Session(campaign,undefined,undefin
     app:{world,items,session:current,campaign,locked:false,suspended:false,characterStats:stats,
       autoSave:()=>calls.push('autosave'),
       ui:{ready:true,controlLayoutEditing:false,showInstant:(message:string)=>calls.push(`instant:${message}`)},
-      audio:{ui:(sound:string)=>calls.push(sound),effect:(sound:string)=>calls.push(`effect:${sound}`)},shops:{shops:{}},
+      audio:{ui:(sound:string)=>calls.push(sound),effect:(sound:string)=>calls.push(`effect:${sound}`)},shops,
+      openShop:(shopId:string)=>calls.push(`openShop:${shopId}`),
       director:{interact:(_entity:EntityPlacement,actor:ActorDefinition)=>{calls.push(`interact:${actor.id}`);return Promise.resolve(true);},
         visitInnkeeper:(actor:ActorDefinition,quote:{cost:number},rest:()=>void)=>{calls.push(`visitInnkeeper:${actor.id}:${quote.cost}`);rest();return Promise.resolve(true);}},
       openCrafting:(actorId:string)=>calls.push(`openCrafting:${actorId}`)},
@@ -156,6 +162,13 @@ test('the innkeeper confirmation charges, restores and autosaves',()=>{
   assert.equal(current.money,99);
   assert.equal(current.hero!.player.health,current.hero!.player.maxHealth);
   assert.equal(current.hero!.player.mana,current.hero!.player.maxMana);
+});
+
+test('a shop NPC without a greeting opens the shop instead of attacking',()=>{
+  const {calls,entity}=pressAttack('steel-orc-village-57c67f8c',undefined,map=>merchandiseDealer(map));
+  assert.equal(entity.actor,'merchandise-dealer-4156e064');
+  assert.equal(world.actors[entity.actor].description,'');
+  assert.deepEqual(calls,[`openShop:${entity.actor}`]);
 });
 
 test('a successful ancient sword pull grants a weapon and plays the sword sound',()=>{

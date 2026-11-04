@@ -1760,7 +1760,8 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     const slot=this.app.session.npcQuestSlot(entity.actor,entity.characterId);
     if(this.app.session.canInteract(entity.actor,entity.id,entity.characterId)
       ||(slot&&this.app.session.status(slot.id)==='ready'))return 0;
-    if(actor.service||actor.chest||entity.spring||actor.description||entity.hint||entity.objective)return 1;
+    if(actor.service||actor.chest||entity.spring||actor.description||entity.hint||entity.objective
+      ||this.app.shops.shops[entity.actor])return 1;
     return this.app.session.markerActor(entity.actor,entity.characterId)?1:null;
   }
   /** 挑出「身边的可交互对象」：原版 `PLAYER_DoCheckNearNPC` 用曼哈顿距离 24 px，最近的一个胜出。 */
