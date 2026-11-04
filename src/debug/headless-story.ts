@@ -197,7 +197,7 @@ export class HeadlessStory {
   /** 把一次回放的事件发生水位写进运行时；重复事件和后续触发靠它抑制。 */
   recordOccurrence(event: StoryEvent, sequence: number): void {
     const key = JSON.stringify([event.id, event.source]);
-    const state = this.session.runtimeState;
+    const state = structuredClone(this.session.runtimeState);
     const current = state.occurrenceSequences.find(([name]) => name === key)?.[1] ?? 0;
     state.occurrenceSequences = state.occurrenceSequences.filter(([name]) => name !== key)
       .concat([[key, Math.max(current, sequence)]]);

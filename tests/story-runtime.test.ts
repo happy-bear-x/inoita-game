@@ -287,7 +287,7 @@ test('invalid complete scene snapshots cannot be committed or restored', async (
     (stage: typeof valid) => { stage.scenes=[structuredClone(stage.scene)]; },
     (stage: typeof valid) => { const scene={...structuredClone(stage.scene),map:'elsewhere'};stage.scenes=[scene,scene]; },
   ]) {
-    const saved = h.runtime.snapshot(); saved.runs[0].stage = structuredClone(valid); corrupt(saved.runs[0].stage);
+    const saved = structuredClone(h.runtime.snapshot()); saved.runs[0].stage = structuredClone(valid); corrupt(saved.runs[0].stage);
     assert.throws(() => h.runtime.restore(saved));
     assert.equal(h.runtime.snapshot().runs[0].stage, undefined);
   }

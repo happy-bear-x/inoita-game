@@ -400,15 +400,19 @@ export class Session {
     return key==='map'?world.currentLocation?.map??this.worldContext()[key]:this.worldContext()[key];
   }
   setStoryWorldContext(context:()=>Record<string,StoryWorldValue>):void { this.worldContext=context;this.questProjection=undefined;this.refresh(); }
-  get runtimeState():StoryRuntimeSnapshot {return structuredClone(this.runtimeSnapshot);}
+  /** 运行时快照不可变，按引用返回；需要修改时由调用方先复制。 */
+  get runtimeState():StoryRuntimeSnapshot {return this.runtimeSnapshot;}
   /** 当前是否有剧情 run 在等待战斗结果；检查点据此避开战斗开局。 */
   get hasWaitingStoryRun():boolean { return this.runtimeSnapshot.runs.some(run=>run.status==='waiting'); }
   set runtimeState(value:StoryRuntimeSnapshot) {
     const next=this.prepareRuntime(value);this.validateStoryLinks(this.storyWorld.captureState(),next);this.runtimeSnapshot=next;
   }
-  private prepareRuntime(snapshot:StoryRuntimeSnapshot):StoryRuntimeSnapshot {
-    const runtime=this.runtimeValidator??=new StoryRuntime(this.campaign,{prepare:async()=>{},capture:()=>undefined,present:async()=>({}),finish:async()=>{},
+  private createRuntimeValidator():StoryRuntime {
+    return new StoryRuntime(this.campaign,{prepare:async()=>{},capture:()=>undefined,present:async()=>({}),finish:async()=>{},
       apply:()=>{},commit:()=>{},rollback:()=>{},evaluate:condition=>this.evaluateCondition(condition)});
+  }
+  private prepareRuntime(snapshot:StoryRuntimeSnapshot):StoryRuntimeSnapshot {
+    const runtime=this.runtimeValidator??=this.createRuntimeValidator();
     return runtime.prepareRestore(snapshot);
   }
   evaluateCondition(condition:StoryCondition):boolean {
@@ -448,11 +452,10 @@ export class Session {
     for(const item of value.claimed)this.claimedReservedDrops.add(item);
   }
   private captureStateWith(questBook:QuestBookState):SessionState {
-    // 各子系统自己的 `captureState()` 已经返回新对象，这里只对**按引用共享**的三项做深拷贝：
-    // 运行时快照、奖励收据与敌人状态（`player` 是冻结值，标量与字符串不可变）。
-    // 省掉外层那份整会话克隆——它连 505 条任务状态一起复制，是死亡结算的一项固定开销。
+    // 运行时快照本身不可变，按引用共享；奖励收据与敌人状态仍需深拷贝，
+    // 否则回滚会改到快照里的同一份对象。
     return {classId:this.hero?.classId??this.character?.classId,
-      questBook,storyWorld:this.storyWorld.captureState(),runtime:structuredClone(this.runtimeSnapshot),
+      questBook,storyWorld:this.storyWorld.captureState(),runtime:this.runtimeSnapshot,
       receipts:[...this.receipts.values()].map(receipt=>structuredClone(receipt)),
       factSequences:[...this.factSequences],trackedQuest:this.trackedQuest,debugFocusQuest:this.debugFocusQuestValue,player:this.playerState,money:this.coins,gameTimeMs:this.gameTimeMs,
       enemies:[...this.enemyStates].map(([id,enemy])=>[id,structuredClone(enemy)]),bag:this.bag.captureState(),hero:this.hero?.captureState(),skills:this.skills.captureState(),
@@ -473,7 +476,8 @@ export class Session {
     // 批次回滚走 O(1) 检查点；存档/检查点恢复仍走带校验的 `restoreState`。
     if(quests)this.questBook.rollbackTo(quests);else this.questBook.restoreState(restored.questBook);
     this.storyWorld.restoreState(restored.storyWorld);
-    this.runtimeSnapshot=structuredClone(restored.runtime);
+    // 外部恢复已在 `prepareRuntime` 校验过；回滚拿到的是本项目刚产出的不可变快照。
+    this.runtimeSnapshot=restored.runtime;
     this.receipts.clear();for(const receipt of restored.receipts)this.receipts.set(JSON.stringify([receipt.quest,receipt.cycle]),structuredClone(receipt));
     this.factSequences.clear();for(const [source,sequence]of restored.factSequences)this.factSequences.set(source,sequence);
     this.enemyStates.clear();for(const [id,enemy] of restored.enemies)this.enemyStates.set(id,enemy);
@@ -997,20 +1001,12 @@ export class Session {
     if(touched.has('runtimeSnapshot'))this.runtimeSnapshot=baseline.runtime!;
   }
   /**
-   * 内部剧情检查点：由 `StoryRuntime` 自己产出，只做轻校验，不复制、不跑读档级的图校验。
+   * 内部剧情检查点：由 `StoryRuntime` 自己产出，只接收引用，不复制、不跑读档级的图校验。
    * 读档、检查点恢复和调试跳转仍走 `prepareRuntime`。
    */
   adoptRuntime(snapshot:StoryRuntimeSnapshot):void {
-    if((snapshot.version!==2&&snapshot.version!==3)||!Number.isSafeInteger(snapshot.sequence)||snapshot.sequence<0)
-      throw new Error('剧情检查点版本或序号无效');
-    if(!Array.isArray(snapshot.runs))throw new Error('剧情检查点运行列表无效');
-    const ids=new Set<string>();
-    for(const run of snapshot.runs){
-      if(!run.id||ids.has(run.id)||!['running','waiting','deferred','completed'].includes(run.status))
-        throw new Error('剧情运行标识或状态无效');
-      ids.add(run.id);
-    }
-    this.runtimeSnapshot=snapshot;
+    const runtime=this.runtimeValidator??=this.createRuntimeValidator();
+    this.runtimeSnapshot=runtime.adopt(snapshot);
   }
   private applyQuestCommand(command:QuestCommand):void {
     const plan=this.questBook.plan(command,{stateIsCurrent:true});

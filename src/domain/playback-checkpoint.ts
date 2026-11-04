@@ -12,22 +12,30 @@ import type { StoryStageSnapshot } from './story-performance.ts';
  * 版本 3 表示这份快照已经去掉缓存外观；版本 2 是仍在运行的完整快照。没有舞台时不改版本。
  */
 export function toPlaybackCheckpoint(runtime: StoryRuntimeSnapshot): StoryRuntimeSnapshot {
-  const checkpoint = structuredClone(runtime);
   let hasStage = false;
-  for (const run of checkpoint.runs) {
-    if (!run.stage) continue;
+  // 写时复制：只有带演员外观的舞台才需要新的 run / 舞台 / 场景对象，其余保持引用。
+  const runs = runtime.runs.map(run => {
+    if (!run.stage) return run;
     hasStage = true;
-    stripStageAppearance(run.stage);
-  }
-  if (hasStage) checkpoint.version = 3;
-  return checkpoint;
+    return { ...run, stage: withoutStageAppearance(run.stage) };
+  });
+  if (!hasStage) return runtime;
+  return { ...runtime, runs, version: 3 };
 }
 
-function stripStageAppearance(stage: StoryStageSnapshot): void {
-  stripSceneAppearance(stage.scene);
-  for (const scene of stage.scenes ?? []) stripSceneAppearance(scene);
+function withoutStageAppearance(stage: StoryStageSnapshot): StoryStageSnapshot {
+  const scene = withoutSceneAppearance(stage.scene);
+  const scenes = stage.scenes?.map(withoutSceneAppearance);
+  if (scene === stage.scene && scenes?.every((value, index) => value === stage.scenes![index])) return stage;
+  return { ...stage, scene, ...(scenes ? { scenes } : {}) };
 }
 
-function stripSceneAppearance(scene: SceneSnapshot): void {
-  for (const actor of scene.actors) delete actor.appearance;
+function withoutSceneAppearance(scene: SceneSnapshot): SceneSnapshot {
+  if (!scene.actors.some(actor => actor.appearance !== undefined)) return scene;
+  return { ...scene, actors: scene.actors.map(actor => {
+    if (actor.appearance === undefined) return actor;
+    const copy = { ...actor };
+    delete copy.appearance;
+    return copy;
+  }) };
 }

@@ -3,6 +3,7 @@ import { STORY_TRIGGER_SOURCES } from './story-graph.ts';
 import type { StoryCommand, StoryEvent, StoryGraph, StoryNode, StoryNodeRef, StoryTriggerSource } from './story-graph.ts';
 import type { StoryCondition } from './story-condition.ts';
 import { validateStoryStageSnapshot, type StoryStage, type StoryStageSnapshot } from './story-performance.ts';
+import { freezeSnapshot } from './dev-mode.ts';
 
 export interface StoryOccurrence { id: string; sequence: number; source: StoryTriggerSource; key?: string; map?: string; mapVisit?: number; entity?: string }
 interface StoryRun {
@@ -74,6 +75,8 @@ export class StoryRuntime {
   private readonly nodes = new Map<string, StoryNode>();
   private readonly eventIndex = new Map<StoryTriggerSource, StoryEvent[]>();
   private state: StoryRuntimeSnapshot = emptySnapshot();
+  /** 按数组引用缓存的完成事件集合；状态不可变，数组换了才重建。 */
+  private completedEventCache?: { events: readonly string[]; values: Set<string> };
   private queue: PendingWork[] = [];
   private controller = new AbortController();
   private epoch = 0;
@@ -121,9 +124,23 @@ export class StoryRuntime {
   eventStatus(id: string): 'completed' | 'running' | 'waiting' | 'idle' {
     const run = [...this.state.runs].reverse().find(run => run.eventId === id && ['running', 'waiting'].includes(run.status));
     if (run) return run.status as 'running' | 'waiting';
-    return this.state.completedEvents.includes(id) ? 'completed' : 'idle';
+    return this.completedEvents().has(id) ? 'completed' : 'idle';
   }
-  snapshot(): StoryRuntimeSnapshot { return clone(this.state); }
+  /** 按数组引用缓存完成事件集合；`completedEvents` 每次变化都会换一根新数组。 */
+  private completedEvents(): Set<string> {
+    const cached = this.completedEventCache;
+    if (cached?.events === this.state.completedEvents) return cached.values;
+    const values = new Set(this.state.completedEvents);
+    this.completedEventCache = { events: this.state.completedEvents, values };
+    return values;
+  }
+  /** 状态不可变，快照直接共享引用；开发/测试模式在这里递归冻结，写坏快照会立刻报错。 */
+  snapshot(): StoryRuntimeSnapshot { return freezeSnapshot(this.state); }
+  /** 内部可信检查点：只接收引用，不克隆、不跑读档级校验。 */
+  adopt(snapshot: StoryRuntimeSnapshot): StoryRuntimeSnapshot {
+    this.state = freezeSnapshot(snapshot);
+    return this.state;
+  }
   /** 这个运行当前走到哪个脚本；供演出提前准备它可能跨到的地图。 */
   runScript(id: string): string | undefined { return this.state.runs.find(run => run.id === id)?.cursor.script; }
   prepareRestore(snapshot: StoryRuntimeSnapshot): StoryRuntimeSnapshot {
@@ -171,7 +188,7 @@ export class StoryRuntime {
   restore(snapshot: StoryRuntimeSnapshot): void {
     const next = this.prepareRestore(snapshot);
     // Explicit restoration replaces the old baseline; cancel only its pending playback.
-    this.active = undefined; this.cancel(); this.state = next;
+    this.active = undefined; this.cancel(); this.adopt(next);
   }
   cancel(): void {
     const active = this.active; this.active = undefined;
@@ -222,7 +239,7 @@ export class StoryRuntime {
     const watermark = this.state.occurrenceSequences.find(([key]) => key === JSON.stringify([event.id, occurrence.source]))?.[1];
     return (occurrence.sequence !== undefined && watermark !== undefined && occurrence.sequence <= watermark)
       || this.state.handledOccurrences.some(([id, source]) => id === event.id && source === occurrence.id)
-      || (!event.repeat && this.state.completedEvents.includes(event.id))
+      || (!event.repeat && this.completedEvents().has(event.id))
       || this.state.runs.some(run => run.eventId === event.id && ['running', 'waiting'].includes(run.status));
   }
   private occurrenceKey(occurrence: StoryOccurrence): string { return JSON.stringify([occurrence.source, occurrence.id]); }
@@ -230,7 +247,7 @@ export class StoryRuntime {
     if (!occurrence.id || !Number.isSafeInteger(occurrence.sequence) || occurrence.sequence < 0) return Promise.reject(new Error('剧情触发必须有本次发生的标识和递增序号')); 
     const key = this.occurrenceKey(occurrence);
     if (!this.state.pendingOccurrences.some(pending => this.occurrenceKey(pending.occurrence) === key))
-      this.state.pendingOccurrences.push({ occurrence: clone(occurrence), nextEventIndex: 0 });
+      this.adopt({ ...this.state, pendingOccurrences: [...this.state.pendingOccurrences, { occurrence: clone(occurrence), nextEventIndex: 0 }] });
     return this.enqueue((signal, epoch) => this.processOccurrence(key, signal, epoch));
   }
   private async processOccurrence(key: string, signal: AbortSignal, epoch: number): Promise<boolean> {
@@ -243,8 +260,8 @@ export class StoryRuntime {
       if (this.port.validOccurrence?.(occurrence) === false) break;
       const event = events[index];
       // 存储剩余候选；当前节点由 runs 独立恢复。
-      const current = this.state.pendingOccurrences.find(pending => this.occurrenceKey(pending.occurrence) === key)!;
-      current.nextEventIndex = index + 1;
+      this.adopt({ ...this.state, pendingOccurrences: this.state.pendingOccurrences.map(pending =>
+        this.occurrenceKey(pending.occurrence) === key ? { ...pending, nextEventIndex: index + 1 } : pending) });
       const expectedKey=event.key??(event.source==='near'?event.nearCharacterId??event.near:event.source==='region'?event.id:undefined);
       if ((expectedKey !== undefined && expectedKey !== occurrence.key) || (event.map !== undefined && event.map !== occurrence.map)
         || (event.entity !== undefined && event.entity !== occurrence.entity) || this.handled(event, occurrence)
@@ -254,7 +271,7 @@ export class StoryRuntime {
       const run = this.createRun(event.script, event.id, occurrence.id, occurrence);
       played = await this.execute(run.id, signal, epoch) || played;
     }
-    this.state.pendingOccurrences = this.state.pendingOccurrences.filter(pending => this.occurrenceKey(pending.occurrence) !== key);
+    this.adopt({ ...this.state, pendingOccurrences: this.state.pendingOccurrences.filter(pending => this.occurrenceKey(pending.occurrence) !== key) });
     return played;
   }
   /** `node` 只给调试入口用：从任意节点强制开演，正常触发始终从脚本 entry 开始。 */
@@ -286,17 +303,16 @@ export class StoryRuntime {
     });
   }
   private createRun(script: string, eventId: string | undefined, occurrence: string, source?: StoryOccurrence, entryNode?: string): StoryRun {
-    let id = `story:${++this.state.sequence}`;
-    while (this.state.runs.some(run => run.id === id)) id = `story:${++this.state.sequence}`;
+    let sequence = this.state.sequence, id: string;
+    do { id = `story:${++sequence}`; } while (this.state.runs.some(run => run.id === id));
     const run: StoryRun = { id, script, eventId, occurrence, occurrenceSource: source?.source, occurrenceSequence: source?.sequence,
       cursor: { script, node: entryNode ?? this.graph.scripts[script].entry }, status: 'running' };
-    this.state.runs.push(run); return run;
+    this.adopt({ ...this.state, sequence, runs: [...this.state.runs, run] }); return run;
   }
   private publish(commit: StoryNodeCommit): void {
-    const portCommit = clone(commit);
-    this.port.apply(portCommit);
-    this.port.commit(portCommit);
-    this.state = commit.checkpoint;
+    this.port.apply(commit);
+    this.port.commit(commit);
+    this.adopt(commit.checkpoint);
   }
   private async execute(id: string, signal: AbortSignal, epoch: number): Promise<boolean> {
     let committed = false;
@@ -306,37 +322,37 @@ export class StoryRuntime {
       const run = this.state.runs.find(run => run.id === id)!;
       if (run.status !== 'running') return committed;
       const node = this.nodes.get(StoryRuntime.nodeKey(run.cursor))!;
-      const context: StoryPlaybackContext = { signal, epoch, runId: id, stage: clone(node.stage ?? run.stage) };
+      const context: StoryPlaybackContext = { signal, epoch, runId: id, stage: node.stage ?? run.stage };
       await this.port.prepare(node, context); this.guard(epoch, signal);
       const baseline = this.port.capture(); this.active = { baseline, context };
       try {
         const result = await this.port.present(node, context); this.guard(epoch, signal);
         await this.port.finish(context); this.guard(epoch, signal);
-        const next = clone(this.state), nextRun = next.runs.find(run => run.id === id)!;
         if (result.stage) validateStoryStageSnapshot(result.stage);
-        nextRun.stage = clone(result.stage ?? run.stage);
         const commands = clone(node.commands);
         for(const command of commands)if(command.type==='world'&&(command.command.kind==='place'||command.command.kind==='remove-character'||command.command.kind==='enemy-location')&&command.command.mapFromStage){
-          const map=nextRun.stage?.map??this.port.currentMap?.();
+          const map=result.stage?.map??run.stage?.map??this.port.currentMap?.();
           if(!map)throw new Error('剧情物件缺少当前地图');
           if(command.command.kind==='place')command.command.entity.map=map;
           else if(command.command.kind==='enemy-location'){if(command.command.location)command.command.location.map=map;}
           else command.command.map=map;
           delete command.command.mapFromStage;
         }
+        // 只替换这一条 run，其余运行和顶层字段保持引用；快照不再整份深拷贝。
+        const nextRun: StoryRun = { ...run, stage: result.stage ?? run.stage };
         switch (node.exit.type) {
-          case 'next': nextRun.cursor = clone(node.exit.target); break;
+          case 'next': nextRun.cursor = node.exit.target; break;
           case 'call': {
-            nextRun.stack = [...nextRun.stack ?? [], clone(node.exit.then)];
-            if (nextRun.stack.length > 32) throw new Error('剧情调用层级超过限制');
-            nextRun.cursor = clone(node.exit.target); break;
+            const stack = [...nextRun.stack ?? [], node.exit.then];
+            if (stack.length > 32) throw new Error('剧情调用层级超过限制');
+            nextRun.stack = stack; nextRun.cursor = node.exit.target; break;
           }
-          case 'branch': nextRun.cursor = clone(node.exit.then); break;
+          case 'branch': nextRun.cursor = node.exit.then; break;
           case 'choice': {
             if (result.choice === undefined) throw new Error('剧情选择没有返回结果');
             const target = node.exit.cases[result.choice] ?? node.exit.otherwise;
             if (!target) throw new Error(`剧情选择未配置出口：${result.choice}`);
-            commands.push({ type: 'choice', choice: node.exit.choice, value: result.choice }); nextRun.cursor = clone(target); break;
+            commands.push({ type: 'choice', choice: node.exit.choice, value: result.choice }); nextRun.cursor = target; break;
           }
           case 'waitEncounter': {
             const encounter = clone(node.exit.encounter);
@@ -344,37 +360,43 @@ export class StoryRuntime {
             encounter.definitionId ??= encounter.id;
             encounter.id = `${id}:${node.id}:${encounter.id}`; encounter.status = 'active';
             commands.push({ type: 'encounter', encounter });
-            nextRun.status = 'waiting'; nextRun.waiting = { encounter: encounter.id, outcomes: clone(node.exit.outcomes) }; break;
+            nextRun.status = 'waiting'; nextRun.waiting = { encounter: encounter.id, outcomes: node.exit.outcomes }; break;
           }
           case 'defer': nextRun.status = 'deferred'; break;
           case 'end': {
-            const returning = nextRun.stack?.pop();
-            if (returning) { nextRun.cursor = returning; break; }
-            nextRun.status = 'completed';
-            if (run.eventId && !next.completedEvents.includes(run.eventId)) next.completedEvents.push(run.eventId); break;
+            // 返回栈来自共享快照，先切出新数组再退一层。
+            const stack = nextRun.stack;
+            if (stack?.length) { nextRun.stack = stack.slice(0, -1); nextRun.cursor = stack[stack.length - 1]!; break; }
+            nextRun.status = 'completed'; break;
           }
         }
-        if (run.eventId && nextRun.status !== 'running' && !next.handledOccurrences.some(([event, occurrence]) => event === run.eventId && occurrence === run.occurrence))
-          { next.handledOccurrences = next.handledOccurrences.filter(([event]) => event !== run.eventId); next.handledOccurrences.push([run.eventId, run.occurrence]); }
+        let completedEvents = this.state.completedEvents;
+        if (node.exit.type === 'end' && nextRun.status === 'completed' && run.eventId && !this.completedEvents().has(run.eventId))
+          completedEvents = [...completedEvents, run.eventId];
+        let handledOccurrences = this.state.handledOccurrences;
+        if (run.eventId && nextRun.status !== 'running' && !handledOccurrences.some(([event, occurrence]) => event === run.eventId && occurrence === run.occurrence))
+          handledOccurrences = [...handledOccurrences.filter(([event]) => event !== run.eventId), [run.eventId, run.occurrence]];
+        let occurrenceSequences = this.state.occurrenceSequences;
         if (run.eventId && run.occurrenceSource !== undefined && run.occurrenceSequence !== undefined && nextRun.status !== 'running') {
           const sourceKey = JSON.stringify([run.eventId, run.occurrenceSource]);
-          next.occurrenceSequences = next.occurrenceSequences.filter(([key]) => key !== sourceKey);
-          next.occurrenceSequences.push([sourceKey, run.occurrenceSequence]);
+          occurrenceSequences = [...occurrenceSequences.filter(([key]) => key !== sourceKey), [sourceKey, run.occurrenceSequence]];
         }
-        if (nextRun.status === 'completed' || nextRun.status === 'deferred') next.runs = next.runs.filter(candidate =>
+        let runs = this.state.runs.map(candidate => candidate.id === id ? nextRun : candidate);
+        if (nextRun.status === 'completed' || nextRun.status === 'deferred') runs = runs.filter(candidate =>
           candidate.id === id || candidate.status === 'running' || candidate.status === 'waiting'
           || (run.eventId ? candidate.eventId !== run.eventId : candidate.eventId !== undefined || candidate.cursor.script !== nextRun.cursor.script));
-        const stage = clone(nextRun.stage);
+        const stage = nextRun.stage;
         if (nextRun.status !== 'running' || commands.some(command => command.type === 'travel' || command.type === 'world' && command.command.kind === 'travel')) delete nextRun.stage;
-        const commit = { commands, checkpoint: next, eventId: run.eventId, node: clone(run.cursor), runId: id, stage };
+        const next: StoryRuntimeSnapshot = freezeSnapshot({ ...this.state, runs, completedEvents, handledOccurrences, occurrenceSequences });
+        const commit: StoryNodeCommit = { commands, checkpoint: next, eventId: run.eventId, node: run.cursor, runId: id, stage };
         if (node.exit.type === 'branch') {
-          // 命令先落地，再读真实状态求值；游标写进新的运行时对象，不就地改已交给会话的临时检查点。
-          this.port.apply(clone(commit));
+          // 命令先落地，再读真实状态求值；分支游标替换成一条新的 run 对象。
+          this.port.apply(commit);
           const takeThen = this.port.evaluate(node.exit.condition);
-          const final = clone(next);
-          final.runs.find(candidate => candidate.id === id)!.cursor = clone(takeThen ? node.exit.then : node.exit.otherwise);
+          const finalRun: StoryRun = { ...nextRun, cursor: takeThen ? node.exit.then : node.exit.otherwise };
+          const final: StoryRuntimeSnapshot = freezeSnapshot({ ...next, runs: next.runs.map(candidate => candidate.id === id ? finalRun : candidate) });
           const finalCommit: StoryNodeCommit = { ...commit, checkpoint: final };
-          this.port.commit(clone(finalCommit));
+          this.port.commit(finalCommit);
           this.state = final;
           this.active = undefined; committed = true;
           await this.port.afterCommit?.(finalCommit, context); this.guard(epoch, signal);
@@ -398,11 +420,14 @@ export class StoryRuntime {
       if (!run) return false;
       const target = run.waiting!.outcomes[outcome];
       if (!target) throw new Error(`剧情遭遇未配置结果：${outcome}`);
-      const next = clone(this.state), nextRun = next.runs.find(candidate => candidate.id === run.id)!;
-      nextRun.cursor = clone(target); nextRun.status = 'running'; delete nextRun.waiting; next.encounterResults.push(resultId); next.encounterResults = next.encounterResults.slice(-64);
+      const nextRun: StoryRun = { ...run, cursor: target, status: 'running' };
+      delete nextRun.waiting;
+      const next: StoryRuntimeSnapshot = freezeSnapshot({ ...this.state,
+        runs: this.state.runs.map(candidate => candidate.id === run.id ? nextRun : candidate),
+        encounterResults: [...this.state.encounterResults, resultId].slice(-64) });
       const commands: StoryCommand[] = outcome === 'won' || outcome === 'lost' ? [{ type: 'world', command: { kind: 'encounter-result', id: encounter, result: outcome } }] : [];
       this.enterPlayback();
-      this.publish({ commands, checkpoint: next, eventId: run.eventId, node: clone(run.cursor), runId: run.id });
+      this.publish({ commands, checkpoint: next, eventId: run.eventId, node: run.cursor, runId: run.id });
       return this.execute(run.id, signal, epoch);
     });
   }
