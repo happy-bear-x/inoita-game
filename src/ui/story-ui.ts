@@ -416,6 +416,8 @@ export class StoryUI {
       }
       case 'shop':return `shop|${this.selectedMemberId}|${bag}|${money}|${partyShape}`;
       case 'crafting':return `crafting|${this.selectedMemberId}|${bag}|${money}|${member?.level??0}|${partyShape}`;
+      // 任务页只依赖任务簿版本与调试焦点；任务状态不变时不重复重绘。
+      case 'quests':return `quests|${session.questBook.version}|${session.debugFocusQuest??''}`;
       case 'forge':return 'forge';
       case 'save':case 'load':case 'settings':case 'system':return this.page;
       default:return undefined;
