@@ -14,7 +14,7 @@ export class SkillConfiguration {
   protected loadouts = new Map<string, SkillLoadout>();
   private pages = new Map<string, number>();
   private revision=0;
-  private draftCallCount=0;
+  protected draftCallCount=0;
   get version():number {return this.revision;}
   /**
    * 开发期计数器：每次 `draft` 真正克隆已有配置或按职业构建新配置时 +1，

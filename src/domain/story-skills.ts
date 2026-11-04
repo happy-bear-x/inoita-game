@@ -13,6 +13,7 @@ export class StorySkillProgression extends SkillConfiguration {
   constructor(hero?: BattleCharacter, catalog?: BattleCatalog) { super();this.hero=hero;this.catalog=catalog; }
 
   override draft(catalog: BattleCatalog, classId: string): SkillLoadout {
+    this.draftCallCount++;
     const existing=this.loadouts.get(classId);
     if(existing)return structuredClone(existing);
     const character=catalog.classes.find(entry=>entry.id===classId);

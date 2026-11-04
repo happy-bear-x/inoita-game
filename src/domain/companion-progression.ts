@@ -77,6 +77,7 @@ export class CompanionSkillProgression extends SkillConfiguration {
   }
   skillLevels():Record<string,number>{return {...this.levels};}
   override draft(catalog:BattleCatalog,classId:string):SkillLoadout{
+    this.draftCallCount++;
     const character=catalog.classes.find(entry=>entry.id===classId);if(!character)throw new Error('职业不存在');
     return {levels:Object.fromEntries(character.skills.map(id=>[id,this.levels[id]??0]))};
   }

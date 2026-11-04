@@ -178,6 +178,14 @@ export class WorldCombat {
   private deathVisualsPaused?:boolean;
   private readonly partyControllers=new Map<string,CombatController>();
   private readonly partySkills=new Map<string,EnemyPlayableSkill[]>();
+  /**
+   * 被动修正、技能表和装备派生值按「成员 + 配置/背包版本 + 状态」复用。
+   * 读取次数远多于变化次数，命中时只做版本比较，不重建技能对象或克隆配置。
+   */
+  private readonly passivesCache=new Map<string,{key:string;value:PassiveModifier[]}>();
+  private readonly skillTableCache=new Map<string,{key:string;value:EnemyPlayableSkill[]}>();
+  private readonly equipmentRecoveryCache=new Map<string,{revision:number;value:ReturnType<typeof equipmentRecoveryModifiers>}>();
+  private readonly combatProcsCache=new Map<string,{revision:number;value:ReturnType<typeof equipmentCombatProcs>}>();
   private readonly pendingAllies=new Set<string>();
   private readonly allyWaiters=new Set<()=>void>();
   private allyLoadFailure?:unknown;
@@ -1365,13 +1373,23 @@ captureStoryActors():SceneActorState[] {
   }
   private equipmentRecovery(id:string):ReturnType<typeof equipmentRecoveryModifiers> {
     const member=this.memberOf(id);
+    const revision=member?.bag.revision??-1;
+    const cached=this.equipmentRecoveryCache.get(id);
+    if(cached?.revision===revision)return cached.value;
     const equipped=member?Object.values(member.bag.equipmentFor(id)).flatMap(item=>{const entry=member.bag.get(item!);return entry?[entry]:[];}):[];
-    return equipmentRecoveryModifiers(equipped);
+    const value=equipmentRecoveryModifiers(equipped);
+    this.equipmentRecoveryCache.set(id,{revision,value});
+    return value;
   }
   private combatProcs(id:string):ReturnType<typeof equipmentCombatProcs> {
     const member=this.memberOf(id);
+    const revision=member?.bag.revision??-1;
+    const cached=this.combatProcsCache.get(id);
+    if(cached?.revision===revision)return cached.value;
     const equipped=member?Object.values(member.bag.equipmentFor(id)).flatMap(item=>{const entry=member.bag.get(item!);return entry?[entry]:[];}):[];
-    return equipmentCombatProcs(equipped);
+    const value=equipmentCombatProcs(equipped);
+    this.combatProcsCache.set(id,{revision,value});
+    return value;
   }
   /** 原版物理成功链：重力摆 -> 冰霜 -> 治愈气息，均在主伤害提交前结算。 */
   private physicalSuccessEquipmentProcs(event:AttackContact,_hit:PhysicalHit,random:()=>number=Math.random):void {
@@ -1621,11 +1639,25 @@ captureStoryActors():SceneActorState[] {
     const weapon=main?this.app.items.items[main]?.kind??'unarmed':'unarmed';
     const configuration=this.skillConfiguration(id,member);
     const armor=equipped.body?this.app.items.items[equipped.body].kind:'';
-    return memberCombatModifiers({
+    const growth=memberSkillGrowth(id);
+    // 血量只在跨过 30% 阈值时影响组队被动；用布尔值做键，避免每次受击都重建。
+    const lowHealth=member.player.health<=Math.floor(member.player.maxHealth*30/100)?1:0;
+    const stealthed=this.conditions.hasState(id,'stealthed')?1:0;
+    const groupVersion=this.app.session.party?.groupModifierVersion??0;
+    const key=`${id}|${member.classId}|${configuration.version}|${member.bag.revision}|${lowHealth}|${stealthed}|${groupVersion}|${growth}`;
+    const cached=this.passivesCache.get(id);
+    if(cached?.key===key)return cached.value;
+    const value=memberCombatModifiers({
       catalog:this.app.battleCatalog,classId:member.classId,loadout:configuration.draft(this.app.battleCatalog,member.classId),
       weaponKind:weapon,armorKind:armor,health:member.player.health,maxHealth:member.player.maxHealth,
-      groupEffects:this.app.session.party?.groupModifiers()??{},stealthed:this.conditions.hasState(id,'stealthed'),growth:memberSkillGrowth(id)
+      groupEffects:this.app.session.party?.groupModifiers()??{},stealthed:stealthed===1,growth
     });
+    this.passivesCache.set(id,{key,value});
+    return value;
+  }
+  private forgetMemberCaches(id:string):void{
+    this.passivesCache.delete(id);this.skillTableCache.delete(id);
+    this.equipmentRecoveryCache.delete(id);this.combatProcsCache.delete(id);
   }
   private enemyFighter(key:string,definition:EnemyDefinition,playerLevel:number):PhysicalFighter|undefined {
     if(this.pendingDefeats.has(key))return;
@@ -1913,15 +1945,21 @@ captureStoryActors():SceneActorState[] {
     const member=this.memberOf(id)!;
     const character=this.app.battleCatalog.classes.find(value=>value.id===member.classId)!;
     const configuration=this.skillConfiguration(id,member);
+    const growth=memberSkillGrowth(id);
+    const key=`${id}|${member.classId}|${configuration.version}|${member.bag.revision}|${growth}`;
+    const cached=this.skillTableCache.get(id);
+    if(cached?.key===key)return cached.value;
     const draft=configuration.draft(this.app.battleCatalog,member.classId);
-    const actions=costumeRecipe(this.app.wardrobe,this.app.items,this.hero.bag.equipmentItems(this.hero.bag.equipmentFor(id)),member.classId).actions;
-    return character.skills.flatMap(skillId=>{
+    const actions=costumeRecipe(this.app.wardrobe,this.app.items,member.bag.equipmentItems(member.bag.equipmentFor(id)),member.classId).actions;
+    const value=character.skills.flatMap(skillId=>{
       const skill=skillForMember(this.app.battleCatalog,id,skillId)!,level=draft.levels[skillId];
       const action=skillId in actions?actions[skillId]:skill.action;
       if(!action||!level)return [];
       return [{id:skillId,name:skill.name,action:skill.action?{...action,hitEffectStyle:skill.action.hitEffectStyle,usesSkillDamageBuff:skill.action.usesSkillDamageBuff,combatUnits:skill.action.combatUnits,repeat:skill.action.repeat?{...skill.action.repeat,restartAfterFrame:action.repeat?.restartAfterFrame??skill.action.repeat.restartAfterFrame}:undefined}:action,level,manaCost:this.skillManaCost(id,skillId,level),frequency:0,
         clips:skillClips(skillId)} as EnemyPlayableSkill];
     });
+    this.skillTableCache.set(id,{key,value});
+    return value;
   }
   private createPartyController(id:string,visual:CharacterVisual,presenter:CombatPresenter,attack:ReturnType<WorldCombat['equipmentAttack']>):{controller:CombatController;port:PartyPort}{
     const facing=()=>id==='player'?this.scene.facing:combatActor(this.allies,id,actor=>actor.id)?.facing??'south';
@@ -1989,7 +2027,11 @@ captureStoryActors():SceneActorState[] {
     const party=this.app.session.party,frequencies=party?.aiFrequency(id);
     const latest=this.partySkillsFor(id);this.partySkills.set(id,latest);
     const mana=this.memberOf(id)?.player.mana??0;
-    for(const skill of latest)skill.frequency=mana>=(skill.manaCost??0)?frequencies?.get(skill.id)??1:0;
+    for(const skill of latest){
+      // 技能表按版本复用，蓝耗和频率仍按当前法力每帧更新。
+      skill.manaCost=this.skillManaCost(id,skill.id,skill.level);
+      skill.frequency=mana>=(skill.manaCost??0)?frequencies?.get(skill.id)??1:0;
+    }
   }
   private async syncAllies():Promise<void>{
     const party=this.app.session.party;if(!party||this.closed)return;
@@ -2000,7 +2042,7 @@ captureStoryActors():SceneActorState[] {
     for(const ally of [...this.allies])if(!active.has(ally.id)){
       this.deathTweens.get(ally.id)?.stop();this.deathTweens.delete(ally.id);this.fallen.delete(ally.id);
       ally.ai.dispose();ally.presenter.clear();ally.overhead.destroy();this.movement.remove(ally.visual);ally.visual.container.destroy();ally.assets?.release();
-      this.combatRuntime?.removeActor(ally.id);this.partyControllers.delete(ally.id);this.partySkills.delete(ally.id);this.conditions.remove(ally.id);this.threat?.removeActor(ally.id);this.allySkillSignatures.delete(ally.id);
+      this.combatRuntime?.removeActor(ally.id);this.partyControllers.delete(ally.id);this.partySkills.delete(ally.id);this.conditions.remove(ally.id);this.threat?.removeActor(ally.id);this.allySkillSignatures.delete(ally.id);this.forgetMemberCaches(ally.id);
       for(const enemy of this.arena)enemy.controller?.targetRemoved(ally.id);
       this.allies.splice(this.allies.indexOf(ally),1);refreshCombatActors(this.allies);
     }
@@ -2573,7 +2615,7 @@ captureStoryActors():SceneActorState[] {
     const active=new Set(this.activeParty);
     for(const [id,controller] of this.partyControllers)if(!active.has(id)){
       controller.cancel(true);this.runtime.removeActor(id);this.partyControllers.delete(id);this.conditions.remove(id);this.threat?.removeActor(id);
-      this.allySkillSignatures.delete(id);
+      this.allySkillSignatures.delete(id);this.forgetMemberCaches(id);
       for(const key of this.summons.removeOwner(id))this.removeEnemy(key);
       const visual=this.visualOf(id);if(visual){this.movement.setEnabled(visual,false);visual.container.setVisible(false);}
     }
@@ -2817,7 +2859,6 @@ captureStoryActors():SceneActorState[] {
     this.app.session.advanceCombatFrames(delta,()=>{
       this.advanceFormation();
       this.conditions.update(LOGIC_FRAME_MS,tick=>this.periodicTick(tick));
-      this.scene.refreshShortcutPage();
       if(this.focusTargetId&&!this.conditions.canTarget(this.focusTargetId)){this.focusTargetId=undefined;this.scene.refreshCombatTarget();}
       for(const id of this.activeParty){
         if(this.memberOf(id)?.player.health){if(this.fallen.has(id))this.reviveMember(id);}
@@ -2891,7 +2932,9 @@ captureStoryActors():SceneActorState[] {
     this.heroAi?.dispose();this.heroAi=undefined;
     this.stateMarkers.clear();
     for(const ally of [...this.allies]){ally.ai.dispose();ally.overhead.destroy();this.movement.remove(ally.visual);ally.visual.container.destroy();ally.assets?.release();}
-    this.allies=[];this.partyControllers.clear();this.partySkills.clear();this.combat=undefined;
+    this.allies=[];this.partyControllers.clear();this.partySkills.clear();
+    this.passivesCache.clear();this.skillTableCache.clear();this.equipmentRecoveryCache.clear();this.combatProcsCache.clear();
+    this.combat=undefined;
     this.presenter?.clear();this.presenter=undefined;
     this.combatEffects.clear();
     this.unsubscribeHero?.();this.unsubscribeHero=undefined;this.unsubscribeSession?.();this.unsubscribeSession=undefined;

@@ -856,11 +856,11 @@ export class WorldScene extends Phaser.Scene {
       this.shortcutPageCache=cache;
     }
     const slots=cache.entries.map(entry=>this.shortcutSlot(entry,member.player.mana,cache.levels[entry?.id??'']??0));
-    // 只读技能行自己按签名缓存；每帧喂一次，切组和切人后能立刻换页。
-    this.skillHud?.setPage(slots);
     const slotsSignature=slots.map(s=>s.entry?`${s.entry.kind}:${s.entry.id}:${s.quantity}:${s.enabled?1:0}:${s.cooldown?.remainingMs??0}/${s.cooldown?.durationMs??0}`:'_').join('|');
+    // 签名没变时连 HUD 喂数据都省掉；切组、切人和冷却读数变化才重绘。
     if(cache.slotsSignature===slotsSignature)return;
     cache.slotsSignature=slotsSignature;
+    this.skillHud?.setPage(slots);
     this.controls.setShortcutPage(slots);
   }
   private refreshLoadout(): void {
