@@ -4,6 +4,7 @@ import {registerHooks} from 'node:module';
 import test from 'node:test';
 import type {BattleCatalog,SummonOwnerDerivation} from '../src/domain/battle.ts';
 import {EnemyRoster} from '../src/domain/enemy-roster.ts';
+import {SummonLifecycle} from '../src/domain/summon-lifecycle.ts';
 import {summonOwnerStats} from '../src/domain/summon-stats.ts';
 
 const phaser=registerHooks({resolve(specifier,context,next){
@@ -60,10 +61,10 @@ test('a placed summon reports the derived stats over its own template',()=>{
 
 test('summoning clears every active summon of the same owner, not just the same skill',()=>{
   const removed:string[]=[];
-  const host={summonGroups:new Map<string,Set<string>>([['player',new Set(['a','b'])],['ally',new Set(['c'])]]),
-    removeEnemy:(key:string)=>{removed.push(key);}};
+  const summons=new SummonLifecycle();
+  summons.register('player','a');summons.register('player','b');summons.register('ally','c');
+  const host={summons,removeEnemy:(key:string)=>{removed.push(key);}};
   method('summonFactory').call(host).begin('player');
   assert.deepEqual(removed,['a','b']);
-  assert.deepEqual([...host.summonGroups.get('player')!],[]);
-  assert.deepEqual([...host.summonGroups.get('ally')!],['c']);
+  assert.deepEqual(summons.capture(),[['player',[]],['ally',['c']]]);
 });

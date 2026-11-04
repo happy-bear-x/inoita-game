@@ -1,4 +1,5 @@
 import { settleCombatRewards } from '../domain/combat-rewards.ts';
+import { SummonLifecycle, advanceSummonLifetime, releasesSummonVitals, summonDurationMs, summonLifetimeExpired, summonedChildren } from '../domain/summon-lifecycle.ts';
 import { displaySettings } from '../application/display-settings.ts';
 import {applyStoryEnemyRemovals} from '../domain/world-enemies.ts';
 import type {PreparedSceneVisit,SceneActorState} from '../domain/scene-snapshot.ts';
@@ -185,7 +186,7 @@ export class WorldCombat {
   private focusTargetId?:string;
   private readonly statusColors=new StatusColorRenderer();
   private readonly stateMarkers:StateMarkers;
-  private readonly summonGroups=new Map<string,Set<string>>();
+  private readonly summons=new SummonLifecycle();
   private summonAwareness?:SummonCombatAwareness;
   private get awareness():SummonCombatAwareness {
     return this.summonAwareness??=new SummonCombatAwareness((this.app.session.combatTick??0)*LOGIC_FRAME_MS);
@@ -455,7 +456,7 @@ captureStoryActors():SceneActorState[] {
         ?{kind:'friendly-summon' as const,state:enemy.controller.captureState()}
         :enemy.controller?{kind:'enemy' as const,state:enemy.controller.captureState()}:undefined,
         summonRemainingMs:enemy.summonRemainingMs,summonTauntChance:enemy.summonTauntChance})),
-      summonGroups:[...this.summonGroups].map(([key,ids])=>[key,[...ids]]),focusTargetId:this.focusTargetId,
+      summonGroups:this.summons.capture(),focusTargetId:this.focusTargetId,
       damageCount:this.damageCount};
   }
   async restoreState(state:WorldCombatState,signal?:AbortSignal):Promise<void> {
@@ -490,7 +491,7 @@ captureStoryActors():SceneActorState[] {
       else if(saved.ai?.kind==='enemy'&&enemy.controller instanceof EnemyController)enemy.controller.restoreState(saved.ai.state);
     }
     this.threat.restoreState(state.threat);
-    this.summonGroups.clear();for(const [key,ids]of state.summonGroups)this.summonGroups.set(key,new Set(ids));
+    this.summons.restore(state.summonGroups);
     // 回滚/读档会把角色瞬间搬到别处；队形相位必须重新对齐，不能把这段位移当成走路方向。
     this.resetFormationState(this.facingOfControlled());
   }
@@ -620,8 +621,7 @@ captureStoryActors():SceneActorState[] {
     return {
       // 原版清掉的是同一主人的全部活动召唤，不区分是哪一个召唤技能。
       begin:(casterId:string)=>{
-        for(const key of [...this.summonGroups.get(casterId)??[]])this.removeEnemy(key);
-        this.summonGroups.set(casterId,new Set<string>());
+        for(const key of this.summons.beginSummon(casterId))this.removeEnemy(key);
       },
       create:(casterId:string,enemyId:string,spot:Point,summonedStats?:SummonStats,summonTauntChance?:number,
         summonedBySkill?:string):CharacterVisual|undefined=>{
@@ -638,7 +638,7 @@ captureStoryActors():SceneActorState[] {
         if(this.memberOf(casterId))placed.level=this.memberOf(casterId)!.level;
         const enemy=this.buildEnemy(placed,definition);
         this.arena.push(enemy);refreshCombatActors(this.arena);
-        this.summonGroups.get(casterId)?.add(enemy.key);
+        this.summons.register(casterId,enemy.key);
         return enemy.visual;
       }
     };
@@ -646,7 +646,7 @@ captureStoryActors():SceneActorState[] {
   private destroyEnemy(enemy: MapEnemy,preserveCooldown=false,keepSummonState=false): void {
     // 召唤物只存在于这次战斗：移除或销毁时丢掉它在会话里的血量/法力条目，避免存档越攒越多。
     // 检查点恢复会重建同一批召唤物，那条路径保留会话状态（`keepSummonState`）。
-    if(!keepSummonState&&enemy.summonedBy!==undefined)this.app.session.forgetEnemyVitals(enemy.key);
+    if(releasesSummonVitals(enemy.summonedBy,keepSummonState))this.app.session.forgetEnemyVitals(enemy.key);
     if(!preserveCooldown)this.app.session.cooldowns.removeActor(enemy.key);
     this.threat?.removeActor(enemy.key);
     for(const actor of this.arena)actor.controller?.targetRemoved(enemy.key);
@@ -979,7 +979,7 @@ captureStoryActors():SceneActorState[] {
       // 有主人侧换算规则的召唤物（驯兽）寿命在施放时按主人属性算，否则用本等级帧寿命。
       const frames=unit.lifetimeFromOwner===undefined?undefined:summonLifetimeFrames(unit.lifetimeFromOwner,
         this.actorAttribute(event.casterId,unit.lifetimeFromOwner.attribute));
-      summon.summonRemainingMs=frames===undefined?rankValues.durationMs:(frames+1)*60;
+      summon.summonRemainingMs=summonDurationMs(rankValues.durationMs,frames);
     }
     return 'success';
 
@@ -1855,7 +1855,7 @@ captureStoryActors():SceneActorState[] {
   /** 游戏行为驱动的移除：场景实例和名册条目一起删。 */
   removeEnemy(key: string): void {
     if(this.pendingDefeats.has(key)){this.pendingDefeats.complete(key,false);return;}
-    for(const child of this.arena.filter(enemy=>enemy.summonedBy===key))this.removeEnemy(child.key);
+    for(const child of summonedChildren(this.arena,key))this.removeEnemy(child);
     if(!this.removeEnemyVisual(key))return;
     this.roster.removeEnemy(key);
   }
@@ -1873,8 +1873,7 @@ captureStoryActors():SceneActorState[] {
     const [enemy] = this.arena.splice(index, 1);refreshCombatActors(this.arena);
     this.destroyEnemy(enemy);
     this.conditions.remove(key);
-    for(const group of this.summonGroups.values())group.delete(key);
-    this.summonGroups.delete(key);
+    this.summons.remove(key);
     for(const controller of this.partyControllers.values())controller.targetRemoved(key);
     if(this.focusTargetId===key)this.focusTargetId=undefined;
     this.scene.refreshCombatTarget();
@@ -2195,7 +2194,7 @@ captureStoryActors():SceneActorState[] {
     for(const enemy of this.arena){
       if(!enemy.summonedBy||!this.memberOf(enemy.summonedBy)||this.pendingDefeats.has(enemy.key)
         ||!this.isActorAlive(enemy.key)||!enemy.visual.container.active)continue;
-      if(enemy.summonRemainingMs!==undefined&&enemy.summonRemainingMs<=0)continue;
+      if(summonLifetimeExpired(enemy.summonRemainingMs))continue;
       if(enemy.controller&&'actionState' in enemy.controller&&enemy.controller.actionState()!=='idle')continue;
       const actor=this.movement.actor(enemy.visual);
       if(!this.shouldSettleFriendly(enemy.visual,actor))continue;
@@ -2562,8 +2561,7 @@ captureStoryActors():SceneActorState[] {
     const active=new Set(this.activeParty);
     for(const [id,controller] of this.partyControllers)if(!active.has(id)){
       controller.cancel(true);this.runtime.removeActor(id);this.partyControllers.delete(id);this.conditions.remove(id);this.threat?.removeActor(id);
-      for(const enemy of [...this.arena])if(enemy.summonedBy===id)this.removeEnemy(enemy.key);
-      this.summonGroups.delete(id);
+      for(const key of this.summons.removeOwner(id))this.removeEnemy(key);
       const visual=this.visualOf(id);if(visual){this.movement.setEnabled(visual,false);visual.container.setVisible(false);}
     }
   }
@@ -2765,7 +2763,8 @@ captureStoryActors():SceneActorState[] {
       }
       if(this.partyFullyEngaged())this.damageCount=0;
       for(const enemy of [...this.arena])if(!this.pendingDefeats.has(enemy.key)&&enemy.summonRemainingMs!==undefined){
-        enemy.summonRemainingMs-=LOGIC_FRAME_MS;if(enemy.summonRemainingMs<=0)this.removeEnemy(enemy.key);
+        enemy.summonRemainingMs=advanceSummonLifetime(enemy.summonRemainingMs);
+        if(summonLifetimeExpired(enemy.summonRemainingMs))this.removeEnemy(enemy.key);
       }
       this.updateEnemies(true);
       this.runtime.step(this.app.session.combatTick);
@@ -2831,7 +2830,7 @@ captureStoryActors():SceneActorState[] {
     this.combatEffects.clear();
     this.unsubscribeHero?.();this.unsubscribeHero=undefined;this.unsubscribeSession?.();this.unsubscribeSession=undefined;
     this.buffLoops.clear();
-    this.clearEnemies();this.conditions.clear();this.summonGroups.clear();
+    this.clearEnemies();this.conditions.clear();this.summons.clear();
     this.playerAssets?.release();this.playerAssets=undefined;
     this.restoredAssets?.release();this.restoredAssets=undefined;
     this.storyAssets?.release();this.storyAssets=undefined;

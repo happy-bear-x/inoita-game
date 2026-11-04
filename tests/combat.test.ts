@@ -12,6 +12,7 @@ import {resolveBasicAttack,basicAttackStrikesAtFrame} from '../src/domain/basic-
 import {actionCues} from '../src/domain/skill-action.ts';
 import {CombatConditions} from '../src/domain/combat-conditions.ts';
 import {CombatCooldownStore} from '../src/domain/combat-cooldowns.ts';
+import {SummonLifecycle} from '../src/domain/summon-lifecycle.ts';
 const catalog=parseBattle(JSON.parse(fs.readFileSync(new URL('../public/content/battle.json',import.meta.url),'utf8')));
 const campaign=parseCampaign(JSON.parse(fs.readFileSync(new URL('../public/content/campaign.json',import.meta.url),'utf8')));
 const phaser=registerHooks({resolve(specifier,context,next){
@@ -552,10 +553,15 @@ function mapEnemy(key:string,summonedBy?:string){
     presenter:{clear:()=>{}},controller:{dispose:()=>{},targetRemoved:()=>{}}};
 }
 function summonHost(session:Session,arena:ReturnType<typeof mapEnemy>[],groups:[string,string[]][]){
+  const summons=new SummonLifecycle();
+  for(const [owner,keys] of groups){
+    summons.beginSummon(owner);
+    for(const key of keys)summons.register(owner,key);
+  }
   return Object.setPrototypeOf({
     pendingDefeats:{has:()=>false,complete:()=>{}},
     arena,app:{session},conditions:{remove:()=>{}},movement:{remove:()=>{}},roster:{removeEnemy:()=>{}},
-    summonGroups:new Map(groups.map(([owner,keys])=>[owner,new Set(keys)])),partyControllers:new Map(),
+    summons,partyControllers:new Map(),
     scene:{refreshCombatTarget:()=>{}},
   },WorldCombat.prototype);
 }
