@@ -41,7 +41,10 @@ test('within one quest only the first matching required item rolls, even when it
 
 test('task drop validation checks enemy and item references, thresholds, and duplicate items',()=>{
   const enemyIds=Object.keys(catalog.enemies);
-  assert.equal(parseDrops(catalog,items,enemyIds),catalog);
+  const parsed=parseDrops(catalog,items,enemyIds);
+  assert.deepEqual(parsed.questItems,catalog.questItems,'任务掉落规则通过校验并原样保留');
+  assert.deepEqual(rollQuestDrops(parsed,enemy,[[need('ectoplasm')]],()=>0),[reward],
+    '过滤后的目录仍能正常掷任务掉落');
   for(const rules of [
     [{item:'missing',threshold:80}], [{item:'ectoplasm',threshold:0}],
     [{item:'ectoplasm',threshold:101}], [{item:'ectoplasm',threshold:80.5}],
