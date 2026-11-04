@@ -18,6 +18,11 @@ let serial = 0;
 /** 生产内容包把人物动作拆成单文件，合成外观前只取这套武器/职业实际用到的动作。 */
 export type WardrobePoseLoader = (ids: readonly string[], signal: AbortSignal) => Promise<Record<string, CostumePose>>;
 
+export interface WardrobePrepareOptions {
+  /** 只合成这些动作（菜单预览只需要 `idle-south`）；省略表示合成整套外观。 */
+  clipNames?: Iterable<string>;
+}
+
 /** Compile only worn combinations; Phaser owns playback of the resulting frames. */
 export class Wardrobe {
   private scene: Phaser.Scene;
@@ -96,25 +101,31 @@ export class Wardrobe {
     void load.catch(()=>{if(this.poseLoads.get(id)===load)this.poseLoads.delete(id);});
     return load;
   }
-  async prepare(base: ActorDefinition, equipment: Partial<Record<EquipmentSlot,string>>, classId?:string): Promise<Outfit> {
+  async prepare(base: ActorDefinition, equipment: Partial<Record<EquipmentSlot,string>>, classId?:string,
+    options?:WardrobePrepareOptions): Promise<Outfit> {
     if(!this.active)throw new DOMException('场景已关闭','AbortError');
     const recipe=costumeRecipe(this.catalog,this.items,equipment,classId,base.id);
-    const poseIds=[...new Set(Object.values(recipe.poses))].filter((id):id is string=>typeof id==='string');
+    const requested=options?.clipNames===undefined?undefined:new Set(options.clipNames);
+    const poses=Object.entries(recipe.poses).filter(([name])=>!requested||requested.has(name));
+    const poseIds=[...new Set(poses.map(([,id])=>id).filter((id):id is string=>typeof id==='string'))];
     // dev/测试与整包内容已经在 poses 里；此时不能额外让出一拍，否则并发表演的同步阶段被打散。
     const missing=poseIds.filter(id=>!this.catalog.poses[id]);
     if(missing.length)await Promise.all(missing.map(id=>this.loadPose(id,this.preparationRequest.signal)));
     this.preparationRequest.signal.throwIfAborted();
-    const signature=JSON.stringify([base.id,recipe.poses,Object.entries(recipe.variants).sort()]);
+    // 过滤条件进签名：预览用的单动作外观不能和整套外观共用缓存。
+    const signature=JSON.stringify([base.id,recipe.poses,Object.entries(recipe.variants).sort(),
+      requested?[...requested].sort():null]);
     const cached=this.cache.get(signature);
     if(cached){this.cache.delete(signature);this.cache.set(signature,cached);return cached;}
     const pending=this.preparations.get(signature);
     if(pending)return pending;
-    const preparation=this.compose(base,recipe,signature,this.preparationRequest.signal);
+    const preparation=this.compose(base,recipe,poses,signature,this.preparationRequest.signal);
     this.preparations.set(signature,preparation);
     try{return await preparation;}
     finally{if(this.preparations.get(signature)===preparation)this.preparations.delete(signature);}
   }
-  private async compose(base:ActorDefinition,recipe:ReturnType<typeof costumeRecipe>,signature:string,signal:AbortSignal):Promise<Outfit> {
+  private async compose(base:ActorDefinition,recipe:ReturnType<typeof costumeRecipe>,poses:[string,string|undefined][],
+    signature:string,signal:AbortSignal):Promise<Outfit> {
     const textures:string[]=[], clips:ActorDefinition['clips']={}, paints:(()=>void)[]=[];
     const source=(part:CostumePart): {key:string;piece:CostumePiece} | undefined => {
       const variant=recipe.variants[part.part];
@@ -124,7 +135,7 @@ export class Wardrobe {
     };
     let preview='';
     try {
-      for(const [name,id]of Object.entries(recipe.poses)) {
+      for(const [name,id]of poses) {
         signal.throwIfAborted();
         const pose=this.catalog.poses[id!];
         const points: {x:number;y:number}[]=[];

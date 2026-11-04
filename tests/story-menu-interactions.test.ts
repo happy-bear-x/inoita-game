@@ -1992,3 +1992,17 @@ test('bag chrome is reused across rerenders and replaced when the page changes',
   f.menu.show('bag');
   assert(chrome.list.length>0,'回到背包页重新建静态图框');
 });
+
+test('using a mercenary emblem prepares only the new member preview', t => {
+  const f=fixture();t.after(f.cleanup);
+  f.menu.show('party');
+  const calls:{id:string;full:boolean|undefined}[]=[];
+  f.app.preparePartyMember=async(id,_signal,options)=>{calls.push({id,full:options?.full});};
+  const badge=f.add('mercenary-emblem-warlock');
+  f.internals.operation={entry:badge.id,kind:'use',quantity:1};
+  f.internals.confirmOperation();
+  const member=f.session.party!.snapshot().members.find(value=>value.source==='mercenary');
+  assert.ok(member,'徽章招募出新成员');
+  assert.deepEqual(calls,[{id:member.id,full:undefined}],'只准备新成员的预览外观，不重建整套队伍外观');
+  assert.equal(f.session.bag.count('mercenary-emblem-warlock'),0,'徽章被消耗');
+});

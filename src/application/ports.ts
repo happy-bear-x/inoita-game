@@ -89,7 +89,7 @@ export interface StoryUIContext {
   /** 文本输入：默认弹系统键盘输入框；测试注入一个直接返回内容的实现。 */
   promptText?: (initial:string)=>Promise<string|undefined>;
   revivePartyMember?: (id:string,item:string)=>import('../domain/items.ts').ItemResult;
-  preparePartyMember?: (id:string,signal?:AbortSignal)=>Promise<void>;
+  preparePartyMember?: (id:string,signal?:AbortSignal,options?:{full?:boolean})=>Promise<void>;
   useRecoveryItem?: (entry:string,memberId?:string)=>RecoveryResult;
   readonly audio?: GameAudio;
   /** 存档槽读写；三个槽的本地持久化由它独占。 */

@@ -2049,7 +2049,7 @@ captureStoryActors():SceneActorState[] {
       try{
       lease=await loadSceneAssets(this.scene,partyMemberCombatAssets(this.app.battleCatalog,this.app.wardrobe,member.classId,actor),()=>{});
       if(this.closed||party.get(id)!==member||!party.activeIds.includes(id)){lease.release();continue;}
-      await this.scene.preparePartyMember(id);
+      await this.scene.preparePartyMember(id,undefined,{full:true});
       if(this.closed||party.get(id)!==member||!party.activeIds.includes(id)){lease.release();continue;}
       actor=this.scene.equipmentAppearance(id)??actor;
       // 上阵落点以主角为锚点，与当前操控者是谁无关；整盒判定避免身体压进地形。

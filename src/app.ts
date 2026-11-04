@@ -74,7 +74,7 @@ export class StoryApp {
   autoSave?: () => void;
   storySignal?:AbortSignal;
   revivePartyMember?: (id:string,item:string)=>ItemResult;
-  preparePartyMember?: (id:string,signal?:AbortSignal)=>Promise<void>;
+  preparePartyMember?: (id:string,signal?:AbortSignal,options?:{full?:boolean})=>Promise<void>;
   audio?: GameAudio;
   useRecoveryItem?: (entry:string,memberId?:string)=>RecoveryResult;
   items!: ItemCatalog;
