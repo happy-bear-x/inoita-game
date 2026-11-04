@@ -25,6 +25,8 @@
 - 内容加载与构建共用 `content-validation.ts` 的校验器，新增内容字段先在这里定校验口径。
 - 生产信任路径只取构建写出的 `content-manifest.json`：比较 `contentVersion` 与页面注入的 `__STORY_CONTENT_VERSION__`，并检查本次文件的必需顶层键；不匹配时明确失败并提示刷新/更新，不静默继续。启动时不对整份内容重算哈希。dev、Node 测试、`?gm` 和 `?validate` 继续走完整校验。
 - 热更新只做旁路：标题页加载完成后调用 `notifyBootReady()`；网页版没有原生桥时静默跳过。检查、下载、切换和回退都在 Android 壳里，网页不判断版本。
+- 会话边界清理：回菜单和新会话装配时调用 `ContentLoader.clearSessionCaches()` 与 `StoryApp.clearMapHistory()`；只清已完成的地图/姿势解析和历史地图租约，核心内容表保持常驻。
+- 地图素材历史保留最近 2 张，预取额度单独管理。
 
 ## 验证
 

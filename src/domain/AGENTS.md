@@ -38,6 +38,10 @@
 - 选择事件按选择标识的写入次数判断：同一个选项再次被选中也算一次新的发生，不能只比较选择值；一次选择只执行一条选择事件，新的选择作为下一次发生排队。
 - 剧情、任务、事件 ID 是存档引用，只新增不改名；要改名就配套迁移。
 - 云存档的账号/密码/槽位校验和锁定时长只在 `cloud-save.ts` 写一份，服务端复用同一份规则；云端保存不改 `SAVE_FORMAT`。
+- 缓存失效用只读修订号：`PartyRoster.groupModifierVersion`、`CombatConditions.revision`、`Session.choiceWriteRevision`/`receiptRevision`/`enemyRevision`、`StoryWorld.encounterRevision`、`LegendaryWeapons.revision`。新增 mutation 入口时同步推进对应修订号；这些字段不写入存档。
+- 自动存档的持久快照按子系统版本复用深拷贝（`captureStateWith(..., true)`）；读档/回滚时清空缓存。`captureState()` 的检查点路径保持每次新克隆。
+- 可破坏物生成记录按完整 id 覆盖；旧档读入时去重，并清理已永久死亡且不会再生成的 `breakable:` 记录，`chest:`/`spring:` 的永久死亡记录保留。
+- 仇恨账本以 owner→source 索引为准，记录数组只用于快照与容量淘汰；增删必须同时维护两边。
 - 单元测试写在 `tests/*.test.ts`。
 
 ## 验证
