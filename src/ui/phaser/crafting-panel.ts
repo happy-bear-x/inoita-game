@@ -1,6 +1,7 @@
 import {equipmentPower} from '../../domain/character-stats.ts';
 import {equipmentLevel} from '../../domain/chaos-equipment.ts';
 import {itemDescriptionBody} from '../item-detail-lines.ts';
+import {equipmentSlotFrame} from '../item-name-color.ts';
 import type {ShopCatalog} from '../../domain/shop.ts';
 import type Phaser from 'phaser';
 import {EquipmentCrafting,CraftingError,type CraftingQuote,type RecipeQuote,type SocketQuote} from '../../domain/crafting.ts';
@@ -138,11 +139,12 @@ export class CraftingPanel {
     const {session,catalog}=this.crafting,bag=session.bag,assets=this.panels.assets,op=catalog.operations[this.tier];
     if(this.target&&!bag.entries.some(entry=>entry.id===this.target))this.target=undefined;
     const target=this.target?bag.get(this.target):undefined,item=target?bag.catalog.items[target.item]:undefined;
-    const slot=v.button('',204,26,74,74,()=>{this.target=undefined;this.changed();},{image:assets['inventory-slot']}).setData('label','合成装备');
+    const frame=item&&target&&session.hero?equipmentSlotFrame(item,target.numbers,session.hero.catalog.equipment[target.item],this.grades,this.tier):undefined;
+    const slot=v.button('',204,26,74,74,()=>{this.target=undefined;this.changed();},{image:assets[frame??'inventory-slot']}).setData('label','合成装备');
     if(item)v.image(item.icon,5,5,64,64,slot);
     this.drops.push({object:slot,craft:true});
     if(item&&target){
-      const numbers=session.hero?.catalog.equipment[target.item],body=session.hero?itemDescriptionBody({item,entry:target,numbers,catalog:session.hero.catalog,grades:this.grades,gemNames:target.gems.map(id=>bag.catalog.items[id]?.name)}):undefined;
+      const numbers=session.hero?.catalog.equipment[target.item],body=session.hero?itemDescriptionBody({item,entry:target,numbers,catalog:session.hero.catalog,grades:this.grades,gemNames:target.gems.map(id=>bag.catalog.items[id]?.name),chaosTier:this.tier}):undefined;
       v.text(body?.title??item.name,241,111,410,22,body?.color??TEXT_COLORS.primary).setOrigin(.5,0);
       if(numbers){const power=equipmentPower(numbers,target);v.text(`等级 ${equipmentLevel(item,target)}　${item.priceKind==='weapon'?`物理攻击 ${power.attack}　魔法攻击 ${power.magicAttack}`:`防御力 ${power.defense}`}`,241,140,410,18,TEXT_COLORS.primary).setOrigin(.5,0);}
     }

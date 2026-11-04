@@ -7,6 +7,7 @@ import { plainDescription } from '../src/domain/description-text.ts';
 import { layoutDescriptionText } from '../src/ui/description-text-layout.ts';
 import type { ItemCatalog, ItemInstance } from '../src/domain/items.ts';
 import type { CharacterStatsCatalog } from '../src/domain/character-stats.ts';
+import type { ChaosTier } from '../src/domain/chaos-equipment.ts';
 import { parseItemCatalog, parseShops, parseCharacterStats } from '../src/application/content-validation.ts';
 
 const read = <T>(name: string): T => JSON.parse(fs.readFileSync(new URL(`../public/content/${name}.json`, import.meta.url), 'utf8')) as T;
@@ -14,9 +15,9 @@ const items = read<ItemCatalog>('items'), stats = read<CharacterStatsCatalog>('c
 const keyOf = (name: string) => Object.entries(items.items).find(([, value]) => value.name === name)![0];
 const entry = (name:string, grade=7):ItemInstance => ({id:'instance',item:keyOf(name),quantity:1,enhancement:3,gems:[],
   numbers:{modifiers:[],gemModifiers:[],magicPercent:20,sockets:3,enhancementUses:7,grade,baseAttack:300,baseDefense:50}});
-const describe = (value:ItemInstance, member?:{classId:string;level:number}, concealed=false, classNames?:Record<string,string>) => itemDescriptionBody({
+const describe = (value:ItemInstance, member?:{classId:string;level:number}, concealed=false, classNames?:Record<string,string>, chaosTier?:ChaosTier) => itemDescriptionBody({
   item:items.items[value.item],entry:value,numbers:stats.equipment[value.item],catalog:stats,grades:shops.grades,member,classNames,
-  gemNames:value.gems.map(id=>items.items[id]?.name),concealed});
+  gemNames:value.gems.map(id=>items.items[id]?.name),concealed,chaosTier});
 const classNames = Object.fromEntries((read<{classes:{id:string;name:string}[]}>('story-classes').classes).map(value => [value.id, value.name]));
 const bodyText = (body:ReturnType<typeof describe>) => body.rows.map(row=>typeof row==='string'?row:plainDescription(row.parts)).join('\n');
 
@@ -87,6 +88,17 @@ test('all fifteen grades retain native colors, including unnamed rare and epic e
   assert.equal(describe(entry('短剑',10)).title,'短剑+3');assert.equal(describe(entry('短剑',10)).color,'#ffe600');
   assert.equal(describe(entry('短剑',14)).color,'#9c00ff');
   assert.equal(itemNameColor(4,'chaos'),'#0000ff');assert.equal(itemNameColor(4,'epic-chaos'),'#ff6c00');
+});
+
+test('crafting preview takes the selected chaos tier instead of the current grade',()=>{
+  const purple=entry('短剑',14);
+  assert.equal(describe(purple).color,'#9c00ff');
+  assert.equal(describe(purple,undefined,false,undefined,'chaos').color,'#0000ff');
+  assert.equal(describe(purple,undefined,false,undefined,'epic-chaos').color,'#ff6c00');
+  const normalChaos=entry('短剑');
+  normalChaos.numbers!.chaos={tier:'chaos'} as NonNullable<ItemInstance['numbers']>['chaos'];
+  assert.equal(describe(normalChaos).color,'#0000ff');
+  assert.equal(describe(normalChaos,undefined,false,undefined,'epic-chaos').color,'#ff6c00');
 });
 
 test('concealed stock changes its title and hides values until purchase without rerolling',()=>{

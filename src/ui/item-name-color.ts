@@ -37,14 +37,15 @@ export function equipmentGrade(numbers: ItemNumbers | undefined, definition: Equ
 
 /** 装备品质色：格子边框与说明标题共用这一套取色口径。 */
 export function equipmentColor(numbers: ItemNumbers | undefined, definition: EquipmentNumbers | undefined,
-  grades: readonly { rarity: number }[] | undefined): string | undefined {
-  return itemNameColor(grades?.[equipmentGrade(numbers, definition)]?.rarity, numbers?.chaos?.tier);
+  grades: readonly { rarity: number }[] | undefined, chaosTier?: ChaosTier): string | undefined {
+  return itemNameColor(grades?.[equipmentGrade(numbers, definition)]?.rarity, chaosTier ?? numbers?.chaos?.tier);
 }
 
 /** 装备格子的边框图；非装备返回 undefined，调用方沿用默认格子图。 */
 export function equipmentSlotFrame(item: { equipment?: unknown } | undefined, numbers: ItemNumbers | undefined,
-  definition: EquipmentNumbers | undefined, grades: readonly { rarity: number }[] | undefined): string | undefined {
+  definition: EquipmentNumbers | undefined, grades: readonly { rarity: number }[] | undefined,
+  chaosTier?: ChaosTier): string | undefined {
   if (!item?.equipment) return undefined;
-  const color = equipmentColor(numbers, definition, grades);
+  const color = equipmentColor(numbers, definition, grades, chaosTier);
   return color === undefined ? undefined : QUALITY_STYLES.find(style => style.color === color)?.frame;
 }
