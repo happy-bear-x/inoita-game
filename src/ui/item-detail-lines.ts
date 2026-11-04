@@ -1,4 +1,4 @@
-import { equipmentLevel } from '../domain/chaos-equipment.ts';
+import { equipmentLevel, type ChaosTier } from '../domain/chaos-equipment.ts';
 import { enhancementBonus, equipmentPower, type CharacterStatsCatalog, type EquipmentNumbers, type Modifier } from '../domain/character-stats.ts';
 import type { ItemDefinition, ItemInstance } from '../domain/items.ts';
 import type { ShopCatalog } from '../domain/shop.ts';
@@ -69,13 +69,15 @@ export function itemDescriptionBody(options: {
   gemNames?: (string | undefined)[];
   skill?: { name: string; className: string };
   concealed?: boolean;
+  /** 合成预览用：按即将得到的混沌档位取标题颜色，优先于实例当前档位。 */
+  chaosTier?: ChaosTier;
 }): ItemDescriptionBody {
   const {item, entry, numbers, catalog, grades, member, classNames, gemNames, skill} = options;
   if (options.concealed) return {title:`${item.typeName}（未鉴定）`, color:TEXT_COLORS.muted, rows:[]};
   const equipment = item.equipment, grade = equipmentGrade(entry.numbers, numbers);
   const prefix = equipment && grade !== 2 ? item.priceKind === 'weapon' ? grades[grade]?.name : grades[grade]?.armorName ?? grades[grade]?.name : '';
   const title = `${prefix ? prefix + ' ' : ''}${item.name}${equipment && entry.enhancement ? '+' + entry.enhancement : ''}`;
-  const color = equipment ? equipmentColor(entry.numbers, numbers, grades) : undefined;
+  const color = equipment ? equipmentColor(entry.numbers, numbers, grades, options.chaosTier) : undefined;
   const parts: DescriptionTextPart[] = [];
   if (equipment) {
     parts.push({text:item.typeName, color:member && !equipment.classes.includes(member.classId) ? TEXT_COLORS.requirementUnmet : TEXT_COLORS.white},

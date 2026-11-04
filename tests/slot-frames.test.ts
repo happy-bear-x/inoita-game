@@ -22,6 +22,9 @@ test('equipment slot frames pick the frame that matches the description title co
   }
   assert.equal(equipmentSlotFrame(dagger, numbers(7, {tier: 'chaos'} as ItemNumbers['chaos']), definition, shops.grades), 'inventory-slot-chaos');
   assert.equal(equipmentSlotFrame(dagger, numbers(7, {tier: 'epic-chaos'} as ItemNumbers['chaos']), definition, shops.grades), 'inventory-slot-epic-chaos');
+  assert.equal(equipmentSlotFrame(dagger, numbers(14), definition, shops.grades), 'inventory-slot-rarity-4');
+  assert.equal(equipmentSlotFrame(dagger, numbers(14), definition, shops.grades, 'chaos'), 'inventory-slot-chaos');
+  assert.equal(equipmentSlotFrame(dagger, numbers(14), definition, shops.grades, 'epic-chaos'), 'inventory-slot-epic-chaos');
   assert.equal(equipmentSlotFrame(undefined, numbers(2), definition, shops.grades), undefined, '空格子沿用默认底图');
 });
 
