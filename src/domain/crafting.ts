@@ -6,7 +6,7 @@ import type {Session} from './session.ts';
 interface CraftingOperationBase {name:string;materials:ItemReward[]}
 interface ChaosCraftingOperation extends CraftingOperationBase {costPerLevel:number;rule:ChaosRule}
 /** 融合器「宝石孔生成」：原版配方 #16；只对 0 孔装备生成孔位。 */
-export interface SocketCraftingOperation extends CraftingOperationBase {cost:number;socketWeights:number[];socketLimits:number[]}
+interface SocketCraftingOperation extends CraftingOperationBase {cost:number;socketWeights:number[];socketLimits:number[]}
 export interface CraftingCatalog {operations:{chaos:ChaosCraftingOperation;'epic-chaos':ChaosCraftingOperation;socket:SocketCraftingOperation}}
 type CraftingNotice='craft-target'|'craft-incompatible'|'craft-equipment'|'craft-socket'|'craft-epic'|'craft-needs-chaos'|'craft-max'|'craft-money'|'craft-materials'|'craft-recipe';
 export class CraftingError extends Error {
@@ -51,20 +51,27 @@ export class EquipmentCrafting {
   readonly session:Session;readonly catalog:CraftingCatalog;
   private readonly reserved:ReadonlySet<string>;
   constructor(session:Session,catalog:CraftingCatalog){this.session=session;this.catalog=catalog;this.reserved=reservedAcquisitionIds(session.bag.catalog);}
+  /**
+   * 配方书配方只有学会后可见、可合成；常备配方仍排除结果是保留道具的那几条。
+   * 配方书本身通过 `reservedDrops` 独立通道获得，学会后合成是它的正常用途。
+   */
+  private available(id:string,recipe:ItemRecipe,learned:readonly string[]=this.session.bag.learnedRecipes):boolean {
+    return recipe.book?learned.includes(id):!this.reserved.has(recipe.result);
+  }
   recipe(id:string):ItemRecipe|undefined {
     const recipe=this.session.bag.catalog.recipes[id];
-    return recipe&&!this.reserved.has(recipe.result)?recipe:undefined;
+    return recipe&&this.available(id,recipe)?recipe:undefined;
   }
-  /** 配方书配方只有学会后才进入列表；常备配方（药水、宝石）始终可用。 */
+  /** 配方书配方只有学会后才进入列表；常备配方若结果是保留道具则继续隐藏。 */
   availableRecipes():{id:string;recipe:ItemRecipe}[] {
-    const learned=new Set(this.session.bag.learnedRecipes);
+    const learned=this.session.bag.learnedRecipes;
     return Object.entries(this.session.bag.catalog.recipes)
-      .filter(([id,recipe])=>(!recipe.book||learned.has(id))&&!this.reserved.has(recipe.result))
+      .filter(([id,recipe])=>this.available(id,recipe,learned))
       .map(([id,recipe])=>({id,recipe}));
   }
   recipeQuote(id:string):RecipeQuote {
     const bag=this.session.bag,recipe=bag.catalog.recipes[id];
-    if(!recipe||(recipe.book&&!bag.learnedRecipes.includes(id))||this.reserved.has(recipe.result))throw new CraftingError('craft-recipe');
+    if(!recipe||!this.available(id,recipe))throw new CraftingError('craft-recipe');
     if(recipe.materials.some(m=>bag.count(m.item)<m.quantity))throw new CraftingError('craft-materials');
     if(this.session.money<recipe.cost)throw new CraftingError('craft-money');
     return {recipe:id,revision:bag.revision,cost:recipe.cost};
@@ -169,7 +176,7 @@ function socketRarity(entry:ItemInstance,stats:CharacterStatsCatalog|undefined):
 }
 
 /** 原版 ApplySocketForMixure：普通稀有度档按权重随机 1..上限；更高档固定 1 孔。 */
-export function rollSocketCreation(entry:ItemInstance,stats:CharacterStatsCatalog|undefined,
+function rollSocketCreation(entry:ItemInstance,stats:CharacterStatsCatalog|undefined,
   operation:SocketCraftingOperation,random:()=>number):number {
   const rarity=socketRarity(entry,stats);
   if(rarity!==0)return 1;
