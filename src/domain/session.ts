@@ -221,7 +221,7 @@ export class Session {
   readonly party?: PartyRoster;
   private gameTimeMs = 0;
   private restoreRevision = 0;
-  private transactionDepth = 0;
+  private notificationBatchDepth = 0;
   private pendingNotification = false;
   /** 演出期间的按子系统懒回滚日志：第一次碰到某个子系统时才抓旧值。 */
   private performanceLogging = false;
@@ -384,7 +384,7 @@ export class Session {
   }
   private atomicPartyChange<T>(operation:()=>T):T {
     const before=this.captureState(),pending=this.pendingNotification;
-    return this.transaction(()=>{
+    return this.batchNotifications(()=>{
       try{return operation();}
       catch(error){this.restoreUnchecked(before);this.pendingNotification=pending;throw error;}
     });
@@ -574,7 +574,7 @@ export class Session {
       !Number.isSafeInteger(enemy.capture.visit)||enemy.capture.visit<0||enemy.capture.visit>restored.storyWorld.mapVisit||enemy.deadUntil!=='permanent')))throw new Error('检查点捕捉来源无效');
     if(new Set(restored.factSequences.map(([id])=>id)).size!==restored.factSequences.length||restored.factSequences.some(([id,value])=>!id||!Number.isSafeInteger(value)||value<0))throw new Error('检查点任务事实序号无效');
     const before=this.captureState(),pending=this.pendingNotification;
-    this.transaction(()=>{
+    this.batchNotifications(()=>{
       try{this.restoreUnchecked(restored);this.refresh();this.restoreRevision++;this.emit();}
       catch(error){this.restoreUnchecked(before);this.pendingNotification=pending;throw error;}
     });
@@ -632,7 +632,7 @@ export class Session {
         (this.questBook.state(quest.id)?.goals[change.goal]??0)<(quest.goals.find(goal=>goal.id===change.goal)?.quantity??0))
         .map(change=>({quest,change})):[])[0];
     if(!match||!this.canSpawnEnemy({...source,enemyId}))return false;
-    this.transaction(()=>{
+    this.batchNotifications(()=>{
       this.applyStoryCommands([
         // 捕捉目标只在这次进图有效：`place` 按 `scope` 决定访问寿命，传进命令里的 `mapVisit`
         // 会被它覆盖；不带 scope 的话，离图后 NPC 还留在世界里，可捕捉状态却已随进图清掉。
@@ -649,7 +649,7 @@ export class Session {
   enemyDefeated(spawn:EnemySpawn|CampaignEnemyPlacement,respawnMs=DEFAULT_ENEMY_RESPAWN_MS):boolean {
     if(this.enemyStates.get(spawn.id)?.deadUntil!==undefined)return false;
     if('activeQuest' in spawn&&this.status(spawn.activeQuest)!=='active')return false;
-    this.transaction(()=>{
+    this.batchNotifications(()=>{
       const commands:StoryCommand[]=[{type:'quest',command:{type:'fact',fact:this.nextQuestFact('defeat',spawn.enemyId,'combat')}}];
       if('activeQuest' in spawn)commands.push({type:'item-give',item:spawn.rewardItem,quantity:1});
       this.applyStoryCommands(commands);
@@ -664,13 +664,17 @@ export class Session {
     this.defeatListeners.add(listener); return () => { this.defeatListeners.delete(listener); };
   }
   subscribe(listener: SessionListener): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
-  transaction<T>(operation:()=>T):T {
-    this.transactionDepth++;
+  /**
+   * 只把批次内多次修改的通知合并成一次；失败不回滚已写入的状态。
+   * 需要“全成或全退”的入口由后续的 `atomic` 负责，这里不要当成事务使用。
+   */
+  batchNotifications<T>(operation:()=>T):T {
+    this.notificationBatchDepth++;
     try{return operation();}
-    finally{this.transactionDepth--;if(!this.transactionDepth&&this.pendingNotification){this.pendingNotification=false;this.emit();}}
+    finally{this.notificationBatchDepth--;if(!this.notificationBatchDepth&&this.pendingNotification){this.pendingNotification=false;this.emit();}}
   }
   emit(): void {
-    if(this.transactionDepth){this.pendingNotification=true;return;}
+    if(this.notificationBatchDepth){this.pendingNotification=true;return;}
     this.refresh(); for (const listener of this.listeners) listener(this);
   }
   refresh():void {
@@ -764,7 +768,7 @@ export class Session {
         command:{type:'fact' as const,fact:{...this.nextQuestFact(kind,target,kind==='interact'?'interaction':'talk'),...(characterId?{characterId}:{})}}})),
     ];
     if(remove)commands.push({type:'world',command:{kind:'remove',id:instance}});
-    this.transaction(()=>{
+    this.batchNotifications(()=>{
       this.applyStoryCommands(commands);
     });
     const feedback:string[]=[];
@@ -1056,7 +1060,7 @@ export class Session {
     };
     if(options.deferFinalize)this.storyCommandDepth++;
     try{
-      this.transaction(()=>{
+      this.batchNotifications(()=>{
         try{
           let playerState=this.playerState?{...this.playerState}:undefined;
         for(const command of commands){

@@ -74,7 +74,7 @@ export class EquipmentCrafting {
     if(bag.revision!==quote.revision)throw new CraftingError('craft-target');
     const current=this.recipeQuote(quote.recipe),recipe=bag.catalog.recipes[current.recipe];
     if(bag.revision!==current.revision)throw new CraftingError('craft-target');
-    this.session.transaction(()=>{
+    this.session.batchNotifications(()=>{
       for(const material of recipe.materials)bag.remove(material.item,material.quantity);
       this.session.spendMoney(current.cost);
       bag.add(recipe.result,1);
@@ -110,7 +110,7 @@ export class EquipmentCrafting {
     // Random callbacks and other callers may have changed inventory or money since the first query.
     if(bag.revision!==current.revision)throw new CraftingError('craft-target');
     this.quote(current.tier,current.target);
-    this.session.transaction(()=>{
+    this.session.batchNotifications(()=>{
       bag.applyChaos(current.target,chaos,current.revision);
       for(const material of op.materials)bag.remove(material.item,material.quantity);
       this.session.spendMoney(current.cost);
@@ -150,7 +150,7 @@ export class EquipmentCrafting {
     // 随机回调不读写背包，但保持与混沌合成相同的二次核对口径。
     if(bag.revision!==current.revision)throw new CraftingError('craft-target');
     this.socketQuote(current.target);
-    this.session.transaction(()=>{
+    this.session.batchNotifications(()=>{
       bag.applySockets(current.target,sockets,current.revision);
       for(const material of op.materials)bag.remove(material.item,material.quantity);
       this.session.spendMoney(current.cost);

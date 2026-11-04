@@ -1107,7 +1107,7 @@ export class WorldScene extends Phaser.Scene {
   private restAtInnkeeper(target:Character):void {
     const quote=innRestQuote(this.app.session);
     this.playStory(()=>this.app.director.visitInnkeeper(target.actor,quote,()=>{
-      this.app.session.transaction(()=>{
+      this.app.session.batchNotifications(()=>{
         this.app.session.spendMoney(quote.cost);
         restAtInn(this.app.session,quote);
       });
@@ -1373,7 +1373,7 @@ export class WorldScene extends Phaser.Scene {
     if(!this.map||this.loadingWorld||this.destroyed||this.app.session.debugFocusQuest)return;
     const session=this.app.session,mapId=this.map.id,store=groundLootFor(session);
     let picked:import('../domain/ground-loot.ts').GroundDrop[]=[];
-    session.transaction(()=>{
+    session.batchNotifications(()=>{
       picked=store.collectAll(mapId,reward=>this.receiveGroundReward(reward));
       if(!picked.length)return;
       session.questItemGenerators.collected(picked.map(drop=>drop.id),session.combatTick);
