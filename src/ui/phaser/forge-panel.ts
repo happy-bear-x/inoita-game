@@ -36,6 +36,8 @@ export class ForgePanel {
     this.changed=changed;this.sound=sound;this.notify=notify;this.preview=preview;
   }
   get confirming():boolean{return !!this.confirmation;}
+  /** 强化台自己的显式状态，供页面签名使用。 */
+  get viewModel():{targetId?:string;tab:ForgeTab;confirming:boolean}{return {targetId:this.targetId,tab:this.tab,confirming:this.confirming};}
   open(targetId:string,tab:ForgeTab='enchant'):void {
     this.targetId=targetId;this.tab=tab;
     this.selectedItem=undefined;this.socketIndex=undefined;this.replaceIndex=undefined;

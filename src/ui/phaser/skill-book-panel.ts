@@ -38,6 +38,11 @@ export class SkillBookPanel {
     return this.catalog.classes.find(entry => entry.id === this.bag.classId)?.skills ?? [];
   }
 
+  /** 技能书页自己的显式状态，供页面签名使用。 */
+  get viewModel(): { entryId: string; selected?: string; message: string } {
+    return { entryId: this.entryId, selected: this.selected, message: this.message };
+  }
+
   open(): void {
     this.selected = undefined; this.message = ''; this.offset = 0;
     // 绑定了具体技能的书只看那一门；普通技能书默认停在第一个可升级的技能上。

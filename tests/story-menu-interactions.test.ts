@@ -1999,6 +1999,31 @@ test('session notifications only repaint the menu page whose data changed', t =>
   assert.notEqual(f.internals.body.root.list.find(child=>child!==f.internals.body.staticRoot),statusDynamic,'状态页数值变化时重绘动态内容');
 });
 
+test('session notifications redraw at most once and skip unchanged pages', t => {
+  const f=fixture();t.after(f.cleanup);
+  let renders=0;const body=f.internals.body,clear=body.clear.bind(body);
+  (body as unknown as {clear:()=>void}).clear=()=>{renders+=1;clear();};
+
+  f.menu.show('bag');renders=0;
+  f.session.emit();
+  assert.equal(renders,0,'数据没变时背包页不重绘');
+  f.session.gainMoney(1);
+  assert.equal(renders,1,'一次会话通知只重绘一次');
+  f.session.transaction(()=>{f.session.gainMoney(1);f.session.gainMoney(1);});
+  assert.equal(renders,2,'同一批通知合并后只再重绘一次');
+
+  f.menu.show('system');renders=0;
+  f.session.emit();
+  f.session.gainMoney(1);
+  assert.equal(renders,0,'系统页不消费会话数据，任何通知都不重绘');
+
+  f.menu.show('quests');renders=0;
+  f.session.emit();
+  assert.equal(renders,0,'任务没变化时不重绘任务页');
+  f.session.focusDebugQuest('grafton-mission');
+  assert.equal(renders,1,'调试焦点变化重绘一次任务页');
+});
+
 test('bag chrome is reused across rerenders and replaced when the page changes', t => {
   const f=fixture();t.after(f.cleanup);
   f.menu.show('bag');

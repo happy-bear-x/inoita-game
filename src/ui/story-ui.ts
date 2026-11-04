@@ -57,8 +57,9 @@ import { tradeLayout } from './shop-layout.ts';
 import { TEXT_COLORS } from './text-style.ts';
 import { splitMoney } from '../domain/money.ts';
 import { CharacterPreview } from './phaser/character-preview.ts';
+import { storyMenuSignature, type StoryMenuPage, type StoryMenuViewModelSource } from './story-ui-signature.ts';
 
-type Page='status'|'bag'|'skills'|'party'|'quests'|'system'|'save'|'load'|'settings'|'shop'|'crafting'|'forge'|'learn'|'debug';
+type Page=StoryMenuPage;
 const tabs:[Page,string][]=[['status','人物'],['bag','背包'],['skills','技能'],['party','队伍'],['quests','任务'],['system','系统']];
 /** 设置页「操作方式」一行上显示的当前选择。 */
 const CONTROL_MODE_LABELS:Record<ControlMode,string>={stick:'虚拟摇杆',dpad:'十字按键',keyboard:'电脑模式'};
@@ -397,39 +398,23 @@ export class StoryUI {
     const signature=this.sessionDataSignature();
     if(signature!==undefined)this.sessionSignature=signature;
   }
-  /**
-   * 当前页依赖的数据签名。返回 `undefined` 的页面（任务、调试）依赖条件求值等
-   * 不易枚举的数据，保持每次通知都重绘，避免显示过期内容。
-   */
+  /** 当前页的显式签名；具体字段由 `story-ui-signature.ts` 按页面收口。 */
   private sessionDataSignature():string|undefined{
-    const session=this.session;
-    if(!session)return undefined;
-    const party=session.party;
-    const partyShape=`${party?.activeIds.join('|')??''}|${party?.controlledId??''}`;
-    const groupShape=JSON.stringify(Object.entries(party?.groupModifiers()??{}).sort());
-    const member=this.member();
-    const companion=this.selectedMemberId==='player'?undefined:party?.get(this.selectedMemberId);
-    const bag=session.bag.revision,money=session.money;
-    switch(this.page){
-      case 'bag':return `bag|${this.selectedMemberId}|${bag}|${money}|${member?.level??0}|${partyShape}`;
-      case 'status':return `status|${this.selectedMemberId}|${bag}|${member?.level??0}|${JSON.stringify(member?.player??null)}|${session.hero?.skillPoints??0}|${session.hero?.statPoints??0}|${partyShape}|${groupShape}`;
-      case 'skills':return `skills|${this.selectedMemberId}|${bag}|${session.skills.version}|${companion?.skills.version??''}|${member?.level??0}|${session.hero?.skillPoints??0}|${partyShape}`;
-      case 'party':{
-        const detail=party?.activeIds.map(id=>{
-          if(id==='player')return `player:${session.hero?.level??0}:${session.hero?.skillPoints??0}:${JSON.stringify(session.hero?.player??null)}`;
-          const entry=party.get(id);
-          return `${id}:${entry?.level??0}:${entry?.skills.version??0}:${JSON.stringify(entry?.player??null)}:${entry?.counterattack??0}:${JSON.stringify([...(entry?.aiFrequency??new Map())])}`;
-        }).join('|')??'';
-        return `party|${bag}|${partyShape}|${detail}`;
-      }
-      case 'shop':return `shop|${this.selectedMemberId}|${bag}|${money}|${partyShape}`;
-      case 'crafting':return `crafting|${this.selectedMemberId}|${bag}|${money}|${member?.level??0}|${partyShape}`;
-      // 任务页只依赖任务簿版本与调试焦点；任务状态不变时不重复重绘。
-      case 'quests':return `quests|${session.questBook.version}|${session.debugFocusQuest??''}`;
-      case 'forge':return 'forge';
-      case 'save':case 'load':case 'settings':case 'system':return this.page;
-      default:return undefined;
-    }
+    return this.session?storyMenuSignature(this.signatureSource(this.session)):undefined;
+  }
+  private signatureSource(session:Session):StoryMenuViewModelSource{
+    return {
+      page:this.page,selectedMemberId:this.selectedMemberId,session,
+      slotReading:ref=>this.app.saves.peek(ref),
+      settings:()=>({
+        music:this.app.audio?.settings.music??0,effects:this.app.audio?.settings.effects??0,
+        fps:displaySettings.fps,criticalDecorations:displaySettings.criticalDecorations,
+        fullscreen:fullscreenStatus(),fullscreenActive:fullscreenActive(),controlMode:controlSettings.mode
+      }),
+      learn:()=>this.skillBook?.viewModel??{entryId:'',message:''},
+      forge:()=>this.forge?.viewModel??{tab:'enchant',confirming:false},
+      debug:()=>({noclip:this.app.gm?.isNoclip()??false,doubleSpeed:this.app.gm?.isDoubleSpeed()??false})
+    };
   }
   /** GM 上报用：列出菜单场景里不属于任何面板容器的可见显示对象。 */
   diagnosticState(): Record<string, unknown> {
