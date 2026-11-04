@@ -69,9 +69,10 @@ test('a failure while restoring members rolls back the charge and every heal',()
   const quote=innRestQuote(session);session.gainMoney(quote.cost);
   const before=session.captureState();
   let updates=0;session.subscribe(()=>updates++);
-  const setMana=hero.setMana;
-  hero.setMana=()=>{throw new Error('注入失败');};
-  try{assert.throws(()=>payForInnRest(session,quote),/注入失败/);}finally{hero.setMana=setMana;}
+  // 注入点放在队员身上：主角已回满、队员血量也已恢复后才失败，才能验证 party 回滚。
+  const setMana=member.setMana;
+  member.setMana=()=>{throw new Error('注入失败');};
+  try{assert.throws(()=>payForInnRest(session,quote),/注入失败/);}finally{member.setMana=setMana;}
   assert.deepEqual(session.captureState(),before,'休息失败后金币和已恢复的血量完全回滚');
   assert.equal(updates,0,'中间状态不通知界面');
 });

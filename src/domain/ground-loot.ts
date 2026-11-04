@@ -49,7 +49,7 @@ export class GroundLootStore {
     const onMap=this.onMap(map);
     if(onMap.length<=MAX_GROUND_DROPS_PER_MAP)return;
     onMap.sort((left,right)=>(left.createdAtMs??Infinity)-(right.createdAtMs??Infinity));
-    for(const drop of onMap.slice(0,onMap.length-MAX_GROUND_DROPS_PER_MAP)){this.drops.delete(drop.id);this.untrack(drop);}
+    for(const drop of onMap.slice(0,onMap.length-MAX_GROUND_DROPS_PER_MAP))this.discard(drop);
   }
   private track(drop:GroundDrop):void {
     let ids=this.byMap.get(drop.map);
@@ -60,6 +60,8 @@ export class GroundLootStore {
     const ids=this.byMap.get(drop.map);if(!ids)return;
     ids.delete(drop.id);if(!ids.size)this.byMap.delete(drop.map);
   }
+  /** 删除一条掉落并同步地图索引：所有删除路径共用，避免 drops/byMap 失步。 */
+  private discard(drop:GroundDrop):void { this.drops.delete(drop.id);this.untrack(drop); }
   private onMap(map:string):GroundDrop[] {
     const ids=this.byMap.get(map);if(!ids)return [];
     const result:GroundDrop[]=[];
@@ -89,7 +91,7 @@ export class GroundLootStore {
       for(const id of [...ids]){
         const drop=this.drops.get(id);
         if(!drop||retain(drop))continue;
-        this.drops.delete(id);this.untrack(drop);removed++;
+        this.discard(drop);removed++;
       }
     }
     if(removed)this.revision++;
@@ -114,7 +116,7 @@ export class GroundLootStore {
     const taken:GroundDrop[]=[];
     for(const drop of nearby){
       if(collect(structuredClone(drop.reward))===false)continue;
-      this.drops.delete(drop.id);this.untrack(drop);taken.push(structuredClone(drop));
+      this.discard(drop);taken.push(structuredClone(drop));
     }
     if(taken.length)this.revision++;
     return taken;
@@ -127,7 +129,7 @@ export class GroundLootStore {
     const taken:GroundDrop[]=[];
     for(const drop of this.onMap(map)){
       if(collect(structuredClone(drop.reward))===false)continue;
-      this.drops.delete(drop.id);this.untrack(drop);taken.push(structuredClone(drop));
+      this.discard(drop);taken.push(structuredClone(drop));
     }
     if(taken.length)this.revision++;
     return taken;

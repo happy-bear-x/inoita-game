@@ -706,8 +706,13 @@ export class Session {
   /** 第一次碰到某个子系统时才抓旧值；同一个子系统只抓一次。 */
   private touchAtomic(frame:AtomicFrame,subsystems:Iterable<AtomicSubsystem>):void {
     const fresh=new Set<AtomicSubsystem>();
-    for(const subsystem of subsystems)if(!frame.touched.has(subsystem)){frame.touched.add(subsystem);fresh.add(subsystem);}
-    if(fresh.size)Object.assign(frame.baseline,this.captureStoryCommandBaseline(fresh));
+    for(const subsystem of subsystems)if(!frame.touched.has(subsystem))fresh.add(subsystem);
+    if(!fresh.size)return;
+    // 先抓快照、成功后再记触碰面：抓取失败时不能留下“声明过、却没有基线”的子系统，
+    // 否则外层稍后回滚会解引用 undefined 基线，盖住原始错误并中断其余子系统的恢复。
+    const baseline=this.captureStoryCommandBaseline(fresh);
+    for(const subsystem of fresh)frame.touched.add(subsystem);
+    Object.assign(frame.baseline,baseline);
   }
   emit(): void {
     if(this.notificationBatchDepth){this.pendingNotification=true;return;}

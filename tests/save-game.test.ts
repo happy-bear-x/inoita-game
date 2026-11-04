@@ -233,9 +233,12 @@ test('overwriting a manual slot parses the old save at most once while the auto 
   try{
     slots.write(1,record(writeSession));
     assert.ok(parses<=1,`首次覆盖手动槽最多解析一次旧档，实际 ${parses} 次`);
-    const cached=slots.peek(1);
+    // 先清零再读槽：若 write 没有回填缓存，这次 peek 会重新解析，parses 就不会是 0。
     parses=0;
-    assert.equal(slots.peek(1),cached,'写完回填摘要，读槽复用缓存');
+    const cached=slots.peek(1);
+    assert.equal(parses,0,'写完回填摘要，读槽复用缓存');
+    assert.equal(cached.kind,'ok');
+    assert.equal(slots.peek(1),cached,'同一份摘要复用缓存对象');
     slots.write(1,record(writeSession));
     assert.equal(parses,0,'再次覆盖手动槽不再解析旧档');
     parses=0;

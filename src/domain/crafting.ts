@@ -75,7 +75,9 @@ export class EquipmentCrafting {
     const current=this.recipeQuote(quote.recipe),recipe=bag.catalog.recipes[current.recipe];
     if(bag.revision!==current.revision)throw new CraftingError('craft-target');
     this.session.atomic(()=>{
-      for(const material of recipe.materials)bag.remove(material.item,material.quantity);
+      // 配方校验按材料条目逐条查数量；重复条目会共用同一份库存，第一次扣完第二次就失败。
+      // 必须检查返回值，否则会在少扣材料的情况下照常扣钱并产出成品。
+      for(const material of recipe.materials)if(!bag.remove(material.item,material.quantity))throw new CraftingError('craft-materials');
       this.session.spendMoney(current.cost);
       bag.add(recipe.result,1);
     },['bag','coins']);

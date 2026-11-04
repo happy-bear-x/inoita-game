@@ -163,7 +163,10 @@ export class SaveSlots<World = unknown> {
     let parsed:unknown;
     try { parsed=JSON.parse(raw); }
     catch { return {kind:'unreadable',reason:'存档内容不是有效 JSON'}; }
-    const record=parsed as Partial<SaveGame<World>>;
+    return this.summaryReadingOf(parsed as Partial<SaveGame<World>>);
+  }
+  /** 已解析记录的摘要判定；peek、inspect 和写档回填缓存共用，避免三处条件分叉。 */
+  private summaryReadingOf(record:Partial<SaveGame<World>>):SlotSummaryReading {
     if(!record||typeof record!=='object')return {kind:'unreadable',reason:'存档内容不是对象'};
     if(typeof record.format==='number'&&!isReadableSaveFormat(record.format))return {kind:'empty'};
     if(!isReadableSaveFormat(record.format))return {kind:'unreadable',reason:'存档缺少有效版本'};
@@ -183,14 +186,8 @@ export class SaveSlots<World = unknown> {
     try { parsed=JSON.parse(raw); }
     catch { return {kind:'unreadable',reason:'存档内容不是有效 JSON'}; }
     const record=parsed as Partial<SaveGame<World>>;
-    if(!record||typeof record!=='object')return {kind:'unreadable',reason:'存档内容不是对象'};
-    if(typeof record.format==='number'&&!isReadableSaveFormat(record.format))return {kind:'empty'};
-    if(!isReadableSaveFormat(record.format))return {kind:'unreadable',reason:'存档缺少有效版本'};
-    if(!record.session||!record.world)return {kind:'unreadable',reason:'存档缺少会话或世界状态'};
-    const summary=record.summary;
-    if(!summary||typeof summary.classId!=='string'||typeof summary.mapId!=='string'||!Number.isFinite(summary.level))
-      return {kind:'unreadable',reason:'存档摘要无效'};
-    return {kind:'ok',game:record as SaveGame<World>};
+    const reading=this.summaryReadingOf(record);
+    return reading.kind==='ok'?{kind:'ok',game:record as SaveGame<World>}:reading;
   }
   /**
    * 云端上传前读原始 JSON。有效档原样返回；未来/过旧/损坏分别给出原因，
@@ -255,14 +252,13 @@ export class SaveSlots<World = unknown> {
     const key=this.key(ref),raw=JSON.stringify(record);
     this.storage.setItem(key,raw);
     // 只有结构上确实能被读成有效档时才回填缓存；否则删掉缓存，让下次读取重新按内容分类。
-    if(this.readableRecord(record))this.summaryCache.set(key,{raw,reading:{kind:'ok',summary:record.summary}});
+    // 摘要复制一份再缓存：调用方之后改自己的 summary 不能让读槽结果和磁盘内容分叉。
+    if(this.readableRecord(record))this.summaryCache.set(key,{raw,reading:{kind:'ok',summary:{...record.summary}}});
     else this.summaryCache.delete(key);
   }
-  /** 写后回填缓存用的廉价结构检查，条件与 `summaryOf` 一致，但不再解析一遍 JSON。 */
+  /** 写后回填缓存用的结构检查：与 `peek`/`inspect` 共用 `summaryReadingOf`，但不再解析一遍 JSON。 */
   private readableRecord(record:SaveGame<World>):boolean {
-    if(!isReadableSaveFormat(record.format)||!record.session||!record.world)return false;
-    const summary=record.summary;
-    return !!summary&&typeof summary.classId==='string'&&typeof summary.mapId==='string'&&Number.isFinite(summary.level);
+    return this.summaryReadingOf(record).kind==='ok';
   }
   erase(ref:SaveSlotRef):void { const key=this.manualKey(ref);this.storage.removeItem(key);this.summaryCache.delete(key); }
   /**
