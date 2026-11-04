@@ -71,6 +71,8 @@ export class UiDebugScene extends Phaser.Scene {
   }
 
   private onKey = (event: KeyboardEvent): void => {
+    // 调试场景没有正式界面场景，键盘也由这里桥接给全局 router。
+    if (this.app.inputRouter.dispatch(event)) return;
     if (event.key === 'Tab') return;
     const index = '1234567890'.indexOf(event.key);
     if (index < 0 || index >= VIEWS.length) return;

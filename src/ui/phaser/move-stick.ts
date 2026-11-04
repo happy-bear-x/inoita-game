@@ -5,6 +5,7 @@ import type { ControlSkin } from '../../domain/control-skin.ts';
 import type { Hud } from '../../rendering/hud.ts';
 import { controlSettings, type ControlMode, type MoveControlStyle } from '../../application/control-settings.ts';
 import { keyBindings as defaultKeyBindings, type KeyBindingPreferences } from '../../application/key-bindings.ts';
+import type { InputRouter } from '../../application/input-router.ts';
 import { MOVE_BINDING_ACTIONS, type KeyBindingAction } from '../../domain/key-bindings.ts';
 
 /** 原版摇杆尺寸参数 */
@@ -71,11 +72,13 @@ export class MoveStick {
   private readonly keyHistory: { dir: CardinalDir; code: string }[] = [];
   private readonly bindings: KeyBindingPreferences;
   private readonly unsubscribeBindings: () => void;
+  /** 接入 router 时的注销函数；没有 router 时保持场景直连（动画调试场景）。 */
+  private unregisterInput?: () => void;
   /** 每个箭头上次用的贴图；同 key 只更新缩放，不重复 setTexture。 */
   private readonly arrowKeys = ['','','',''];
 
   constructor(scene: Phaser.Scene, hud: Hud, skin: ControlSkin, preferences?: ControlLayoutPreferences,
-    bindings: KeyBindingPreferences = defaultKeyBindings) {
+    bindings: KeyBindingPreferences = defaultKeyBindings, router?: InputRouter) {
     scene = hud.scene; this.scene = scene; this.hud = hud; this.skin = skin; this.preferences = preferences;
     this.bindings = bindings;
     this.mode = controlSettings.mode;
@@ -137,7 +140,9 @@ export class MoveStick {
     scene.input.on(Phaser.Input.Events.POINTER_UP, this.onUp, this);
     scene.input.on(Phaser.Input.Events.POINTER_UP_OUTSIDE, this.onUp, this);
     scene.input.on('gameout', this.onGameOut, this);
-    scene.input.keyboard?.on('keydown', this.onKeyDown, this);
+    // 有 router 时只接 keydown；keyup 仍由摇杆自己处理，松键不会交给其他层。
+    if (router) this.unregisterInput = router.register('world', event => this.onKeyDown(event), { active: () => this.inputEnabled });
+    else scene.input.keyboard?.on('keydown', this.onKeyDown, this);
     scene.input.keyboard?.on('keyup', this.onKeyUp, this);
   }
 
@@ -185,19 +190,21 @@ export class MoveStick {
     if (this.pointerId < 0) this.syncKeyAxis();
   }
 
-  private onKeyDown(event: KeyboardEvent): void {
-    if (!this.inputEnabled || event.isComposing) return;
+  /** 方向键被消费时返回 true；其他按键留给技能快捷位和世界交互。 */
+  private onKeyDown(event: KeyboardEvent): boolean {
+    if (!this.inputEnabled || event.isComposing) return false;
     const element = globalThis.document?.activeElement as HTMLElement | null;
     if (element && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA'
-      || element.tagName === 'SELECT' || element.isContentEditable)) return;
+      || element.tagName === 'SELECT' || element.isContentEditable)) return false;
     const dir = this.directionFor(event);
-    if (!dir) return;
+    if (!dir) return false;
     event.preventDefault();
     const code = event.code || event.key;
     // 同一个物理键按住不放会重复触发 keydown；后按优先的规则只看第一次。
-    if (this.keyHistory.some(entry => entry.code === code)) return;
+    if (this.keyHistory.some(entry => entry.code === code)) return true;
     this.keyHistory.push({ dir, code });
     if (this.pointerId < 0) this.syncKeyAxis();
+    return true;
   }
 
   private directionFor(event: KeyboardEvent): CardinalDir | undefined {
@@ -315,6 +322,8 @@ export class MoveStick {
     this.scene.input.off(Phaser.Input.Events.POINTER_UP, this.onUp, this);
     this.scene.input.off(Phaser.Input.Events.POINTER_UP_OUTSIDE, this.onUp, this);
     this.scene.input.off('gameout', this.onGameOut, this);
+    this.unregisterInput?.();
+    this.unregisterInput = undefined;
     this.scene.input.keyboard?.off('keydown', this.onKeyDown, this);
     this.scene.input.keyboard?.off('keyup', this.onKeyUp, this);
     this.container.destroy(true);

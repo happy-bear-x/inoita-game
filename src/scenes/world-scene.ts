@@ -406,7 +406,7 @@ export class WorldScene extends Phaser.Scene {
         const actor=this.app.world.actors[member.definition.actor];
         return memberArt(this.app.menuPanels,actor,member.classId,member.source).partyIcon;
       },()=>{if(this.canControl)this.combat?.focusSelected();},id=>this.combat?.activeConditions(id)??[],()=>this.app.session.player);
-    this.stick = new MoveStick(this, this.hud!, this.app.controlSkin, this.app.controlLayout);
+    this.stick = new MoveStick(this, this.hud!, this.app.controlSkin, this.app.controlLayout, this.app.keyBindings, this.app.inputRouter);
     this.controls = new ActionControls(this, this.hud!, {
       attack: () => this.attackKey(), skill: key => {if(this.canControl)this.combat?.attack(key);},
       item: itemId => this.useShortcutItem(itemId), swap: () => this.cycleShortcutPage()
@@ -416,7 +416,7 @@ export class WorldScene extends Phaser.Scene {
       cycle: () => this.cycleShortcutPage(),
       previousMember: () => this.switchMember(-1),
       nextMember: () => this.switchMember(1)
-    });
+    }, this.app.inputRouter);
     this.skillHud = new ComputerSkillHud(this, this.hud!, this.app.controlSkin);
     // 操作方式切换后立刻按新 HUD 显隐，不等下一帧兜底。
     this.unsubscribeControlMode = controlSettings.subscribeMode(() => this.syncHud());

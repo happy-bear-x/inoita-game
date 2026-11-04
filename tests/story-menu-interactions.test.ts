@@ -30,6 +30,7 @@ import type { ScrollArea, UiSurface } from '../src/ui/phaser/widgets.ts';
 import { COMMON_BUTTON } from '../src/ui/common-button.ts';
 import { createGmActions } from '../src/debug/gm-actions.ts';
 import type { ForgePanel } from '../src/ui/phaser/forge-panel.ts';
+import { InputRouter } from '../src/application/input-router.ts';
 
 // Only Phaser's drawing boundary is replaced. StoryUI, UiSurface, ScrollArea,
 // button events, GameUI locks and every domain transaction run their real code.
@@ -142,6 +143,8 @@ Object.defineProperties(globalThis, {
 // Drawn objects remain inspectable, but only live, visible objects are returned.
 // click() executes the production UiSurface hit callback and pointer handlers.
 class MenuScene {
+  /** 键盘事件由测试桥接给全局 router；生产里由正式界面场景做同一件事。 */
+  router?: InputRouter;
   readonly nodes: Display[] = [];
   readonly events = new Events();
   readonly scale = Object.assign(new Events(), { width: 1024, height: 640 });
@@ -214,7 +217,7 @@ class MenuScene {
   click(button: Display) { assert(this.tryClick(button), `按钮可点击：${button.getData('label')}`); }
   key(key: string, shiftKey = false) {
     let prevented = false;
-    this.input.keyboard.emit('keydown', { key, shiftKey, preventDefault: () => { prevented = true; } });
+    this.router?.dispatch({ key, shiftKey, preventDefault: () => { prevented = true; } } as KeyboardEvent);
     return prevented;
   }
   resize(width: number, height: number) { this.scale.width = width; this.scale.height = height; this.scale.emit('resize'); }
@@ -247,11 +250,13 @@ interface MenuInternals {
 function fixture(classId = 'dark-knight') {
   const hero = new BattleCharacter(classId, stats, items), session = new Session(campaign, undefined, undefined, items, hero, battle, stats, companions);
   const controls = new GameUI(); controls.mode = 'game'; controls.ready = true;
+  let textFocused = false;
+  const inputRouter = new InputRouter({ textInputFocused: () => textFocused });
   // 存档走内存存储；世界快照在菜单测试里只求能原样写回，语义由 save-game 的用例覆盖。
   const stored = new Map<string, string>();
   const saves = new SaveSlots<StoryWorldViewSnapshot>({ getItem: key => stored.get(key) ?? null,
     setItem: (key, value) => { stored.set(key, value); }, removeItem: key => { stored.delete(key); } });
-  const app: StoryUIContext = { content:{shopEquipment:async()=>({})}, controlLayout:new ControlLayoutPreferences(null), keyBindings:new KeyBindingPreferences(null), ui: controls, battleCatalog: battle, storyClasses: read<StoryClassCatalog>('story-classes'), menuPanels: panels,
+  const app: StoryUIContext = { inputRouter, content:{shopEquipment:async()=>({})}, controlLayout:new ControlLayoutPreferences(null), keyBindings:new KeyBindingPreferences(null), ui: controls, battleCatalog: battle, storyClasses: read<StoryClassCatalog>('story-classes'), menuPanels: panels,
     saves, captureSaveWorld: () => ({ ok: true, map: { id: campaign.start.map, name: '测试地图' },
       world: { location: { map: campaign.start.map, x: 16, y: 24, facing: 'south' as const }, generatedEntities: [],
         scene:{map:campaign.start.map,actors:[{id:'player',actor:campaign.start.actor,memberId:'player',x:16,y:24,facing:'south',visible:true}]} } }),
@@ -261,7 +266,7 @@ function fixture(classId = 'dark-knight') {
       if (entry) session.bag.equip(entry, slot as EquipmentSlot, owner, member.classId, member.level); else session.bag.unequip(slot, owner);
       return '';
     } };
-  const scene = new MenuScene(), menu = new StoryUI(app); menu.attach(scene as unknown as Phaser.Scene); menu.bind(session, world, content);
+  const scene = new MenuScene(), menu = new StoryUI(app); scene.router = inputRouter; menu.attach(scene as unknown as Phaser.Scene); menu.bind(session, world, content);
   controls.view = {
     sync: () => menu.sync(), resetInput: () => scene.game.events.emit(UI_EVENTS.cancelInput),
     renderText() {}, paginate: (_ui, text) => [{ text, end: text.length }], async portrait() {}
@@ -277,7 +282,9 @@ function fixture(classId = 'dark-knight') {
     menu.show('bag'); const name = id === 'player' ? world.actors[campaign.start.actor].name : session.party!.get(id)!.definition.name;
     scene.click(scene.button(name)); assert.equal(internals.selectedMemberId, id);
   };
-  return { hero, session, scene, menu, internals, controls, app, entry, add, recruit, select, cleanup: () => scene.events.emit('shutdown') };
+  return { hero, session, scene, menu, internals, controls, app, entry, add, recruit, select, inputRouter,
+    setTextFocused: (value: boolean) => { textFocused = value; },
+    cleanup: () => scene.events.emit('shutdown') };
 }
 
 function keyboardFocus(f: ReturnType<typeof fixture>, label: string, shift = false) {
@@ -2019,4 +2026,41 @@ test('using a mercenary emblem prepares only the new member preview', t => {
   assert.ok(member,'徽章招募出新成员');
   assert.deepEqual(calls,[{id:member.id,full:undefined}],'只准备新成员的预览外观，不重建整套队伍外观');
   assert.equal(f.session.bag.count('mercenary-emblem-warlock'),0,'徽章被消耗');
+});
+
+test('打开菜单后世界快捷键不再响应，Escape 只关最上层', t => {
+  const f=fixture();t.after(f.cleanup);
+  const pressed:string[]=[];
+  f.inputRouter.register('world',event=>{pressed.push(event.key);return true;});
+  f.scene.key('Digit1');
+  assert.deepEqual(pressed,['Digit1'],'菜单关闭时世界收到快捷键');
+
+  pressed.length=0;f.menu.show('bag');
+  f.scene.key('Digit1');
+  assert.deepEqual(pressed,[],'菜单打开时世界收不到快捷键');
+  assert.equal(f.scene.key('Escape'),true);
+  assert.equal(f.menu.menuOpen,false,'Escape 关掉菜单');
+  assert.deepEqual(pressed,[],'Escape 没有被世界层重复消费');
+});
+
+test('文本输入框有焦点时菜单和世界都让路', t => {
+  const f=fixture();t.after(f.cleanup);
+  f.menu.show('bag');
+  const pressed:string[]=[];
+  f.inputRouter.register('world',event=>{pressed.push(event.key);return true;});
+  f.setTextFocused(true);
+  f.scene.key('Escape');
+  assert.equal(f.menu.menuOpen,true,'输入框有焦点时菜单不响应 Escape');
+  f.scene.key('Digit1');
+  assert.deepEqual(pressed,[],'输入框有焦点时世界也不响应');
+});
+
+test('场景关闭后菜单作用域已注销', () => {
+  const f=fixture();
+  f.menu.show('bag');
+  f.cleanup();
+  const pressed:string[]=[];
+  f.inputRouter.register('world',event=>{pressed.push(event.key);return true;});
+  f.scene.key('Escape');
+  assert.deepEqual(pressed,['Escape'],'菜单注销后按键落到世界层');
 });

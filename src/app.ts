@@ -32,6 +32,7 @@ import { ContentLoader } from './application/content-loader.ts';
 import type { AssetLease } from './application/assets.ts';
 import { ControlLayoutPreferences } from './ui/control-layout.ts';
 import { keyBindings as defaultKeyBindings } from './application/key-bindings.ts';
+import { InputRouter } from './application/input-router.ts';
 
 /**
  * 运行上下文：启动时先建界面，资源取回来之后再补上内容、状态和 Phaser 实例。
@@ -57,6 +58,8 @@ import { keyBindings as defaultKeyBindings } from './application/key-bindings.ts
  *    `changeEquipment`、`useRecoveryItem`、`uiAssets`、`returnToMenu`，不经过第 2~4 组。
  */
 export class StoryApp {
+  /** 全局键盘路由。场景只在启动时桥接一次原始事件，按键按作用域只交给一层。 */
+  readonly inputRouter = new InputRouter();
   readonly controlLayout = new ControlLayoutPreferences();
   /** 键位是本机设置，和布局一样不进存档。 */
   readonly keyBindings = defaultKeyBindings;

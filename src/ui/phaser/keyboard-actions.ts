@@ -1,6 +1,7 @@
 import type Phaser from 'phaser';
 import { SKILL_BINDING_ACTIONS, type KeyBindingAction } from '../../domain/key-bindings.ts';
 import type { KeyBindingPreferences } from '../../application/key-bindings.ts';
+import type { InputRouter } from '../../application/input-router.ts';
 
 export interface KeyboardActionHandlers {
   /** `slot` 从 1 开始，对应屏幕上的六个快捷位。 */
@@ -25,19 +26,22 @@ export class KeyboardActions {
   private readonly scene: Phaser.Scene;
   private readonly bindings: KeyBindingPreferences;
   private readonly handlers: KeyboardActionHandlers;
-  private readonly keydown = (event: KeyboardEvent): void => {
-    if (event.isComposing || editingText()) return;
+  /** 接入 router 时的注销函数；没有 router 时保持场景直连。 */
+  private unregisterInput?: () => void;
+  private readonly keydown = (event: KeyboardEvent): boolean => {
+    if (event.isComposing || editingText()) return false;
     for (let index = 0; index < SKILL_BINDING_ACTIONS.length; index++) {
-      if (this.dispatch(SKILL_BINDING_ACTIONS[index], event, () => this.handlers.skill(index + 1))) return;
+      if (this.dispatch(SKILL_BINDING_ACTIONS[index], event, () => this.handlers.skill(index + 1))) return true;
     }
-    if (this.dispatch('wheel.next', event, () => this.handlers.cycle())) return;
-    if (this.dispatch('party.previous', event, () => this.handlers.previousMember())) return;
-    this.dispatch('party.next', event, () => this.handlers.nextMember());
+    if (this.dispatch('wheel.next', event, () => this.handlers.cycle())) return true;
+    if (this.dispatch('party.previous', event, () => this.handlers.previousMember())) return true;
+    return this.dispatch('party.next', event, () => this.handlers.nextMember());
   };
 
-  constructor(scene: Phaser.Scene, bindings: KeyBindingPreferences, handlers: KeyboardActionHandlers) {
+  constructor(scene: Phaser.Scene, bindings: KeyBindingPreferences, handlers: KeyboardActionHandlers, router?: InputRouter) {
     this.scene = scene; this.bindings = bindings; this.handlers = handlers;
-    scene.input.keyboard?.on('keydown', this.keydown);
+    if (router) this.unregisterInput = router.register('world', this.keydown);
+    else scene.input.keyboard?.on('keydown', this.keydown);
   }
 
   /** 匹配则阻止默认动作；按住不放只阻止默认，不重复执行。 */
@@ -49,6 +53,8 @@ export class KeyboardActions {
   }
 
   destroy(): void {
+    this.unregisterInput?.();
+    this.unregisterInput = undefined;
     this.scene.input.keyboard?.off('keydown', this.keydown);
   }
 }

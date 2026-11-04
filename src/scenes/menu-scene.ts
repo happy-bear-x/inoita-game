@@ -44,6 +44,8 @@ interface ConfirmRequest {
 
 export class MenuScene extends Phaser.Scene {
   readonly app:MenuContext;
+  /** 菜单作用域的注销函数；场景 shutdown 时摘掉，避免标题页退出后还抢按键。 */
+  private unregisterInput?:()=>void;
   private surface?:UiSurface;
   /** 确认框画在它上面；底下的页面在确认期间不接受输入。 */
   private modal?:UiSurface;
@@ -78,19 +80,9 @@ export class MenuScene extends Phaser.Scene {
   create(options:{page?:'home'|'slots'}={}):void {
     this.page='home';this.app.ui.setMode('menu');this.app.ui.loading('正在准备主菜单…');
     const controller=new AbortController();
-    this.events.once('shutdown',()=>{controller.abort();this.cancelCloudRequest();this.settleConfirm(false,false);this.slotRequest?.abort();this.prompt?.close();this.passwordPrompt?.close();this.credentials?.destroy();this.credentials=undefined;this.surface?.destroy();this.surface=undefined;this.modal?.destroy();this.modal=undefined;this.slotPortraits?.release();this.slotPortraits=undefined;this.events.off(Phaser.Scenes.Events.RESUME,this.renderCloudOnResume);this.events.off(Phaser.Scenes.Events.PAUSE,this.hideCredentials);this.scale.off('resize',this.layout,this);});
-    this.input.keyboard?.on('keydown',(event:KeyboardEvent)=>{
-      if(this.app.ui.suspended)return;
-      // 键盘事件来自 DOM 输入框时归输入框；即使输入框刚失焦，也不能让同一次回车/退出触发菜单按钮。
-      const target=event.target as HTMLElement|null;
-      if(target&&(target.tagName==='INPUT'||target.tagName==='TEXTAREA'||target.isContentEditable))return;
-      // 改名、修改密码表单或云存档账号/密码框有焦点时键盘归输入框，场景不再处理按键。
-      if(this.renameRef!==undefined||this.prompt?.active||this.passwordPrompt?.active||this.credentials?.focused)return;
-      // 确认框打开时 Escape 只关确认框，不退出页面。
-      if(event.key==='Escape'&&this.confirmAction!==undefined){event.preventDefault();this.confirmAction.cancel();return;}
-      if(event.key==='Escape'&&this.page!=='home'){event.preventDefault();this.back();return;}
-      this.surface?.key(event);
-    });
+    this.events.once('shutdown',()=>{this.unregisterInput?.();this.unregisterInput=undefined;controller.abort();this.cancelCloudRequest();this.settleConfirm(false,false);this.slotRequest?.abort();this.prompt?.close();this.passwordPrompt?.close();this.credentials?.destroy();this.credentials=undefined;this.surface?.destroy();this.surface=undefined;this.modal?.destroy();this.modal=undefined;this.slotPortraits?.release();this.slotPortraits=undefined;this.events.off(Phaser.Scenes.Events.RESUME,this.renderCloudOnResume);this.events.off(Phaser.Scenes.Events.PAUSE,this.hideCredentials);this.scale.off('resize',this.layout,this);});
+    // 标题页整屏独占键盘；原始事件由正式界面场景那一处桥接进 router。
+    this.unregisterInput?.();this.unregisterInput=this.app.inputRouter.register('menu',this.routeKey,{exclusive:()=>true});
     this.events.on(Phaser.Scenes.Events.RESUME,this.renderCloudOnResume);
     this.events.on(Phaser.Scenes.Events.PAUSE,this.hideCredentials);
     this.scale.on('resize',this.layout,this);
@@ -112,6 +104,19 @@ export class MenuScene extends Phaser.Scene {
       this.app.ui.menuLoaded();if(options.page==='slots')this.openSlots();else this.render();this.app.syncLifecycle?.();notifyBootReady();
     },error=>{if(!controller.signal.aborted)this.app.ui.error(String(error),()=>this.scene.restart());});
   }
+  /** 标题页键盘：输入框让路，确认框的 Escape 只关确认框，其余交给页面按钮。 */
+  private routeKey=(event:KeyboardEvent):boolean=>{
+    if(this.app.ui.suspended)return false;
+    // 键盘事件来自 DOM 输入框时归输入框；即使输入框刚失焦，也不能让同一次回车/退出触发菜单按钮。
+    const target=event.target as HTMLElement|null;
+    if(target&&(target.tagName==='INPUT'||target.tagName==='TEXTAREA'||target.isContentEditable))return true;
+    // 改名、修改密码表单或云存档账号/密码框有焦点时键盘归输入框，场景不再处理按键。
+    if(this.renameRef!==undefined||this.prompt?.active||this.passwordPrompt?.active||this.credentials?.focused)return true;
+    // 确认框打开时 Escape 只关确认框，不退出页面。
+    if(event.key==='Escape'&&this.confirmAction!==undefined){event.preventDefault();this.confirmAction.cancel();return true;}
+    if(event.key==='Escape'&&this.page!=='home'){event.preventDefault();this.back();return true;}
+    return this.surface?.key(event)??false;
+  };
   /**
    * 右下角版本号；点击它切换 GM 调试模式。
    *

@@ -204,10 +204,12 @@ export class UiSurface {
   pruneButtons():void{this.buttons=this.buttons.filter(button=>button.active);}
   focusables():Phaser.GameObjects.Container[]{return this.enabled()&&this.root.visible?this.buttons.filter(button=>button.active&&button.input?.enabled&&button.visible):[];}
   focus(button:Phaser.GameObjects.Container):void{this.buttons.forEach(candidate=>candidate.getData('highlight')?.setVisible(candidate===button||candidate.getData('selected')));this.scrolls.find(scroll=>scroll.content===button.parentContainer)?.reveal(button);}
-  key(event:KeyboardEvent):void {
+  /** 返回是否消费了这次按键；输入路由靠它决定要不要交给更低的作用域。 */
+  key(event:KeyboardEvent):boolean {
     const candidates=this.focusables();
-    if(event.key==='Tab'&&candidates.length){event.preventDefault();this.focusIndex=this.focusIndex<0?(event.shiftKey?candidates.length-1:0):(this.focusIndex+(event.shiftKey?-1:1)+candidates.length)%candidates.length;this.focus(candidates[this.focusIndex]);}
-    if((event.key==='Enter'||event.key===' ')&&this.focusIndex>=0&&candidates[this.focusIndex]){event.preventDefault();this.scene.game.events.emit(UI_EVENTS.select);candidates[this.focusIndex].getData('action')();}
+    if(event.key==='Tab'&&candidates.length){event.preventDefault();this.focusIndex=this.focusIndex<0?(event.shiftKey?candidates.length-1:0):(this.focusIndex+(event.shiftKey?-1:1)+candidates.length)%candidates.length;this.focus(candidates[this.focusIndex]);return true;}
+    if((event.key==='Enter'||event.key===' ')&&this.focusIndex>=0&&candidates[this.focusIndex]){event.preventDefault();this.scene.game.events.emit(UI_EVENTS.select);candidates[this.focusIndex].getData('action')();return true;}
+    return false;
   }
   nineSlice(file:string,x:number,y:number,width:number,height:number,inset:number):void {
     const key=uiTexture(file);

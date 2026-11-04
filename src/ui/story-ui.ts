@@ -101,6 +101,8 @@ export class StoryUI {
   private shortcutEdit?:{kind:ShortcutEntry['kind'];id:string;page:number};
   private backdrop?:Phaser.GameObjects.Rectangle;
   private session?:Session;private world?:WorldIndex;private content?:StoryInterface;private unsubscribe?:()=>void;private unsubscribeFullscreen?:()=>void;
+  /** 菜单作用域的注销函数；重新 attach 或场景 shutdown 时先摘掉旧的。 */
+  private unregisterKeyboard?:()=>void;
   /** 菜单是否打开；诊断用，和 `locked` 里的 `story-menu` 对应。 */
   get menuOpen():boolean{return this.open;}
   private page:Page='bag';private open=false;/** 从阵亡面板打开的读档页：关掉时要回到阵亡面板。 */private loadReturnToDefeat=false;private selectedMemberId='player';private questPanel?:QuestPanel;
@@ -164,13 +166,17 @@ export class StoryUI {
     this.body.enabled=()=>this.surface!.enabled();this.description.enabled=()=>this.body!.enabled();
     this.modal.enabled=()=>this.open&&!this.app.ui.suspended&&!this.busy&&(!!this.operation||!!this.itemNotice||!!this.allocationExit||this.skillReset||this.saveConfirm!==undefined||this.loadConfirm!==undefined||this.deleteConfirm!==undefined||!!this.craftingPanel?.modalOpen||!!this.shopPanel?.modalOpen||!!this.partyPanel?.modalOpen||!!this.forge?.confirming);
     this.hudButtons.enabled=()=>this.app.ui.mode==='game'&&this.app.ui.ready&&!this.app.ui.locked&&!this.app.ui.suspended;
-    scene.scale.on('resize',this.resize,this);scene.input.keyboard?.on('keydown',this.key,this);
+    scene.scale.on('resize',this.resize,this);
+    // 菜单只注册一个 menu 作用域；打开时独占键盘，关闭时把未消费的按键让给剧情和世界。
+    this.unregisterKeyboard?.();this.unregisterKeyboard=this.app.inputRouter.register('menu',this.key,{
+      exclusive:()=>this.open||this.app.ui.keyBindingEditing||this.app.ui.controlLayoutEditing
+    });
     // 浏览器自身的退出（Esc、手势）不会走设置页的按钮，靠事件把开关状态同步回来。
     this.unsubscribeFullscreen?.();
     this.unsubscribeFullscreen=onFullscreenChange(()=>{if(this.open&&this.page==='settings')this.render();});
     scene.input.on('pointermove',this.moveDrag,this);scene.input.on('pointerup',this.endDrag,this);scene.input.on('pointerupoutside',this.cancelDrag,this);
     scene.game.events.on(UI_EVENTS.minimapLayout,this.onMinimap,this);scene.game.events.on(UI_EVENTS.cancelInput,this.cancelDrag,this);
-    scene.events.once('shutdown',()=>{this.unsubscribe?.();this.unsubscribeFullscreen?.();this.discardAllocation();scene.scale.off('resize',this.resize,this);scene.game.events.off(UI_EVENTS.minimapLayout,this.onMinimap,this);scene.game.events.off(UI_EVENTS.cancelInput,this.cancelDrag,this);this.cancelOperation();this.prompt?.close();this.surface!.root.remove(this.body!.root);this.surface?.destroy();this.body?.destroy();this.modal?.destroy();this.hudButtons?.destroy();this.description?.destroy();this.shortcutScreen?.destroy();this.backTab?.destroy();this.backdrop?.destroy();this.controlEditor?.destroy();this.controlEditor=undefined;this.keyBindingEditor?.destroy();this.keyBindingEditor=undefined;});
+    scene.events.once('shutdown',()=>{this.unregisterKeyboard?.();this.unregisterKeyboard=undefined;this.unsubscribe?.();this.unsubscribeFullscreen?.();this.discardAllocation();scene.scale.off('resize',this.resize,this);scene.game.events.off(UI_EVENTS.minimapLayout,this.onMinimap,this);scene.game.events.off(UI_EVENTS.cancelInput,this.cancelDrag,this);this.cancelOperation();this.prompt?.close();this.surface!.root.remove(this.body!.root);this.surface?.destroy();this.body?.destroy();this.modal?.destroy();this.hudButtons?.destroy();this.description?.destroy();this.shortcutScreen?.destroy();this.backTab?.destroy();this.backdrop?.destroy();this.controlEditor?.destroy();this.controlEditor=undefined;this.keyBindingEditor?.destroy();this.keyBindingEditor=undefined;});
     this.sync();
   }
   bind(session:Session,world:WorldIndex,content:StoryInterface):void{
@@ -292,33 +298,35 @@ export class StoryUI {
     if(this.loadReturnToDefeat){this.loadReturnToDefeat=false;if(this.app.ui.defeated)this.app.ui.revealDefeat();}
   }
   private cancelOperation():void{this.cancelDrag();this.request.abort();this.request=new AbortController();this.busy=false;this.operation=undefined;this.itemNotice=undefined;this.skillReset=false;this.saveConfirm=undefined;this.loadConfirm=undefined;this.deleteConfirm=undefined;this.renameRef=undefined;this.prompt?.close();this.partyPanel?.close();this.craftingPanel?.close();this.forge=undefined;this.skillBook=undefined;this.modal?.clear();this.modal?.visible(false);}
-  private key(event:KeyboardEvent):void{
-    if(this.app.ui.suspended)return;
+  /** 返回是否消费这次按键；菜单关闭时把未消费的按键让给剧情层和世界。 */
+  private key=(event:KeyboardEvent):boolean=>{
+    if(this.app.ui.suspended)return false;
     // 捕获按键时整块键盘归键位面板：Tab、Enter、空格不再操作菜单。
-    if(this.app.ui.keyBindingEditing){this.keyBindingEditor?.key(event);return;}
+    if(this.app.ui.keyBindingEditing){this.keyBindingEditor?.key(event);return true;}
     if(!this.open){
       // 菜单键只在正式游戏里生效；`repeat` 按住不放也只开一次。
       if(!event.repeat&&this.session&&this.app.ui.mode==='game'&&this.app.ui.ready&&!this.app.ui.locked
         &&this.app.keyBindings.matches('menu',event)){
-        event.preventDefault();this.show('bag');
+        event.preventDefault();this.show('bag');return true;
       }
-      return;
+      return false;
     }
     // 改名输入框开着时键盘归系统输入法：Enter/Escape 由输入框自己处理。
-    if(this.renameRef!==undefined)return;
-    if(this.app.ui.controlLayoutEditing){if(event.key==='Escape'){event.preventDefault();this.closeControlEditor();}else this.controlEditor?.key(event);return;}
-    if(event.key==='Escape'&&this.itemNotice){event.preventDefault();this.itemNotice=undefined;this.render();return;}
-    if(event.key==='Escape'&&this.deleteConfirm!==undefined){event.preventDefault();this.deleteConfirm=undefined;this.render();return;}
-    if(event.key==='Escape'&&this.loadConfirm!==undefined){event.preventDefault();this.loadConfirm=undefined;this.render();return;}
-    if(event.key==='Escape'&&this.saveConfirm!==undefined){event.preventDefault();this.saveConfirm=undefined;this.render();return;}
-    if(event.key==='Escape'&&this.allocationExit){event.preventDefault();this.finishAllocation(false);return;}
-    if(event.key==='Escape'){event.preventDefault();if(this.busy){this.close();return;}if(this.page==='forge'){if(this.forge?.confirming)this.forge.cancelConfirmation();else this.closeForge();return;}if(this.page==='learn'){this.closeSkillBook();return;}if(this.shortcutEdit){this.closeShortcutScreen();return;}if(this.skillReset){this.skillReset=false;this.render();}else if(this.craftingPanel?.modalOpen){this.craftingPanel.cancel();}else if(this.shopPanel?.active){this.shopPanel.cancel();}else if(this.partyPanel?.modalOpen){this.partyPanel.cancel();}else if(this.operation){this.operation=undefined;this.render();}else if(this.page==='bag'&&this.selectedItem){this.selectedItem=undefined;this.render();}else this.close();return;}
+    if(this.renameRef!==undefined)return true;
+    if(this.app.ui.controlLayoutEditing){if(event.key==='Escape'){event.preventDefault();this.closeControlEditor();}else this.controlEditor?.key(event);return true;}
+    if(event.key==='Escape'&&this.itemNotice){event.preventDefault();this.itemNotice=undefined;this.render();return true;}
+    if(event.key==='Escape'&&this.deleteConfirm!==undefined){event.preventDefault();this.deleteConfirm=undefined;this.render();return true;}
+    if(event.key==='Escape'&&this.loadConfirm!==undefined){event.preventDefault();this.loadConfirm=undefined;this.render();return true;}
+    if(event.key==='Escape'&&this.saveConfirm!==undefined){event.preventDefault();this.saveConfirm=undefined;this.render();return true;}
+    if(event.key==='Escape'&&this.allocationExit){event.preventDefault();this.finishAllocation(false);return true;}
+    if(event.key==='Escape'){event.preventDefault();if(this.busy){this.close();return true;}if(this.page==='forge'){if(this.forge?.confirming)this.forge.cancelConfirmation();else this.closeForge();return true;}if(this.page==='learn'){this.closeSkillBook();return true;}if(this.shortcutEdit){this.closeShortcutScreen();return true;}if(this.skillReset){this.skillReset=false;this.render();}else if(this.craftingPanel?.modalOpen){this.craftingPanel.cancel();}else if(this.shopPanel?.active){this.shopPanel.cancel();}else if(this.partyPanel?.modalOpen){this.partyPanel.cancel();}else if(this.operation){this.operation=undefined;this.render();}else if(this.page==='bag'&&this.selectedItem){this.selectedItem=undefined;this.render();}else this.close();return true;}
     const surfaces=this.operation||this.itemNotice||this.allocationExit||this.skillReset||this.saveConfirm!==undefined||this.loadConfirm!==undefined||this.deleteConfirm!==undefined||this.craftingPanel?.modalOpen||this.shopPanel?.modalOpen||this.partyPanel?.modalOpen||this.forge?.confirming
       ?[this.modal!]:this.shortcutEdit?[this.shortcutScreen!,this.backTab!]:[this.surface!,this.body!,this.description!];
     const buttons=surfaces.flatMap(surface=>surface.focusables());
     if(this.keyboardFocus&&!buttons.includes(this.keyboardFocus))this.keyboardFocus=undefined;
-    if(event.key==='Tab'&&buttons.length){event.preventDefault();const current=this.keyboardFocus?buttons.indexOf(this.keyboardFocus):-1,index=current<0?(event.shiftKey?buttons.length-1:0):(current+(event.shiftKey?-1:1)+buttons.length)%buttons.length;this.keyboardFocus=buttons[index];surfaces.forEach(surface=>surface.focus(this.keyboardFocus!));}
-    else if((event.key==='Enter'||event.key===' ')&&this.keyboardFocus&&buttons.includes(this.keyboardFocus)){event.preventDefault();this.scene!.game.events.emit(UI_EVENTS.select);this.keyboardFocus.getData('action')();}
+    if(event.key==='Tab'&&buttons.length){event.preventDefault();const current=this.keyboardFocus?buttons.indexOf(this.keyboardFocus):-1,index=current<0?(event.shiftKey?buttons.length-1:0):(current+(event.shiftKey?-1:1)+buttons.length)%buttons.length;this.keyboardFocus=buttons[index];surfaces.forEach(surface=>surface.focus(this.keyboardFocus!));return true;}
+    if((event.key==='Enter'||event.key===' ')&&this.keyboardFocus&&buttons.includes(this.keyboardFocus)){event.preventDefault();this.scene!.game.events.emit(UI_EVENTS.select);this.keyboardFocus.getData('action')();return true;}
+    return false;
   }
   private onMinimap(height:number):void{this.minimapHeight=height;this.layout();}
   /** 缩放时登记屏的圆槽要按新锚点重摆，所以不光是 `layout`。 */
