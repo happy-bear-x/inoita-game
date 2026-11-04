@@ -9,6 +9,19 @@ import { NavigationWorld } from '../src/domain/navigation-world.ts';
 import type { Campaign } from '../src/domain/campaign.ts';
 const campaign=JSON.parse(fs.readFileSync(new URL('../public/content/campaign.json',import.meta.url),'utf8')) as Campaign;
 
+test('nested atomic joins the outer rollback and restores subsystems declared by the inner call',()=>{
+ const session=new Session(campaign);
+ session.gainMoney(100);session.bag.add('healing-potion-s',1);
+ const before=session.captureState();
+ let updates=0;session.subscribe(()=>updates++);
+ assert.throws(()=>session.atomic(()=>{
+   session.gainMoney(5);
+   session.atomic(()=>{session.bag.add('healing-potion-s',2);throw new Error('内层失败');},['bag']);
+ },['coins']),/内层失败/);
+ assert.deepEqual(session.captureState(),before,'外层统一回滚，内层新碰到的背包也恢复');
+ assert.equal(updates,0,'失败的事务不通知界面');
+});
+
 test('native assassination progress requires a defeat and markers follow its delivery state',()=>{
  const session=new Session(campaign);
  assert.equal(session.marker('darius','npc-40'),null);

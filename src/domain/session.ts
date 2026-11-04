@@ -691,9 +691,9 @@ export class Session {
     const outer=this.atomicFrames.length===0;
     const frame:AtomicFrame=outer?{touched:new Set(),baseline:{}}:this.atomicFrames[0]!;
     if(outer)this.atomicFrames.push(frame);
-    this.touchAtomic(frame,touched);
     const pending=this.pendingNotification;
     try{
+      this.touchAtomic(frame,touched);
       return this.batchNotifications(()=>{
         try{return operation();}
         catch(error){
