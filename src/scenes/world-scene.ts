@@ -12,7 +12,7 @@ import { claimNearTrigger } from '../domain/story-trigger-occupancy.ts';
 import { NavigationWorld, collisionAt } from '../domain/navigation-world.ts';
 import { MovementWorld } from '../rendering/movement-world.ts';
 import { isBodyWalking } from '../rendering/arcade-movement.ts';
-import type { ClipName, EntityPlacement, ExitFacing, Facing, MapExit, WorldMap } from '../domain/content.ts';
+import type { ClipName, EntityPlacement, ExitFacing, Facing, MapExit, QuestStatus, WorldMap } from '../domain/content.ts';
 import type { AssetLease } from '../application/assets.ts';
 import { Wardrobe } from '../rendering/wardrobe.ts';
 import { acquireCompanionWardrobe } from '../rendering/wardrobe-cache.ts';
@@ -185,6 +185,9 @@ export class WorldScene extends Phaser.Scene {
   private groundLootRevision=-1;
   private pickupMessages?:PickupMessages;
   private readonly pickupRecipients=new Map<string,CharacterVisual>();
+  /** 任务完成提示的上次状态；按任务簿版本对比，不在每次会话通知里扫全部任务。 */
+  private questStatuses=new Map<string,QuestStatus>();
+  private questStatusVersion?:number;
   /** 普攻连打门控：发起过一次普攻后，站定就自动接下一击，摇杆一动即停。 */
   private readonly autoAttack=new BasicAttackRepeat();
   private checkpointPending=false;
@@ -203,6 +206,7 @@ export class WorldScene extends Phaser.Scene {
     this.movement = undefined; this.lastPlayerPosition = undefined;this.combat=undefined;this.checkpointPending=!options.checkpoint;
     this.shortcutPageCache=undefined;
     this.dropCatalog=undefined;this.springCatalog=undefined;this.groundLootView=undefined;this.pickupMessages=undefined;this.pickupRecipients.clear();
+    this.questStatuses.clear();this.questStatusVersion=undefined;
     this.prefetchTarget = undefined; this.prefetchTask = undefined;
     this.baseEntities=[];this.occupiedRegions.clear();this.encounterResults.clear();
     this.entryPrefetches?.clear();
@@ -911,10 +915,31 @@ export class WorldScene extends Phaser.Scene {
     return this.app.session.chests.isOpened(this.map.id,character.entity.id,
       this.app.session.storyWorld.isPlaced(character.entity.id));
   }
+  /**
+   * 任务目标完成时给一条和泉水相同的屏幕提示。只在任务簿版本变化时对比状态；
+   * 只提示普通目标计数任务：对话/剧情类任务在接取或演出里本来就有弹窗，避免一接就提示。
+   */
+  private noticeQuestCompletions(): void {
+    const version=this.app.session.questBook.version;
+    if(version===this.questStatusVersion)return;
+    this.questStatusVersion=version;
+    const next=this.app.session.quests;
+    if(this.questStatuses.size){
+      for(const [id,state] of next){
+        if(state.status!=='ready'||this.questStatuses.get(id)==='ready')continue;
+        const quest=this.app.session.definition(id);
+        if(!quest||quest.hidden||quest.completion!=='all')continue;
+        this.app.ui.showInstant(`任务完成：${quest.title}`);
+      }
+    }
+    this.questStatuses=new Map([...next].map(([id,state])=>[id,state.status]));
+  }
+
   refreshState(): void {
     this.refreshLoadout();
     this.combat?.setPerformanceActive(this.performing);
     const { session } = this.app;
+    this.noticeQuestCompletions();
     for (const character of this.characters) {
       const opened = this.chestOpened(character), consumed = this.legendarySwordConsumed(character);
       // `actor-visibility` / `remove-character` 记在本图角色状态里；静态摆放也要立即隐藏并停碰撞。
