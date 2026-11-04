@@ -238,12 +238,23 @@ export class SaveSlots<World = unknown> {
     }
     const key=this.key(ref);this.storage.setItem(key,raw);this.summaryCache.delete(key);
   }
-  /** 写不进去（容量或隐私模式）就抛错，由界面报「保存失败」。 */
+  /**
+   * 写不进去（容量或隐私模式）就抛错，由界面报「保存失败」。
+   *
+   * 覆盖手动槽时沿用原来的自定义名字：只有玩家改名才会换名字。自动槽没有改名入口，
+   * 直接写，不为拿名字解析旧档。手动槽优先用 `peek` 已缓存的摘要，没缓存才解析一次；
+   * 写完用刚写出的 raw 和摘要回填，下一次读槽不用重新解析。
+   */
   write(ref:SaveSlotRef, game:SaveGame<World>):void {
-    // 覆盖旧档时沿用那个槽原来的自定义名字：只有玩家改名才会换名字。
-    const summary=game.summary.name===undefined?this.existingName(ref):undefined;
-    const record=summary===undefined?game:{...game,summary:{...game.summary,name:summary}};
-    const key=this.key(ref);this.storage.setItem(key,JSON.stringify(record));this.summaryCache.delete(key);
+    let record=game;
+    if(ref!==AUTO_SAVE_SLOT&&game.summary.name===undefined){
+      const existing=this.peek(ref);
+      if(existing.kind==='ok'&&existing.summary.name!==undefined)
+        record={...game,summary:{...game.summary,name:existing.summary.name}};
+    }
+    const key=this.key(ref),raw=JSON.stringify(record);
+    this.storage.setItem(key,raw);
+    this.summaryCache.set(key,{raw,reading:{kind:'ok',summary:record.summary}});
   }
   erase(ref:SaveSlotRef):void { const key=this.manualKey(ref);this.storage.removeItem(key);this.summaryCache.delete(key); }
   /**
@@ -259,10 +270,6 @@ export class SaveSlots<World = unknown> {
     if(applied===undefined)delete summary.name;else summary.name=applied;
     const key=this.key(ref);this.storage.setItem(key,JSON.stringify({ ...reading.game, summary }));this.summaryCache.delete(key);
     return applied;
-  }
-  private existingName(ref:SaveSlotRef):string|undefined {
-    const reading=this.inspect(ref);
-    return reading.kind==='ok'?reading.game.summary.name:undefined;
   }
 }
 
