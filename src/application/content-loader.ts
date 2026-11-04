@@ -7,7 +7,14 @@ import type { StoryInterface } from '../domain/story-interface.ts';
 import type { ShopCatalog } from '../domain/shop.ts';
 import { parseSprings, type SpringCatalog } from '../domain/springs.ts';
 import { wardrobePoseFile, type CostumePose, type WardrobeCatalog } from '../domain/wardrobe.ts';
-import { versionedContent } from './asset-version.ts';
+import { contentVersionNow, versionedContent } from './asset-version.ts';
+import { storyDevMode } from '../domain/dev-mode.ts';
+
+interface ContentManifest {
+  schema: 1;
+  contentVersion: string;
+  required: Record<string, string[]>;
+}
 
 interface ContentRequest<T> {
   promise: Promise<T>;
@@ -22,6 +29,12 @@ export class ContentLoader {
    * 开发服务、Node 测试与直接 import 默认 false；main.ts 按构建常量/GM 打开。
    */
   trusted = false;
+  /**
+   * 页面构建时注入的内容版本。生产信任路径先核对服务端清单与它是否一致；
+   * Node 测试默认空串，可显式赋值来验证不匹配分支。
+   */
+  contentVersion = contentVersionNow();
+  private manifestRequest?: Promise<ContentManifest>;
   private readonly requests = new Map<string, ContentRequest<unknown>>();
   statusHud(signal?:AbortSignal){return this.read('content/status-hud.json',parseStatusHud,signal);}
   characterStats(signal?:AbortSignal){return this.read('content/character-stats.json',parseCharacterStats,signal);}
@@ -54,6 +67,42 @@ export class ContentLoader {
     const entries=await Promise.all(ids.map(async id=>[id,await this.read<CostumePose>(wardrobePoseFile(id),value=>value as CostumePose,signal)]as const));
     return Object.fromEntries(entries);
   }
+  /**
+   * 生产内容哨兵：只取一次很小的清单，核对版本和本次文件声明的必需顶层键。
+   *
+   * 版本或键不匹配时明确失败，不静默继续。网页上由启动错误页提示刷新；
+   * Android 壳把启动失败交给热更新回退到上一版（见 `docs/live-update.md`）。
+   */
+  private async verifyTrusted(file:string, value:unknown, signal?:AbortSignal):Promise<void>{
+    const manifest=await this.trustedManifest();
+    signal?.throwIfAborted();
+    if(!this.contentVersion&&!storyDevMode())
+      throw new Error('页面没有内容版本，无法核对生产内容，请刷新页面或更新客户端');
+    if(this.contentVersion && manifest.contentVersion!==this.contentVersion)
+      throw new Error(`内容版本与页面不一致（页面 ${this.contentVersion}，内容 ${manifest.contentVersion}），请刷新页面或更新客户端`);
+    const required=manifest.required[file];
+    if(!required)return;
+    if(!value||typeof value!=='object'||Array.isArray(value))
+      throw new Error(`内容文件格式无效：${file}；请刷新页面或更新客户端`);
+    for(const key of required)if(!(key in value))
+      throw new Error(`内容缺少必需字段：${file} ${key}；请刷新页面或更新客户端`);
+  }
+  private trustedManifest():Promise<ContentManifest>{
+    if(!this.manifestRequest){
+      const request=(async():Promise<ContentManifest>=>{
+        // 清单很小，和单个内容请求解耦；调用方取消只在读完后由 signal 检查。
+        const response=await fetch('content-manifest.json');
+        if(!response.ok)throw new Error('生产内容清单缺失，请刷新页面或更新客户端');
+        const manifest=await response.json() as ContentManifest;
+        if(manifest?.schema!==1||typeof manifest.contentVersion!=='string'||!manifest.required||typeof manifest.required!=='object'||Array.isArray(manifest.required))
+          throw new Error('生产内容清单格式无效，请刷新页面或更新客户端');
+        return manifest;
+      })();
+      // 失败后允许重试，与单个内容文件的行为一致。
+      this.manifestRequest=request.catch(error=>{this.manifestRequest=undefined;throw error;});
+    }
+    return this.manifestRequest;
+  }
   private read<T>(file:string, parse:(data:unknown)=>T, signal?:AbortSignal):Promise<T>{
     signal?.throwIfAborted();
     let request = this.requests.get(file) as ContentRequest<T> | undefined;
@@ -64,8 +113,12 @@ export class ContentLoader {
         if (!response.ok) throw new Error(`资源暂时无法加载：${file}`);
         const value = await response.json();
         controller.signal.throwIfAborted();
-        // 已核对现有 parseX 都是“校验后返回原对象”，生产可跳过；dev/test 仍完整校验。
-        return this.trusted ? value as T : parse(value);
+        // 生产信任路径只核对内容哨兵；dev/test/GM/?validate 仍完整校验。
+        if(this.trusted){
+          await this.verifyTrusted(file,value,controller.signal);
+          return value as T;
+        }
+        return parse(value);
       })();
       request = { promise, controller, waiters: 0, finished: false };
       this.requests.set(file, request);

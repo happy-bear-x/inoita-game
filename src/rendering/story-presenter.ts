@@ -17,6 +17,7 @@ import { createEffect } from './effects.ts';
 import type { WorldScene } from '../scenes/world-scene.ts';
 import type { StoryStageScene } from '../scenes/story-stage-scene.ts';
 import type { StoryEntityState } from '../domain/story-world.ts';
+import { freezeSnapshot, storyDevMode } from '../domain/dev-mode.ts';
 
 interface Performer { visual: CharacterVisual; facing: Facing; worldEntityId?: string; unpositioned?:boolean }
 type VisualAction = Exclude<PerformanceAction, { type: 'parallel' }>;
@@ -31,6 +32,8 @@ export class StoryPresenter implements StoryPresentationPort {
   private baseline?: StoryStageSnapshot;
   private finalStage?: StoryStageSnapshot;
   private state?: StoryStageSnapshot;
+  /** 同一份舞台状态只抓一次快照；`getWorldChanges` 与 `committed` 共用它。 */
+  private stageCapture?: { state: StoryStageSnapshot; value: StoryStageSnapshot };
   private scenes = new Map<string, SceneSnapshot>();
   private committedScenes = new Map<string, SceneSnapshot>();
   private epoch = 0;
@@ -86,24 +89,29 @@ export class StoryPresenter implements StoryPresentationPort {
   }
   captureStage(): StoryStageSnapshot | undefined {
     const scene = this.scene();
-    if (!scene.map || !this.state || !this.actors.has('player')) return this.finalStage ? structuredClone(this.finalStage) : undefined;
-    const snapshot = structuredClone(this.state);
-    for (const actor of snapshot.scene.actors) {
+    if (!scene.map || !this.state || !this.actors.has('player')) return this.finalStage;
+    // 舞台状态没换就直接复用上一次快照；节点提交后的改动都会先替换 `this.state`。
+    if (this.stageCapture?.state === this.state) return this.stageCapture.value;
+    // 演员外壳每个快照一份，外观本身按引用共享；开发/测试模式冻结外观，写坏会立刻报错。
+    const actors = this.state.scene.actors.map(actor => {
       const performer = this.actors.get(actor.id);
-      if (!performer) continue;
+      if (!performer) return { ...actor };
       const visual = performer.visual;
       const position = scene.movement?.position?.(visual) ?? visual.container;
-      Object.assign(actor, { x: position.x, y: position.y, facing: performer.facing,
+      const appearance = storyDevMode() ? freezeSnapshot(visual.actor) : visual.actor;
+      const next = { ...actor, x: position.x, y: position.y, facing: performer.facing,
         visible: visual.container.visible, unpositioned: performer.unpositioned,
-        clip: visual.clipName ?? undefined, alpha: visual.container.alpha, appearance: structuredClone(visual.actor) });
+        clip: visual.clipName ?? undefined, alpha: visual.container.alpha, appearance };
       const animation = visual.layers[0]?.anims;
       if (animation?.currentAnim) {
         const state = characterAnimationState(visual);
         // 单帧动画的 Phaser 进度是 NaN，快照只保存有限值。
-        actor.animationProgress = state.progress;
-        actor.animationPlaying = state.playing;
+        next.animationProgress = state.progress;
+        next.animationPlaying = state.playing;
       }
-    }
+      return next;
+    });
+    const snapshot: StoryStageSnapshot = { ...this.state, scene: { ...this.state.scene, actors } };
     const camera = scene.cameras.main;
     // Phaser 的镜头中点就是 `scrollX + width / 2`，与 zoom 无关（BaseCamera.centerOnX 与
     // Camera.preRender 都不除 zoom）；多除一次会在 zoom != 1 时把恢复的镜头甩到地图边缘。
@@ -112,7 +120,9 @@ export class StoryPresenter implements StoryPresentationPort {
     snapshot.curtain = { opacity: this.opacity, color: this.color };
     if (this.app.audio) snapshot.audio = this.app.audio.captureStoryAudio();
     snapshot.scenes = [...this.scenes.values()].filter(visited => visited.map !== snapshot.map).map(visited => structuredClone(visited));
-    return syncStoryScene(snapshot);
+    const value = syncStoryScene(snapshot);
+    this.stageCapture = { state: this.state, value };
+    return value;
   }
   getStageState(): StoryStageSnapshot | undefined { return this.captureStage(); }
   getWorldChanges(): readonly StoryEntityState[] {
@@ -543,7 +553,7 @@ export class StoryPresenter implements StoryPresentationPort {
     if (this.closing) return this.closing;
     this.epoch++;
     this.resetActors(); this.opacity = 0; this.finalStage = undefined; this.baseline = undefined;
-    this.state = undefined; this.scenes.clear(); this.committedScenes.clear();
+    this.state = undefined; this.stageCapture = undefined; this.scenes.clear(); this.committedScenes.clear();
     this.groundEffects = undefined; this.topEffects = undefined; this.toneFilter = undefined;
     const scene = this.scene();
     if (scene.sys.isActive() || scene.sys.isPaused() || scene.sys.isSleeping?.()) {

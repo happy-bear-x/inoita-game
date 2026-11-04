@@ -28,3 +28,8 @@ export function versionedAsset(url: string): string {
 export function versionedContent(url: string): string {
   return withVersion(url, injected('content'));
 }
+
+/** 页面构建时注入的内容版本；生产内容哨兵用它核对服务端清单。 */
+export function contentVersionNow(): string {
+  return injected('content');
+}

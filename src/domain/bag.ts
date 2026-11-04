@@ -130,7 +130,7 @@ export function mergeStackableInstances(state: BagState, catalog: ItemCatalog): 
   return merged;
 }
 
-/** Inventory transactions own both loose items and equipped instances. */
+/** Inventory operations own both loose items and equipped instances. */
 export class Bag {
   readonly catalog: ItemCatalog;
   readonly classId: string;
@@ -301,7 +301,7 @@ export class Bag {
     this.rules?.initialize(entry);
     this.instances.set(entry.id,entry); return entry;
   }
-  /** Called by the session's pickup/quest transaction; notification belongs to its caller. */
+  /** Called by the session's pickup/quest notification batch; notification belongs to its caller. */
   add(item: string, quantity = 1, skill?: string): void {
     if (!Number.isSafeInteger(quantity) || quantity <= 0) throw new Error('物品数量必须为正整数');
     if(Object.keys(this.catalog.items).length&&!this.catalog.items[item])throw new Error('物品定义不存在');
@@ -647,7 +647,7 @@ export class Bag {
     if(!Number.isSafeInteger(quantity)||quantity<=0||quantity>entry.quantity)throw new Error('丢弃数量无效');
     this.consume(id,quantity);this.notify();
   }
-  /** Remove a selected loose instance after a shop transaction has validated it. */
+  /** Remove a selected loose instance after a shop operation has validated it. */
   take(id:string, quantity:number, notify=true):void {
     const entry=this.instances.get(id);
     if(!entry||this.cellOf(id)<0||!Number.isSafeInteger(quantity)||quantity<1||quantity>entry.quantity)

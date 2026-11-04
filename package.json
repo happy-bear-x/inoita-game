@@ -38,7 +38,8 @@
     "verify:apk": "node tools/verify-apk.mjs",
     "update:key": "node tools/update-key.ts",
     "verify:update": "node tools/verify-update.ts",
-    "test:standalone": "node tests/standalone.mjs"
+    "test:standalone": "node tests/standalone.mjs",
+    "test:content-build": "node tests/content-build-smoke.mjs"
   },
   "engines": {
     "node": ">=24"

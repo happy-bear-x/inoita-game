@@ -43,6 +43,7 @@ import { potentialMapEnemyIds, storyPresentationAssets, type WorldAssetInputs } 
 import { uiTexture } from '../ui/phaser/widgets.ts';
 import { storyExitId } from '../domain/story-world.ts';
 import { hasLivingParty } from '../domain/session-checkpoint.ts';
+import { freezeSnapshot, storyDevMode } from '../domain/dev-mode.ts';
 import type { TravelDestination } from '../domain/content.ts';
 import type {StoryAudioState} from '../application/game-audio.ts';
 
@@ -1107,7 +1108,7 @@ export class WorldScene extends Phaser.Scene {
   private restAtInnkeeper(target:Character):void {
     const quote=innRestQuote(this.app.session);
     this.playStory(()=>this.app.director.visitInnkeeper(target.actor,quote,()=>{
-      this.app.session.transaction(()=>{
+      this.app.session.batchNotifications(()=>{
         this.app.session.spendMoney(quote.cost);
         restAtInn(this.app.session,quote);
       });
@@ -1373,7 +1374,7 @@ export class WorldScene extends Phaser.Scene {
     if(!this.map||this.loadingWorld||this.destroyed||this.app.session.debugFocusQuest)return;
     const session=this.app.session,mapId=this.map.id,store=groundLootFor(session);
     let picked:import('../domain/ground-loot.ts').GroundDrop[]=[];
-    session.transaction(()=>{
+    session.batchNotifications(()=>{
       picked=store.collectAll(mapId,reward=>this.receiveGroundReward(reward));
       if(!picked.length)return;
       session.questItemGenerators.collected(picked.map(drop=>drop.id),session.combatTick);
@@ -1494,7 +1495,7 @@ captureStoryScene():SceneSnapshot {
         characterId:character.entity.characterId,worldEntityId:player?undefined:character.entity.id,
         authority:player?undefined:character.entity.authority,
         memberId:player?'player':undefined,...this.movement!.position(character),facing:facing??'south',visible,
-        flip:character.entity.flip,appearance:structuredClone(character.actor),clip:character.clipName??undefined,
+        flip:character.entity.flip,appearance:storyDevMode()?freezeSnapshot(character.actor):character.actor,clip:character.clipName??undefined,
         alpha:character.container.alpha,animationProgress:animation.progress,
         animationPlaying:animation.playing};
     });

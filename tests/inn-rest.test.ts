@@ -51,7 +51,7 @@ test('innkeeper confirmation charges once and cancellation changes nothing',asyn
   session.gainMoney(quote.cost);
   const ui=new GameUI(),director=new StoryDirector(campaign,session,ui,locked=>ui.lock(locked));
   const actor=world.actors['innkeeper-ad05fa66'];
-  const rest=()=>{session.transaction(()=>{session.spendMoney(quote.cost);restAtInn(session,quote);});};
+  const rest=()=>{session.batchNotifications(()=>{session.spendMoney(quote.cost);restAtInn(session,quote);});};
   const cancelled=director.visitInnkeeper(actor,quote,rest);
   assert.equal(ui.locked,true);assert.match(ui.choices!.description,new RegExp(`休息费用：${moneyText(quote.cost)}`));
   ui.choices!.choose(ui.choices!.options[1]);assert.equal(await cancelled,true);
