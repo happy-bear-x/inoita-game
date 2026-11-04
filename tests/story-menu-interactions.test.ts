@@ -129,6 +129,7 @@ const hook = registerHooks({ resolve(specifier, context, next) {
   return specifier === 'phaser' ? { shortCircuit: true, url: `data:text/javascript,${encodeURIComponent(`
     const boundary=globalThis[Symbol.for('inotia.story-menu-test.phaser')];
     export default {WEBGL:2,Geom:{Rectangle:boundary.Rect},GameObjects:{Rectangle:boundary.MaskRectangle},
+      Input:{Events:{POINTER_UP:'pointerup',POINTER_UP_OUTSIDE:'pointerupoutside'}},
       Math:{Clamp:(value,min,max)=>Math.max(min,Math.min(max,value))},BlendModes:{NORMAL:0,ADD:1,SCREEN:2,MULTIPLY:3}};
   `)}` } : next(specifier, context);
 } });
