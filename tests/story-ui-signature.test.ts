@@ -13,7 +13,7 @@ function fixture() {
     player: { level: 5, health: 10, maxHealth: 20, mana: 1, maxMana: 2, experience: 3, nextLevelExperience: 4 }
   };
   const companion = {
-    level: 3, skills: { version: 2 }, counterattack: 1,
+    level: 3, skills: { version: 2 },
     aiFrequency: new Map([['attack', 5]]),
     player: { level: 3, health: 8, maxHealth: 12, mana: 2, maxMana: 6, experience: 1, nextLevelExperience: 10 }
   };

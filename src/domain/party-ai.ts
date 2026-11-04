@@ -1,6 +1,6 @@
 import { LOGIC_FRAME_MS, type EnemyPlayableSkill } from './battle.ts';
 import { attackDistance, targetDistance } from './basic-attack.ts';
-import { CombatController, canTargetCombatant, type AttackContact, type Combatant, type CombatPort } from './combat.ts';
+import { CombatController, canTargetCombatant, type Combatant, type CombatPort } from './combat.ts';
 import { combatStateCapabilities } from './combat-state.ts';
 import { needsTarget } from './skill-action.ts';
 import { canTraverse, createPathSearch, PATH_GRID_SIZE } from './pathfinding.ts';
@@ -16,9 +16,6 @@ export interface PartyPort extends CombatPort {
   partyTarget?(): string | undefined;
   /** 整个队伍是否已进入战斗：有指派目标，或最近和敌人真实交战过。 */
   inCombat(): boolean;
-  counterattack(): CounterattackMode;
-  /** 该成员当前承受的连续受击次数，供延迟档判定。 */
-  damageCount(): number;
   navigationBounds(): GameRectangle;
   /** 每渲染帧共享的寻路扩展预算；缺省时按单次上限同步搜索（测试与无场景调用）。 */
   pathBudget?:{take(owner:string,limit:number):number};
@@ -32,7 +29,6 @@ export interface PartyPort extends CombatPort {
   attackRange():number;
 }
 interface PartyControllerState {
-  retaliation?:string;
   accumulator:number;
   clock:number;
   nextPathAt:number;
@@ -62,18 +58,6 @@ const PARTY_FOLLOW_PROGRESS_PX = 4;
 /** 几乎贴脸时才不触发收拢；薄墙两侧 8px 以上也要能脱困。 */
 const PARTY_REGROUP_MIN_DISTANCE_PX = 8;
 
-/** 原版自动反击档位：0 未启用、1 延迟、2 启用。 */
-export type CounterattackMode = 0 | 1 | 2;
-export const COUNTERATTACK_MODES: readonly CounterattackMode[] = [0, 1, 2];
-
-/** 延迟档在原版里要等到连续受击满三次才转入战斗。 */
-export const DELAYED_COUNTERATTACK_HITS = 3;
-
-/** 反击只按进入战斗的那一刻判定；进入后不因计数变化退出。 */
-export function counterattackReady(mode: CounterattackMode, damageCount: number): boolean {
-  return mode === 2 || (mode === 1 && damageCount >= DELAYED_COUNTERATTACK_HITS);
-}
-
 /** 自动施法抽取 1 至 99 的整数，严格小于阈值时通过。 */
 export function partySkillThreshold(kind:PartySkillKind,frequency:number,following:boolean):number {
   const high=frequency===2;
@@ -90,7 +74,6 @@ export class PartyController {
   private readonly port:PartyPort;
   readonly combatController:CombatController;
   private readonly random:()=>number;
-  private retaliation?:string;
   private accumulator=0;
   private clock=0;
   private nextPathAt=0;
@@ -117,31 +100,25 @@ export class PartyController {
   actionState(){return this.combatController.actionState();}
   selectedTargetId(){return this.combatController.selectedTargetId();}
   captureState():PartyControllerState {
-    return {retaliation:this.retaliation,accumulator:this.accumulator,clock:this.clock,nextPathAt:this.nextPathAt,
+    return {accumulator:this.accumulator,clock:this.clock,nextPathAt:this.nextPathAt,
       path:this.path.map(point=>({...point})),destination:this.destination?{...this.destination}:undefined,
       destinationTarget:this.destinationTarget,destinationRange:this.destinationRange};
   }
   restoreState(state:PartyControllerState):void {
-    this.retaliation=state.retaliation;this.accumulator=state.accumulator;this.clock=state.clock;this.nextPathAt=state.nextPathAt;
+    this.accumulator=state.accumulator;this.clock=state.clock;this.nextPathAt=state.nextPathAt;
     this.path=state.path.map(point=>({...point}));this.destination=state.destination?{...state.destination}:undefined;
     this.destinationTarget=state.destinationTarget;this.destinationRange=state.destinationRange;
     // 搜索持有的是旧场地的闭包，读档后必须重新开始。
     this.search=undefined;this.pathRetryAt=0;this.followProgress=undefined;this.followProgressAt=0;
     this.chaseProgress=undefined;this.chaseRecoveryUntil=0;
   }
-  onContact(event:AttackContact):void {
-    if(this.disposed||event.targetId!==this.id||!counterattackReady(this.port.counterattack(),this.port.damageCount()))return;
-    const actor=this.port.actor(this.id),source=this.port.actor(event.casterId);
-    if(actor&&source&&actor.team!==source.team&&canTargetCombatant(actor,source))this.retaliation=source.id;
-  }
   targetRemoved(targetId:string):void {
     this.combatController.targetRemoved(targetId);
-    if(this.retaliation===targetId)this.retaliation=undefined;
     if(this.destinationTarget!==targetId)return;
     this.path=[];this.search=undefined;this.pathRetryAt=0;this.followProgress=undefined;this.followProgressAt=0;
     this.destination=undefined;this.destinationTarget=undefined;this.destinationRange=undefined;this.nextPathAt=0;this.port.stop();
   }
-  cancel():void {this.combatController.cancel(true);this.retaliation=undefined;this.path=[];this.search=undefined;this.pathRetryAt=0;
+  cancel():void {this.combatController.cancel(true);this.path=[];this.search=undefined;this.pathRetryAt=0;
     this.followProgress=undefined;this.followProgressAt=0;this.chaseProgress=undefined;this.chaseRecoveryUntil=0;
     this.destination=undefined;this.destinationTarget=undefined;this.destinationRange=undefined;
     this.nextPathAt=0;this.accumulator=0;this.port.stop();}
@@ -161,14 +138,6 @@ export class PartyController {
   private tick():void {
     const actor=this.port.actor(this.id);
     if(!actor){this.port.stop();return;}
-    const retaliating=this.retaliation?this.port.actor(this.retaliation):undefined;
-    if(retaliating&&!canTargetCombatant(actor,retaliating))this.retaliation=undefined;
-    if(this.port.counterattack()===0&&this.retaliation){
-      this.retaliation=undefined;
-      if(!this.port.focusTarget()){
-        this.combatController.cancel(true);this.path=[];this.destination=undefined;this.nextPathAt=0;this.port.stop();
-      }
-    }
     this.combatController.update();
     if(!combatStateCapabilities(actor.states??[]).canAct){this.path=[];this.port.stop();this.followProgress=undefined;this.followProgressAt=0;return;}
     const actionState=this.combatController.actionState();
@@ -179,17 +148,14 @@ export class PartyController {
       return;
     }
     if(actionState!=='idle')return;
-    if(this.port.counterattack()===0)this.retaliation=undefined;
     const inCombat=this.port.inCombat();
     const recovering=this.clock<this.chaseRecoveryUntil;
-    // 优先级：显式集火 > 自己被谁打 > 主操作角色正在打的目标 > 自己上一轮选中的目标。
+    // 佣兵只跟随主角的攻击：显式集火优先，其次主操作角色当前攻击的目标。
+    // 不自己索敌，也不因为挨打还手；主角没有目标时只跟随。
     const target=recovering?undefined:this.hostileTarget(actor,[
       this.port.focusTarget(),
-      this.retaliation,
-      inCombat?this.port.partyTarget?.():undefined,
-      inCombat?this.combatController.selectedTargetId():undefined
+      this.port.partyTarget?.()
     ]);
-    if(!target)this.retaliation=undefined;
     // 重新选中目标时清掉旧的队长跟随计时；没有目标但处于战斗时仍走队长跟随，
     // 这条计时不能被 inCombat 每帧清零，否则掉队收拢在战斗中永远等不到触发。
     if(target){this.followProgress=undefined;this.followProgressAt=0;}
@@ -214,11 +180,6 @@ export class PartyController {
         if(ready&&this.combatController.request(skill,target?.id)==='started'){this.path=[];return;}
       }
     }
-    // 队伍已开战但没有可攻击目标：走和玩家攻击键相同的默认普攻请求，
-    // 由 CombatController 自行索敌并接近。附近没有敌人时不能停在这里等——
-    // 仍要回到队长身边，否则战斗发生在别处时佣兵会一直留在原地。
-    // 收拢后的短暂恢复期不再自动索敌，避免同一面墙前反复瞬移。
-    if(!target&&inCombat&&!recovering&&this.combatController.request(undefined,undefined)!=='no-target')return;
     if(target){
       const range=this.port.attackRange();
       if(attackDistance(actor.position,actor.bounds,target.position,target.bounds)<=range){
@@ -241,7 +202,7 @@ export class PartyController {
     }
     this.follow(actor,leader,PARTY_FOLLOW_DISTANCE_UNITS-1,true,goal);
   }
-  /** 按优先级取第一个仍可攻击的敌对目标；共享目标只在队伍已战斗时参与。 */
+  /** 按优先级取第一个仍可攻击的敌对目标；这里只接收主角侧给出的目标。 */
   private hostileTarget(actor:Combatant,ids:readonly (string|undefined)[]):Combatant|undefined {
     for(const id of ids){
       const candidate=id?this.port.actor(id):undefined;
@@ -271,7 +232,6 @@ export class PartyController {
     if(this.search)return false;
     if(this.clock-previous.since<PARTY_FOLLOW_STUCK_MS)return false;
     this.chaseProgress=undefined;
-    this.retaliation=undefined;
     this.path=[];this.search=undefined;this.pathRetryAt=0;this.destination=undefined;
     this.destinationTarget=undefined;this.destinationRange=undefined;this.nextPathAt=0;
     this.combatController.cancel(true);this.port.stop();this.port.regroup?.();

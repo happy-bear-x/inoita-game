@@ -28,7 +28,7 @@ function partyAction(id:string,cooldowns:CombatCooldownStore) {
   const port:PartyPort={cooldowns:cooldowns.forActor(id),actor:key=>[caster,enemy].find(actor=>actor.id===key),candidates:()=>[caster,enemy],facing:()=> 'east',
     moveToward(){},stop(){stops++;},canStand:()=>true,relocate(){},clearEffects(){clears++;},
     play:(_action,frame)=>{oldFrame=frame;return()=>{cancelled++;};},frame(){},contact(){hits++;},
-    leader:()=>caster,focusTarget:()=>undefined,inCombat:()=>true,counterattack:()=>2,damageCount:()=>0,navigationBounds:()=>({x:0,y:0,width:256,height:256}),
+    leader:()=>caster,focusTarget:()=>undefined,inCombat:()=>true,navigationBounds:()=>({x:0,y:0,width:256,height:256}),
     followPath(){},skills:()=>[],skillKind:()=>undefined,vitals:()=>({health:10,maxHealth:10}),attacking:()=>false,attackRange:()=>4};
   const controller=new CombatController(id,resolveBasicAttack(battle,battle.classes[0]),port);
   const ai=new PartyController(id,port,controller);

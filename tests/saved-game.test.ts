@@ -39,6 +39,17 @@ test('format 36 saves keep their cached stage appearances through the upgrade',(
   assert.deepEqual(saved,before,'升级不改写槽里的原件');
 });
 
+test('format 41 saves with the removed counterattack settings still restore',()=>{
+  const saved=record();
+  saved.format=41;
+  const party=saved.session.party as unknown as {heroCounterattack?:number};
+  party.heroCounterattack=1;
+  const before=structuredClone(saved);
+  const candidate=prepareSavedGame(saved,content);
+  assert.equal(candidate.session.hero!.classId,saved.summary.classId);
+  assert.deepEqual(saved,before,'升级不改写槽里的原件');
+});
+
 test('each class restores into a fresh candidate and retains its destination, resources and inventory',()=>{
   for(let index=0;index<content.storyClasses.classes.length;index++){
     const saved=record(index),before=structuredClone(saved),candidate=prepareSavedGame(saved,content);

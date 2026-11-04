@@ -62,10 +62,8 @@ test('AI settings and settings tabs require native level art, locked slot and th
     assert.throws(()=>parseMenuPanels(missing),/缺少菜单素材/);
   }
   // 设置页的初始化按钮用通用外框加文案，不再需要带钻石的原版按钮图。
-  const blank=structuredClone(panels);blank.skillPanel.labels.counterattackTitle='';
-  assert.throws(()=>parseMenuPanels(blank),/自动反击标题、初始技能点与初始化按钮文案/);
   const reset=structuredClone(panels);reset.skillPanel.labels.resetButton='';
-  assert.throws(()=>parseMenuPanels(reset),/自动反击标题、初始技能点与初始化按钮文案/);
+  assert.throws(()=>parseMenuPanels(reset),/初始技能点与初始化按钮文案/);
   const absent=structuredClone(panels);delete (absent.skillPanel as {labels?:unknown}).labels;
   assert.throws(()=>parseMenuPanels(absent),/skillPanel/);
 });

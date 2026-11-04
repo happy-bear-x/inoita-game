@@ -343,7 +343,6 @@
   },
   "skillPanel": {
     "labels": {
-      "counterattackTitle": "设置自动反击",
       "initialSkillPoints": "初始技能点",
       "resetButton": "能力初始化"
     }

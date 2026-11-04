@@ -139,6 +139,14 @@ const SAVE_UPGRADES:Record<number,SaveUpgrade>={
     game.session.reservedDrops={unlockMisses:0,claimed:[]};
     game.format=41;
   },
+  41:game=>{
+    // 41 → 42：删除自动反击档位和队伍受击计数；佣兵只跟随主角的攻击。
+    const party=game.session.party as unknown as {heroCounterattack?:unknown;members?:{counterattack?:unknown}[]}|undefined;
+    if(party){delete party.heroCounterattack;for(const member of party.members??[])delete member.counterattack;}
+    const world=game.world.world as unknown as {damageCount?:unknown}|undefined;
+    if(world)delete world.damageCount;
+    game.format=42;
+  },
 };
 function upgradeSavedGame(game:SaveGame<StoryWorldViewSnapshot>):SaveGame<StoryWorldViewSnapshot>{
   if(game.format===SAVE_FORMAT)return game;

@@ -31,8 +31,6 @@ export interface WorldCombatState {
   summonGroups:[string,string[]][];
   /** `WorldCombat` 自己的字段：当前锁定目标。 */
   focusTargetId?:string;
-  /** 连续受击次数，供反击延迟档判定。`WorldCombat` 自己持有。 */
-  damageCount?:number;
 }
 
 function finiteTree(value:unknown,seen=new Set<object>()):void {

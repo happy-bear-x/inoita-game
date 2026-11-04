@@ -456,8 +456,7 @@ captureStoryActors():SceneActorState[] {
         ?{kind:'friendly-summon' as const,state:enemy.controller.captureState()}
         :enemy.controller?{kind:'enemy' as const,state:enemy.controller.captureState()}:undefined,
         summonRemainingMs:enemy.summonRemainingMs,summonTauntChance:enemy.summonTauntChance})),
-      summonGroups:this.summons.capture(),focusTargetId:this.focusTargetId,
-      damageCount:this.damageCount};
+      summonGroups:this.summons.capture(),focusTargetId:this.focusTargetId};
   }
   async restoreState(state:WorldCombatState,signal?:AbortSignal):Promise<void> {
     signal?.throwIfAborted();
@@ -475,7 +474,7 @@ captureStoryActors():SceneActorState[] {
     // 恢复会按 roster 重建同一批召唤物；它们的会话状态来自存档，不能在这里清掉。
     this.clearEnemies(true,true);this.roster.restoreState(state.roster);this.conditions.restoreState(state.conditions);
     this.syncControlled();
-    this.focusTargetId=state.focusTargetId;this.damageCount=state.damageCount??0;
+    this.focusTargetId=state.focusTargetId;
     for(const saved of state.party){const visual=this.visualOf(saved.id);if(!visual)continue;
       const alive=!!this.memberOf(saved.id)?.player.health;
       visual.container.setAlpha(1).setVisible(alive&&!this.performanceHidden);this.movement.setEnabled(visual,alive);
@@ -789,16 +788,6 @@ captureStoryActors():SceneActorState[] {
   /** 原版角色位 +0xc 的 bit2：打出过伤害后置位、初始化时清零，治疗选人据此降低优先级。 */
   private readonly dealtDamage=new Set<string>();
   /**
-   * 原版 PLAYER_nDamageCount：队伍成员被敌对单位接战时累计，原版是一个跨全队共享的全局值。
-   * 延迟档自动反击据此判断是否转入战斗，在场上阵成员全部打出过伤害后清零。
-   */
-  private damageCount=0;
-  /** 原版 PARTY_IsCombatAll：在场上阵成员全部已进入战斗。 */
-  private partyFullyEngaged():boolean {
-    const living=this.activeParty.filter(id=>(this.memberOf(id)?.player.health??0)>0);
-    return living.length>0&&living.every(id=>this.dealtDamage.has(id));
-  }
-  /**
    * 固定三槽接收者：按队伍槽顺序取前三名仍在战斗的成员。
    * 与给 cue 用的 partyBuffSlots 不同，这里不筛显示形态也不看距离——原版这两处都是直接遍历槽位。
    */
@@ -1021,12 +1010,8 @@ captureStoryActors():SceneActorState[] {
       if(this.defeated||this.closed||this.fallen?.has(event.casterId)||this.fallen?.has(event.targetId)||
         this.pendingDefeats?.has(event.casterId)||this.pendingDefeats?.has(event.targetId))return;
       this.recordSummonContact?.(event.casterId,event.targetId);
-      // 计数在派发之前累加，第 3 次受击当帧就能满足延迟档的门槛。
-      if(this.memberOf(event.targetId)&&!this.memberOf(event.casterId))this.damageCount++;
       if(event.skillId){
         if(this.enemiesRunning&&!this.pendingDefeats.has(event.targetId))combatActor(this.arena,event.targetId,actor=>actor.key)?.controller?.onContact(event);
-        if(this.enemiesRunning&&event.targetId!==this.controlledId)combatActor(this.allies,event.targetId,actor=>actor.id)?.ai.onContact(event);
-        if(this.enemiesRunning&&event.targetId==='player'&&this.controlledId!=='player')this.heroAi?.onContact(event);
         return;
       }
       if(!this.conditions.canLoseHealth(event.targetId)){
@@ -1064,8 +1049,6 @@ captureStoryActors():SceneActorState[] {
       this.settleHit(event,hit,hero,targetEnemy,{style:profile?.hitEffectStyle??'weapon',sound:true});
       this.dropMana(event.casterId,hit.damage,targetPosition);
       if(this.enemiesRunning&&targetEnemy&&!this.pendingDefeats.has(targetEnemy.key)&&this.arena.includes(targetEnemy))targetEnemy.controller?.onContact(event);
-      if(this.enemiesRunning&&event.targetId!==this.controlledId)combatActor(this.allies,event.targetId,actor=>actor.id)?.ai.onContact(event);
-      if(this.enemiesRunning&&event.targetId==='player'&&this.controlledId!=='player')this.heroAi?.onContact(event);
     });
   }
   /** 召唤物打中目标后的主人侧反应：先按固定值回魔，再按嘲讽机会拉走目标，最后判完美配合。 */
@@ -1441,8 +1424,6 @@ captureStoryActors():SceneActorState[] {
     this.settleHit(event,{kind:'hit',damage},hero,enemy,{style:'weapon',sound:true});
     if(!this.enemiesRunning)return;
     if(enemy&&!this.pendingDefeats.has(enemy.key)&&this.arena.includes(enemy))enemy.controller?.onContact(event);
-    if(event.targetId!==this.controlledId)combatActor(this.allies,event.targetId,actor=>actor.id)?.ai.onContact(event);
-    if(event.targetId==='player'&&this.controlledId!=='player')this.heroAi?.onContact(event);
   }
   private attackSplashCenter(source:Combatant,targets:readonly Combatant[],rangeUnits:number):Point {
     const controller=this.partyControllers.get(source.id)??combatActor(this.arena,source.id,actor=>actor.key)?.controller?.combatController;
@@ -1948,8 +1929,6 @@ captureStoryActors():SceneActorState[] {
       vitals:key=>this.memberOf(key)?.player,
       attacking:key=>this.partyControllers.get(key)?.actionState()==='attacking',
       attackRange:()=>this.equipmentAttack(visual.actor,id).approachDistanceUnits+this.actorAttribute(id,'attackRangeBonusUnits'),
-      counterattack:()=>this.app.session.party?.counterattack(id)??2,
-      damageCount:()=>this.damageCount,
       navigationBounds:()=>this.movement.navigation.bounds,pathBudget:this.pathBudget,
       moveToward:position=>{if(!this.conditions.canAutoApproach(id)){this.movement.stop(visual);return;}setFacing(faceTarget(this.movement.position(visual),position));this.movement.toward(visual,position,this.movementSpeed(id,PLAYER_MOVE_SPEED));},
       followPath:nextWaypoint=>this.movement.followPath(visual,()=>{
@@ -2761,7 +2740,6 @@ captureStoryActors():SceneActorState[] {
       for(const id of this.activeParty){if(id===this.controlledId||!this.memberOf(id)?.player.health)continue;
         this.syncAiSkills(id);if(id==='player')this.heroAi?.step();else combatActor(this.allies,id,actor=>actor.id)?.ai.step();
       }
-      if(this.partyFullyEngaged())this.damageCount=0;
       for(const enemy of [...this.arena])if(!this.pendingDefeats.has(enemy.key)&&enemy.summonRemainingMs!==undefined){
         enemy.summonRemainingMs=advanceSummonLifetime(enemy.summonRemainingMs);
         if(summonLifetimeExpired(enemy.summonRemainingMs))this.removeEnemy(enemy.key);

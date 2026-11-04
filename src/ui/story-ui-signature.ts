@@ -93,13 +93,13 @@ function groupShape(session: Session): string {
   return JSON.stringify(Object.entries(session.party?.groupModifiers() ?? {}).sort());
 }
 
-/** 上阵队员的等级、技能版本、血量与 AI 设置；只在队伍/调试页使用。 */
+/** 上阵队员的等级、技能版本、血量与技能频率设置；只在队伍/调试页使用。 */
 function partyDetail(session: Session): string {
   const party = session.party, hero = session.hero;
   return party?.activeIds.map(id => {
     if (id === 'player') return `player:${hero?.level ?? 0}:${hero?.skillPoints ?? 0}:${JSON.stringify(hero?.player ?? null)}`;
     const entry = party.get(id);
-    return `${id}:${entry?.level ?? 0}:${entry?.skills.version ?? 0}:${JSON.stringify(entry?.player ?? null)}:${entry?.counterattack ?? 0}:${JSON.stringify([...(entry?.aiFrequency ?? new Map())])}`;
+    return `${id}:${entry?.level ?? 0}:${entry?.skills.version ?? 0}:${JSON.stringify(entry?.player ?? null)}:${JSON.stringify([...(entry?.aiFrequency ?? new Map())])}`;
   }).join('|') ?? '';
 }
 

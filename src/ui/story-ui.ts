@@ -21,7 +21,6 @@ import type { StoryInterface } from '../domain/story-interface.ts';
 import type { CompanionMember } from '../domain/party.ts';
 import type { BattleClass, SkillLoadout } from '../domain/battle.ts';
 import type { StorySkillProgression } from '../domain/story-skills.ts';
-import { COUNTERATTACK_MODES } from '../domain/party-ai.ts';
 import { ShopPanel } from './phaser/shop-panel.ts';
 import { Storefront } from '../domain/shop.ts';
 import { QuestPanel } from './phaser/quest-panel.ts';
@@ -66,8 +65,6 @@ const CONTROL_MODE_LABELS:Record<ControlMode,string>={stick:'虚拟摇杆',dpad:
 /** 原版菜单里正文与数值的米色：进绘制前调 `GRPX_SetFontColorFromRGB(0xe2,0xcb,0x9e)`。 */
 const AREA_TEXT=TEXT_COLORS.primary;
 const SKILL_LEVEL_ASSETS=['skill-level-none','skill-level-normal','skill-level-high'];
-/** 自动反击三档的原版名称，用作焦点与读屏标签。 */
-const COUNTERATTACK_LABELS=['未启用','延迟','启用'];
 /** 登记快捷键那一屏顶部的提示，原版取文本表第 35462 条。 */
 const SHORTCUT_PROMPT='请选择要设置的快捷键。';
 /** 菜单内容块的固定原点；说明层与内容块共用同一坐标。 */
@@ -714,6 +711,8 @@ export class StoryUI {
     v.button('取消',270,350,170,48,()=>this.finishAllocation(false));v.button('确定',480,350,190,48,()=>this.finishAllocation(true));
   }
   private renderSkills():void{
+    // 设置页只剩主角的技能点初始化；选中佣兵时回到技能目录，不展示空页。
+    if(this.skillSection==='settings'&&this.selectedMemberId!=='player')this.skillSection='directory';
     const v=this.body!,member=this.member()!,panels=this.app.menuPanels,configuration=this.configuration(),character=this.app.battleCatalog.classes.find(value=>value.id===member.classId)!;
     this.skill??=character.skills[0];if(!character.skills.includes(this.skill))this.skill=character.skills[0];
     const draft=configuration.draft(this.app.battleCatalog,member.classId),progression=this.selectedMemberId==='player'?this.session!.skills:undefined;
@@ -724,7 +723,7 @@ export class StoryUI {
     if(this.skillSection==='directory')this.renderSkillDirectory(character,draft);
     else if(this.skillSection==='ai')this.renderSkillAi(character,draft);
     else this.renderSkillSettings();
-    (['directory','ai','settings'] as const).forEach((section,index)=>v.button('',486,38+index*118,46,118,()=>{this.skillSection=section;this.scrollOffsets.delete('skills:description');this.render();},{image:panels.assets[`skill-tab-${section}`],disabled:section!=='directory'&&!this.session!.party}).setData('label',{directory:'技能目录',ai:'AI 设置',settings:'设置'}[section]));
+    (['directory','ai','settings'] as const).forEach((section,index)=>v.button('',486,38+index*118,46,118,()=>{this.skillSection=section;this.scrollOffsets.delete('skills:description');this.render();},{image:panels.assets[`skill-tab-${section}`],disabled:section!=='directory'&&(!this.session!.party||(section==='settings'&&this.selectedMemberId!=='player'))}).setData('label',{directory:'技能目录',ai:'AI 设置',settings:'设置'}[section]));
     // 剧情伙伴的定义 id 也叫 mercenary-*，身份只能看 source。
     const companion=progression?undefined:this.session!.party?.get(this.selectedMemberId);
     v.text(progression?`${panels.character.labels.skillPoints} ${progression.points()}`:(companion?.source==='story'?'伙伴技能':'佣兵技能'),561,14,350,19);
@@ -783,16 +782,10 @@ export class StoryUI {
     });
     this.finishScroll('ai',list,Math.max(20+5*89+75,20+2*178+75));
   }
-  /** 设置：自动反击三档与技能点初始化，原版这一页只有这两项。 */
+  /** 设置：只剩主角的技能点初始化；佣兵没有独立设置项。 */
   private renderSkillSettings():void{
-    const v=this.body!,panels=this.app.menuPanels,party=this.session!.party!,labels=panels.skillPanel.labels,mode=party.counterattack(this.selectedMemberId);
-    v.text(labels.counterattackTitle,289,40,0,24).setOrigin(.5,0);
-    for(const level of COUNTERATTACK_MODES){
-      const button=v.button('',147+level*102,110,82,42,()=>this.action(()=>party.setCounterattack(this.selectedMemberId,level)),
-        {image:panels.assets[SKILL_LEVEL_ASSETS[level]!],pressed:panels.assets['skill-level-pressed'],native:true}).setData('label',`自动反击 ${COUNTERATTACK_LABELS[level]}`);
-      button.setAlpha(mode===level?1:.55);
-    }
-    if(this.selectedMemberId==='player')v.button(labels.resetButton,161,290,257,63,()=>{this.skillReset=true;this.render();});
+    const v=this.body!,labels=this.app.menuPanels.skillPanel.labels;
+    v.button(labels.resetButton,161,290,257,63,()=>{this.skillReset=true;this.render();});
   }
   /** 说明区由技能目录与 AI 设置共享；设置页与原版一样留空。 */
   /**

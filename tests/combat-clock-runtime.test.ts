@@ -18,14 +18,14 @@ function fixture(){
   const record=(kind:string)=>events.push(`${session.combatTick}:${kind}`);
   const visual=()=>({layers:[],container:{active:true,y:0,setDepth:()=>{}}});
   const player=visual(),ally=visual();
-  const host={runtime:new CombatRuntime(()=>session.combatTick),setPaused:()=>{},closed:false,defeated:false,player,allies:[{id:'ally',visual:ally,ai:{step:()=>record('ally'),onContact:()=>{}}}],
+  const host={runtime:new CombatRuntime(()=>session.combatTick),setPaused:()=>{},closed:false,defeated:false,player,allies:[{id:'ally',visual:ally,ai:{step:()=>record('ally')}}],
     arena:[{key:'enemy-a',visual:visual(),controller:{step:()=>record('enemy-a')}},
       {key:'enemy-b',visual:visual(),controller:{step:()=>record('enemy-b')}}],
     app:{session},conditions,deathTweens:new Map(),pendingDefeats:new Set(),fallen:new Set(),
     outcomes:{setPaused:()=>{}},feedback:{setPaused:()=>{}},statusColors:{paint:()=>{}},
     scene:{canCombatControl:true,time:{now:0},events:{emit:()=>{}},refreshShortcutPage:()=>{},refreshCombatTarget:()=>{},refreshSkillCooldowns:(value:unknown)=>shown.push(value)},
     get cooldowns(){return session.cooldowns.forActor('player').snapshot();},
-    activeParty:['player','ally'],controlledId:'player',syncedControlledId:'player',nextPartySyncAt:Infinity,dealtDamage:new Set(),damageCount:0,
+    activeParty:['player','ally'],controlledId:'player',syncedControlledId:'player',nextPartySyncAt:Infinity,dealtDamage:new Set(),
     roster:{refresh:()=>({removed:[],added:[]})},
     memberOf:(id:string)=>['player','ally'].includes(id)?{player:{health:1}}:undefined,
     syncCombatResourceLimits:()=>{},syncAiSkills:()=>{},syncBuffLoops:()=>{},syncStateMarkers:()=>{},
@@ -33,7 +33,6 @@ function fixture(){
     combat:{update:()=>record('player')},
     updateEnemies(enabled:boolean):void{invoke(host,'updateEnemies',enabled);},
     observeSummonCombat:()=>record('summon-awareness'),
-    partyFullyEngaged():boolean{return invoke(host,'partyFullyEngaged') as boolean;},
     recoverResources:()=>{record('recovery');session.recoverCombatResources([]);},
   };
   return {host,session,events,shown,update:(delta:number,enabled=true)=>invoke(host,'update',delta,enabled)};
@@ -55,23 +54,6 @@ test('the scene refreshes the controlled cooldown display while an otherwise idl
   assert.deepEqual(run.shown,[{probe:{remainingMs:60,durationMs:120}},{}]);
 });
 
-test('hostile contact advances the counterattack damage count and a fully engaged party clears it',()=>{
-  const run=fixture();
-  const contact=(event:object)=>invoke(run.host,'attackContact',event);
-  contact({casterId:'enemy-a',targetId:'ally',skillId:'dark-strike'});
-  contact({casterId:'enemy-a',targetId:'ally',skillId:'dark-strike'});
-  assert.equal(run.host.damageCount,2);
-  contact({casterId:'ally',targetId:'ally',skillId:'dark-strike'});
-  contact({casterId:'enemy-a',targetId:'enemy-a',skillId:'dark-strike'});
-  assert.equal(run.host.damageCount,2,'只有队伍成员被敌对单位接战才计数');
-  run.host.dealtDamage.add('player');run.host.dealtDamage.add('ally');
-  run.update(60);
-  assert.equal(run.host.damageCount,0,'在场成员全部进入战斗后清零');
-  run.host.dealtDamage.delete('ally');
-  contact({casterId:'enemy-a',targetId:'ally',skillId:'dark-strike'});
-  run.update(60);
-  assert.equal(run.host.damageCount,1);
-});
 test('scene removal clears enemy cooldowns while checkpoint visual replacement preserves restored records',()=>{
   const session=new Session(campaign),port=session.cooldowns.forActor('enemy');
   const enemy={key:'enemy',controller:{dispose:()=>{},targetRemoved:()=>{}},presenter:{clear:()=>{}},visual:{container:{destroy:()=>{}}}};

@@ -3,7 +3,6 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { BattleCharacter, type CharacterStatsCatalog } from '../src/domain/character-stats.ts';
 import { adjacentLivingMember, PartyRoster, type CompanionCatalog } from '../src/domain/party.ts';
-import type { CounterattackMode } from '../src/domain/party-ai.ts';
 import type { ItemCatalog } from '../src/domain/items.ts';
 import type { Campaign } from '../src/domain/campaign.ts';
 import type { WorldMap } from '../src/domain/content.ts';
@@ -223,14 +222,13 @@ test('a restored combat maximum does not grant its resource increase twice',()=>
   const restored=party.get(member.id)!;restored.setCombatResourceLimits(maxHealth,400);
   assert.equal(restored.player.health,maxHealth-20);assert.equal(restored.player.maxHealth,maxHealth);
 });
-test('counterattack keeps the original three levels through a checkpoint',()=>{
+test('skill usage frequency survives a checkpoint',()=>{
   const {party}=setup(),member=recruit(party);
-  assert.equal(party.counterattack('player'),2);assert.equal(party.counterattack(member.id),2);
-  party.setCounterattack('player',1);party.setCounterattack(member.id,0);
-  assert.throws(()=>party.setCounterattack(member.id,3 as CounterattackMode),/反击档位/);
+  party.setAiFrequency('player','dark-strike',0);party.setAiFrequency(member.id,'dark-strike',2);
   const state=party.captureState();party.restoreState(state);
-  assert.equal(party.counterattack('player'),1);assert.equal(party.counterattack(member.id),0);
-  assert.equal(party.counterattack('missing'),0);
+  assert.equal(party.aiFrequency('player').get('dark-strike'),0);
+  assert.equal(party.aiFrequency(member.id).get('dark-strike'),2);
+  assert.throws(()=>party.setAiFrequency(member.id,'dark-strike',3),/技能频率/);
 });
 test('companion resource projections and single-capacity reads preserve the other resource',()=>{
   const {party}=setup(),member=recruit(party),base=member.player;

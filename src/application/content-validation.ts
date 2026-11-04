@@ -435,7 +435,7 @@ const menuPanels=shape<MenuPanels>({itemMessages:record(text),assets:record(file
   classes:record(object({preview:file})),
   character:object({portraits:record(object({image:file,partyIcon:file})),combatLabels:strings,
     labels:object({statPoints:text,skillPoints:text,health:text,mana:text,experience:text})}),
-  skillPanel:object({labels:object({counterattackTitle:text,initialSkillPoints:text,resetButton:text})})});
+  skillPanel:object({labels:object({initialSkillPoints:text,resetButton:text})})});
 export function parseMenuPanels(value:unknown):MenuPanels {
   menuPanels(value,'menuPanels'); const result=value as MenuPanels;
   for(const key of [...ITEM_NOTICES,'craft-incompatible','craft-needs-chaos','craft-epic','craft-max','craft-money','craft-materials','craft-target','craft-confirm'])
@@ -450,8 +450,8 @@ export function parseMenuPanels(value:unknown):MenuPanels {
     'menuPanels.skillColumns','需要三个独立技能列标题');
   requireValue(slots.size===10&&result.equipmentSlots.length===10&&EQUIPMENT_SLOTS.every(slot=>slots.has(slot)),'menuPanels.equipmentSlots','需要十个独立装备槽');
   requireValue(result.equipmentSlots.every((slot,index)=>slot.id===EQUIPMENT_SLOT_ORDER[index]),'menuPanels.equipmentSlots','装备槽顺序与界面次序不一致');
-  requireValue(result.skillPanel.labels.counterattackTitle.trim()&&result.skillPanel.labels.initialSkillPoints.trim()&&result.skillPanel.labels.resetButton.trim(),
-    'menuPanels.skillPanel.labels','需要设置页的自动反击标题、初始技能点与初始化按钮文案');
+  requireValue(result.skillPanel.labels.initialSkillPoints.trim()&&result.skillPanel.labels.resetButton.trim(),
+    'menuPanels.skillPanel.labels','需要设置页的初始技能点与初始化按钮文案');
   requireValue(result.skillPositions.length===15&&new Set(result.skillPositions.map(p=>`${p.column},${p.row}`)).size===15,'menuPanels.skillPositions','需要十五个独立技能位置');
   for(const p of result.skillPositions)requireValue(p.column<3&&p.row<6,'menuPanels.skillPositions','技能位置超出排列范围');
   return result;

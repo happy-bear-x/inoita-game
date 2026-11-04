@@ -1,7 +1,6 @@
 import { boundedHealth } from './status-hud.ts';
 import { calculateCharacter, previewGemPanel, PRIMARY_STATS, primaryAttributesFrom, type CharacterPanel, type CharacterStatsCatalog, type Modifier, type PrimaryAttributes, type BattleCharacter } from './character-stats.ts';
 import type { SkillConfigurationState } from './skill-configuration.ts';
-import type { CounterattackMode } from './party-ai.ts';
 import { CompanionSkillProgression, generateCompanion, MERCENARY_CLASS_ORDER, randomInteger, weightedIndex, type CompanionGenerationRules, type CompanionGroupEffect, type CompanionGroupSkill, type GeneratedCompanion } from './companion-progression.ts';
 export type { CompanionGroupEffect, CompanionGroupSkill } from './companion-progression.ts';
 const MERCENARY_SLOT_COUNT=18;
@@ -61,11 +60,11 @@ interface CompanionState {
   id:string;definitionId:string;source:'story'|'mercenary';generated:GeneratedCompanion;
   level:number;health:number;mana:number;experience:number;skills:SkillConfigurationState;
   combatResourceLimits:{maxHealth:number;maxMana:number}|null;
-  aiFrequency:[string,number][];counterattack:CounterattackMode;
+  aiFrequency:[string,number][];
 }
 interface PartyState {
   members:CompanionState[];rosterSlots:(string|null)[];slots:(string|null)[];selected:string;serial:number;
-  heroAiFrequency:[string,number][];heroCounterattack:CounterattackMode;
+  heroAiFrequency:[string,number][];
 }
 
 
@@ -76,7 +75,6 @@ export class CompanionMember {
   readonly skills:CompanionSkillProgression;
   readonly generated:GeneratedCompanion;
   readonly aiFrequency=new Map<string,number>();
-  counterattack:CounterattackMode=2;
   private readonly stats:CharacterStatsCatalog;
   private readonly items:ItemCatalog;
   readonly bag:Bag;
@@ -166,11 +164,11 @@ export class CompanionMember {
     name:this.definition.name,classId:this.definition.classId,source:this.source,elite:this.definition.elite,...player};}
   captureState():CompanionState{return structuredClone({id:this.id,definitionId:this.definition.id,source:this.source,
     generated:this.generated,level:this.currentLevel,health:this.currentHealth,mana:this.currentMana,experience:this.currentExperience,
-    combatResourceLimits:this.combatResourceLimits,skills:this.skills.captureState(),aiFrequency:[...this.aiFrequency],counterattack:this.counterattack});}
+    combatResourceLimits:this.combatResourceLimits,skills:this.skills.captureState(),aiFrequency:[...this.aiFrequency]});}
   restoreState(state:CompanionState):void{
     this.currentLevel=state.level;this.currentHealth=state.health;this.currentMana=state.mana;this.currentExperience=state.experience;
     this.combatResourceLimits=state.combatResourceLimits?{...state.combatResourceLimits}:null;this.skills.updateLevel(this.currentLevel);this.skills.restoreState(state.skills);
-    this.aiFrequency.clear();for(const [id,value] of state.aiFrequency)this.aiFrequency.set(id,value);this.counterattack=state.counterattack;
+    this.aiFrequency.clear();for(const [id,value] of state.aiFrequency)this.aiFrequency.set(id,value);
   }
 
 }
@@ -192,7 +190,6 @@ export class PartyRoster {
   readonly bag:Bag;
   readonly catalog:CompanionCatalog;
   readonly heroAiFrequency=new Map<string,number>();
-  heroCounterattack:CounterattackMode=2;
   private readonly stats:CharacterStatsCatalog;
   private readonly items:ItemCatalog;
   private readonly changed:()=>void;
@@ -235,11 +232,6 @@ export class PartyRoster {
   get activeSize():number{return this.activeIds.length;}
   get(id:string):CompanionMember|undefined{return this.owned.get(id);}
   aiFrequency(id:string):Map<string,number>{return id==='player'?this.heroAiFrequency:this.owned.get(id)?.aiFrequency??new Map();}
-  counterattack(id:string):CounterattackMode{return id==='player'?this.heroCounterattack:this.owned.get(id)?.counterattack??0;}
-  setCounterattack(id:string,mode:CounterattackMode):void{
-    if(mode!==0&&mode!==1&&mode!==2)throw new Error('反击档位需要是 0–2');
-    if(id==='player')this.heroCounterattack=mode;else{const member=this.owned.get(id);if(!member)throw new Error('伙伴不存在');member.counterattack=mode;}this.changed();
-  }
   setAiFrequency(id:string,skill:string,frequency:number):void{
     if(!Number.isInteger(frequency)||frequency<0||frequency>2)throw new Error('技能频率需要是 0–2');
     if(id!=='player'&&!this.owned.has(id))throw new Error('伙伴不存在');
@@ -373,7 +365,7 @@ export class PartyRoster {
   }
   captureState():PartyState{return structuredClone({members:[...this.owned.values()].map(member=>member.captureState()),
     rosterSlots:this.rosterSlots,slots:this.slots.map(value=>value??null),selected:this.selected,serial:this.serial,
-    heroAiFrequency:[...this.heroAiFrequency],heroCounterattack:this.heroCounterattack});}
+    heroAiFrequency:[...this.heroAiFrequency]});}
   restoreState(state:PartyState):void{
     const saved=structuredClone(state);this.owned.clear();
     for(const entry of saved.members){
@@ -383,7 +375,7 @@ export class PartyRoster {
       member.restoreState(entry);this.owned.set(entry.id,member);
     }
     this.rosterSlots=saved.rosterSlots;this.slots=saved.slots.map(value=>value??undefined);this.selected=saved.selected;this.serial=saved.serial;
-    this.heroAiFrequency.clear();for(const [id,value] of saved.heroAiFrequency)this.heroAiFrequency.set(id,value);this.heroCounterattack=saved.heroCounterattack;
+    this.heroAiFrequency.clear();for(const [id,value] of saved.heroAiFrequency)this.heroAiFrequency.set(id,value);
   }
 
 }

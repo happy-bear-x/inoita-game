@@ -11,8 +11,8 @@ export interface MenuPanels {
     combatLabels: string[];
     labels: { statPoints: string; skillPoints: string; health: string; mana: string; experience: string };
   };
-  /** 技能窗口 AI 设置与设置两个标签的原版文案：自动反击标题、初始技能点、初始化按钮。 */
-  skillPanel: { labels: { counterattackTitle: string; initialSkillPoints: string; resetButton: string } };
+  /** 技能窗口设置页的原版文案：初始技能点与初始化按钮。 */
+  skillPanel: { labels: { initialSkillPoints: string; resetButton: string } };
 }
 
 export const ITEM_ACTION_ASSETS = ['item-equip', 'item-unequip', 'item-use', 'item-discard'];
