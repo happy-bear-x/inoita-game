@@ -1,4 +1,5 @@
-import {displaySettings} from '../application/display-settings.ts';
+import { settleCombatRewards } from '../domain/combat-rewards.ts';
+import { displaySettings } from '../application/display-settings.ts';
 import {applyStoryEnemyRemovals} from '../domain/world-enemies.ts';
 import type {PreparedSceneVisit,SceneActorState} from '../domain/scene-snapshot.ts';
 import {combatFollowUp,type CombatFollowUpPort} from '../domain/combat-follow-ups.ts';
@@ -47,7 +48,6 @@ import {equipmentAttackProcs} from '../domain/equipment-attack-procs.ts';
 import {equipmentCombatProcs} from '../domain/equipment-combat-procs.ts';
 import {selectAttackSplashCenter,attackSplashTargets} from '../domain/attack-splash.ts';
 import {applyCombatOperation} from '../domain/combat-operation.ts';
-import { calculateEnemy } from '../domain/enemy-stats.ts';
 import { actionDamage, prepareActionDamage, type PreparedActionDamage } from '../domain/action-damage.ts';
 import { actionDamageSource,bestNormalDamage,normalDamageForClass,physicalNormalDamage,magicNormalDamage, type CombatActorAttributes } from '../domain/combat-damage-source.ts';
 import { calculateManaCost,defaultResourceAttributes } from '../domain/combat-resources.ts';
@@ -91,7 +91,7 @@ import { isBodyWalking } from '../rendering/arcade-movement.ts';
 import { effectAssets } from '../rendering/effects.ts';
 import { loadSceneAssets, retainLoadedSceneAssets } from '../rendering/scene-assets.ts';
 import { WorldEnemyRoster } from '../domain/world-enemies.ts';
-import { breakableKindOf, firstBossGuarantee, rollBreakableLoot, rollEnemyLoot, rollQuestDrops, rollReservedDrops, specialDropEligibility, type DropCatalog, type ReservedDropSource } from '../domain/drops.ts';
+import { type DropCatalog } from '../domain/drops.ts';
 import { PendingEnemyDefeats } from '../domain/combat-outcomes.ts';
 import { CombatHitResolution } from '../domain/combat-hit-resolution.ts';
 import {moltenReflectionDamage,rollMoltenSplash,moltenSplashTargets} from '../domain/molten-armor.ts';
@@ -1139,80 +1139,50 @@ captureStoryActors():SceneActorState[] {
         if(before.health>0&&remaining===0)(this.hitResolution??=new CombatHitResolution()).deferDefeat(targetEnemy.key,()=>{
           if(this.closed||this.pendingDefeats.has(targetEnemy.key)||
             (this.roster.enemySnapshot(targetEnemy.key,targetEnemy.definition,hero.level)?.health??0)>0)return;
-          this.app.audio?.monsterDeath(targetEnemy.definition.id);
-          const reward=calculateEnemy(targetEnemy.definition,{level:before.level,elite:before.elite,
-            partySize:Math.max(1,this.app.session.party?.livingIds.length??1),playerLevel:hero.level}).experience;
           const spawn=this.roster.source(targetEnemy.key);
           const earnsExperience=!!(this.memberOf(event.casterId)||this.arena.some(enemy=>enemy.key===event.casterId&&this.memberOf(enemy.summonedBy??'')));
-          const session=this.app.session,level=hero.level,map=this.scene.map!.id;
+          const session=this.app.session,map=this.scene.map!.id;
           const {x,y}=targetEnemy.visual.container,key=targetEnemy.key;
           this.pendingDefeats.add(key,render=>{
             this.runtime.cancel(`defeat:${key}`);this.outcomes.cancelDeath(key);
             if(spawn)session.enemyDefeated(spawn);
-            const breakable=breakableKindOf(targetEnemy.definition.id);
-            if(spawn){
-              const enemyId=targetEnemy.definition.id;
-              const rule=this.drops.enemies[enemyId];
-              if(breakable){
-                // 景物怪只掷一次：地图等级优先，地图没有有效等级时沿用玩家等级。
-                const lootLevel=(this.scene.map?.lootLevel??0)>0?this.scene.map!.lootLevel!:level;
-                const rolled=rollBreakableLoot(this.drops,this.app.characterStats,breakable,lootLevel,hero.level,Math.random,
-                  session.party?.groupModifiers());
-                this.scene.spawnLootOnMap(map,x,y,rolled.rewards,render&&!this.closed);
-                session.chests.spawnBreakableEnemies(map,key,rolled.enemies,{x,y});
-              }else if(rule&&!rule.noNormalDrops){
-              // 没有掉落规则或原版标记「无普通掉落」的敌人不掷骰，也不消耗首杀/保底计数；
-              // 任务掉落在同块之外，仍按原版 CHARSYSTEM_Die 的闸门后顺序执行。
-                const chapterLevel=(this.scene.map?.lootLevel??0)>0?this.scene.map!.lootLevel!:(rule.level??level);
-                const pity=this.drops.pity;
-                const pityConfig=pity?{equipment:pity.equipment,unique:pity.unique,epic:pity.epic,levelWindow:pity.levelWindow}:undefined;
-                const boss=rule.threat==='boss';
-                const firstBoss=boss?session.lootPity.takeBossFirstDefeat(enemyId):false;
-                const owners=session.party?.livingIds??['player'];
-                const offsets=[0,5,-5];
-                owners.forEach((ownerId,index)=>{
-                  const member=ownerId==='player'?hero:session.party?.get(ownerId);
-                  const memberLevel=member?.level??level;
-                  const eligibility=specialDropEligibility(this.drops,memberLevel,rule.level??level,chapterLevel);
-                  const guarantee=firstBossGuarantee(pity,firstBoss);
-                  const equipmentBonus=guarantee.equipmentBonus||(pityConfig?session.lootPity.equipmentBonus(ownerId,pityConfig):0);
-                  const uniqueBonus=eligibility.unique&&pityConfig?session.lootPity.uniqueBonus(ownerId,pityConfig):0;
-                  const epicBonus=eligibility.epic&&pityConfig?session.lootPity.epicBonus(ownerId,pityConfig):0;
-                  const uniqueGuarantee=eligibility.unique&&pityConfig?session.lootPity.uniqueGuaranteed(ownerId,pityConfig):false;
-                  const epicGuarantee=eligibility.epic&&pityConfig?session.lootPity.epicGuaranteed(ownerId,pityConfig):false;
-                  const minRarity=guarantee.minRarity;
-                  const rolled=rollEnemyLoot(this.drops,this.app.characterStats,enemyId,memberLevel,chapterLevel,Math.random,
-                    session.party?.groupModifiers(),{equipmentBonus,uniqueBonus,uniqueGuarantee,epicBonus,epicGuarantee,minRarity,itemChance:session.partyItemChance});
-                  const equipment=rolled.rewards.filter(reward=>reward.kind==='item'&&!!reward.roll);
-                  const bestRarity=equipment.reduce((best,reward)=>Math.max(best,reward.kind==='item'&&reward.roll?reward.roll.rarity:0),0);
-                  session.lootPity.recordEnemy(ownerId,{equipment:equipment.length>0,bestRarity},eligibility);
-                  const offset=offsets[index%offsets.length]!;
-                  this.scene.spawnLootOnMap(map,x+offset,y,rolled.rewards,render&&!this.closed);
-                });
-                const reservedSource:ReservedDropSource|undefined=rule.threat==='boss'?'boss':
-                  rule.threat==='elite'||rule.paidDropEligible?'elite':undefined;
-                if(reservedSource&&this.drops.reservedDrops){
-                  const pending=new Set(groundLootFor(session).forMap(map).flatMap(drop=>
-                    drop.reward.kind==='item'?[drop.reward.item]:[]));
-                  const reserved=rollReservedDrops(this.drops,this.app.characterStats,{
-                    source:reservedSource,heroLevel:session.hero?.level??level,pending,
-                    claimed:session.claimedReservedDrops,unlockMisses:session.reservedDropMisses,random:Math.random
-                  });
-                  session.reservedDropMisses=reserved.unlockMisses;
-                  if(reserved.rewards.length)this.scene.spawnLootOnMap(map,x,y,reserved.rewards,render&&!this.closed);
-                }
-              }
-              // 任务掉落保持共享：每次击杀最多一件，不随队伍人数翻倍。
-              // 已掉在地上还没捡的同类物品也要算进持有量，避免任务需求满了还继续产出。
-              this.scene.spawnLootOnMap(map,x,y,rollQuestDrops(this.drops,enemyId,
-                session.questDropRequirements()),render&&!this.closed);
+            const living=session.party?.livingIds??[];
+            const settlement=settleCombatRewards({
+              enemy:targetEnemy.definition,hasSpawn:!!spawn,enemyLevel:before.level,elite:before.elite,
+              heroLevel:hero.level,map,x,y,lootLevel:this.scene.map?.lootLevel,
+              partySize:Math.max(1,living.length||1),earnsExperience,
+              party:(living.length?living:['player']).map(id=>{
+                const member=id==='player'?hero:session.party?.get(id);
+                return {id,level:member?.level??hero.level};
+              }),
+              modifiers:session.party?.groupModifiers(),itemChance:session.partyItemChance,
+              drops:this.drops,stats:this.app.characterStats,random:Math.random,
+              questRequirements:session.questDropRequirements(),
+              pity:session.lootPity,
+              reserved:{misses:session.reservedDropMisses,claimed:session.claimedReservedDrops,
+                pending:new Set(groundLootFor(session).forMap(map).flatMap(drop=>
+                  drop.reward.kind==='item'?[drop.reward.item]:[]))},
+            });
+            if(settlement.killSound)this.app.audio?.monsterDeath(targetEnemy.definition.id);
+            for(const record of settlement.pityRecords)session.lootPity.recordEnemy(record.ownerId,
+              {equipment:record.equipment,bestRarity:record.bestRarity},record.eligibility);
+            session.reservedDropMisses=settlement.reservedUnlockMisses;
+            if(settlement.breakable){
+              this.scene.spawnLootOnMap(map,x,y,settlement.breakable.rewards,render&&!this.closed);
+              session.chests.spawnBreakableEnemies(map,key,settlement.breakable.enemies,{x,y});
+            }else{
+              const offsets=[0,5,-5];
+              for(const group of settlement.owners)this.scene.spawnLootOnMap(map,
+                x+offsets[group.slot%offsets.length]!,y,group.rewards,render&&!this.closed);
+              if(settlement.reserved.length)this.scene.spawnLootOnMap(map,x,y,settlement.reserved,render&&!this.closed);
             }
+            if(spawn)this.scene.spawnLootOnMap(map,x,y,settlement.quest,render&&!this.closed);
             this.removeEnemy(key);
-            if(breakable)this.syncChestEnemies();
-            if(!breakable&&earnsExperience&&reward>0){
-              const members=(session.party?.livingIds??[]).map(id=>({id,member:this.memberOf(id)!}));
+            if(settlement.isBreakable)this.syncChestEnemies();
+            if(settlement.experience>0){
+              const members=living.map(id=>({id,member:this.memberOf(id)!}));
               const levels=members.map(({member})=>member.level);
-              session.party?.addExperience(reward);
+              session.party?.addExperience(settlement.experience);
               if(render&&!this.closed)for(let index=0;index<members.length;index++){
                 const {id,member}=members[index],visual=this.visualOf(id);
                 if(member.level>levels[index]&&visual?.container.active){

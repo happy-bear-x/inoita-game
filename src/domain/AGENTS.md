@@ -5,7 +5,7 @@
 ## 文件
 
 - 会话/剧情：`session.ts`、`story-director.ts`、`story-runtime.ts`、`story-graph.ts`、`story-condition.ts`、`story-scene.ts`、`story-script.ts`、`campaign.ts`、`scene-plan.ts`，以及同前缀的 `story-*.ts`、`scene-*.ts`。
-- 战斗：`combat-*.ts`、`battle.ts`、`action-*.ts`、`attack-*.ts`、`buff-*.ts`、`skill-*.ts`、`enemy-*.ts`。
+- 战斗：`combat-*.ts`、`battle.ts`、`action-*.ts`、`attack-*.ts`、`buff-*.ts`、`skill-*.ts`、`enemy-*.ts`；击杀奖励结算在 `combat-rewards.ts`。
 - 物品/背包：`items.ts`、`inventory.ts`、`bag.ts`、`drops.ts`、`loot-pity.ts`、`ground-loot.ts`、`crafting.ts`、`enhancement.ts`、`equipment-*.ts`、`shop.ts`、`money.ts`（金额拆分与显示文本）。
 - 队伍/召唤：`party*.ts`、`companion-progression.ts`、`friendly-summon-ai.ts`、`summon-*.ts`。
 - 导航/地图：`navigation.ts`、`navigation-world.ts`、`pathfinding.ts`、`path-budget.ts`、`walk-route.ts`、`map-placement.ts`、`minimap.ts`。
@@ -16,6 +16,7 @@
 
 - 本目录保持零 Phaser 依赖，也不 import `application`、`ui`、`rendering`、`scenes`、`debug`。
 - 新规则写成纯函数或状态迁移，由 `application` 负责适配 Phaser、浏览器和磁盘。
+- 击杀奖励结算（经验、普通/景物/付费道具/任务掉落、套装首杀与装备/黄装/紫装保底记录）在 `combat-rewards.ts` 算完；场景只负责播放表现、选择落点并写回会话。随机源由调用方传入，固定随机源即可在纯 Node 下复现。
 - 金额一律以铜币存储；对玩家展示时用 `money.ts` 的 `moneyText` 或 `splitMoney`，不要直接把裸数字写成「金币」。
 - `SAVE_FORMAT` 当前是 41；改存档结构或校验口径时把它加一，并在 `src/application/saved-game.ts` 补迁移和旧档测试。升级链覆盖的旧档正常读取；比升级链更早的档案显示为空槽。
 - 保留道具（原版付费道具）由 `items.ts` 的 `reservedItems` 标记，普通掉落、商店、合成和任务奖励继续过滤；只有 `drops.ts` 的 `reservedDrops` 独立通道可以发放。一次性领取记录和解锁保底在会话状态 `reservedDrops` 里；旧档只补空状态和已经拥有的一次性道具领取记录，不清理已有物品。
