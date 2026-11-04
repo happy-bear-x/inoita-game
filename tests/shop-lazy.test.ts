@@ -39,9 +39,11 @@ test('trusted ContentLoader returns the lazy equipment payload', async () => {
     const { variants: _variants, ...rest } = entry;
     return [id, rest];
   }));
-  globalThis.fetch = (async (url: string) => ({
+  globalThis.fetch = (async (input: string | URL | Request) => ({
     ok: true,
-    json: async () => url.includes('shops-equipment') ? { equipment } : stats
+    json: async () => String(input) === 'content-manifest.json'
+      ? { schema: 1, contentVersion: '', required: {} }
+      : String(input).includes('shops-equipment') ? { equipment } : stats
   } as Response)) as typeof fetch;
   try {
     const loader = new ContentLoader();

@@ -3,7 +3,7 @@ import { STORY_TRIGGER_SOURCES } from './story-graph.ts';
 import type { StoryCommand, StoryEvent, StoryGraph, StoryNode, StoryNodeRef, StoryTriggerSource } from './story-graph.ts';
 import type { StoryCondition } from './story-condition.ts';
 import { validateStoryStageSnapshot, type StoryStage, type StoryStageSnapshot } from './story-performance.ts';
-import { freezeSnapshot } from './dev-mode.ts';
+import { freezeSnapshot, storyDevMode } from './dev-mode.ts';
 
 export interface StoryOccurrence { id: string; sequence: number; source: StoryTriggerSource; key?: string; map?: string; mapVisit?: number; entity?: string }
 interface StoryRun {
@@ -74,6 +74,8 @@ export class StoryRuntime {
   private readonly port: StoryRuntimePort;
   private readonly nodes = new Map<string, StoryNode>();
   private readonly eventIndex = new Map<StoryTriggerSource, StoryEvent[]>();
+  /** 可信检查点的廉价校验查这张表，不再线性扫事件。 */
+  private readonly eventIds = new Set<string>();
   private state: StoryRuntimeSnapshot = emptySnapshot();
   /** 按数组引用缓存的完成事件集合；状态不可变，数组换了才重建。 */
   private completedEventCache?: { events: readonly string[]; values: Set<string> };
@@ -97,6 +99,7 @@ export class StoryRuntime {
     for (const [script, definition] of Object.entries(this.graph.scripts))
       for (const node of definition.nodes) this.nodes.set(StoryRuntime.nodeKey({ script, node: node.id }), node);
     this.graph.events.forEach(event => {
+      this.eventIds.add(event.id);
       const list = this.eventIndex.get(event.source) ?? [];
       list.push(event); this.eventIndex.set(event.source, list);
     });
@@ -136,15 +139,47 @@ export class StoryRuntime {
   }
   /** 状态不可变，快照直接共享引用；开发/测试模式在这里递归冻结，写坏快照会立刻报错。 */
   snapshot(): StoryRuntimeSnapshot { return freezeSnapshot(this.state); }
-  /** 内部可信检查点：只接收引用，不克隆、不跑读档级校验。 */
-  adopt(snapshot: StoryRuntimeSnapshot): StoryRuntimeSnapshot {
+  /** 运行时自己的写入口：状态已经由本类产出，只冻结引用，不再校验。 */
+  private install(snapshot: StoryRuntimeSnapshot): StoryRuntimeSnapshot {
     this.state = freezeSnapshot(snapshot);
     return this.state;
+  }
+  /**
+   * 内部可信检查点：只接收引用，不克隆。
+   *
+   * 每次只查版本、顶层数组、运行 ID 与完成事件是否存在/重复；这些是 O(运行数 + 事件数) 的廉价检查。
+   * 开发/测试模式再跑一遍读档级全量校验，把内部 bug 尽早暴露；生产热路径不承担这份成本。
+   */
+  adoptTrusted(snapshot: StoryRuntimeSnapshot): StoryRuntimeSnapshot {
+    if ((snapshot.version !== 2 && snapshot.version !== 3) || !Number.isSafeInteger(snapshot.sequence) || snapshot.sequence < 0)
+      throw new Error('剧情检查点版本或序号无效');
+    for (const key of ['runs', 'completedEvents', 'handledOccurrences', 'encounterResults', 'pendingOccurrences', 'occurrenceSequences'] as const)
+      if (!Array.isArray(snapshot[key])) throw new Error(`剧情检查点 ${key} 不是数组`);
+    const ids = new Set<string>();
+    for (const run of snapshot.runs) {
+      if (!run?.id || ids.has(run.id) || !['running', 'waiting', 'deferred', 'completed'].includes(run.status))
+        throw new Error('剧情运行标识或状态无效');
+      ids.add(run.id);
+      if (!run.cursor || !this.nodes.has(StoryRuntime.nodeKey(run.cursor)))
+        throw new Error(`剧情检查点节点不存在：${run.cursor?.script}/${run.cursor?.node}`);
+    }
+    const completed = new Set<string>();
+    for (const id of snapshot.completedEvents) {
+      if (!id || completed.has(id) || !this.eventIds.has(id)) throw new Error(`已完成事件不存在或重复：${id}`);
+      completed.add(id);
+    }
+    if (storyDevMode()) this.validateRestoreSnapshot(snapshot);
+    return this.install(snapshot);
   }
   /** 这个运行当前走到哪个脚本；供演出提前准备它可能跨到的地图。 */
   runScript(id: string): string | undefined { return this.state.runs.find(run => run.id === id)?.cursor.script; }
   prepareRestore(snapshot: StoryRuntimeSnapshot): StoryRuntimeSnapshot {
     const result = clone(snapshot);
+    this.validateRestoreSnapshot(result);
+    return result;
+  }
+  /** 读档级全量校验；只给外部存档/检查点入口和开发模式的内部检查点用。 */
+  private validateRestoreSnapshot(result: StoryRuntimeSnapshot): void {
     if ((result.version !== 2 && result.version !== 3) || !Number.isSafeInteger(result.sequence) || result.sequence < 0) throw new Error('剧情检查点版本或序号无效');
     const ids = new Set<string>();
     const activeEvents = new Set<string>();
@@ -183,12 +218,11 @@ export class StoryRuntime {
       || result.occurrenceSequences.some(([key, sequence]) => !key || !Number.isSafeInteger(sequence) || sequence < 0)) throw new Error('剧情触发发生序号无效');
     for (const id of result.completedEvents) if (!this.graph.events.some(event => event.id === id)) throw new Error(`已完成事件不存在：${id}`);
     if (new Set(result.completedEvents).size !== result.completedEvents.length || new Set(result.encounterResults).size !== result.encounterResults.length) throw new Error('剧情检查点记账重复');
-    return result;
   }
   restore(snapshot: StoryRuntimeSnapshot): void {
     const next = this.prepareRestore(snapshot);
     // Explicit restoration replaces the old baseline; cancel only its pending playback.
-    this.active = undefined; this.cancel(); this.adopt(next);
+    this.active = undefined; this.cancel(); this.install(next);
   }
   cancel(): void {
     const active = this.active; this.active = undefined;
@@ -247,7 +281,7 @@ export class StoryRuntime {
     if (!occurrence.id || !Number.isSafeInteger(occurrence.sequence) || occurrence.sequence < 0) return Promise.reject(new Error('剧情触发必须有本次发生的标识和递增序号')); 
     const key = this.occurrenceKey(occurrence);
     if (!this.state.pendingOccurrences.some(pending => this.occurrenceKey(pending.occurrence) === key))
-      this.adopt({ ...this.state, pendingOccurrences: [...this.state.pendingOccurrences, { occurrence: clone(occurrence), nextEventIndex: 0 }] });
+      this.install({ ...this.state, pendingOccurrences: [...this.state.pendingOccurrences, { occurrence: clone(occurrence), nextEventIndex: 0 }] });
     return this.enqueue((signal, epoch) => this.processOccurrence(key, signal, epoch));
   }
   private async processOccurrence(key: string, signal: AbortSignal, epoch: number): Promise<boolean> {
@@ -260,7 +294,7 @@ export class StoryRuntime {
       if (this.port.validOccurrence?.(occurrence) === false) break;
       const event = events[index];
       // 存储剩余候选；当前节点由 runs 独立恢复。
-      this.adopt({ ...this.state, pendingOccurrences: this.state.pendingOccurrences.map(pending =>
+      this.install({ ...this.state, pendingOccurrences: this.state.pendingOccurrences.map(pending =>
         this.occurrenceKey(pending.occurrence) === key ? { ...pending, nextEventIndex: index + 1 } : pending) });
       const expectedKey=event.key??(event.source==='near'?event.nearCharacterId??event.near:event.source==='region'?event.id:undefined);
       if ((expectedKey !== undefined && expectedKey !== occurrence.key) || (event.map !== undefined && event.map !== occurrence.map)
@@ -271,7 +305,7 @@ export class StoryRuntime {
       const run = this.createRun(event.script, event.id, occurrence.id, occurrence);
       played = await this.execute(run.id, signal, epoch) || played;
     }
-    this.adopt({ ...this.state, pendingOccurrences: this.state.pendingOccurrences.filter(pending => this.occurrenceKey(pending.occurrence) !== key) });
+    this.install({ ...this.state, pendingOccurrences: this.state.pendingOccurrences.filter(pending => this.occurrenceKey(pending.occurrence) !== key) });
     return played;
   }
   /** `node` 只给调试入口用：从任意节点强制开演，正常触发始终从脚本 entry 开始。 */
@@ -307,12 +341,12 @@ export class StoryRuntime {
     do { id = `story:${++sequence}`; } while (this.state.runs.some(run => run.id === id));
     const run: StoryRun = { id, script, eventId, occurrence, occurrenceSource: source?.source, occurrenceSequence: source?.sequence,
       cursor: { script, node: entryNode ?? this.graph.scripts[script].entry }, status: 'running' };
-    this.adopt({ ...this.state, sequence, runs: [...this.state.runs, run] }); return run;
+    this.install({ ...this.state, sequence, runs: [...this.state.runs, run] }); return run;
   }
   private publish(commit: StoryNodeCommit): void {
     this.port.apply(commit);
     this.port.commit(commit);
-    this.adopt(commit.checkpoint);
+    this.install(commit.checkpoint);
   }
   private async execute(id: string, signal: AbortSignal, epoch: number): Promise<boolean> {
     let committed = false;

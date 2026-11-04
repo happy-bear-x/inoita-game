@@ -1001,12 +1001,12 @@ export class Session {
     if(touched.has('runtimeSnapshot'))this.runtimeSnapshot=baseline.runtime!;
   }
   /**
-   * 内部剧情检查点：由 `StoryRuntime` 自己产出，只接收引用，不复制、不跑读档级的图校验。
+   * 内部剧情检查点：由 `StoryRuntime` 自己产出，只接收引用并做廉价检查；开发/测试模式再全量校验。
    * 读档、检查点恢复和调试跳转仍走 `prepareRuntime`。
    */
   adoptRuntime(snapshot:StoryRuntimeSnapshot):void {
     const runtime=this.runtimeValidator??=this.createRuntimeValidator();
-    this.runtimeSnapshot=runtime.adopt(snapshot);
+    this.runtimeSnapshot=runtime.adoptTrusted(snapshot);
   }
   private applyQuestCommand(command:QuestCommand):void {
     const plan=this.questBook.plan(command,{stateIsCurrent:true});

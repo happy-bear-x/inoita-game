@@ -5,6 +5,7 @@ import { build } from 'vite';
 import { validateContent } from './validate-content.mjs';
 import { BUILD_META_FILENAME, computeVersions, hashTree } from './build-version.ts';
 import { buildContent } from './content-build.ts';
+import { writeContentManifest } from './content-manifest.ts';
 import { writeUpdateArtifacts } from './update-manifest.ts';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 if(process.argv.length>2)throw new Error('构建命令无需参数');
@@ -30,6 +31,8 @@ try{
  // Vite 会先把 public 原样复制到 output；用构建期编译/压缩后的内容替换。
  await fs.rm(path.join(output,'content'),{recursive:true,force:true});
  await fs.cp(contentDir,path.join(output,'content'),{recursive:true});
+ // 内容哨兵放在 content/ 外，contentVersion 仍只由 hashTree(content) 决定。
+ await writeContentManifest(output,contentDir,versions.contentVersion);
  const outputVersions=computeVersions(output);
  if(outputVersions.assetVersion!==versions.assetVersion||outputVersions.contentVersion!==versions.contentVersion)
   throw new Error('构建后的 assets/content 与构建期版本不一致，请重新构建');
