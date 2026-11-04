@@ -21,7 +21,7 @@ export type RecoveryResult = {used:false;reason:'unavailable'|'blocked'|'cooldow
  * 持续回复的剩余时间与每脉冲加成。数值来自物品自身的用时数据
  * （原版 `ITEMBUFFBASE` → `BUFFDATABASE` → `BUFFUNITBASE`），加在既有的资源回复脉冲上。
  */
-export interface RegenerationState { remainingMs:number; healthRecoveryPerPulse:number; manaRecoveryPerPulse:number }
+interface RegenerationState { remainingMs:number; healthRecoveryPerPulse:number; manaRecoveryPerPulse:number }
 export interface RecoveryItemsState { elapsedMs:number; nextTick:number; durationMs:number; regeneration?:RegenerationState }
 
 /** One party-wide clock, advanced only by active gameplay. */

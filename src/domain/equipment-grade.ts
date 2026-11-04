@@ -15,7 +15,7 @@ export interface GradeProfile {
   luck?: number;
 }
 
-export interface RolledGrade extends EquipmentGradeSeed {
+interface RolledGrade extends EquipmentGradeSeed {
   rarity: number;
 }
 

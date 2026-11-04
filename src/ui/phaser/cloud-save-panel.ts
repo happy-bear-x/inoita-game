@@ -10,7 +10,7 @@ import {
 } from '../cloud-save-layout.ts';
 import type { UiSurface } from './widgets.ts';
 
-export interface CloudSavePageAssets {
+interface CloudSavePageAssets {
   frame: string;
   close: string;
   closePressed: string;

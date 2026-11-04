@@ -13,7 +13,7 @@ function parseValueParts(value: string): { prefix: string; sign: string; number:
   return { prefix: groups.prefix, sign: groups.sign, number: groups.number, suffix: groups.suffix };
 }
 
-export interface CompiledSkillDisplay {
+interface CompiledSkillDisplay {
   display: SkillDisplayRow[];
   displayValues: number[][];
 }

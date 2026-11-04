@@ -3,7 +3,7 @@ import { SKILL_BINDING_ACTIONS, type KeyBindingAction } from '../../domain/key-b
 import type { KeyBindingPreferences } from '../../application/key-bindings.ts';
 import type { InputRouter } from '../../application/input-router.ts';
 
-export interface KeyboardActionHandlers {
+interface KeyboardActionHandlers {
   /** `slot` 从 1 开始，对应屏幕上的六个快捷位。 */
   skill(slot: number): void;
   cycle(): void;

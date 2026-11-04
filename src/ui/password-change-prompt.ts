@@ -4,7 +4,7 @@ import {
   validateCloudPassword,
 } from '../domain/cloud-save.ts';
 
-export interface PasswordChangePromptOptions {
+interface PasswordChangePromptOptions {
   onConfirm(currentPassword: string, newPassword: string): void;
   onCancel(): void;
   /** 覆盖默认提示。 */

@@ -8,7 +8,7 @@
 export const CLOUD_PATH = '/__cloud';
 export const DIAGNOSTICS_REPORT_PATH = '/__diagnostics/report';
 
-export interface RuntimeEndpoints {
+interface RuntimeEndpoints {
   version: 1;
   /** 完整的云存档基址；空串表示同源。 */
   cloudBase: string;
@@ -16,7 +16,7 @@ export interface RuntimeEndpoints {
   diagnosticsReport: string;
 }
 
-export interface EndpointGlobals {
+interface EndpointGlobals {
   __inoitaEndpoints?: unknown;
 }
 

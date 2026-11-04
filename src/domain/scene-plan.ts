@@ -1,7 +1,7 @@
 import type {SceneActorState,SceneSnapshot} from './scene-snapshot.ts';
 import {actorRefFromState,actorRefKey,type ActorRef} from './actor-ref.ts';
 
-export interface PlannedActor {
+interface PlannedActor {
   /** 稳定实例引用；alias 不在这里。 */
   ref:ActorRef;
   refKey:string;
@@ -12,7 +12,7 @@ export interface PlannedActor {
   aliases:string[];
 }
 
-export interface ScenePlan {
+interface ScenePlan {
   map:string;
   actors:PlannedActor[];
   /** 可见实例按 refKey 分组；每份状态必须只有一个可见演员。 */

@@ -7,9 +7,9 @@ import {projectileStep,projectileHeading} from './basic-attack.ts';
 import {positionTransitionStep} from './skill-geometry.ts';
 
 interface ScheduledWork {id:number;ownerId:string;dueFrame:number;work():void}
-export type CombatRequestResult={kind:'started'|'approaching'}|{kind:'rejected';reason:Exclude<ReturnType<CombatController['request']>,'started'>};
-export interface CombatRuntimeState {actors:[string,CombatSnapshot][]}
-export interface ActionTiming {sourceFrames:number;frameDurationMs:number}
+type CombatRequestResult={kind:'started'|'approaching'}|{kind:'rejected';reason:Exclude<ReturnType<CombatController['request']>,'started'>};
+interface CombatRuntimeState {actors:[string,CombatSnapshot][]}
+interface ActionTiming {sourceFrames:number;frameDurationMs:number}
 interface RunningAction {
   id:number;ownerId:string;startedFrame:number;action:ActionPlayback;timing:ActionTiming;
   elapsedMs:number;frame:number;frames:number;frameWork(index:number):void;complete():void;
@@ -18,8 +18,8 @@ export type FlightEvent=
   | {kind:'start';id:number;effect:string;position:Point;heading:number;directional:boolean;aboveCharacters:boolean}
   | {kind:'step';id:number;position:Point;heading:number;durationMs:number}
   | {kind:'end';id:number};
-export interface FlightPort {actor(id:string):Combatant|undefined;emit(event:FlightEvent):void}
-export interface FlightRequest {
+interface FlightPort {actor(id:string):Combatant|undefined;emit(event:FlightEvent):void}
+interface FlightRequest {
   ownerId:string;effect:string;position:Point;targetId?:string;targetPosition?:Point;
   kind:'trace'|'position';stepDistancePx:number;stepDurationMs:number;
   switchFrame?:number;directional?:boolean;aboveCharacters?:boolean;

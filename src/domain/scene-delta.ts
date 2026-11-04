@@ -1,14 +1,14 @@
 import type {SceneActorState,SceneSnapshot} from './scene-snapshot.ts';
 import {actorRefFromState,actorRefKey,type ActorRef} from './actor-ref.ts';
 
-export interface SceneActorDelta {
+interface SceneActorDelta {
   ref:ActorRef;
   kind:'appear'|'update'|'remove';
   before?:SceneActorState;
   after?:SceneActorState;
 }
 
-export interface SceneDelta {
+interface SceneDelta {
   map:string;
   changes:SceneActorDelta[];
 }

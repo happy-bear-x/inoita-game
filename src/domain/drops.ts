@@ -14,7 +14,7 @@ export const BREAKABLE_ENEMY_IDS = {
   jar: 'enemy-jar-1',
   box: 'enemy-box-1'
 } as const;
-export type BreakableKind = keyof typeof BREAKABLE_ENEMY_IDS;
+type BreakableKind = keyof typeof BREAKABLE_ENEMY_IDS;
 const BREAKABLE_KIND_BY_ENEMY = new Map<string, BreakableKind>(
   Object.entries(BREAKABLE_ENEMY_IDS).map(([kind, enemyId]) => [enemyId, kind as BreakableKind])
 );
@@ -35,7 +35,7 @@ export interface EnemyDropRule {
   chances:Record<DropChance,number>;
   fixed:{item:string;weight:number}[];
 }
-export interface ChapterBand {
+interface ChapterBand {
   id:string;
   minLevel:number;
   maxLevel:number;
@@ -48,15 +48,15 @@ export interface PityConfig extends LootPityConfig {
   bossGuarantee:{equipment:boolean;minRarity:number};
 }
 /** 独立紫装判定：没有这个配置时紫装随机路径完全关闭。 */
-export interface EpicDropsConfig {
+interface EpicDropsConfig {
   minLevel:number;
   enemyChance:number;
   chestChance:number;
 }
-export interface QuestItemDropRule { item:string; threshold:number }
+interface QuestItemDropRule { item:string; threshold:number }
 export interface QuestDropRequirement { item:string; quantity:number; owned:number }
-export type ReservedDropSource = 'elite'|'boss';
-export interface ReservedDropEntry {
+type ReservedDropSource = 'elite'|'boss';
+interface ReservedDropEntry {
   item:string;
   minPlayerLevel:number;
   maxPlayerLevel:number;
@@ -318,7 +318,7 @@ function pickUnique(catalog:DropCatalog,cap:number,random:()=>number):string|und
   return pickFromPool(catalog.equipment.unique,cap,random);
 }
 
-export interface LegendaryReward {
+interface LegendaryReward {
   item:string;
   grade:EquipmentGradeSeed;
   sockets:boolean;
@@ -399,7 +399,7 @@ function itemLevelCap(level:number,playerLevel:number,maxItemLevel?:number):numb
   return Math.max(1,Math.min(level,playerLevel,maxItemLevel??level));
 }
 
-export interface ReservedDropRollOptions {
+interface ReservedDropRollOptions {
   source:ReservedDropSource;
   heroLevel:number;
   pending?:ReadonlySet<string>;
@@ -407,7 +407,7 @@ export interface ReservedDropRollOptions {
   unlockMisses?:number;
   random?:()=>number;
 }
-export interface ReservedDropRollResult {
+interface ReservedDropRollResult {
   rewards:DropReward[];
   unlockMisses:number;
   forced:boolean;
@@ -447,7 +447,7 @@ export function rollReservedDrops(catalog:DropCatalog,stats:CharacterStatsCatalo
   return {rewards:[reward],unlockMisses:nextMisses,forced,item:entry.item};
 }
 
-export interface SpecialDropEligibility { cap:number; withinWindow:boolean; unique:boolean; epic:boolean }
+interface SpecialDropEligibility { cap:number; withinWindow:boolean; unique:boolean; epic:boolean }
 
 /**
  * 黄装/紫装的等级与保底资格。cap 是物品等级上限：人物、内容、章节上限三者取小。
@@ -589,7 +589,7 @@ function profileFor(catalog:DropCatalog,band:ChapterBand|undefined,threat:'norma
 }
 
 /** 怪物掉落：基础槽位判定与原版一致，槽位成功后按稀有度/章节/品级生成实例快照。 */
-export interface EnemyLootOptions {
+interface EnemyLootOptions {
   /** 温和保底：装备槽的绝对加值（万分比）。 */
   equipmentBonus?: number;
   /** 温和保底：黄装槽的绝对加值。 */

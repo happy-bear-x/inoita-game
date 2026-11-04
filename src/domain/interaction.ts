@@ -1,9 +1,9 @@
 import type { ActorDefinition } from './content.ts';
 
-export type InteractionService = NonNullable<ActorDefinition['service']>;
+type InteractionService = NonNullable<ActorDefinition['service']>;
 
 /** 交互决策的结果；场景按 kind 执行对应表现或面板。 */
-export type InteractionAction =
+type InteractionAction =
   | { kind: 'none' }
   | { kind: 'chest' }
   | { kind: 'spring' }

@@ -3,7 +3,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
 /** 构建版本：只随对应目录的内容变化，不随 checkout 时间或重新构建变化。 */
-export interface BuildVersions {
+interface BuildVersions {
   assetVersion: string;
   contentVersion: string;
 }

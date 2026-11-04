@@ -8,7 +8,7 @@ import { compileSkillAction } from '../src/domain/skill-action-compiler.ts';
 import { wardrobePoseRelativeFile, type WardrobeCatalog } from '../src/domain/wardrobe.ts';
 import type { SkillAction, SkillDisplayRow, SkillRank } from '../src/domain/battle.ts';
 
-export interface ContentBuildStats {
+interface ContentBuildStats {
   files: number;
   sourceBytes: number;
   outputBytes: number;
@@ -49,12 +49,12 @@ interface BattleLike {
 }
 
 interface ClipLayerLike { key: string; file: string; [field: string]: unknown }
-export interface ClipLike {
+interface ClipLike {
   frameWidth: number; frameHeight: number; frames: number; frameRate: number;
   layers: ClipLayerLike[]; [field: string]: unknown;
 }
 interface ClipRecord { clip: ClipLike; name: string; layer: ClipLayerLike }
-export interface ClipDedupe {
+interface ClipDedupe {
   docs: Map<string, unknown>;
   canonical: Map<string, { key: string; file: string }>;
   hashes: Map<string, string>;

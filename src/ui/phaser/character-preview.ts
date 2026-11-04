@@ -3,7 +3,7 @@ import type { ActorDefinition } from '../../domain/content.ts';
 import { blendModeOf } from '../../rendering/blend-modes.ts';
 import type { UiSurface } from './widgets.ts';
 
-export interface CharacterPreviewRect { x: number; y: number; width: number; height: number }
+interface CharacterPreviewRect { x: number; y: number; width: number; height: number }
 
 /**
  * 菜单里的角色立绘。只摆角色外观的第一帧静态图，不创建会播放动画的角色。

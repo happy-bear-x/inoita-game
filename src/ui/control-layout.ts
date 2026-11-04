@@ -5,13 +5,13 @@ export const CONTROL_IDS = ['move', 'attack', 'slot-0', 'slot-1', 'slot-2', 'slo
 export type ControlId = typeof CONTROL_IDS[number];
 export interface ControlPoint { x: number; y: number }
 /** 控件中心相对屏幕安全区的位置（横纵 0–1）和用户缩放倍率；缺项使用默认位置和 1 倍。 */
-export interface ControlOverride extends ControlPoint { scale?: number }
+interface ControlOverride extends ControlPoint { scale?: number }
 export type ControlLayoutOverrides = Partial<Record<ControlId, ControlOverride>>;
 export interface StorageLike { getItem(key: string): string | null; setItem(key: string, value: string): void }
 export const CONTROL_LAYOUT_STORAGE_KEY = 'inotia-control-layout';
 /** 用户能拉到的最小和最大倍率；布局解析和编辑器共用。 */
 export const CONTROL_SCALE_MIN = 0.6;
-export const CONTROL_SCALE_MAX = 2;
+const CONTROL_SCALE_MAX = 2;
 const FORMAT = 2;
 
 /** 各类操作控件的基准尺寸（界面单位）；布局解析与绘制层共用这一份。 */
@@ -24,13 +24,13 @@ export const CONTROL_SIZES = {
   slot: { width: 94, height: 94 }
 } as const;
 
-export const SHORTCUT_OFFSETS = [
+const SHORTCUT_OFFSETS = [
   {x:-342,y:33},{x:-242,y:33},{x:-142,y:33},
   {x:-129,y:-57},{x:-61,y:-120},{x:33,y:-123}
 ] as const;
 /** 左侧存档／菜单按钮的基准边长（界面单位）；电脑模式技能行的一格按它换算。 */
 export const HUD_SIDE_BUTTON_SIZE = 56;
-export const SWAP_OFFSET = {x:42,y:-210} as const;
+const SWAP_OFFSET = {x:42,y:-210} as const;
 /** 登记页的待登记对象相对默认普攻中心的位置。 */
 export const PENDING_OFFSET = {x:-382,y:-183} as const;
 

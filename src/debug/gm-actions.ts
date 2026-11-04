@@ -23,27 +23,27 @@ import type { ItemCategory } from '../domain/story-interface.ts';
 import { organizedDebugInventory } from '../domain/inventory.ts';
 import { DIAGNOSTICS_REPORT_PATH, diagnosticsReportUrl } from '../application/endpoints.ts';
 
-export interface GmResult { ok: boolean; reason?: string }
-export interface GmStoryPreview extends GmResult {
+interface GmResult { ok: boolean; reason?: string }
+interface GmStoryPreview extends GmResult {
   preview?: StoryDebugPreview;
   /** 准备失败时，导出层的缺口记录（缺哪条证据）。 */
   gap?: StoryDebugGap;
 }
-export interface GmStoryJumpResult extends GmResult {
+interface GmStoryJumpResult extends GmResult {
   sourceHash?: string;
   play?: StoryDebugPlay;
   gap?: StoryDebugGap;
 }
-export interface GmEndDebugResult extends GmResult { focus?: string }
+interface GmEndDebugResult extends GmResult { focus?: string }
 /** 面板据此显示「调试现场：自动存档已暂停」与「结束本次调试」。 */
-export interface GmDebugState { focus?: string; autoSavePaused: boolean }
+interface GmDebugState { focus?: string; autoSavePaused: boolean }
 /** 进入调试前的世界视图；动作层不依赖 Phaser，场景快照保持不透明。 */
-export interface GmDebugWorldPort {
+interface GmDebugWorldPort {
   capture(): unknown | undefined;
   restore(snapshot: unknown): Promise<GmResult>;
 }
 /** 脱困结果带前后位置，面板与 agent 都能确认搬到了哪里。 */
-export interface GmRescueResult extends GmResult { from?: unknown; to?: unknown; moved?: boolean }
+interface GmRescueResult extends GmResult { from?: unknown; to?: unknown; moved?: boolean }
 
 export type GmItemFilter = 'all' | ItemCategory;
 
@@ -75,9 +75,9 @@ export interface GmItemEntry {
   owned: number;
 }
 
-export interface GmLevelResult extends GmResult { level?: number; gained?: number }
-export interface GmGiveResult extends GmResult { item?: string; name?: string; requested?: number; total?: number }
-export interface GmMoneyResult extends GmResult { money?: number }
+interface GmLevelResult extends GmResult { level?: number; gained?: number }
+interface GmGiveResult extends GmResult { item?: string; name?: string; requested?: number; total?: number }
+interface GmMoneyResult extends GmResult { money?: number }
 
 /**
  * 战斗侧能力。headless 没有场景时不注入，相关动作如实返回失败，
@@ -92,7 +92,7 @@ export interface GmCombatPort {
   revive?(actorId: string): GmResult;
 }
 
-export interface GmActionLogEntry {
+interface GmActionLogEntry {
   at: string;
   call: string;
   args: readonly unknown[];
@@ -105,7 +105,7 @@ export interface GmActionLogEntry {
  * 进入调试现场时暂停写入；正常结束调试时恢复并把当前现场重新记成检查点、请求一次正常存档；
  * 调试现场被回滚流程接管时只恢复写入——当前画面不是调试结果，不能记成检查点。
  */
-export interface GmPersistencePort {
+interface GmPersistencePort {
   suspend(): void;
   /** 正常结束调试：恢复自动存档，并把当前现场记成检查点、请求一次存档。 */
   resume(): void;
@@ -113,7 +113,7 @@ export interface GmPersistencePort {
   resumeAfterRollback(): void;
 }
 
-export interface GmPorts {
+interface GmPorts {
   session: Session;
   campaign: Campaign;
   director?: StoryDirector;

@@ -35,7 +35,7 @@ export function blocksActor(first: NavigationActor, second: NavigationActor): bo
   return !(first.faction?.() === 'party' && second.faction?.() === 'party');
 }
 
-export interface NavigationQuerySnapshot {
+interface NavigationQuerySnapshot {
   readonly bounds:GameRectangle;
   readonly start:Point;
   /** 与地图共享的只读地形；整张地图生命周期内不变，查询不需要复制。 */

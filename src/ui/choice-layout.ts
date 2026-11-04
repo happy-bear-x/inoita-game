@@ -2,14 +2,14 @@
  * 剧情/任务选项面板的竖排布局。场景负责量文字高度，这里只算几何：
  * 面板尽量向上长到放得下所有选项，放不下时选项区滚动，按钮高度始终够放下换行后的标签。
  */
-export interface ChoiceLayoutInput {
+interface ChoiceLayoutInput {
   promptHeight: number;
   descriptionHeight?: number;
   /** 每个选项标签按选项宽度换行后的实际文字高度。 */
   optionTextHeights: readonly number[];
 }
 
-export interface ChoiceLayout {
+interface ChoiceLayout {
   top: number;
   panelHeight: number;
   promptY: number;

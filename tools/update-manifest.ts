@@ -6,7 +6,7 @@ import { signBytes, tryReadUpdateKey, verifyBytes, writePublicKey } from './upda
 
 export { signBytes, verifyBytes };
 
-export const MIN_SHELL = 1;
+const MIN_SHELL = 1;
 const HEX16 = /^[0-9a-f]{16}$/;
 const HEX64 = /^[0-9a-f]{64}$/;
 const UPDATE_DIR = 'update';
@@ -27,19 +27,19 @@ export interface UpdatePointer {
   manifestSha256: string;
   minShell: number;
 }
-export interface UpdateBuildInput {
+interface UpdateBuildInput {
   builtAt: string;
   assetVersion: string;
   contentVersion: string;
   minShell?: number;
 }
-export interface UpdateBuildResult {
+interface UpdateBuildResult {
   buildId: string;
   fileCount: number;
   signed: boolean;
   manifestBytes: Buffer;
 }
-export interface UpdateDiff { changed: UpdateFile[]; removed: string[]; downloadBytes: number }
+interface UpdateDiff { changed: UpdateFile[]; removed: string[]; downloadBytes: number }
 
 function recordOf(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} 必须是对象`);
@@ -140,7 +140,7 @@ export function serialize(value: unknown): string {
   return JSON.stringify(value);
 }
 
-export function pointerFor(
+function pointerFor(
   manifest: UpdateManifest, manifestBytes: Buffer, builtAt: string, minShell = MIN_SHELL,
 ): UpdatePointer {
   return {

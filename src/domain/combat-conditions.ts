@@ -23,7 +23,7 @@ export interface ResourceCapacities {maxHealth:number;maxMana:number}
  * 无敌开关的宿主。调试开关存在会话上，`CombatConditions` 只读取它；没有宿主时退化为类内集合。
  * 开关刻意不进入 `captureState`，因此不写存档、也不随剧情标记回退。
  */
-export interface InvincibilityPort {has(actorId:string):boolean;add(actorId:string):void;delete(actorId:string):void}
+interface InvincibilityPort {has(actorId:string):boolean;add(actorId:string):void;delete(actorId:string):void}
 interface BuffResourcePort {
   captureResourceCapacities(actorId:string):ResourceCapacities;
   onApply(actorId:string,effect:BattleBuffEffect,entry:Readonly<ResourceCapacities>):void;

@@ -12,14 +12,14 @@ import { classSummonEnemyIds, enemyCombatAssets, partyMemberCombatAssets } from 
 import { residentCombatAssets, type ResidentCombatInput } from './resident-combat-assets.ts';
 import { EFFECT_ATLAS_BY_FILE, EFFECT_ATLAS_PAGES } from '../generated/effect-atlas.ts';
 
-export interface CoverageInput extends ResidentCombatInput {
+interface CoverageInput extends ResidentCombatInput {
   battle: BattleCatalog;
   wardrobe: WardrobeCatalog;
   world: WorldIndex;
   companions: CompanionCatalog;
 }
 
-export interface CoverageGaps {
+interface CoverageGaps {
   /** 运行时可能播放、但常驻包没有登记的特效名。 */
   effects: string[];
   /** 常驻包里缺少的特效纹理键。 */

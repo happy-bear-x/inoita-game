@@ -35,7 +35,7 @@ export const PARTY_ASSETS = ['party-slot', 'party-empty', 'party-frame', 'party-
   'party-tab-info', 'party-tab-equipment', 'party-tab-skills', 'party-skill-unavailable',
   ...['dark-knight','assassin','warlock','priest','ranger','warrior'].map(id=>`party-class-${id}`)];
 
-export interface MemberArt { image: string; partyIcon: string }
+interface MemberArt { image: string; partyIcon: string }
 
 /**
  * 队员在菜单里的形象。佣兵只显示职业默认图；主角和剧情同伴优先用专属立绘，

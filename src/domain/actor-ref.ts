@@ -13,7 +13,7 @@ export type ActorRef =
   | {source:'combat';map:string;encounterId?:string;enemyKey:string}
   | {source:'story';runId:string;instanceId:string};
 
-export interface ActorRefContext {
+interface ActorRefContext {
   map:string;
   runId?:string;
   encounterId?:string;

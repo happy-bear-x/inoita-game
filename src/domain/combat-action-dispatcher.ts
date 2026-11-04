@@ -9,7 +9,7 @@ import type {CollisionBox} from './content.ts';
 import {CombatRuntime,type FlightEvent} from './combat-runtime.ts';
 
 export type ActionDispatchRunner=(definition:ActionDispatchDefinition,work:()=>void,after?:()=>void)=>void;
-export interface CombatActionPort {
+interface CombatActionPort {
   runtime:CombatRuntime;
   catalog:BattleCatalog;
   actor(id:string):Combatant|undefined;

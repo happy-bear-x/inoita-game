@@ -22,21 +22,21 @@ export interface StoryMenuSettingsView {
 }
 
 /** 技能书页自己的状态；选中项和提示由面板直接改，会话通知只关心书与技能版本。 */
-export interface StoryMenuLearnView {
+interface StoryMenuLearnView {
   entryId: string;
   selected?: string;
   message: string;
 }
 
 /** 强化台自己的状态；通知期间它的动作由面板显式重绘。 */
-export interface StoryMenuForgeView {
+interface StoryMenuForgeView {
   targetId?: string;
   tab: string;
   confirming: boolean;
 }
 
 /** GM 页顶部的开关状态。 */
-export interface StoryMenuDebugView {
+interface StoryMenuDebugView {
   noclip: boolean;
   doubleSpeed: boolean;
 }
@@ -62,7 +62,7 @@ export interface StoryMenuViewModelSource {
 }
 
 /** 每个页面自己的 view model：只放这一页真正显示、且会随通知变化的数据。 */
-export interface StoryMenuViewModel {
+interface StoryMenuViewModel {
   page: StoryMenuPage;
   selectedMemberId?: string;
   bagRevision?: number;

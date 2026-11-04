@@ -34,7 +34,7 @@ export interface ResidentCombatInput {
 }
 
 /** 会话常驻的战斗视觉资源：一次加载，切图与战斗结束都不释放。 */
-export interface CombatAssetPack {
+interface CombatAssetPack {
   assets: PendingAsset[];
   /** 计划覆盖的特效名，构建期用它核对运行时引用。 */
   effectNames: Set<string>;

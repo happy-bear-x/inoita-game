@@ -58,7 +58,7 @@ export class CloudStoreError extends Error {
   }
 }
 
-export interface CloudAccountRecord {
+interface CloudAccountRecord {
   version: 1;
   account: string;
   passwordHash: string;
@@ -67,7 +67,7 @@ export interface CloudAccountRecord {
   lockedUntil: number;
 }
 
-export interface CloudSessionRecord {
+interface CloudSessionRecord {
   tokenHash: string;
   accountKey: string;
   account: string;
@@ -89,18 +89,18 @@ export interface CloudSaveEntry {
   updatedAt: number;
 }
 
-export interface CloudAuthResult {
+interface CloudAuthResult {
   token: string;
   account: string;
   expiresAt: number;
   absoluteExpiresAt: number;
 }
 
-export type CloudRefreshResult =
+type CloudRefreshResult =
   | { renewed: true; token: string; account: string; expiresAt: number; absoluteExpiresAt: number }
   | { renewed: false; account: string; expiresAt: number; absoluteExpiresAt: number };
 
-export interface CloudSaveStoreOptions {
+interface CloudSaveStoreOptions {
   dataDir: string;
   now?: () => number;
   /** 测试用：缩小配额，避免造几十 MB 的存档。 */

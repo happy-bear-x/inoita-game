@@ -6,7 +6,7 @@ export type MoveControlStyle = 'stick' | 'dpad';
 export type ControlMode = MoveControlStyle | 'keyboard';
 
 /** 设置页点击「操作方式」时按这个顺序轮换。 */
-export const CONTROL_MODES: readonly ControlMode[] = ['stick', 'dpad', 'keyboard'];
+const CONTROL_MODES: readonly ControlMode[] = ['stick', 'dpad', 'keyboard'];
 
 export function nextControlMode(mode: ControlMode): ControlMode {
   return CONTROL_MODES[(CONTROL_MODES.indexOf(mode) + 1) % CONTROL_MODES.length]!;

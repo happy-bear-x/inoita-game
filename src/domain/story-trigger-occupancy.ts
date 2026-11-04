@@ -8,7 +8,7 @@
  * 选「我还有事，请稍等」之后，原路走回来应当能重开。所以「身边不再站着这个人」就要
  * 把占用放下，而不是等到切图重建场景。
  */
-export interface OccupancyEvent { id: string }
+interface OccupancyEvent { id: string }
 
 /**
  * 这一帧该起演的近身事件。`besideAt` 返回「玩家身边站着的、这个事件点名的角色」，没有就是 null。

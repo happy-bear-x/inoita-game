@@ -34,7 +34,7 @@ export const CLOUD_PAGE = {
   actions: { x: CONTENT.left, y: CONTENT.top + 100, width: 200, height: 72, step: 220 },
 } as const;
 
-export type CloudPageStatusKind = 'info' | 'success' | 'error';
+type CloudPageStatusKind = 'info' | 'success' | 'error';
 
 export interface CloudPageStatus {
   kind: CloudPageStatusKind;

@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { planClipDedupe, walkClips } from './content-build.ts';
 import { EFFECT_ATLAS_BY_FILE, EFFECT_ATLAS_PAGES } from '../src/generated/effect-atlas.ts';
 
-export interface AssetDuplicateGroup {
+interface AssetDuplicateGroup {
   hash: string;
   count: number;
   bytes: number;
@@ -14,7 +14,7 @@ export interface AssetDuplicateGroup {
   files: string[];
 }
 
-export interface AssetReport {
+interface AssetReport {
   files: number;
   bytes: number;
   decodedBytes: number;
@@ -33,7 +33,7 @@ export interface AssetReport {
  * 生产构建口径：构建期会把字节、帧尺寸、帧数、帧率和循环类型都相同的动画图层
  * 合并到同一个贴图键。这里复用同一套合并规则，统计运行时实际会引用的素材量。
  */
-export interface RuntimeAssetReport {
+interface RuntimeAssetReport {
   clipKeysBefore: number;
   clipKeysAfter: number;
   dedupedLayers: number;

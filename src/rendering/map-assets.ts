@@ -51,7 +51,7 @@ export interface MapVisualPlan {
   actorIds: Set<string>;
 }
 
-export interface MapVisualOptions {
+interface MapVisualOptions {
   /** 当前图已经投影出来的实体；省略时按静态摆放 + 随机结果的超集。 */
   entities?: readonly EntityPlacement[];
   /** 只扫描本次入口闭包里的脚本；省略时扫描全部脚本（单元测试/兜底）。 */
@@ -59,7 +59,7 @@ export interface MapVisualOptions {
 }
 
 /** 所有脚本里在这张地图上开演的舞台角色（含 `node.stage` 与 parallel 里的舞台）。 */
-export function stageActorsForMap(campaign: Pick<Campaign, 'scripts'>, mapId: string): string[] {
+function stageActorsForMap(campaign: Pick<Campaign, 'scripts'>, mapId: string): string[] {
   const actors = new Set<string>();
   const addStage = (stage: StoryStage | undefined) => {
     if (!stage || stage.mapFromWorld || stage.map !== mapId) return;
@@ -135,7 +135,7 @@ export function planMapVisuals(map: WorldMap, input: WorldAssetInputs, options: 
   return { assets, actorIds };
 }
 
-export interface EnemyPlanOptions {
+interface EnemyPlanOptions {
   /** 本次入口闭包里的脚本；省略时扫描全部脚本（入口进图一次，成本可接受）。 */
   scripts?: Iterable<string>;
   /** 当前图已经投影出来的实体；宝箱怪可能来自剧情生成。 */
@@ -199,7 +199,7 @@ export function potentialMapEnemyIds(map: WorldMap, input: WorldAssetInputs, opt
   return [...ids];
 }
 
-export interface MapCombatOptions extends EnemyPlanOptions {
+interface MapCombatOptions extends EnemyPlanOptions {
   enemyIds?: Iterable<string>;
   partyIds?: Iterable<string>;
   joinCompanionIds?: Iterable<string>;
@@ -259,7 +259,7 @@ export function sharedEntryAssets(input: WorldAssetInputs): PendingAsset[] {
   ];
 }
 
-export interface StoryPresentationAssets {
+interface StoryPresentationAssets {
   portraits: string[];
   sounds: string[];
 }

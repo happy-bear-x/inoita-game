@@ -1,7 +1,7 @@
 import type { StoryEvent, StoryGraph } from './story-graph.ts';
 
 /** 索引只依赖角色的身份和可见性，不关心 Phaser 的视觉对象。 */
-export interface TriggerCharacter {
+interface TriggerCharacter {
   entity: { actor: string; characterId?: string };
   container: { visible: boolean };
 }

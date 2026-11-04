@@ -5,12 +5,12 @@ import {attackSplashTargets,selectAttackSplashCenter} from './attack-splash.ts';
 import {MAX_SKILL_TARGETS,resolveSkillUnitSequence,type ResolvedSkillUnit} from './skill-unit-sequence.ts';
 import type {PreparedActionDamage} from './action-damage.ts';
 
-export interface SkillExecution extends SkillUnitStart {
+interface SkillExecution extends SkillUnitStart {
   cues:readonly SkillEffectCue[];
   origin?:Point;
   selectedTargetId?:string;
 }
-export interface SkillExecutionPort extends Pick<CombatPort,'actor'|'candidates'|'partySlots'|'rangeBonusUnits'|'healScore'|'healCandidates'|'prepareUnit'|'unit'|'unitFeedback'|'runUnitSequence'> {
+interface SkillExecutionPort extends Pick<CombatPort,'actor'|'candidates'|'partySlots'|'rangeBonusUnits'|'healScore'|'healCandidates'|'prepareUnit'|'unit'|'unitFeedback'|'runUnitSequence'> {
   currentTargetId?():string|undefined;
   selectTarget?(id:string):void;
   resolved?(hit:SkillUnitHit):void;

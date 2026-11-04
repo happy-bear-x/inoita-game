@@ -1,7 +1,7 @@
 import type { SaveGame } from '../domain/save-game.ts';
 import type { Session } from '../domain/session.ts';
 
-export interface AutoSavePorts<World = unknown> {
+interface AutoSavePorts<World = unknown> {
   /** 世界还没就绪（换图、未进图）时返回 undefined，这一次就不写。 */
   capture(): SaveGame<World> | undefined;
   /** 写自动槽。失败只记日志——自动存档不该打断游戏。 */

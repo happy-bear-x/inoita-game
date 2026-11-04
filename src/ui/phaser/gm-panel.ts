@@ -14,7 +14,7 @@ import { drawQuestText, measureQuestText } from './quest-text.ts';
  *
  * 版面按菜单 body 的可用高度（约 468）排：子页签 8、过滤 54、双栏 100–436、提示 452。
  */
-export interface GmPanelHooks {
+interface GmPanelHooks {
   /** 关掉菜单，让剧情接管画面。 */
   close(): void;
   /** 重画整个菜单。 */
@@ -24,7 +24,7 @@ export interface GmPanelHooks {
 }
 
 /** 把内容里的编号翻成名字；缺省时使用中文场景说明。 */
-export interface GmReferences {
+interface GmReferences {
   mapName?(id: string): string | undefined;
   actorName?(id: string): string | undefined;
   /** 背包物品格底图，来自 `content/menu-panels.json` 的 `inventory-slot`。 */

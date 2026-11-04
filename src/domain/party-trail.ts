@@ -1,7 +1,7 @@
 import type { Point } from './navigation.ts';
 
 /** 主角走过的路径点间距；越密越贴近真实路线，越疏越省内存。 */
-export const PARTY_TRAIL_SPACING_PX = 8;
+const PARTY_TRAIL_SPACING_PX = 8;
 /** 最多保留的路径点数；按 8 像素一个点，约覆盖身后 512 像素。 */
 export const PARTY_TRAIL_MAX_POINTS = 64;
 /**

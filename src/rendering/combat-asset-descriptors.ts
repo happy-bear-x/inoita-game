@@ -61,7 +61,7 @@ function effectPageAsset(index: number): PendingAsset {
   return asset;
 }
 
-export interface EffectClipSet { clips: Readonly<Record<string, EffectClip>> }
+interface EffectClipSet { clips: Readonly<Record<string, EffectClip>> }
 
 /** 一个特效 clip 的每层实际使用的纹理键：图集层取所有页，未映射层取原 spritesheet 键。 */
 export function effectLayerTextureKeys(clip: EffectClip): string[] {

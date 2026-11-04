@@ -10,7 +10,7 @@ const CLOSING = new Set(Array.from('，。！？；：、）)]】》」』”’
 
 /** 带色文本的一段：`key` 是这条排版不关心的分段依据（任务窗口用语气，对白用字色）。 */
 export type KeyedTextPart<K> = { text: string; key: K } | { break: true };
-export interface KeyedTextRun<K> { text: string; key: K; x: number }
+interface KeyedTextRun<K> { text: string; key: K; x: number }
 export interface KeyedTextLine<K> { runs: KeyedTextRun<K>[]; width: number }
 
 /** 先为整行测量、断行，再恢复颜色片段；颜色标记不改变换行位置。 */

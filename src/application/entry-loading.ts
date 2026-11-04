@@ -11,7 +11,7 @@ export interface EntryLoadingPorts {
   prepareSounds(names: string[], signal: AbortSignal): Promise<void>;
 }
 
-export interface EntryLoadingResult {
+interface EntryLoadingResult {
   /** 当前图的租约；场景接管后负责释放。 */
   currentLease: AssetLease;
 }

@@ -2,7 +2,7 @@ import type { BattleCatalog, SkillGrowthProfile, SkillLoadout } from './battle.t
 import type { CompanionGroupEffect } from './companion-progression.ts';
 import { passiveModifiers, type PassiveModifier } from './passive-skills.ts';
 
-export interface MemberCombatModifierInput {
+interface MemberCombatModifierInput {
   catalog:BattleCatalog;
   classId:string;
   loadout:SkillLoadout;

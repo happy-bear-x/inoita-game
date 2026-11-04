@@ -2,7 +2,7 @@ import type { ActiveCombatAction, Combatant } from './combat.ts';
 import { actionCues } from './skill-action.ts';
 
 const RECENT_CONTACT_MS=1800;
-export interface SummonCombatObservation {
+interface SummonCombatObservation {
   actor:Combatant;
   action?:ActiveCombatAction;
   chasingTargetId?:string;

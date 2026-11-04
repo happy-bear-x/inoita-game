@@ -16,7 +16,7 @@ export interface FriendlySummonTactics {
   threats: readonly {enemyId:string;targetId:string}[];
   partyIds: readonly string[];
 }
-export interface FriendlySummonNavigationSnapshot {
+interface FriendlySummonNavigationSnapshot {
   bounds: GameRectangle;
   start?: Point;
   canStand(point:Point):boolean;
@@ -31,7 +31,7 @@ export interface FriendlySummonPort extends EnemyPort {
   /** 自主索敌是否允许以该敌人为目标；展示型场景物件必须返回 false。 */
   autonomousTarget(id:string):boolean;
 }
-export const FRIENDLY_SUMMON_AI = {
+const FRIENDLY_SUMMON_AI = {
   decisionMs:180,holdTargetMs:600,pathImprovementPx:32,failedPathMs:900,
   followStartPx:32,followStopPx:16,joinCombatPx:128,leashPx:192,returnStopPx:64,
   farRecallPx:320,recallDelayMs:5040,progressPx:4,destinationChangePx:16,

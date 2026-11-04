@@ -14,7 +14,7 @@ export function isReadableSaveFormat(format: unknown): format is number {
 }
 
 /** 云存档导入时的格式分类：能读、比当前新、比升级链旧、版本不合法。 */
-export type SaveFormatStatus = 'ok' | 'future' | 'obsolete' | 'unknown';
+type SaveFormatStatus = 'ok' | 'future' | 'obsolete' | 'unknown';
 export function saveFormatStatus(format: unknown): SaveFormatStatus {
   if (typeof format !== 'number' || !Number.isSafeInteger(format)) return 'unknown';
   if (isReadableSaveFormat(format)) return 'ok';
@@ -54,7 +54,7 @@ export interface SaveGame<World = unknown> {
 /**
  * 读一个槽的三种结果。`unreadable` 与 `empty` 分开：损坏槽保留 unreadable，保存覆盖时确认；开发阶段的版本不符槽显示 EMPTY。
  */
-export type SlotReading<World = unknown> =
+type SlotReading<World = unknown> =
   | { kind:'empty' }
   | { kind:'unreadable'; reason:string }
   | { kind:'ok'; game:SaveGame<World> };

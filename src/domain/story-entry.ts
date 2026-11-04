@@ -14,7 +14,7 @@ function conditionQuestIds(condition: StoryCondition | undefined): string[] {
   return [];
 }
 
-export interface LocalStoryScriptsInput {
+interface LocalStoryScriptsInput {
   campaign: Pick<Campaign, 'events' | 'placements' | 'mapEntryPlacements' | 'quests' | 'scripts'>;
   map: Pick<WorldMap, 'id' | 'entities'>;
   /** 当前地图上已经投影出来的人物；省略时只用静态摆放。 */

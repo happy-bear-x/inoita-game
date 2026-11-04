@@ -4,8 +4,8 @@ import type { PendingAsset } from './scene-assets.ts';
 
 interface PropDefinition { key: string; file: string }
 
-export interface PropRef { texture: string; frame?: string }
-export interface PropFrameSource {
+interface PropRef { texture: string; frame?: string }
+interface PropFrameSource {
   image: CanvasImageSource;
   x: number;
   y: number;
@@ -21,7 +21,7 @@ export function propRef(key: string): PropRef {
 
 const pageAssets = new Map<string, PendingAsset>();
 /** 同一页的 descriptor 必须完全一致；冻结后所有地图/舞台共用同一个对象。 */
-export function propAtlasPageAsset(key: string): PendingAsset {
+function propAtlasPageAsset(key: string): PendingAsset {
   const cached = pageAssets.get(key);
   if (cached) return cached;
   const page = PROP_ATLAS_PAGES.find(value => value.key === key);

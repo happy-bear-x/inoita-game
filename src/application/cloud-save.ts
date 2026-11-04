@@ -14,7 +14,7 @@ import { CLOUD_PATH } from './endpoints.ts';
 const SESSION_KEY = 'inotia4.cloud.v1.session';
 const REQUEST_TIMEOUT_MS = 12_000;
 
-export type CloudSaveErrorCode =
+type CloudSaveErrorCode =
   | 'network'
   | 'timeout'
   | 'aborted'
@@ -37,7 +37,7 @@ export interface CloudSaveError {
   retryAfterSeconds?: number;
 }
 
-export type CloudResult<T> =
+type CloudResult<T> =
   | { ok: true; value: T }
   | { ok: false; error: CloudSaveError };
 
@@ -81,7 +81,7 @@ export interface CloudSessionStore {
   clear(): void;
 }
 
-export interface CloudSaveClientOptions {
+interface CloudSaveClientOptions {
   /** 网页留空走同源；APK 传原生注入的绝对地址。 */
   baseUrl?: string | (() => string);
   fetch?: typeof fetch;

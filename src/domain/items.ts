@@ -30,7 +30,7 @@ export interface GroundItemSprite {
  * `amount` 在区间内随机一次、全队同一数值（四档治疗药水）；`rate` 各按自己的上限算比例
  * （元气恢复药水是 100%，同时回魔法）。
  */
-export type ItemRecovery =
+type ItemRecovery =
   | { mode:'amount'; minHealth:number; maxHealth:number; restoresMana:boolean; cooldownMs:number }
   | { mode:'rate'; ratePercent:number; restoresMana:boolean; cooldownMs:number };
 
@@ -38,7 +38,7 @@ export type ItemRecovery =
  * 持续回复：时限内每次资源回复脉冲额外恢复的点数。
  * 数值来自原版 `ITEMBUFFBASE` → `BUFFDATABASE` → `BUFFUNITBASE` 两级查表。
  */
-export interface ItemRegeneration { durationMs:number; healthRecoveryPerPulse:number; manaRecoveryPerPulse:number }
+interface ItemRegeneration { durationMs:number; healthRecoveryPerPulse:number; manaRecoveryPerPulse:number }
 
 interface ItemUse {
   kind: ItemUseKind;

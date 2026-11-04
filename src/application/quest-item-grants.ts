@@ -18,7 +18,7 @@ export interface QuestGrantSource {
   scripts: Readonly<Record<string, { nodes: readonly { commands: readonly StoryCommand[] }[] }>>;
 }
 
-export interface QuestItemOverflow {
+interface QuestItemOverflow {
   quest: string;
   item: string;
   /** 接取发放 + 剧情发放。 */

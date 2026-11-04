@@ -8,7 +8,7 @@ import {
 } from '../domain/save-game.ts';
 import type { CloudSaveEntry, CloudSaveError, CloudSavePort } from './cloud-save.ts';
 
-export interface CloudSyncFailure {
+interface CloudSyncFailure {
   slot: SaveSlotRef;
   reason: string;
 }
@@ -25,7 +25,7 @@ export interface CloudSyncResult {
   cancelled?: boolean;
 }
 
-export interface CloudSaveSyncPorts<World = unknown> {
+interface CloudSaveSyncPorts<World = unknown> {
   cloud: CloudSavePort;
   saves: SaveSlots<World>;
   confirm(message: string): Promise<boolean>;

@@ -29,7 +29,7 @@ export const TEXT_COLOR_CODES: Readonly<Record<string, string>> = {
   T: '#7878ff', U: '#000000', V: '#9c00ff', W: '#ffffff', X: '#000000', Y: '#fcff00',
 };
 
-export interface TextRun { text: string; color: string }
+interface TextRun { text: string; color: string }
 
 const CODE = /(\$[A-Y]|&[NPC]|\n)/g;
 

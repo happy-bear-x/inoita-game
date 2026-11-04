@@ -16,9 +16,9 @@ interface Outfit {
 let serial = 0;
 
 /** 生产内容包把人物动作拆成单文件，合成外观前只取这套武器/职业实际用到的动作。 */
-export type WardrobePoseLoader = (ids: readonly string[], signal: AbortSignal) => Promise<Record<string, CostumePose>>;
+type WardrobePoseLoader = (ids: readonly string[], signal: AbortSignal) => Promise<Record<string, CostumePose>>;
 
-export interface WardrobePrepareOptions {
+interface WardrobePrepareOptions {
   /** 只合成这些动作（菜单预览只需要 `idle-south`）；省略表示合成整套外观。 */
   clipNames?: Iterable<string>;
 }

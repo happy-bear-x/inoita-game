@@ -2,7 +2,7 @@
  * 温和保底：连续没有出装备/黄装/紫装时，下一次的概率逐步提高，达到次数后必出。
  * 计数按成员、按存档保存；宝箱只维护装备计数，黄装/紫装保底只按敌人击杀累计。
  */
-export interface PityCounters {
+interface PityCounters {
   equipmentMisses: number;
   /** 替代旧的 rarePlusMisses：连续没有黄装（unique）的次数。 */
   uniqueMisses: number;
@@ -18,7 +18,7 @@ export interface LootPityState {
 }
 
 /** 掉率/保底加值的单位都是 1/10000；stepPermille 这个名字是历史遗留。 */
-export interface PityRate {
+interface PityRate {
   stepPermille: number;
   capPermille: number;
 }

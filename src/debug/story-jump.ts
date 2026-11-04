@@ -10,7 +10,7 @@ import type { StoryRuntimeSnapshot } from '../domain/story-runtime.ts';
 import type { StoryWorldSnapshot } from '../domain/story-world.ts';
 import { Bag } from '../domain/bag.ts';
 
-export interface StoryDebugScene {
+interface StoryDebugScene {
   map: string;
   x: number;
   y: number;

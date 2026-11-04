@@ -5,7 +5,7 @@ import type { Session } from './session.ts';
 import type { StoryEncounter } from './story-world.ts';
 import { BREAKABLE_ENEMY_IDS } from './drops.ts';
 
-export type WorldSpawn = EnemySpawn | CampaignEnemyPlacement;
+type WorldSpawn = EnemySpawn | CampaignEnemyPlacement;
 
 export interface QuestEnemySnapshot {
   revision: number;
@@ -17,7 +17,7 @@ export interface QuestEnemyProvider {
   snapshot(): QuestEnemySnapshot;
 }
 
-export interface MapSpawnSelectionOptions {
+interface MapSpawnSelectionOptions {
   /** active 任务的关键敌人：无论档位都保留。 */
   questEnemies?: ReadonlySet<string>;
   /** 当前剧情下这个站位是否还有出现资格；不得读取死亡/刷新计时。 */

@@ -40,7 +40,7 @@ export interface CloudRateLimitOptions {
   registerPerHour?: number;
 }
 
-export interface CloudSaveServiceOptions {
+interface CloudSaveServiceOptions {
   dataDir: string;
   now?: () => number;
   allowedOrigins?: readonly string[];

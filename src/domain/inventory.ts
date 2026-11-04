@@ -20,7 +20,7 @@ export type InventoryPouch = (typeof INVENTORY_POUCHES)[number];
 /** 侧边六个页面各自保存排列，共享物品实例。 */
 export type InventoryView = 'all' | InventoryPouch;
 export const INVENTORY_SIDE_FILTERS: readonly InventoryView[] = ['all', ...INVENTORY_POUCHES];
-export const INVENTORY_COLUMNS = 4;
+const INVENTORY_COLUMNS = 4;
 const names = new Intl.Collator('zh-CN', { numeric: true });
 
 /** 武器按原版的左右手位置分：主手与副手是武器，其余装备槽是防具。 */

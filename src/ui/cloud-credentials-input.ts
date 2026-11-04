@@ -10,7 +10,7 @@ export interface CredentialInputRect {
   fontSize: number;
 }
 
-export interface CloudCredentialsInputOptions {
+interface CloudCredentialsInputOptions {
   onAccount(value: string): void;
   onPassword(value: string): void;
 }

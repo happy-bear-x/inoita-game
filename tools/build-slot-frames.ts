@@ -20,7 +20,7 @@ const FRAMES: readonly { file: string; color: [number, number, number] }[] = [
 ];
 
 /** 只把边框像素换成目标色：保留原始明暗、抗锯齿与半透明，内底一律不动。 */
-export function recolorFrame(source: PNG, color: [number, number, number]): PNG {
+function recolorFrame(source: PNG, color: [number, number, number]): PNG {
   const result = new PNG({ width: source.width, height: source.height });
   for (let index = 0; index < source.data.length; index += 4) {
     const red = source.data[index], green = source.data[index + 1], blue = source.data[index + 2], alpha = source.data[index + 3];

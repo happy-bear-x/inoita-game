@@ -14,7 +14,7 @@ const GM_KEY = 'inotia4.gm.v1.enabled';
 /** 没有可写存储时的替身：读为空、写静默丢弃。 */
 const volatileStorage: SaveStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
 
-export function defaultGmStorage(): SaveStorage {
+function defaultGmStorage(): SaveStorage {
   return typeof localStorage === 'undefined' ? volatileStorage : localStorage;
 }
 

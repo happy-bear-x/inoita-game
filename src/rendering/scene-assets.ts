@@ -74,10 +74,10 @@ async function inTextureQueue<T>(scene: Phaser.Scene, work: () => Promise<T>): P
   finally { release(); }
 }
 
-export type AssetGap = 'texture' | `frame:${number}`;
+type AssetGap = 'texture' | `frame:${number}`;
 
 /** 纹理存在且 spritesheet 帧完整才算就绪；预检、加载、验收共用这一判据。 */
-export function assetGap(scene: Phaser.Scene, asset: PendingAsset): AssetGap | undefined {
+function assetGap(scene: Phaser.Scene, asset: PendingAsset): AssetGap | undefined {
   if (!scene.textures.exists(asset.key)) return 'texture';
   const texture = scene.textures.get(asset.key);
   if (asset.kind === 'atlas') return asset.frame && !texture.has(asset.frame) ? 'frame:0' : undefined;

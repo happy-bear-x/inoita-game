@@ -41,7 +41,7 @@ export interface ChoiceDecision {
 }
 
 /** 生成期的选择策略；没有决定就报错，不默认选第一项。 */
-export interface ChoicePolicy {
+interface ChoicePolicy {
   forced?: Readonly<Record<string, string>>;
   evidence?: Readonly<Record<string, string>>;
   converged?: Readonly<Record<string, string>>;
@@ -56,7 +56,7 @@ export interface BattleDecision {
   basis: string;
 }
 
-export interface ReplayOptions {
+interface ReplayOptions {
   eventId?: string;
   node?: string;
   choices?: ChoicePolicy;
@@ -68,7 +68,7 @@ export interface ReplayOptions {
   script?: string;
 }
 
-export interface ReplayResult {
+interface ReplayResult {
   script: string;
   eventId?: string;
   status: 'completed' | 'waiting' | 'deferred' | 'skipped';

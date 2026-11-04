@@ -35,7 +35,7 @@ export function dodgePixel(background: number, foreground: number): number {
  * 把 feature 叠在地图 ground 上做颜色减淡，生成一张独立画布纹理。
  * 失败时删除刚创建的键再抛出，调用方不需要知道半成品纹理。
  */
-export function composeColorDodge(
+function composeColorDodge(
   scene: Phaser.Scene, groundKey: string, feature: MapFeature, textureKey: string
 ): string {
   const prop = propFrameSource(scene, feature.texture);

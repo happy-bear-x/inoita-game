@@ -127,7 +127,7 @@ export function nearInteractable(from: {x:number;y:number}, target: {x:number;y:
  * 目标碰撞盒（锚在脚底）与玩家 16×16 脚底框之间的两轴间隙之和，单位 px。
  * `flip` 时按原版镜像横轴，盒子的左边界变成 `-x - width`。
  */
-export function bodyGap(
+function bodyGap(
   from: {x:number;y:number},
   target: {x:number;y:number},
   collision: CollisionBox,

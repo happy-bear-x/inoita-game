@@ -5,7 +5,7 @@ import { residentCombatAssets } from '../rendering/resident-combat-assets.ts';
 import { planMapCombat, planMapVisuals, potentialMapEnemyIds, sharedEntryAssets, storyPresentationAssets, type MapVisualPlan, type WorldAssetInputs } from '../rendering/map-assets.ts';
 import type { PendingAsset } from '../rendering/scene-assets.ts';
 
-export interface MapEntryPlan {
+interface MapEntryPlan {
   map: WorldMap;
   visuals: MapVisualPlan;
   /** 进入这张地图要加载的全部场景资源（不含 shared）。 */
@@ -30,7 +30,7 @@ export interface EntryPlan {
   scripts: string[];
 }
 
-export interface EntryPlanInput {
+interface EntryPlanInput {
   currentMap: WorldMap;
   /** 当前图已经投影出来的实体；用于按实际随机结果加载。 */
   currentEntities?: readonly EntityPlacement[];

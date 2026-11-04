@@ -19,7 +19,7 @@ export class LegendaryWeapons {
   markPulled(mapId:string,entityId:string):void { this.used.add(this.key(mapId,entityId)); this.revisionValue++; }
 }
 
-export interface LegendaryPullResult { success:boolean; message:string; item?:ItemInstance; unique?:boolean; }
+interface LegendaryPullResult { success:boolean; message:string; item?:ItemInstance; unique?:boolean; }
 
 const LEGENDARY_STATS=['strength','dexterity','intelligence'] as const;
 

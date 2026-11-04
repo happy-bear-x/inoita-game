@@ -112,7 +112,7 @@ export function descriptionPanel(width:number) {
   };
 }
 
-export interface DescriptionActionLayout {
+interface DescriptionActionLayout {
   /** 动作变多时正文滚动区要让出上面一行按钮的高度。 */
   scrollHeight: number;
   columns: number;

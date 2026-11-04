@@ -4,11 +4,11 @@ import { AUTO_SAVE_SLOT, MANUAL_SAVE_SLOT_COUNT, saveSlotLabel, type SaveSlotRef
  * 云存档账号规则：大小写不敏感，NFKC 归一化后按码点计算长度。
  * 账号只用字母、数字、下划线和汉字；密码允许任意字符，区分大小写。
  */
-export const CLOUD_ACCOUNT_MIN_LENGTH = 3;
+const CLOUD_ACCOUNT_MIN_LENGTH = 3;
 export const CLOUD_ACCOUNT_MAX_LENGTH = 24;
-export const CLOUD_PASSWORD_MIN_LENGTH = 6;
+const CLOUD_PASSWORD_MIN_LENGTH = 6;
 export const CLOUD_PASSWORD_MAX_LENGTH = 64;
-export const CLOUD_PASSWORD_MAX_BYTES = 512;
+const CLOUD_PASSWORD_MAX_BYTES = 512;
 /** 连续输错多少次锁定，以及锁定时长。 */
 export const CLOUD_LOGIN_MAX_FAILURES = 3;
 export const CLOUD_LOCK_DURATION_MS = 15 * 60 * 1000;

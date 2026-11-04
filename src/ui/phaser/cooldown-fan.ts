@@ -2,7 +2,7 @@ import type Phaser from 'phaser';
 import type { Cooldown } from '../../domain/combat.ts';
 
 /** 只依赖快捷位里与冷却有关的字段，方便操作按钮和电脑模式技能行共用。 */
-export interface CooldownSlotLike {
+interface CooldownSlotLike {
   entry: { kind: 'skill' | 'item'; id: string } | null;
   /** 物品格的恢复冷却；技能格的冷却来自 `cooldowns`。 */
   cooldown?: Cooldown;

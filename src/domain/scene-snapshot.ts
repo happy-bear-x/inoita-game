@@ -101,7 +101,7 @@ export function validateSceneSnapshot(value: unknown): asserts value is SceneSna
   assertUniqueActorInstances(snapshot.actors as SceneActorState[], '剧情场景快照');
 }
 
-export function validatePreparedSceneVisit(value: unknown): asserts value is PreparedSceneVisit {
+function validatePreparedSceneVisit(value: unknown): asserts value is PreparedSceneVisit {
   const fail = (): never => {throw new Error('剧情地图访问快照格式无效');};
   if (!record(value)) fail();
   const visit = value as Record<string, unknown>;

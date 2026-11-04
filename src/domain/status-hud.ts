@@ -48,7 +48,7 @@ export function buffIconPosition(skin:BuffIconSkin,panelBottom:number,index:numb
 export function memberPanelIds(active:readonly string[],controlled:string):readonly string[] {
   return active.filter(id=>id!==controlled);
 }
-export interface MemberColumnInput {
+interface MemberColumnInput {
   /** 大面板左上角的 y（屏幕像素）。 */
   top:number;
   /** 大面板高度（屏幕像素）。 */
@@ -66,7 +66,7 @@ export interface MemberColumnInput {
   /** 队友面板之间的空隙（屏幕像素）。 */
   rowGap:number;
 }
-export interface MemberColumn { scale:number; tops:number[] }
+interface MemberColumn { scale:number; tops:number[] }
 /**
  * 队友面板列紧接大面板下缘向下排，整体缩放保证最后一块不越过 `limit`。
  * 空隙不参与面板缩放，所以小屏上面板缩小、行距仍然看得清。

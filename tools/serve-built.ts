@@ -36,7 +36,7 @@ const MIME: Record<string, string> = {
   '.txt': 'text/plain; charset=utf-8',
 };
 
-export function mimeType(file: string): string {
+function mimeType(file: string): string {
   return MIME[path.extname(file).toLowerCase()] ?? 'application/octet-stream';
 }
 
@@ -45,7 +45,7 @@ function compressible(type: string): boolean {
 }
 
 /** 解析 Accept-Encoding，正确处理 `gzip;q=0` 与逗号列表。 */
-export function acceptsGzip(header: string | undefined): boolean {
+function acceptsGzip(header: string | undefined): boolean {
   if (!header) return false;
   for (const part of header.split(',')) {
     const [name, ...parameters] = part.trim().toLowerCase().split(';');
@@ -56,7 +56,7 @@ export function acceptsGzip(header: string | undefined): boolean {
   return false;
 }
 
-export function cachePolicyFor(pathname: string, search: URLSearchParams, meta: BuildMeta | undefined): string {
+function cachePolicyFor(pathname: string, search: URLSearchParams, meta: BuildMeta | undefined): string {
   if (pathname.startsWith('/update/')) {
     // 指针带 builtAt/minShell，每次都要重新取；清单只由内容决定，可按 buildId 永久缓存。
     if (/^\/update\/(?:latest|latest-staging)\.json(?:\.sig)?$/.test(pathname)) return 'no-store';
@@ -72,8 +72,8 @@ export function cachePolicyFor(pathname: string, search: URLSearchParams, meta: 
   return 'no-cache';
 }
 
-export interface ByteRange { start: number; end: number }
-export type RangeResult = ByteRange | 'invalid' | 'multiple' | undefined;
+interface ByteRange { start: number; end: number }
+type RangeResult = ByteRange | 'invalid' | 'multiple' | undefined;
 
 /** 单段 Range；多段返回 multiple（调用方退化为 200 全量），不可满足返回 invalid。 */
 export function parseRange(header: string | undefined, size: number): RangeResult {
@@ -130,7 +130,7 @@ function notModifiedSince(header: string | undefined, mtimeMs: number): boolean 
 
 interface CompressionEntry { key: string; buffer: Buffer }
 
-export interface GameServerOptions {
+interface GameServerOptions {
   projectRoot: string;
   distDir?: string;
   now?: () => number;
@@ -369,9 +369,9 @@ export function createGameServer(options: GameServerOptions): Server {
   return server;
 }
 
-export interface StartedServer { server: Server; port: number }
+interface StartedServer { server: Server; port: number }
 
-export async function startGameServer(options: GameServerOptions & { port?: number; host?: string }): Promise<StartedServer> {
+async function startGameServer(options: GameServerOptions & { port?: number; host?: string }): Promise<StartedServer> {
   const server = createGameServer(options);
   const port = options.port ?? 4004;
   const host = options.host ?? '127.0.0.1';

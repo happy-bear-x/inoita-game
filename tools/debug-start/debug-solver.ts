@@ -15,7 +15,7 @@ const MAX_DEPTH = 256;
 const INTERPRETER_VERSION = 3;
 const SEMANTICS_VERSION = 3;
 
-export class GapError extends Error {
+class GapError extends Error {
   readonly kind: string;
   readonly detail: string;
   readonly quest?: string;
@@ -30,7 +30,7 @@ export class GapError extends Error {
   }
 }
 
-export interface DebugInputs {
+interface DebugInputs {
   content: Omit<HeadlessContent, 'campaign'> & {campaign: Campaign};
   itemsRaw: {items?: Record<string, {category?: string}>};
   routes: {stages?: {id: string; before?: string[]; entry?: DebugEntry}[]};
@@ -983,7 +983,7 @@ export class DebugTaskBuilder {
   }
 }
 
-export function exitTargets(exit: StoryNodeRef | undefined | {type: string; [key: string]: unknown}): StoryNodeRef[] {
+function exitTargets(exit: StoryNodeRef | undefined | {type: string; [key: string]: unknown}): StoryNodeRef[] {
   if (!exit) return [];
   const value = exit as {type: string; target?: StoryNodeRef; then?: StoryNodeRef; otherwise?: StoryNodeRef;
     cases?: Record<string, StoryNodeRef>; outcomes?: Record<string, StoryNodeRef>};

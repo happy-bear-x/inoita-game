@@ -49,7 +49,7 @@ const EMPTY_WIDTH = 173, EMPTY_HEIGHT = 68;
 /** 槽位里立绘的高度：原版槽位立绘约 196×138（`UI_TITLESLOT_01` 图组 88 的 5/6/7 项）。 */
 const PORTRAIT_HEIGHT = 126;
 /** 槽位文字颜色：原版 `UIMainMenu_DrawSaveSlotButtons` 先算 RGB(0xe6,0xd9,0xa0) 再画全部文字。 */
-export const SAVE_SLOT_TEXT = '#e6d9a0';
+const SAVE_SLOT_TEXT = '#e6d9a0';
 const SAVE_SLOT_TIME_TEXT = '#b9ad86';
 /** 行内小控件（改名/删除）的宽度与留白；主按钮让开这一列，两者不重叠。 */
 const CONTROL_WIDTH = 96, CONTROL_GAP = 20, CONTROL_COLUMN = CONTROL_WIDTH + CONTROL_GAP;
@@ -68,7 +68,7 @@ export interface SaveBoardRow {
   /** 改名 / 删除；自动槽永远没有。 */
   controls?:readonly SaveBoardControl[];
 }
-export interface SaveBoardAssets { frame:string; empty:string }
+interface SaveBoardAssets { frame:string; empty:string }
 
 /** 面板左上角在当前画布里的位置。菜单画布 1024 宽 → 178（= 内容区 32 + 960 空间里的 146）。 */
 export function saveBoardOrigin(width:number):{x:number; y:number} {
@@ -83,7 +83,7 @@ export function saveRowTitle(ref:SaveSlotRef, reading:SlotSummaryReading):string
 }
 
 /** 存档时间：`2026-10-19 21:04`。手工补零，不依赖 Intl。 */
-export function formatSavedAt(savedAt?:number):string {
+function formatSavedAt(savedAt?:number):string {
   if(typeof savedAt!=='number'||!Number.isFinite(savedAt))return '';
   const date=new Date(savedAt), pad=(value:number)=>String(value).padStart(2,'0');
   return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;

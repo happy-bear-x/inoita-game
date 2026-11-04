@@ -25,7 +25,7 @@ export interface EnhancementRule { step: number; threshold: number; extra: numbe
 export interface EquipmentGradeSeed {
   grade: number; gradeName: string; attack: number; defense: number; optionCount: number; socketLimit: number;
 }
-export interface EquipmentGradeVariant {
+interface EquipmentGradeVariant {
   attack: number; defense: number; name: string; rarity: number; optionCount: number; socketLimit: number;
 }
 export interface EquipmentNumbers {
@@ -35,7 +35,7 @@ export interface EquipmentNumbers {
   fixedOptions: ModifierRange[]; randomOptions: ModifierRange[]; optionCount: number;
   socketLimit: number; enhancementUses: number[]; fixedEnhancementUses:number|null;
 }
-export interface GradeDefinition { index: number; name: string; rarity: number; weight: number }
+interface GradeDefinition { index: number; name: string; rarity: number; weight: number }
 export interface CharacterStatsCatalog {
   maxLevel: number; statPointsPerLevel: number; skillPointsPerLevel: number;
   grades?: GradeDefinition[];

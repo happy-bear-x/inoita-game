@@ -64,7 +64,7 @@ export function equipmentAttackFor(wardrobe: WardrobeCatalog, items: ItemCatalog
   }, undefined, step);
 }
 
-export interface PlayerCombatAssetInput {
+interface PlayerCombatAssetInput {
   catalog: BattleCatalog;
   wardrobe: WardrobeCatalog;
   items: ItemCatalog;

@@ -2,7 +2,7 @@ import type { Campaign } from './campaign.ts';
 import type { EntityPlacement, WorldMap } from './content.ts';
 
 /** 剧情摆放是否覆盖地图静态摆放：有人物编号时按编号，否则按人物资源。 */
-export function replacesMapEntity(authored: EntityPlacement, entity: EntityPlacement): boolean {
+function replacesMapEntity(authored: EntityPlacement, entity: EntityPlacement): boolean {
   return authored.characterId && entity.characterId
     ? authored.characterId === entity.characterId
     : authored.actor === entity.actor;

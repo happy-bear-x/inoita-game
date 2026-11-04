@@ -1,4 +1,4 @@
-export const MAX_SPRITESHEET_SIZE = 4096;
+const MAX_SPRITESHEET_SIZE = 4096;
 
 export function validateSpriteSheet(header: Uint8Array, clip: { frameWidth: number; frameHeight: number; frames: number }, file: string): void {
   const fail = (reason: string): never => { throw new Error(`动画图集 ${file}：${reason}`); };

@@ -46,7 +46,7 @@ export interface StoryStageSnapshot extends StoryStage {
   bindings: [string, string][];
 }
 
-export type StoryObjectCommand = Extract<StoryWorldCommand, { kind: 'place' | 'remove-character' | 'remove' | 'show' | 'hide' }>;
+type StoryObjectCommand = Extract<StoryWorldCommand, { kind: 'place' | 'remove-character' | 'remove' | 'show' | 'hide' }>;
 
 export type PerformanceAction =
   | StoryStage

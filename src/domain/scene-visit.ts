@@ -13,7 +13,7 @@ import type {Session} from './session.ts';
 import {rollSpring, type SpringCatalog} from './springs.ts';
 import {WorldEnemyRoster} from './world-enemies.ts';
 
-export interface SceneVisitInputs {
+interface SceneVisitInputs {
   session: Session;
   campaign: Campaign;
   world: WorldIndex;

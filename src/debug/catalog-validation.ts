@@ -4,7 +4,7 @@ import type {StoryCastMember} from '../domain/story-performance.ts';
 import type {StoryCondition} from '../domain/story-condition.ts';
 import type {StoryDebugCatalog, StoryDebugTask} from '../domain/story-debug.ts';
 
-export interface DebugCatalogInput {
+interface DebugCatalogInput {
   campaign: Campaign;
   maps: ReadonlyMap<string, WorldMap>;
   catalog: StoryDebugCatalog;
@@ -100,14 +100,14 @@ function visibleEntities(campaign: Campaign, maps: ReadonlyMap<string, WorldMap>
   });
 }
 
-export function visibleCharacters(campaign: Campaign, maps: ReadonlyMap<string, WorldMap>,
+function visibleCharacters(campaign: Campaign, maps: ReadonlyMap<string, WorldMap>,
   mapId: string, flags: Set<string>): Set<string> {
   return new Set(visibleEntities(campaign, maps, mapId, flags)
     .map(entity => entity.characterId).filter((value): value is string => !!value));
 }
 
 /** 同一节点里隐藏 A、显示 B，且 A/B 是同一地图同一角色基名，说明它们代表同一角色的不同时期。 */
-export function phasePairs(campaign: Campaign): Map<string, [string, string][]> {
+function phasePairs(campaign: Campaign): Map<string, [string, string][]> {
   const pairs = new Map<string, [string, string][]>();
   const authored = new Set(campaign.placements.map(entity => `${entity.map}|${entity.characterId ?? ''}`));
   for (const graph of Object.values(campaign.scripts)) {

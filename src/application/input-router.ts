@@ -5,12 +5,12 @@
  * 文本输入框有焦点时整场键盘归输入框；弹层打开时菜单和世界都不再收到按键。
  * 按钮点击、滚动和拖拽仍由 Phaser 自己的输入处理，这里只接键盘。
  */
-export const INPUT_SCOPES = ['text-input', 'modal', 'menu', 'dialogue', 'world'] as const;
-export type InputScope = typeof INPUT_SCOPES[number];
+const INPUT_SCOPES = ['text-input', 'modal', 'menu', 'dialogue', 'world'] as const;
+type InputScope = typeof INPUT_SCOPES[number];
 /** 返回 `true` 表示这次按键已被消费，不再交给后面的作用域。 */
-export type InputKeyHandler = (event: KeyboardEvent) => boolean;
+type InputKeyHandler = (event: KeyboardEvent) => boolean;
 
-export interface InputScopeOptions {
+interface InputScopeOptions {
   /** 当前是否接收按键；默认一直接收。 */
   active?: () => boolean;
   /**
@@ -20,7 +20,7 @@ export interface InputScopeOptions {
   exclusive?: () => boolean;
 }
 
-export interface InputRouterOptions {
+interface InputRouterOptions {
   /** 文本输入框是否正在接收键盘；默认检查 `document.activeElement`，测试可注入。 */
   textInputFocused?: () => boolean;
 }

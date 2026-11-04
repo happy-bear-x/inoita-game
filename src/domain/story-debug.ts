@@ -32,7 +32,7 @@ export interface StoryDebugCatalog {
 export interface StoryDebugTarget { quest: string }
 
 /** 导出器版本与覆盖率；hash 不一致时现场表必须重新导出。 */
-export interface StoryDebugMeta {
+interface StoryDebugMeta {
   interpreterVersion: number;
   semanticsVersion: number;
   sourceHash: string;
@@ -96,7 +96,7 @@ export interface StoryDebugStartTable {
 }
 
 /** 现场表里的一条任务差量。 */
-export type StoryDebugStartQuest = NonNullable<StoryDebugStartTable['quests']>[number];
+type StoryDebugStartQuest = NonNullable<StoryDebugStartTable['quests']>[number];
 
 /** 证据不足、不能进入调试目录的任务。 */
 export interface StoryDebugGap {
@@ -115,7 +115,7 @@ export function debugTask(campaign: Campaign, target: StoryDebugTarget): StoryDe
 }
 
 /** 任务的缺口；没有现场表时，面板与命令行据此说明缺哪条证据。 */
-export function debugGaps(campaign: Campaign, quest?: string): StoryDebugGap[] {
+function debugGaps(campaign: Campaign, quest?: string): StoryDebugGap[] {
   return (campaign.debugStory?.gaps ?? []).filter(gap => !quest || gap.quest === quest);
 }
 

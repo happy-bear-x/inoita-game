@@ -100,8 +100,6 @@ export class StoryWorldState {
   hasFlag(id:string):boolean{return this.flags.has(id);}
   get flagIds():ReadonlySet<string>{return new Set(this.flags);}
   choice(id:string):string|undefined{return this.choices.get(id);}
-  /** 选择快照：只复制 choices，避免剧情观察每次 emit 深拷贝整个世界。 */
-  choiceValues():Map<string,string>{return new Map(this.choices);}
   /** 遭遇状态快照：观察只需要 id、status 和 definitionId。 */
   encounterStatuses():Map<string,{status:StoryEncounter['status'];definitionId?:string}>{
     const cached=this.encounterStatusesCache;

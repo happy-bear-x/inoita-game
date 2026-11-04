@@ -9,13 +9,13 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 /** 热更新签名私钥：仓库外，PKCS#8 EC P-256 PEM，权限 600。 */
-export const UPDATE_KEY_DIR = path.join(os.homedir(), '.config', 'inoita');
-export const UPDATE_KEY_PATH = path.join(UPDATE_KEY_DIR, 'update-signing.pem');
+const UPDATE_KEY_DIR = path.join(os.homedir(), '.config', 'inoita');
+const UPDATE_KEY_PATH = path.join(UPDATE_KEY_DIR, 'update-signing.pem');
 /** 公钥：base64(SPKI DER)，单行，随 APK 一起分发。 */
-export const UPDATE_PUBLIC_KEY_PATH = path.resolve(
+const UPDATE_PUBLIC_KEY_PATH = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)), '..', 'android', 'update-public-key.txt');
 
-export interface UpdateKey {
+interface UpdateKey {
   privateKey: KeyObject;
   publicKey: KeyObject;
   created: boolean;
@@ -26,7 +26,7 @@ export function tryReadUpdateKey(): KeyObject | undefined {
   return createPrivateKey(readFileSync(UPDATE_KEY_PATH));
 }
 
-export function publicKeyBase64(key: KeyObject): string {
+function publicKeyBase64(key: KeyObject): string {
   const publicKey = key.type === 'private' ? createPublicKey(key) : key;
   return publicKey.export({ type: 'spki', format: 'der' }).toString('base64');
 }

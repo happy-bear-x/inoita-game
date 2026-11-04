@@ -4,9 +4,9 @@
  */
 export const COMPANION_WARDROBE_LIMIT = 8;
 
-export interface CompanionWardrobeCacheEntry { destroy(): void }
+interface CompanionWardrobeCacheEntry { destroy(): void }
 
-export interface CompanionWardrobeCacheOptions<K> {
+interface CompanionWardrobeCacheOptions<K> {
   limit?: number;
   /** 当前选中、上阵或正在准备的成员不淘汰。 */
   keep: (id: K) => boolean;

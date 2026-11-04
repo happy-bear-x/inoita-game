@@ -10,7 +10,7 @@ import type {Facing} from './content.ts';
 import type {BattleCatalog} from './battle.ts';
 import {ThreatLedger} from './combat-threat.ts';
 
-export type WorldEnemyAIState =
+type WorldEnemyAIState =
   | {kind:'enemy';state:ReturnType<EnemyController['captureState']>}
   | {kind:'friendly-summon';state:FriendlySummonState};
 

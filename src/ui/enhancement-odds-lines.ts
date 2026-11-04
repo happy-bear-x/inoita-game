@@ -2,13 +2,13 @@ import type { EnhancementOdds } from '../domain/enhancement.ts';
 
 export type EnhancementOutcomeTone='loss'|'single'|'double';
 
-export interface EnhancementOutcomeRow {
+interface EnhancementOutcomeRow {
   result:string;
   chance:string;
   tone:EnhancementOutcomeTone;
 }
 
-export interface EnhancementOddsView {
+interface EnhancementOddsView {
   /** 普通卷轴用一句完整结果；混沌卷轴为空。 */
   sentence?:string;
   /** 混沌卷轴的当前等级标题；普通卷轴为空。 */

@@ -1,6 +1,6 @@
 import { SAVE_NAME_MAX_LENGTH, sanitizeSaveName } from '../domain/save-game.ts';
 
-export interface TextPromptOptions {
+interface TextPromptOptions {
   title:string;
   initial:string;
   onConfirm(value:string):void;

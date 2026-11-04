@@ -108,7 +108,7 @@ export interface QuestBookCheckpoint {
   readonly debugPins: ReadonlySet<string>;
 }
 
-export interface QuestRefreshChanges {
+interface QuestRefreshChanges {
   /** 变化的条件键，格式见 `conditionKey`（`quest:`、`event:`、`choice:`、`flag:`、`world:`）。 */
   keys?: Iterable<string>;
   /** 背包修订号变了：进行中任务的物品目标要重算。 */
@@ -326,10 +326,6 @@ export class QuestBook {
   definition(id: string): QuestRules | undefined { return this.definitions.get(id); }
   /** 单条进度；条目本身已冻结，直接交出去即可，不必克隆。 */
   state(id: string): Readonly<QuestProgress> | undefined { return this.states.get(id); }
-  /** 全部进度的只读投影，供调用方按需遍历而不物化整份快照。 */
-  progressEntries(): ReadonlyMap<string, Readonly<QuestProgress>> { return this.states; }
-  /** 事实序号的只读投影，供提交侧镜像到会话级。 */
-  factSequenceEntries(): readonly (readonly [string, number])[] { return [...this.factSequences]; }
   status(id: string): QuestStatus { return this.states.get(id)?.status ?? 'locked'; }
   /** 该任务是否被 GM 调试钉在进行中。 */
   pinned(id: string): boolean { return this.debugPins.has(id); }

@@ -9,7 +9,7 @@ import type { LootPityConfig, PityEligibility } from './loot-pity.ts';
  * 结算需要的保底状态。`LootPity` 直接满足这份接口；测试可以传只读替身。
  * 首杀记录由这里推进，因为它决定本次掉落是否必中。
  */
-export interface CombatRewardPity {
+interface CombatRewardPity {
   takeBossFirstDefeat(enemyId: string): boolean;
   equipmentBonus(ownerId: string, config: LootPityConfig): number;
   uniqueBonus(ownerId: string, config: LootPityConfig): number;
@@ -19,12 +19,12 @@ export interface CombatRewardPity {
 }
 
 /** 存活上阵成员；等级用于个人掉落与经验分配。 */
-export interface CombatRewardMember {
+interface CombatRewardMember {
   id: string;
   level: number;
 }
 
-export interface CombatRewardInput {
+interface CombatRewardInput {
   /** 被击杀的敌人定义；经验按定义里的基础数值计算。 */
   enemy: EnemyDefinition;
   /** 是否有地图生成点。没有生成点时仍可给经验，但不写击杀记录、不掷掉落。 */
@@ -56,25 +56,25 @@ export interface CombatRewardInput {
 }
 
 /** 一名成员的普通掉落。落点偏移由场景按 `slot` 决定。 */
-export interface CombatRewardOwnerGroup {
+interface CombatRewardOwnerGroup {
   ownerId: string;
   slot: number;
   rewards: DropReward[];
 }
 
-export interface CombatRewardBreakable {
+interface CombatRewardBreakable {
   rewards: DropReward[];
   enemies: string[];
 }
 
-export interface CombatRewardPityRecord {
+interface CombatRewardPityRecord {
   ownerId: string;
   equipment: boolean;
   bestRarity: number;
   eligibility: PityEligibility;
 }
 
-export interface CombatRewardSettlement {
+interface CombatRewardSettlement {
   /** 本次击杀应发放的经验；景物怪、非队伍击杀和 0 经验敌人返回 0。 */
   experience: number;
   isBreakable: boolean;
