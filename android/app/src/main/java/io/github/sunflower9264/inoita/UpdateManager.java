@@ -223,19 +223,18 @@ final class UpdateManager {
         }
 
         worker.execute(() -> {
-            // 上次已经下载完成的版本，在下次冷启动时直接切过去；这是一次完整启动，
-            // 会重新走 markBootOk / 回退窗口。
-            try {
-                applyReadyBlocking();
-            } catch (Exception error) {
-                Log.w(TAG, "应用已就绪更新失败，继续使用当前版本", error);
-                state.clearReady();
-            }
+            // 先读当前版本，拿到已安装版本的 builtAt；再决定要不要应用上次下载好的版本。
             try {
                 loadSnapshot();
             } catch (Exception error) {
                 Log.w(TAG, "初始化版本快照失败，降级为 APK 资源", error);
                 snapshot = Snapshot.apkOnly("apk");
+            }
+            try {
+                if (applyReadyBlocking()) loadSnapshot();
+            } catch (Exception error) {
+                Log.w(TAG, "应用已就绪更新失败，继续使用当前版本", error);
+                state.clearReady();
             }
 
             List<Runnable> callbacks;
@@ -639,6 +638,14 @@ final class UpdateManager {
         UpdateManifest.Manifest manifest = UpdateManifest.parseManifest(readFile(manifestFile));
         if (!manifest.buildId.equals(buildId)) throw new IOException("已就绪版本 buildId 不一致");
         String builtAt = new String(readFile(builtAtFile), java.nio.charset.StandardCharsets.UTF_8).trim();
+        long readyAt = UpdateState.parseMillis(builtAt);
+        long installed = UpdateState.parseMillis(installedBuiltAt);
+        // 安装新 APK 后，旧的 ready 可能比 APK 基线还旧；不能把网页降级回去。
+        if (buildId.equals(snapshot.buildId()) || (installed != Long.MIN_VALUE && readyAt <= installed)) {
+            state.clearReady();
+            Log.i(TAG, "已就绪版本不比当前版本新，丢弃: " + buildId);
+            return false;
+        }
         UpdateInstaller.Plan plan = new UpdateInstaller.Plan(
                 buildId, manifest, java.util.Collections.emptyList(), 0L, staging);
         state.setPendingBoot(buildId, System.currentTimeMillis());
