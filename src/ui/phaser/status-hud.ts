@@ -150,7 +150,7 @@ export class StatusHud {
   private readonly unsubscribe:()=>void;private player?:Readonly<StoryPlayerState>;private target?:TargetStatus;private visible=false;
   private targetSignature='';private lastTick=-1;
   private playerIconImages:Phaser.GameObjects.Image[]=[];private memberCount=0;
-  private playerIconSignature='';private portraitKey?:string;private visibilityApplied=false;
+  private playerIconSignature='';private portraitKey?:string;private visibilityApplied=false;private levelSignature='';
   constructor(hud:Hud,skin:StatusHudSkin,readPlayer:()=>Readonly<StoryPlayerState>|undefined,subscribe:(listener:()=>void)=>()=>void,
     readParty?:()=>PartySnapshot|undefined,onSelect?:(id:string)=>void,portraitFor?:(id:string)=>string|undefined,onFocus?:()=>void,
     readConditions?:(id:string)=>readonly ActiveCondition[],readHero?:()=>MemberValues|undefined){
@@ -192,7 +192,10 @@ export class StatusHud {
       if(ref&&portraitSignature!==this.portraitKey){this.portraitKey=portraitSignature;this.portrait.setTexture(ref.key,ref.frame).setDisplaySize(p.width,p.height);}
       this.paintPlayerIcons(readConditions?.(controlled)??[]);
       this.panels.forEach((panel,index)=>panel.paintIcons(index<others.length?(readConditions?.(others[index])??[]):[]));
-      if(this.player){const value=this.player;this.level.setText(String(value.level)).setScale(Math.min(1,(level.width-4)/Math.max(1,this.level.width),(level.height-4)/Math.max(1,this.level.height)));this.gauges.health.update(value.health,value.maxHealth);this.gauges.mana.update(value.mana,value.maxMana);this.gauges.experience.update(value.experience,value.nextLevelExperience);}this.paintTarget();this.syncVisibility();
+      if(this.player){const value=this.player,levelText=String(value.level);
+        // setText 会重新生成文字纹理；等级没变就只更新三条数值。
+        if(levelText!==this.levelSignature){this.levelSignature=levelText;this.level.setText(levelText).setScale(Math.min(1,(level.width-4)/Math.max(1,this.level.width),(level.height-4)/Math.max(1,this.level.height)));}
+        this.gauges.health.update(value.health,value.maxHealth);this.gauges.mana.update(value.mana,value.maxMana);this.gauges.experience.update(value.experience,value.nextLevelExperience);}this.paintTarget();this.syncVisibility();
       // 面板数量变了，列的缩放与位置也要跟着重算。
       if(previousCount!==this.memberCount)this.layout();
     };

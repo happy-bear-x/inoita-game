@@ -891,7 +891,9 @@ export class Session {
   unpinDebugQuest(id:string):void { this.recordPerformance(['questBook']);this.questBook.unpinDebug(id); this.refresh(); }
   mark(flag:string):void {this.applyStoryCommands([{type:'flag',flag}]);}
   visible(entity:VisibilityRules & {condition?:StoryCondition}):boolean {
-    return this.storyWorld.visible(entity.id)&&evaluateStoryCondition(entity.condition,this.conditionContext());
+    if(!this.storyWorld.visible(entity.id))return false;
+    // 没有条件时不要构造整套条件上下文；大多数静态角色走这条快路径。
+    return entity.condition===undefined||evaluateStoryCondition(entity.condition,this.conditionContext());
   }
   private matchesQuestActor(quest:CampaignQuest,actor:string,characterId:string|undefined,delivery:boolean):boolean {
     const expectedActor=delivery?(quest.delivery??quest.giver):quest.giver;

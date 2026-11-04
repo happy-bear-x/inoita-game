@@ -9,11 +9,14 @@ export interface LegendaryWeaponsState { used:string[] }
 
 export class LegendaryWeapons {
   private readonly used = new Set<string>();
+  private revisionValue=0;
+  /** 拔剑状态变化时推进；地图刷新据此判断古剑外观要不要重画。 */
+  get revision():number { return this.revisionValue; }
   private key(mapId:string,entityId:string):string { return `${mapId}:${entityId}`; }
   captureState():LegendaryWeaponsState { return { used:[...this.used].sort() }; }
-  restoreState(state?:LegendaryWeaponsState):void { if(!state)return; this.used.clear(); for(const key of state.used)this.used.add(key); }
+  restoreState(state?:LegendaryWeaponsState):void { if(!state)return; this.used.clear(); for(const key of state.used)this.used.add(key); this.revisionValue++; }
   isPulled(mapId:string,entityId:string):boolean { return this.used.has(this.key(mapId,entityId)); }
-  markPulled(mapId:string,entityId:string):void { this.used.add(this.key(mapId,entityId)); }
+  markPulled(mapId:string,entityId:string):void { this.used.add(this.key(mapId,entityId)); this.revisionValue++; }
 }
 
 export interface LegendaryPullResult { success:boolean; message:string; item?:ItemInstance; unique?:boolean; }

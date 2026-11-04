@@ -24,14 +24,14 @@ test('interaction distance filters task queries and preserves visibility, opened
   const far=character('far',25),hidden=character('hidden',1,{container:{x:1,y:0,visible:false}});
   const chest=character('chest',2,{actor:{chest:true}}),spring=character('spring',3,{entity:{id:'spring',spring:true}});
   const decorative=character('decorative',4),first=character('first',24),tie=character('tie',-24);
-  const queried:string[]=[];let refreshed=0;
+  const queried:string[]=[];let refreshed=0,signature=0;
   const host={app:{session:{refresh:()=>refreshed++,chests:{isOpened:()=>true},springs:{isEmpty:()=>true}}},map:{id:'map'},
     player:{container:{x:0,y:0}},characters:[far,hidden,chest,spring,decorative,first,tie],near:null as unknown,
     chestOpened:(value:typeof chest)=>value===chest,
-    legendarySwordConsumed:()=>false,
+    legendarySwordConsumed:()=>false,interactionSignature:()=>String(signature++),
     interactionCandidate:(value:typeof far)=>{queried.push(value.entity.id);return value!==decorative?1:null;}};
   invoke(host,'updateInteractionTarget');
-  assert.equal(refreshed,1);assert.deepEqual(queried,['decorative','first','tie']);assert.equal(host.near,first);
+  assert.equal(refreshed,0,'交互目标不再每帧刷新任务簿');assert.deepEqual(queried,['decorative','first','tie']);assert.equal(host.near,first);
   first.container.x=30;tie.container.x=-30;invoke(host,'updateInteractionTarget');assert.equal(host.near,null);
 });
 
@@ -177,4 +177,19 @@ test('world update stays idle while the stage covers it and recovers when the st
   invoke(host,'update',0,16);
   assert.equal(host.stageOccluded,false,'舞台消失后自愈');
   assert.deepEqual(calls,['visible:true','resume']);
+});
+
+test('unchanged map state skips the character visibility loop',()=>{
+  let touched=0;
+  const host={
+    app:{session:{visible:()=>true,storyWorld:{actorVisible:()=>true},marker:()=>null}},
+    performing:false,combat:{setPerformanceActive(){}},map:undefined,
+    characters:[{entity:{id:'npc',actor:'npc'},actor:{id:'npc'},container:{x:0,y:0,setVisible:()=>touched++}}],
+    refreshLoadout(){},noticeQuestCompletions(){},refreshStateSignature:()=>'same',
+    chestOpened:()=>false,legendarySwordConsumed:()=>false,movement:{setEnabled(){}},
+  };
+  invoke(host,'refreshState');
+  assert.equal(touched,1,'第一次按状态刷新角色显隐');
+  invoke(host,'refreshState');
+  assert.equal(touched,1,'签名不变时不再执行角色显隐循环');
 });

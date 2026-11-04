@@ -9,6 +9,7 @@ import { OverheadStatus } from '../rendering/overhead-status.ts';
 import Phaser from 'phaser';
 import { ExitTrigger, overlapsFootRect } from '../domain/navigation.ts';
 import { claimNearTrigger } from '../domain/story-trigger-occupancy.ts';
+import { buildStoryTriggerIndex, type StoryTriggerIndex } from '../domain/story-trigger-index.ts';
 import { NavigationWorld, collisionAt } from '../domain/navigation-world.ts';
 import { MovementWorld } from '../rendering/movement-world.ts';
 import { isBodyWalking } from '../rendering/arcade-movement.ts';
@@ -144,6 +145,10 @@ export class WorldScene extends Phaser.Scene {
   private readonly encounterResults=new Set<string>();
   private baseEntities:EntityPlacement[]=[];
   private readonly occupiedRegions=new Set<string>();
+  /** 本图的区域/近身事件与角色分组；进图和剧情投影后各建一次。 */
+  private triggerIndex?:StoryTriggerIndex<Character>;
+  private refreshStateSignatureValue?:string;
+  private interactionSignatureValue?:string;
   /** 屏幕固定的界面层与它上面的移动摇杆。 */
   private hud?: Hud;
   private statusHud?:StatusHud;
@@ -208,7 +213,7 @@ export class WorldScene extends Phaser.Scene {
     this.dropCatalog=undefined;this.springCatalog=undefined;this.groundLootView=undefined;this.pickupMessages=undefined;this.pickupRecipients.clear();
     this.questStatuses.clear();this.questStatusVersion=undefined;
     this.prefetchTarget = undefined; this.prefetchTask = undefined;
-    this.baseEntities=[];this.occupiedRegions.clear();this.encounterResults.clear();
+    this.baseEntities=[];this.occupiedRegions.clear();this.encounterResults.clear();this.triggerIndex=undefined;this.refreshStateSignatureValue=undefined;this.interactionSignatureValue=undefined;
     this.entryPrefetches?.clear();
     this.projectedActorIds.clear();
   }
@@ -441,6 +446,7 @@ export class WorldScene extends Phaser.Scene {
     mapNavigation.prepareTerrainRouting();
     this.movement = new MovementWorld(this, mapNavigation);
     for (const entity of this.entities) this.characters.push(this.createActor(entity));
+    this.rebuildTriggerIndex();
     // 同图场景重建（检查点恢复、剧情演出）沿用本次地图访问的喝空记录。
     this.restoreDrainedSprings();
     this.refreshState();
@@ -935,11 +941,28 @@ export class WorldScene extends Phaser.Scene {
     this.questStatuses=new Map([...next].map(([id,state])=>[id,state.status]));
   }
 
+  /** 地图与角色集合变化后重建触发索引；内容不可变，查询侧只读。 */
+  private rebuildTriggerIndex():void {
+    this.triggerIndex=this.map?buildStoryTriggerIndex(this.app.campaign,this.map.id,this.characters):undefined;
+  }
+  /** 整图角色显隐、任务标记和小地图重建只在这些输入变化时执行。 */
+  private refreshStateSignature():string {
+    const session=this.app.session;
+    const characters=this.characters.map(character=>
+      `${character.entity.id}:${character.entity.actor}:${character.entity.characterId??''}:${character.actor.id}`).join(',');
+    return [this.map?.id??'',this.performing?1:0,this.combat?.controlledId??'player',characters,
+      session.questBook.version,session.storyWorld.revision,session.chests.revision,
+      session.legendaryWeapons.revision,session.runtimeState.sequence,session.restorationVersion,
+      session.debugFocusQuest??''].join('|');
+  }
   refreshState(): void {
     this.refreshLoadout();
     this.combat?.setPerformanceActive(this.performing);
     const { session } = this.app;
     this.noticeQuestCompletions();
+    const stateSignature=this.refreshStateSignature();
+    if(stateSignature===this.refreshStateSignatureValue)return;
+    this.refreshStateSignatureValue=stateSignature;
     for (const character of this.characters) {
       const opened = this.chestOpened(character), consumed = this.legendarySwordConsumed(character);
       // `actor-visibility` / `remove-character` 记在本图角色状态里；静态摆放也要立即隐藏并停碰撞。
@@ -1678,6 +1701,7 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     // 新队员生成与换装（碰撞盒可能刷新）之后再收拢队伍；回滚路径由 restoreState 逐名恢复。
     if(playerLocation){if(!restoredLocation)this.combat?.regroupPartyAroundHero();this.syncControlledCharacter(true);}
     if(stage?.scene.map===this.map.id)this.combat?.adoptStoryPositions(stage.scene.actors);
+    this.rebuildTriggerIndex();
     this.refreshState();this.syncHud();
   }
   private async projectEquipment(signal:AbortSignal):Promise<void>{
@@ -1786,14 +1810,24 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     if(this.app.session.canInteract(entity.actor,entity.id,entity.characterId)
       ||(slot&&this.app.session.status(slot.id)==='ready'))return 0;
     if(actor.service||actor.chest||entity.spring||actor.description||entity.hint||entity.objective
-      ||this.app.shops.shops[entity.actor])return 1;
+      ||this.app.shops?.shops[entity.actor])return 1;
     return this.app.session.markerActor(entity.actor,entity.characterId)?1:null;
   }
   /** 挑出「身边的可交互对象」：原版 `PLAYER_DoCheckNearNPC` 用曼哈顿距离 24 px，最近的一个胜出。 */
+  private interactionSignature(controlled:CharacterVisual):string {
+    const session=this.app.session;
+    const characters=this.characters.map(character=>
+      `${character.entity.id}:${character.actor.id}:${character.entity.flip?1:0}:${character.container.visible?1:0}`).join(',');
+    return [this.map?.id??'',this.combat?.controlledId??'player',controlled.container.x,controlled.container.y,characters,
+      session.questBook.version,session.storyWorld.revision,session.chests.revision,session.legendaryWeapons.revision,
+      session.restorationVersion,this.performing?1:0].join('|');
+  }
   private updateInteractionTarget(): void {
     const controlled=this.combat?.controlledVisual??this.player;
-    if (!controlled) { this.near = null; return; }
-    this.app.session.refresh();
+    if (!controlled) { this.near = null;this.interactionSignatureValue=undefined;return; }
+    const signature=this.interactionSignature(controlled);
+    if(signature===this.interactionSignatureValue)return;
+    this.interactionSignatureValue=signature;
     let nearest: Character | null = null, distance = Number.POSITIVE_INFINITY, rank = 2;
     for (const character of this.characters) {
       if (!character.container.visible) continue;
@@ -1874,7 +1908,8 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     this.combat?.afterMovement();
     this.collectGroundLoot(pos);
     this.updateInteractionTarget(); this.syncHud();
-    for (const event of this.app.campaign.events)if(event.source==='region'&&event.map===this.map?.id&&event.region){
+    const triggerIndex=this.triggerIndex;
+    for (const event of triggerIndex?.regionEvents ?? this.app.campaign.events)if(event.source==='region'&&event.map===this.map?.id&&event.region){
       const inside=overlapsFootRect(pos,event.region);
       if(!inside){this.occupiedRegions.delete(event.id);continue;}
       if(this.occupiedRegions.has(event.id)||(event.condition&&!this.app.session.evaluateCondition(event.condition)))continue;
@@ -1889,11 +1924,16 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     // 近身触发（原版 `near_npc_field`）：走到那个角色旁边就起演。相邻判定与原版
     // `PLAYER_DoCheckNearNPC` 同口径（曼哈顿 24 px，见 findings 94），占用表与区域触发共用，
     // 避免同一段戏每帧重复上报。
+    const nearEvents = triggerIndex?.nearEvents
+      ?? this.app.campaign.events.filter(event => event.source === 'near' && event.near && (!event.map || event.map === this.map?.id));
     const near = claimNearTrigger(
-      this.app.campaign.events.filter(event => event.source === 'near' && event.near && (!event.map || event.map === this.map?.id)),
+      nearEvents,
       this.occupiedRegions,
       event => {
-        const beside = this.characters.find(character => character.entity.actor === event.near && (!event.nearCharacterId || character.entity.characterId === event.nearCharacterId) && character.container.visible);
+        const candidates = event.near ? triggerIndex?.charactersByActor.get(event.near) : undefined;
+        const beside = candidates
+          ? candidates.find(character => (!event.nearCharacterId || character.entity.characterId === event.nearCharacterId) && character.container.visible)
+          : this.characters.find(character => character.entity.actor === event.near && (!event.nearCharacterId || character.entity.characterId === event.nearCharacterId) && character.container.visible);
         return beside && nearInteractive(pos, beside.container, beside.actor.collision, !!beside.entity.flip) ? beside : null;
       },
       event => !event.condition || this.app.session.evaluateCondition(event.condition));
