@@ -63,8 +63,23 @@ test('every runtime combat effect and actor layer is in the resident pack', () =
   assert.deepEqual(gaps.companions, [], '有佣兵无法通过按需路径加载外观');
 });
 
-test('companion skill stance effects are resident, not only the hero class', () => {
-  const pack = residentCombatAssets({ battle, wardrobe, world, companions });
+test('the map combat plan follows the hero learned skills', () => {
+  const inputs = assetInputs();
+  const reference = world.maps.find(entry => entry.id === campaign.start.map)!;
+  const map = read<WorldMap>(reference.file.replace('content/', '').replace(/\.json$/, ''));
+  const character = battle.classes.find(value => value.id === hero.classId)!;
+  const starter = character.skills[0]!;
+  const levels: Record<string, number> = Object.fromEntries(character.skills.map(id => [id, id === starter ? 1 : 0]));
+  const scoped = { ...inputs, heroSkills: { draft: () => ({ levels }) } } as unknown as WorldAssetInputs;
+  const effectKey = 'firestorm-swing-default-screen';
+  const planKeys = (value: WorldAssetInputs) => new Set(planMapCombat(map, value, { scripts: [] }).map(asset => asset.key));
+  assert.ok(planKeys(inputs).has(effectKey), '全量规划包含姿态特效');
+  assert.equal(planKeys(scoped).has(effectKey), false, '未学技能不进入进图计划');
+  levels.firestorm = 1;
+  assert.ok(planKeys(scoped).has(effectKey), '学会新技能后进图计划补上');
+});
+
+test('companion skill stance effects are resident, not only the hero class', () => {  const pack = residentCombatAssets({ battle, wardrobe, world, companions });
   for (const name of ['heavy-dark-slash', 'firestorm-swing', 'aimed-shot', 'orb-blue', 'rage-aura', 'giant-blow-swing']) {
     assert.ok(pack.effectNames.has(name), `缺少姿态特效 ${name}`);
   }

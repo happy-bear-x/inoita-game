@@ -43,6 +43,7 @@ export function residentCombatCoverageGaps(input: CoverageInput): CoverageGaps {
   const actorLayerKeys = new Set(pack.assets.filter(asset => asset.kind === 'spritesheet').map(asset => asset.key));
   const classIds = input.classIds === undefined ? undefined : new Set(input.classIds);
   const classes = classIds ? battle.classes.filter(character => classIds.has(character.id)) : battle.classes;
+  const learnedSkills = input.learnedSkillIds === undefined ? undefined : new Set(input.learnedSkillIds);
   const effects = new Set<string>();
   const definitions = new Set<string>();
 
@@ -55,6 +56,7 @@ export function residentCombatCoverageGaps(input: CoverageInput): CoverageGaps {
 
   for (const character of classes) {
     for (const id of character.skills) {
+      if (learnedSkills && !learnedSkills.has(id)) continue;
       const skill = battle.skills[id];
       for (const profile of [skill, ...(skill.companion ? [skillForGrowth(skill, 'companion')] : [])]) {
         for (const name of skillReactionEffects(profile)) effects.add(name);
@@ -63,7 +65,10 @@ export function residentCombatCoverageGaps(input: CoverageInput): CoverageGaps {
       }
     }
     for (const stance of Object.values(wardrobe.skillStances?.[character.id] ?? {}))
-      for (const action of Object.values(stance.actions ?? {})) if (action) addAction(action);
+      for (const [skillId, action] of Object.entries(stance.actions ?? {})) {
+        if (learnedSkills && !learnedSkills.has(skillId)) continue;
+        if (action) addAction(action);
+      }
   }
   for (const profile of Object.values(wardrobe.attacks)) addAttack(profile);
   for (const profile of Object.values(wardrobe.dualWieldAttacks ?? {})) addAttack(profile);
@@ -116,7 +121,7 @@ export function residentCombatCoverageGaps(input: CoverageInput): CoverageGaps {
     } catch { unusableCompanions.push(definition.id); }
   }
   // 职业召唤物是另一个独立资源闭包，不能只靠职业 actor 覆盖。
-  for (const character of classes) for (const id of classSummonEnemyIds(battle, character.id)) {
+  for (const character of classes) for (const id of classSummonEnemyIds(battle, character.id, learnedSkills)) {
     const definition = battle.enemies.find(enemy => enemy.id === id);
     if (!definition) { definitions.add(`summon:${id}`); continue; }
     for (const asset of enemyCombatAssets(battle, definition)) {

@@ -572,7 +572,7 @@ export class WorldScene extends Phaser.Scene {
       wardrobe: app.wardrobe, drops: this.dropCatalog, springs: this.springCatalog,
       statusHud: app.statusHud, controlSkin: app.controlSkin, storyInterface: app.storyInterface,
       storyWorld: session.storyWorld, companions: app.companions, party: session.party,
-      hero: session.hero, playerBase: session.character.appearance
+      hero: session.hero, heroSkills: session.skills, playerBase: session.character.appearance
     };
   }
   /**

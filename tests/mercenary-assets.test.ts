@@ -42,3 +42,12 @@ test('omitting the owned set keeps the build-time full companion coverage',()=>{
   const actors=new Set(Object.values(companions.definitions).map(definition=>definition.actor));
   for(const actor of actors)assert.ok(pack.actorIds.has(actor),`全量校验应包含 ${actor}`);
 });
+
+test('party member combat assets only include learned skill stances',()=>{
+  const definition=companions.definitions['mercenary-black-knight']!;
+  const actor=world.actors[definition.actor]!;
+  const keys=(learned:string[])=>new Set(partyMemberCombatAssets(battle,wardrobe,definition.classId,actor,new Set(learned)).map(asset=>asset.key));
+  const effectKey='firestorm-swing-default-screen';
+  assert.equal(keys(['dark-strike']).has(effectKey),false,'未学 firestorm 时不加载它的姿态特效');
+  assert.equal(keys(['dark-strike','firestorm']).has(effectKey),true,'学会 firestorm 后下一场战斗能加载到');
+});

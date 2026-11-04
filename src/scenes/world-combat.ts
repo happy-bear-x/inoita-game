@@ -97,6 +97,7 @@ import { CombatHitResolution } from '../domain/combat-hit-resolution.ts';
 import {moltenReflectionDamage,rollMoltenSplash,moltenSplashTargets} from '../domain/molten-armor.ts';
 import { CombatOutcomes } from '../rendering/combat-outcomes.ts';
 import { enemyCombatAssets, equipmentAttackFor, partyMemberCombatAssets, playerCombatAssets, sharedCombatAssets } from '../rendering/combat-assets.ts';
+import { learnedSkillIds } from '../domain/skill-configuration.ts';
 import type { WorldScene } from './world-scene.ts';
 
 interface MapAlly {
@@ -2047,7 +2048,8 @@ captureStoryActors():SceneActorState[] {
       this.allyLoadFailure=undefined;
       let lease:AssetLease|undefined;
       try{
-      lease=await loadSceneAssets(this.scene,partyMemberCombatAssets(this.app.battleCatalog,this.app.wardrobe,member.classId,actor),()=>{});
+      lease=await loadSceneAssets(this.scene,partyMemberCombatAssets(this.app.battleCatalog,this.app.wardrobe,member.classId,actor,
+        learnedSkillIds(this.app.battleCatalog,member.classId,member.skills)),()=>{});
       if(this.closed||party.get(id)!==member||!party.activeIds.includes(id)){lease.release();continue;}
       await this.scene.preparePartyMember(id,undefined,{full:true});
       if(this.closed||party.get(id)!==member||!party.activeIds.includes(id)){lease.release();continue;}
@@ -2309,7 +2311,8 @@ captureStoryActors():SceneActorState[] {
         const spawn=kind?this.drops.chests[kind]?.spawn:undefined;
         return spawn?[spawn.enemyId]:[];
       })]);
-    const needed=[...playerCombatAssets({catalog,wardrobe:this.app.wardrobe,items:this.app.items,hero:this.hero,actor:this.player.actor}),
+    const needed=[...playerCombatAssets({catalog,wardrobe:this.app.wardrobe,items:this.app.items,hero:this.hero,actor:this.player.actor,
+      learnedSkills:learnedSkillIds(catalog,this.hero.classId,this.app.session.skills)}),
       ...sharedCombatAssets(catalog,this.app.wardrobe),
       ...[...enemyIds].flatMap(id=>{
         const definition=catalog.enemies.find(enemy=>enemy.id===id);

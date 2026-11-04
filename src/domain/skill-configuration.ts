@@ -55,3 +55,18 @@ export class SkillConfiguration {
     this.loadouts.set(classId, structuredClone(draft));this.markChanged();
   }
 }
+
+/** 只读取技能等级的来源；正式游戏、伙伴成长和测试替身都满足这个形状。 */
+export type SkillDraftSource = Pick<SkillConfiguration,'draft'>;
+
+/**
+ * 当前职业真正学会的技能 id：配置里等级大于 0 才算。
+ * 省略配置或职业不存在时返回该职业全部技能（安全超集），供构建期和尚未入队的伙伴使用。
+ */
+export function learnedSkillIds(catalog: BattleCatalog, classId: string, configuration?: SkillDraftSource): Set<string> {
+  const character = catalog.classes.find(value => value.id === classId);
+  if (!character) return new Set();
+  if (!configuration) return new Set(character.skills);
+  const levels = configuration.draft(catalog, classId).levels;
+  return new Set(character.skills.filter(id => (levels[id] ?? 0) > 0));
+}

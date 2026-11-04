@@ -26,6 +26,11 @@ export interface ResidentCombatInput {
    * 运行时只传当前队伍已拥有的伙伴，未拥有的成员按需加载。
    */
   ownedCompanionIds?: Iterable<string>;
+  /**
+   * 已学技能 id（主角与已拥有伙伴的并集）。省略 = 全部技能（构建期全量校验）；
+   * 运行时只装已学技能的动画特效与召唤物。
+   */
+  learnedSkillIds?: Iterable<string>;
 }
 
 /** 会话常驻的战斗视觉资源：一次加载，切图与战斗结束都不释放。 */
@@ -37,8 +42,9 @@ export interface CombatAssetPack {
 }
 
 /**
- * 玩家侧全部战斗视觉资源。职业、佣兵、武器、技能、技能姿态、召唤物和共享表现
+ * 玩家侧战斗视觉资源。当前职业、已拥有佣兵、已学技能、技能姿态、召唤物和共享表现
  * 都与具体地图无关，因此和佣兵素材一样在首次进入世界时加载并常驻。
+ * 运行时用 `classIds` / `ownedCompanionIds` / `learnedSkillIds` 收窄；构建期省略时覆盖全量。
  *
  * 敌人素材随地图预取，不在这里。两边的纹理键必须唯一；同一键指向不同帧配置时
  * 直接报错，避免运行时静默用错帧数。
@@ -62,14 +68,15 @@ export function residentCombatAssets(input: ResidentCombatInput): CombatAssetPac
     for (const name of Object.keys(effects)) effectNames.add(name);
     addAssets(effectAssets(effects));
   };
+  const learnedSkills = input.learnedSkillIds === undefined ? undefined : new Set(input.learnedSkillIds);
   const addClass = (classId: string): void => {
     const character = battle.classes.find(value => value.id === classId);
     if (!character) return;
     actorIds.add(character.actor.id);
     addAssets(characterAssets(character.actor));
     const attack = resolveBasicAttack(battle, { actor: character.actor, basicAttack: character.basicAttack });
-    addEffects(classEffects(battle, character, attack, wardrobe));
-    for (const id of classSummonEnemyIds(battle, classId)) {
+    addEffects(classEffects(battle, character, attack, wardrobe, learnedSkills));
+    for (const id of classSummonEnemyIds(battle, classId, learnedSkills)) {
       const definition = battle.enemies.find(enemy => enemy.id === id);
       if (!definition) throw new Error(`召唤物定义缺失：${id}`);
       addAssets(enemyCombatAssets(battle, definition));

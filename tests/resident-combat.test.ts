@@ -66,3 +66,17 @@ test('an unknown or empty class scope is explicit, not silently full', () => {
   for (const character of battle.classes) assert.equal(empty.actorIds.has(character.actor.id), false);
   assert.equal(empty.assets.some(asset => asset.key.includes('battle-')), false);
 });
+
+test('resident pack only carries effects for learned skills', () => {
+  const character = battle.classes.find((value: { id: string }) => value.id === 'dark-knight')!;
+  const starter = character.skills[0]!;
+  const scope = { battle, wardrobe, world, companions, classIds: [character.id], ownedCompanionIds: [] as string[] };
+  const before = residentCombatAssets({ ...scope, learnedSkillIds: [starter] });
+  assert.ok(before.effectNames.has('heavy-dark-slash'), '初始技能的姿态特效应在常驻包中');
+  assert.equal(before.effectNames.has('firestorm-swing'), false, '未学技能的姿态特效不应常驻');
+  const gaps = residentCombatCoverageGaps({ ...scope, learnedSkillIds: [starter] });
+  assert.deepEqual(gaps, { effects: [], layers: [], actorLayers: [], definitions: [], companions: [] });
+  const after = residentCombatAssets({ ...scope, learnedSkillIds: [starter, 'firestorm'] });
+  assert.ok(after.effectNames.has('firestorm-swing'), '学会新技能后应能加载对应特效');
+  assert.ok(after.effectNames.size > before.effectNames.size);
+});

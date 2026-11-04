@@ -7,6 +7,7 @@ import { BREAKABLE_ENEMY_IDS, type DropCatalog } from '../domain/drops.ts';
 import type { ItemCatalog } from '../domain/items.ts';
 import type { CompanionCatalog, PartyRoster } from '../domain/party.ts';
 import type { SpringCatalog } from '../domain/springs.ts';
+import { learnedSkillIds, type SkillDraftSource } from '../domain/skill-configuration.ts';
 import type { StatusHudSkin } from '../domain/status-hud.ts';
 import type { StoryInterface } from '../domain/story-interface.ts';
 import type { StoryNode } from '../domain/story-graph.ts';
@@ -39,6 +40,8 @@ export interface WorldAssetInputs {
   companions: CompanionCatalog;
   party?: PartyRoster;
   hero: BattleCharacter;
+  /** 主角技能配置；省略时按全部技能规划（构建期/测试）。 */
+  heroSkills?: SkillDraftSource;
   /** 主角当前外观（`session.character.appearance`）。 */
   playerBase: ActorDefinition;
 }
@@ -204,8 +207,11 @@ export interface MapCombatOptions extends EnemyPlanOptions {
 
 /** 目标图的完整战斗素材：主角、当前队伍、剧情会加入的伙伴、可能出现的敌人。 */
 export function planMapCombat(map: WorldMap, input: WorldAssetInputs, options: MapCombatOptions = {}): PendingAsset[] {
+  // 主角和已入队伙伴只装已学技能；尚未入队/只声明加入的伙伴仍用全套，避免剧情加入时缺素材。
+  const heroLearned = input.heroSkills ? learnedSkillIds(input.battle, input.hero.classId, input.heroSkills) : undefined;
   const assets: PendingAsset[] = [
-    ...playerCombatAssets({ catalog: input.battle, wardrobe: input.wardrobe, items: input.items, hero: input.hero, actor: input.playerBase }),
+    ...playerCombatAssets({ catalog: input.battle, wardrobe: input.wardrobe, items: input.items, hero: input.hero, actor: input.playerBase,
+      learnedSkills: heroLearned }),
     ...sharedCombatAssets(input.battle, input.wardrobe)
   ];
   const partyIds = options.partyIds ?? input.party?.activeIds ?? [];
@@ -214,7 +220,8 @@ export function planMapCombat(map: WorldMap, input: WorldAssetInputs, options: M
     const member = input.party?.get(id);
     const actor = member ? input.world.actors[member.definition.actor] : undefined;
     if (!member || !actor) continue;
-    assets.push(...partyMemberCombatAssets(input.battle, input.wardrobe, member.classId, actor));
+    assets.push(...partyMemberCombatAssets(input.battle, input.wardrobe, member.classId, actor,
+      learnedSkillIds(input.battle, member.classId, member.skills)));
   }
   const joins = new Set(options.joinCompanionIds ?? []);
   if (!options.joinCompanionIds) {

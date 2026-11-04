@@ -124,14 +124,16 @@ export function basicAttackEffects(catalog: BattleCatalog, attack: BasicAttackDe
 }
 
 /**
- * 当前职业可能用到的特效：技能（含私有追击与伙伴成长分支）、反应，以及这个职业的**全部武器姿态**。
+ * 当前职业可能用到的特效：技能（含私有追击与伙伴成长分支）、反应，以及这个职业的**武器姿态**。
  * 姿态按职业而不是按当前操控者收集，队友与主角因此共用同一份集合。
+ * 传入 `learnedSkills` 时只收已学会的技能和对应姿态；省略表示全部技能（构建期/覆盖校验）。
  */
 export function classEffects(catalog: BattleCatalog, character: BattleClass, attack: ResolvedBasicAttack,
-  wardrobe?: WardrobeCatalog): EffectMap {
+  wardrobe?: WardrobeCatalog, learnedSkills?: ReadonlySet<string>): EffectMap {
   const names = new Set(Object.keys(basicAttackEffects(catalog, attack)));
   if (catalog.attackEffects['life-drain']) names.add('life-drain');
   for (const id of character.skills) {
+    if (learnedSkills && !learnedSkills.has(id)) continue;
     const skill = catalog.skills[id];
     for (const profile of [skill, ...(skill.companion ? [skillForGrowth(skill, 'companion')] : [])]) {
       for (const name of skillReactionEffects(profile)) names.add(name);
@@ -140,8 +142,10 @@ export function classEffects(catalog: BattleCatalog, character: BattleClass, att
     }
   }
   for (const stance of Object.values(wardrobe?.skillStances?.[character.id] ?? {}))
-    for (const action of Object.values(stance.actions ?? {})) if (action)
-      for (const name of skillEffectNames(action)) names.add(name);
+    for (const [skillId, action] of Object.entries(stance.actions ?? {})) {
+      if (learnedSkills && !learnedSkills.has(skillId)) continue;
+      if (action) for (const name of skillEffectNames(action)) names.add(name);
+    }
   return Object.fromEntries([...names].filter(name => catalog.attackEffects[name]).map(name => [name, catalog.attackEffects[name]]));
 }
 
