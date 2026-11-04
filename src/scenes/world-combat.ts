@@ -72,7 +72,7 @@ import type { PassiveModifier } from '../domain/passive-skills.ts';
 import { disturbanceCandidate } from '../domain/disturbance.ts';
 import { planSummonSpot } from '../domain/skill-geometry.ts';
 import { scaledBuffEffect, summonLifetimeFrames, summonOwnerStats, withLifetimeFrames, type SummonStats } from '../domain/summon-stats.ts';
-import { faceTarget, resolveBasicAttack } from '../domain/basic-attack.ts';
+import { faceTarget, resolveBasicAttack, targetDistance } from '../domain/basic-attack.ts';
 import { skillClipName, skillClips, skillPlaybackEvents, skillSoundNames } from '../domain/skill-action.ts';
 import { costumeRecipe, hasOffhandShield } from '../domain/wardrobe.ts';
 import type { ActorDefinition, ClipName, Facing } from '../domain/content.ts';
@@ -1987,7 +1987,7 @@ captureStoryActors():SceneActorState[] {
       healCandidates:()=>this.healCandidates(),
       facing,
       leader:()=>this.combatant(this.controlledId),followGoal:()=>this.partyFollowGoal(id),trailGoal:()=>this.partyTrailGoal(id),focusTarget:()=>this.focusTargetId,
-      partyTarget:()=>this.currentTargetOf(this.controlledId),
+      partyTarget:()=>this.currentTargetOf(this.controlledId),threatTarget:()=>this.nearestEngagedEnemy(),
       // 玩家指派了目标，或队伍最近与敌人真实交战过，都算整个队伍已进入战斗。
       inCombat:()=>!!this.focusTargetId||this.awareness.inCombat((this.app.session.combatTick??0)*LOGIC_FRAME_MS),
       skills:()=>this.partySkills.get(id)??[],
@@ -2529,6 +2529,20 @@ captureStoryActors():SceneActorState[] {
   /** 最近交战的敌人：佣兵被攻击但没有还手时，控制器里还没有目标。 */
   private engagedTarget():string|undefined{
     return this.awareness.tactics(this.controlledId,this.activeParty,this.focusTargetId).engagedTargetIds[0];
+  }
+
+  /** 战斗待命时转身朝向：最近仍在交战、且当前可攻击的敌人。 */
+  private nearestEngagedEnemy():Combatant|undefined {
+    const leader=this.combatant(this.controlledId);
+    if(!leader)return undefined;
+    let nearest:Combatant|undefined,nearestDistance=Infinity;
+    for(const id of this.awareness.tactics(this.controlledId,this.activeParty,this.focusTargetId).engagedTargetIds){
+      const enemy=this.combatant(id);
+      if(!enemy||enemy.team===leader.team||!canTargetCombatant(leader,enemy))continue;
+      const distance=targetDistance(leader.position,enemy.position);
+      if(distance<nearestDistance){nearest=enemy;nearestDistance=distance;}
+    }
+    return nearest;
   }
   hasHostileTarget():boolean{const source=this.combatant(this.controlledId);return !!source&&this.combatants().some(target=>source.team!==target.team&&canTargetCombatant(source,target));}
   attack(key?:string):void{

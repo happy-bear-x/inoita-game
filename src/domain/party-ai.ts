@@ -1,5 +1,5 @@
 import { LOGIC_FRAME_MS, type EnemyPlayableSkill } from './battle.ts';
-import { attackDistance, targetDistance } from './basic-attack.ts';
+import { attackDistance, faceTarget, targetDistance } from './basic-attack.ts';
 import { CombatController, canTargetCombatant, type Combatant, type CombatPort } from './combat.ts';
 import { combatStateCapabilities } from './combat-state.ts';
 import { needsTarget } from './skill-action.ts';
@@ -16,6 +16,8 @@ export interface PartyPort extends CombatPort {
   focusTarget(): string | undefined;
   /** 主操作角色当前的战斗目标；队伍联动时让佣兵攻击同一个敌人。 */
   partyTarget?(): string | undefined;
+  /** 战斗待命时最近仍在交战的敌人；只用于转身朝向，不参与索敌。 */
+  threatTarget?(): Combatant | undefined;
   /** 整个队伍是否已进入战斗：有指派目标，或最近和敌人真实交战过。 */
   inCombat(): boolean;
   navigationBounds(): GameRectangle;
@@ -68,6 +70,14 @@ const PARTY_TRAIL_DETOUR_RATIO = 1.6;
 const PARTY_TRAIL_DETOUR_MAX_PX = 96;
 /** 因绕行切到轨迹后，至少保持这么久再评估回队形，避免在连续拐角里来回切。 */
 const PARTY_TRAIL_DETOUR_HOLD_MS = 1500;
+/** 主角最后一次指定目标后，佣兵最多再记这么久；与真实交战窗口一致。 */
+const PARTY_COMBAT_MEMORY_MS = 1800;
+/** 战斗中无目标时的保持圈：主角在这个半径内走动，佣兵不跟。 */
+const PARTY_COMBAT_HOLD_RADIUS_PX = 96;
+/** 超出保持圈后归队，到主角的攻击距离单位内停下（约七格）。 */
+const PARTY_COMBAT_REGROUP_DISTANCE_UNITS = 7;
+/** 目标离主角超过这个距离就放弃追击，避免被远程敌人牵着走。 */
+const PARTY_CHASE_LEASH_PX = 80;
 
 /** 队形点能站，但寻路要绕很远时，下一帧改走主角路径。 */
 export function shouldUseTrailByDetour(pathLength:number, straightDistance:number):boolean {
@@ -104,6 +114,10 @@ export class PartyController {
   /** 追击敌人或自动接近时的最近一次真实位移；和队长跟随分开记录，战斗状态不会互相清零。 */
   private chaseProgress?:{targetId:string;position:Point;since:number};
   private chaseRecoveryUntil=0;
+  /** 主角最后一刻还在攻击的目标；主角走位清掉目标后，佣兵靠它继续打一小段时间。 */
+  private combatTarget?:{id:string;until:number};
+  /** 是否正在从战斗保持圈外归队；进入内圈才停，避免在边界上来回抖。 */
+  private combatRegrouping=false;
   private followMode:'formation'|'trail'='formation';
   private formationBlockedSince=0;
   private formationUsableSince=0;
@@ -131,17 +145,18 @@ export class PartyController {
     this.destinationTarget=state.destinationTarget;this.destinationRange=state.destinationRange;
     // 搜索持有的是旧场地的闭包，读档后必须重新开始。
     this.search=undefined;this.pathRetryAt=0;this.followProgress=undefined;this.followProgressAt=0;
-    this.chaseProgress=undefined;this.chaseRecoveryUntil=0;
+    this.chaseProgress=undefined;this.chaseRecoveryUntil=0;this.combatTarget=undefined;this.combatRegrouping=false;
     this.followMode='formation';this.formationBlockedSince=0;this.formationUsableSince=0;this.trailHoldUntil=0;this.searchKind=undefined;
   }
   targetRemoved(targetId:string):void {
     this.combatController.targetRemoved(targetId);
+    if(this.combatTarget?.id===targetId)this.combatTarget=undefined;
     if(this.destinationTarget!==targetId)return;
     this.path=[];this.search=undefined;this.pathRetryAt=0;this.followProgress=undefined;this.followProgressAt=0;
     this.destination=undefined;this.destinationTarget=undefined;this.destinationRange=undefined;this.nextPathAt=0;this.port.stop();
   }
   cancel():void {this.combatController.cancel(true);this.path=[];this.search=undefined;this.pathRetryAt=0;
-    this.followProgress=undefined;this.followProgressAt=0;this.chaseProgress=undefined;this.chaseRecoveryUntil=0;
+    this.followProgress=undefined;this.followProgressAt=0;this.chaseProgress=undefined;this.chaseRecoveryUntil=0;this.combatTarget=undefined;this.combatRegrouping=false;
     this.destination=undefined;this.destinationTarget=undefined;this.destinationRange=undefined;
     this.nextPathAt=0;this.accumulator=0;this.followMode='formation';this.formationBlockedSince=0;
     this.formationUsableSince=0;this.trailHoldUntil=0;this.searchKind=undefined;this.port.stop();}
@@ -162,7 +177,9 @@ export class PartyController {
     const actor=this.port.actor(this.id);
     if(!actor){this.port.stop();return;}
     this.combatController.update();
-    if(!combatStateCapabilities(actor.states??[]).canAct){this.path=[];this.port.stop();this.followProgress=undefined;this.followProgressAt=0;return;}
+    if(!combatStateCapabilities(actor.states??[]).canAct){
+      this.path=[];this.port.stop();this.followProgress=undefined;this.followProgressAt=0;this.combatTarget=undefined;return;
+    }
     const actionState=this.combatController.actionState();
     // 默认普攻由 CombatController 直线接近目标；撞上剧情障碍时不会自己寻路。
     // 这里只在接近阶段做无进展检测，取消接近后交给下面的收拢兜底。
@@ -174,12 +191,22 @@ export class PartyController {
     const inCombat=this.port.inCombat();
     const recovering=this.clock<this.chaseRecoveryUntil;
     // 佣兵只跟随主角的攻击：显式集火优先，其次主操作角色当前攻击的目标。
-    // 不自己索敌，也不因为挨打还手；主角没有目标时只跟随。
-    const target=recovering?undefined:this.hostileTarget(actor,[
+    // 不自己索敌，也不因为挨打还手；主角走位清掉目标时，先吃完最后一刻的目标记忆。
+    const realtime=recovering?undefined:this.hostileTarget(actor,[
       this.port.focusTarget(),
       this.port.partyTarget?.()
     ]);
-    // 重新选中目标时清掉旧的队长跟随计时；没有目标但处于战斗时仍走队长跟随，
+    if(realtime)this.rememberCombatTarget(realtime);
+    let target=realtime??this.recalledCombatTarget(actor,recovering);
+    // 目标被拉出主角身边时不再追，防止远程敌人把近战佣兵牵出战斗区域；
+    // 已经在攻击距离内的目标不受影响，先打完这一下再判断距离。
+    if(target&&this.chaseLeashExceeded(actor,target)
+      &&attackDistance(actor.position,actor.bounds,target.position,target.bounds)>this.port.attackRange()){
+      this.combatTarget=undefined;target=undefined;
+      this.path=[];this.search=undefined;this.pathRetryAt=0;this.nextPathAt=0;
+      this.port.stop();
+    }
+    // 重新选中目标时清掉旧的队长跟随计时；没有目标但处于战斗时仍走战斗保持，
     // 这条计时不能被 inCombat 每帧清零，否则掉队收拢在战斗中永远等不到触发。
     if(target){this.followProgress=undefined;this.followProgressAt=0;this.formationBlockedSince=0;this.formationUsableSince=0;}
     // 队伍未进入战斗时只跟随，不放任何主动技能；召唤物之类的无目标技能也不例外。
@@ -214,6 +241,9 @@ export class PartyController {
       return;
     }
     this.chaseProgress=undefined;
+    // 队伍仍在战斗时不跟主角的小范围走位：留在战斗位置待命，辅助技能照常释放。
+    // 只有脱战，或主角拉开到保持圈外，才恢复跟随。
+    if(inCombat){this.holdCombatPosition(actor);return;}
     const leader=this.port.leader();
     const formation=this.port.followGoal?.();
     this.updateFollowMode(formation);
@@ -234,6 +264,50 @@ export class PartyController {
       if(candidate&&candidate.team!==actor.team&&canTargetCombatant(actor,candidate))return candidate;
     }
     return undefined;
+  }
+
+  /** 主角刚打过的目标记一小段时间；主角走位清掉目标时，佣兵不会立刻停手。 */
+  private rememberCombatTarget(target:Combatant):void {
+    this.combatTarget={id:target.id,until:this.clock+PARTY_COMBAT_MEMORY_MS};
+  }
+  /** 取仍在有效期内的记忆目标；失效或过期的目标立刻清掉。 */
+  private recalledCombatTarget(actor:Combatant,recovering:boolean):Combatant|undefined {
+    const memory=this.combatTarget;
+    if(!memory)return undefined;
+    if(recovering||this.clock>memory.until){this.combatTarget=undefined;return undefined;}
+    const target=this.port.actor(memory.id);
+    if(!target||target.team===actor.team||!canTargetCombatant(actor,target)){this.combatTarget=undefined;return undefined;}
+    // 这个目标已经不在主角的实时意图里；佣兵自己不接近敌人时（伏击等），
+    // 不能让记忆目标拦住归队，交回普通跟随。
+    const capabilities=combatStateCapabilities(actor.states??[]);
+    if(!capabilities.canMove||!capabilities.canAutoApproach){this.combatTarget=undefined;return undefined;}
+    return target;
+  }
+  /** 目标离主角太远就放弃追击；没有主操作角色时不做限制。 */
+  private chaseLeashExceeded(actor:Combatant,target:Combatant):boolean {
+    const leader=this.port.leader();
+    if(!leader||leader.id===actor.id)return false;
+    return targetDistance(target.position,leader.position)>PARTY_CHASE_LEASH_PX;
+  }
+  /** 战斗中没有目标：保持圈内原地待命，超出才归队；待命时转向最近的交战敌人。 */
+  private holdCombatPosition(actor:Combatant):void {
+    const leader=this.port.leader();
+    if(!leader||leader.id===actor.id){this.path=[];this.port.stop();this.combatRegrouping=false;return;}
+    const distance=targetDistance(actor.position,leader.position);
+    if(distance>PARTY_COMBAT_HOLD_RADIUS_PX)this.combatRegrouping=true;
+    else if(attackDistance(actor.position,actor.bounds,leader.position,leader.bounds)<=PARTY_COMBAT_REGROUP_DISTANCE_UNITS)this.combatRegrouping=false;
+    if(this.combatRegrouping){
+      this.follow(actor,leader,PARTY_COMBAT_REGROUP_DISTANCE_UNITS,true);
+      return;
+    }
+    this.path=[];this.search=undefined;this.pathRetryAt=0;this.nextPathAt=0;
+    this.destination=undefined;this.destinationTarget=undefined;this.destinationRange=undefined;
+    this.port.stop();this.faceCombatThreat(actor,leader);
+  }
+  private faceCombatThreat(actor:Combatant,leader:Combatant):void {
+    if(!this.port.face)return;
+    const threat=this.port.threatTarget?.();
+    this.port.face(faceTarget(actor.position,threat?.position??leader.position));
   }
   private roll(threshold:number):boolean{return 1+Math.floor(this.random()*99)<threshold;}
   /**

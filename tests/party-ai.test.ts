@@ -82,12 +82,12 @@ test('companions attack the controlled character target',()=>{
   const run=setup();run.shared('enemy');run.ai.update(60);
   assert.equal(run.plays.at(-1)?.target?.id,'enemy','主角正在打的目标就是佣兵的目标');
 });
-test('without a player target, companions follow the leader even during combat',()=>{
-  const run=setup();run.fighting();
+test('without a player target, companions hold their combat position instead of following small movements',()=>{
+  const run=setup();run.fighting();run.leader.position={x:64,y:32};
   run.enemy.position={x:600,y:600};run.enemy2.position={x:600,y:600};
   run.ai.update(60);
   assert.equal(run.plays.length,0,'没有主角目标时佣兵不能自己索敌出手');
-  assert.ok(run.waypoint(),'队伍在别处开战时，佣兵仍要跟向队长');
+  assert.equal(run.waypoint(),undefined,'队伍在战斗中时，主角身边的小范围走位不带动佣兵');
 });
 
 test('fighting companions pursue the controlled character target beyond their own search radius',()=>{
@@ -121,7 +121,7 @@ test('being hit does not make companions attack; only focus or the controlled ch
   const run=setup();run.fighting();run.ai.update(60);assert.equal(run.plays.length,0,'挨打不开战，也不自己索敌');
   run.focus('enemy2');run.ai.update(60);assert.equal(run.plays.at(-1)?.target?.id,'enemy2','显式集火');
   run.ai.cancel();run.focus(undefined);run.shared('enemy');run.ai.update(60);assert.equal(run.plays.at(-1)?.target?.id,'enemy','跟随主角目标');
-  run.ai.cancel();run.shared(undefined);run.ai.update(60);assert.ok(run.waypoint(),'主角没有目标时回到跟随');
+  run.ai.cancel();run.shared(undefined);run.fighting(false);run.ai.update(60);assert.ok(run.waypoint(),'脱战后回到跟随');
 });
 test('native AI thresholds distinguish regular and high frequency and following state',()=>{
   assert.equal(partySkillThreshold('chance',1,false),30);assert.equal(partySkillThreshold('chance',2,false),100);
@@ -164,7 +164,7 @@ test('changing pursuit target or required range invalidates the cached follow pa
   const run=setup();run.ai.update(60);assert.equal(run.boundsCalls(),1);
   run.enemy.position={...run.leader.position};run.focus('enemy');run.ai.update(60);assert.equal(run.boundsCalls(),2);
   run.port.attackRange=()=>1;run.ai.update(60);assert.equal(run.boundsCalls(),3);
-  run.focus(undefined);run.ai.update(60);assert.equal(run.boundsCalls(),4);
+  run.ai.targetRemoved('enemy');run.ai.update(60);assert.equal(run.boundsCalls(),4);
 });
 test('followers re-path after the leader moves three grid steps, not on every step',()=>{
   const run=setup();run.ai.update(60);const base=run.boundsCalls();
@@ -221,8 +221,8 @@ test('a follower with no progress for the watchdog window is pulled beside the l
 
 test('a companion chasing an unreachable focused enemy is pulled beside the leader once',()=>{
   const run=setup();let regroups=0;
-  run.enemy.position={x:300,y:32};
-  run.port.canStand=point=>point.x>=8&&point.x<=120&&point.y>=8&&point.y<=88;
+  run.enemy.position={x:150,y:32};
+  run.port.canStand=point=>point.x>=8&&point.x<=100&&point.y>=8&&point.y<=88;
   run.port.regroup=()=>{regroups++;run.ai.cancel();run.member.position={...run.leader.position};};
   run.focus('enemy');
   for(let frame=0;frame<70;frame++)run.ai.update(60);
@@ -234,11 +234,75 @@ test('a companion chasing an unreachable focused enemy is pulled beside the lead
 test('a companion without a player target still recovers when the leader route is blocked',()=>{
   const run=setup();let regroups=0;
   run.enemy.position={x:300,y:32};run.enemy2.position={x:-100,y:-100};
-  run.port.canStand=point=>point.x>=8&&point.x<=120&&point.y>=8&&point.y<=88;
+  run.leader.position={x:160,y:32};
+  run.port.canStand=point=>point.x>=8&&point.x<=90&&point.y>=8&&point.y<=88;
   run.port.regroup=()=>{regroups++;run.ai.cancel();run.member.position={...run.leader.position};};
   run.fighting();
   for(let frame=0;frame<70;frame++)run.ai.update(60);
-  assert.equal(regroups,1,'没有主角目标时跟队长也不能每帧清空掉队计时');
+  assert.equal(regroups,1,'战斗中归队被地形挡住时也不能每帧清空掉队计时');
+});
+
+test('companions keep attacking the last controlled target after its selection is cleared',()=>{
+  const run=setup();run.shared('enemy');run.fighting();run.ai.update(60);
+  assert.equal(run.plays.at(-1)?.target?.id,'enemy');
+  run.finish();run.shared(undefined);run.ai.update(60);
+  assert.equal(run.plays.at(-1)?.target?.id,'enemy','记忆目标在有效期内继续攻击');
+});
+
+test('expired target memory makes companions hold position in combat',()=>{
+  const run=setup();run.fighting();run.shared('enemy');run.ai.update(60);
+  run.finish();run.shared(undefined);run.leader.position={x:80,y:32};
+  run.ai.update(1861);
+  const casts=run.plays.length;
+  run.ai.update(600);
+  assert.equal(run.plays.length,casts,'记忆过期后不再补攻击');
+  assert.equal(run.waypoint(),undefined,'战斗中留在保持圈内');
+});
+
+test('companions rejoin the leader when a fight pulls the leader outside the hold radius',()=>{
+  const run=setup();run.fighting();run.leader.position={x:160,y:32};run.ai.update(60);
+  assert.ok(run.waypoint(),'超过保持圈后归队');
+  run.advance(40);
+  assert.equal(run.waypoint(),undefined,'进入归队内圈后停下');
+  assert.ok(attackDistance(run.member.position,box,run.leader.position,box)<=7,'停在保持圈附近');
+});
+
+test('companions stop chasing a target dragged too far from the controlled character',()=>{
+  const run=setup();run.fighting();run.leader.position={x:32,y:32};
+  run.enemy.position={x:160,y:32};run.shared('enemy');run.ai.update(60);
+  assert.equal(run.waypoint(),undefined,'目标离主角太远时不追');
+  assert.equal(run.plays.length,0,'也不进入攻击');
+});
+
+test('an invalid remembered target is dropped immediately',()=>{
+  const run=setup();run.fighting();run.shared('enemy');run.ai.update(60);
+  const casts=run.plays.length;run.finish();run.shared(undefined);
+  run.enemy.states=['stealthed'];run.leader.position={x:64,y:32};run.ai.update(60);
+  assert.equal(run.plays.length,casts,'隐身目标不能再打');
+  assert.equal(run.waypoint(),undefined,'转回战斗保持');
+});
+
+test('leaving combat returns companions to formation following',()=>{
+  const run=setup();run.fighting();run.ai.update(60);
+  assert.equal(run.waypoint(),undefined,'战斗中无目标保持原位');
+  run.fighting(false);run.ai.update(60);
+  assert.ok(run.waypoint(),'脱战后恢复跟随');
+});
+
+test('cancelling clears the remembered combat target',()=>{
+  const run=setup();run.fighting();run.shared('enemy');run.ai.update(60);
+  const casts=run.plays.length;run.ai.cancel();run.shared(undefined);run.ai.update(60);
+  assert.equal(run.plays.length,casts,'取消后不再使用记忆目标');
+  assert.equal(run.waypoint(),undefined,'仍在战斗中则保持原位');
+});
+
+test('restoring a party checkpoint clears remembered combat targets',()=>{
+  const run=setup();run.fighting();run.shared('enemy');run.ai.update(60);
+  const casts=run.plays.length;
+  run.ai.restoreState(run.ai.captureState());
+  run.shared(undefined);run.ai.update(60);
+  assert.equal(run.plays.length,casts,'读档恢复后不沿用旧战斗目标');
+  assert.equal(run.waypoint(),undefined);
 });
 
 test('party checkpoints restore the pending logic frame and cached navigation without sharing mutable points',()=>{
