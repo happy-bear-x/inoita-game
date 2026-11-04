@@ -29,5 +29,5 @@ test('an older checkpoint without the new keys still restores and the save forma
   assert.equal(restored.hasState('actor','potion-sickness'),false);
   assert.equal(restored.canUseRecoveryItems('actor'),true);
   assert.equal(restored.canUseSkillShortcuts('actor'),true);
-  assert.equal(SAVE_FORMAT,39);
+  assert.equal(SAVE_FORMAT,41);
 });
