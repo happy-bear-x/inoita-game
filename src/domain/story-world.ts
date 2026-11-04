@@ -83,6 +83,7 @@ export class StoryWorldState {
   private revisionValue=0;
   get revision():number{return this.revisionValue;}
   private encounterRevisionValue=0;
+  private encounterStatusesCache?:{revision:number;value:Map<string,{status:StoryEncounter['status'];definitionId?:string}>};
   /**
    * 遭遇集合的修订号：新增遭遇（包括剧情以 `active` 状态新建）和结果变成 `won`/`lost` 时推进；
    * `restoreState` 替换整份世界也推进。其他世界命令不改变它，遭遇状态缓存可以据此复用。
@@ -103,8 +104,11 @@ export class StoryWorldState {
   choiceValues():Map<string,string>{return new Map(this.choices);}
   /** 遭遇状态快照：观察只需要 id、status 和 definitionId。 */
   encounterStatuses():Map<string,{status:StoryEncounter['status'];definitionId?:string}>{
+    const cached=this.encounterStatusesCache;
+    if(cached?.revision===this.encounterRevisionValue)return cached.value;
     const result=new Map<string,{status:StoryEncounter['status'];definitionId?:string}>();
     for(const [id,encounter] of this.encounters)result.set(id,{status:encounter.status,definitionId:encounter.definitionId});
+    this.encounterStatusesCache={revision:this.encounterRevisionValue,value:result};
     return result;
   }
   entity(id:string):Readonly<StoryEntityState>|undefined{const value=this.entities.get(id);return value?{...value}:undefined;}

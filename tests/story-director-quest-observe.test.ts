@@ -72,3 +72,24 @@ test('story observation reads choices and encounters without cloning the whole w
   assert.equal(captures(), base);
   director.dispose();
 });
+
+test('choice and encounter observation reuse their revisions', () => {
+  const session = new Session(campaign), director = new StoryDirector(campaign, session, ui, () => {}, presentation);
+  let choiceReads = 0, encounterReads = 0;
+  const choiceCounts = session.choiceWriteCounts.bind(session);
+  session.choiceWriteCounts = () => { choiceReads++; return choiceCounts(); };
+  const encounterStatuses = session.storyWorld.encounterStatuses.bind(session.storyWorld);
+  session.storyWorld.encounterStatuses = () => { encounterReads++; return encounterStatuses(); };
+
+  session.emit();
+  const choiceBase = choiceReads, encounterBase = encounterReads;
+  for (let index = 0; index < 10; index++) session.emit();
+  assert.equal(choiceReads, choiceBase, '没有选择写入时不再读取选择表');
+  assert.equal(encounterReads, encounterBase, '遭遇没变时不再重建状态表');
+
+  session.applyStoryCommands([{ type: 'choice', choice: 'route', value: 'north' }]);session.emit();
+  assert.ok(choiceReads > choiceBase, '选择写入后重新读取');
+  session.storyWorld.apply({ kind: 'encounter', encounter: { id: 'probe', map: 'forest', status: 'active', spawns: [] } });session.emit();
+  assert.ok(encounterReads > encounterBase, '遭遇变化后重新读取');
+  director.dispose();
+});

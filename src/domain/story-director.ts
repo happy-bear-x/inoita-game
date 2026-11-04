@@ -89,6 +89,9 @@ export class StoryDirector {
   /** 选择标识的写入次数；只比较次数，值相同也算玩家又选了一次。 */
   private observedChoiceWrites = new Map<string, number>();
   private observedEncounters = new Map<string, string>();
+  private observedChoiceRevision?: number;
+  private observedEncounterRevision?: number;
+  private observedCompletedEvents?: readonly string[];
   onTravel?: (destination: TravelDestination, signal: AbortSignal) => void | Promise<void>;
   onError?: (error: unknown, retry: () => Promise<boolean>) => void;
   /** 本次播出的第一段画面已经画出；进图加载界面据此收起，避免先露一帧地图。 */
@@ -190,23 +193,36 @@ export class StoryDirector {
     }
     // 只取观察需要的两张小表；不要为了 choices/encounters 深拷贝整个剧情世界。
     // 选择看写入次数而不是值：同一个选项连续选两次，值没变，但仍然是两次选择。
-    const choiceWrites = this.session.choiceWriteCounts();
-    for (const [id, count] of choiceWrites) {
-      const previous = this.observedChoiceWrites.get(id) ?? 0;
-      if (count > previous) changes.push({ source: 'choice', key: id });
+    // 选择、遭遇和已完成事件各自有单调修订号或不可变数组引用；没动就不复制观察表。
+    const choiceRevision = this.session.choiceWriteRevision;
+    if (choiceRevision !== this.observedChoiceRevision) {
+      const choiceWrites = this.session.choiceWriteCounts();
+      for (const [id, count] of choiceWrites) {
+        const previous = this.observedChoiceWrites.get(id) ?? 0;
+        if (count > previous) changes.push({ source: 'choice', key: id });
+      }
+      this.observedChoiceWrites = new Map(choiceWrites);
+      this.observedChoiceRevision = choiceRevision;
     }
-    const encounters = this.session.storyWorld.encounterStatuses();
-    const encounterStatuses = new Map<string,string>();
-    for (const [id, encounter] of encounters) {
-      encounterStatuses.set(id, encounter.status);
-      if (['won','lost'].includes(encounter.status) && this.observedEncounters.get(id) !== encounter.status)
-        changes.push({ source: 'battle', key: encounter.definitionId ?? id });
+    const encounterRevision = this.session.storyWorld.encounterRevision;
+    if (encounterRevision !== this.observedEncounterRevision) {
+      const encounters = this.session.storyWorld.encounterStatuses();
+      const encounterStatuses = new Map<string,string>();
+      for (const [id, encounter] of encounters) {
+        encounterStatuses.set(id, encounter.status);
+        if (['won','lost'].includes(encounter.status) && this.observedEncounters.get(id) !== encounter.status)
+          changes.push({ source: 'battle', key: encounter.definitionId ?? id });
+      }
+      this.observedEncounters = encounterStatuses;
+      this.observedEncounterRevision = encounterRevision;
     }
-    const completedEvents = new Set(this.session.runtimeState.completedEvents);
-    for (const id of completedEvents) if (!this.observedEvents.has(id)) changes.push({ source: 'event', key: id });
-    this.observedEvents = completedEvents;
-    this.observedChoiceWrites = new Map(choiceWrites);
-    this.observedEncounters = encounterStatuses;
+    const completedEvents = this.session.runtimeState.completedEvents;
+    if (completedEvents !== this.observedCompletedEvents) {
+      const completedSet = new Set(completedEvents);
+      for (const id of completedSet) if (!this.observedEvents.has(id)) changes.push({ source: 'event', key: id });
+      this.observedEvents = completedSet;
+      this.observedCompletedEvents = completedEvents;
+    }
     if (!dispatch || !changes.length) return;
     const version = this.session.restorationVersion;
     // Session publishes while the runtime is still finishing its synchronous commit.

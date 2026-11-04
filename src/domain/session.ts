@@ -35,6 +35,7 @@ interface EnemyState { health?:number; mana?:number; deadUntil?:number|'permanen
 export const DEFAULT_ENEMY_RESPAWN_MS = 60_000;
 
 type SessionListener = (session: Session) => void;
+type SnapshotSlot = 'questBook'|'storyWorld'|'bag'|'enemies'|'receipts'|'chests'|'groundLoot';
 
 /** Data owned by a story session; render objects and subscriptions stay outside checkpoints. */
 export interface SessionState {
@@ -253,6 +254,11 @@ export class Session {
   readonly party?: PartyRoster;
   private gameTimeMs = 0;
   private restoreRevision = 0;
+  /**
+   * 存档快照的子系统缓存：版本没变时复用上一次的深拷贝，避免每次自动存档都把
+   * 随进度变大的背包、世界、敌人和收据整份重克隆。读档/回滚时整体清空。
+   */
+  private snapshotCache:Partial<Record<SnapshotSlot,{version:number;value:unknown}>>={};
   private notificationBatchDepth = 0;
   private pendingNotification = false;
   /** 正在执行的 `atomic`；只有最外层持有自己的帧，嵌套调用把触碰面并进来。 */
@@ -463,8 +469,10 @@ export class Session {
   captureState():SessionState { return this.captureStateWith(this.questBook.captureState()); }
   /** 存档用：GM 调试钉住只是现场状态；舞台演员外观也不是持久数据，写档前剥离。 */
   capturePersistentState():SessionState {
-    const state=this.captureState();
-    if(state.questBook.debugPins?.length)delete state.questBook.debugPins;
+    const state=this.captureStateWith(undefined,true);
+    if(state.questBook.debugPins?.length){
+      const questBook={...state.questBook};delete questBook.debugPins;state.questBook=questBook;
+    }
     delete state.debugFocusQuest;
     state.runtime=toPlaybackCheckpoint(state.runtime);
     return state;
@@ -487,22 +495,39 @@ export class Session {
     this.claimedReservedDrops.clear();
     for(const item of value.claimed)this.claimedReservedDrops.add(item);
   }
-  private captureStateWith(questBook:QuestBookState):SessionState {
-    // 运行时快照本身不可变，按引用共享；奖励收据与敌人状态仍需深拷贝，
-    // 否则回滚会改到快照里的同一份对象。
+  private cachedSnapshot<T>(slot:SnapshotSlot,version:number,capture:()=>T):T {
+    const cached=this.snapshotCache[slot];
+    if(cached?.version===version)return cached.value as T;
+    const value=capture();this.snapshotCache[slot]={version,value};return value;
+  }
+  private captureStateWith(questBook:QuestBookState|undefined,reuse=false):SessionState {
+    const captureEnemies=():SessionState['enemies']=>[...this.enemyStates].map(([id,enemy])=>[id,structuredClone(enemy)]);
+    const captureReceipts=():SessionState['receipts']=>[...this.receipts.values()].map(receipt=>structuredClone(receipt));
+    const questBookState=reuse
+      ?this.cachedSnapshot('questBook',this.questBook.version,()=>this.questBook.captureState())
+      :(questBook??this.questBook.captureState());
+    const storyWorld=reuse
+      ?this.cachedSnapshot('storyWorld',this.storyWorld.revision,()=>this.storyWorld.captureState())
+      :this.storyWorld.captureState();
+    const bag=reuse?this.cachedSnapshot('bag',this.bag.revision,()=>this.bag.captureState()):this.bag.captureState();
+    const enemies=reuse?this.cachedSnapshot('enemies',this.enemyRevision,captureEnemies):captureEnemies();
+    const receipts=reuse?this.cachedSnapshot('receipts',this.receiptRevision,captureReceipts):captureReceipts();
+    const chests=reuse?this.cachedSnapshot('chests',this.chests.revision,()=>this.chests.captureState()):this.chests.captureState();
+    const ground=groundLootFor(this);
+    const groundLoot=reuse?this.cachedSnapshot('groundLoot',ground.revision,()=>ground.captureState()):ground.captureState();
     return {classId:this.hero?.classId??this.character?.classId,
-      questBook,storyWorld:this.storyWorld.captureState(),runtime:this.runtimeSnapshot,
-      receipts:[...this.receipts.values()].map(receipt=>structuredClone(receipt)),
+      questBook:questBookState,storyWorld,runtime:this.runtimeSnapshot,
+      receipts,
       factSequences:[...this.factSequences],trackedQuest:this.trackedQuest,debugFocusQuest:this.debugFocusQuestValue,player:this.playerState,money:this.coins,gameTimeMs:this.gameTimeMs,
-      enemies:[...this.enemyStates].map(([id,enemy])=>[id,structuredClone(enemy)]),bag:this.bag.captureState(),hero:this.hero?.captureState(),skills:this.skills.captureState(),
+      enemies,bag,hero:this.hero?.captureState(),skills:this.skills.captureState(),
       party:this.party?.captureState(),recovery:this.recovery.captureState(),resourceRecovery:this.resourceRecovery.captureState(),
-      combatClock:this.combatClock.captureState(),cooldowns:this.cooldowns.captureState(),frenzyAnimations:this.frenzyAnimations.captureState(),chests:this.chests.captureState(),springs:this.springs.captureState(),legendaryWeapons:this.legendaryWeapons.captureState(),shops:this.shops.captureState(),
-      questItemGeneration:this.questItemGenerators.captureState(),groundLoot:groundLootFor(this).captureState(),
+      combatClock:this.combatClock.captureState(),cooldowns:this.cooldowns.captureState(),frenzyAnimations:this.frenzyAnimations.captureState(),chests,springs:this.springs.captureState(),legendaryWeapons:this.legendaryWeapons.captureState(),shops:this.shops.captureState(),
+      questItemGeneration:this.questItemGenerators.captureState(),groundLoot,
       lootPity:this.lootPity.captureState(),reservedDrops:{unlockMisses:this.reservedDropMisses,claimed:[...this.claimedReservedDrops].sort()},
       partyItemChance:this.partyItemChance};
   }
   private restoreUnchecked(restored:SessionState,quests?:QuestBookCheckpoint):void {
-    this.questProjection=undefined;this.questsProjection=undefined;
+    this.snapshotCache={};this.questProjection=undefined;this.questsProjection=undefined;
     // 回滚与校验后的恢复都走这里：状态已经过 validateInventoryState，重验只会让错误处理
     // 自己抛错、把真正的异常盖掉。
     this.bag.restoreUnchecked(restored.bag);
