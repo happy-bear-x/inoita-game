@@ -42,6 +42,7 @@ interface HarnessOptions {
   arena?: { key: string; summonedBy?: string; definition: { commandAction?: unknown } }[];
   quests?: readonly (readonly QuestDropRequirement[])[];
   sceneLevel?: number;
+  drops?: DropCatalog;
 }
 
 function harness(options: HarnessOptions = {}) {
@@ -95,6 +96,7 @@ function harness(options: HarnessOptions = {}) {
       loot.push({ map: _map, x, y, rewards, rendered });
     },
   };
+  const dropCatalog = options.drops ?? drops;
   const target = {
     key: spawn.id, definition, visual: { container: { x: 10, y: 20, active: true, disableInteractive() {} } },
     presenter: { clear() {} },
@@ -106,7 +108,7 @@ function harness(options: HarnessOptions = {}) {
       audio: { monsterDeath: (id: string) => { audio.push(id); } },
       director: { healthChanged: () => false },
     },
-    drops, conditions: new CombatConditions(), hitResolution: new CombatHitResolution(),
+    drops: dropCatalog, conditions: new CombatConditions(), hitResolution: new CombatHitResolution(),
     pendingDefeats: new PendingEnemyDefeats(), roster, scene, hero: { level: heroLevel },
     arena: options.arena ?? [],
     allies: [],
@@ -199,6 +201,21 @@ test('the unique pity forces a unique drop and resets the unique counter', t => 
   assert.ok(uniqueItems.has(guaranteed.item!), '保底产出的是黄装池物品');
   assert.equal(run.pity.counters('player').uniqueMisses, 0, '命中黄装后清空黄装保底计数');
   assert.equal(run.pity.counters('player').equipmentMisses, 0, '带品级快照的黄装同时算作装备命中，装备保底清零');
+});
+
+test('the equipment pity bonus is added to the ordinary equipment slot', t => {
+  t.mock.method(Math, 'random', () => 0.999);
+  const catalog = structuredClone(drops);
+  catalog.pity!.equipment = { stepPermille: 10000, capPermille: 10000 };
+  const run = harness({ enemyId: 'enemy-head-goblin-1', heroLevel: 20, level: 13, drops: catalog });
+  run.pity.counters('player').equipmentMisses = 1;
+
+  run.settle();
+
+  const rewards = run.loot.flatMap(call => call.rewards);
+  assert.ok(rewards.some(reward => reward.kind === 'item' && reward.roll),
+    '装备保底加成把装备槽推到必中');
+  assert.equal(run.pity.counters('player').equipmentMisses, 0, '装备命中后清空装备保底计数');
 });
 
 test('the epic pity forces an epic drop once eligible', t => {
