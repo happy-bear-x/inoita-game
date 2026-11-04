@@ -12,7 +12,7 @@ export interface MapEntryPlan {
 }
 
 /**
- * 进图计划只保证落脚图可玩，首次进入世界时额外并入一次全部佣兵候选素材。
+ * 进图计划只保证落脚图可玩，首次进入世界时额外并入当前队伍已拥有的佣兵外观。
  * 后续剧情地图不在这里读取或预取，换图时由目标图自己的入口加载。
  */
 export interface EntryPlan {
@@ -86,7 +86,8 @@ export function buildEntryPlan(input: EntryPlanInput): EntryPlan {
       residentCombat: residentCombatAssets({
         battle: input.inputs.battle, wardrobe: input.inputs.wardrobe,
         world: input.inputs.world, companions: input.inputs.companions,
-        classIds: [input.inputs.hero.classId]
+        classIds: [input.inputs.hero.classId],
+        ownedCompanionIds: input.inputs.party?.ownedDefinitionIds() ?? []
       }).assets
     } : {}),
     portraits: presentation.portraits,

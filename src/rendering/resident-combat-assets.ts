@@ -19,9 +19,13 @@ export interface ResidentCombatInput {
   companions: CompanionCatalog;
   /**
    * 省略 = 全部职业（构建期全量校验）；运行时只传当前主角职业。
-   * 伙伴外观始终全量，保留菜单实时预览。
    */
   classIds?: Iterable<string>;
+  /**
+   * 已拥有的伙伴外观定义 id。省略 = 全部伙伴（构建期全量校验）；
+   * 运行时只传当前队伍已拥有的伙伴，未拥有的成员按需加载。
+   */
+  ownedCompanionIds?: Iterable<string>;
 }
 
 /** 会话常驻的战斗视觉资源：一次加载，切图与战斗结束都不释放。 */
@@ -87,8 +91,12 @@ export function residentCombatAssets(input: ResidentCombatInput): CombatAssetPac
     if (!battle.classes.some(character => character.id === id)) throw new Error(`常驻战斗包职业不存在：${id}`);
   for (const character of battle.classes)
     if (!selectedClasses || selectedClasses.has(character.id)) addClass(character.id);
-  // 佣兵的基础外观必须在入队前就绪；职业特效与召唤物已由上面的职业循环覆盖。
-  for (const definition of Object.values(companions.definitions)) {
+  // 佣兵的基础外观只装已拥有的成员；招募后由队伍面板和战斗开场按需加载。
+  const selectedCompanions = input.ownedCompanionIds === undefined ? undefined : new Set(input.ownedCompanionIds);
+  if (selectedCompanions) for (const id of selectedCompanions)
+    if (!companions.definitions[id]) throw new Error(`常驻战斗包伙伴不存在：${id}`);
+  for (const [id, definition] of Object.entries(companions.definitions)) {
+    if (selectedCompanions && !selectedCompanions.has(id)) continue;
     const actor = world.actors[definition.actor];
     if (!actor) continue;
     actorIds.add(actor.id);

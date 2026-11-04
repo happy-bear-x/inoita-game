@@ -14,15 +14,26 @@ const wardrobe = parseWardrobe(read('wardrobe.json'));
 const world = parseWorld(read('world.json'));
 const companions = parseCompanions(read('companions.json'));
 
-test('scoped resident packs keep only the active class and every companion appearance', () => {
+test('scoped resident packs keep only the active class and owned companion appearances', () => {
   const full = residentCombatAssets({ battle, wardrobe, world, companions });
   const fullByKey = new Map(full.assets.map(asset => [asset.key, JSON.stringify(asset)]));
-  const companionActors = new Set(Object.values(companions.definitions).map(definition => definition.actor));
-  assert.equal(companionActors.size, 41);
+  const allCompanionActors = new Set(Object.values(companions.definitions).map(definition => definition.actor));
+  assert.equal(allCompanionActors.size, 41);
+  for (const actor of allCompanionActors) assert.ok(full.actorIds.has(actor), `全量包缺少伙伴 ${actor}`);
+  const mercenaries = Object.values(companions.definitions)
+    .filter(definition => (definition.source ?? 'mercenary') === 'mercenary');
+  const owned = mercenaries.slice(0, 2);
+  const ownedIds = owned.map(definition => definition.id);
+  const ownedActors = new Set(owned.map(definition => definition.actor));
+  const unownedActors = [...allCompanionActors].filter(actor => !ownedActors.has(actor));
   for (const character of battle.classes) {
-    const scoped = residentCombatAssets({ battle, wardrobe, world, companions, classIds: [character.id] });
+    const scoped = residentCombatAssets({
+      battle, wardrobe, world, companions, classIds: [character.id], ownedCompanionIds: ownedIds
+    });
     assert.ok(scoped.actorIds.has(character.actor.id));
-    for (const actor of companionActors) assert.ok(scoped.actorIds.has(actor), `${character.id} missing companion ${actor}`);
+    for (const actor of ownedActors) assert.ok(scoped.actorIds.has(actor), `${character.id} missing owned companion ${actor}`);
+    for (const actor of unownedActors)
+      assert.equal(scoped.actorIds.has(actor), false, `${character.id} leaked unowned companion ${actor}`);
     for (const other of battle.classes) if (other.id !== character.id)
       assert.equal(scoped.actorIds.has(other.actor.id), false, `${character.id} leaked ${other.id}`);
     for (const asset of scoped.assets) {
@@ -33,9 +44,20 @@ test('scoped resident packs keep only the active class and every companion appea
     for (const asset of characterAssets(character.actor)) assert.ok(scoped.assets.some(value => value.key === asset.key), `${character.id}: ${asset.key}`);
     for (const skillId of character.skills)
       assert.ok(scoped.assets.some(value => value.key === battle.skills[skillId].icon), `${character.id}: icon ${skillId}`);
-    const gaps = residentCombatCoverageGaps({ battle, wardrobe, world, companions, classIds: [character.id] });
-    assert.deepEqual(gaps, { effects: [], layers: [], actorLayers: [], definitions: [] }, character.id);
+    const gaps = residentCombatCoverageGaps({
+      battle, wardrobe, world, companions, classIds: [character.id], ownedCompanionIds: ownedIds
+    });
+    assert.deepEqual(gaps, { effects: [], layers: [], actorLayers: [], definitions: [], companions: [] }, character.id);
   }
+});
+
+test('unowned companions stay out of the resident pack until loaded on demand', () => {
+  const allCompanionActors = new Set(Object.values(companions.definitions).map(definition => definition.actor));
+  const none = residentCombatAssets({ battle, wardrobe, world, companions, ownedCompanionIds: [] });
+  for (const actor of allCompanionActors) assert.equal(none.actorIds.has(actor), false, `未拥有伙伴不应常驻：${actor}`);
+  assert.throws(() => residentCombatAssets({
+    battle, wardrobe, world, companions, ownedCompanionIds: ['missing-companion']
+  }), /伙伴不存在/);
 });
 
 test('an unknown or empty class scope is explicit, not silently full', () => {

@@ -60,6 +60,7 @@ test('every runtime combat effect and actor layer is in the resident pack', () =
   assert.deepEqual(gaps.definitions, [], '内容缺少特效定义');
   assert.deepEqual(gaps.layers, [], '常驻包缺少特效纹理');
   assert.deepEqual(gaps.actorLayers, [], '常驻包缺少角色纹理');
+  assert.deepEqual(gaps.companions, [], '有佣兵无法通过按需路径加载外观');
 });
 
 test('companion skill stance effects are resident, not only the hero class', () => {

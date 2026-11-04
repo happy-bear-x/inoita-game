@@ -150,16 +150,18 @@ export function validateContent(root=fileURLToPath(new URL('../public/',import.m
  for(const asset of resident.assets)ensure(fs.existsSync(path.join(root,asset.file)),`常驻战斗资源不存在 ${asset.file}`);
  const gaps=residentCombatCoverageGaps({battle,wardrobe,world,companions});
  const uncovered=[...gaps.definitions.map(name=>`特效定义缺失 ${name}`),...gaps.effects.map(name=>`常驻包缺少特效 ${name}`),
-  ...gaps.layers.map(key=>`常驻包缺少特效纹理 ${key}`),...gaps.actorLayers.map(key=>`常驻包缺少角色纹理 ${key}`)];
+  ...gaps.layers.map(key=>`常驻包缺少特效纹理 ${key}`),...gaps.actorLayers.map(key=>`常驻包缺少角色纹理 ${key}`),
+  ...gaps.companions.map(id=>`佣兵外观无法按需加载 ${id}`)];
  ensure(!uncovered.length,`战斗常驻资源不完整：\n${uncovered.slice(0,20).join('\n')}`);
- // 运行时只常驻当前职业 + 全部伙伴外观 + 共享特效；每个职业都必须能单独形成完整子集。
+ // 运行时只常驻当前职业 + 已拥有伙伴外观 + 共享特效；每个职业都必须能单独形成完整子集。
  const fullAssets=new Map(resident.assets.map(asset=>[asset.key,JSON.stringify(asset)]));
  for(const character of battle.classes){
   const scoped=residentCombatAssets({battle,wardrobe,world,companions,classIds:[character.id]});
   for(const asset of scoped.assets)ensure(fullAssets.get(asset.key)===JSON.stringify(asset),`职业 ${character.id} 的常驻资源与全量包不一致：${asset.key}`);
   const scopedGaps=residentCombatCoverageGaps({battle,wardrobe,world,companions,classIds:[character.id]});
   const missing=[...scopedGaps.definitions.map(name=>`特效定义缺失 ${name}`),...scopedGaps.effects.map(name=>`常驻包缺少特效 ${name}`),
-   ...scopedGaps.layers.map(key=>`常驻包缺少特效纹理 ${key}`),...scopedGaps.actorLayers.map(key=>`常驻包缺少角色纹理 ${key}`)];
+   ...scopedGaps.layers.map(key=>`常驻包缺少特效纹理 ${key}`),...scopedGaps.actorLayers.map(key=>`常驻包缺少角色纹理 ${key}`),
+   ...scopedGaps.companions.map(id=>`佣兵外观无法按需加载 ${id}`)];
   ensure(!missing.length,`职业 ${character.id} 的常驻资源不完整：\n${missing.slice(0,20).join('\n')}`);
  }
  return {maps:world.maps.length,assets:assets.size};
