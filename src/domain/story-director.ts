@@ -3,7 +3,7 @@ import type { ActorDefinition, ChoiceOption, DialogueLine, EntityPlacement, Ques
 import type { Campaign, CampaignQuest } from './campaign.ts';
 import type { PerformanceAction, StoryPresentationPort, StoryStage, StoryStageSnapshot } from './story-performance.ts';
 import { pendingEntranceAliases } from './story-performance.ts';
-import type { Session, SessionState, StoryCommitReceipt } from './session.ts';
+import type { Session, StoryCommitReceipt } from './session.ts';
 import { StoryRuntime } from './story-runtime.ts';
 import type { StoryNodeCommit, StoryOccurrence, StoryPlaybackContext } from './story-runtime.ts';
 import type { StoryCommand, StoryEvent, StoryNode, StoryTriggerSource } from './story-graph.ts';
@@ -33,7 +33,7 @@ export interface StoryWorldPort {
   /** 一次剧情播放正常交还操作权后的收尾；取消/报错不调用。 */
   settle?(): void | Promise<void>;
 }
-interface PlaybackBaseline { session: SessionState; world?: unknown; stage?: StoryStageSnapshot }
+interface PlaybackBaseline { world?: unknown; stage?: StoryStageSnapshot }
 
 /** 节点先完成表现，再一次提交状态；场景重建失败可以从已提交节点继续。 */
 export class StoryDirector {
@@ -106,8 +106,9 @@ export class StoryDirector {
       currentMap:()=>this.session.storyWorld.currentLocation?.map,
       prepare: (node, context) => this.prepare(node, context),
       capture: () => {
-        this.session.runtimeState = this.runtime.snapshot();
-        return { session: this.session.captureState(), world: this.world?.capture(), stage: this.presentation?.getStageState?.() } satisfies PlaybackBaseline;
+        this.session.adoptRuntime(this.runtime.snapshot());
+        this.session.beginPerformanceLog();
+        return { world: this.world?.capture(), stage: this.presentation?.getStageState?.() } satisfies PlaybackBaseline;
       },
       present: (node, context) => this.present(node, context),
       finish: async context => { if (this.presenting) await this.presentation!.finish(true, context.signal); },
@@ -119,16 +120,16 @@ export class StoryDirector {
         if (commit.eventId && run?.status === 'completed') this.onEventCompleted?.(commit.eventId);
       },
       recover: context => this.recover(context.signal),
-      checkpoint: snapshot => { this.session.runtimeState = snapshot; },
+      checkpoint: snapshot => { this.session.adoptRuntime(snapshot); },
       rollback: (baseline, context) => {
         this.restoring = true;
         try {
           const applied = this.applied;
           this.applied = undefined;
           // 分支求值失败时命令已经落地：用回执只恢复碰到的子系统；
-          // 演出中途取消时命令还没落地，退回整份会话基线。
+          // 取消演出时命令还没落地，用演出日志恢复期间的外部变化。
           if (applied && applied.runId === context.runId) applied.receipt.rollback();
-          else this.session.restoreState((baseline as PlaybackBaseline).session);
+          this.session.rollbackPerformanceLog();
         } finally { this.restorationVersion = this.session.restorationVersion; this.restoring = false; }
         this.recovery = baseline as PlaybackBaseline;
         this.rollbackPresentation = this.presenting;
@@ -406,6 +407,7 @@ export class StoryDirector {
     this.presentation?.committed?.();
     const applied=this.applied;
     if(applied){this.applied=undefined;applied.receipt.finalize();}
+    this.session.commitPerformanceLog();
   }
   private async project(signal: AbortSignal): Promise<void> {
     if (!this.projectionPending && !this.travelPending) return;

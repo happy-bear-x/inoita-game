@@ -223,16 +223,46 @@ export class Session {
   private restoreRevision = 0;
   private transactionDepth = 0;
   private pendingNotification = false;
+  /** 演出期间的按子系统懒回滚日志：第一次碰到某个子系统时才抓旧值。 */
+  private performanceLogging = false;
+  /** 正在执行导演自己的延迟提交：这些改动由命令回执负责，不进演出日志。 */
+  private storyCommandDepth = 0;
+  private performanceTouched = new Set<StorySubsystem>();
+  private performanceBaseline:StoryCommandBaseline = {};
   get restorationVersion():number { return this.restoreRevision; }
+  /** 演出开始：打开懒日志，不抓任何状态。 */
+  beginPerformanceLog():void {
+    this.performanceLogging=true;this.performanceTouched.clear();this.performanceBaseline={};
+  }
+  /** 演出正常提交：丢掉旧值。 */
+  commitPerformanceLog():void {
+    this.performanceLogging=false;this.performanceTouched.clear();this.performanceBaseline={};
+  }
+  /** 取消演出：只恢复演出期间第一次碰到的子系统。 */
+  rollbackPerformanceLog():void {
+    if(!this.performanceLogging)return;
+    const touched=this.performanceTouched,baseline=this.performanceBaseline;
+    this.performanceLogging=false;this.performanceTouched=new Set();this.performanceBaseline={};
+    if(!touched.size)return;
+    this.restoreStoryCommandBaseline(touched,baseline);
+    this.emit();
+  }
+  /** 第一次碰到某个子系统时记下旧值；导演自己的延迟提交由命令回执负责，不重复记录。 */
+  private recordPerformance(subsystems:Iterable<StorySubsystem>):void {
+    if(!this.performanceLogging||this.storyCommandDepth>0)return;
+    const fresh=new Set<StorySubsystem>();
+    for(const subsystem of subsystems)if(!this.performanceTouched.has(subsystem)){this.performanceTouched.add(subsystem);fresh.add(subsystem);}
+    if(fresh.size)Object.assign(this.performanceBaseline,this.captureStoryCommandBaseline(fresh));
+  }
   private coins = 0;
   get money():number { return this.coins; }
   gainMoney(amount:number):void {
     if(!Number.isSafeInteger(amount)||amount<0||!Number.isSafeInteger(this.coins+amount))throw new Error('金币数量无效');
-    this.coins+=amount;this.emit();
+    this.recordPerformance(['coins']);this.coins+=amount;this.emit();
   }
   spendMoney(amount:number):void {
     if(!Number.isSafeInteger(amount)||amount<0||amount>this.coins)throw new Error('金币不足');
-    this.coins-=amount;this.emit();
+    this.recordPerformance(['coins']);this.coins-=amount;this.emit();
   }
   private readonly enemyStates = new Map<string, EnemyState>();
   private trackedQuest?: string;
@@ -253,6 +283,7 @@ export class Session {
     return (this.player?.health??0)>0;
   }
   setHealth(value:number):void {
+    this.recordPerformance(['hero','party','playerState']);
     if(this.hero){this.hero.setHealth(value);return;}
     if(!this.playerState)return;
     this.playerState=Object.freeze({...this.playerState,health:boundedHealth(value,this.playerState.maxHealth)});this.emit();
@@ -331,9 +362,9 @@ export class Session {
     this.hero = hero;
     this.skills = new StorySkillProgression(hero,battle);
     hero?.setSkillUseHandler((item,skill)=>this.skills.applyItem(item,skill));
-    this.party=hero&&items&&stats&&companions?new PartyRoster(hero,stats,items,companions,()=>this.emit(),id=>{this.cooldowns.removeActor(id);this.frenzyAnimations.removeActor(id);},
+    this.party=hero&&items&&stats&&companions?new PartyRoster(hero,stats,items,companions,()=>{this.recordPerformance(['party','bag']);this.emit();},id=>{this.cooldowns.removeActor(id);this.frenzyAnimations.removeActor(id);},
       sourceItem=>this.recordQuestFact('recruit',sourceItem,'recruit'),operation=>this.atomicPartyChange(operation)):undefined;
-    this.bag = hero?.bag ?? new Bag(()=>this.emit(),items,character?.classId,items?'game':'none');
+    this.bag = hero?.bag ?? new Bag(()=>{this.recordPerformance(['bag']);this.emit();},items,character?.classId,items?'game':'none');
     const inputs={events:new Set<string>(),choices:new Set<string>(),flags:new Set<string>(),world:new Set<string>()};
     for(const quest of campaign.quests){
       const references=storyConditionReferences(quest.availableWhen);
@@ -344,7 +375,7 @@ export class Session {
     for(const id of inputs.flags)this.questConditionInputs.push({key:`flag:${id}`,read:context=>context.flag(id)});
     for(const key of inputs.world)this.questConditionInputs.push({key:`world:${key}`,read:context=>context.world(key)});
     this.questBook=new QuestBook(this.campaign.quests,()=>this.questContext(),sideQuestIds(this.campaign.questGroups));
-    hero?.subscribe(()=>this.emit());
+    hero?.subscribe(()=>{this.recordPerformance(['hero','bag']);this.emit();});
     this.refresh();
   }
   private questContext() {
@@ -515,6 +546,8 @@ export class Session {
     }
   }
   restoreState(state:SessionState):void {
+    // 整份状态被外部快照替换，演出日志里的旧值已经失去意义。
+    this.performanceLogging=false;this.performanceTouched=new Set();this.performanceBaseline={};
     const restored=structuredClone(state);
     if(restored.classId!==(this.hero?.classId??this.character?.classId)||!!restored.hero!==!!this.hero||!!restored.party!==!!this.party)throw new Error('检查点与当前游戏角色不一致');
     this.questBook.prepareRestore(restored.questBook);this.storyWorld.prepareRestore(restored.storyWorld);this.prepareRuntime(restored.runtime);
@@ -645,13 +678,15 @@ export class Session {
       conditions.every((value,index)=>Object.is(value,previous.conditions[index])))return;
     // 没有上一份投影（启动、读档/检查点恢复、调试改写了世界上下文）时做一次全量刷新，
     // 把新装进来的任务和当前条件对齐；常规刷新只找这次变化会影响的任务。
-    if(!previous){this.questBook.commit(this.questBook.plan({type:'refresh'}));this.recordQuestProjection();return;}
+    if(!previous){this.recordPerformance(['questBook']);this.questBook.commit(this.questBook.plan({type:'refresh'}));this.recordQuestProjection();return;}
     const keys:string[]=[];
     for(const [index,input] of this.questConditionInputs.entries())
       if(!Object.is(conditions[index],previous.conditions[index]))keys.push(input.key);
     const bagChanged=previous.bagVersion!==bagVersion,ownerChanged=previous.owner!==owner;
-    if(keys.length||bagChanged||ownerChanged)
+    if(keys.length||bagChanged||ownerChanged){
+      this.recordPerformance(['questBook']);
       this.questBook.refreshChanges({keys,bagChanged,ownerChanged});
+    }
     this.recordQuestProjection();
   }
   /** 记下这次任务投影的输入，供 `refresh` 判断结果能不能复用。 */
@@ -757,8 +792,8 @@ export class Session {
     this.applyStoryCommands([{type:'quest',command:{type:'complete',quest:id,cycle:this.questBook.state(id)!.cycle}}]);return true;
   }
   /** GM 调试：把已接取任务钉在进行中，refresh 不再把它提升为待交付。 */
-  pinDebugQuest(id:string):void { this.questBook.pinDebug(id); this.refresh(); }
-  unpinDebugQuest(id:string):void { this.questBook.unpinDebug(id); this.refresh(); }
+  pinDebugQuest(id:string):void { this.recordPerformance(['questBook']);this.questBook.pinDebug(id); this.refresh(); }
+  unpinDebugQuest(id:string):void { this.recordPerformance(['questBook']);this.questBook.unpinDebug(id); this.refresh(); }
   mark(flag:string):void {this.applyStoryCommands([{type:'flag',flag}]);}
   visible(entity:VisibilityRules & {condition?:StoryCondition}):boolean {
     return this.storyWorld.visible(entity.id)&&evaluateStoryCondition(entity.condition,this.conditionContext());
@@ -1004,6 +1039,8 @@ export class Session {
     // 任务状态，所以每个非空批次都把它纳入回滚集。
     touched.add('questBook');
     if(checkpoint)touched.add('runtimeSnapshot');
+    // 外部交互触发的提交也要能在取消演出时回滚；导演自己的延迟提交由回执负责，不重复记录。
+    if(!options.deferFinalize)this.recordPerformance(touched);
     const baseline=this.captureStoryCommandBaseline(touched),pending=this.pendingNotification;
     let active=true;
     const receipt:StoryCommitReceipt={
@@ -1013,9 +1050,11 @@ export class Session {
         this.restoreStoryCommandBaseline(touched,baseline);this.pendingNotification=pending;this.emit();
       },
     };
-    this.transaction(()=>{
-      try{
-        let playerState=this.playerState?{...this.playerState}:undefined;
+    if(options.deferFinalize)this.storyCommandDepth++;
+    try{
+      this.transaction(()=>{
+        try{
+          let playerState=this.playerState?{...this.playerState}:undefined;
         for(const command of commands){
           // 任务命令按前一条命令留下的背包/世界校验；其余命令直接改真实状态。
           if(command.type==='quest'||command.type==='interaction'||command.type==='talk')this.refresh();
@@ -1065,7 +1104,10 @@ export class Session {
       }catch(error){
         this.restoreStoryCommandBaseline(touched,baseline);this.pendingNotification=pending;throw error;
       }
-    });
+      });
+    }finally{
+      if(options.deferFinalize)this.storyCommandDepth--;
+    }
     if(!options.deferFinalize)active=false;
     return receipt;
   }

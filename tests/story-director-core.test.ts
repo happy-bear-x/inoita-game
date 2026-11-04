@@ -6,6 +6,7 @@ import type { Campaign } from '../src/domain/campaign.ts';
 import type { CampaignQuest } from '../src/domain/campaign.ts';
 import type { StoryNode } from '../src/domain/story-graph.ts';
 import type { StoryPresentationPort, StoryStage } from '../src/domain/story-performance.ts';
+import type { StoryPlayerState } from '../src/domain/story-interface.ts';
 import { Session } from '../src/domain/session.ts';
 import { StoryDirector, type StoryUI, type StoryWorldPort } from '../src/domain/story-director.ts';
 
@@ -16,11 +17,11 @@ const stage:StoryStage={type:'stage',map:base.start.map,x:base.start.x,y:base.st
 const node=(id:string,commands:StoryNode['commands']=[],exit:StoryNode['exit']={type:'end'}):StoryNode=>({id,presentation:[],commands,exit});
 const quest=(id:string,patch:Partial<CampaignQuest>={}):CampaignQuest=>({id,title:id,description:id,giver:'npc',
   guidance:{available:'offer',active:'continue'},goals:[],completion:'talk',progressText:'continue',completeText:'thanks',...patch});
-function harness(nodes:StoryNode[],presentation?:StoryPresentationPort,world?:StoryWorldPort,quests:CampaignQuest[]=[]){
+function harness(nodes:StoryNode[],presentation?:StoryPresentationPort,world?:StoryWorldPort,quests:CampaignQuest[]=[],player?:StoryPlayerState){
   const campaign:Campaign={...structuredClone(base),quests:[...structuredClone(base.quests),...quests],
     scripts:{...structuredClone(base.scripts),demo:{entry:nodes[0].id,nodes}},
     events:[{id:'demo-event',source:'start',script:'demo'}]};
-  const session=new Session(campaign),locks:boolean[]=[];
+  const session=new Session(campaign,player),locks:boolean[]=[];
   const ui:StoryUI={async dialogue(){},async choice(_prompt,options){return options[0];},async questPopup(){},toast(){},closeDialogue(){},skipDialogue(){}};
   const director=new StoryDirector(campaign,session,ui,value=>locks.push(value),presentation,world);
   return {campaign,session,ui,director,locks};
@@ -242,6 +243,47 @@ test('cancelling an in-flight performance rolls the session back to that playbac
   h.session.gainMoney(20);assert.equal(h.session.money,30);
   h.director.cancel();assert.equal(h.session.money,10);
   held=false;release();await tick();await started;
+});
+
+test('cancelling a performance lazily rolls back external quest, coin and health changes',async()=>{
+  const play=node('play',[],{type:'end'});play.presentation=[stage];
+  const questDef=quest('performance-quest',{completion:'all',
+    goals:[{id:'talk',kind:'talk',target:'elder',quantity:1}]});
+  const player:StoryPlayerState={level:1,health:10,maxHealth:20,mana:5,maxMana:10,experience:0,nextLevelExperience:10};
+  const run=()=>{
+    let release!:()=>void,held=true;
+    const presentation:StoryPresentationPort={begin(){},async execute(){},getStageState(){return stageSnapshot(stage);},
+      async finish(completed){if(completed&&held)await new Promise<void>(resolve=>{release=resolve;});},async release(){}};
+    const h=harness([play],presentation,undefined,[questDef],player);
+    h.session.accept('performance-quest');h.session.gainMoney(10);
+    const started=h.director.start();
+    return {h,started,finish:async()=>{held=false;release();await tick();await started;}};
+  };
+  const cancelled=run();
+  for(let index=0;index<10;index++)await tick();
+  // 演出期间由外部交互触发的任务提交没有 deferFinalize，回执已 finalize；取消要靠演出日志回滚。
+  cancelled.h.session.recordQuestFact('talk','elder','test');
+  cancelled.h.session.gainMoney(20);
+  cancelled.h.session.setHealth(3);
+  assert.equal(cancelled.h.session.money,30);
+  assert.equal(cancelled.h.session.player?.health,3);
+  assert.equal(cancelled.h.session.status('performance-quest'),'ready');
+  cancelled.h.director.cancel();
+  assert.equal(cancelled.h.session.money,10,'取消后金币回到演出前');
+  assert.equal(cancelled.h.session.player?.health,10,'取消后血量回到演出前');
+  assert.equal(cancelled.h.session.questBook.state('performance-quest')!.goals.talk,0,'取消后任务进度回到演出前');
+  assert.equal(cancelled.h.session.status('performance-quest'),'active');
+  await cancelled.finish();
+
+  const committed=run();
+  for(let index=0;index<10;index++)await tick();
+  committed.h.session.recordQuestFact('talk','elder','test');
+  committed.h.session.gainMoney(20);
+  committed.h.session.setHealth(3);
+  await committed.finish();
+  assert.equal(committed.h.session.money,30,'正常提交保留演出期间的金币变化');
+  assert.equal(committed.h.session.player?.health,3,'正常提交保留演出期间的血量变化');
+  assert.equal(committed.h.session.questBook.state('performance-quest')!.goals.talk,1,'正常提交保留演出期间的任务进度');
 });
 
 test('a checkpoint restored mid-performance keeps its state under either cancel order',async()=>{
