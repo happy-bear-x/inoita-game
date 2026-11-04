@@ -138,7 +138,8 @@ test('a quest completion popup finishes before the follow-up story starts',async
   const log:string[]=[];let closePopup!:()=>void;
   const ui:StoryUI={
     async dialogue(line){log.push('dialogue:'+line.text.slice(0,4));},
-    async choice(_prompt,options){log.push('choice');return options[0];},
+    // 教学菜单会重复出现；显式选“现在没事了”，避免测试一直停在同一个选项上。
+    async choice(_prompt,options){log.push('choice');return options.find(option=>option.value==='option-3')??options[0];},
     questPopup(kind,quest){log.push('popup:'+kind+':'+quest.id);return new Promise<void>(resolve=>{closePopup=resolve;});},
     toast(){},closeDialogue(){},skipDialogue(){}
   };

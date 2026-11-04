@@ -91,6 +91,8 @@ interface StoryCommandBaseline {
   party?:ReturnType<PartyRoster['captureState']>;
   quests?:{checkpoint:QuestBookCheckpoint;factSequences:[string,number][]};
   world?:StoryWorldSnapshot;
+  /** 选择标识的写入次数；和世界快照一起回滚，避免取消演出后留下假的“又选了一次”。 */
+  choiceWrites?:[string,number][];
   loot?:GroundLootState;
   coins?:number;
   receipts?:[string,QuestSettlement][];
@@ -213,6 +215,11 @@ export class Session {
   private runtimeValidator?:StoryRuntime;
   private readonly receipts = new Map<string,QuestSettlement>();
   private readonly factSequences = new Map<string,number>();
+  /**
+   * 每个选择标识被写入的次数，值相同也加一。剧情选择事件靠它判断“玩家又选了一次”，
+   * 不能只看选择值有没有变化，否则重复选同一个选项会被当成没发生。
+   */
+  private readonly choiceWrites = new Map<string,number>();
   private worldContext:()=>Record<string,StoryWorldValue> = ()=>({});
   /** 任务可用性读的条件输入；带条件键，刷新时只找引用变化键的任务。 */
   private readonly questConditionInputs:{key:string;read:(context:StoryConditionContext)=>StoryWorldValue|undefined}[]=[];
@@ -360,6 +367,8 @@ export class Session {
     return value;
   }
   get flags():ReadonlySet<string> { return this.storyWorld.flagIds; }
+  /** 每个选择标识被选中过多少次；导演用次数变化派发选择剧情，值相同也算一次。 */
+  choiceWriteCounts():ReadonlyMap<string,number> { return this.choiceWrites; }
   constructor(campaign:Campaign, player?:StoryPlayerState, character?:{classId:string;appearance:ActorDefinition}, items?:ItemCatalog, hero?:BattleCharacter, battle?:BattleCatalog, stats?:CharacterStatsCatalog, companions?:CompanionCatalog) {
     this.campaign = campaign;
     this.questGroupKinds = new Map(campaign.questGroups.flatMap(group =>
@@ -478,6 +487,8 @@ export class Session {
     // 批次回滚走 O(1) 检查点；存档/检查点恢复仍走带校验的 `restoreState`。
     if(quests)this.questBook.rollbackTo(quests);else this.questBook.restoreState(restored.questBook);
     this.storyWorld.restoreState(restored.storyWorld);
+    // 选择写入次数是当前时间线的运行时计数，读档/检查点恢复后从零开始。
+    this.choiceWrites.clear();
     // 外部恢复已在 `prepareRuntime` 校验过；回滚拿到的是本项目刚产出的不可变快照。
     this.runtimeSnapshot=restored.runtime;
     this.receipts.clear();for(const receipt of restored.receipts)this.receipts.set(JSON.stringify([receipt.quest,receipt.cycle]),structuredClone(receipt));
@@ -1007,7 +1018,10 @@ export class Session {
     if(touched.has('skills'))baseline.skills=this.skills.captureState();
     if(touched.has('party')&&this.party)baseline.party=this.party.captureState();
     if(touched.has('questBook'))baseline.quests={checkpoint:this.questBook.checkpoint(),factSequences:[...this.factSequences]};
-    if(touched.has('storyWorld'))baseline.world=this.storyWorld.captureState();
+    if(touched.has('storyWorld')){
+      baseline.world=this.storyWorld.captureState();
+      baseline.choiceWrites=[...this.choiceWrites];
+    }
     if(touched.has('groundLoot'))baseline.loot=groundLootFor(this).captureState();
     if(touched.has('coins'))baseline.coins=this.coins;
     if(touched.has('receipts'))baseline.receipts=[...this.receipts].map(([key,receipt])=>[key,structuredClone(receipt)]);
@@ -1028,7 +1042,10 @@ export class Session {
       this.factSequences.clear();for(const[source,sequence]of baseline.quests!.factSequences)this.factSequences.set(source,sequence);
       this.questProjection=undefined;this.questsProjection=undefined;
     }
-    if(touched.has('storyWorld'))this.storyWorld.restoreState(baseline.world!);
+    if(touched.has('storyWorld')){
+      this.storyWorld.restoreState(baseline.world!);
+      this.choiceWrites.clear();for(const[id,count]of baseline.choiceWrites??[])this.choiceWrites.set(id,count);
+    }
     if(touched.has('groundLoot'))groundLootFor(this).restoreState(baseline.loot!);
     if(touched.has('coins'))this.coins=baseline.coins!;
     if(touched.has('receipts')){
@@ -1128,7 +1145,9 @@ export class Session {
               groundLootFor(this).add(command.map??this.storyWorld.currentLocation?.map??this.campaign.start.map,command.x,command.y,[{kind:'item',item:command.item,quantity:command.quantity}]);
               break;
             case 'flag':this.storyWorld.apply({kind:'flag',id:command.flag,value:command.value??true});break;
-            case 'choice':this.storyWorld.apply({kind:'choice',id:command.choice,value:command.value});break;
+            case 'choice':
+              this.storyWorld.apply({kind:'choice',id:command.choice,value:command.value});
+              this.choiceWrites.set(command.choice,(this.choiceWrites.get(command.choice)??0)+1);break;
             case 'world':this.storyWorld.apply(command.command);break;
             case 'travel':this.storyWorld.apply({kind:'travel',destination:command.destination});break;
             case 'encounter':this.storyWorld.apply({kind:'encounter',encounter:command.encounter});break;

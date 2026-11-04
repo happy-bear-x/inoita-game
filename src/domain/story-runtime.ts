@@ -304,6 +304,9 @@ export class StoryRuntime {
       this.enterPlayback();
       const run = this.createRun(event.script, event.id, occurrence.id, occurrence);
       played = await this.execute(run.id, signal, epoch) || played;
+      // 一次选择只执行一条选择事件；新的选择会作为新的发生排进队列。
+      // 否则同一次发生会继续扫描后面的候选，把玩家刚选出的下一条分支也顺手跑掉。
+      if (occurrence.source === 'choice') break;
     }
     this.install({ ...this.state, pendingOccurrences: this.state.pendingOccurrences.filter(pending => this.occurrenceKey(pending.occurrence) !== key) });
     return played;

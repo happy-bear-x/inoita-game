@@ -86,7 +86,8 @@ export class StoryDirector {
   /** 事件按 source/key 预索引：受击与会话派发不必再扫全部事件表。 */
   private readonly eventsByKey = new Map<string, StoryEvent[]>();
   private readonly keylessEvents = new Map<string, StoryEvent[]>();
-  private observedChoices = new Map<string, string>();
+  /** 选择标识的写入次数；只比较次数，值相同也算玩家又选了一次。 */
+  private observedChoiceWrites = new Map<string, number>();
   private observedEncounters = new Map<string, string>();
   onTravel?: (destination: TravelDestination, signal: AbortSignal) => void | Promise<void>;
   onError?: (error: unknown, retry: () => Promise<boolean>) => void;
@@ -188,10 +189,14 @@ export class StoryDirector {
       this.observedItems = items; this.observedBagRevision = bagRevision;
     }
     // 只取观察需要的两张小表；不要为了 choices/encounters 深拷贝整个剧情世界。
-    const choices = this.session.storyWorld.choiceValues();
+    // 选择看写入次数而不是值：同一个选项连续选两次，值没变，但仍然是两次选择。
+    const choiceWrites = this.session.choiceWriteCounts();
+    for (const [id, count] of choiceWrites) {
+      const previous = this.observedChoiceWrites.get(id) ?? 0;
+      if (count > previous) changes.push({ source: 'choice', key: id });
+    }
     const encounters = this.session.storyWorld.encounterStatuses();
     const encounterStatuses = new Map<string,string>();
-    for (const [id, value] of choices) if (this.observedChoices.get(id) !== value) changes.push({ source: 'choice', key: id });
     for (const [id, encounter] of encounters) {
       encounterStatuses.set(id, encounter.status);
       if (['won','lost'].includes(encounter.status) && this.observedEncounters.get(id) !== encounter.status)
@@ -200,7 +205,7 @@ export class StoryDirector {
     const completedEvents = new Set(this.session.runtimeState.completedEvents);
     for (const id of completedEvents) if (!this.observedEvents.has(id)) changes.push({ source: 'event', key: id });
     this.observedEvents = completedEvents;
-    this.observedChoices = choices;
+    this.observedChoiceWrites = new Map(choiceWrites);
     this.observedEncounters = encounterStatuses;
     if (!dispatch || !changes.length) return;
     const version = this.session.restorationVersion;
