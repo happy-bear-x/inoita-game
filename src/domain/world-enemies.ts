@@ -211,6 +211,8 @@ capturePreparedState():{roster:ReturnType<EnemyRoster['captureState']>;breakable
       const placed:PlacedEnemy={key:spawn.id,enemyId:spawn.enemyId,x:spawn.x,y:spawn.y,health:vitals.health,mana:vitals.mana};
       this.restoreEnemy(placed);present.add(spawn.id);added.push(placed);
     }
+    // 生成集合缩小时同步丢弃旧来源，避免同图待久后 sources 只增不减。
+    for(const id of [...this.sources.keys()])if(!active.has(id))this.sources.delete(id);
     this.recordEmptyDiagnostic(spawns);
     return {added,removed};
   }

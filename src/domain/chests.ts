@@ -32,7 +32,16 @@ export class ChestVisits {
     const restored=structuredClone(state);this.map=restored.map;this.visit=restored.visit;
     this.opened.clear();for(const id of restored.opened)this.opened.add(id);
     this.consumed.clear();for(const id of restored.consumed??[])this.consumed.add(id);
-    this.enemies.splice(0,this.enemies.length,...restored.enemies);
+    // 旧档里同 id 可能因为槽位重生被追加多次；保留最后一条，避免遍历量随读档增长。
+    const deduped=new Map<string,EnemySpawn>();
+    for(const enemy of restored.enemies)deduped.set(enemy.id,enemy);
+    this.enemies.splice(0,this.enemies.length,...deduped.values());
+  }
+  /** 丢弃一条生成记录；旧档清理和槽位覆盖写入都用它。 */
+  removeSpawn(id:string):boolean {
+    const index=this.enemies.findIndex(enemy=>enemy.id===id);
+    if(index<0)return false;
+    this.enemies.splice(index,1);this.revisionValue++;return true;
   }
   get mapId(): string | undefined { return this.map; }
   get spawns(): readonly EnemySpawn[] { return this.enemies; }
@@ -52,13 +61,20 @@ export class ChestVisits {
     this.revisionValue++;
     this.enemies.push({ id: `spring:${this.visit}:${map}:${key}`, enemyId, x: position.x, y: position.y, respawn: false });
   }
-  /** 可破坏物里开出的怪：同样只活到本次地图访问结束。 */
-  spawnBreakableEnemies(map: string, key: string, enemyIds: readonly string[], position: {x:number;y:number}): void {
-    if (map !== this.map) return;
+  /**
+   * 可破坏物里开出的怪：同样只活到本次地图访问结束。
+   * 同一槽位再次被打碎时用完整 id 覆盖旧记录，返回被移除的 id 供调用方清理会话状态。
+   */
+  spawnBreakableEnemies(map: string, key: string, enemyIds: readonly string[], position: {x:number;y:number}): string[] {
+    if (map !== this.map) return [];
     this.revisionValue++;
+    const ids=enemyIds.map((_,index)=>`breakable:${this.visit}:${map}:${key}:${index}`);
+    const removed:string[]=[];
+    for(const id of ids)if(this.removeSpawn(id))removed.push(id);
     enemyIds.forEach((enemyId, index) => this.enemies.push({
-      id: `breakable:${this.visit}:${map}:${key}:${index}`, enemyId, x: position.x, y: position.y, respawn: false
+      id: ids[index]!, enemyId, x: position.x, y: position.y, respawn: false
     }));
+    return removed;
   }
   open(map: string, entity: string, position: {x:number;y:number}, roll: () => ChestOpenResult, oneTime = false): ChestOpenResult | undefined {
     if (map !== this.map) return;

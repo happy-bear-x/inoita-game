@@ -523,6 +523,7 @@ export class Session {
     this.trackedQuest=restored.trackedQuest;this.debugFocusQuestValue=restored.debugFocusQuest;this.playerState=restored.player?Object.freeze({...restored.player}):undefined;
     this.coins=restored.money;this.gameTimeMs=restored.gameTimeMs;
     this.recovery.restoreState(restored.recovery);this.chests.restoreState(restored.chests);this.springs.restoreState(restored.springs);this.legendaryWeapons.restoreState(restored.legendaryWeapons);this.shops.restoreState(restored.shops);
+    this.pruneBreakableEnemyStates();
     const clock=restored.combatClock??{frame:Math.floor(restored.resourceRecovery.elapsedMs/LOGIC_FRAME_MS),remainderMs:restored.resourceRecovery.elapsedMs%LOGIC_FRAME_MS};
     this.combatClock.restoreState(clock);this.cooldowns.restoreState(restored.cooldowns??{actors:[]});
     this.frenzyAnimations.restoreState(restored.frenzyAnimations??[]);
@@ -651,6 +652,14 @@ export class Session {
   /** 召唤物离场时丢弃它的战斗状态；召唤实例的 key 不会被地图生成点复用。 */
   forgetEnemyVitals(id:string):void {
     this.deleteEnemyState(id);
+  }
+  /** 旧档里已永久死亡的可破坏物记录不会再生成，读档时连记录和会话状态一起清掉。 */
+  private pruneBreakableEnemyStates():void {
+    for(const [id,state] of [...this.enemyStates]) {
+      if(!id.startsWith('breakable:')||state.deadUntil!=='permanent')continue;
+      this.deleteEnemyState(id);
+      this.chests.removeSpawn(id);
+    }
   }
   removeStoryEnemy(id:string):void {
     this.storyWorld.apply({kind:'remove',id});

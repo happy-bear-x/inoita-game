@@ -668,6 +668,7 @@ captureStoryActors():SceneActorState[] {
     // 检查点恢复会重建同一批召唤物，那条路径保留会话状态（`keepSummonState`）。
     if(releasesSummonVitals(enemy.summonedBy,keepSummonState))this.app.session.forgetEnemyVitals(enemy.key);
     if(!preserveCooldown)this.app.session.cooldowns.removeActor(enemy.key);
+    this.dealtDamage.delete(enemy.key);
     this.threat?.removeActor(enemy.key);
     for(const actor of this.arena)actor.controller?.targetRemoved(enemy.key);
     this.combatRuntime?.removeActor(enemy.key);enemy.controller?.dispose(); enemy.presenter.clear();
@@ -1180,7 +1181,8 @@ captureStoryActors():SceneActorState[] {
             session.reservedDropMisses=settlement.reservedUnlockMisses;
             if(settlement.breakable){
               this.scene.spawnLootOnMap(map,x,y,settlement.breakable.rewards,render&&!this.closed);
-              session.chests.spawnBreakableEnemies(map,key,settlement.breakable.enemies,{x,y});
+              for(const id of session.chests.spawnBreakableEnemies(map,key,settlement.breakable.enemies,{x,y}))
+                session.forgetEnemyVitals(id);
             }else{
               const offsets=[0,5,-5];
               for(const group of settlement.owners)this.scene.spawnLootOnMap(map,

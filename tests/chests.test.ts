@@ -230,3 +230,28 @@ test('every real chest has a positive effective level and zero-level maps fall b
   }
   assert.equal(zeroMaps.length,6,'6 张 lootLevel=0 的地图由邻居等级回退');
 });
+
+test('breakable spawns overwrite the same slot id instead of appending',()=>{
+  const visits=new ChestVisits();
+  visits.enterMap('forest');
+  assert.deepEqual(visits.spawnBreakableEnemies('forest','jar',[mimic,mimic],{x:0,y:0}),[]);
+  const count=visits.spawns.length;
+  const removed=visits.spawnBreakableEnemies('forest','jar',[mimic,mimic],{x:0,y:0});
+  assert.equal(removed.length,2,'同槽再次打碎时覆盖两条旧记录');
+  assert.equal(visits.spawns.length,count,'记录数不随同槽重复打碎增长');
+  assert.equal(new Set(visits.spawns.map(spawn=>spawn.id)).size,visits.spawns.length);
+});
+
+test('restoring a save dedupes breakable records and prunes permanent ones',()=>{
+  const session=new Session(campaign);
+  const state=session.captureState() as any;
+  const spawn=(id:string)=>({id,enemyId:mimic,x:0,y:0,respawn:false});
+  state.chests={map:'forest',visit:3,opened:[],consumed:[],enemies:[
+    spawn('breakable:3:forest:jar:0'),spawn('breakable:3:forest:jar:0'),spawn('chest:3:forest:box:0'),
+  ]};
+  state.enemies=[['breakable:3:forest:jar:0',{deadUntil:'permanent'}],['chest:3:forest:box:0',{deadUntil:'permanent'}]];
+  session.restoreState(state);
+  assert.deepEqual(session.chests.spawns.map(spawn=>spawn.id),['chest:3:forest:box:0']);
+  assert.equal(session.enemyVitals('breakable:3:forest:jar:0').deadUntil,undefined);
+  assert.equal(session.enemyVitals('chest:3:forest:box:0').deadUntil,'permanent','宝箱的永久死亡必须保留');
+});
