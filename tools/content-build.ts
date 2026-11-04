@@ -49,12 +49,12 @@ interface BattleLike {
 }
 
 interface ClipLayerLike { key: string; file: string; [field: string]: unknown }
-interface ClipLike {
+export interface ClipLike {
   frameWidth: number; frameHeight: number; frames: number; frameRate: number;
   layers: ClipLayerLike[]; [field: string]: unknown;
 }
 interface ClipRecord { clip: ClipLike; name: string; layer: ClipLayerLike }
-interface ClipDedupe {
+export interface ClipDedupe {
   docs: Map<string, unknown>;
   canonical: Map<string, { key: string; file: string }>;
   hashes: Map<string, string>;
@@ -69,7 +69,7 @@ function singleClip(name: string): boolean {
     || STORY_POSE_NAMES.some(pose => name.startsWith(`${pose}-`));
 }
 
-function walkClips(value: unknown, visit: (clip: ClipLike, name: string) => void): void {
+export function walkClips(value: unknown, visit: (clip: ClipLike, name: string) => void): void {
   if (!value || typeof value !== 'object') return;
   if (Array.isArray(value)) { for (const item of value) walkClips(item, visit); return; }
   const record = value as Record<string, unknown>;
@@ -157,6 +157,11 @@ async function dedupeClipLayers(sourceDir: string, files: SourceFile[]): Promise
   clipKeysBefore = before.size;
   clipKeysAfter = after.size;
   return { docs, canonical, hashes, dedupedLayers, clipKeysBefore, clipKeysAfter };
+}
+
+/** 只读磁盘内容，按生产构建同一套规则计算动画图层合并结果。 */
+export async function planClipDedupe(sourceDir: string): Promise<ClipDedupe> {
+  return dedupeClipLayers(sourceDir, await filesUnder(sourceDir));
 }
 
 async function filesUnder(directory: string, relative = ''): Promise<SourceFile[]> {

@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { planClipDedupe, walkClips } from './content-build.ts';
+import { EFFECT_ATLAS_BY_FILE, EFFECT_ATLAS_PAGES } from '../src/generated/effect-atlas.ts';
 
 export interface AssetDuplicateGroup {
   hash: string;
@@ -24,6 +26,22 @@ export interface AssetReport {
   duplicateBytes: number;
   duplicateDecodedBytes: number;
   topDuplicateGroups: AssetDuplicateGroup[];
+  runtime?: RuntimeAssetReport;
+}
+
+/**
+ * 生产构建口径：构建期会把字节、帧尺寸、帧数、帧率和循环类型都相同的动画图层
+ * 合并到同一个贴图键。这里复用同一套合并规则，统计运行时实际会引用的素材量。
+ */
+export interface RuntimeAssetReport {
+  clipKeysBefore: number;
+  clipKeysAfter: number;
+  dedupedLayers: number;
+  referencedFiles: number;
+  referencedDecodedBytes: number;
+  residualDuplicateGroups: number;
+  residualDuplicateFiles: number;
+  residualDuplicateDecodedBytes: number;
 }
 
 interface ImageSize { width: number; height: number }
@@ -73,9 +91,10 @@ function filesUnder(directory: string, relative = ''): { relative: string; absol
  * 构建期资产归因：按文件内容 SHA-256 分组，再按图片尺寸估算解码后的 RGBA 字节。
  * 只看磁盘内容，不依赖业务代码，因此不会因为内容/加载策略调整而失真。
  */
-export function reportAssets(root = path.resolve('public')): AssetReport {
+export async function reportAssets(root = path.resolve('public')): Promise<AssetReport> {
   const files = filesUnder(path.join(root, 'assets'));
   const groups = new Map<string, AssetDuplicateGroup & { decodedBytes: number }>();
+  const index = new Map<string, { hash: string; decodedBytes: number }>();
   let bytes = 0, decodedBytes = 0;
   for (const file of files) {
     const content = fs.readFileSync(file.absolute);
@@ -84,6 +103,7 @@ export function reportAssets(root = path.resolve('public')): AssetReport {
     const decoded = size ? size.width * size.height * 4 : 0;
     bytes += content.byteLength;
     decodedBytes += decoded;
+    index.set(`assets/${file.relative}`, { hash, decodedBytes: decoded });
     const existing = groups.get(hash);
     if (existing) {
       existing.count++;
@@ -112,21 +132,91 @@ export function reportAssets(root = path.resolve('public')): AssetReport {
     .sort((a, b) => b.decodedBytes * (b.count - 1) - a.decodedBytes * (a.count - 1))
     .slice(0, 20)
     .map(({ hash, count, bytes, decodedBytes, width, height, files }) => ({ hash, count, bytes, decodedBytes, width, height, files }));
+  const runtime = await runtimeReport(root, index);
   return {
     files: files.length, bytes, decodedBytes,
     uniqueFiles: groups.size, uniqueBytes, uniqueDecodedBytes,
     duplicateGroups, duplicateFiles, duplicateBytes, duplicateDecodedBytes,
-    topDuplicateGroups
+    topDuplicateGroups,
+    ...(runtime ? { runtime } : {})
+  };
+}
+
+/**
+ * 按运行时实际加载规则收集贴图：命中特效图集的图层只加载图集页，
+ * 不加载 battle-effects 里的原始帧图；其余图层仍按文件路径加载。
+ */
+function runtimeFiles(docs: ReadonlyMap<string, unknown>): string[] {
+  const files = new Set<string>();
+  for (const document of docs.values())
+    walkClips(document, clip => {
+      for (const layer of clip.layers) {
+        if (!layer.file) continue;
+        const atlas = EFFECT_ATLAS_BY_FILE[layer.file];
+        if (!atlas) { files.add(layer.file); continue; }
+        for (const frame of atlas.slice(0, clip.frames)) {
+          const page = EFFECT_ATLAS_PAGES[frame.page];
+          if (page) files.add(page.file);
+        }
+      }
+    });
+  return [...files];
+}
+
+/**
+ * 读取 content/world.json 与 battle.json，按构建期的合并规则算出运行时贴图引用。
+ * 没有内容文件时返回 undefined，让报告仍可只统计纯素材目录。
+ */
+async function runtimeReport(
+  root: string,
+  index: ReadonlyMap<string, { hash: string; decodedBytes: number }>
+): Promise<RuntimeAssetReport | undefined> {
+  const contentDir = path.join(root, 'content');
+  if (!fs.existsSync(path.join(contentDir, 'world.json')) && !fs.existsSync(path.join(contentDir, 'battle.json')))
+    return undefined;
+  const dedupe = await planClipDedupe(contentDir);
+  let referencedFiles = 0, referencedDecodedBytes = 0;
+  const byHash = new Map<string, { decodedBytes: number; count: number }>();
+  for (const file of runtimeFiles(dedupe.docs)) {
+    const asset = index.get(file);
+    if (!asset) continue;
+    referencedFiles++;
+    referencedDecodedBytes += asset.decodedBytes;
+    const group = byHash.get(asset.hash);
+    if (group) group.count++;
+    else byHash.set(asset.hash, { decodedBytes: asset.decodedBytes, count: 1 });
+  }
+  let residualDuplicateGroups = 0, residualDuplicateFiles = 0, residualDuplicateDecodedBytes = 0;
+  for (const group of byHash.values()) {
+    if (group.count < 2) continue;
+    residualDuplicateGroups++;
+    residualDuplicateFiles += group.count - 1;
+    residualDuplicateDecodedBytes += group.decodedBytes * (group.count - 1);
+  }
+  return {
+    clipKeysBefore: dedupe.clipKeysBefore,
+    clipKeysAfter: dedupe.clipKeysAfter,
+    dedupedLayers: dedupe.dedupedLayers,
+    referencedFiles,
+    referencedDecodedBytes,
+    residualDuplicateGroups,
+    residualDuplicateFiles,
+    residualDuplicateDecodedBytes
   };
 }
 
 const mb = (value: number): string => `${(value / 1024 / 1024).toFixed(1)} MB`;
 if (process.argv[1] === new URL(import.meta.url).pathname) {
-  const report = reportAssets(process.argv[2] ? path.resolve(process.argv[2]) : undefined);
+  const report = await reportAssets(process.argv[2] ? path.resolve(process.argv[2]) : undefined);
   console.log(`资产：${report.files} 个文件 / ${mb(report.bytes)}；唯一内容 ${report.uniqueFiles} 个 / ${mb(report.uniqueBytes)}`);
   console.log(`重复：${report.duplicateGroups} 组，${report.duplicateFiles} 个多余文件，磁盘 ${mb(report.duplicateBytes)}，解码约 ${mb(report.duplicateDecodedBytes)}`);
   for (const group of report.topDuplicateGroups) {
     const size = group.width && group.height ? `${group.width}x${group.height}` : '未知尺寸';
     console.log(`  ${group.count} 份 ${size} 解码重复 ${mb(group.decodedBytes * (group.count - 1))}  ${group.files.slice(0, 3).join(' | ')}`);
+  }
+  const runtime = report.runtime;
+  if (runtime) {
+    console.log(`生产构建口径：动画贴图键 ${runtime.clipKeysBefore} -> ${runtime.clipKeysAfter}（合并 ${runtime.dedupedLayers} 个图层引用）`);
+    console.log(`运行时引用：${runtime.referencedFiles} 个素材 / 解码约 ${mb(runtime.referencedDecodedBytes)}；构建后仍重复 ${runtime.residualDuplicateGroups} 组，${runtime.residualDuplicateFiles} 个多余路径，解码约 ${mb(runtime.residualDuplicateDecodedBytes)}`);
   }
 }
