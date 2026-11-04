@@ -19,7 +19,7 @@ import type { ActorDefinition, CampaignEnemyPlacement, EnemySpawn, MapExit, Ques
 /** 落位修正需要的边界信息；调用方持有完整地图时直接传地图对象。 */
 export type MapBoundary=Pick<WorldMap,'width'|'height'> & {exits?:readonly MapExit[]};
 import type { Campaign, CampaignQuest } from './campaign.ts';
-import { QuestBook, sideQuestIds, type QuestBookCheckpoint, type QuestBookState, type QuestGoal, type QuestProgress, type QuestFact, type QuestSettlement } from './quest-book.ts';
+import { QuestBook, sideQuestIds, type QuestBookCheckpoint, type QuestBookState, type QuestCommand, type QuestGoal, type QuestProgress, type QuestFact, type QuestSettlement } from './quest-book.ts';
 import { evaluateStoryCondition, storyConditionReferences, type StoryCondition, type StoryConditionContext, type StoryWorldValue } from './story-condition.ts';
 import { StoryWorldState, type StoryWorldSnapshot } from './story-world.ts';
 import type { StoryCommand } from './story-graph.ts';
@@ -72,6 +72,55 @@ export interface SessionState {
   reservedDrops?:ReservedDropState;
   /** 队伍物品掉率乘数（千分比）；当前内容没有已验证来源，默认 0。 */
   partyItemChance?:number;
+}
+
+/** 剧情命令会改到的会话子系统；批次开始时只抓这些的旧值。 */
+type StorySubsystem = 'bag'|'hero'|'skills'|'party'|'lootPity'|'storyWorld'|'groundLoot'
+  |'questBook'|'coins'|'receipts'|'playerState'|'runtimeSnapshot';
+/** 一次剧情命令提交的回执：`StoryDirector` 在分支求值失败时用它恢复到提交前。 */
+export interface StoryCommitReceipt {
+  /** 丢掉旧值；普通调用方在返回前已经调用。 */
+  finalize(): void;
+  /** 恢复这次碰到的子系统；已 finalize 后为空操作。 */
+  rollback(): void;
+}
+interface StoryCommandBaseline {
+  bag?:BagState;
+  hero?:BattleCharacterState;
+  skills?:SkillConfigurationState;
+  party?:ReturnType<PartyRoster['captureState']>;
+  quests?:{checkpoint:QuestBookCheckpoint;factSequences:[string,number][]};
+  world?:StoryWorldSnapshot;
+  loot?:GroundLootState;
+  coins?:number;
+  receipts?:[string,QuestSettlement][];
+  lootPity?:LootPityState;
+  playerState?:Readonly<StoryPlayerState>;
+  runtime?:StoryRuntimeSnapshot;
+}
+/** 命令静态会碰到的子系统；比运行时实际改动多抓是安全的，少抓会漏回滚。 */
+function storyCommandSubsystems(command:StoryCommand):readonly StorySubsystem[]{
+  switch(command.type){
+    case 'interaction':case 'talk':return ['questBook'];
+    case 'quest':{
+      switch(command.command.type){
+        case 'fact':case 'pin-active':case 'unpin-active':case 'refresh':case 'reset':case 'script-ready':
+          return ['questBook'];
+        case 'accept':return ['questBook','bag'];
+        case 'complete':case 'script-complete':return ['questBook','bag','hero','skills','coins','receipts'];
+        case 'reset-side-quests':return ['questBook','bag'];
+      }
+      return ['questBook'];
+    }
+    case 'item-give':case 'item-take':return ['bag'];
+    case 'money-give':case 'money-take':return ['coins'];
+    case 'item-drop':return ['groundLoot'];
+    case 'flag':case 'choice':case 'world':case 'travel':case 'encounter':return ['storyWorld'];
+    case 'party-join':case 'party-leave':return ['party','bag','lootPity'];
+    case 'party-control':return ['party'];
+    case 'health':case 'mana':return ['hero','party','playerState'];
+    case 'equip':case 'unequip-destroy':return ['bag'];
+  }
 }
 
 /** 本次运行的故事状态。这个模块不依赖 Phaser，也不认识源格式。 */
@@ -333,7 +382,7 @@ export class Session {
   }
   evaluateCondition(condition:StoryCondition,commands:readonly StoryCommand[]=[]):boolean {
     if(!commands.length)return evaluateStoryCondition(condition,this.conditionContext());
-    const preview=this.planStoryCommands(commands);
+    const preview=this.previewStoryCommands(commands);
     const states=preview.questBook.progressEntries();
     return evaluateStoryCondition(condition,{...this.conditionContext(),questStatus:id=>states.get(id)?.status??'locked',
       questCompletedCycles:id=>states.get(id)?.completedCycles??0,flag:id=>preview.world.flags.includes(id),
@@ -355,17 +404,6 @@ export class Session {
     state.runtime=toPlaybackCheckpoint(state.runtime);
     return state;
   }
-  /**
-   * 批次失败时的回滚基线：任务簿改用 O(1) 检查点，占位里只保留会话级的事实序号镜像。
-   *
-   * `rollbackBatch` 会走 `QuestBook.rollbackTo`，所以这里的 `questBook` 占位不参与恢复；
-   * 存档、检查点与导演节点基线仍用完整的 `captureState()`。
-   */
-  captureBatchBaseline():{state:SessionState;quests:QuestBookCheckpoint} {
-    return {quests:this.questBook.checkpoint(),
-      state:this.captureStateWith({version:5,quests:[],runningQuestIds:[],factSequences:[...this.factSequences]})};
-  }
-  rollbackBatch(baseline:{state:SessionState;quests:QuestBookCheckpoint}):void { this.restoreUnchecked(baseline.state,baseline.quests); }
   /** 拾取一次性解锁道具：记录后把解锁保底清零。 */
   claimReservedDrop(item:string):void {
     this.claimedReservedDrops.add(item);
@@ -884,7 +922,64 @@ export class Session {
       bag.equip(entry.id,command.slot,command.member,classId,level);
     }
   }
-  private planStoryCommands(commands:readonly StoryCommand[]) {
+  private captureStoryCommandBaseline(touched:ReadonlySet<StorySubsystem>):StoryCommandBaseline {
+    const baseline:StoryCommandBaseline={};
+    if(touched.has('bag'))baseline.bag=this.bag.captureState();
+    if(touched.has('hero')&&this.hero)baseline.hero=this.hero.captureState();
+    if(touched.has('skills'))baseline.skills=this.skills.captureState();
+    if(touched.has('party')&&this.party)baseline.party=this.party.captureState();
+    if(touched.has('questBook'))baseline.quests={checkpoint:this.questBook.checkpoint(),factSequences:[...this.factSequences]};
+    if(touched.has('storyWorld'))baseline.world=this.storyWorld.captureState();
+    if(touched.has('groundLoot'))baseline.loot=groundLootFor(this).captureState();
+    if(touched.has('coins'))baseline.coins=this.coins;
+    if(touched.has('receipts'))baseline.receipts=[...this.receipts].map(([key,receipt])=>[key,structuredClone(receipt)]);
+    if(touched.has('lootPity'))baseline.lootPity=this.lootPity.captureState();
+    if(touched.has('playerState'))baseline.playerState=this.playerState;
+    if(touched.has('runtimeSnapshot'))baseline.runtime=this.runtimeSnapshot;
+    return baseline;
+  }
+  /** 只恢复这次真的碰过的子系统；没碰过的不读也不写。 */
+  private restoreStoryCommandBaseline(touched:ReadonlySet<StorySubsystem>,baseline:StoryCommandBaseline):void {
+    if(touched.has('bag'))this.bag.restoreUnchecked(baseline.bag!);
+    if(touched.has('hero')&&baseline.hero)this.hero!.restoreState(baseline.hero);
+    if(touched.has('skills'))this.skills.restoreState(baseline.skills!);
+    if(touched.has('party')&&baseline.party)this.party!.restoreState(baseline.party);
+    if(touched.has('questBook')){
+      this.questBook.rollbackTo(baseline.quests!.checkpoint);
+      this.factSequences.clear();for(const[source,sequence]of baseline.quests!.factSequences)this.factSequences.set(source,sequence);
+      this.questProjection=undefined;this.questsProjection=undefined;
+    }
+    if(touched.has('storyWorld'))this.storyWorld.restoreState(baseline.world!);
+    if(touched.has('groundLoot'))groundLootFor(this).restoreState(baseline.loot!);
+    if(touched.has('coins'))this.coins=baseline.coins!;
+    if(touched.has('receipts')){
+      this.receipts.clear();for(const[key,receipt]of baseline.receipts!)this.receipts.set(key,structuredClone(receipt));
+    }
+    if(touched.has('lootPity'))this.lootPity.restoreState(baseline.lootPity!);
+    if(touched.has('playerState'))this.playerState=baseline.playerState;
+    if(touched.has('runtimeSnapshot'))this.runtimeSnapshot=baseline.runtime!;
+  }
+  /**
+   * 内部剧情检查点：由 `StoryRuntime` 自己产出，只做轻校验，不复制、不跑读档级的图校验。
+   * 读档、检查点恢复和调试跳转仍走 `prepareRuntime`。
+   */
+  adoptRuntime(snapshot:StoryRuntimeSnapshot):void {
+    if((snapshot.version!==2&&snapshot.version!==3)||!Number.isSafeInteger(snapshot.sequence)||snapshot.sequence<0)
+      throw new Error('剧情检查点版本或序号无效');
+    if(!Array.isArray(snapshot.runs))throw new Error('剧情检查点运行列表无效');
+    const ids=new Set<string>();
+    for(const run of snapshot.runs){
+      if(!run.id||ids.has(run.id)||!['running','waiting','deferred','completed'].includes(run.status))
+        throw new Error('剧情运行标识或状态无效');
+      ids.add(run.id);
+    }
+    this.runtimeSnapshot=snapshot;
+  }
+  /**
+   * 分支求值前的窄预演：`StoryRuntime` 目前仍在命令落地前求值分支，这一步用独立沙盒保证
+   * 条件能看到同一节点命令的结果。命令落地后求值完成后会删除这条路径。
+   */
+  private previewStoryCommands(commands:readonly StoryCommand[]) {
     const world=new StoryWorldState();world.restoreState(this.storyWorld.captureState());
     const loot=new GroundLootStore();loot.restoreState(groundLootFor(this).captureState());
     const hero=this.hero?new BattleCharacter(this.hero.classId,this.hero.catalog,this.bag.catalog):undefined;
@@ -893,23 +988,18 @@ export class Session {
     const party=this.party&&hero?new PartyRoster(hero,hero.catalog,this.bag.catalog,this.party.catalog,()=>{}):undefined;
     if(party)party.restoreState(this.party!.captureState());
     const fallback=this.playerState?structuredClone(this.playerState):undefined;
-    // 金币与背包一样要在这遍预算里先算：同一批命令里「先给后取」要能通过，不足则整批不落地。
     let coins=this.coins;
-    const receipts:QuestSettlement[]=[],rewardsByCommand=new Map<number,readonly QuestSettlement[]>(),itemsByCommand=new Map<number,{grants:readonly {item:string;quantity:number}[];removals:readonly {item:string;quantity:number}[]}>();
-    // 沙盒与真实任务簿共享同一份不可变状态根：预演改状态是换条目，碰不到来源簿（见 `QuestBook.fork`）。
     const book=this.questBook.fork(()=>({...this.questContext(),classId:hero?.classId??this.character?.classId,itemCount:id=>bag.count(id),
       equippedItemCount:item=>Object.values(bag.equipmentItems(bag.equipmentFor(party?.controlledId??'player'))).filter(id=>id===item).length,
       flag:id=>world.hasFlag(id),choice:id=>world.choice(id),world:key=>this.worldValue(world,key)}));
-    for(const [commandIndex,command]of commands.entries()){
+    for(const command of commands){
       switch(command.type){
         case 'quest':{
           const plan=book.plan(command.command);
           for(const item of plan.itemRemovals)if(!bag.remove(item.item,item.quantity))throw new Error('剧情物品不足');
-          const grants:{item:string;quantity:number}[]=[];
-          for(const item of plan.itemGrants){bag.add(item.item,item.quantity);grants.push(item);}
+          for(const item of plan.itemGrants)bag.add(item.item,item.quantity);
           for(const receipt of plan.rewards){if(receipt.reward.experience)hero?.addExperience(receipt.reward.experience);coins+=receipt.reward.money;}
-          book.commit(plan);receipts.push(...plan.rewards);rewardsByCommand.set(commandIndex,plan.rewards);
-          itemsByCommand.set(commandIndex,{grants,removals:plan.itemRemovals});break;
+          book.commit(plan);break;
         }
         case 'interaction':{
           if(!command.target||!command.instance)throw new Error('剧情交互目标无效');
@@ -930,13 +1020,12 @@ export class Session {
           if(command.type==='money-take'){
             if(command.amount>coins&&!command.allowPartial)throw new Error('剧情金币不足');
             coins=Math.max(0,coins-command.amount);
-          }else{ if(!Number.isSafeInteger(coins+command.amount))throw new Error('剧情金币数量无效'); coins+=command.amount; }
+          }else coins+=command.amount;
           break;
         }
         case 'item-drop':
           if(!this.bag.catalog.items[command.item]||!Number.isSafeInteger(command.quantity)||command.quantity<=0||!Number.isFinite(command.x)||!Number.isFinite(command.y))throw new Error('剧情地面物品无效');
-          loot.add(command.map??world.currentLocation?.map??this.campaign.start.map,command.x,command.y,[{kind:'item',item:command.item,quantity:command.quantity}]);
-          break;
+          loot.add(command.map??world.currentLocation?.map??this.campaign.start.map,command.x,command.y,[{kind:'item',item:command.item,quantity:command.quantity}]);break;
         case 'flag':world.apply({kind:'flag',id:command.flag,value:command.value??true});break;
         case 'choice':world.apply({kind:'choice',id:command.choice,value:command.value});break;
         case 'world':world.apply(command.command);break;
@@ -947,46 +1036,108 @@ export class Session {
         default:throw new Error('未知剧情游戏命令');
       }
     }
-    // 每条 quest 命令都以 `refresh()` 收尾（见 `QuestBook.plan`），所以末尾是 quest 命令时这一步多余；
-    // 末尾是别的命令（改了背包或世界）才需要重算物品类目标。
     if(commands.at(-1)?.type!=='quest')book.commit(book.plan({type:'refresh'}));
-    return {questBook:book,world:world.captureState(),loot:loot.captureState(),receipts,rewardsByCommand,itemsByCommand};
+    return {questBook:book,world:world.captureState()};
   }
-  applyStoryCommands(commands:readonly StoryCommand[],checkpoint?:StoryRuntimeSnapshot):void {
-    const plan=this.planStoryCommands(commands),nextRuntime=checkpoint?this.prepareRuntime(checkpoint):undefined;
-    this.validateStoryLinks(plan.world,nextRuntime??this.runtimeSnapshot);
-    // 批次回滚基线：任务簿用 O(1) 检查点，其余子系统照旧。见 `captureBatchBaseline`。
-    const before=this.captureBatchBaseline(),pending=this.pendingNotification;
+  private applyQuestCommand(command:QuestCommand):void {
+    const plan=this.questBook.plan(command,{stateIsCurrent:true});
+    for(const item of plan.itemRemovals)if(!this.bag.remove(item.item,item.quantity))throw new Error('剧情物品不足');
+    for(const item of plan.itemGrants)this.bag.add(item.item,item.quantity);
+    for(const receipt of plan.rewards){
+      const key=JSON.stringify([receipt.quest,receipt.cycle]);if(this.receipts.has(key))throw new Error('任务奖励已结算');
+      if(receipt.reward.experience)this.hero?.addExperience(receipt.reward.experience);
+      if(receipt.reward.money)this.gainMoney(receipt.reward.money);
+      this.receipts.set(key,structuredClone(receipt));
+    }
+    this.questBook.commit(plan);
+    // `fact` 也走任务命令；会话级事实序号是提交侧的镜像。
+    if(command.type==='fact')this.factSequences.set(command.fact.occurrence.source,this.questBook.factSequence(command.fact.occurrence.source));
+    this.recordQuestProjection();
+  }
+  /**
+   * 按顺序把剧情命令直接落到真实状态。
+   *
+   * 空命令只认领运行时检查点；非空批次在开改前只抓会碰到的子系统，失败只恢复这些子系统。
+   * 返回回执给 `StoryDirector` 在分支求值失败时回滚；普通调用方在返回前已经 finalize。
+   */
+  applyStoryCommands(commands:readonly StoryCommand[],checkpoint?:StoryRuntimeSnapshot,
+    options:{deferFinalize?:boolean}={}):StoryCommitReceipt {
+    if(!commands.length){
+      if(checkpoint)this.adoptRuntime(checkpoint);
+      return {finalize(){},rollback(){}};
+    }
+    // 先把外部改动造成的任务差异补齐；通常命中投影缓存，不做全量。
+    this.refresh();
+    const touched=new Set<StorySubsystem>();
+    for(const command of commands)for(const subsystem of storyCommandSubsystems(command))touched.add(subsystem);
+    // 任务簿检查点是 O(1) 的状态根引用；背包/世界/操控角色变化都可能经由 `refresh` 间接刷新
+    // 任务状态，所以每个非空批次都把它纳入回滚集。
+    touched.add('questBook');
+    if(checkpoint)touched.add('runtimeSnapshot');
+    const baseline=this.captureStoryCommandBaseline(touched),pending=this.pendingNotification;
+    let active=true;
+    const receipt:StoryCommitReceipt={
+      finalize:()=>{active=false;},
+      rollback:()=>{
+        if(!active)return;active=false;
+        this.restoreStoryCommandBaseline(touched,baseline);this.pendingNotification=pending;this.emit();
+      },
+    };
     this.transaction(()=>{
       try{
-        const fallback=this.playerState?structuredClone(this.playerState):undefined;
-        for(const [commandIndex,command]of commands.entries()){
-          const items=plan.itemsByCommand.get(commandIndex);
-          for(const item of items?.removals??[])if(!this.bag.remove(item.item,item.quantity))throw new Error('剧情物品交付失败');
-          for(const item of items?.grants??[])this.bag.add(item.item,item.quantity);
-          if(command.type==='item-give')this.bag.add(command.item,command.quantity);
-          if(command.type==='item-take'&&!(command.allowPartial&&this.bag.count(command.item)===0)&&!this.bag.remove(command.item,command.allowPartial?Math.min(command.quantity,this.bag.count(command.item)):command.quantity))throw new Error('剧情物品交付失败');
-          if(command.type==='money-give')this.gainMoney(command.amount);
-          if(command.type==='money-take')this.spendMoney(command.allowPartial?Math.min(command.amount,this.coins):command.amount);
-          for(const receipt of plan.rewardsByCommand.get(commandIndex)??[]){
-            const key=JSON.stringify([receipt.quest,receipt.cycle]);if(this.receipts.has(key))throw new Error('任务奖励已结算');
-            if(receipt.reward.experience)this.hero?.addExperience(receipt.reward.experience);
-            if(receipt.reward.money)this.gainMoney(receipt.reward.money);this.receipts.set(key,structuredClone(receipt));
+        let playerState=this.playerState?{...this.playerState}:undefined;
+        for(const command of commands){
+          // 任务命令按前一条命令留下的背包/世界校验；其余命令直接改真实状态。
+          if(command.type==='quest'||command.type==='interaction'||command.type==='talk')this.refresh();
+          switch(command.type){
+            case 'quest':this.applyQuestCommand(command.command);break;
+            case 'interaction':
+              if(!command.target||!command.instance)throw new Error('剧情交互目标无效');
+              this.applyQuestCommand({type:'fact',fact:{kind:'interact',target:command.target,
+                occurrence:{source:'interaction',sequence:this.questBook.factSequence('interaction')+1}}});break;
+            case 'talk':
+              if(!command.target)throw new Error('剧情对话目标无效');
+              this.applyQuestCommand({type:'fact',fact:{kind:'talk',target:command.target,
+                occurrence:{source:'talk',sequence:this.questBook.factSequence('talk')+1}}});break;
+            case 'item-give':case 'item-take':
+              if(!Number.isSafeInteger(command.quantity)||command.quantity<=0)throw new Error('剧情物品数量无效');
+              if(command.type==='item-give')this.bag.add(command.item,command.quantity);
+              else if(!(command.allowPartial&&this.bag.count(command.item)===0)&&!this.bag.remove(command.item,command.allowPartial?Math.min(command.quantity,this.bag.count(command.item)):command.quantity))throw new Error('剧情物品不足');
+              break;
+            case 'money-give':case 'money-take':
+              if(!Number.isSafeInteger(command.amount)||command.amount<=0)throw new Error('剧情金币数量无效');
+              if(command.type==='money-take'){
+                if(command.amount>this.coins&&!command.allowPartial)throw new Error('剧情金币不足');
+                this.spendMoney(Math.min(command.amount,this.coins));
+              }else this.gainMoney(command.amount);
+              break;
+            case 'item-drop':
+              if(!this.bag.catalog.items[command.item]||!Number.isSafeInteger(command.quantity)||command.quantity<=0||!Number.isFinite(command.x)||!Number.isFinite(command.y))throw new Error('剧情地面物品无效');
+              groundLootFor(this).add(command.map??this.storyWorld.currentLocation?.map??this.campaign.start.map,command.x,command.y,[{kind:'item',item:command.item,quantity:command.quantity}]);
+              break;
+            case 'flag':this.storyWorld.apply({kind:'flag',id:command.flag,value:command.value??true});break;
+            case 'choice':this.storyWorld.apply({kind:'choice',id:command.choice,value:command.value});break;
+            case 'world':this.storyWorld.apply(command.command);break;
+            case 'travel':this.storyWorld.apply({kind:'travel',destination:command.destination});break;
+            case 'encounter':this.storyWorld.apply({kind:'encounter',encounter:command.encounter});break;
+            case 'party-join':case 'party-leave':case 'party-control':case 'health':case 'mana':case 'equip':case 'unequip-destroy':
+              this.applyActorCommand(command,this.bag,this.hero,this.party,playerState);break;
+            default:throw new Error('未知剧情游戏命令');
           }
-          this.applyActorCommand(command,this.bag,this.hero,this.party,fallback);
         }
-        if(fallback)this.playerState=Object.freeze(fallback);
-        // 直接把沙盒那份状态根接过来：它是预演沙盒改出来的、出自同一份任务定义；
-        // 失败回滚用的 `before` 与读档仍走带校验的 `prepareRestore`。
-        this.questBook.adopt(plan.questBook);this.storyWorld.restoreState(plan.world);groundLootFor(this).restoreState(plan.loot);
-        if(nextRuntime)this.runtimeSnapshot=nextRuntime;
-        for(const [source,sequence]of plan.questBook.factSequenceEntries())this.factSequences.set(source,sequence);
-        // 沙盒收尾时已经用批后的背包与世界算过一遍，装进来的就是定点：直接认领这次投影，
-        // 免得紧跟其后的 `emit → refresh` 再跑一次全量任务计划。
-        this.recordQuestProjection();
-        this.emit();
-      }catch(error){this.rollbackBatch(before);this.pendingNotification=pending;throw error;}
+        if(touched.has('playerState'))this.playerState=playerState?Object.freeze(playerState):undefined;
+        if(checkpoint)this.adoptRuntime(checkpoint);
+        // 没有等待中的运行、也没有本批创建的遭遇时，不复制剧情世界做链接校验。
+        if(this.runtimeSnapshot.runs.some(run=>run.waiting)||commands.some(command=>command.type==='encounter'))
+          this.validateStoryLinks(this.storyWorld.captureState(),this.runtimeSnapshot);
+        // 收尾补齐最后一条命令造成的任务差异，再认领投影，避免随后的 emit 再算一遍。
+        this.refresh();this.recordQuestProjection();this.emit();
+      }catch(error){
+        this.restoreStoryCommandBaseline(touched,baseline);this.pendingNotification=pending;throw error;
+      }
     });
+    if(!options.deferFinalize)active=false;
+    return receipt;
   }
   /**
    * 只把玩家挪到同一张图上的新位置，不预演、不整批快照。
