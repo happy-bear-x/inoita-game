@@ -98,6 +98,8 @@ export function calculateStateThreat(input:StateThreatInput):number {
 /** 全部敌方角色共用的有序账本；世界负责关系、目标有效性和共用脉冲。 */
 export class ThreatLedger {
   private records:ThreatEntry[]=[];
+  /** owner → source → entry；记录数组仍保留，用于快照和容量淘汰。 */
+  private readonly index=new Map<string,Map<string,ThreatEntry>>();
 
   add(ownerId:string,sourceId:string,amount:number,tick:number,rules:ThreatAdditionRules={}):boolean {
     actorId(ownerId);actorId(sourceId);integer(amount,'仇恨增量');logicTick(tick);
@@ -112,9 +114,9 @@ export class ThreatLedger {
   /** 该 owner 下满足条件的最高分；没有条目时返回 undefined。 */
   highest(ownerId:string,isEligible:(sourceId:string)=>boolean):number|undefined {
     let maximum:number|undefined;
-    for(const entry of this.records)
-      if(entry.ownerId===ownerId&&isEligible(entry.sourceId)&&(maximum===undefined||entry.score>maximum))
-        maximum=entry.score;
+    const owner=this.index.get(ownerId);
+    if(owner)for(const entry of owner.values())
+      if(isEligible(entry.sourceId)&&(maximum===undefined||entry.score>maximum))maximum=entry.score;
     return maximum;
   }
 
@@ -125,7 +127,7 @@ export class ThreatLedger {
   raiseTo(ownerId:string,sourceId:string,floor:number,tick:number):boolean {
     actorId(ownerId);actorId(sourceId);integer(floor,'仇恨下限');logicTick(tick);
     if(floor<0)throw new Error('仇恨下限必须非负');
-    let entry=this.records.find(record=>record.ownerId===ownerId&&record.sourceId===sourceId);
+    let entry=this.index.get(ownerId)?.get(sourceId);
     if(entry&&entry.score>=floor)return false;
     if(!entry)entry=this.ensureEntry(ownerId,sourceId,tick);
     entry.score=floor;entry.updatedTick=tick;
@@ -133,16 +135,17 @@ export class ThreatLedger {
   }
 
   score(ownerId:string,sourceId:string):number|undefined {
-    return this.records.find(entry=>entry.ownerId===ownerId&&entry.sourceId===sourceId)?.score;
+    return this.index.get(ownerId)?.get(sourceId)?.score;
   }
 
   entries(ownerId?:string):Readonly<ThreatEntry>[] {
-    return this.records.filter(entry=>ownerId===undefined||entry.ownerId===ownerId).map(entry=>({...entry}));
+    const source=ownerId===undefined?this.records:[...(this.index.get(ownerId)?.values()??[])];
+    return source.map(entry=>({...entry}));
   }
 
   clearOwner(ownerId:string):void {this.removeWhere(entry=>entry.ownerId===ownerId);}
   removeActor(id:string):void {this.removeWhere(entry=>entry.ownerId===id||entry.sourceId===id);}
-  clear():void {this.records=[];}
+  clear():void {this.records=[];this.index.clear();}
 
   /** 在每次资源恢复后调用一次；越距判断使用角色矩形距离与自身视距。 */
   decay(isBeyondSight:(ownerId:string,sourceId:string)=>boolean):void {
@@ -157,8 +160,9 @@ export class ThreatLedger {
   /** 最大值候选由宿主筛 active、敌对及隐身；当前目标失效由宿主先清理。 */
   select(ownerId:string,currentSourceId:string|undefined,isEligible:(sourceId:string)=>boolean):string|undefined {
     let maximum:ThreatEntry|undefined;
-    for(const entry of this.records){
-      if(entry.ownerId!==ownerId||!isEligible(entry.sourceId))continue;
+    const owner=this.index.get(ownerId);
+    if(owner)for(const entry of owner.values()){
+      if(!isEligible(entry.sourceId))continue;
       if(!maximum||entry.score>maximum.score)maximum=entry;
     }
     if(!maximum)return currentSourceId;
@@ -172,8 +176,9 @@ export class ThreatLedger {
     const casterScore=this.score(ownerId,casterId);
     if(casterScore===undefined)return false;
     const ceiling=divide(Math.imul(casterScore,TAUNT_RIVAL_CEILING_PERCENT),100);
-    for(const entry of this.records)
-      if(entry.ownerId===ownerId&&entry.sourceId!==casterId&&entry.score>ceiling&&isSameCasterFaction(entry.sourceId))
+    const owner=this.index.get(ownerId);
+    if(owner)for(const entry of owner.values())
+      if(entry.sourceId!==casterId&&entry.score>ceiling&&isSameCasterFaction(entry.sourceId))
         entry.score=ceiling;
     return true;
   }
@@ -189,20 +194,29 @@ export class ThreatLedger {
         throw new Error('仇恨快照包含重复来源');
       restored.push({ownerId:entry.ownerId,sourceId:entry.sourceId,score:entry.score,updatedTick:entry.updatedTick});
     }
-    this.records=restored;
+    this.records=restored;this.index.clear();
+    for(const entry of restored){
+      let owner=this.index.get(entry.ownerId);
+      if(!owner){owner=new Map();this.index.set(entry.ownerId,owner);}
+      owner.set(entry.sourceId,entry);
+    }
   }
 
   private ensureEntry(ownerId:string,sourceId:string,tick:number):ThreatEntry {
-    const existing=this.records.find(record=>record.ownerId===ownerId&&record.sourceId===sourceId);
+    let owner=this.index.get(ownerId);
+    const existing=owner?.get(sourceId);
     if(existing)return existing;
     if(this.records.length===THREAT_CAPACITY){
       let oldest=0;
       for(let index=1;index<this.records.length;index++)
         if(this.records[index].updatedTick<this.records[oldest].updatedTick)oldest=index;
       this.removeAt(oldest);
+      owner=this.index.get(ownerId);
     }
     const entry={ownerId,sourceId,score:0,updatedTick:tick};
     this.records.push(entry);
+    if(!owner){owner=new Map();this.index.set(ownerId,owner);}
+    owner.set(sourceId,entry);
     return entry;
   }
 
@@ -212,6 +226,10 @@ export class ThreatLedger {
   }
 
   private removeAt(index:number):void {
+    const removed=this.records[index]!;
+    const owner=this.index.get(removed.ownerId);
+    owner?.delete(removed.sourceId);
+    if(owner&&owner.size===0)this.index.delete(removed.ownerId);
     const last=this.records.pop()!;
     if(index<this.records.length)this.records[index]=last;
   }

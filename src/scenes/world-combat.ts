@@ -238,6 +238,7 @@ export class WorldCombat {
   private skillAssetRefreshRunning=false;
   private skillAssetRefreshQueued=false;
   private attackProcs=new AttackProcExecutor();
+  private combatantsCache?:{tick:number;value:Combatant[]};
   private effectExecutor?:CombatEffectExecutor;
   private readonly soundedSkills=new WeakSet<object>();
   private unsubscribeHero?:()=>void;
@@ -668,7 +669,7 @@ captureStoryActors():SceneActorState[] {
     // 检查点恢复会重建同一批召唤物，那条路径保留会话状态（`keepSummonState`）。
     if(releasesSummonVitals(enemy.summonedBy,keepSummonState))this.app.session.forgetEnemyVitals(enemy.key);
     if(!preserveCooldown)this.app.session.cooldowns.removeActor(enemy.key);
-    this.dealtDamage.delete(enemy.key);
+    this.dealtDamage?.delete(enemy.key);
     this.threat?.removeActor(enemy.key);
     for(const actor of this.arena)actor.controller?.targetRemoved(enemy.key);
     this.combatRuntime?.removeActor(enemy.key);enemy.controller?.dispose(); enemy.presenter.clear();
@@ -773,8 +774,13 @@ captureStoryActors():SceneActorState[] {
     return false;
   }
   private combatants(): Combatant[] {
-    return [...this.activeParty.map(id=>this.combatant(id)),...this.arena.map(enemy=>this.combatant(enemy.key))]
+    // 同一逻辑帧内的 AI/技能查询共用一份候选快照；帧开始和结束时清空，避免跨帧读到旧位置。
+    const tick=this.app.session.combatTick;
+    if(this.combatantsCache?.tick===tick)return this.combatantsCache.value;
+    const value=[...this.activeParty.map(id=>this.combatant(id)),...this.arena.map(enemy=>this.combatant(enemy.key))]
       .filter((actor):actor is Combatant=>!!actor);
+    this.combatantsCache={tick,value};
+    return value;
   }
   private createThreatSystem():CombatThreatSystem {
     return new CombatThreatSystem({
@@ -2937,12 +2943,14 @@ captureStoryActors():SceneActorState[] {
     }
     this.partyActionsSuspended=false;
     this.app.session.advanceGameTime(delta);
-    this.consumeRosterChanges(this.roster.refresh());
     if(this.scene.time.now>=this.nextPartySyncAt&&this.app.session.party?.activeIds.join('|')!==this.partySignature)
       void this.syncAllies().catch(error=>this.app.ui.toast((error as Error).message));
     if(this.controlledId!==this.syncedControlledId&&this.partyControllers.has(this.controlledId))this.syncControlled(false);
     const tickBefore=this.app.session.combatTick;
     this.app.session.advanceCombatFrames(delta,()=>{
+      this.combatantsCache=undefined;
+      // 名册按逻辑帧刷新；最多晚一帧（约 60ms）出现，不再每渲染帧全量扫描生成点。
+      this.consumeRosterChanges(this.roster.refresh());
       this.advanceFormation();
       this.conditions.update(LOGIC_FRAME_MS,tick=>this.periodicTick(tick));
       if(this.focusTargetId&&!this.conditions.canTarget(this.focusTargetId)){this.focusTargetId=undefined;this.scene.refreshCombatTarget();}
@@ -2961,8 +2969,9 @@ captureStoryActors():SceneActorState[] {
       }
       this.updateEnemies(true);
       this.runtime.step(this.app.session.combatTick);
-      if(this.defeated||this.closed||!this.scene.canCombatControl)return false;
+      if(this.defeated||this.closed||!this.scene.canCombatControl){this.combatantsCache=undefined;return false;}
       this.recoverResources();
+      this.combatantsCache=undefined;
     });
     // 冷却读数按战斗帧变化；这一渲染帧没推进逻辑帧时不必重新取快照、重算签名。
     if(tickBefore!==this.app.session.combatTick)this.scene.refreshSkillCooldowns(this.cooldowns);
@@ -3019,7 +3028,7 @@ captureStoryActors():SceneActorState[] {
     this.stateMarkers.clear();
     for(const ally of [...this.allies]){ally.ai.dispose();ally.overhead.destroy();this.movement.remove(ally.visual);ally.visual.container.destroy();ally.assets?.release();}
     this.allies=[];this.partyControllers.clear();this.partySkills.clear();
-    this.passivesCache.clear();this.skillTableCache.clear();this.equipmentRecoveryCache.clear();this.combatProcsCache.clear();
+    this.passivesCache.clear();this.skillTableCache.clear();this.equipmentRecoveryCache.clear();this.combatProcsCache.clear();this.combatantsCache=undefined;
     this.combat=undefined;
     this.presenter?.clear();this.presenter=undefined;
     this.combatEffects.clear();

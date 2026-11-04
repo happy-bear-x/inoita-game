@@ -951,8 +951,8 @@ export class WorldScene extends Phaser.Scene {
     const characters=this.characters.map(character=>
       `${character.entity.id}:${character.entity.actor}:${character.entity.characterId??''}:${character.actor.id}`).join(',');
     return [this.map?.id??'',this.performing?1:0,this.combat?.controlledId??'player',characters,
-      session.questBook.version,session.storyWorld.revision,session.chests.revision,
-      session.legendaryWeapons.revision,session.runtimeState.sequence,session.restorationVersion,
+      session.questBook?.version??0,session.storyWorld?.revision??0,session.chests?.revision??0,
+      session.legendaryWeapons?.revision??0,session.runtimeState?.sequence??0,session.restorationVersion??0,
       session.debugFocusQuest??''].join('|');
   }
   refreshState(): void {
@@ -1819,8 +1819,8 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     const characters=this.characters.map(character=>
       `${character.entity.id}:${character.actor.id}:${character.entity.flip?1:0}:${character.container.visible?1:0}`).join(',');
     return [this.map?.id??'',this.combat?.controlledId??'player',controlled.container.x,controlled.container.y,characters,
-      session.questBook.version,session.storyWorld.revision,session.chests.revision,session.legendaryWeapons.revision,
-      session.restorationVersion,this.performing?1:0].join('|');
+      session.questBook?.version??0,session.storyWorld?.revision??0,session.chests?.revision??0,
+      session.legendaryWeapons?.revision??0,session.restorationVersion??0,this.performing?1:0].join('|');
   }
   private updateInteractionTarget(): void {
     const controlled=this.combat?.controlledVisual??this.player;

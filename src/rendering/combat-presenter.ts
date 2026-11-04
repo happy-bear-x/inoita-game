@@ -22,7 +22,7 @@ export class CombatPresenter {
   private readonly catalog: BattleCatalog;
   private readonly visual: (id: string) => CharacterVisual | undefined;
   private readonly candidates: () => Combatant[];
-  private readonly flights=new Map<number,{visual:Phaser.GameObjects.Container;effect:string;directional:boolean}>();
+  private readonly flights=new Map<number,{visual:Phaser.GameObjects.Container;effect:string;directional:boolean;heading?:number}>();
   private readonly combatEffects:CombatEffects;
   private readonly ownsCombatEffects:boolean;
   private screenTint?: Phaser.GameObjects.Rectangle;
@@ -81,13 +81,17 @@ export class CombatPresenter {
   renderFlight(event:FlightEvent):void {
     if(event.kind==='start'){
       const visual=this.effect(event.effect,event.directional?`heading-${event.heading}`:'default',event.position,true);
-      this.flights.set(event.id,{visual,effect:event.effect,directional:event.directional});
+      this.flights.set(event.id,{visual,effect:event.effect,directional:event.directional,heading:event.directional?event.heading:undefined});
       if(event.aboveCharacters){this.transitionEffects??=this.scene.add.layer().setDepth(Number.MAX_SAFE_INTEGER-1);this.transitionEffects.add(visual);}
     }else{
       const flight=this.flights.get(event.id);if(!flight)return;
       if(event.kind==='end'){flight.visual.destroy();this.flights.delete(event.id);return;}
       this.scene.tweens.killTweensOf(flight.visual);
-      if(flight.directional)setEffectClip(this.scene,flight.visual,this.catalog.attackEffects[flight.effect].clips[`heading-${event.heading}`],true);
+      // 方向没变时只平移，不销毁重画整组特效 Sprite。
+      if(flight.directional&&flight.heading!==event.heading){
+        flight.heading=event.heading;
+        setEffectClip(this.scene,flight.visual,this.catalog.attackEffects[flight.effect].clips[`heading-${event.heading}`],true);
+      }
       this.scene.tweens.add({targets:flight.visual,x:event.position.x,y:event.position.y,duration:event.durationMs,onUpdate:()=>flight.visual.setDepth(flight.visual.y+1)});
     }
   }

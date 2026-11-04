@@ -197,7 +197,7 @@ test('every active summon of the caster is commanded, and it follows the summon 
 
 test('a spring that has already been drunk is no longer an interaction target',()=>{
   const spring={container:{visible:true,x:8,y:0},actor:{},entity:{id:'well-1',actor:'clear-springs-f6f095b4',x:8,y:0,spring:true}};
-  // 挑脚下的可交互对象前会先刷新任务投影（任务日志与头顶标记都读它），替身也要提供这一步。
+  // 任务查询自己负责刷新投影；场景层不再每帧强制刷新整份任务状态。
   let refreshed=0;
   const state=(empty:boolean)=>({player:{container:{visible:true,x:0,y:0}},characters:[spring],combat:{controlledVisual:undefined},map:{id:'forest'},
     app:{session:{refresh:()=>{refreshed++;},springs:{isEmpty:()=>empty},chests:{isOpened:()=>false},
@@ -210,7 +210,7 @@ test('a spring that has already been drunk is no longer an interaction target',(
   const full=Object.setPrototypeOf(state(false),WorldScene.prototype) as unknown as {near:unknown;updateInteractionTarget():void};
   full.updateInteractionTarget();
   assert.equal(full.near,spring,'满水的泉水照常可选');
-  assert.equal(refreshed,2,'每次交互判定都先刷新一次任务投影');
+  assert.equal(refreshed,0,'交互判定不再每帧强制刷新任务投影');
 });
 
 test('drinking replaces the spring visuals with the waterless well',()=>{
