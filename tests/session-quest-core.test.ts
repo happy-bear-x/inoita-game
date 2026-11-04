@@ -35,12 +35,18 @@ function campaign(quests:CampaignQuest[]):Campaign {
 
 function refreshCounter(t:test.TestContext,session:Session){
   let calls=0;
-  const original=session.questBook.plan.bind(session.questBook);
-  t.mock.method(session.questBook,'plan',(command:Parameters<typeof original>[0])=>{calls++;return original(command);});
+  const originalChanges=session.questBook.refreshChanges.bind(session.questBook);
+  const originalPlan=session.questBook.plan.bind(session.questBook);
+  t.mock.method(session.questBook,'refreshChanges',(changes:Parameters<typeof originalChanges>[0])=>{calls++;return originalChanges(changes);});
+  // 全量刷新（启动、恢复、世界上下文改变）仍走 plan({type:'refresh'})，也要计入“刷新了一次”。
+  t.mock.method(session.questBook,'plan',(command:Parameters<typeof originalPlan>[0],options?:Parameters<typeof originalPlan>[1])=>{
+    if(!Array.isArray(command)&&(command as {type:string}).type==='refresh')calls++;
+    return originalPlan(command,options);
+  });
   return ()=>calls;
 }
 
-test('unchanged quest inputs skip plans across repeated NPC queries and unrelated notifications',t=>{
+test('unchanged quest inputs skip incremental refreshes across repeated NPC queries and unrelated notifications',t=>{
   const hero=new BattleCharacter('dark-knight',stats,items);
   const session=new Session(campaign([quest('one')]),undefined,undefined,items,hero,battle,stats,companions);
   const calls=refreshCounter(t,session);
@@ -112,13 +118,13 @@ test('restores and failed commits leave quest refresh caches coherent',t=>{
   assert.deepEqual(session.captureState(),before);session.refresh();assert.equal(session.status('letter'),'active');
 });
 
-test('a failed refresh plan is retried even when its input versions stay the same',t=>{
+test('a failed incremental refresh is retried even when its input versions stay the same',t=>{
   const session=new Session(campaign([quest('one')]));
-  const original=session.questBook.plan.bind(session.questBook);let fail=true,calls=0;
-  t.mock.method(session.questBook,'plan',(command:Parameters<typeof original>[0])=>{
-    calls++;if(fail)throw new Error('fixture plan failure');return original(command);
+  const original=session.questBook.refreshChanges.bind(session.questBook);let fail=true,calls=0;
+  t.mock.method(session.questBook,'refreshChanges',(changes:Parameters<typeof original>[0])=>{
+    calls++;if(fail)throw new Error('fixture refresh failure');return original(changes);
   });
-  session.bag.add('letter');assert.throws(()=>session.refresh(),/fixture plan failure/);
+  session.bag.add('letter');assert.throws(()=>session.refresh(),/fixture refresh failure/);
   fail=false;session.refresh();session.refresh();assert.equal(calls,2);
 });
 

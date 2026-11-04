@@ -158,7 +158,8 @@ export class Session {
   private readonly receipts = new Map<string,QuestSettlement>();
   private readonly factSequences = new Map<string,number>();
   private worldContext:()=>Record<string,StoryWorldValue> = ()=>({});
-  private readonly questConditionInputs:((context:StoryConditionContext)=>StoryWorldValue|undefined)[]=[];
+  /** 任务可用性读的条件输入；带条件键，刷新时只找引用变化键的任务。 */
+  private readonly questConditionInputs:{key:string;read:(context:StoryConditionContext)=>StoryWorldValue|undefined}[]=[];
   private questProjection?:{questVersion:number;bagVersion:number;owner:string;conditions:(StoryWorldValue|undefined)[]};
   /** `quests` 投影的缓存；只用任务簿版本做键，因为 `commit` 在没有真实变化时不推进版本。 */
   private questsProjection?:{questVersion:number;value:ReadonlyMap<string,Readonly<QuestProgress&{count:number}>>};
@@ -289,10 +290,10 @@ export class Session {
       const references=storyConditionReferences(quest.availableWhen);
       for(const key of Object.keys(inputs) as (keyof typeof inputs)[])for(const id of references[key])inputs[key].add(id);
     }
-    for(const id of inputs.events)this.questConditionInputs.push(context=>context.eventStatus(id));
-    for(const id of inputs.choices)this.questConditionInputs.push(context=>context.choice(id));
-    for(const id of inputs.flags)this.questConditionInputs.push(context=>context.flag(id));
-    for(const key of inputs.world)this.questConditionInputs.push(context=>context.world(key));
+    for(const id of inputs.events)this.questConditionInputs.push({key:`event:${id}`,read:context=>context.eventStatus(id)});
+    for(const id of inputs.choices)this.questConditionInputs.push({key:`choice:${id}`,read:context=>context.choice(id)});
+    for(const id of inputs.flags)this.questConditionInputs.push({key:`flag:${id}`,read:context=>context.flag(id)});
+    for(const key of inputs.world)this.questConditionInputs.push({key:`world:${key}`,read:context=>context.world(key)});
     this.questBook=new QuestBook(this.campaign.quests,()=>this.questContext(),sideQuestIds(this.campaign.questGroups));
     hero?.subscribe(()=>this.emit());
     this.refresh();
@@ -607,18 +608,25 @@ export class Session {
     if(!this.questBook)return;
     const questVersion=this.questBook.version,bagVersion=this.bag.revision,owner=this.party?.controlledId??'player';
     const context=this.questConditionInputs.length?this.conditionContext():undefined;
-    const conditions=this.questConditionInputs.map(read=>read(context!)),previous=this.questProjection;
+    const conditions=this.questConditionInputs.map(input=>input.read(context!)),previous=this.questProjection;
     if(previous&&previous.questVersion===questVersion&&previous.bagVersion===bagVersion&&previous.owner===owner&&
       conditions.every((value,index)=>Object.is(value,previous.conditions[index])))return;
-    this.questBook.commit(this.questBook.plan({type:'refresh'}));
-    // 任务计划自身可能改变版本；下一次读取应复用刚提交的投影。
+    // 没有上一份投影（启动、读档/检查点恢复、调试改写了世界上下文）时做一次全量刷新，
+    // 把新装进来的任务和当前条件对齐；常规刷新只找这次变化会影响的任务。
+    if(!previous){this.questBook.commit(this.questBook.plan({type:'refresh'}));this.recordQuestProjection();return;}
+    const keys:string[]=[];
+    for(const [index,input] of this.questConditionInputs.entries())
+      if(!Object.is(conditions[index],previous.conditions[index]))keys.push(input.key);
+    const bagChanged=previous.bagVersion!==bagVersion,ownerChanged=previous.owner!==owner;
+    if(keys.length||bagChanged||ownerChanged)
+      this.questBook.refreshChanges({keys,bagChanged,ownerChanged});
     this.recordQuestProjection();
   }
   /** 记下这次任务投影的输入，供 `refresh` 判断结果能不能复用。 */
   private recordQuestProjection():void {
     const context=this.questConditionInputs.length?this.conditionContext():undefined;
     this.questProjection={questVersion:this.questBook.version,bagVersion:this.bag.revision,
-      owner:this.party?.controlledId??'player',conditions:this.questConditionInputs.map(read=>read(context!))};
+      owner:this.party?.controlledId??'player',conditions:this.questConditionInputs.map(input=>input.read(context!))};
   }
   definition(id:string):CampaignQuest|undefined{return this.campaign.quests.find(quest=>quest.id===id);}
   status(id:string):QuestStatus{return this.questBook?.status(id)??'locked';}
