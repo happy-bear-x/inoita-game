@@ -10,7 +10,7 @@
 - 队伍/召唤：`party*.ts`、`companion-progression.ts`、`friendly-summon-ai.ts`、`summon-*.ts`；召唤物的归属分组、顶替、寿命与退场在 `summon-lifecycle.ts`。
 - 导航/地图：`navigation.ts`、`navigation-world.ts`、`pathfinding.ts`、`path-budget.ts`、`walk-route.ts`、`map-placement.ts`、`minimap.ts`。
 - 存档/状态：`save-game.ts`、`cloud-save.ts`（云存档账号、密码、槽位与锁定规则）、`state-application.ts`、`key-bindings.ts`、`control-skin.ts`、`legendary-weapon.ts`（拔剑判定、奖励与已拔状态）、`inns.ts`（旅店休息费用与恢复）。
-- 任务/文本：`quest-*.ts`、`menu-panels.ts`、`text-markup.ts`、`description-text.ts`；其余文件按前缀或符号搜索，例如 `combat-runtime.ts`、`story-entry.ts`。
+- 任务/文本：`quest-*.ts`、`menu-panels.ts`、`text-markup.ts`、`description-text.ts`；世界交互判定在 `interaction.ts`；其余文件按前缀或符号搜索，例如 `combat-runtime.ts`、`story-entry.ts`。
 
 ## 规则
 
@@ -18,6 +18,7 @@
 - 新规则写成纯函数或状态迁移，由 `application` 负责适配 Phaser、浏览器和磁盘。
 - 击杀奖励结算（经验、普通/景物/付费道具/任务掉落、套装首杀与装备/黄装/紫装保底记录）在 `combat-rewards.ts` 算完；场景只负责播放表现、选择落点并写回会话。随机源由调用方传入，固定随机源即可在纯 Node 下复现。
 - 召唤物的分组、同主人顶替、寿命和退场规则在 `summon-lifecycle.ts`；场景保留 visual、物理体和名册实例，`WorldCombatState` 的序列化仍由 `combat-snapshot.ts` 负责。召唤物移除时清理会话里的血量/法力条目，检查点恢复重建同一批召唤物的路径保留这些条目。
+- 世界交互按宝箱 → 泉水 → 任务槽 → 服务 NPC → 商店 → 普通剧情的顺序在 `interaction.ts` 的 `resolveInteraction` 判定；场景只提供附近目标、朝向、任务槽和商店状态，并按返回的动作执行。
 - 金额一律以铜币存储；对玩家展示时用 `money.ts` 的 `moneyText` 或 `splitMoney`，不要直接把裸数字写成「金币」。
 - `SAVE_FORMAT` 当前是 41；改存档结构或校验口径时把它加一，并在 `src/application/saved-game.ts` 补迁移和旧档测试。升级链覆盖的旧档正常读取；比升级链更早的档案显示为空槽。
 - 保留道具（原版付费道具）由 `items.ts` 的 `reservedItems` 标记，普通掉落、商店、合成和任务奖励继续过滤；只有 `drops.ts` 的 `reservedDrops` 独立通道可以发放。一次性领取记录和解锁保底在会话状态 `reservedDrops` 里；旧档只补空状态和已经拥有的一次性道具领取记录，不清理已有物品。
