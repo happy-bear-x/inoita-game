@@ -470,7 +470,8 @@ captureStoryActors():SceneActorState[] {
     for(const id of this.activeParty)this.presenterFor(id)?.reset();
     for(const tween of this.deathTweens.values())tween.stop();this.deathTweens.clear();this.fallen.clear();
     this.defeated=false;this.wipeoutPending=false;
-    this.clearEnemies(true);this.roster.restoreState(state.roster);this.conditions.restoreState(state.conditions);
+    // 恢复会按 roster 重建同一批召唤物；它们的会话状态来自存档，不能在这里清掉。
+    this.clearEnemies(true,true);this.roster.restoreState(state.roster);this.conditions.restoreState(state.conditions);
     this.syncControlled();
     this.focusTargetId=state.focusTargetId;this.damageCount=state.damageCount??0;
     for(const saved of state.party){const visual=this.visualOf(saved.id);if(!visual)continue;
@@ -641,15 +642,18 @@ captureStoryActors():SceneActorState[] {
       }
     };
   }
-  private destroyEnemy(enemy: MapEnemy,preserveCooldown=false): void {
+  private destroyEnemy(enemy: MapEnemy,preserveCooldown=false,keepSummonState=false): void {
+    // 召唤物只存在于这次战斗：移除或销毁时丢掉它在会话里的血量/法力条目，避免存档越攒越多。
+    // 检查点恢复会重建同一批召唤物，那条路径保留会话状态（`keepSummonState`）。
+    if(!keepSummonState&&enemy.summonedBy!==undefined)this.app.session.forgetEnemyVitals(enemy.key);
     if(!preserveCooldown)this.app.session.cooldowns.removeActor(enemy.key);
     this.threat?.removeActor(enemy.key);
     for(const actor of this.arena)actor.controller?.targetRemoved(enemy.key);
     this.combatRuntime?.removeActor(enemy.key);enemy.controller?.dispose(); enemy.presenter.clear();
     this.movement.remove(enemy.visual); enemy.visual.container.destroy(); enemy.assets?.release();
   }
-  private clearEnemies(preserveCooldown=false): void {
-    for (const enemy of this.arena) this.destroyEnemy(enemy,preserveCooldown);
+  private clearEnemies(preserveCooldown=false,keepSummonStates=false): void {
+    for (const enemy of this.arena) this.destroyEnemy(enemy,preserveCooldown,keepSummonStates);
     this.arena = [];this.threat?.clear();
   }
   /**
