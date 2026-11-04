@@ -7,6 +7,7 @@ import type {MenuContext} from '../src/application/ports.ts';
 import type {StoryWorldViewSnapshot} from '../src/scenes/world-scene.ts';
 import type {CloudSaveEntry,CloudSavePort,CloudSession} from '../src/application/cloud-save.ts';
 import {CLOUD_PAGE} from '../src/ui/cloud-save-layout.ts';
+import {InputRouter} from '../src/application/input-router.ts';
 const hook=registerHooks({resolve(specifier,context,next){return specifier==='phaser'?{url:'data:text/javascript,export default {Scene:class{},BlendModes:{}}',shortCircuit:true}:next(specifier,context);}});
 const {MenuScene}=await import('../src/scenes/menu-scene.ts');
 const {UiSurface}=await import('../src/ui/phaser/widgets.ts');hook.deregister();
@@ -65,7 +66,7 @@ function fakeView(width:number,height:number){
 function fixture(gmMode?:MenuContext['gmMode'],cloud?:CloudSavePort){
   const entries=new Map<string,string>(),events:string[]=[],signals:AbortSignal[]=[];
   const saves=new SaveSlots<StoryWorldViewSnapshot>({getItem:key=>entries.get(key)??null,setItem:(key,value)=>{entries.set(key,value);},removeItem:key=>{entries.delete(key);}});
-  const app:MenuContext={saves,gmMode,cloud,ui:{ready:true,suspended:false,setMode:()=>{},loading:()=>{},menuLoaded:()=>{},error:()=>{}},
+  const app:MenuContext={inputRouter:new InputRouter({textInputFocused:()=>false}),saves,gmMode,cloud,ui:{ready:true,suspended:false,setMode:()=>{},loading:()=>{},menuLoaded:()=>{},error:()=>{}},
     enterGame:async()=>{events.push('new');},resumeSlot:async(slot,signal)=>{events.push(`load:${slot}`);if(signal)signals.push(signal);}};
   const view=fakeView(1200,640),modal=fakeView(1024,640);
   // 直接借用 MenuScene.prototype 的假场景不会跑字段初始化；这里补上新加的私有状态，

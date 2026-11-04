@@ -39,6 +39,9 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
   private blocker!:Phaser.GameObjects.Zone;
   /** 原版 `INSTANTMSG` 的屏幕提示；不进 surface，因为它要逐帧淡出而 surface 每次 sync 整体重建。 */
   private instantText?:Phaser.GameObjects.Text;
+  /** 场景键盘只做一次桥接：原始事件交给全局 router，自己不再按页面各订阅一份。 */
+  private readonly bridgeKey=(event:KeyboardEvent):void=>{this.app.inputRouter.dispatch(event);};
+  private unregisterInput?:()=>void;
   constructor(app:StoryApp){super(SCENE_KEYS.formalUi);this.app=app;}
   create():void{
     this.background=this.add.rectangle(0,0,1,1,0x000000,1).setOrigin(0).setDepth(998);this.blocker=this.add.zone(0,0,1,1).setOrigin(0).setDepth(999).setInteractive();
@@ -49,14 +52,13 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     this.questPopup=new QuestPopup(this,()=>this.app.ui.ready&&!this.app.ui.suspended);
     this.surface.enabled=()=>!this.app.ui.suspended;
     this.scale.on('resize',()=>{this.signature='';this.sync(this.app.ui);this.app.ui.reflowDialogue();});
-    this.input.keyboard?.on('keydown',(event:KeyboardEvent)=>{
-      if(this.app.ui.suspended||this.app.ui.worldRebuildCover)return;
-      // 键位捕获期间键盘归设置面板：Enter / 空格不能顺手触发菜单按钮。
-      if(this.app.ui.keyBindingEditing)return;
-      if(this.app.ui.defeated&&event.key==='Escape'){event.preventDefault();this.app.ui.cancelDefeatConfirmation();return;}
-      if(this.app.ui.quest){this.questPopup.key(event);return;}
-      if(event.key==='Enter'||event.key===' '){if(this.app.ui.canSkip){event.preventDefault();this.app.ui.advance();return;}}
-      this.surface.key(event);
+    // 场景里只保留这一份键盘监听：它只把原始事件交给 router，由作用域决定消费者。
+    this.input.keyboard?.on('keydown',this.bridgeKey);
+    this.unregisterInput=this.app.inputRouter.register('modal',this.routeKey,{
+      active:()=>this.app.ui.mode==='game',
+      // 弹层、加载、选项和挂起时独占键盘，菜单和世界不再重复消费。
+      exclusive:()=>this.app.ui.suspended||this.app.ui.worldRebuildCover||this.app.ui.defeated
+        ||!!this.app.ui.quest||!!this.app.ui.loadingState||!!this.app.ui.choices
     });
     this.input.on('pointerdown',(pointer:Phaser.Input.Pointer,objects:Phaser.GameObjects.GameObject[])=>{
       if(this.app.ui.defeated||this.app.ui.worldRebuildCover)return;
@@ -70,10 +72,25 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     });
     this.input.on('pointerupoutside',(pointer:Phaser.Input.Pointer)=>this.app.ui.cancelPress(pointer.id));
     this.game.canvas.addEventListener('pointercancel',this.cancelInput);this.game.events.once('destroy',()=>this.game.canvas.removeEventListener('pointercancel',this.cancelInput));
-    this.events.once('shutdown',()=>{this.uiAssets.releaseContent();this.surface.destroy();this.questPopup.destroy();this.baseLease?.release();});
+    this.events.once('shutdown',()=>{this.unregisterInput?.();this.unregisterInput=undefined;this.input.keyboard?.off('keydown',this.bridgeKey);this.uiAssets.releaseContent();this.surface.destroy();this.questPopup.destroy();this.baseLease?.release();});
     void loadUiImages(this,['/assets/ui/loading-background.webp']).then(lease=>{this.baseLease=lease;this.signature='';this.sync(this.app.ui);}).catch(console.error);
     this.app.storyUI.attach(this);this.sync(this.app.ui);
   }
+  /**
+   * 正式界面的弹层键盘：守卫顺序保持原样。返回 `true` 表示这一层消费了按键；
+   * 返回 `false` 时由 router 继续交给菜单或世界，只有独占状态会挡住它们。
+   */
+  private routeKey=(event:KeyboardEvent):boolean=>{
+    if(this.app.ui.suspended||this.app.ui.worldRebuildCover)return false;
+    // 键位捕获期间键盘归设置面板：Enter / 空格不能顺手触发菜单按钮。
+    if(this.app.ui.keyBindingEditing)return false;
+    // 游戏内菜单打开时由 StoryUI 的 menu 作用域接管，正式界面不抢先处理 Tab/Enter。
+    if(this.app.storyUI?.menuOpen)return false;
+    if(this.app.ui.defeated&&event.key==='Escape'){event.preventDefault();this.app.ui.cancelDefeatConfirmation();return true;}
+    if(this.app.ui.quest){this.questPopup.key(event);return true;}
+    if(event.key==='Enter'||event.key===' '){if(this.app.ui.canSkip){event.preventDefault();this.app.ui.advance();return true;}}
+    return this.surface.key(event);
+  };
   private cancelInput=():void=>this.app.ui.resetInput();
   resetInput():void{this.game.events.emit(UI_EVENTS.cancelInput);}
   override update(_time:number,delta:number):void{this.app.ui.tick(delta);this.syncInstantMessage();}

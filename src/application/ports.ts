@@ -19,9 +19,11 @@ import type { GameAudio } from './game-audio.ts';
 import type { ShopCatalog } from '../domain/shop.ts';
 import type { ControlLayoutPreferences } from '../ui/control-layout.ts';
 import type { KeyBindingPreferences } from './key-bindings.ts';
+import type { InputRouter } from './input-router.ts';
 import type { SaveWorldResult } from '../scenes/world-scene.ts';
 
 export interface StoryClassContext {
+  readonly inputRouter: InputRouter;
   readonly storyClasses: StoryClassCatalog;
   readonly ui: Pick<GameUI,'ready'|'loading'|'loaded'|'error'>;
   readonly suspended: boolean;
@@ -33,6 +35,7 @@ export interface StoryClassContext {
 
 type SceneUI = Pick<GameUI,'ready'|'locked'|'mode'|'loading'|'loaded'|'error'|'toast'|'showInstant'|'resetInput'|'setMode'|'showDefeat'|'closeDefeat'|'controlLayoutEditing'|'keyBindingEditing'|'preloadPortraits'|'setWorldRebuildCover'>;
 export interface StoryContext {
+  readonly inputRouter: InputRouter;
   readonly controlLayout:ControlLayoutPreferences;
   readonly keyBindings:KeyBindingPreferences;
   gmNoclip?: boolean;
@@ -80,6 +83,7 @@ export interface StoryContext {
   autoSave?: () => void;
 }
 export interface StoryUIContext {
+  readonly inputRouter: InputRouter;
   /** 商店装备表按需加载（生产内容包与 shops.json 分开）。 */
   readonly content: Pick<ContentLoader,'shopEquipment'>;
   readonly controlLayout:ControlLayoutPreferences;
@@ -115,6 +119,7 @@ export interface StoryUIContext {
   readonly gm?: import('../debug/gm-actions.ts').GmActions;
 }
 export interface MenuContext {
+  readonly inputRouter: InputRouter;
   readonly ui: Pick<GameUI,'setMode'|'loading'|'menuLoaded'|'error'|'ready'|'suspended'>;
   /** GM（调试）开关：标题页的隐藏手势与角落指示读它，见 `docs/debugging.md`。 */
   readonly gmMode?: { readonly on: boolean; toggle(): boolean };
