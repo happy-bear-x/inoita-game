@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 import { PendingEnemyDefeats } from '../src/domain/combat-outcomes.ts';
 import { Session } from '../src/domain/session.ts';
+import { SummonLifecycle } from '../src/domain/summon-lifecycle.ts';
 import { WorldEnemyRoster } from '../src/domain/world-enemies.ts';
 import type { Campaign } from '../src/domain/campaign.ts';
 import type { WorldMap } from '../src/domain/content.ts';
@@ -37,7 +38,7 @@ test('roster refresh only syncs the arena projection and keeps the new roster id
     arena: [{ key: 'slot', definition: { id: 'enemy-jar-1' }, visual: { container: {} } }],
     pendingDefeats: new PendingEnemyDefeats(),
     conditions: { remove() {} },
-    summonGroups: new Map(),
+    summons: new SummonLifecycle(),
     partyControllers: new Map(),
     scene: { refreshCombatTarget() {} },
     destroyEnemy: (enemy: { key: string }) => { destroyed.push(enemy.key); },

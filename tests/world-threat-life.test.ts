@@ -7,6 +7,7 @@ import {CombatConditions} from '../src/domain/combat-conditions.ts';
 import {CombatCooldownStore} from '../src/domain/combat-cooldowns.ts';
 import {CombatHitResolution} from '../src/domain/combat-hit-resolution.ts';
 import {CombatThreatSystem,type CombatThreatActor} from '../src/domain/combat-threat-system.ts';
+import {SummonLifecycle} from '../src/domain/summon-lifecycle.ts';
 
 const hook=registerHooks({resolve(specifier,context,next){return specifier==='phaser'
   ?{url:'data:text/javascript,export default {BlendModes:{},Scene:class{},Physics:{Arcade:{Body:class{}}}}',shortCircuit:true}
@@ -88,7 +89,7 @@ test('host actor departure clears the current enemy target without deleting its 
   }}};
   const host=Object.setPrototypeOf({threat,arena:[departing,watcher],pendingDefeats:new Set(),
     app:{session:{cooldowns:new CombatCooldownStore(()=>0)}},
-    conditions:new CombatConditions(),partyControllers:new Map(),summonGroups:new Map(),
+    conditions:new CombatConditions(),partyControllers:new Map(),summons:new SummonLifecycle(),
     movement:{remove:()=>{}},roster:{removeEnemy:(id:string)=>actors.delete(id)},
     scene:{refreshCombatTarget:()=>{}},
   },WorldCombat.prototype);

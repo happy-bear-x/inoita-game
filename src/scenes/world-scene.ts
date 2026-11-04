@@ -27,6 +27,7 @@ import { WorldEnemyRoster } from '../domain/world-enemies.ts';
 import { WorldCombat, type WorldCombatState } from './world-combat.ts';
 import { QuestEnemyWatch } from '../domain/quest-enemies.ts';
 import { parseDrops, rollChestLoot, type DropCatalog, type DropReward } from '../domain/drops.ts';
+import { resolveInteraction } from '../domain/interaction.ts';
 import { BODY_ADJACENT_GAP, canReachChest, CHEST_OPEN_MS, facesTarget, nearInteractable, nearInteractive, SHOP_COUNTER_GAP } from '../domain/chests.ts';
 import { applySpringRecovery, grantSpringSkillPoint, parseSprings, rollSpringEffect, springBuffScope, type SpringCatalog, type SpringPartyResources } from '../domain/springs.ts';
 import { groundLootFor } from '../domain/ground-loot.ts';
@@ -1058,34 +1059,33 @@ export class WorldScene extends Phaser.Scene {
     this.updateInteractionTarget();
     if (!this.near) return false;
     const target = this.near;
-    // 原版按攻击键时要求玩家正面朝向目标，没朝着就是一下普攻。
-    if (!facesTarget(this.controlledPosition(), this.currentFacing, target.container)) return false;
-    if (target.actor.chest) { this.openChest(target); return true; }
-    if (target.entity.spring) { this.drinkSpring(target); return true; }
-    if(target.actor.service==='fusion-machine'){
-      // 原版 `UINpc_ExeCurrentNpcTask` 先取 NPC 任务槽，再执行 `UINpc_ExeNpcTask`；
-      // 道具合成只是任务槽之后的功能分支。进行中的收集任务不挡面板（既有体验决定）。
-      if(this.takesQuestSlot(target.entity)){this.playStory(()=>this.app.director.interact(target.entity,target.actor));return true;}
-      this.app.openCrafting?.(target.actor.id);return true;
+    const chest = !!target.actor.chest, spring = !!target.entity.spring, service = target.actor.service;
+    // 只按原版的分支顺序查询：宝箱/泉水/服务 NPC 不读商店，非服务 NPC 才占任务槽。
+    const shop = !chest && !spring && !service ? !!this.app.shops.shops[target.entity.actor] : false;
+    const questSlot = service ? this.takesQuestSlot(target.entity)
+      : shop && !target.entity.objective ? this.takesQuestSlot(target.entity) : false;
+    const action = resolveInteraction({
+      facing: facesTarget(this.controlledPosition(), this.currentFacing, target.container),
+      chest,
+      spring,
+      service,
+      objective: !!target.entity.objective,
+      questSlot,
+      shop,
+    });
+    switch (action.kind) {
+      case 'none': return false;
+      case 'chest': this.openChest(target); return true;
+      case 'spring': this.drinkSpring(target); return true;
+      case 'crafting': this.app.openCrafting?.(target.actor.id); return true;
+      case 'soul-healer':
+        this.playStory(() => this.app.director.visitHealer(target.actor, () => this.combat?.reviveAtHealer()));
+        return true;
+      case 'legendary-sword': this.pullLegendarySword(target); return true;
+      case 'innkeeper': this.restAtInnkeeper(target); return true;
+      case 'shop': this.app.openShop(target.entity.actor, this.map?.id ?? ''); return true;
+      case 'story': this.playStory(() => this.app.director.interact(target.entity, target.actor)); return true;
     }
-    if(target.actor.service==='soul-healer'){
-      if(this.takesQuestSlot(target.entity)){this.playStory(()=>this.app.director.interact(target.entity,target.actor));return true;}
-      this.playStory(()=>this.app.director.visitHealer(target.actor,()=>this.combat?.reviveAtHealer()));return true;
-    }
-    if(target.actor.service==='legendary-sword'){
-      if(this.takesQuestSlot(target.entity)){this.playStory(()=>this.app.director.interact(target.entity,target.actor));return true;}
-      this.pullLegendarySword(target);return true;
-    }
-    if(target.actor.service==='innkeeper'){
-      if(this.takesQuestSlot(target.entity)){this.playStory(()=>this.app.director.interact(target.entity,target.actor));return true;}
-      this.restAtInnkeeper(target);return true;
-    }
-    const shop=this.app.shops.shops[target.entity.actor];
-    if(shop&&!target.entity.objective&&!this.takesQuestSlot(target.entity)) {
-      this.app.openShop(target.entity.actor,this.map?.id??'');return true;
-    }
-    this.playStory(() => this.app.director.interact(target.entity, target.actor));
-    return true;
   }
   private pullLegendarySword(target:Character):void {
     const map=this.map, drops=this.dropCatalog;
