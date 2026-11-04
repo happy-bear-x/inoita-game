@@ -13,15 +13,22 @@ export class StoryClassScene extends Phaser.Scene {
   private preview?:CharacterVisual;
   private selected?:StoryClass;
   private request=new AbortController();
+  /** 职业选择整屏独占键盘；场景关闭时注销，避免回到标题页后继续处理按键。 */
+  private unregisterInput?:()=>void;
   constructor(app:StoryClassContext){super(SCENE_KEYS.classSelect);this.app=app;}
   create():void{
     this.request=new AbortController();this.selected=undefined;this.cameras.main.setBackgroundColor('#000000');
     this.scale.on('resize',this.layout,this);
-    this.input.keyboard?.on('keydown',(event:KeyboardEvent)=>{if(this.app.suspended)return;if(event.key==='Escape')this.app.returnToMenu?.();else this.surface?.key(event);});
-    this.events.once('shutdown',()=>{this.request.abort();this.scale.off('resize',this.layout,this);this.surface?.destroy();this.surface=undefined;this.preview=undefined;});
+    this.unregisterInput?.();this.unregisterInput=this.app.inputRouter.register('menu',this.routeKey,{exclusive:()=>true});
+    this.events.once('shutdown',()=>{this.unregisterInput?.();this.unregisterInput=undefined;this.request.abort();this.scale.off('resize',this.layout,this);this.surface?.destroy();this.surface=undefined;this.preview=undefined;});
     const signal=this.request.signal;
     void this.open(signal).catch(error=>{if(!signal.aborted)this.app.ui.error((error as Error).message,()=>this.scene.restart());});
   }
+  private routeKey=(event:KeyboardEvent):boolean=>{
+    if(this.app.suspended)return false;
+    if(event.key==='Escape'){this.app.returnToMenu?.();return true;}
+    return this.surface?.key(event)??false;
+  };
   private async open(signal:AbortSignal):Promise<void>{
     const catalog=this.app.storyClasses;
     await Promise.all([

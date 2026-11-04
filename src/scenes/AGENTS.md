@@ -28,6 +28,7 @@ Phaser 场景层：驱动生命周期、转发输入，把 domain、rendering、
 - 云存档页从存档槽页右上角进入，返回和 Escape 都回存档槽页；忙碌时只禁用云操作，返回始终可用，离开页面 abort 请求。账号/密码框直接盖在面板对应行上，输入框有焦点时场景键盘处理器让路；确认框、改名和修改密码表单打开时隐藏输入覆盖层。
 - 云存档续期只在打开云页时检查：token 剩余不足 7 天才发 `/__cloud/refresh`，不在游戏循环或后台定时。
 - 云存档错误只写页面状态行，不调用 `ui.error()`；场景 `shutdown` 时 abort 云请求并把待确认 Promise 落地。
+- 场景键盘只桥接一次：`FormalUiScene` 把原始 `keydown` 交给 `app.inputRouter`，其他场景只注册自己的作用域，不再各挂一份 `keydown`。`MenuScene`、`StoryClassScene` 用 `menu` 作用域；`WorldScene` 的摇杆和快捷位用 `world` 作用域。场景 `shutdown` 时注销作用域。
 - 场景 `shutdown` 时解绑输入、计时器和 tween，避免重启后重复触发。
 - 标题页资源加载完成后调用 `notifyBootReady()`（`application/live-update.ts`，模块级 once）。热更新壳靠这个信号提交新版本；漏掉会被当成启动失败而回退。
 

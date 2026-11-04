@@ -17,6 +17,8 @@ const hook = registerHooks({ resolve(specifier, context, next) {
   `)}` } : next(specifier, context);
 } });
 const { FormalUiScene } = await import('../src/scenes/formal-ui-scene.ts');
+const { MenuScene } = await import('../src/scenes/menu-scene.ts');
+const { StoryClassScene } = await import('../src/scenes/story-class-scene.ts');
 hook.deregister();
 
 interface FakeEvent { key: string; target?: { tagName: string }; prevented: number; preventDefault(): void }
@@ -98,5 +100,56 @@ test('正式界面场景只把原始按键桥接给 router', () => {
   f.app.inputRouter.register('modal', event => { seen.push(event.key); return true; });
   f.scene.bridgeKey(press('Escape'));
   assert.deepEqual(seen, ['Escape']);
+});
+
+test('标题页的 Escape 先关确认框，再返回上一页', () => {
+  const inputRouter = new InputRouter({ textInputFocused: () => false });
+  const app = { inputRouter, ui: { suspended: false } };
+  const scene = new MenuScene(app as never) as unknown as {
+    routeKey(event: FakeEvent): boolean;
+    page: string;
+    confirmAction?: { cancel(): void };
+    surface: { key(event: FakeEvent): boolean };
+    back(): void;
+  };
+  const calls: string[] = [];
+  scene.surface = { key: () => false };
+  scene.back = () => calls.push('back');
+
+  scene.page = 'slots';
+  scene.confirmAction = { cancel: () => calls.push('cancel-confirm') };
+  const first = press('Escape');
+  assert.equal(scene.routeKey(first), true);
+  assert.equal(first.prevented, 1);
+  assert.deepEqual(calls, ['cancel-confirm']);
+
+  scene.confirmAction = undefined;
+  assert.equal(scene.routeKey(press('Escape')), true);
+  assert.deepEqual(calls, ['cancel-confirm', 'back'], '确认框关掉后 Escape 才离开页面');
+
+  scene.page = 'home';
+  assert.equal(scene.routeKey(press('Escape')), false);
+  assert.deepEqual(calls, ['cancel-confirm', 'back']);
+
+  scene.page = 'slots';
+  (scene as unknown as { renameRef?: object }).renameRef = {};
+  assert.equal(scene.routeKey(press('Escape')), true, '输入框有焦点时场景不处理按键');
+  assert.deepEqual(calls, ['cancel-confirm', 'back']);
+});
+
+test('职业选择页的 Escape 回标题，其他按键交给页面按钮', () => {
+  const app = { inputRouter: new InputRouter({ textInputFocused: () => false }), suspended: false,
+    returnToMenu: () => { app.returned += 1; }, returned: 0 };
+  const scene = new StoryClassScene(app as never) as unknown as {
+    routeKey(event: FakeEvent): boolean;
+    surface: { key(event: FakeEvent): boolean };
+  };
+  scene.surface = { key: () => true };
+  assert.equal(scene.routeKey(press('Escape')), true);
+  assert.equal(app.returned, 1);
+  assert.equal(scene.routeKey(press('Tab')), true);
+  app.suspended = true;
+  assert.equal(scene.routeKey(press('Escape')), false, '挂起时不再响应');
+  assert.equal(app.returned, 1);
 });
 
