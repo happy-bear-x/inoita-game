@@ -219460,7 +219460,7 @@
               "type": "dialogue",
               "text": "哈哈哈，吓了一跳吗？这才是你自己的真正面目啊。隐藏在你身体里的$R怪物$B！&P你能打败你自己吗？",
               "speaker": "巨大的黑暗力量堆",
-              "actor": null
+              "actor": "enemy-dark-forces-of-evil-1"
             },
             {
               "type": "camera",
@@ -219743,7 +219743,7 @@
               "type": "dialogue",
               "text": "咔噢噢噢！",
               "speaker": "巨大的黑暗力量堆",
-              "actor": null
+              "actor": "enemy-dark-forces-of-evil-1"
             },
             {
               "type": "wait",
@@ -239999,7 +239999,7 @@
               "type": "dialogue",
               "text": "黑暗的种子啊...&N我一直在等待着你...",
               "speaker": "巨大的黑暗力量堆",
-              "actor": null
+              "actor": "enemy-dark-forces-of-evil-1"
             },
             {
               "type": "dialogue",
@@ -240031,7 +240031,7 @@
               "type": "dialogue",
               "text": "你的身体就由我拿走吧。乖乖接受我的力量吧...&P我将会借由你的身体重新降临与这个世界，你应该感到荣幸啊...哈哈哈哈！",
               "speaker": "巨大的黑暗力量堆",
-              "actor": null
+              "actor": "enemy-dark-forces-of-evil-1"
             },
             {
               "type": "dialogue",
@@ -240154,7 +240154,7 @@
               "type": "dialogue",
               "text": "咳啊...你这家伙...！&N到底想干什么！",
               "speaker": "巨大的黑暗力量堆",
-              "actor": null
+              "actor": "enemy-dark-forces-of-evil-1"
             },
             {
               "type": "wait",
@@ -240184,13 +240184,13 @@
               "type": "dialogue",
               "text": "不！不能这样！&N我的力量...我的存在...你这家伙...！",
               "speaker": "巨大的黑暗力量堆",
-              "actor": null
+              "actor": "enemy-dark-forces-of-evil-1"
             },
             {
               "type": "dialogue",
               "text": "啊啊啊啊啊！！！",
               "speaker": "巨大的黑暗力量堆",
-              "actor": null
+              "actor": "enemy-dark-forces-of-evil-1"
             },
             {
               "type": "wait",

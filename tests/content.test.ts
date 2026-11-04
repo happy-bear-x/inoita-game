@@ -24,6 +24,7 @@ const root=fileURLToPath(new URL('../public/',import.meta.url));
 const read=<T = WorldMap>(file: string): T=>JSON.parse(fs.readFileSync(path.join(root,file),'utf8')) as T;
 const world=read<WorldIndex>('content/world.json'),campaign=read<Campaign>('content/campaign.json');
 const storyInterface=read<{portraits:Record<string,string>}>('content/story-interface.json');
+const sourceMap=JSON.parse(fs.readFileSync(fileURLToPath(new URL('../tools/debug-start/data/source-map.json',import.meta.url)),'utf8')) as {actors:Record<string,number>};
 
 test('dialogue portraits resolve to exported files and player identity is separate from NPC professions',()=>{
  assert.equal(world.actors.kiyan.portrait,'kiyan');assert.equal(world.actors.saint.portrait,'saint');
@@ -54,6 +55,55 @@ test('dialogue portraits resolve to exported files and player identity is separa
  }
  for(const direction of ['south','west','north','east'])for(const action of ['idle','walk'])assert.ok(world.actors.kiyan.clips[`${action}-${direction}` as ClipName]!.frames>1);
  assert.equal(world.actors['ectoplasm-spirit'].clips['idle-south']?.frames,4);
+});
+
+test('every speaking actor with an original portrait identity has an exported portrait',()=>{
+ // 原版 PORTRAITBASE 身份到对白立绘键的映射，对应 ../inoita/work/tools/game_content/portrait_map.py。
+ // 测试自带这份表，不读取仓库外的原版工程；kind 0 是玩家、1 是怪物、2 是 NPC。
+ const originalPortraitKeys:Record<string,string>={
+  '0:0':'kiyan','2:40':'darius','2:53':'azad-053','2:509':'azad-053','2:510':'azad-053',
+  '2:54':'portia','2:599':'portia','2:55':'janus','2:56':'shinty','2:587':'shinty',
+  '2:57':'alexander-057','2:58':'saint','2:79':'saint','2:142':'saint','2:302':'saint',
+  '2:492':'saint','2:199':'cornette-199','2:249':'olaf','2:498':'veteran-498',
+  '1:350':'red-dragon','1:523':'red-dragon','1:356':'purple-demon','1:526':'purple-demon',
+ };
+ // debug-start 的怪物记录号带 2000 偏移：enemy-dark-forces-of-evil-1 是 2356 = 2000 + 356。
+ const originalIdentity=(actorId:string):string|undefined=>{
+  if(actorId==='kiyan')return '0:0';
+  const record=sourceMap.actors[actorId];
+  if(record===undefined)return undefined;
+  return record>=2000?`1:${record-2000}`:`2:${record}`;
+ };
+ const actorsByName=new Map<string,string[]>();
+ for(const [actorId,actor] of Object.entries(world.actors)) {
+  const ids=actorsByName.get(actor.name)??[];
+  ids.push(actorId);actorsByName.set(actor.name,ids);
+ }
+ const speakingActors=new Set<string>();
+ for(const action of storyActions(campaign)) {
+  const lines=[action as DialogueLine,...((action as ChoiceAction).options??[]).flatMap(option=>option.lines??[])];
+  for(const line of lines) {
+   if(line.actor){speakingActors.add(line.actor);continue;}
+   // 同一句发言者对应多个人物时不猜：要靠剧情显式绑定 actor 才能带立绘。
+   const matches=actorsByName.get(line.speaker)??[];
+   if(matches.length===1)speakingActors.add(matches[0]!);
+  }
+ }
+ for(const actorId of speakingActors) {
+  const identity=originalIdentity(actorId);
+  const portraitKey=identity===undefined?undefined:originalPortraitKeys[identity];
+  if(!portraitKey)continue;
+  const portrait=world.actors[actorId]?.portrait;
+  assert.ok(portrait,`${actorId} 在原版有 ${portraitKey} 立绘，剧情对白里会说话，但人物没有 portrait`);
+  assert.ok(world.portraits[portrait],`${actorId} 的立绘 ${portrait} 不在 world.portraits 中`);
+ }
+ // “巨大的黑暗力量堆”在 world 里对应两个人物；对白不显式绑定 actor 时无法唯一解析，
+ // 这 7 句必须绑定到有立绘的 enemy-dark-forces-of-evil-1。
+ const darkForcesLines=storyActions(campaign)
+  .flatMap(action=>[action as DialogueLine,...((action as ChoiceAction).options??[]).flatMap(option=>option.lines??[])])
+  .filter(line=>line.speaker==='巨大的黑暗力量堆');
+ assert.ok(darkForcesLines.length>=7);
+ for(const line of darkForcesLines)assert.equal(line.actor,'enemy-dark-forces-of-evil-1');
 });
 
 test('character clips resolve to valid assets inside the game project',()=>{
