@@ -132,7 +132,8 @@ export class GameAudio {
 
   stopStoryAudio():void {
     this.restoreStoryAudio({music:null,ambience:null});
-    this.scene.sound.stopAll();
+    // removeAll 会销毁声音对象；stopAll 只停不销毁，被打断的一次性音效会一直留在管理器里。
+    this.scene.sound.removeAll();
   }
 
   effect(name: string | null | undefined): void {
@@ -222,7 +223,7 @@ export class GameAudio {
     const revision = music ? ++this.musicRevision : ++this.ambienceRevision;
     const volume = music ? this.settings.music : this.settings.effects;
     const path = id && (music ? this.catalog.music[id] : this.catalog.effects[id]);
-    const key = volume > 0 && id && path ? `${music ? 'bgm' : 'se'}:${id}` : undefined;
+    const key = this.desiredKey(channel);
     current?.stop(); current?.destroy();
     if (music) { this.music = undefined; this.playingMusicKey = undefined; }
     else { this.ambience = undefined; this.playingAmbienceKey = undefined; }
@@ -236,13 +237,38 @@ export class GameAudio {
     if (!key || !path) { if (music && volume <= 0) this.releaseRetainedMusic(); return; }
     void this.load(key, path).then(loaded => {
       const current = music ? this.settings.music : this.settings.effects;
-      if (!loaded || revision !== (music ? this.musicRevision : this.ambienceRevision) || current <= 0) return;
+      if (!loaded || revision !== (music ? this.musicRevision : this.ambienceRevision) || current <= 0) {
+        // 本次不再播放：把刚解码出来、又没有其他主人的缓存一并释放。
+        if (loaded) this.releaseAbandonedKey(key);
+        return;
+      }
       const sound = this.scene.sound.add(key, { loop: true, volume: music ? 0.65 * current : 0.45 * current });
       if (music) { this.music = sound; this.playingMusicKey = key; this.dropRetainedMusic(key); }
       else { this.ambience = sound; this.playingAmbienceKey = key; }
       sound.play();
       if (this.isSuspended()) sound.pause();
     });
+  }
+
+  /** 当前通道想播的缓存键；静音或没有配置时为空。 */
+  private desiredKey(channel: 'music' | 'ambience'): string | undefined {
+    const music = channel === 'music';
+    const id = music ? this.musicId : this.ambienceId;
+    const volume = music ? this.settings.music : this.settings.effects;
+    const path = id && (music ? this.catalog.music[id] : this.catalog.effects[id]);
+    return volume > 0 && id && path ? `${music ? 'bgm' : 'se'}:${id}` : undefined;
+  }
+
+  /**
+   * 一次加载被放弃后释放它的解码缓存。仍在播、仍被当前通道需要、或留给回切的 key 不删。
+   * 同一 key 可能被前后两代请求共用（A→B→A），所以按「现在还有谁要它」判断，而不是按 revision。
+   */
+  private releaseAbandonedKey(key: string): void {
+    if (key === this.playingMusicKey || key === this.playingAmbienceKey) return;
+    if (this.retainedMusic.includes(key)) return;
+    if (key === this.desiredKey('music') || key === this.desiredKey('ambience')) return;
+    if (this.scene.sound.getAll(key).some(sound => sound.isPlaying)) return;
+    this.scene.cache.audio.remove(key);
   }
 
   private retainMusic(key: string): void {
