@@ -1401,7 +1401,14 @@ export class WorldScene extends Phaser.Scene {
     if(!visual||!this.movement||!this.map)return {ok:false,reason:'地图尚未加载'};
     const actor=this.movement.actor(visual),shape=actor.shape(),navigation=this.movement.navigation;
     const from=this.movement.position(visual);
-    if(navigation.terrainFree(from)&&navigation.bodyTerrainFree(shape,from))return {ok:true,moved:false,from};
+    // 地形合法还不够：火焰、路障这类内容机关会把身体压住，也属于需要脱困的状态。
+    if(navigation.terrainFree(from)&&navigation.bodyTerrainFree(shape,from)&&navigation.canStand(actor,from))
+      return {ok:true,moved:false,from};
+    const recovered=this.movement.recoverContent(visual);
+    if(recovered){
+      this.combat?.stopMoving();this.syncControlledCharacter(true);
+      return {ok:true,moved:true,from:recovered.from,to:recovered.to};
+    }
     const landing=navigation.nearestBody(shape,from,actor)??navigation.nearestReachableBody(shape,from,undefined,actor);
     if(!landing)return {ok:false,reason:'附近没有可站的整盒落点',from};
     try{this.movement.place(visual,landing);}catch(error){return {ok:false,reason:error instanceof Error?error.message:String(error),from};}

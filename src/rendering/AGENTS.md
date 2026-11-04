@@ -15,6 +15,7 @@
 - **常驻战斗包按当前进度收窄。** `residentCombatAssets` 运行时只装当前主角职业、已拥有伙伴的外观和已学技能；未拥有伙伴和未学技能按需加载。构建期省略这些集合表示“覆盖全量”，用于 `combat-visual-coverage` 校验。新增常驻内容时保持这个收窄口径。
 - **衣柜预览只合成 `idle-south`。** 队伍面板选中成员时只准备预览需要的姿势，上阵/进战斗再补全套；伙伴外观走 `wardrobe-cache.ts` 的全局 LRU（上限 8 套），切换成员不会无上限堆积。
 - **剧情舞台快照共享演员外观引用。** `story-presenter` 只复制演员外壳，外观对象按引用共享；开发/测试模式冻结外观，任何原地改外观都会立刻报错。不要为了“保险”恢复逐角色深拷贝。
+- **队伍单位被内容机关压住时要能自愈。** 火焰、路障、宝箱这类不会自己移动的 `content` 实体算落位障碍；移动自愈、GM 脱困和强制位移兜底都要按整盒避开所有角色，不能只看地形。
 - 动画名用游戏概念：`walk-east`、`idle-south`，不拼接帧号或方向偏移。
 - 沿用现有纹理、depth、filter 的组织方式；Phaser 4 写法以 `.agents/skills/` 和 4.2.1 文档为准。
 - 性能敏感的改动先用 `?perf` 在 4002/APK 上量基线，再决定是否新增对象或逐帧逻辑。
@@ -23,4 +24,5 @@
 
 - `npm run typecheck`：类型检查覆盖本目录。
 - `npm test -- tests/buff-loop-renderer.test.ts`：状态图标循环表现。
+- `npm test -- tests/movement-content-recovery.test.ts`：内容机关压住队伍单位后的自愈。
 - `npm test -- tests/state-markers.test.ts`：眩晕/睡眠状态标记的创建与销毁。

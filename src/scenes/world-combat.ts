@@ -681,7 +681,14 @@ captureStoryActors():SceneActorState[] {
     if (!this.movement) return false;
     if (this.canPlaceBodyAt(visual, position, clearanceActorId)) { this.movement.place(visual, position); return true; }
     const actor = this.movement.actor(visual), shape = actor.shape();
-    if (this.movement.navigation.terrainFree(position) && this.movement.navigation.bodyTerrainFree(shape, position)) {
+    const clearance = clearanceActorId ? this.visualOf(clearanceActorId) : undefined;
+    const clearanceActor = clearance ? this.movement.actor(clearance) : undefined;
+    const placements = clearanceActor
+      ? [{ actor: clearanceActor, position: clearanceActor.position(), enabled: false }]
+      : [];
+    // 兜底只放宽「整盒压墙、脚点可站」的情况；人物/机关占位仍要避开，
+    // 否则会把角色直接放进火焰、路障这类内容实体里，之后自愈也拉不出来。
+    if (this.movement.navigation.canPlace(shape, position, actor, placements)) {
       this.movement.place(visual, position); return true;
     }
     this.relocationFailures.push({ id: visual.entity.id, position: { ...position } });

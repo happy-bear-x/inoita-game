@@ -25,6 +25,8 @@ export interface NavigationActor {
    * 落位也要通过整盒校验；内容实体与敌人不设此标记，保持内容坐标的可信语义。
    */
   strictTerrain?(): boolean;
+  /** 不会自己移动的内容机关（火焰、路障、宝箱）；卡住自愈只处理这一类。 */
+  content?(): boolean;
 }
 export interface Placement { actor: NavigationActor; position: Point; enabled?: boolean }
 
@@ -203,6 +205,22 @@ export class NavigationWorld {
     // `canPlace` 会再查一次地形和碰撞盒；这里已经查过地形，只补人物占位。
     const box = collisionAt(actor.shape(), point);
     return !box || !this.blockedByActors(box, actor);
+  }
+  /**
+   * 角色是否被不会自己移动的内容机关压住。卡住自愈只处理内容实体：敌方/队友的贴身接触
+   * 交给物理分离，不能每帧把队伍单位传走。
+   */
+  blockedByContent(shape: NavigationShape, point: Point, ignore?: NavigationActor): boolean {
+    const box = collisionAt(shape, point);
+    if (!box) return false;
+    for (const actor of this.actors) {
+      if (actor === ignore || !actor.content?.() || !actor.enabled()) continue;
+      if (ignore?.ghost?.() || actor.ghost?.()) continue;
+      if (ignore && !blocksActor(ignore, actor)) continue;
+      const other = actor.shape().collision;
+      if (other && overlapsAt(other, actor.position(), box)) return true;
+    }
+    return false;
   }
   /**
    * 整组落位是否都站得住，**包括没动的那些**。判定「一次挪动之后这一组是否成立」用它。

@@ -64,7 +64,8 @@ export class MovementWorld {
       faction: faction ? () => faction : undefined,
       ghost: () => ghost.value,
       // 主角、佣兵与友方召唤物在落位时要求整盒合法；内容实体保持可信的内容坐标。
-      strictTerrain: () => body.recoversTerrain
+      strictTerrain: () => body.recoversTerrain,
+      content: () => body.contentActor
     };
     body.initialize(this.navigation, actor, movable, terrainRecovery);
     // 构造时容器坐标已经是脚点，先同步再设置实体偏移。
@@ -210,6 +211,21 @@ export class MovementWorld {
     }
   }
   place(visual: CharacterVisual, position: Point): void { this.placeAll([{ visual, position, enabled: visual.container.visible }]); }
+  /**
+   * 被内容机关压住时，把队伍单位搬到最近的、整盒不压地形也不压任何角色的落点。
+   * 返回前后位置供 GM 诊断；没有压住或找不到落点时不移动。
+   */
+  recoverContent(visual: CharacterVisual): { from: Point; to: Point } | undefined {
+    const registration = this.registrations.get(visual);
+    if (!registration || !registration.body.recoversTerrain) return undefined;
+    const actor = registration.actor, shape = actor.shape(), from = actor.position();
+    if (!this.navigation.blockedByContent(shape, from, actor)) return undefined;
+    const landing = this.navigation.nearestBody(shape, from, actor)
+      ?? this.navigation.nearestReachableBody(shape, from, undefined, actor);
+    if (!landing) return undefined;
+    this.place(visual, landing);
+    return { from: { ...from }, to: { ...landing } };
+  }
   remove(visual: CharacterVisual): void {
     const r = this.registrations.get(visual); if (!r) return;
     this.interpolation.remove(visual.container);

@@ -24,9 +24,14 @@ export function movementBodyClass(Base: typeof Phaser.Physics.Arcade.Body) {
     /** 是否允许在脚点非法时按整盒落点自愈；主角、佣兵与友方召唤物开启。 */
     private terrainRecovery=true;
     get recoversTerrain():boolean{return this.terrainRecovery;}
+    /** 内容摆放的机关（火焰、路障、宝箱）：不会自己移动，卡住自愈可以作为落点判断的障碍。 */
+    get contentActor():boolean{return !this.movable;}
     /** 被物理分离挤进阻挡格后拉回来的次数与最近一次的前后位置；卡墙排查用。 */
     private wallRecoveries=0;
     private lastWallRecovery?: { from: Point; to: Point };
+    /** 被火焰、路障这类内容机关压住后自愈的次数与最近一次的前后位置。 */
+    private contentRecoveries=0;
+    private lastContentRecovery?: { from: Point; to: Point };
     /** 找不到合法落点时别每帧全图扫描：隔 500ms 再试。 */
     private wallRetryAt=0;
     /** 队伍单位带着非法脚点起跑的次数：第一次非法写入的旁证。 */
@@ -93,20 +98,26 @@ export function movementBodyClass(Base: typeof Phaser.Physics.Arcade.Body) {
     }
     /** 分离人物后校验地形，防止碰撞修正把脚点挤入阻挡格。 */
     settleStep(): void {
-      // 固定内容体不会被碰撞分离推动；没有移动意图时无需每步重复校验地形。
+      // 固定内容体不会被碰撞分离推动；没有移动意图时无需每步重复校验。
       if ((!this.movable && !this.intention) || this.noclip || !this.stepStart) return;
-      if (this.navigation.terrainFree(this.footPosition())) return;
       const pushed = this.footPosition();
+      const shape = this.actor.shape();
+      const terrainBlocked = !this.navigation.terrainFree(pushed);
+      // 内容机关（火焰、路障、宝箱）也会把队伍单位夹住；敌方/队友的贴身接触仍交给物理分离。
+      const contentBlocked = this.terrainRecovery && this.navigation.blockedByContent(shape, pushed, this.actor);
+      if (!terrainBlocked && !contentBlocked) return;
       const displaced = pushed.x !== this.stepStart.x || pushed.y !== this.stepStart.y;
       // 物理分离把脚点推进了阻挡格：先退回这一物理步的起点。
       // 对本来就站在阻挡格上的内容实体，起点与当前坐标相同，等于原地写回，不改内容坐标。
       this.position.set(this.stepStart.x + this.collision.x, this.stepStart.y + this.collision.y);
       this.updateCenter(); this.stop();
-      if (displaced) {
+      if (displaced && terrainBlocked) {
         this.wallRecoveries += 1;
         this.lastWallRecovery = { from: { ...pushed }, to: { ...this.stepStart } };
       }
-      if (this.navigation.terrainFree(this.footPosition())) return;
+      const start = this.footPosition();
+      const startBlocked = this.navigation.blockedByContent(shape, start, this.actor);
+      if (this.navigation.terrainFree(start) && !startBlocked) return;
       // 起点本身也不合法。主角、佣兵与友方召唤物允许搬迁，且只接受整盒落点——窄足底兜底会重新
       // 制造「脚点合法、身体压墙」的状态。内容实体与敌人保持原位。
       if (!this.terrainRecovery) return;
@@ -115,6 +126,10 @@ export function movementBodyClass(Base: typeof Phaser.Physics.Arcade.Body) {
       if (landing) {
         this.reset(landing.x, landing.y); this.updateFromGameObject();
         this.lastWallRecovery = { from: pushed, to: { ...landing } };
+        if (contentBlocked || startBlocked) {
+          this.contentRecoveries += 1;
+          this.lastContentRecovery = { from: pushed, to: { ...landing } };
+        }
         this.wallRetryAt = 0;
       } else this.wallRetryAt = Date.now() + 500;
     }
@@ -125,13 +140,16 @@ export function movementBodyClass(Base: typeof Phaser.Physics.Arcade.Body) {
     /** 诊断：卡住时先看这里——是暂停、被固定、还是仍在推进某个意图。 */
     describe(): { enabled: boolean; suspended: boolean; immovable: boolean; movable: boolean; terrainRecovery: boolean;
       velocity: Point; collision: GameRectangle; foot: Point; intention: 'velocity' | 'route' | 'destination' | null;
-      wallRecoveries: number; illegalStarts: number; lastWallRecovery?: { from: Point; to: Point } } {
+      wallRecoveries: number; contentRecoveries: number; illegalStarts: number;
+      lastWallRecovery?: { from: Point; to: Point }; lastContentRecovery?: { from: Point; to: Point } } {
       const intention = this.intention ? ('velocity' in this.intention ? 'velocity' : 'route' in this.intention ? 'route' : 'destination') : null;
       return { enabled: this.enable, suspended: this.suspended, immovable: this.immovable,
         movable: this.movable, terrainRecovery: this.terrainRecovery,
         velocity: { x: this.velocity.x, y: this.velocity.y }, collision: { ...this.collision },
-        foot: this.footPosition(), intention, wallRecoveries: this.wallRecoveries, illegalStarts: this.illegalStarts,
-        ...(this.lastWallRecovery ? { lastWallRecovery: this.lastWallRecovery } : {}) };
+        foot: this.footPosition(), intention, wallRecoveries: this.wallRecoveries,
+        contentRecoveries: this.contentRecoveries, illegalStarts: this.illegalStarts,
+        ...(this.lastWallRecovery ? { lastWallRecovery: this.lastWallRecovery } : {}),
+        ...(this.lastContentRecovery ? { lastContentRecovery: this.lastContentRecovery } : {}) };
     }
   };
 }
