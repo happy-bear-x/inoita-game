@@ -74,11 +74,11 @@ export class EquipmentCrafting {
     if(bag.revision!==quote.revision)throw new CraftingError('craft-target');
     const current=this.recipeQuote(quote.recipe),recipe=bag.catalog.recipes[current.recipe];
     if(bag.revision!==current.revision)throw new CraftingError('craft-target');
-    this.session.batchNotifications(()=>{
+    this.session.atomic(()=>{
       for(const material of recipe.materials)bag.remove(material.item,material.quantity);
       this.session.spendMoney(current.cost);
       bag.add(recipe.result,1);
-    });
+    },['bag','coins']);
   }
   targetProblem(tier:ChaosTier,target?:string):CraftingNotice|undefined {
     const bag=this.session.bag,entry=target?bag.get(target):undefined;
@@ -110,11 +110,11 @@ export class EquipmentCrafting {
     // Random callbacks and other callers may have changed inventory or money since the first query.
     if(bag.revision!==current.revision)throw new CraftingError('craft-target');
     this.quote(current.tier,current.target);
-    this.session.batchNotifications(()=>{
+    this.session.atomic(()=>{
       bag.applyChaos(current.target,chaos,current.revision);
       for(const material of op.materials)bag.remove(material.item,material.quantity);
       this.session.spendMoney(current.cost);
-    });
+    },['bag','coins']);
   }
 
   /** 宝石孔生成只接受装备类、且当前孔位上限为 0 的实例；对应原版 CheckMixture 的 0 孔检查。 */
@@ -150,11 +150,11 @@ export class EquipmentCrafting {
     // 随机回调不读写背包，但保持与混沌合成相同的二次核对口径。
     if(bag.revision!==current.revision)throw new CraftingError('craft-target');
     this.socketQuote(current.target);
-    this.session.batchNotifications(()=>{
+    this.session.atomic(()=>{
       bag.applySockets(current.target,sockets,current.revision);
       for(const material of op.materials)bag.remove(material.item,material.quantity);
       this.session.spendMoney(current.cost);
-    });
+    },['bag','coins']);
   }
 }
 

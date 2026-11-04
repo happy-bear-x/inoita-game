@@ -31,7 +31,7 @@ import { resolveInteraction } from '../domain/interaction.ts';
 import { BODY_ADJACENT_GAP, canReachChest, CHEST_OPEN_MS, facesTarget, nearInteractable, nearInteractive, SHOP_COUNTER_GAP } from '../domain/chests.ts';
 import { applySpringRecovery, grantSpringSkillPoint, parseSprings, rollSpringEffect, springBuffScope, type SpringCatalog, type SpringPartyResources } from '../domain/springs.ts';
 import { groundLootFor } from '../domain/ground-loot.ts';
-import { innRestQuote, restAtInn } from '../domain/inns.ts';
+import { innRestQuote, payForInnRest } from '../domain/inns.ts';
 import { pullLegendaryWeapon } from '../domain/legendary-weapon.ts';
 import { GroundLootView } from '../rendering/ground-loot.ts';
 import { PickupMessages } from '../rendering/pickup-messages.ts';
@@ -1108,10 +1108,7 @@ export class WorldScene extends Phaser.Scene {
   private restAtInnkeeper(target:Character):void {
     const quote=innRestQuote(this.app.session);
     this.playStory(()=>this.app.director.visitInnkeeper(target.actor,quote,()=>{
-      this.app.session.batchNotifications(()=>{
-        this.app.session.spendMoney(quote.cost);
-        restAtInn(this.app.session,quote);
-      });
+      payForInnRest(this.app.session,quote);
       this.app.autoSave?.();
       this.checkpointStoryWorld();
       this.app.ui.showInstant('已恢复全部的生命和魔法。');

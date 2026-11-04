@@ -106,3 +106,25 @@ test('socket creation rechecks the target, materials, money and revision without
   session.spendMoney(session.money);
   assert.throws(()=>crafting.socketQuote(target),notice('craft-money'));
 });
+
+test('chaos and socket commits roll back every earlier mutation when a later step fails',()=>{
+  const chaos=fixture(),chaosBefore=chaos.session.captureState();
+  let updates=0;chaos.session.subscribe(()=>updates++);
+  const spend=chaos.session.spendMoney;
+  chaos.session.spendMoney=()=>{throw new Error('注入失败');};
+  try{assert.throws(()=>chaos.crafting.commit(chaos.crafting.quote('chaos',chaos.target),()=>.999),/注入失败/);}
+  finally{chaos.session.spendMoney=spend;}
+  assert.deepEqual(chaos.session.captureState(),chaosBefore,'混沌合成失败后装备、材料和金币完全回滚');
+  assert.equal(updates,0,'中间状态不通知界面');
+
+  const socket=fixture(),bag=socket.hero.bag;
+  setSocketTarget(bag,socket.target,0,0);
+  const socketQuote=socket.crafting.socketQuote(socket.target),socketBefore=socket.session.captureState();
+  let socketUpdates=0;socket.session.subscribe(()=>socketUpdates++);
+  const socketSpend=socket.session.spendMoney;
+  socket.session.spendMoney=()=>{throw new Error('注入失败');};
+  try{assert.throws(()=>socket.crafting.socketCommit(socketQuote,()=>0),/注入失败/);}
+  finally{socket.session.spendMoney=socketSpend;}
+  assert.deepEqual(socket.session.captureState(),socketBefore,'打孔失败后孔位、材料和金币完全回滚');
+  assert.equal(socketUpdates,0);
+});

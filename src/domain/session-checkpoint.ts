@@ -14,7 +14,8 @@ export class SessionCheckpoint<WorldState = undefined> {
     const state=session.captureState();
     // 已拔出的古老武器是存档级进度；死亡检查点不回滚它，否则同一存档能反复拔同一把剑。
     delete state.legendaryWeapons;
-    this.snapshot=structuredClone({session:state,location,world});
+    // 各子系统 `captureState()` 已经产出独立对象；location/world 也是调用方刚捕获的视图。
+    this.snapshot={session:state,location,world};
     return true;
   }
   restore(session:Session):{location:CheckpointLocation;world:WorldState}|undefined {

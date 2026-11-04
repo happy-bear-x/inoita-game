@@ -79,6 +79,23 @@ export class GroundLootStore {
   }
   forMap(map:string):GroundDrop[] {return this.onMap(map).map(drop=>structuredClone(drop));}
   /**
+   * 进入新地图时清掉其他地图的地面掉落；`retain` 返回 true 的保留（任务/剧情物品）。
+   * 只按地图的 id 分组扫一遍，不复制掉落内容；当前地图的掉落完全不动。
+   */
+  clearOtherMaps(currentMap:string,retain:(drop:GroundDrop)=>boolean):number {
+    let removed=0;
+    for(const [map,ids] of this.byMap){
+      if(map===currentMap)continue;
+      for(const id of [...ids]){
+        const drop=this.drops.get(id);
+        if(!drop||retain(drop))continue;
+        this.drops.delete(id);this.untrack(drop);removed++;
+      }
+    }
+    if(removed)this.revision++;
+    return removed;
+  }
+  /**
    * 所有地图上已产出、尚未拾取的物品数量。
    * 任务掉落用它把地面存货计入有效持有量，避免连续击杀时同一只怪反复产出。
    */

@@ -222,6 +222,28 @@ test('raw cloud import distinguishes versions and writes the cloud name without 
   assert.equal(kept.kind==='ok'?kept.summary.name:undefined,'云端名','失败的导入不覆盖原槽');
 });
 
+test('overwriting a manual slot parses the old save at most once while the auto slot never reads it',()=>{
+  const storage=memory(),writeSession=createSession();
+  // 预置一份旧档：自动槽也放一份，用来确认写入时完全没读它。
+  storage.setItem('inotia4.story.v1.slot1',JSON.stringify(record(writeSession)));
+  storage.setItem('inotia4.story.v1.auto',JSON.stringify(record(writeSession)));
+  const slots=new SaveSlots<World>(storage),original=JSON.parse;
+  let parses=0;
+  JSON.parse=(text:string,reviver?:(this:unknown,key:string,value:unknown)=>unknown)=>{parses++;return original(text,reviver);};
+  try{
+    slots.write(1,record(writeSession));
+    assert.ok(parses<=1,`首次覆盖手动槽最多解析一次旧档，实际 ${parses} 次`);
+    const cached=slots.peek(1);
+    parses=0;
+    assert.equal(slots.peek(1),cached,'写完回填摘要，读槽复用缓存');
+    slots.write(1,record(writeSession));
+    assert.equal(parses,0,'再次覆盖手动槽不再解析旧档');
+    parses=0;
+    slots.write(AUTO_SAVE_SLOT,record(writeSession));
+    assert.equal(parses,0,'自动槽没有改名入口，写入时不解析旧档');
+  }finally{JSON.parse=original;}
+});
+
 test('summary reads reuse the parsed summary until the raw save changes',()=>{
   const slots=new SaveSlots<World>(memory()),session=createSession();
   session.enterMap(campaign.start.map);

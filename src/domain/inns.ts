@@ -10,6 +10,14 @@ export function innRestQuote(session:Session):InnRestQuote {
   return {cost:members.length*level,members};
 }
 
+/** 付费休息：先扣钱再回满；任何一步失败都回到付钱前的金币和血量。 */
+export function payForInnRest(session:Session,quote:InnRestQuote):void {
+  session.atomic(()=>{
+    session.spendMoney(quote.cost);
+    restAtInn(session,quote);
+  },['coins','hero','party']);
+}
+
 /** 只回满存活成员；不复活、不清状态。原版 PARTY_ApplyRest 只对 situation=1 的成员加满 HP/MP。 */
 export function restAtInn(session:Session,quote:InnRestQuote):void {
   for(const id of quote.members){

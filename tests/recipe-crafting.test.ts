@@ -59,3 +59,16 @@ test('missing materials, missing money and stale quotes leave the bag untouched'
   assert.throws(()=>crafting.recipeCommit(quote),notice('craft-target'));
   assert.deepEqual(session.captureState(),snapshot);
 });
+
+test('a recipe failure after consuming materials rolls the bag and money back without notifying',()=>{
+  const {hero,session,crafting}=fixture(),bag=hero.bag,recipe=items.recipes['mix-life-potion-m'];
+  for(const material of recipe.materials)bag.add(material.item,material.quantity);
+  const before=session.captureState();
+  let updates=0;session.subscribe(()=>updates++);
+  const spend=session.spendMoney;
+  session.spendMoney=()=>{throw new Error('注入失败');};
+  try{assert.throws(()=>crafting.recipeCommit(crafting.recipeQuote('mix-life-potion-m')),/注入失败/);}
+  finally{session.spendMoney=spend;}
+  assert.deepEqual(session.captureState(),before,'配方失败后材料和金币完全回滚');
+  assert.equal(updates,0,'中间状态不通知界面');
+});

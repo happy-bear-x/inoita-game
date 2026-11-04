@@ -266,3 +266,19 @@ test('adjacentLivingMember cycles forward and backward, wraps, and tolerates a m
   assert.equal(adjacentLivingMember(ids,'dead',1),'player');
   assert.equal(adjacentLivingMember(ids,'dead',-1),'b');
 });
+
+test('a failed recruitment rolls the roster, emblem and quest fact back in one step',()=>{
+  const campaign=read<Campaign>('campaign'),battle=read<BattleCatalog>('battle');
+  const hero=new BattleCharacter('dark-knight',stats,items);
+  const session=new Session(campaign,undefined,undefined,items,hero,battle,stats,catalog);
+  hero.bag.add('mercenary-emblem-priest');
+  const emblem=hero.bag.entries.find(entry=>entry.item==='mercenary-emblem-priest')!;
+  const before=session.captureState();
+  let updates=0;session.subscribe(()=>updates++);
+  const record=session.recordQuestFact;
+  session.recordQuestFact=()=>{throw new Error('注入失败');};
+  try{assert.throws(()=>session.party!.recruit(emblem.id,()=>0),/注入失败/);}
+  finally{session.recordQuestFact=record;}
+  assert.deepEqual(session.captureState(),before,'名册、徽章和任务事实全部回滚');
+  assert.equal(updates,0,'中间状态不通知界面');
+});

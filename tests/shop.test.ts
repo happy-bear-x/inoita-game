@@ -152,3 +152,23 @@ test('limited consumables sell once and cannot be bought as unlimited stacks',()
   const store=open(s,black,catalog),entry=store.offers.find(offer=>offer.limited)!;s.gainMoney(1000);
   assert.throws(()=>store.buy(entry.id,2),/数量无效/);store.buy(entry.id,1);assert.equal(entry.sold,true);
 });
+
+test('a failed purchase or sale restores the bag and money without notifying',()=>{
+  const s=session(),store=open(s),id=offer(store,'healing-potion-s').id;
+  s.gainMoney(50);let updates=0;s.subscribe(()=>updates++);
+  const buyBefore=s.captureState(),spend=s.spendMoney;
+  s.spendMoney=()=>{throw new Error('注入失败');};
+  try{assert.throws(()=>store.buy(id,2),/注入失败/);}finally{s.spendMoney=spend;}
+  assert.deepEqual(s.captureState(),buyBefore,'买入失败后背包和金币回滚');
+  assert.equal(updates,0);
+
+  const entry=s.bag.entries.find(item=>item.item==='healing-potion-s')!;
+  const sellBefore=s.captureState(),gain=s.gainMoney;
+  s.gainMoney=()=>{throw new Error('注入失败');};
+  try{
+    assert.throws(()=>store.sell(entry.id,1),/注入失败/);
+    assert.throws(()=>store.sellMany([{id:entry.id,quantity:1}]),/注入失败/);
+  }finally{s.gainMoney=gain;}
+  assert.deepEqual(s.captureState(),sellBefore,'卖出失败后背包和金币回滚');
+  assert.equal(updates,0,'失败的事务不通知界面');
+});
