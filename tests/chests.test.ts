@@ -91,7 +91,8 @@ test('chest rare chance uses map level, caps hero level at the chest level, and 
 
 test('drop parser rejects missing chest profiles and invalid mimic references',()=>{
   const items=content('items.json'),ids=content('battle.json').enemies.map((enemy:{id:string})=>enemy.id);
-  assert.equal(parseDrops(drops,items,ids),drops);
+  const parsed=parseDrops(drops,items,ids);
+  assert.deepEqual(parsed.chests,drops.chests,'校验通过后宝箱规则原样保留');
   const invalid=structuredClone(drops);invalid.chests.ordinary.spawn!.enemyId='missing';
   assert.throws(()=>parseDrops(invalid,items,ids),/宝箱掉落规则/);
   assert.throws(()=>parseDrops({...drops,chests:{}},items,ids),/宝箱掉落规则/);

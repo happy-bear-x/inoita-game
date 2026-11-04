@@ -65,8 +65,9 @@ function setup(){
   return {scene,nodes,animations,textures,removed,character,actor,effects,advance};
 }
 
-test('Whist smoke attaches to moving feet at full opacity and survives the next action clear until its sixth frame',()=>{
+test('Whist smoke attaches to moving feet at full opacity and survives the next action clear until its sixth frame',async()=>{
   const f=setup(),effects=new CombatEffects(f.scene),visual=f.character('player'),caster=f.actor('player');
+  const lease=await loadSceneAssets(f.scene,effectAssets({'smoke-puff':catalog.attackEffects['smoke-puff']}),()=>{});
   const body=f.scene.add.sprite(0,0,'body');visual.layers.push(body);visual.container.add(body);
   visual.container.setPosition(24,40);
   setCharacterStealth(visual,true);assert.equal(body.alpha,0.5);
@@ -81,7 +82,7 @@ test('Whist smoke attaches to moving feet at full opacity and survives the next 
   presenter.clear();assert.equal(smoke.active,true);
   dispatchFrame(presenter,{caster,facing:'east',basicAttack:null,skill:{id:'whist',action:catalog.skills.whist.action!,level:1}},0);
   f.advance(5);assert.equal(smoke.active,true);f.advance(1);assert.equal(smoke.active,false);
-  assert.equal(visual.container.active,true);effects.clear();
+  assert.equal(visual.container.active,true);effects.clear();lease.release();
 });
 
 test('character-owned smoke retains loaded textures across action cancellation and releases them on natural completion or owner destruction',async()=>{
@@ -104,13 +105,14 @@ test('character-owned smoke retains loaded textures across action cancellation a
   }
 });
 
-test('character lifetime is specific to generated smoke and does not retain ordinary attached or in-flight action visuals',()=>{
+test('character lifetime is specific to generated smoke and does not retain ordinary attached or in-flight action visuals',async()=>{
   const f=setup(),effects=new CombatEffects(f.scene),visual=f.character('player'),caster=f.actor('player');
+  const lease=await loadSceneAssets(f.scene,effectAssets({'smoke-puff':catalog.attackEffects['smoke-puff']}),()=>{});
   const presenter=new CombatPresenter(f.scene,catalog,()=>visual,()=>[caster],effects);
   presenter.showEffects('player',[{effect:'smoke-puff',recipient:'caster',placement:'attached'},
     {effect:'life-drain',recipient:'caster',placement:'attached'}]);
   const smoke=f.effects('smoke-puff')[0],attached=f.effects('life-drain')[0];
   const flight=Reflect.get(CombatPresenter.prototype,'effect').call(presenter,'smoke-puff','default',{x:0,y:0},true) as Display;
   presenter.clear();assert.equal(smoke.active,true);assert.equal(attached.active,false);assert.equal(flight.active,false);
-  visual.container.destroy();assert.equal(smoke.active,false);effects.clear();
+  visual.container.destroy();assert.equal(smoke.active,false);effects.clear();lease.release();
 });

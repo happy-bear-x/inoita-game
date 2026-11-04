@@ -50,6 +50,7 @@ test('a successful hit stacks one layer on the holder itself, without a chance r
 function fixture(){
   const conditions=new CombatConditions(),order:string[]=[];
   const member=(rank:number)=>({classId:'warlock',player:{health:100,maxHealth:100,mana:0,maxMana:0},
+    bag:{equipmentFor:()=>({}),get:()=>undefined,equipmentItems:()=>({})},
     skills:{draft:()=>({levels:rank?{'blood-revenge':rank}:{}})}});
   const members=new Map([['first',member(1)],['second',member(8)],['idle',member(0)]]);
   const host=Object.setPrototypeOf({app:{battleCatalog:catalog,session:{skills:{draft:()=>({levels:{}})}}},
