@@ -420,6 +420,11 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
     }
 
     @Override
+    public void onUpdateCheckStart() {
+        reportUpdateEvent("update-check-start", "buildInfo", updateManager.buildInfoJson());
+    }
+
+    @Override
     public void onUpdateCheckResult(String result, String error) {
         reportUpdateEvent("update-check", "result", result == null ? "" : result,
                 "error", error == null ? "" : error, "buildInfo", updateManager.buildInfoJson());

@@ -40,6 +40,8 @@ final class UpdateManager {
     interface Listener {
         void onUpdateAvailable(String buildId, int fileCount, long downloadBytes);
 
+        void onUpdateCheckStart();
+
         void onUpdateCheckResult(String result, String error);
 
         void onDownloadProgress(int completed, int total);
@@ -289,6 +291,10 @@ final class UpdateManager {
         }
         if (!force && System.currentTimeMillis() - state.lastCheckAt() < CHECK_INTERVAL_MS) return;
         if (!checking.compareAndSet(false, true)) return;
+        postToMain(() -> {
+            Listener current = listener;
+            if (current != null) current.onUpdateCheckStart();
+        });
         worker.execute(this::runUpdateCheck);
     }
 
