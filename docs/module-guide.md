@@ -98,6 +98,8 @@ StoryDirector.project → WorldScene 把结果投影回正式地图
 
 内容校验不是“启动时的装饰”。它把许多运行时会变成“找不到人/黑屏/卡死”的问题提前到构建或启动阶段。
 
+生产环境不在每次启动时重跑这三层校验。构建会写一份很小的 `content-manifest.json`，记下编译后内容的版本和 `campaign.json`、`battle.json` 的必需顶层键；运行时只核对这份清单，版本或键对不上就明确报错并要求刷新/更新。开发服务、Node 测试、`?gm` 和 `?validate` 仍走完整校验，`npm run test:content-build` 则用真实内容编译后跑一场最小战斗和一个剧情节点，证明编译产物真的能运行。
+
 `public/content/debug/start.json` 是独立的调试任务目录。它记录每条任务“开演前世界是什么样”，由 `tools/debug-start` 生成；改过内容后要重新生成，否则现场表会过期。
 
 ## Session：游戏事实的总账本
