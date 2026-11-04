@@ -23,6 +23,10 @@ function fixture(){
   const host=Object.assign(Object.create(WorldCombat.prototype),{
     app:{battleCatalog:battle,items,session},hero,
     passivesCache:new Map(),skillTableCache:new Map(),equipmentRecoveryCache:new Map(),combatProcsCache:new Map(),
+    closed:false,
+    playerSkillSignature:'',playerSkillGate:'',allySkillSignatures:new Map(),allySkillGates:new Map(),
+    skillAssetFailures:new Map(),skillAssetRefreshRunning:false,skillAssetRefreshQueued:false,
+    scene:{player:{actor:{id:'hero'}},time:{now:0,delayedCall:()=>({remove(){}})}},
     memberOf:(id:string)=>id==='player'?hero:session.party?.get(id),
     skillConfiguration:(id:string,member:{skills:unknown})=>id==='player'?session.skills:member.skills,
     conditions:{hasState:()=>false},
@@ -45,4 +49,31 @@ test('party passives are reused until a real input changes',()=>{
   host.conditions.hasState=()=>true;
   invoke('partyPassives','player');
   assert.equal(session.skills.draftCalls,afterFirst+1,'潜行状态变化会失效一次');
+});
+
+test('skill asset refresh uses cheap gates and ignores health changes',async()=>{
+  const {host,invoke}=fixture();
+  const calls:unknown[][]=[];
+  const anyHost=host as any;
+  anyHost.refreshSkillAssets=(signature:string|undefined,gate:string,allies:unknown[])=>{
+    calls.push([signature,gate,allies]);return Promise.resolve();
+  };
+  const settle=()=>new Promise(resolve=>setImmediate(resolve));
+  const schedule=()=>invoke('scheduleSkillAssetRefresh');
+
+  schedule();await settle();
+  assert.equal(calls.length,1,'第一次发现签名变化时补载一次');
+
+  anyHost.playerSkillSignature=invoke('playerSkillSignatureNow');
+  anyHost.playerSkillGate=invoke('playerSkillGateNow');
+  schedule();await settle();
+  assert.equal(calls.length,1,'门控和签名都没变时不重复补载');
+
+  host.hero.setMana(1);host.hero.setHealth(host.hero.player.maxHealth-1);
+  schedule();await settle();
+  assert.equal(calls.length,1,'掉血回蓝不触发补载');
+
+  host.hero.bag.addEquipped('dagger','main-hand','player');
+  schedule();await settle();
+  assert.equal(calls.length,2,'换武器才补载');
 });
