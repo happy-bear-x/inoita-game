@@ -5,6 +5,10 @@ const TERRAIN_RADIUS = 4;
 const COLLISION_EPSILON = 1e-7;
 /** 没有首选落点时的同步兜底搜索预算；超过后交给调用方回退，避免整张图扫完。 */
 const PLACEMENT_SEARCH_BUDGET = 512;
+/** 占位广相的格子边长。和地图瓦片同尺寸；它只筛候选，相交仍由 `overlapsAt` 精确判定。 */
+const OCCUPANCY_CELL_SIZE = 16;
+/** 广相格子键的进位；地图坐标远小于这个范围，去掉字符串键的分配。 */
+const OCCUPANCY_CELL_STRIDE = 1 << 20;
 const TERRAIN_DIRECTIONS: readonly (readonly [number, number])[] = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 export interface NavigationShape { collision?: GameRectangle }
 /** 通行阵营：玩家、佣兵和友方召唤物同属 party，彼此不占位；敌人与中立 NPC 保持实体碰撞。 */
@@ -32,6 +36,8 @@ export function blocksActor(first: NavigationActor, second: NavigationActor): bo
 export interface NavigationQuerySnapshot {
   readonly bounds:GameRectangle;
   readonly start:Point;
+  /** 与地图共享的只读地形；整张地图生命周期内不变，查询不需要复制。 */
+  readonly terrain?:CollisionMap;
   canStand(point:Point):boolean;
   terrainFree(point:Point):boolean;
 }
@@ -64,6 +70,32 @@ function overlapsAt(shape: GameRectangle, point: Point, other: GameRectangle): b
   return x < other.x + other.width - COLLISION_EPSILON && x + shape.width > other.x + COLLISION_EPSILON &&
     y < other.y + other.height - COLLISION_EPSILON && y + shape.height > other.y + COLLISION_EPSILON;
 }
+function occupancyCellKey(column: number, row: number): number {
+  return column * OCCUPANCY_CELL_STRIDE + row;
+}
+/** 矩形覆盖到的广相格子都要登记；大碰撞盒跨多格时不能漏掉任何一格。 */
+function addOccupancy(cells: Map<number, GameRectangle[]>, box: GameRectangle): void {
+  const left = Math.floor(box.x / OCCUPANCY_CELL_SIZE), right = Math.floor((box.x + box.width) / OCCUPANCY_CELL_SIZE);
+  const top = Math.floor(box.y / OCCUPANCY_CELL_SIZE), bottom = Math.floor((box.y + box.height) / OCCUPANCY_CELL_SIZE);
+  for (let row = top; row <= bottom; row++) for (let column = left; column <= right; column++) {
+    const key = occupancyCellKey(column, row), bucket = cells.get(key);
+    if (bucket) bucket.push(box); else cells.set(key, [box]);
+  }
+}
+/**
+ * 查询矩形覆盖的广相格子必须全部检查。只查脚点所在的一格会漏掉伸进相邻格的碰撞盒，
+ * 尤其是 32/48 像素宽的 Boss；格子只减少候选，最终仍用 `overlapsAt` 做精确相交。
+ */
+function blockedInOccupancy(cells: Map<number, GameRectangle[]>, collision: GameRectangle, point: Point): boolean {
+  const x = point.x + collision.x, y = point.y + collision.y;
+  const left = Math.floor(x / OCCUPANCY_CELL_SIZE), right = Math.floor((x + collision.width) / OCCUPANCY_CELL_SIZE);
+  const top = Math.floor(y / OCCUPANCY_CELL_SIZE), bottom = Math.floor((y + collision.height) / OCCUPANCY_CELL_SIZE);
+  for (let row = top; row <= bottom; row++) for (let column = left; column <= right; column++) {
+    const bucket = cells.get(occupancyCellKey(column, row));
+    if (bucket) for (const other of bucket) if (overlapsAt(collision, point, other)) return true;
+  }
+  return false;
+}
 export function mirroredCollision(box: GameRectangle | undefined, flip = false): GameRectangle | undefined {
   return box && { ...box, x: flip ? -box.x - box.width : box.x };
 }
@@ -79,6 +111,8 @@ export class NavigationWorld {
   constructor(terrain: CollisionMap | { name: string; bounds: GameRectangle }) {
     this.name = terrain.name;
     this.terrain = 'tileSize' in terrain ? terrain : undefined;
+    // 地形在整张地图的生命周期内不变；冻结后寻路快照可以直接共享，不必每次搜索复制。
+    if (this.terrain) Object.freeze(this.terrain.blocked);
     this.bounds = 'bounds' in terrain ? { ...terrain.bounds } : { x: 0, y: 0, width: terrain.columns * terrain.tileSize, height: terrain.rows * terrain.tileSize };
     if (this.terrain?.water?.length) {
       // 内容用索引列表存水格，查询时只读这张同尺寸的位图。
@@ -108,17 +142,18 @@ export class NavigationWorld {
   captureStandability(actor:NavigationActor):NavigationQuerySnapshot {
     const bounds=Object.freeze({...this.bounds}),start=Object.freeze({...actor.position()});
     const source=actor.shape().collision,collision=source?{...source}:undefined;
-    const terrain=this.terrain?{...this.terrain,blocked:[...this.terrain.blocked]}:undefined;
-    const occupied:GameRectangle[]=[];
-    for(const other of this.actors){
-      if(other===actor||!other.enabled()||actor.ghost?.()||other.ghost?.()||!blocksActor(actor,other))continue;
+    // 地形整图只读，直接共享；占位按 16px 广相登记，查询只对格内候选做精确相交。
+    const terrain=this.terrain;
+    const occupied=new Map<number,GameRectangle[]>();
+    if(collision&&!actor.ghost?.())for(const other of this.actors){
+      if(other===actor||!other.enabled()||other.ghost?.()||!blocksActor(actor,other))continue;
       const box=collisionAt(other.shape(),other.position());
-      if(box)occupied.push(box);
+      if(box)addOccupancy(occupied,box);
     }
     const terrainFree=(point:Point)=>terrainFreeAt(bounds,terrain,point);
-    return {bounds,start,terrainFree,canStand(point){
+    return {bounds,start,terrain,terrainFree,canStand(point){
       // 与 `canStand()` 同口径：地形和地图边界对所有角色都生效；没有碰撞盒只表示不查人物占位。
-      return terrainFree(point)&&(!collision||!occupied.some(other=>overlapsAt(collision,point,other)));
+      return terrainFree(point)&&(!collision||!blockedInOccupancy(occupied,collision,point));
     }};
   }
   canPlace(shape: NavigationShape, point: Point, ignore?: NavigationActor, placements: readonly Placement[] = []): boolean {

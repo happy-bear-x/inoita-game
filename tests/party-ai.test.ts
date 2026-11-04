@@ -214,7 +214,7 @@ test('a follow search yields when the shared budget is exhausted and retries lat
 });
 test('a follow search resumes across frames instead of restarting from the beginning',()=>{
   const run=setup();
-  run.port.pathBudget={take:limit=>Math.min(2,limit)};
+  run.port.pathBudget={take:(_owner,limit)=>Math.min(2,limit)};
   run.ai.update(60);
   assert.equal(run.boundsCalls(),1,'第一帧只开一次搜索');
   assert.equal(run.waypoint(),undefined,'两格预算还算不完');

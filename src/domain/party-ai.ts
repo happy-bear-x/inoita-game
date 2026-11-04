@@ -21,7 +21,7 @@ export interface PartyPort extends CombatPort {
   damageCount(): number;
   navigationBounds(): GameRectangle;
   /** 每渲染帧共享的寻路扩展预算；缺省时按单次上限同步搜索（测试与无场景调用）。 */
-  pathBudget?:{take(limit:number):number};
+  pathBudget?:{take(owner:string,limit:number):number};
   followPath(next: () => Point | undefined): void;
   /** 跟随队长时长时间没有位移，让宿主把佣兵收拢到队长身边；无场景调用可省略。 */
   regroup?(): void;
@@ -308,7 +308,7 @@ export class PartyController {
       ||targetDistance(this.destination,followTarget)>=repathDistance
       ||!this.path.length||!this.nextWaypoint())){
       // 先领预算再建查询：没有预算的帧连地图边界都不该读。
-      const granted=this.port.pathBudget?.take(PARTY_SEARCH_CAP)??PARTY_SEARCH_CAP;
+      const granted=this.port.pathBudget?.take(this.id,PARTY_SEARCH_CAP)??PARTY_SEARCH_CAP;
       if(granted>0)this.beginSearch(actor,leader,range,granted,goal);
       else this.nextPathAt=this.clock+LOGIC_FRAME_MS;
     }
@@ -350,7 +350,7 @@ export class PartyController {
     this.stepSearch(actor,granted);
   }
   private advanceSearch(actor:Combatant):void {
-    const granted=this.port.pathBudget?.take(PARTY_SEARCH_CAP)??PARTY_SEARCH_CAP;
+    const granted=this.port.pathBudget?.take(this.id,PARTY_SEARCH_CAP)??PARTY_SEARCH_CAP;
     if(granted>0)this.stepSearch(actor,granted);
   }
   private stepSearch(actor:Combatant,granted:number):void {

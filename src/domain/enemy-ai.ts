@@ -20,7 +20,7 @@ export interface EnemyPort extends CombatPort {
   health?(id:string):{current:number;maximum:number}|undefined;
   navigationBounds(): GameRectangle;
   /** 每渲染帧共享的寻路扩展预算；缺省时按单次上限同步推进（测试与无场景调用）。 */
-  pathBudget?:{take(limit:number):number};
+  pathBudget?:{take(owner:string,limit:number):number};
   /** 冻结通行快照；有它时跨帧搜索读同一份地图。 */
   navigationSnapshot?():{bounds:GameRectangle;canStand(point:Point):boolean};
   threat?:{
@@ -334,7 +334,8 @@ export class EnemyController {
     const manaCost=skill?(this.port.manaCost?.(skill)??skill.manaCost):undefined;
     if(manaCost&&this.port.canSpendMana?.(manaCost)===false)return false;
     this.path=[];this.destination=undefined;this.search=undefined;if(!this.mapWide)this.nextPathAt=0;
-    const reachable=this.reachableNow(actor,target.position,target,range);
+    // 只有技能需要“够不够得着”的判定；普攻分支的结果没人使用，别为它跑一次同步搜索。
+    const reachable=skill?this.reachableNow(actor,target.position,target,range):true;
     this.path=[];this.destination=undefined;this.search=undefined;this.progressPosition=undefined;this.port.stop();
     // 技能动作需要走到位才算数：够不着就作废并回家。
     // 普通攻击够不着时仍留着目标（原地不动的 Boss 不该因为这一刻打不到就丢掉仇恨），
@@ -406,7 +407,7 @@ export class EnemyController {
     // 手上没有旧路线时多给一次预算，让第一次搜索尽量在一帧内出结果，免得原地干等；
     // 实际能拿多少仍由每帧共享预算封顶，不会让单个敌人独占。
     const requested=this.path.length?SEARCH_SLICE:HOLD_SEARCH_CAP;
-    const granted=this.port.pathBudget?.take(requested)??requested;
+    const granted=this.port.pathBudget?.take(this.id,requested)??requested;
     if(granted<=0)return;
     const result=search.task.step(granted);
     if(result.status==='pending')return;
@@ -460,7 +461,7 @@ export class EnemyController {
     else destination.y+=(facing==='north'?-1:1)*distance;
     const canStand=(point:Point)=>this.port.canStand(point);
     if(!canStand(destination))return;
-    const granted=this.port.pathBudget?.take(WANDER_SEARCH_CAP)??WANDER_SEARCH_CAP;
+    const granted=this.port.pathBudget?.take(this.id,WANDER_SEARCH_CAP)??WANDER_SEARCH_CAP;
     if(granted<=0)return;
     const result=createPathSearch(actor.position,{bounds:this.port.navigationBounds(),canStand,
       isGoal:point=>Math.hypot(point.x-destination.x,point.y-destination.y)<=PATH_GRID_SIZE&&canTraverse(point,destination,canStand),

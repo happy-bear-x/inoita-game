@@ -25,8 +25,11 @@ interface TestEnemy {
     combatController:{activeAction():ActiveCombatAction|undefined}};
 }
 
-function fixture(){
-  const terrain={name:'summon-recall',tileSize:16,columns:64,rows:64,blocked:Array<boolean>(4096).fill(false)};
+function fixture(walledColumn?:number){
+  const blocked=Array<boolean>(4096).fill(false);
+  // 地形在 NavigationWorld 构造时冻结，墙必须在建图前铺好。
+  if(walledColumn!==undefined)for(let row=0;row<64;row++)blocked[row*64+walledColumn]=true;
+  const terrain={name:'summon-recall',tileSize:16,columns:64,rows:64,blocked};
   const navigation=new NavigationWorld(terrain);
   const session={combatTick:0,party:{activeIds:['player','companion'],controlledId:'player'}};
   const positions=new Map<TestVisual,Point>(),bodies=new Map<TestVisual,NavigationActor>(),actors=new Map<string,Combatant>();
@@ -141,8 +144,7 @@ test('recall waits for runtime work, pause, story takeover and movement restrict
 });
 
 test('recall chooses a legal landing on the owners side of a wall without needing an origin route',()=>{
-  const f=fixture();f.setTime(6000);
-  for(let row=0;row<64;row++)f.terrain.blocked[row*64+34]=true;
+  const f=fixture(34);f.setTime(6000);
   Object.assign(f.positions.get(f.summon.visual)!,{x:800,y:512});
   const original=Object.freeze({...f.positions.get(f.summon.visual)!});
   assert.equal(f.recall(),true);
