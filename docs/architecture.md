@@ -15,9 +15,9 @@
 | 技能效果与命中反应 | `combat-unit-execution.ts`、`combat-effect-executor.ts`、`combat-hit-resolution.ts`、`combat-reaction-pipeline.ts`、`combat-follow-ups.ts` | `world-combat.ts` 的状态与画面接口、`battle.json` | `skill-unit-runtime`、`skill-reaction-runtime`、对应技能测试 |
 | 冷却、状态、持续效果与恢复 | `session.ts`、`combat-clock.ts`、`combat-cooldowns.ts`、`combat-conditions.ts`、`combat-periodic.ts`、`combat-resources.ts` | `world-combat.ts`、`status-hud.json` | `combat-clock-runtime`、`combat-cooldowns`、`combat-state-runtime`、`combat-resources-runtime` |
 | 怪物与伙伴 AI（自动行为） | `enemy-ai.ts`、`party-ai.ts`、`combat-threat*.ts`、`world-enemies.ts` | `world-combat.ts`、`content/maps/`、`companions.json` | `enemy-ai`、`party-ai`、`world-enemies`、`world-threat` |
-| 移动、碰撞、出口、落位 | `navigation-world.ts`、`pathfinding.ts`、`walk-route.ts`、`navigation.ts` | `rendering/movement-world.ts`、`arcade-movement.ts`、`movement-interpolation.ts`、`scenes/world-scene.ts` | `movement`、`movement-world`、`navigation-placement`、`map-placement`、`story-exit-gates` |
+| 移动、碰撞、出口、落位 | `navigation-world.ts`、`pathfinding.ts`、`path-budget.ts`、`walk-route.ts`、`navigation.ts` | `rendering/movement-world.ts`、`arcade-movement.ts`、`movement-interpolation.ts`、`scenes/world-scene.ts` | `movement`、`movement-world`、`navigation-placement`、`map-placement`、`story-exit-gates` |
 | 任务、剧情与永久世界 | `campaign.ts`、`quest-book.ts`、`story-runtime.ts`、`story-world.ts`、`story-director.ts` | `campaign.json`、`rendering/story-presenter.ts`、`scenes/story-stage-scene.ts` | `session-quest-core`、`story-runtime`、`story-director-core`、`story-stage-isolation` |
-| 背包、穿戴、人物成长 | `bag.ts`、`items.ts`、`character-stats.ts`、`attribute-allocation.ts`、`story-skills.ts` | `ui/story-ui.ts`、`rendering/wardrobe.ts`、`items.json`、`character-stats.json`、`wardrobe.json` | `bag`、`character-stats`、`wardrobe`、`story-skills` |
+| 背包、穿戴、人物成长 | `bag.ts`、`items.ts`、`character-stats.ts`、`attribute-allocation.ts`、`story-skills.ts` | `ui/story-ui.ts`、`rendering/wardrobe.ts`、`rendering/wardrobe-cache.ts`、`items.json`、`character-stats.json`、`wardrobe.json` | `bag`、`character-stats`、`wardrobe`、`story-skills` |
 | 掉落、宝箱、泉水、商店、融合 | `drops.ts`、`ground-loot.ts`、`chests.ts`、`springs.ts`、`shop.ts`、`crafting.ts` | `world-scene.ts`、`ui/phaser/shop-panel.ts`、`crafting-panel.ts`、对应内容目录 | `drops`、`chests`、`springs`、`shop`、`crafting` |
 | 快捷栏、状态栏、菜单和触控 | `shortcut-bar.ts`、`skill-configuration.ts`、`status-hud.ts`、`control-skin.ts` | `ui/phaser/`、`ui/story-ui.ts`、`rendering/hud.ts`、`ui/viewport.ts` | `shortcut-bar`、`status-hud`、`story-menu-interactions`、`viewport` |
 | 剧情调试导航与跳转 | `domain/story-debug.ts`、`debug/story-jump.ts`、`debug/gm-actions.ts` | `content/debug/start.json`（运行时挂到 `Campaign.debugStory`）、`ui/phaser/gm-panel.ts`；[调试说明](debugging.md) | `story-debug`、`story-debug-start`、`gm-actions`、`story-menu-interactions` |
@@ -34,7 +34,7 @@
 
 `Session` 是游戏会话的权威入口：它持有主角、队伍、背包、技能配置、任务、剧情游标、永久世界、金币、地面掉落、宝箱、泉水、商店、恢复药水时钟及共享战斗时钟和冷却。Phaser 场景负责把这些状态表现成地图、人物和界面。实时人物位置由 `MovementWorld` 的物理体持有；名单中的初始站位不是实时位置，捕获世界快照时才用物理坐标覆盖。
 
-`Session.transaction` 只合并状态通知，失败时不会自动回滚。招募、交易、加工等组合操作先完成条件与随机结果准备，再同步提交。剧情节点的 `applyStoryCommands` 有额外的隔离预演与完整状态恢复，成功时只通知一次。它的成本与这一批实际会碰的条目成正比：预演沙盒与真实任务簿共享同一份不可变状态根（`QuestBook.fork`），任务簿写入是换条目而不是改条目，批次回滚基线用 O(1) 检查点而不是整会话克隆（`captureBatchBaseline`）。测试助手逐步走位这类**只改位置**的推进走 `Session.movePlayer`——真实运行时玩家位置由物理体推进，本来就不经过剧情命令批次。
+`Session.batchNotifications` 只合并状态通知，失败时不会自动回滚；需要“要么全成、要么全退”的入口用 `Session.atomic`，它只对这次实际碰到的子系统拍快照，失败时恢复这些子系统并丢弃待发通知。剧情节点的 `applyStoryCommands` 直接改真实状态：按命令表判断会碰到哪些子系统，只给这些子系统拍回滚快照，执行后求值分支，返回 `StoryCommitReceipt`；不再有沙盒预演和整会话基线。任务刷新走增量索引，只更新引用变化条件键、进行中任务或依赖链上的条目，全量刷新只留给启动、读档/检查点恢复和调试。取消演出用按子系统的懒日志回滚，不再每节点复制整份会话。测试助手逐步走位这类**只改位置**的推进走 `Session.movePlayer`——真实运行时玩家位置由物理体推进，本来就不经过剧情命令批次。
 
 `Session.refresh` 按任务版本、背包版本、操控成员及任务条件实际引用值复用已提交的任务结果；恢复、回滚和替换世界条件提供者会重新采样。这份缓存只在内存中存在，实时世界值和独立剧情检查点仍参与输入比较。
 
@@ -101,13 +101,13 @@
 
 读档在独立会话上校验并准备静止战斗状态，再等待旧场景 shutdown 后安装。准备失败保留旧会话；取消或迟到结果不能安装。`prepareCombatRestore` 在隔离副本上检查有限数值、身份、内容、状态和仇恨引用，并清掉动作路径与临时属性。内存检查点只在本次运行内存在，持久槽位跨刷新保存；安全检查点要求可以操作且没有待处理战斗工作。
 
-正式 UI（用户界面）由 Phaser Image、Text、Container、Graphics 与 Layer 绘制；HTML/CSS 负责画布、设备安全区和系统键盘输入框（存档改名、云存档账号/密码、修改密码）。`formal-ui` 承担对白与菜单，`controls-ui` 承担地图 HUD（状态和操作界面）。菜单、确认层、快捷键登记屏按当前输入层处理触摸与键盘；滚动裁剪同时限制命中区，滚动手势后的抬手不触发条目动作，重绘清理失效焦点。物品使用与交易反馈沿角色横带及当前面板呈现。HUD 的数值与成员面板由会话通知驱动，场景只做调和：逐帧入口先把可见性、目标与敌我状态归一成摘要，摘要不变就不写文本、贴图、裁剪或可见性；buff 图标的闪烁相位按逻辑帧去重，同一逻辑帧内不重复计算。
+正式 UI（用户界面）由 Phaser Image、Text、Container、Graphics 与 Layer 绘制；HTML/CSS 负责画布、设备安全区和系统键盘输入框（存档改名、云存档账号/密码、修改密码）。`formal-ui` 承担对白与菜单，`controls-ui` 承担地图 HUD（状态和操作界面）。键盘和 Escape 只从场景桥接一次进 `application/input-router.ts`，按 `text-input > modal > menu > dialogue > world` 的作用域决定消费者；按钮点击、滚动和拖拽继续走 Phaser 输入。菜单页面重绘由 `ui/story-ui-signature.ts` 的显式签名决定（页面、选中成员、背包版本、任务簿版本、技能版本、存档摘要和设置等），签名不变就不重绘，不做对象深度哈希。菜单、确认层、快捷键登记屏按当前输入层处理触摸与键盘；滚动裁剪同时限制命中区，滚动手势后的抬手不触发条目动作，重绘清理失效焦点。物品使用与交易反馈沿角色横带及当前面板呈现。HUD 的数值与成员面板由会话通知驱动，场景只做调和：逐帧入口先把可见性、目标与敌我状态归一成摘要，摘要不变就不写文本、贴图、裁剪或可见性；buff 图标的闪烁相位按逻辑帧去重，同一逻辑帧内不重复计算。
 
 地图快捷栏按背包和 `SkillConfiguration.version` 缓存当前页与技能等级，切控、换页、配置对象变化和场景初始化也会使缓存失效。技能等级或页码的写入推进配置版本；物品数量、当前魔力消耗、使用条件和冷却继续实时读取。配置版本只用于运行时刷新，不写入存档。
 
 `ContentLoader` 使用 `content-validation.ts` 校验已加载的目录。`tools/validate-content.mjs` 额外检查完整目录、图片、音频及跨文件关系；同一入口也接在 Vite 开发服务（4003）的启动和内容变化上。剧情引用与每条分支的演员、音频、路线、并行冲突由专用校验器检查。`tools/build.mjs` 先校验 `public/`，构建到临时目录，对构建前后的 `public/assets` 与 `public/content` 做内容哈希并比对，再把 `.build-meta.json` 写进产物、校验构建结果并替换 `dist/`。输出使用相对 base 与 `bundles/`，部署在站点根路径；公共资源 URL 在加载边界追加内容版本，供静态服务长缓存。
 
-内容运行时：`tools/content-build.ts` 在构建期把 `public/content` 转成运行时内容目录——全部 JSON minify；`battle.json` 的 90 个技能把 `details` 编译成 `display` 模板 + 每级 `displayValues`，全部 236 个技能/敌人动作预计算 `requiresTarget/effectNames/soundNames/summonNames/eventFrames`；`shops.equipment` 拆到 `shops-equipment.json`，并省略与 `character-stats.gradeVariants` 重复的 `variants`；`wardrobe.poses` 按动作 ID 拆成 `content/wardrobe/poses/*.json`，运行时 `Wardrobe.prepare()` 只取当前武器/职业实际用到的十几条，`pose-index.json` 供 dev/GM 完整校验。`tools/build.mjs` 用它替换 `dist/content` 并计算 `contentVersion`。生产构建注入 `__STORY_TRUST_CONTENT__`，`ContentLoader` 只做 `JSON.parse`；开发服务、Node 测试、`?gm` 与 `?validate` 仍执行完整 `parseX` 和跨文件校验。构建期 `validateContent` 是唯一权威校验入口，运行时不再重复。
+内容运行时：`tools/content-build.ts` 在构建期把 `public/content` 转成运行时内容目录——全部 JSON minify；`battle.json` 的 90 个技能把 `details` 编译成 `display` 模板 + 每级 `displayValues`，全部 236 个技能/敌人动作预计算 `requiresTarget/effectNames/soundNames/summonNames/eventFrames`；`shops.equipment` 拆到 `shops-equipment.json`，并省略与 `character-stats.gradeVariants` 重复的 `variants`；`wardrobe.poses` 按动作 ID 拆成 `content/wardrobe/poses/*.json`，运行时 `Wardrobe.prepare()` 只取当前武器/职业实际用到的十几条，`pose-index.json` 供 dev/GM 完整校验。`tools/build.mjs` 用它替换 `dist/content` 并计算 `contentVersion`，同时在 `dist/content-manifest.json` 写生产内容哨兵（内容版本与 `campaign.json`/`battle.json` 的必需顶层键，放在 `content/` 外，不参与内容哈希）。生产构建注入 `__STORY_TRUST_CONTENT__` 和页面内容版本；`ContentLoader` 的信任路径只读这份清单，核对版本和本次文件的必需顶层键，不重算整份内容哈希，不匹配就明确失败并提示刷新/更新；开发服务、Node 测试、`?gm` 与 `?validate` 仍执行完整 `parseX` 和跨文件校验。构建期 `validateContent` 是唯一权威校验入口，运行时不再重复。
 
 菜单图片同样分两批：`gameMenuImageGroups()` 把菜单框架、职业预览和立绘放在 `core`，323 个物品图标与 90 个技能图标放进 `extra`。开局前只等 `core`，`extra` 在世界加载期间后台补；补完后 `StoryUI.refreshMenuAssets()` 重画已打开的菜单。素材校验把 `core` 与 `extra` 合起来作为完整清单。
 

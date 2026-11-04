@@ -1,11 +1,11 @@
 # tests
 
-单元测试与独立构建验收。414 个平铺的 `*.test.ts` 覆盖剧情、战斗、任务、地图、存档和界面规则；`standalone.mjs` 负责独立安装与构建验收。
+单元测试与独立构建验收。436 个平铺的 `*.test.ts` 覆盖剧情、战斗、任务、地图、存档和界面规则；`standalone.mjs` 负责独立安装与构建验收，`content-build-smoke.mjs` 用真实内容做编译后的行为烟雾测试。
 
 ## 文件
 
-- `tests/*.test.ts` 全部平铺在根目录，按模块前缀命名：`story-*` 65 个最多，其次 `combat-*`、`quest-*`、`world-*`、`skill-*`、`action-*`。找用例先按前缀匹配，例如 `tests/combat-*.test.ts`、`tests/story-*.test.ts`。
-- `standalone.mjs`：独立安装、类型检查和构建验收，对应 `npm run test:standalone`。
+- `tests/*.test.ts` 全部平铺在根目录，按模块前缀命名：`story-*` 68 个最多，其次 `combat-*`、`quest-*`、`world-*`、`skill-*`、`action-*`。找用例先按前缀匹配，例如 `tests/combat-*.test.ts`、`tests/story-*.test.ts`。
+- `standalone.mjs`：独立安装、类型检查和构建验收，对应 `npm run test:standalone`；`content-build-smoke.mjs` 对应 `npm run test:content-build`，只验证编译后的真实内容能跑，不重复语义校验。
 - `helpers/`、`support/`、`fixtures/`：测试驱动、替身和固定数据，不是测试入口。
 
 ## 规则

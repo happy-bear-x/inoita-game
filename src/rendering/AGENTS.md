@@ -7,11 +7,14 @@
 - 角色/移动：`characters.ts`、`arcade-movement.ts`、`movement-world.ts`、`movement-interpolation.ts`、`character-visibility.ts`、`name-banner.ts`、`control-skin.ts`。
 - 地图/资源：`map-layers.ts`、`map-assets.ts`、`prop-atlas.ts`、`scene-assets.ts`、`story-map-view.ts`、`story-minimap.ts`。
 - 战斗表现：`combat-presenter.ts`、`combat-effects.ts`、`combat-feedback.ts`、`combat-outcomes.ts`、`combat-assets.ts`、`combat-asset-descriptors.ts`、`resident-combat-assets.ts`、`combat-visual-coverage.ts`、`buff-loop-renderer.ts`、`state-markers.ts`、`status-color.ts`、`status-hud.ts`、`overhead-status.ts`。
-- 剧情/HUD/其他：`story-presenter.ts`、`hud.ts`、`action-controls.ts`、`ground-loot.ts`、`pickup-messages.ts`、`wardrobe.ts`、`effects.ts`、`effect-animations.ts`、`effect-colors.ts`、`blend-modes.ts`、`webgl-recovery.ts`。
+- 剧情/HUD/其他：`story-presenter.ts`、`hud.ts`、`action-controls.ts`、`ground-loot.ts`、`pickup-messages.ts`、`wardrobe.ts`、`wardrobe-cache.ts`、`effects.ts`、`effect-animations.ts`、`effect-colors.ts`、`blend-modes.ts`、`webgl-recovery.ts`。
 
 ## 规则
 
 - 本目录只读取 `domain` 状态并绘制，规则变化和存档写入留在 `domain` 与 `application`。
+- **常驻战斗包按当前进度收窄。** `residentCombatAssets` 运行时只装当前主角职业、已拥有伙伴的外观和已学技能；未拥有伙伴和未学技能按需加载。构建期省略这些集合表示“覆盖全量”，用于 `combat-visual-coverage` 校验。新增常驻内容时保持这个收窄口径。
+- **衣柜预览只合成 `idle-south`。** 队伍面板选中成员时只准备预览需要的姿势，上阵/进战斗再补全套；伙伴外观走 `wardrobe-cache.ts` 的全局 LRU（上限 8 套），切换成员不会无上限堆积。
+- **剧情舞台快照共享演员外观引用。** `story-presenter` 只复制演员外壳，外观对象按引用共享；开发/测试模式冻结外观，任何原地改外观都会立刻报错。不要为了“保险”恢复逐角色深拷贝。
 - 动画名用游戏概念：`walk-east`、`idle-south`，不拼接帧号或方向偏移。
 - 沿用现有纹理、depth、filter 的组织方式；Phaser 4 写法以 `.agents/skills/` 和 4.2.1 文档为准。
 - 性能敏感的改动先用 `?perf` 在 4002/APK 上量基线，再决定是否新增对象或逐帧逻辑。

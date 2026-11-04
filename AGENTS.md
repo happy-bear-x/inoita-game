@@ -49,6 +49,7 @@ npm test -- tests/example.test.ts
 
 - TypeScript 改动需要类型检查；没有相关用例时运行 `npm run typecheck`。
 - 内容、内容校验器或素材引用有变化时运行 `npm run validate:content`。
+- 内容构建链路（`tools/content-build.ts`、`tools/content-manifest.ts`、`tools/build.mjs`）有变化时运行 `npm run test:content-build`，它会用真实内容编译到临时目录并跑一场最小战斗和一个剧情节点。
 - 相关检查通过后继续完成任务；只有新改动、新失败或尚未解决的疑点才扩大测试。
 - 全量单元测试只在用户明确要求时使用 `npm run test:all`；独立安装与构建验收用 `npm run test:standalone`。测试写法见 `tests/AGENTS.md`。
 
