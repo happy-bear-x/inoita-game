@@ -38,9 +38,8 @@ import { controlViewport } from './phaser/control-layout-viewport.ts';
 import { UiSurface, uiImageFor, type ScrollArea } from './phaser/widgets.ts';
 import { drawDescriptionClose, drawDescriptionPanel, drawDescriptionRows, drawDescriptionSeparator, drawDescriptionTitle } from './phaser/description-panel.ts';
 import { drawNativeMessage } from './phaser/native-message.ts';
-import { AUTO_SAVE_SLOT, MANUAL_SAVE_SLOT_COUNT, captureSaveGame, saveSlotLabel, saveSummary, sessionClassId, type SaveGame, type SaveSlotRef } from '../domain/save-game.ts';
-import { SAVE_BOARD, SAVE_BOARD_LAYOUT, drawSaveBoardRow, newestFirstSlots, saveBoardOrigin, saveRowTitle, type SaveBoardRow } from './phaser/save-board.ts';
-import { TextPrompt } from './text-prompt.ts';
+import type { SaveGame } from '../domain/save-game.ts';
+import { SavePage } from './save-page.ts';
 import type { SaveWorldReason, StoryWorldViewSnapshot } from '../scenes/world-scene.ts';
 import { drawPopupPanel } from './phaser/popup-panel.ts';
 import { SkillBookPanel } from './phaser/skill-book-panel.ts';
@@ -71,14 +70,6 @@ const SKILL_LEVEL_ASSETS=['skill-level-none','skill-level-normal','skill-level-h
 const COUNTERATTACK_LABELS=['未启用','延迟','启用'];
 /** 登记快捷键那一屏顶部的提示，原版取文本表第 35462 条。 */
 const SHORTCUT_PROMPT='请选择要设置的快捷键。';
-/** 存档结果与「不能存取」的提示文本，原版取文本表 35331／35332／35342 条。 */
-const SAVE_DONE='保存成功',SAVE_FAILED='保存失败',SAVE_UNAVAILABLE='在当前的地图中无法进行存档。';
-const SAVE_UNAVAILABLE_DEBUG='调试现场不能存档，请先在调试面板点「结束本次调试」。';
-const SAVE_UNAVAILABLE_LOADING='地图正在载入，请稍后再存档。';
-const SAVE_UNAVAILABLE_NO_SURVIVORS='队伍已经全员阵亡，无法存档。';
-const saveUnavailableNotice=(reason:SaveWorldReason):string=>reason==='debug'?SAVE_UNAVAILABLE_DEBUG
-  :reason==='loading'?SAVE_UNAVAILABLE_LOADING
-  :reason==='no-survivors'?SAVE_UNAVAILABLE_NO_SURVIVORS:SAVE_UNAVAILABLE;
 /** 菜单内容块的固定原点；说明层与内容块共用同一坐标。 */
 const CONTENT_ORIGIN={x:32,y:172} as const;
 /** 这些使用方式走独立操作面板，不出现在背包的「使用」菜单里。 */
@@ -116,14 +107,8 @@ export class StoryUI {
   private modalActive=false;
   private readonly placeModal=(width:number,height:number):void=>this.beginModal(width,height);
   private skill?:string;private skillSection:'directory'|'ai'|'settings'='directory';private skillReset=false;private adjusting=false;
-  /** 覆盖已有存档的确认：停在哪个槽上。保存本身不可逆，所以先问一次。 */
-  private saveConfirm?:SaveSlotRef;
-  private loadConfirm?:SaveSlotRef;
-  /** 删除存档的确认；删除不可撤销，所以走原版是／否横带。 */
-  private deleteConfirm?:SaveSlotRef;
-  /** 改名输入框打开时停在哪个槽上；开着的时候整个菜单不吃输入。 */
-  private renameRef?:SaveSlotRef;
-  private prompt?:TextPrompt;
+  /** 存档/读档页：确认框、改名输入和读档请求都由它自己持有。 */
+  private savePage!:SavePage;
   private allocation?:AttributeAllocation;private allocationExit?:()=>void;private allocationError='';
   /** 能力加点按钮的长按连发；每次重画都会换按钮，所以只记指针和这一步要加的属性。 */
   private allocationHold?:Phaser.Time.TimerEvent;
@@ -152,8 +137,23 @@ export class StoryUI {
     this.scene=scene;this.surface=new UiSurface(scene,1024,640,100);this.body=new UiSurface(scene,960,431,200);this.surface.root.add(this.body.root);this.body.root.setPosition(CONTENT_ORIGIN.x,CONTENT_ORIGIN.y);
     // 交易弹层的画布按原版数量框的 450×350 建立，确认框在其中垂直居中。
     this.modal=new UiSurface(scene,450,350,400);this.modal.root.setPosition(287,145);
-    // 改名用系统键盘：DOM 输入框盖在画布上，菜单这一层在它打开时整体让出输入。
-    this.prompt=new TextPrompt();
+    // 存档页自己管确认框、改名输入和读档请求；菜单只提供重绘、弹层和滚动区位置。
+    this.savePage=new SavePage({
+      app:this.app,
+      session:()=>this.session,
+      world:()=>this.world,
+      contentAssets:()=>this.content?.assets??{},
+      render:()=>this.render(),
+      sync:()=>this.sync(),
+      busy:()=>this.busy,
+      setBusy:value=>{this.busy=value;},
+      activeRequest:()=>this.request,
+      setItemNotice:message=>{this.itemNotice=message;},
+      modal:()=>this.modal!,
+      beginModal:(width,height)=>this.beginModal(width,height),
+      scroll:(name,x,y,width,height,surface)=>this.scroll(name,x,y,width,height,surface),
+      finishScroll:(name,scroll,height)=>this.finishScroll(name,scroll,height)
+    });
     // 说明面板单独一层，深度高于内容块的滚动层（`ScrollArea` 的 Layer 取父画布深度 +1）。
     // 停在右栏时它压在背包格子上，画在内容块里会被那一层整个盖住，底色和边框都看不见。
     // 它不挂在 surface 下面，所以位置与缩放要跟着 surface 自己同步（见 `layout`）。
@@ -163,9 +163,9 @@ export class StoryUI {
     this.shortcutScreen.enabled=()=>this.open&&!this.app.ui.suspended&&!this.busy&&!!this.shortcutEdit;
     this.backTab.enabled=()=>this.shortcutScreen!.enabled();
     this.hudButtons=new UiSurface(scene,960,640,50);this.backdrop=scene.add.rectangle(0,0,1,1,0x000000,.65).setOrigin(0).setDepth(99).setInteractive();
-    this.surface.enabled=()=>this.open&&!this.app.ui.suspended&&!this.busy&&!this.app.ui.controlLayoutEditing&&!this.app.ui.keyBindingEditing&&!this.shortcutEdit&&!this.operation&&!this.itemNotice&&!this.allocationExit&&!this.skillReset&&this.saveConfirm===undefined&&this.loadConfirm===undefined&&this.deleteConfirm===undefined&&this.renameRef===undefined&&!this.craftingPanel?.modalOpen&&!this.shopPanel?.modalOpen&&!this.partyPanel?.modalOpen&&!this.forge?.confirming;
+    this.surface.enabled=()=>this.open&&!this.app.ui.suspended&&!this.busy&&!this.app.ui.controlLayoutEditing&&!this.app.ui.keyBindingEditing&&!this.shortcutEdit&&!this.operation&&!this.itemNotice&&!this.allocationExit&&!this.skillReset&&!this.savePage.blocksPage&&!this.craftingPanel?.modalOpen&&!this.shopPanel?.modalOpen&&!this.partyPanel?.modalOpen&&!this.forge?.confirming;
     this.body.enabled=()=>this.surface!.enabled();this.description.enabled=()=>this.body!.enabled();
-    this.modal.enabled=()=>this.open&&!this.app.ui.suspended&&!this.busy&&(!!this.operation||!!this.itemNotice||!!this.allocationExit||this.skillReset||this.saveConfirm!==undefined||this.loadConfirm!==undefined||this.deleteConfirm!==undefined||!!this.craftingPanel?.modalOpen||!!this.shopPanel?.modalOpen||!!this.partyPanel?.modalOpen||!!this.forge?.confirming);
+    this.modal.enabled=()=>this.open&&!this.app.ui.suspended&&!this.busy&&(!!this.operation||!!this.itemNotice||!!this.allocationExit||this.skillReset||this.savePage.modalOpen||!!this.craftingPanel?.modalOpen||!!this.shopPanel?.modalOpen||!!this.partyPanel?.modalOpen||!!this.forge?.confirming);
     this.hudButtons.enabled=()=>this.app.ui.mode==='game'&&this.app.ui.ready&&!this.app.ui.locked&&!this.app.ui.suspended;
     scene.scale.on('resize',this.resize,this);
     // 菜单只注册一个 menu 作用域；打开时独占键盘，关闭时把未消费的按键让给剧情和世界。
@@ -177,7 +177,7 @@ export class StoryUI {
     this.unsubscribeFullscreen=onFullscreenChange(()=>{if(this.open&&this.page==='settings')this.render();});
     scene.input.on('pointermove',this.moveDrag,this);scene.input.on('pointerup',this.endDrag,this);scene.input.on('pointerupoutside',this.cancelDrag,this);
     scene.game.events.on(UI_EVENTS.minimapLayout,this.onMinimap,this);scene.game.events.on(UI_EVENTS.cancelInput,this.cancelDrag,this);
-    scene.events.once('shutdown',()=>{this.unregisterKeyboard?.();this.unregisterKeyboard=undefined;this.unsubscribe?.();this.unsubscribeFullscreen?.();this.discardAllocation();scene.scale.off('resize',this.resize,this);scene.game.events.off(UI_EVENTS.minimapLayout,this.onMinimap,this);scene.game.events.off(UI_EVENTS.cancelInput,this.cancelDrag,this);this.cancelOperation();this.prompt?.close();this.surface!.root.remove(this.body!.root);this.surface?.destroy();this.body?.destroy();this.modal?.destroy();this.hudButtons?.destroy();this.description?.destroy();this.shortcutScreen?.destroy();this.backTab?.destroy();this.backdrop?.destroy();this.controlEditor?.destroy();this.controlEditor=undefined;this.keyBindingEditor?.destroy();this.keyBindingEditor=undefined;});
+    scene.events.once('shutdown',()=>{this.unregisterKeyboard?.();this.unregisterKeyboard=undefined;this.unsubscribe?.();this.unsubscribeFullscreen?.();this.discardAllocation();scene.scale.off('resize',this.resize,this);scene.game.events.off(UI_EVENTS.minimapLayout,this.onMinimap,this);scene.game.events.off(UI_EVENTS.cancelInput,this.cancelDrag,this);this.cancelOperation();this.savePage.destroy();this.surface!.root.remove(this.body!.root);this.surface?.destroy();this.body?.destroy();this.modal?.destroy();this.hudButtons?.destroy();this.description?.destroy();this.shortcutScreen?.destroy();this.backTab?.destroy();this.backdrop?.destroy();this.controlEditor?.destroy();this.controlEditor=undefined;this.keyBindingEditor?.destroy();this.keyBindingEditor=undefined;});
     this.sync();
   }
   bind(session:Session,world:WorldIndex,content:StoryInterface):void{
@@ -195,7 +195,7 @@ export class StoryUI {
     });this.sync();
   }
   sync():void{
-    if(this.app.ui.suspended){this.cancelDrag();if(this.renameRef!==undefined){this.prompt?.close();this.renameRef=undefined;}}
+    if(this.app.ui.suspended){this.cancelDrag();this.savePage?.closeInput();}
     const active=this.app.ui.mode==='game'&&this.app.ui.ready&&!!this.session;
     if(!active&&this.open&&!(this.busy&&this.app.ui.mode==='game'&&this.session)){this.discardAllocation();this.close();}
     if(this.app.ui.mode!=='game')this.hudButtons?.clear();
@@ -204,7 +204,7 @@ export class StoryUI {
     // 登记快捷键时菜单本体整块让位，只留背后的遮罩与这一屏自己，画面里那层游戏背景就露出来了。
     const menu=this.open&&!this.app.ui.suspended&&!this.shortcutEdit&&!this.app.ui.controlLayoutEditing&&!this.app.ui.keyBindingEditing;
     this.surface?.visible(menu);this.body?.visible(menu);this.description?.visible(menu&&!this.forge);
-    const modal=menu&&(!!this.operation||!!this.itemNotice||!!this.allocationExit||this.skillReset||this.saveConfirm!==undefined||this.loadConfirm!==undefined||this.deleteConfirm!==undefined||!!this.craftingPanel?.modalOpen||!!this.shopPanel?.modalOpen||!!this.partyPanel?.modalOpen||!!this.forge?.confirming);
+    const modal=menu&&(!!this.operation||!!this.itemNotice||!!this.allocationExit||this.skillReset||this.savePage?.modalOpen||!!this.craftingPanel?.modalOpen||!!this.shopPanel?.modalOpen||!!this.partyPanel?.modalOpen||!!this.forge?.confirming);
     if(modal&&!this.modalActive)this.app.ui.resetInput();
     this.modalActive=modal;this.modal?.visible(modal);
     this.shortcutScreen?.visible(this.open&&!this.app.ui.suspended&&!!this.shortcutEdit);this.backTab?.visible(this.open&&!this.app.ui.suspended&&!!this.shortcutEdit);
@@ -298,7 +298,7 @@ export class StoryUI {
     this.keyBindingEditor?.close();this.app.ui.setKeyBindingEditing(false);this.cancelOperation();this.modalActive=false;this.shortcutEdit=undefined;this.shortcutScreen?.clear();this.backTab?.clear();this.shopPanel=undefined;this.bagPortrait?.destroy();this.bagPortrait=undefined;this.partyPanel?.destroyPreview();this.craftingPanel=undefined;this.craftingActor=undefined;this.forge=undefined;this.skillBook=undefined;this.open=false;this.scrollNames.forEach((scroll,name)=>this.scrollOffsets.set(`${this.page}:${name}`,scroll.scrollTop));this.scrollNames.clear();this.body?.clear();this.description?.clear();if(this.surface&&this.body){this.surface.root.remove(this.body.root);this.surface.clear();this.surface.root.add(this.body.root);}this.keyboardFocus=undefined;this.surface?.visible(false);this.body?.visible(false);this.description?.visible(false);this.modal?.visible(false);this.shortcutScreen?.visible(false);this.backTab?.visible(false);this.backdrop?.setVisible(false);this.app.ui.resetInput();this.app.ui.lock(false,'story-menu');
     if(this.loadReturnToDefeat){this.loadReturnToDefeat=false;if(this.app.ui.defeated)this.app.ui.revealDefeat();}
   }
-  private cancelOperation():void{this.cancelDrag();this.request.abort();this.request=new AbortController();this.busy=false;this.operation=undefined;this.itemNotice=undefined;this.skillReset=false;this.saveConfirm=undefined;this.loadConfirm=undefined;this.deleteConfirm=undefined;this.renameRef=undefined;this.prompt?.close();this.partyPanel?.close();this.craftingPanel?.close();this.forge=undefined;this.skillBook=undefined;this.modal?.clear();this.modal?.visible(false);}
+  private cancelOperation():void{this.cancelDrag();this.request.abort();this.request=new AbortController();this.busy=false;this.operation=undefined;this.itemNotice=undefined;this.skillReset=false;this.savePage?.cancelPending();this.partyPanel?.close();this.craftingPanel?.close();this.forge=undefined;this.skillBook=undefined;this.modal?.clear();this.modal?.visible(false);}
   /** 返回是否消费这次按键；菜单关闭时把未消费的按键让给剧情层和世界。 */
   private key=(event:KeyboardEvent):boolean=>{
     if(this.app.ui.suspended)return false;
@@ -313,15 +313,13 @@ export class StoryUI {
       return false;
     }
     // 改名输入框开着时键盘归系统输入法：Enter/Escape 由输入框自己处理。
-    if(this.renameRef!==undefined)return true;
+    if(this.savePage.renaming)return true;
     if(this.app.ui.controlLayoutEditing){if(event.key==='Escape'){event.preventDefault();this.closeControlEditor();}else this.controlEditor?.key(event);return true;}
     if(event.key==='Escape'&&this.itemNotice){event.preventDefault();this.itemNotice=undefined;this.render();return true;}
-    if(event.key==='Escape'&&this.deleteConfirm!==undefined){event.preventDefault();this.deleteConfirm=undefined;this.render();return true;}
-    if(event.key==='Escape'&&this.loadConfirm!==undefined){event.preventDefault();this.loadConfirm=undefined;this.render();return true;}
-    if(event.key==='Escape'&&this.saveConfirm!==undefined){event.preventDefault();this.saveConfirm=undefined;this.render();return true;}
+    if(this.savePage.handleEscape(event))return true;
     if(event.key==='Escape'&&this.allocationExit){event.preventDefault();this.finishAllocation(false);return true;}
     if(event.key==='Escape'){event.preventDefault();if(this.busy){this.close();return true;}if(this.page==='forge'){if(this.forge?.confirming)this.forge.cancelConfirmation();else this.closeForge();return true;}if(this.page==='learn'){this.closeSkillBook();return true;}if(this.shortcutEdit){this.closeShortcutScreen();return true;}if(this.skillReset){this.skillReset=false;this.render();}else if(this.craftingPanel?.modalOpen){this.craftingPanel.cancel();}else if(this.shopPanel?.active){this.shopPanel.cancel();}else if(this.partyPanel?.modalOpen){this.partyPanel.cancel();}else if(this.operation){this.operation=undefined;this.render();}else if(this.page==='bag'&&this.selectedItem){this.selectedItem=undefined;this.render();}else this.close();return true;}
-    const surfaces=this.operation||this.itemNotice||this.allocationExit||this.skillReset||this.saveConfirm!==undefined||this.loadConfirm!==undefined||this.deleteConfirm!==undefined||this.craftingPanel?.modalOpen||this.shopPanel?.modalOpen||this.partyPanel?.modalOpen||this.forge?.confirming
+    const surfaces=this.operation||this.itemNotice||this.allocationExit||this.skillReset||this.savePage.modalOpen||this.craftingPanel?.modalOpen||this.shopPanel?.modalOpen||this.partyPanel?.modalOpen||this.forge?.confirming
       ?[this.modal!]:this.shortcutEdit?[this.shortcutScreen!,this.backTab!]:[this.surface!,this.body!,this.description!];
     const buttons=surfaces.flatMap(surface=>surface.focusables());
     if(this.keyboardFocus&&!buttons.includes(this.keyboardFocus))this.keyboardFocus=undefined;
@@ -499,14 +497,12 @@ export class StoryUI {
       }
       this.gmPanel?.render(this.body!);
     }
-    if(this.page==='save'||this.page==='load')this.renderSaveSlots();
+    if(this.page==='save'||this.page==='load')this.savePage.render(this.surface!,this.page==='load');
     if(this.page==='settings')this.renderSettings();
     if(this.notice)this.surface.text(this.notice,512,614,880,18).setOrigin(.5,0);
     if(this.operation)this.renderOperation();if(this.allocationExit)this.renderAllocationConfirmation();if(this.skillReset)this.renderSkillResetConfirmation();
     if(this.itemNotice){this.beginModal(1024,640);drawNativeMessage(this.modal!,this.app.menuPanels.assets,this.itemNotice,()=>{this.itemNotice=undefined;this.render();});}
-    if(this.loadConfirm!==undefined){const slot=this.loadConfirm;this.beginModal(1024,640);drawNativeMessage(this.modal!,this.app.menuPanels.assets,'读取存档将丢失当前未保存的进度，确定读取？',()=>{this.loadConfirm=undefined;void this.loadFromSlot(slot);},()=>{this.loadConfirm=undefined;this.render();});}
-    if(this.saveConfirm!==undefined){const slot=this.saveConfirm;this.beginModal(1024,640);drawNativeMessage(this.modal!,this.app.menuPanels.assets,'这个存档槽里已经有存档，确定覆盖？',()=>{this.saveConfirm=undefined;this.saveToSlot(slot);},()=>{this.saveConfirm=undefined;this.render();});}
-    if(this.deleteConfirm!==undefined){const slot=this.deleteConfirm;this.beginModal(1024,640);drawNativeMessage(this.modal!,this.app.menuPanels.assets,'删除后无法恢复，确定删除这个存档？',()=>this.deleteSlot(slot),()=>{this.deleteConfirm=undefined;this.render();});}
+    this.savePage.renderConfirmations();
     this.sync();
   }
   private openControlEditor():void {
@@ -587,120 +583,10 @@ export class StoryUI {
     }
     this.finishScroll('settings',scroll,rowTop+80);
   }
-  /**
-   * 存档槽：原版 `Scene_Init_POPUP_SC_SAVESLOT @0x1eae4c` 的面板 668×530 居中、三行 634×150、
-   * 行距 166，行框是 668×184 的原版图（版面和几何在 `ui/phaser/save-board.ts`）。
-   * 面板不画底图，界面的样子全来自三张行框图，和原版一致。标题页开局与游戏内读档共用同一份版面。
-   */
-  private renderSaveSlots():void{
-    const v=this.surface!;
-    const loading=this.page==='load';v.text(loading?'读取存档':'存档槽',512,16,0,28).setOrigin(.5,0);
-    const assets={frame:this.content!.assets['save-slot'],empty:this.content!.assets['save-empty']};
-    const origin=saveBoardOrigin(v.width);
-    // 自动存档固定一行置顶：读档页可读，存档页只展示；永远没有改名与删除。
-    drawSaveBoardRow(v,assets,origin,SAVE_BOARD_LAYOUT.autoTop,this.saveRow(AUTO_SAVE_SLOT,loading));
-    // 十个手动槽放进滚动区；按写入时间倒序，最新的排最前，空槽排在后面。
-    const scroll=this.scroll('slots',origin.x,SAVE_BOARD_LAYOUT.listTop,SAVE_BOARD.panelWidth,SAVE_BOARD_LAYOUT.listHeight,v);
-    newestFirstSlots(slot=>this.app.saves.peek(slot)).forEach((slot,index)=>
-      drawSaveBoardRow(v,assets,{x:0,y:0},index*SAVE_BOARD.rowStep,this.saveRow(slot,loading),scroll.content));
-    this.finishScroll('slots',scroll,(MANUAL_SAVE_SLOT_COUNT-1)*SAVE_BOARD.rowStep+SAVE_BOARD.frameHeight);
-  }
-  /** 一行存档的读数、动作与行内控件；自动槽在存档页没有动作。 */
-  private saveRow(ref:SaveSlotRef,loading:boolean):SaveBoardRow{
-    const reading=this.app.saves.peek(ref),title=saveRowTitle(ref,reading),auto=ref===AUTO_SAVE_SLOT;
-    const action=loading
-      ? reading.kind==='ok'&&this.app.resumeSlot?()=>this.requestLoad(ref):undefined
-      : auto?undefined:()=>this.requestSave(ref);
-    // 行内控件用固定的槽位名（改名后仍叫「存档槽 N 删除」），行本身的标题才用自定义名字。
-    const slotLabel=saveSlotLabel(ref);
-    const controls = !auto&&reading.kind==='ok' ? [
-      {text:'改名',label:`${slotLabel} 改名`,action:()=>this.renameSlot(ref)},
-      {text:'删除',label:`${slotLabel} 删除`,action:()=>this.requestDelete(ref)},
-    ] : !auto&&reading.kind==='unreadable' ? [
-      {text:'删除',label:`${slotLabel} 删除`,action:()=>this.requestDelete(ref)},
-    ] : undefined;
-    return {reading,action,label:title,title,auto,...(controls?{controls}:{})};
-  }
-  private requestLoad(ref:SaveSlotRef):void {
-    if(this.busy||this.app.saves.peek(ref).kind!=='ok')return;
-    this.loadConfirm=ref;this.render();
-  }
-  private async loadFromSlot(ref:SaveSlotRef):Promise<void> {
-    const load=this.app.resumeSlot;if(!load||this.busy)return;
-    const request=this.request,session=this.session;this.busy=true;this.render();this.sync();
-    try{await load(ref,request.signal);}
-    catch(error){if(!request.signal.aborted&&this.request===request&&this.session===session){this.itemNotice=error instanceof Error?error.message:String(error);}}
-    finally{if(!request.signal.aborted&&this.request===request&&this.session===session){this.busy=false;this.render();this.sync();}}
-  }
-  /** 点一个手动槽：空槽直接存，已有存档先问一次再覆盖（原版对不可逆操作用是／否确认）。 */
-  private requestSave(ref:SaveSlotRef):void{
-    if(ref===AUTO_SAVE_SLOT)return;
-    if(this.app.saves.peek(ref).kind==='empty'){this.saveToSlot(ref);return;}
-    this.saveConfirm=ref;this.render();
-  }
-  private saveToSlot(ref:SaveSlotRef):void{
-    if(ref===AUTO_SAVE_SLOT)return;
-    const captured=this.captureSaveRecord();
-    if(!captured.ok){this.itemNotice=saveUnavailableNotice(captured.reason);this.render();return;}
-    try{
-      this.app.saves.write(ref,captured.record);
-      this.app.saveSlot=ref;
-      this.app.audio?.ui('select');this.itemNotice=SAVE_DONE;
-    }catch(error){
-      console.warn('存档写入失败',error);this.itemNotice=SAVE_FAILED;
-    }
-    this.render();
-  }
-  /** 删除手动存档；删掉的正是当前槽时清空 `saveSlot`。 */
-  private requestDelete(ref:SaveSlotRef):void{
-    if(ref===AUTO_SAVE_SLOT)return;
-    if(this.app.saves.peek(ref).kind==='empty')return;
-    this.deleteConfirm=ref;this.render();
-  }
-  private deleteSlot(ref:SaveSlotRef):void{
-    try{
-      this.app.saves.erase(ref);
-      if(this.app.saveSlot===ref)this.app.saveSlot=undefined;
-      this.app.audio?.ui('select');
-    }catch(error){
-      console.warn('删除存档失败',error);this.itemNotice=SAVE_FAILED;
-    }
-    this.deleteConfirm=undefined;this.render();
-  }
-  /** 改名：手机系统键盘输入，只收中文、英文、数字；确认后只改摘要里的名字。 */
-  private renameSlot(ref:SaveSlotRef):void{
-    if(ref===AUTO_SAVE_SLOT)return;
-    const reading=this.app.saves.peek(ref);
-    if(reading.kind!=='ok')return;
-    const apply=(value:string|undefined):void=>{
-      if(value!==undefined){
-        try{this.app.saves.rename(ref,value);}
-        catch(error){console.warn('存档改名失败',error);}
-      }
-      this.renameRef=undefined;this.render();this.sync();
-    };
-    // 测试没有 DOM 输入框，直接注入一个返回值。
-    if(this.app.promptText){void this.app.promptText(reading.summary.name??'').then(apply);return;}
-    this.renameRef=ref;this.render();this.sync();
-    this.prompt?.show({title:'存档名称',initial:reading.summary.name??'',
-      onConfirm:value=>apply(value),onCancel:()=>apply(undefined)});
-    // 没有 DOM（测试或极端环境）时输入框起不来，别让菜单一直处于「让出输入」状态。
-    if(!this.prompt?.active){this.renameRef=undefined;this.render();this.sync();}
-  }
   /** 摘要与快照的唯一捕获口：手动保存与自动存档共用。 */
   captureSaveRecord():{ok:true;record:SaveGame<StoryWorldViewSnapshot>}|{ok:false;reason:SaveWorldReason}{
-    if(!this.session)return {ok:false,reason:'not-ready'};
-    const capture=this.app.captureSaveWorld?.();
-    if(!capture||!capture.ok)return {ok:false,reason:capture?.reason??'not-ready'};
-    return {ok:true,record:captureSaveGame(this.session,capture.world,this.saveSummaryOf(capture.map))};
+    return this.savePage.captureSaveRecord();
   }
-  /** 摘要里的职业名与立绘在存档时就展开，标题页读档不必再加载职业目录。 */
-  private saveSummaryOf(map:{id:string;name:string}){
-    const classId=sessionClassId(this.session!) ?? '';
-    return saveSummary(this.session!,map,{name:this.app.storyClasses.classes.find(value=>value.id===classId)?.name??classId,portrait:this.playerPortrait().image});
-  }
-  /** 主角的立绘：存档槽里画的是他，与菜单当前选中的队员无关。 */
-  private playerPortrait(){const actor=this.world!.actors[this.session!.campaign.start.actor],portraits=this.app.menuPanels.character.portraits;return portraits[actor.portrait??'kiyan']??portraits.kiyan;}
   private renderStatus():void{
     const v=this.body!,member=this.member()!,actor=this.actor(),panels=this.app.menuPanels,character=this.app.storyClasses.classes.find(value=>value.id===member.classId)!,art=this.memberArt();
     const hero=this.selectedMemberId==='player'?this.session!.hero:undefined,panel=member.panel;
