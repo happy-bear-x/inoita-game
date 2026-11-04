@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { KeyBindingPreferences } from '../src/application/key-bindings.ts';
+import { InputRouter } from '../src/application/input-router.ts';
 import { KeyboardActions } from '../src/ui/phaser/keyboard-actions.ts';
 import type Phaser from 'phaser';
 
@@ -95,4 +96,21 @@ test('destroy 后不再触发', () => {
   assert.equal(f.live(), false);
   f.press(key('Digit1'));
   assert.deepEqual(f.calls, []);
+});
+
+test('接入 router 时从 world 作用域分发，注销后不再触发', () => {
+  const router = new InputRouter({ textInputFocused: () => false });
+  const calls: string[] = [];
+  const scene = { input: { keyboard: { on() {}, off() {} } } } as unknown as Phaser.Scene;
+  const actions = new KeyboardActions(scene, new KeyBindingPreferences(null), {
+    skill: slot => calls.push(`skill ${slot}`),
+    cycle: () => calls.push('cycle'),
+    previousMember: () => calls.push('previous'),
+    nextMember: () => calls.push('next')
+  }, router);
+  assert.equal(router.dispatch(key('Digit2') as unknown as KeyboardEvent), true);
+  assert.deepEqual(calls, ['skill 2']);
+  assert.equal(router.dispatch(key('KeyM') as unknown as KeyboardEvent), false, '未绑定的键不消费');
+  actions.destroy();
+  assert.equal(router.dispatch(key('Digit2') as unknown as KeyboardEvent), false, '注销后 world 作用域不再响应');
 });
