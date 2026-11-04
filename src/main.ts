@@ -397,7 +397,7 @@ function installSession(session: Session): void {
   app.checkpoint.clear();
   app.changeEquipment=async(entry,slot,signal,memberId)=>requireWorldScene().changeEquipment(entry,slot,signal,memberId);
   app.equipmentAppearance=memberId=>worldScene()?.equipmentAppearance(memberId);
-  app.preparePartyMember=async(id,signal)=>{const scene=worldScene();if(scene)await scene.preparePartyMember(id,signal);};
+  app.preparePartyMember=async(id,signal,options)=>{const scene=worldScene();if(scene)await scene.preparePartyMember(id,signal,options);};
   app.revivePartyMember=(id,item)=>requireWorldScene().revivePartyMember(id,item);
   ui.playerActor = campaign.start.actor;
   app.storyUI.bind(session, app.world, presentation);

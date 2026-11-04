@@ -19,9 +19,18 @@ export interface ResidentCombatInput {
   companions: CompanionCatalog;
   /**
    * 省略 = 全部职业（构建期全量校验）；运行时只传当前主角职业。
-   * 伙伴外观始终全量，保留菜单实时预览。
    */
   classIds?: Iterable<string>;
+  /**
+   * 已拥有的伙伴外观定义 id。省略 = 全部伙伴（构建期全量校验）；
+   * 运行时只传当前队伍已拥有的伙伴，未拥有的成员按需加载。
+   */
+  ownedCompanionIds?: Iterable<string>;
+  /**
+   * 已学技能 id（主角与已拥有伙伴的并集）。省略 = 全部技能（构建期全量校验）；
+   * 运行时只装已学技能的动画特效与召唤物。
+   */
+  learnedSkillIds?: Iterable<string>;
 }
 
 /** 会话常驻的战斗视觉资源：一次加载，切图与战斗结束都不释放。 */
@@ -33,8 +42,9 @@ export interface CombatAssetPack {
 }
 
 /**
- * 玩家侧全部战斗视觉资源。职业、佣兵、武器、技能、技能姿态、召唤物和共享表现
+ * 玩家侧战斗视觉资源。当前职业、已拥有佣兵、已学技能、技能姿态、召唤物和共享表现
  * 都与具体地图无关，因此和佣兵素材一样在首次进入世界时加载并常驻。
+ * 运行时用 `classIds` / `ownedCompanionIds` / `learnedSkillIds` 收窄；构建期省略时覆盖全量。
  *
  * 敌人素材随地图预取，不在这里。两边的纹理键必须唯一；同一键指向不同帧配置时
  * 直接报错，避免运行时静默用错帧数。
@@ -58,14 +68,15 @@ export function residentCombatAssets(input: ResidentCombatInput): CombatAssetPac
     for (const name of Object.keys(effects)) effectNames.add(name);
     addAssets(effectAssets(effects));
   };
+  const learnedSkills = input.learnedSkillIds === undefined ? undefined : new Set(input.learnedSkillIds);
   const addClass = (classId: string): void => {
     const character = battle.classes.find(value => value.id === classId);
     if (!character) return;
     actorIds.add(character.actor.id);
     addAssets(characterAssets(character.actor));
     const attack = resolveBasicAttack(battle, { actor: character.actor, basicAttack: character.basicAttack });
-    addEffects(classEffects(battle, character, attack, wardrobe));
-    for (const id of classSummonEnemyIds(battle, classId)) {
+    addEffects(classEffects(battle, character, attack, wardrobe, learnedSkills));
+    for (const id of classSummonEnemyIds(battle, classId, learnedSkills)) {
       const definition = battle.enemies.find(enemy => enemy.id === id);
       if (!definition) throw new Error(`召唤物定义缺失：${id}`);
       addAssets(enemyCombatAssets(battle, definition));
@@ -87,8 +98,12 @@ export function residentCombatAssets(input: ResidentCombatInput): CombatAssetPac
     if (!battle.classes.some(character => character.id === id)) throw new Error(`常驻战斗包职业不存在：${id}`);
   for (const character of battle.classes)
     if (!selectedClasses || selectedClasses.has(character.id)) addClass(character.id);
-  // 佣兵的基础外观必须在入队前就绪；职业特效与召唤物已由上面的职业循环覆盖。
-  for (const definition of Object.values(companions.definitions)) {
+  // 佣兵的基础外观只装已拥有的成员；招募后由队伍面板和战斗开场按需加载。
+  const selectedCompanions = input.ownedCompanionIds === undefined ? undefined : new Set(input.ownedCompanionIds);
+  if (selectedCompanions) for (const id of selectedCompanions)
+    if (!companions.definitions[id]) throw new Error(`常驻战斗包伙伴不存在：${id}`);
+  for (const [id, definition] of Object.entries(companions.definitions)) {
+    if (selectedCompanions && !selectedCompanions.has(id)) continue;
     const actor = world.actors[definition.actor];
     if (!actor) continue;
     actorIds.add(actor.id);

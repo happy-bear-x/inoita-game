@@ -6,13 +6,14 @@ import type { ActorDefinition } from '../src/domain/content.ts';
 import type { ItemCatalog } from '../src/domain/items.ts';
 import type { WardrobeCatalog } from '../src/domain/wardrobe.ts';
 import { Wardrobe } from '../src/rendering/wardrobe.ts';
+import { acquireCompanionWardrobe, COMPANION_WARDROBE_LIMIT } from '../src/rendering/wardrobe-cache.ts';
 
 class PreviewImage {
   src='preview';
   decode():Promise<void>{return Promise.resolve();}
 }
 
-function setup(t:test.TestContext){
+function setup(t:test.TestContext,extraPoses=false){
   const original=Object.getOwnPropertyDescriptor(globalThis,'HTMLImageElement');
   Object.defineProperty(globalThis,'HTMLImageElement',{value:PreviewImage,configurable:true});
   t.after(()=>{
@@ -30,11 +31,13 @@ function setup(t:test.TestContext){
     exists:(key:string)=>textures.has(key),remove:(key:string)=>textures.delete(key)
   }} as unknown as Phaser.Scene;
   const catalog:WardrobeCatalog={textures:[],sprites:{},defaults:{},variants:{},equipment:{},
-    stances:{'unarmed:empty':{'idle-south':'idle'}},skills:{},skillStances:{},attacks:{},
-    poses:{idle:{frames:[[]],frameRate:10,mirrorX:false}}};
+    stances:{'unarmed:empty':extraPoses?{'idle-south':'idle','attack-north':'attack'}:{'idle-south':'idle'}},skills:{},skillStances:{},attacks:{},
+    poses:{idle:{frames:[[]],frameRate:10,mirrorX:false},...(extraPoses?{attack:{frames:[[]],frameRate:10,mirrorX:false}}:{})}};
   const wardrobe=new Wardrobe(scene,catalog,{items:{}} as ItemCatalog);
   const actor={id:'hero',clips:{}} as ActorDefinition;
-  return {wardrobe,textures,events,renderer,ops,snapshots,prepare:()=>wardrobe.prepare(actor,{},'hero'),finish:(index:number)=>snapshots[index](new PreviewImage())};
+  return {wardrobe,textures,events,renderer,ops,snapshots,
+    prepare:(options?:{clipNames?:Iterable<string>})=>wardrobe.prepare(actor,{},'hero',options),
+    finish:(index:number)=>snapshots[index](new PreviewImage())};
 }
 
 test('concurrent outfit requests share their generated textures and release all of them',async t=>{
@@ -91,4 +94,37 @@ test('explicit outfit disposal cancels pending texture work and removes its scen
   assert.equal(run.textures.size,0);
   run.finish(0);assert.equal(run.textures.size,0);
   run.wardrobe.destroy();await assert.rejects(run.prepare(),{name:'AbortError'});
+});
+
+test('preview preparation composes only the requested clip',async t=>{
+  const run=setup(t,true),pending=run.prepare({clipNames:['idle-south']});
+  assert.equal(run.snapshots.length,1,'单动作预览只生成自己的快照');
+  run.finish(0);
+  const preview=await pending;
+  assert.deepEqual(Object.keys(preview.actor.clips),['idle-south'],'预览外观只合成 idle-south');
+  assert.equal(run.textures.size,1);
+  const fullPending=run.prepare();
+  run.finish(1);
+  const full=await fullPending;
+  assert.deepEqual(Object.keys(full.actor.clips).sort(),['attack-north','idle-south'],'缺省仍合成整套动作');
+  assert.equal(run.textures.size,3);
+  assert.notEqual(await run.prepare({clipNames:['idle-south']}),full,'单动作与整套外观分开缓存');
+});
+
+test('companion wardrobe cache keeps a global LRU bound and protects in-use members',()=>{
+  const cache=new Map<string,{id:string;destroy():void}>(),destroyed:string[]=[],protectedIds=new Set<string>();
+  const acquire=(id:string)=>acquireCompanionWardrobe(cache,id,()=>({id,destroy(){destroyed.push(id);}}),
+    {keep:value=>protectedIds.has(value)});
+  for(let index=0;index<COMPANION_WARDROBE_LIMIT;index++)acquire(`member-${index}`);
+  assert.equal(cache.size,COMPANION_WARDROBE_LIMIT);
+  acquire('member-0');
+  acquire('member-extra');
+  assert.equal(cache.size,COMPANION_WARDROBE_LIMIT,'超过上限后仍保持上限');
+  assert.equal(cache.has('member-0'),true,'刚用过的成员保留');
+  assert.equal(cache.has('member-1'),false,'最久未使用的成员被淘汰');
+  protectedIds.add('member-2');
+  acquire('member-extra-2');
+  assert.equal(cache.has('member-2'),true,'正在使用的成员不淘汰');
+  assert.equal(cache.has('member-3'),false,'跳过受保护成员后淘汰下一个最久未使用的');
+  assert.deepEqual(destroyed,['member-1','member-3']);
 });

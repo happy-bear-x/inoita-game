@@ -7,8 +7,8 @@ import { skillForGrowth, type BattleCatalog } from '../domain/battle.ts';
 import type { ActorDefinition, WorldIndex } from '../domain/content.ts';
 import type { CompanionCatalog } from '../domain/party.ts';
 import type { WardrobeCatalog } from '../domain/wardrobe.ts';
-import { basicAttackEffects, stateMarkerEffects } from './combat-asset-descriptors.ts';
-import { classSummonEnemyIds, enemyCombatAssets } from './combat-assets.ts';
+import { basicAttackEffects, characterAssets, stateMarkerEffects } from './combat-asset-descriptors.ts';
+import { classSummonEnemyIds, enemyCombatAssets, partyMemberCombatAssets } from './combat-assets.ts';
 import { residentCombatAssets, type ResidentCombatInput } from './resident-combat-assets.ts';
 import { EFFECT_ATLAS_BY_FILE, EFFECT_ATLAS_PAGES } from '../generated/effect-atlas.ts';
 
@@ -28,6 +28,8 @@ export interface CoverageGaps {
   actorLayers: string[];
   /** 内容里根本不存在的特效定义。 */
   definitions: string[];
+  /** 可招募佣兵无法通过按需路径加载外观。 */
+  companions: string[];
 }
 
 /**
@@ -41,6 +43,7 @@ export function residentCombatCoverageGaps(input: CoverageInput): CoverageGaps {
   const actorLayerKeys = new Set(pack.assets.filter(asset => asset.kind === 'spritesheet').map(asset => asset.key));
   const classIds = input.classIds === undefined ? undefined : new Set(input.classIds);
   const classes = classIds ? battle.classes.filter(character => classIds.has(character.id)) : battle.classes;
+  const learnedSkills = input.learnedSkillIds === undefined ? undefined : new Set(input.learnedSkillIds);
   const effects = new Set<string>();
   const definitions = new Set<string>();
 
@@ -53,6 +56,7 @@ export function residentCombatCoverageGaps(input: CoverageInput): CoverageGaps {
 
   for (const character of classes) {
     for (const id of character.skills) {
+      if (learnedSkills && !learnedSkills.has(id)) continue;
       const skill = battle.skills[id];
       for (const profile of [skill, ...(skill.companion ? [skillForGrowth(skill, 'companion')] : [])]) {
         for (const name of skillReactionEffects(profile)) effects.add(name);
@@ -61,7 +65,10 @@ export function residentCombatCoverageGaps(input: CoverageInput): CoverageGaps {
       }
     }
     for (const stance of Object.values(wardrobe.skillStances?.[character.id] ?? {}))
-      for (const action of Object.values(stance.actions ?? {})) if (action) addAction(action);
+      for (const [skillId, action] of Object.entries(stance.actions ?? {})) {
+        if (learnedSkills && !learnedSkills.has(skillId)) continue;
+        if (action) addAction(action);
+      }
   }
   for (const profile of Object.values(wardrobe.attacks)) addAttack(profile);
   for (const profile of Object.values(wardrobe.dualWieldAttacks ?? {})) addAttack(profile);
@@ -93,14 +100,28 @@ export function residentCombatCoverageGaps(input: CoverageInput): CoverageGaps {
         if (layer.file && !actorLayerKeys.has(layer.key)) missingActorLayers.push(layer.key);
   };
   // 职业 actor 不在 world.actors 里，必须直接检查 battle.classes[].actor；
-  // 伙伴外观仍从 world.actors 取。
+  // 伙伴外观只核对已拥有的成员，未拥有的走按需路径。
   for (const character of classes) addActorLayers(character.actor);
-  for (const definition of Object.values(companions.definitions)) {
+  const ownedCompanions = input.ownedCompanionIds === undefined ? undefined : new Set(input.ownedCompanionIds);
+  for (const [id, definition] of Object.entries(companions.definitions)) {
+    if (ownedCompanions && !ownedCompanions.has(id)) continue;
     const actor = world.actors[definition.actor];
     if (actor) addActorLayers(actor);
   }
+  // 未拥有的佣兵不进常驻包，但招募后必须能只靠按需路径装好外观。
+  const unusableCompanions: string[] = [];
+  for (const definition of Object.values(companions.definitions)) {
+    if ((definition.source ?? 'mercenary') !== 'mercenary' || definition.recruitable === false) continue;
+    const actor = world.actors[definition.actor];
+    const expected = actor ? characterAssets(actor) : [];
+    if (!actor || !expected.length) { unusableCompanions.push(definition.id); continue; }
+    try {
+      const loaded = new Set(partyMemberCombatAssets(battle, wardrobe, definition.classId, actor).map(asset => asset.key));
+      if (expected.some(asset => !loaded.has(asset.key))) unusableCompanions.push(definition.id);
+    } catch { unusableCompanions.push(definition.id); }
+  }
   // 职业召唤物是另一个独立资源闭包，不能只靠职业 actor 覆盖。
-  for (const character of classes) for (const id of classSummonEnemyIds(battle, character.id)) {
+  for (const character of classes) for (const id of classSummonEnemyIds(battle, character.id, learnedSkills)) {
     const definition = battle.enemies.find(enemy => enemy.id === id);
     if (!definition) { definitions.add(`summon:${id}`); continue; }
     for (const asset of enemyCombatAssets(battle, definition)) {
@@ -114,6 +135,7 @@ export function residentCombatCoverageGaps(input: CoverageInput): CoverageGaps {
     effects: [...effects].filter(name => !pack.effectNames.has(name)),
     layers: [...new Set(missingLayers)],
     actorLayers: [...new Set(missingActorLayers)],
-    definitions: [...definitions]
+    definitions: [...definitions],
+    companions: [...new Set(unusableCompanions)]
   };
 }

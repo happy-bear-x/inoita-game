@@ -1,4 +1,5 @@
 import type { EntityPlacement, WorldMap } from '../domain/content.ts';
+import { learnedSkillIds } from '../domain/skill-configuration.ts';
 import { localStoryScripts, storyReachableScripts } from '../domain/story-entry.ts';
 import { residentCombatAssets } from '../rendering/resident-combat-assets.ts';
 import { planMapCombat, planMapVisuals, potentialMapEnemyIds, sharedEntryAssets, storyPresentationAssets, type MapVisualPlan, type WorldAssetInputs } from '../rendering/map-assets.ts';
@@ -12,7 +13,7 @@ export interface MapEntryPlan {
 }
 
 /**
- * 进图计划只保证落脚图可玩，首次进入世界时额外并入一次全部佣兵候选素材。
+ * 进图计划只保证落脚图可玩，首次进入世界时额外并入当前队伍已拥有的佣兵外观。
  * 后续剧情地图不在这里读取或预取，换图时由目标图自己的入口加载。
  */
 export interface EntryPlan {
@@ -63,6 +64,21 @@ export function entryPlanAssets(plan: EntryPlan): PendingAsset[] {
   return [...plan.shared, ...plan.current.assets, ...(plan.residentCombat ?? [])];
 }
 
+/**
+ * 常驻包只装主角和已拥有伙伴真正学会的技能。
+ * 没有主角技能配置时返回 undefined，保持构建期/测试的全量口径。
+ */
+function residentLearnedSkills(inputs: WorldAssetInputs): Set<string> | undefined {
+  if (!inputs.heroSkills) return undefined;
+  const learned = new Set<string>();
+  for (const id of learnedSkillIds(inputs.battle, inputs.hero.classId, inputs.heroSkills)) learned.add(id);
+  for (const member of inputs.party?.snapshot().members ?? []) {
+    if (!inputs.companions.definitions[member.definitionId]) continue;
+    for (const [id, level] of Object.entries(member.skillLevels)) if (level > 0) learned.add(id);
+  }
+  return learned;
+}
+
 export function buildEntryPlan(input: EntryPlanInput): EntryPlan {
   const { campaign } = input.inputs;
   const localEnemies = potentialMapEnemyIds(input.currentMap, input.inputs, { scripts: [] });
@@ -86,7 +102,9 @@ export function buildEntryPlan(input: EntryPlanInput): EntryPlan {
       residentCombat: residentCombatAssets({
         battle: input.inputs.battle, wardrobe: input.inputs.wardrobe,
         world: input.inputs.world, companions: input.inputs.companions,
-        classIds: [input.inputs.hero.classId]
+        classIds: [input.inputs.hero.classId],
+        ownedCompanionIds: input.inputs.party?.ownedDefinitionIds() ?? [],
+        learnedSkillIds: residentLearnedSkills(input.inputs)
       }).assets
     } : {}),
     portraits: presentation.portraits,
