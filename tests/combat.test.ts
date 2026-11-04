@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import {registerHooks} from 'node:module';
 import {CombatController,resolveCueTargets} from '../src/domain/combat.ts';
 import type {ActionPlayback,CombatPort,Combatant,AttackContact} from '../src/domain/combat.ts';
-import {parseBattle,parseWorld} from '../src/application/content-validation.ts';
+import {parseBattle,parseCampaign,parseWorld} from '../src/application/content-validation.ts';
+import {Session} from '../src/domain/session.ts';
 import {AssetPool} from '../src/application/assets.ts';
 import {ControlState} from '../src/application/control-state.ts';
 import {resolveBasicAttack,basicAttackStrikesAtFrame} from '../src/domain/basic-attack.ts';
@@ -11,6 +13,12 @@ import {actionCues} from '../src/domain/skill-action.ts';
 import {CombatConditions} from '../src/domain/combat-conditions.ts';
 import {CombatCooldownStore} from '../src/domain/combat-cooldowns.ts';
 const catalog=parseBattle(JSON.parse(fs.readFileSync(new URL('../public/content/battle.json',import.meta.url),'utf8')));
+const campaign=parseCampaign(JSON.parse(fs.readFileSync(new URL('../public/content/campaign.json',import.meta.url),'utf8')));
+const phaser=registerHooks({resolve(specifier,context,next){
+  return specifier==='phaser'?{url:'data:text/javascript,export default {BlendModes:{NORMAL:0,ADD:1,MULTIPLY:2,SCREEN:3},Scene:class{},Physics:{Arcade:{Body:class{}}}}',shortCircuit:true}:next(specifier,context);
+}});
+const {WorldCombat}=await import('../src/scenes/world-combat.ts');
+phaser.deregister();
 const caster:Combatant={id:'player',team:'party',position:{x:350,y:192},bounds:{x:-8,y:-8,width:16,height:16}};
 const enemy:Combatant={...caster,id:'enemy',team:'hostile',position:{x:384,y:192}};
 function setup(){
@@ -537,4 +545,53 @@ test('an unreachable charge rejects without consuming mana, cooldown or playback
   assert.equal(run.combat.request(skill,target.id),'no-target');
   assert.equal(spent,0);assert.deepEqual(run.combat.snapshot().cooldowns,{});
   assert.equal(run.plays.length,0);assert.equal(run.combat.snapshot().state,'idle');
+});
+
+function mapEnemy(key:string,summonedBy?:string){
+  return {key,summonedBy,definition:{},visual:{container:{destroy:()=>{}}},body:{},facing:'south' as const,
+    presenter:{clear:()=>{}},controller:{dispose:()=>{},targetRemoved:()=>{}}};
+}
+function summonHost(session:Session,arena:ReturnType<typeof mapEnemy>[],groups:[string,string[]][]){
+  return Object.setPrototypeOf({
+    pendingDefeats:{has:()=>false,complete:()=>{}},
+    arena,app:{session},conditions:{remove:()=>{}},movement:{remove:()=>{}},roster:{removeEnemy:()=>{}},
+    summonGroups:new Map(groups.map(([owner,keys])=>[owner,new Set(keys)])),partyControllers:new Map(),
+    scene:{refreshCombatTarget:()=>{}},
+  },WorldCombat.prototype);
+}
+const combatMethod=(name:string)=>Reflect.get(WorldCombat.prototype,name) as (this:object,...args:unknown[])=>unknown;
+
+test('removing or replacing a summon discards its own session enemy state',()=>{
+  const session=new Session(campaign);
+  const first=mapEnemy('enemy-1','player'),second=mapEnemy('enemy-2','player'),other=mapEnemy('enemy-3','ally');
+  const host=summonHost(session,[first,second,other],[['player',['enemy-1','enemy-2']],['ally',['enemy-3']]]);
+  session.setEnemyVitals('enemy-1',40,7);session.setEnemyVitals('enemy-2',20,1);session.setEnemyVitals('enemy-3',10,0);
+  const factory=Reflect.get(WorldCombat.prototype,'summonFactory').call(host) as {begin:(owner:string)=>void};
+  factory.begin('player');
+  assert.deepEqual(session.enemyVitals('enemy-1'),{});
+  assert.deepEqual(session.enemyVitals('enemy-2'),{});
+  assert.equal(session.enemyVitals('enemy-3').health,10,'其他主人的召唤还在场，状态保留');
+  assert.deepEqual(host.arena.map((enemy:ReturnType<typeof mapEnemy>)=>enemy.key),['enemy-3']);
+});
+
+test('summon removal clears only its own state while a normal enemy death stays recorded',()=>{
+  const session=new Session(campaign);
+  const summon=mapEnemy('enemy-1','player'),normal=mapEnemy('wolf');
+  const host=summonHost(session,[summon,normal],[]);
+  session.setEnemyVitals('enemy-1',40,7);
+  session.enemyDefeated({id:'wolf',enemyId:'wolf',x:0,y:0,respawn:false});
+  assert.equal(session.enemyVitals('enemy-1').health,40);
+  assert.equal(session.enemyVitals('wolf').deadUntil,'permanent');
+  combatMethod('removeEnemy').call(host,'enemy-1');
+  assert.deepEqual(session.enemyVitals('enemy-1'),{});
+  combatMethod('removeEnemy').call(host,'wolf');
+  assert.equal(session.enemyVitals('wolf').deadUntil,'permanent','普通敌人的永久死亡状态必须保留');
+});
+
+test('checkpoint restore keeps summon state for the instance it is about to rebuild',()=>{
+  const session=new Session(campaign);
+  const host=summonHost(session,[mapEnemy('enemy-1','player')],[]);
+  session.setEnemyVitals('enemy-1',40,7);
+  combatMethod('clearEnemies').call(host,true,true);
+  assert.equal(session.enemyVitals('enemy-1').health,40);
 });

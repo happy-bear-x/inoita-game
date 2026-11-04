@@ -13,13 +13,13 @@ export interface GameRectangle {
   height: number;
 }
 
-/** 地图的地形通行网格。 */
+/** 地图的地形通行网格。`blocked` 在地图生命周期内只读，`NavigationWorld` 构造时冻结它。 */
 export interface CollisionMap {
   name: string;
   tileSize: number;
   columns: number;
   rows: number;
-  blocked: boolean[];
+  blocked: readonly boolean[];
   /** 水格索引（row * columns + col）；脚点落在水格时移动速度减半。 */
   water?: readonly number[];
 }

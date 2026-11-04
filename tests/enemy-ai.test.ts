@@ -62,6 +62,17 @@ test('immobilized or ambushing enemies can strike in range but cannot chase',()=
  }
 });
 
+test('an immobile basic attacker out of range does not run an unused reachability search',()=>{
+  const run=setup({canMove:false});
+  run.player.position={x:120,y:32};
+  run.port.threat={select:()=>run.player.id,notice:()=>{},has:()=>true,clear:()=>{}};
+  const before=run.checks();
+  run.advance();
+  assert.equal(run.checks(),before,'没有技能时普攻分支不需要同步可达性搜索');
+  assert.equal(run.ai.snapshot().state,'idle','普攻够不着仍然原地保留目标');
+  assert.equal(run.ai.snapshot().targetId,run.player.id);
+});
+
 test('state changes stop existing paths before another decision tick and stun blocks nearby attacks',()=>{
  const run=setup();run.ai.update(60);assert.ok(run.waypoint());
  run.actor.states=['immobilized'];const position={...run.actor.position};run.advance();
@@ -169,7 +180,7 @@ test('unreachable targets back off 180 ms while chasing, then resume after an ob
 test('a cross-frame search spends the shared budget and waits for a path when the straight line is blocked',()=>{
   // 移动速度放到接近 0：只看搜索期间是否原地等、完成后是否换用路径点。
   const run=setup({moveSpeedPxPerSecond:1});let grants=0;
-  run.port.pathBudget={take:limit=>{grants++;return Math.min(limit,4);}};
+  run.port.pathBudget={take:(_owner,limit)=>{grants++;return Math.min(limit,4);}};
   run.advance();
   assert.ok(grants>0,'从共享预算领取扩展');
   // 直线走不通时不能硬撞墙；先原地等，等路径算完再走。

@@ -539,6 +539,10 @@ export class Session {
     const state=this.enemyStates.get(id);
     return {...state,...(state?.capture?{capture:{...state.capture}}:{})};
   }
+  /** 召唤物离场时丢弃它的战斗状态；召唤实例的 key 不会被地图生成点复用。 */
+  forgetEnemyVitals(id:string):void {
+    this.enemyStates.delete(id);
+  }
   removeStoryEnemy(id:string):void {
     this.storyWorld.apply({kind:'remove',id});
     this.enemyStates.set(id,{...this.enemyStates.get(id),health:0,deadUntil:'permanent'});
