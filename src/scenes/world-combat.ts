@@ -218,6 +218,12 @@ export class WorldCombat {
   private playerAssets?:AssetLease;
   private restoredAssets?:AssetLease;
   private storyAssets?:AssetLease;
+  /** 玩家/伙伴在进入地图后学会新技能时补载的特效与召唤物；直到关闭地图才释放。 */
+  private readonly extraSkillLeases:AssetLease[]=[];
+  private playerSkillSignature='';
+  private readonly allySkillSignatures=new Map<string,string>();
+  private skillAssetRefreshRunning=false;
+  private skillAssetRefreshQueued=false;
   private attackProcs=new AttackProcExecutor();
   private effectExecutor?:CombatEffectExecutor;
   private readonly soundedSkills=new WeakSet<object>();
@@ -1994,7 +2000,7 @@ captureStoryActors():SceneActorState[] {
     for(const ally of [...this.allies])if(!active.has(ally.id)){
       this.deathTweens.get(ally.id)?.stop();this.deathTweens.delete(ally.id);this.fallen.delete(ally.id);
       ally.ai.dispose();ally.presenter.clear();ally.overhead.destroy();this.movement.remove(ally.visual);ally.visual.container.destroy();ally.assets?.release();
-      this.combatRuntime?.removeActor(ally.id);this.partyControllers.delete(ally.id);this.partySkills.delete(ally.id);this.conditions.remove(ally.id);this.threat?.removeActor(ally.id);
+      this.combatRuntime?.removeActor(ally.id);this.partyControllers.delete(ally.id);this.partySkills.delete(ally.id);this.conditions.remove(ally.id);this.threat?.removeActor(ally.id);this.allySkillSignatures.delete(ally.id);
       for(const enemy of this.arena)enemy.controller?.targetRemoved(ally.id);
       this.allies.splice(this.allies.indexOf(ally),1);refreshCombatActors(this.allies);
     }
@@ -2035,6 +2041,7 @@ captureStoryActors():SceneActorState[] {
       const shared=this.createPartyController(id,visual,presenter,attack);ally.controller=shared.controller;
       const skills=this.partySkillsFor(id);this.partySkills.set(id,skills);
       ally.ai=new PartyController(id,shared.port,shared.controller);
+      this.allySkillSignatures.set(id,this.allySkillSignatureNow(member));
       if(!member.alive)this.markAlreadyFallen(id);
       }catch(error){lease?.release();this.allyLoadFailure=error;this.partySignature='';this.nextPartySyncAt=this.scene.time.now+1000;if(!this.closed)throw error;}
       finally{this.pendingAllies.delete(id);if(!this.pendingAllies.size)for(const notify of [...this.allyWaiters])notify();}
@@ -2302,7 +2309,7 @@ captureStoryActors():SceneActorState[] {
     const generation=++this.generation;
     const lease=await loadSceneAssets(this.scene,needed,()=>{});
     if(this.closed||generation!==this.generation){lease.release();return;}
-    this.playerAssets=lease;
+    this.playerAssets=lease;this.playerSkillSignature=this.playerSkillSignatureNow();
     this.presenter=new CombatPresenter(this.scene,catalog,id=>this.visualOf(id),()=>this.combatants(),
       this.combatEffects);
     const heroController=this.createPartyController('player',this.player,this.presenter,attack);
@@ -2566,15 +2573,70 @@ captureStoryActors():SceneActorState[] {
     const active=new Set(this.activeParty);
     for(const [id,controller] of this.partyControllers)if(!active.has(id)){
       controller.cancel(true);this.runtime.removeActor(id);this.partyControllers.delete(id);this.conditions.remove(id);this.threat?.removeActor(id);
+      this.allySkillSignatures.delete(id);
       for(const key of this.summons.removeOwner(id))this.removeEnemy(key);
       const visual=this.visualOf(id);if(visual){this.movement.setEnabled(visual,false);visual.container.setVisible(false);}
     }
+    this.scheduleSkillAssetRefresh();
   }
   private onHeroChanged():void {
     this.scene.refreshCombatTarget();
     if(this.hero.player.health===0)(this.hitResolution??=new CombatHitResolution()).deferDefeat('player',()=>{
       if(this.hero.player.health===0)this.memberDefeated('player');
     });
+    this.scheduleSkillAssetRefresh();
+  }
+  private playerSkillSignatureNow():string {
+    const learned=[...learnedSkillIds(this.app.battleCatalog,this.hero.classId,this.app.session.skills)].sort();
+    // 换武器会换普攻与技能姿态的特效；把装备也纳入签名，换装后重新补一次。
+    const equipment=this.hero.bag.equipmentItems(this.hero.bag.equipmentFor('player'));
+    return `${this.hero.classId}|${learned.join(',')}|${JSON.stringify(equipment)}`;
+  }
+  private allySkillSignatureNow(member:CompanionMember):string {
+    const learned=[...learnedSkillIds(this.app.battleCatalog,member.classId,member.skills)].sort();
+    return `${member.classId}|${learned.join(',')}`;
+  }
+  /**
+   * 进图和开战时的素材计划只覆盖当时已学的技能。玩家或伙伴在地图里升级、学新技能后，
+   * 这里补载新增技能的特效、姿态和召唤物；签名没变就什么都不做。
+   */
+  private scheduleSkillAssetRefresh():void {
+    // 单测替身没有完整的会话/英雄对象时跳过；真实场景在 start() 后一定具备。
+    if(this.closed||!this.hero||!this.player||!this.app.session.skills)return;
+    const playerSignature=this.playerSkillSignatureNow();
+    let changed=playerSignature!==this.playerSkillSignature;
+    if(!changed)for(const id of this.activeParty){
+      if(id==='player')continue;
+      const member=this.app.session.party?.get(id);
+      if(member&&this.allySkillSignatures.get(id)!==this.allySkillSignatureNow(member)){changed=true;break;}
+    }
+    if(!changed)return;
+    if(this.skillAssetRefreshRunning){this.skillAssetRefreshQueued=true;return;}
+    this.skillAssetRefreshRunning=true;
+    void this.refreshSkillAssets(playerSignature).catch(error=>console.warn('技能素材补载失败',error)).finally(()=>{
+      this.skillAssetRefreshRunning=false;
+      if(this.skillAssetRefreshQueued){this.skillAssetRefreshQueued=false;this.scheduleSkillAssetRefresh();}
+    });
+  }
+  private async refreshSkillAssets(playerSignature:string):Promise<void> {
+    const catalog=this.app.battleCatalog;
+    if(playerSignature!==this.playerSkillSignature){
+      const lease=await loadSceneAssets(this.scene,playerCombatAssets({catalog,wardrobe:this.app.wardrobe,items:this.app.items,
+        hero:this.hero,actor:this.player.actor,learnedSkills:learnedSkillIds(catalog,this.hero.classId,this.app.session.skills)}),()=>{});
+      if(this.closed){lease.release();return;}
+      this.extraSkillLeases.push(lease);this.playerSkillSignature=playerSignature;
+    }
+    for(const id of this.activeParty){
+      if(id==='player')continue;
+      const member=this.app.session.party?.get(id),actor=member?this.app.world.actors[member.definition.actor]:undefined;
+      if(!member||!actor)continue;
+      const signature=this.allySkillSignatureNow(member);
+      if(this.allySkillSignatures.get(id)===signature)continue;
+      const lease=await loadSceneAssets(this.scene,partyMemberCombatAssets(catalog,this.app.wardrobe,member.classId,actor,
+        learnedSkillIds(catalog,member.classId,member.skills)),()=>{});
+      if(this.closed){lease.release();return;}
+      this.extraSkillLeases.push(lease);this.allySkillSignatures.set(id,signature);
+    }
   }
   private memberDefeated(id:string):void{
     if(this.closed||this.fallen.has(id))return;
@@ -2836,6 +2898,8 @@ captureStoryActors():SceneActorState[] {
     this.buffLoops.clear();
     this.clearEnemies();this.conditions.clear();this.summons.clear();
     this.playerAssets?.release();this.playerAssets=undefined;
+    for(const lease of this.extraSkillLeases)lease.release();this.extraSkillLeases.length=0;
+    this.playerSkillSignature='';this.allySkillSignatures.clear();
     this.restoredAssets?.release();this.restoredAssets=undefined;
     this.storyAssets?.release();this.storyAssets=undefined;
   }

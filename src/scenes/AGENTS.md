@@ -23,6 +23,7 @@ Phaser 场景层：驱动生命周期、转发输入，把 domain、rendering、
 - 有商店的 NPC 无论有没有招呼语，都算可交互目标；交互优先级仍由 `resolveInteraction` 决定。
 - 掉落落点用 `lootLanding` 避开地图进出口；不要把物品图标落在门洞上。
 - 伙伴外观按需加载：队伍面板预览只准备 `idle-south`，进战斗开场再补全套；使用勇士徽章招募后由招募确认或队伍面板调用 `preparePartyMember`，不要为了省事把全部伙伴重新塞回常驻包。
+- **地图内学会新技能后要补素材。** 进图和开战的素材计划只覆盖当时已学的技能；玩家或伙伴升级、学新技能、换武器后，`WorldCombat` 用 `scheduleSkillAssetRefresh` 按签名补载新增技能的特效、姿态和召唤物。签名不变不重复加载，补载租约到关闭地图时统一释放。
 - `captureStoryScene` 与剧情舞台快照共享演员外观引用，只复制必要的外壳字段；开发/测试模式下外观是冻结的，原地修改会直接报错。
 - 喝泉水的回血回蓝和技能点结算调用 `domain/springs.ts` 的 `applySpringRecovery`、`grantSpringSkillPoint`；正面状态按存活上阵队员逐个施加，负面或攻防混合状态只给当前操控者。
 - **任务目标完成提示走 `showInstant`。** 只在任务簿版本变化时对比状态，只提示 `completion: 'all'` 的可见任务进入待交付；对话/剧情任务已有任务窗，不重复提示。
