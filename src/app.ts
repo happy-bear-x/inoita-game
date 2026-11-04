@@ -162,7 +162,13 @@ export class StoryApp {
   private readonly storyPrefetches = new Map<string, AssetLease>();
   retainMapAssets(lease: AssetLease): void {
     this.mapAssetHistory.push(lease);
-    while(this.mapAssetHistory.length+(this.mapPrefetch ? 1 : 0)>3)this.mapAssetHistory.shift()!.release();
+    // 只留最近两张历史地图；预取额度另算。
+    while(this.mapAssetHistory.length>2)this.mapAssetHistory.shift()!.release();
+  }
+  /** 丢弃全部历史地图租约，供会话边界使用；调用方要先确认这些地图已不再被场景使用。 */
+  clearMapHistory(): void {
+    for(const lease of this.mapAssetHistory)lease.release();
+    this.mapAssetHistory.length = 0;
   }
   retainMapPrefetch(lease: AssetLease): void {
     this.clearMapPrefetch();

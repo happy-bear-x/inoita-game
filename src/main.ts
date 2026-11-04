@@ -389,8 +389,10 @@ async function resumeSlot(slot:SaveSlotRef,signal?:AbortSignal):Promise<void> {
 
 /** 新开与读档共用的会话装配：世界场景、菜单、剧情播放器与界面都接到这份会话上。 */
 function installSession(session: Session): void {
-  // 会话可能换了职业；旧常驻包不能跨会话继续持有。
+  // 会话可能换了职业；旧常驻包、历史地图纹理和会话级内容解析结果都不再复用。
   app.releaseResidentCombat();
+  app.clearMapHistory();
+  app.content.clearSessionCaches();
   const campaign = app.campaign, presentation = app.storyInterface;
   app.session = session;
   app.storySignal = modeRequest.signal;
@@ -532,12 +534,16 @@ function returnToMenu(): void {
   // 会话已经销毁：把动作层一起摘掉，免得 agent 拿到一个指向已 dispose 导演的句柄。
   app.gm = undefined; delete globalThis.gm;
   const scene = currentScene();
-  const releaseResident = () => app.releaseResidentCombat();
+  const releaseSessionAssets = () => {
+    app.releaseResidentCombat();
+    app.clearMapHistory();
+    app.content.clearSessionCaches();
+  };
   if (scene?.sys.isActive() || scene?.sys.isPaused()) {
     // 场景还活着时不能提前删纹理；等 WorldScene/当前场景真正 shutdown 后再释放。
-    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, releaseResident);
+    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, releaseSessionAssets);
     scene.scene.start(SCENE_KEYS.menu,{page:returnPage});
-  } else releaseResident();
+  } else releaseSessionAssets();
   // 初始内容请求失败时菜单场景仍在运行。
   app.mode = 'menu'; ui.lock(false,'game'); ui.setMode('menu');
   app.audio?.enterMenu();

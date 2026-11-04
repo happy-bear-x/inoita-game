@@ -116,3 +116,71 @@ test('failed content can be requested again', async () => {
     assert.equal(calls, 2);
   } finally { globalThis.fetch = original; }
 });
+
+test('session cleanup keeps core content tables cached', async () => {
+  const original = globalThis.fetch;
+  const calls: string[] = [];
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url === 'content-manifest.json') return manifestResponse();
+    calls.push(url);
+    return { ok: true, json: async () => ({}) } as Response;
+  }) as typeof fetch;
+  try {
+    const loader = new ContentLoader();
+    loader.trusted = true;
+    await loader.statusHud();
+    loader.clearSessionCaches();
+    await loader.statusHud();
+    assert.deepEqual(calls, ['content/status-hud.json']);
+  } finally { globalThis.fetch = original; }
+});
+
+test('session cleanup drops map and pose content so the next request reloads them', async () => {
+  const original = globalThis.fetch;
+  const calls: string[] = [];
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url === 'content-manifest.json') return manifestResponse();
+    calls.push(url);
+    return { ok: true, json: async () => ({}) } as Response;
+  }) as typeof fetch;
+  try {
+    const loader = new ContentLoader();
+    loader.trusted = true;
+    await loader.map('content/maps/town.json');
+    await loader.wardrobePoses(['pose-a']);
+    loader.clearSessionCaches();
+    await loader.map('content/maps/town.json');
+    await loader.wardrobePoses(['pose-a']);
+    assert.deepEqual(calls, [
+      'content/maps/town.json', 'content/wardrobe/poses/pose-a.json',
+      'content/maps/town.json', 'content/wardrobe/poses/pose-a.json',
+    ]);
+  } finally { globalThis.fetch = original; }
+});
+
+test('session cleanup keeps an in-flight map request and resolves its waiter', async () => {
+  const original = globalThis.fetch;
+  let mapCalls = 0;
+  let finish!: () => void;
+  const value = { id: 'town' };
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url === 'content-manifest.json') return manifestResponse();
+    mapCalls++;
+    return new Promise<Response>(resolve => {
+      finish = () => resolve({ ok: true, json: async () => value } as Response);
+    });
+  }) as typeof fetch;
+  try {
+    const loader = new ContentLoader();
+    loader.trusted = true;
+    const pending = loader.map('content/maps/town.json');
+    loader.clearSessionCaches();
+    finish();
+    assert.equal(await pending, value);
+    assert.equal(await loader.map('content/maps/town.json'), value);
+    assert.equal(mapCalls, 1, '完成后仍留在缓存里，下一次调用不再请求');
+  } finally { globalThis.fetch = original; }
+});

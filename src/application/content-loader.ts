@@ -16,11 +16,15 @@ interface ContentManifest {
   required: Record<string, string[]>;
 }
 
+/** 核心内容表跨会话常驻；会话级内容只服务当前地图/外观，可在回菜单或新会话时丢弃。 */
+type ContentScope = 'core' | 'session';
+
 interface ContentRequest<T> {
   promise: Promise<T>;
   controller: AbortController;
   waiters: number;
   finished: boolean;
+  scope: ContentScope;
 }
 
 export class ContentLoader {
@@ -64,8 +68,18 @@ export class ContentLoader {
     return parseWardrobe({...core,poses:await this.wardrobePoses(ids,signal)});
   }
   async wardrobePoses(ids:readonly string[],signal?:AbortSignal):Promise<Record<string,CostumePose>>{
-    const entries=await Promise.all(ids.map(async id=>[id,await this.read<CostumePose>(wardrobePoseFile(id),value=>value as CostumePose,signal)]as const));
+    const entries=await Promise.all(ids.map(async id=>[id,await this.read<CostumePose>(wardrobePoseFile(id),value=>value as CostumePose,signal,'session')]as const));
     return Object.fromEntries(entries);
+  }
+  /**
+   * 会话边界清理：丢弃已经完成的会话级内容（地图与人物动作），核心内容表继续常驻。
+   * 只删缓存条目，不 abort 进行中的请求，也不改动已经返回给调用方的对象。
+   */
+  clearSessionCaches(): void {
+    for (const [file, request] of this.requests) {
+      if (request.scope === 'session' && request.finished && this.requests.get(file) === request)
+        this.requests.delete(file);
+    }
   }
   /**
    * 生产内容哨兵：只取一次很小的清单，核对版本和本次文件声明的必需顶层键。
@@ -103,7 +117,7 @@ export class ContentLoader {
     }
     return this.manifestRequest;
   }
-  private read<T>(file:string, parse:(data:unknown)=>T, signal?:AbortSignal):Promise<T>{
+  private read<T>(file:string, parse:(data:unknown)=>T, signal?:AbortSignal, scope:ContentScope='core'):Promise<T>{
     signal?.throwIfAborted();
     let request = this.requests.get(file) as ContentRequest<T> | undefined;
     if (!request) {
@@ -120,7 +134,7 @@ export class ContentLoader {
         }
         return parse(value);
       })();
-      request = { promise, controller, waiters: 0, finished: false };
+      request = { promise, controller, waiters: 0, finished: false, scope };
       this.requests.set(file, request);
       const current = request;
       void promise.then(
@@ -164,5 +178,5 @@ export class ContentLoader {
   storyInterface(signal?:AbortSignal):Promise<StoryInterface>{return this.read('content/story-interface.json',parseStoryInterface,signal);}
   storyClasses(signal?:AbortSignal){return this.read('content/story-classes.json',parseStoryClasses,signal);}
   battle(signal?:AbortSignal):Promise<BattleCatalog>{return this.read('content/battle.json',parseBattle,signal);}
-  map(file:string,signal?:AbortSignal):Promise<WorldMap>{return this.read(file,parseMap,signal);}
+  map(file:string,signal?:AbortSignal):Promise<WorldMap>{return this.read(file,parseMap,signal,'session');}
 }
