@@ -254,7 +254,15 @@ export class SaveSlots<World = unknown> {
     }
     const key=this.key(ref),raw=JSON.stringify(record);
     this.storage.setItem(key,raw);
-    this.summaryCache.set(key,{raw,reading:{kind:'ok',summary:record.summary}});
+    // 只有结构上确实能被读成有效档时才回填缓存；否则删掉缓存，让下次读取重新按内容分类。
+    if(this.readableRecord(record))this.summaryCache.set(key,{raw,reading:{kind:'ok',summary:record.summary}});
+    else this.summaryCache.delete(key);
+  }
+  /** 写后回填缓存用的廉价结构检查，条件与 `summaryOf` 一致，但不再解析一遍 JSON。 */
+  private readableRecord(record:SaveGame<World>):boolean {
+    if(!isReadableSaveFormat(record.format)||!record.session||!record.world)return false;
+    const summary=record.summary;
+    return !!summary&&typeof summary.classId==='string'&&typeof summary.mapId==='string'&&Number.isFinite(summary.level);
   }
   erase(ref:SaveSlotRef):void { const key=this.manualKey(ref);this.storage.removeItem(key);this.summaryCache.delete(key); }
   /**
