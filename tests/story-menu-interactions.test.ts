@@ -2009,7 +2009,7 @@ test('session notifications redraw at most once and skip unchanged pages', t => 
   assert.equal(renders,0,'数据没变时背包页不重绘');
   f.session.gainMoney(1);
   assert.equal(renders,1,'一次会话通知只重绘一次');
-  f.session.transaction(()=>{f.session.gainMoney(1);f.session.gainMoney(1);});
+  f.session.batchNotifications(()=>{f.session.gainMoney(1);f.session.gainMoney(1);});
   assert.equal(renders,2,'同一批通知合并后只再重绘一次');
 
   f.menu.show('system');renders=0;
