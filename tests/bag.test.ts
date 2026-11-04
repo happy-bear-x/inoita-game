@@ -7,6 +7,7 @@ import { costumeRecipe } from '../src/domain/wardrobe.ts';
 import { parseItemCatalog, parseWardrobe, validateWardrobe, parseCampaign } from '../src/application/content-validation.ts';
 import { Session } from '../src/domain/session.ts';
 import { organizedInventory, pouchFor } from '../src/domain/inventory.ts';
+import { emptyShortcutRow } from '../src/domain/shortcut-bar.ts';
 
 const read=(name:string)=>JSON.parse(fs.readFileSync(new URL(`../public/content/${name}.json`,import.meta.url),'utf8'));
 const catalog=parseItemCatalog(read('items')), wardrobe=parseWardrobe(read('wardrobe'));
@@ -287,6 +288,69 @@ test('item counts reuse one map per revision and refresh after inventory changes
   assert.equal(bag.count(first!),2);
   assert.equal(bag.remove(first!,1),true);
   assert.equal(bag.count(first!),1,'消耗后计数同步刷新');
+});
+
+test('removing items reads loose instances directly instead of copying the whole bag',()=>{
+  const bag=new Bag(()=>{},catalog,'dark-knight');const [first,second]=pick('material',2);
+  bag.add(first!,4);bag.add(second!,1);
+  const original=globalThis.structuredClone;let copies=0;
+  globalThis.structuredClone=((value:unknown,options?:Parameters<typeof structuredClone>[1])=>{
+    copies++;return original(value,options);
+  }) as unknown as typeof structuredClone;
+  try{assert.equal(bag.remove(first!,2),true);}finally{globalThis.structuredClone=original;}
+  assert.equal(copies,0,'删除不再深拷贝整包散装实例');
+  assert.equal(bag.count(first!),2);
+  assert.equal(bag.count(second!),1);
+});
+
+test('removal follows pouch order and only clears the cells it emptied',()=>{
+  const bag=new Bag(()=>{},catalog,'dark-knight');const [sword]=weapons(1),[ore]=pick('material',1);
+  bag.add(sword!,2);bag.add(ore!);
+  const ids=bag.entries.filter(entry=>entry.item===sword).map(entry=>entry.id);
+  assert.equal(ids.length,2,'不可叠加的武器分两条实例');
+  const rebuilds=()=>(bag as unknown as {countsRebuilds:number}).countsRebuilds;
+  bag.counts;
+  const built=rebuilds(),revision=bag.revision;
+  assert.equal(bag.remove(sword!,1),true);
+  assert.equal(bag.get(ids[0]!),undefined,'先扣袋里靠前的那一条');
+  assert.ok(bag.get(ids[1]!));
+  assert.equal(bag.count(sword!),1);
+  assert.equal(bag.revision,revision+1,'移除一件只推进一次修订号');
+  assert.equal(rebuilds(),built,'删除不重建整张计数表');
+  assert.equal(bag.pouchCells.weapon[0],undefined);
+  assert.equal(bag.pouchCells.weapon[1]!.id,ids[1],'后面的物品不往前挪');
+  assert.equal(bag.remove(sword!,1),true);
+  assert.equal(bag.count(sword!),0);
+  assert.equal(rebuilds(),built,'连续删除仍不重建');
+  assert.equal(bag.pouchCells.weapon.length,0,'用光的袋位被收拢');
+  const finalRevision=bag.revision;
+  assert.equal(bag.remove(sword!,1),false,'数量不足时不改动背包');
+  assert.equal(bag.revision,finalRevision);
+  assert.equal(bag.count(ore!),1);
+});
+
+test('consuming a stack updates counts incrementally and clears the shortcut only when empty',()=>{
+  const bag=new Bag(()=>{},catalog,'dark-knight');
+  const potion=Object.entries(catalog.items).find(([,item])=>item.shortcut&&item.stackable&&item.use?.kind==='consume')!;
+  const [other]=pick('material',1);
+  bag.add(potion[0],3);bag.add(other!);
+  const row=emptyShortcutRow();row[0]={kind:'item',id:potion[0]};bag.setShortcuts('player',row);
+  const id=bag.entries.find(entry=>entry.item===potion[0])!.id;
+  const snapshot=bag.counts;
+  const rebuilds=()=>(bag as unknown as {countsRebuilds:number}).countsRebuilds,built=rebuilds();
+  bag.take(id,2,false);
+  assert.equal(bag.count(potion[0]),1);
+  assert.equal(snapshot.get(potion[0]),3,'已经拿到的计数快照不被原地改写');
+  assert.equal(rebuilds(),built,'消耗不重建整张计数表');
+  assert.deepEqual(bag.ensureShortcuts('player',emptyShortcutRow())[0],{kind:'item',id:potion[0]},'还有库存时快捷栏保留');
+  const revision=bag.revision;
+  bag.take(id,1,false);
+  assert.equal(bag.count(potion[0]),0);
+  assert.equal(rebuilds(),built,'连续消耗仍不重建');
+  assert.equal(bag.revision,revision+1);
+  assert.equal(bag.count(other!),1,'其他物品计数不受影响');
+  assert.equal(bag.pouchCells.consumable.length,0,'用光的格位被收拢');
+  assert.equal(bag.ensureShortcuts('player',emptyShortcutRow())[0],null,'库存见底撤下快捷栏物品');
 });
 
 test('organise sorts every pouch by category and natural name',()=>{

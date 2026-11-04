@@ -152,7 +152,9 @@ export class Bag {
   get learnedRecipes(): string[] { return [...this.recipeBook]; }
   lastResult?: Readonly<ItemResult>;
   private rules?:BagRules;
-  private countsCache?:{revision:number;value:ReadonlyMap<string,number>};
+  private countsCache?:{revision:number;value:Map<string,number>};
+  /** counts 整表重建次数；消耗走增量更新时不增加。测试用它确认没有退回整表重算。 */
+  private countsRebuilds = 0;
 
   constructor(changed: () => void, catalog: ItemCatalog = emptyCatalog, classId = '', seed: 'none' | 'game' = 'none', rules?:BagRules) {
     this.catalog = catalog; this.classId = classId; this.changed = changed;this.rules=rules;
@@ -288,6 +290,7 @@ export class Bag {
     const value = new Map<string, number>();
     for (const id of this.orderedIds()) { const entry = this.instances.get(id)!; value.set(entry.item, (value.get(entry.item) ?? 0) + entry.quantity); }
     this.countsCache = { revision: this.revision, value };
+    this.countsRebuilds++;
     return value;
   }
   count(item: string): number { return this.counts.get(item) ?? 0; }
@@ -326,21 +329,34 @@ export class Bag {
   }
   remove(item: string, quantity: number): boolean {
     if (!Number.isSafeInteger(quantity) || quantity <= 0 || this.count(item) < quantity) return false;
-    for (const entry of this.entries.filter(entry=>entry.item===item)) {
-      const used=Math.min(quantity,entry.quantity);this.consume(entry.id,used);quantity-=used;if(!quantity)break;
+    // 按五个袋的顺序直接读实例引用，顺序语义不变；不再为拿 id/数量深拷贝整包散装实例。
+    for (const id of this.orderedIds()) {
+      const entry=this.instances.get(id);
+      if(!entry||entry.item!==item)continue;
+      const used=Math.min(quantity,entry.quantity);this.consume(id,used);quantity-=used;if(!quantity)break;
     }
     return true;
   }
   private consume(id: string, quantity = 1): void {
-    this.revision++;
-    const entry=this.instances.get(id)!;entry.quantity-=quantity;
+    const entry=this.instances.get(id)!;
+    const emptied=entry.quantity<=quantity;
+    entry.quantity-=quantity;
     if(!entry.quantity){
       this.clearCells(id);
       this.instances.delete(id);
     }
+    const cached=this.countsCache, wasCurrent=cached!==undefined&&cached.revision===this.revision;
+    this.revision++;
+    // counts 缓存按条目增量更新：只搬这一条，避免每次喝药/出售都重建整张 Map。
+    if(wasCurrent){
+      const value=new Map(cached.value),remaining=(value.get(entry.item)??0)-quantity;
+      if(remaining>0)value.set(entry.item,remaining);else value.delete(entry.item);
+      this.countsCache={revision:this.revision,value};
+    }
     // 库存见底就把快捷栏里的这瓶药水一起撤掉，只清物品格，技能格不动。
-    if(!this.count(entry.item))for(const row of this.shortcuts.values())
-      row.forEach((slot,index)=>{if(slot?.kind==='item'&&slot.id===entry.item)row[index]=null;});
+    if(emptied&&!this.orderedIds().some(other=>this.instances.get(other)?.item===entry.item))
+      for(const row of this.shortcuts.values())
+        row.forEach((slot,index)=>{if(slot?.kind==='item'&&slot.id===entry.item)row[index]=null;});
   }
   private notify(): void { this.revision++; this.changed(); }
   /**
