@@ -63,7 +63,7 @@ npm test -- tests/example.test.ts
 |---|---|---|---|
 | 4002 | HTTPS 入口（nginx 终止 TLS，转发到 4004） | 系统 nginx | https://catgo.online:4002/ |
 | 4004 | 打包后的静态服务（`dist/`，仅本机） | `npm run serve` | http://127.0.0.1:4004/ |
-| 4003 | Vite 开发服务（读源码） | `npm run dev` | http://localhost:4003/ |
+| 4003 | Vite 开发服务（代码读源码，内容按生产规则编译） | `npm run dev` | http://localhost:4003/ |
 
 端口上已经有监听就说明服务已经启动，直接访问即可，不要再起一个。重复启动只会撞端口失败。不确定当前跑着什么时先看：
 
@@ -74,6 +74,8 @@ ss -ltnp | grep -E '4002|4003|4004'
 在根目录运行 `npm run build` 生成 `dist/`；`npm run deploy` 会做类型检查、构建，并通过 `https://catgo.online:4002` 核对正在提供的版本。4004 静态服务直接读磁盘，构建完成即生效，不需要重启；只有静态服务自身改动才需要重启。
 
 本地调试用 4003；4002/4004 是部署链路。Android 调试通过 `adb reverse tcp:4003 tcp:4003` 复用 4003，不把开发地址写进 release 包。
+
+4003 的代码仍从源码加载；`/content` 请求由开发服务用 `buildContent` 生成临时目录后提供，内容改动自动重建，所以素材口径与 4002/APK 一致——同样的场景不会因为开发模式多加载重复贴图。
 
 ## 5. 目录导航
 
