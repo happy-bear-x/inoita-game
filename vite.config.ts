@@ -129,6 +129,9 @@ export default defineConfig(({ command }) => {
       host: true,
       port: 4003,
       strictPort: true,
+      // 子 agent 的工作树在仓库内且各自带整套素材；开发服务不监听它们，
+      // 否则文件监听数量会被这些副本撑爆（ENOSPC）。
+      watch: { ignored: ['**/.claude/**'] },
       // 账号、会话和云存档文件不能通过 /@fs/ 被开发服务读出去。
       fs: { deny: ['.cloud-save/**', '.cloud-save-dev/**', '.env', '.env.*', '*.{crt,pem}', '**/.git/**'] }
     },
