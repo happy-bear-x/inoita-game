@@ -17,7 +17,7 @@ function harness(options: { suspended?: () => boolean } = {}) {
   const batches: number[] = [];
   /** 一次性音效的播放记录；循环音频走 sound.add()，不进这里。 */
   const played: string[] = [];
-  const sounds: { key: string; isPlaying: boolean; destroyed: boolean; volume: number; setVolume(value: number): void }[] = [];
+  const sounds: { key: string; isPlaying: boolean; destroyed: boolean; volume: number; setVolume(value: number): void; destroy(): void }[] = [];
   let sinceStart = 0;
   const loader = Object.assign(new EventEmitter(), {
     audio(key: string) { requested.push(key); queued.push(key); sinceStart++; },
@@ -27,7 +27,11 @@ function harness(options: { suspended?: () => boolean } = {}) {
     load: loader,
     cache: { audio: { exists: (key: string) => cache.has(key), remove: (key: string) => cache.delete(key) } },
     sound: {
-      stopAll(){for(const sound of sounds)sound.isPlaying=false;},
+      removeAll() {
+        for (const sound of sounds) { sound.isPlaying = false; sound.destroy(); }
+        sounds.length = 0;
+      },
+      getAll(key: string) { return sounds.filter(sound => sound.key === key); },
       add(key: string) {
         assert.ok(cache.has(key));
         const sound = {
@@ -72,12 +76,14 @@ function harness(options: { suspended?: () => boolean } = {}) {
   };
 }
 
-test('native stop-all clears loops and cancels late sound playback',async()=>{
+test('stopStoryAudio destroys every live sound and cancels late playback',async()=>{
   const f=harness();f.audio.enterMenu();await f.drain();
-  assert(f.playing().length);
+  const live=[...f.sounds];assert(live.length);
   f.audio.effect(catalog.ui.questStart);
   f.audio.stopStoryAudio();await f.drain();
   assert.deepEqual(f.playing(),[]);
+  assert.equal(f.sounds.length,0,'声音对象被销毁并从管理器移除');
+  assert.ok(live.every(sound=>sound.destroyed));
   assert.deepEqual(f.played,[]);
   assert.deepEqual(f.audio.captureStoryAudio(),{music:null,ambience:null});
 });
@@ -155,6 +161,66 @@ test('a menu track that finishes loading after story entry cannot start during t
 
   f.audio.enterMenu(); await f.finishLoading();
   assert.deepEqual(f.playing(), [`bgm:${catalog.menuMusic}`]);
+});
+
+test('a track abandoned before it finishes loading is removed from the cache', async () => {
+  const f = harness();
+  f.audio.enterMenu();
+  await setImmediate();
+  f.audio.enterStory();
+  await f.finishLoading();
+  assert.deepEqual(f.playing(), []);
+  assert.ok(!f.cachedKeys().has(`bgm:${catalog.menuMusic}`), '被放弃的 BGM 不留在解码缓存里');
+});
+
+test('a track that finishes loading after music is muted is removed from the cache', async () => {
+  const f = harness();
+  f.audio.enterMenu();
+  await setImmediate();
+  f.audio.setVolume('music', 0);
+  await f.finishLoading();
+  assert.deepEqual(f.playing(), []);
+  assert.deepEqual([...f.cachedKeys()].filter(key => key.startsWith('bgm:')), []);
+});
+
+test('a track still loading when story audio stops is removed from the cache', async () => {
+  const f = harness();
+  f.audio.enterMenu();
+  await setImmediate();
+  f.audio.stopStoryAudio();
+  await f.drain();
+  assert.deepEqual(f.playing(), []);
+  assert.ok(!f.cachedKeys().has(`bgm:${catalog.menuMusic}`), '停止音频时未完成的加载不留在缓存里');
+});
+
+test('a track replaced before it finishes loading is removed from the cache', async () => {
+  const f = harness();
+  const [mapId, map] = Object.entries(catalog.maps).find(([, entry]) => entry.music)!;
+  const other = Object.keys(catalog.music).find(id => id !== map.music)!;
+  f.audio.enterMap(mapId);
+  await setImmediate();
+  f.audio.setStoryMusic(other);
+  await f.drain();
+  assert.ok(!f.cachedKeys().has(`bgm:${map.music}`), '被换下的 BGM 不留在解码缓存里');
+  assert.ok(f.cachedKeys().has(`bgm:${other}`));
+  assert.deepEqual(f.playing().filter(key => key.startsWith('bgm:')), [`bgm:${other}`]);
+});
+
+test('returning to a track while its replacement loads keeps the shared cache key', async () => {
+  const f = harness();
+  const tracks = [...new Set(Object.values(catalog.maps).map(entry => entry.music).filter((id): id is string => !!id))];
+  const maps = tracks.slice(0, 2).map(id => Object.entries(catalog.maps).find(([, entry]) => entry.music === id)!);
+  assert.equal(maps.length, 2, '目录里至少要有两张不同 BGM 的地图');
+  const [mapA, mapB] = maps.map(([mapId, entry]) => [mapId, entry] as const);
+  const keyA = `bgm:${mapA[1].music}`, keyB = `bgm:${mapB[1].music}`;
+  f.audio.enterMap(mapA[0]); await f.drain();
+  assert.ok(f.playing().includes(keyA));
+  f.audio.enterMap(mapB[0]);
+  f.audio.enterMap(mapA[0]);
+  await f.drain();
+  assert.ok(f.playing().includes(keyA), '回到前一首后仍在播放');
+  assert.ok(f.cachedKeys().has(keyA), '仍在使用的缓存键不删');
+  assert.ok(!f.cachedKeys().has(keyB), '被放弃的下一首不留在缓存里');
 });
 
 const effectName = 'UI_Menu_select';
