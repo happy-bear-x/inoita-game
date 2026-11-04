@@ -284,11 +284,12 @@ story  + runId + instanceId
 
 ## 队伍 AI
 
-主要文件：`src/domain/party-ai.ts`、`src/domain/friendly-summon-ai.ts`、`src/domain/combat-threat*.ts`
+主要文件：`src/domain/party-ai.ts`、`src/domain/party-trail.ts`、`src/domain/friendly-summon-ai.ts`、`src/domain/combat-threat*.ts`
 
 佣兵和召唤物都不是玩家直接操作的角色，但决策范围不同：
 
 - 佣兵只跟随主角的攻击：玩家指派的目标优先，其次是主操作角色当前攻击的目标；主角没有目标时只跟随，不自己索敌，也不因为挨打还手；
+- 跟随以队形槽位为主；槽位连续 350ms 站不下、或短距离绕行超过 1.6 倍时，改走主角最近走过的路径（`party-trail.ts` 记录，间距 8 像素、最多 64 点），恢复可站 800ms 后切回队形；
 - 召唤物按主人位置、攻击距离和召唤类型行动。
 
 跟随和追击都有“无进展”保护：长时间位移不足会取消旧路线，必要时把掉队单位收拢到操控者旁边。这样不会被剧情障碍或人群永久卡住。

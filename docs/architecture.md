@@ -14,7 +14,7 @@
 | 动作起手、接近、取消 | `domain/combat.ts`、`combat-runtime.ts`、`combat-action-dispatcher.ts` | `scenes/world-combat.ts`、`rendering/combat-presenter.ts`、`content/battle.json` | `combat`、`combat-runtime`、`combat-kernel` |
 | 技能效果与命中反应 | `combat-unit-execution.ts`、`combat-effect-executor.ts`、`combat-hit-resolution.ts`、`combat-reaction-pipeline.ts`、`combat-follow-ups.ts` | `world-combat.ts` 的状态与画面接口、`battle.json` | `skill-unit-runtime`、`skill-reaction-runtime`、对应技能测试 |
 | 冷却、状态、持续效果与恢复 | `session.ts`、`combat-clock.ts`、`combat-cooldowns.ts`、`combat-conditions.ts`、`combat-periodic.ts`、`combat-resources.ts` | `world-combat.ts`、`status-hud.json` | `combat-clock-runtime`、`combat-cooldowns`、`combat-state-runtime`、`combat-resources-runtime` |
-| 怪物与伙伴 AI（自动行为） | `enemy-ai.ts`、`party-ai.ts`、`combat-threat*.ts`、`world-enemies.ts` | `world-combat.ts`、`content/maps/`、`companions.json` | `enemy-ai`、`party-ai`、`world-enemies`、`world-threat` |
+| 怪物与伙伴 AI（自动行为） | `enemy-ai.ts`、`party-ai.ts`、`party-trail.ts`、`combat-threat*.ts`、`world-enemies.ts` | `world-combat.ts`、`content/maps/`、`companions.json` | `enemy-ai`、`party-ai`、`world-enemies`、`world-threat` |
 | 移动、碰撞、出口、落位 | `navigation-world.ts`、`pathfinding.ts`、`path-budget.ts`、`walk-route.ts`、`navigation.ts` | `rendering/movement-world.ts`、`arcade-movement.ts`、`movement-interpolation.ts`、`scenes/world-scene.ts` | `movement`、`movement-world`、`navigation-placement`、`map-placement`、`story-exit-gates` |
 | 任务、剧情与永久世界 | `campaign.ts`、`quest-book.ts`、`story-runtime.ts`、`story-world.ts`、`story-director.ts` | `campaign.json`、`rendering/story-presenter.ts`、`scenes/story-stage-scene.ts` | `session-quest-core`、`story-runtime`、`story-director-core`、`story-stage-isolation` |
 | 背包、穿戴、人物成长 | `bag.ts`、`items.ts`、`character-stats.ts`、`attribute-allocation.ts`、`story-skills.ts` | `ui/story-ui.ts`、`rendering/wardrobe.ts`、`rendering/wardrobe-cache.ts`、`items.json`、`character-stats.json`、`wardrobe.json` | `bag`、`character-stats`、`wardrobe`、`story-skills` |
@@ -79,7 +79,7 @@
 
 攻击接近距离 `approachDistanceUnits` 按实体边缘的横纵距离各除八取整并加两个近身单位。`searchRadiusPx` 和 `targetRangePx` 使用世界像素。`targetRangeMetric: octagonal-grid` 使用八方向整数近似距离再按八像素取整；省略时采用圆形距离。特效的 `attached` 跟随人物锚点，`ground` 在人物下方，`above-characters` 在人物上方；具体层级由内容与 `CombatEffects` 管理。
 
-正常敌人由地图候选点和任务／遭遇配置生成，资源、掉落、刷新截止时间由会话保存。零血后立即退出选敌与碰撞，660ms 消散结束后结算一次奖励；普通敌人经过 60 秒可操作时间刷新。剧情永久击败使用可写入JSON的 `permanent` 标记，限时刷新使用有限的游戏毫秒截止值。地面物品在落地前不参与拾取，落地后在操控者横纵各 12 像素内自动拾取。任务地面物品由地图的 `questItemSpawns` 定义，`Session.questItemGenerators` 使用共享逻辑帧处理生成与拾取后的刷新；只有对应任务 active 才生成，未拾取实例持续绑定生成点。绑定、剩余帧数与共享检查截止帧随会话存档。队伍人数变化调整敌人上限并保留生命比例。怪物和队员的动作、仇恨、寻路规则分别在 `enemy-ai.ts`、`party-ai.ts` 和 `combat-threat*.ts`。剧情末节点直接开战时，已经 active 的遭遇不会阻止演出收尾把被困的闲置佣兵拉回主角身边；佣兵追击敌人或自动接近时连续 1.5 秒没有真实位移，会取消当前追击并收拢一次，随后短暂停止重新索敌，避免在剧情障碍前反复瞬移。
+正常敌人由地图候选点和任务／遭遇配置生成，资源、掉落、刷新截止时间由会话保存。零血后立即退出选敌与碰撞，660ms 消散结束后结算一次奖励；普通敌人经过 60 秒可操作时间刷新。剧情永久击败使用可写入JSON的 `permanent` 标记，限时刷新使用有限的游戏毫秒截止值。地面物品在落地前不参与拾取，落地后在操控者横纵各 12 像素内自动拾取。任务地面物品由地图的 `questItemSpawns` 定义，`Session.questItemGenerators` 使用共享逻辑帧处理生成与拾取后的刷新；只有对应任务 active 才生成，未拾取实例持续绑定生成点。绑定、剩余帧数与共享检查截止帧随会话存档。队伍人数变化调整敌人上限并保留生命比例。怪物和队员的动作、仇恨、寻路规则分别在 `enemy-ai.ts`、`party-ai.ts` 和 `combat-threat*.ts`。剧情末节点直接开战时，已经 active 的遭遇不会阻止演出收尾把被困的闲置佣兵拉回主角身边；佣兵跟随以队形槽位为主；槽位连续 350ms 站不下、或短距离内寻路绕行超过 1.6 倍直线上限时，改走 `party-trail.ts` 记录的主角路径，恢复可站 800ms 后再回队形。追击目标时连续 1.5 秒没有真实位移，会取消当前追击并收拢一次，随后短暂停止重新索敌，避免在剧情障碍前反复瞬移。
 
 ## 移动、电影舞台与永久世界
 

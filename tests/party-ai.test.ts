@@ -2,7 +2,7 @@ import {CombatCooldownStore} from '../src/domain/combat-cooldowns.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {readFileSync} from 'node:fs';
-import {PartyController,partySkillThreshold,
+import {PartyController,partySkillThreshold,shouldUseTrailByDetour,
   type PartyPort,type PartySkillKind} from '../src/domain/party-ai.ts';
 import {CombatController,type ActionPlayback,type Combatant} from '../src/domain/combat.ts';
 import {attackDistance,resolveBasicAttack,targetDistance} from '../src/domain/basic-attack.ts';
@@ -273,4 +273,24 @@ test('party single-step decisions read session cooldowns without advancing their
   run.finish();
   run.time.frame=duration;assert.deepEqual(run.ai.snapshot().cooldowns,{});
   run.ai.step();assert.equal(run.plays.filter(play=>play.skill).length,2);
+});
+
+test('detour detection only applies to short formation paths',()=>{
+  assert.equal(shouldUseTrailByDetour(160,100),false,'刚好 1.6 倍不算绕');
+  assert.equal(shouldUseTrailByDetour(153,90),true);
+  assert.equal(shouldUseTrailByDetour(300,150),false,'直线距离超过 96 像素时不按绕行判断');
+  assert.equal(shouldUseTrailByDetour(10,0),false);
+});
+
+test('a blocked formation slot falls back to the leader trail and returns after the exit window',()=>{
+  const run=setup(),formation={x:128,y:48},trail={x:100,y:32};
+  let usable=false;
+  run.port.followGoal=()=>formation;
+  run.port.trailGoal=()=>trail;
+  run.port.canStand=point=>usable||point.x!==formation.x||point.y!==formation.y;
+  run.ai.update(60*8);
+  assert.deepEqual(run.ai.captureState().destination,trail,'队形点连续不可站后切轨迹');
+  usable=true;
+  run.ai.update(60*16);
+  assert.deepEqual(run.ai.captureState().destination,formation,'恢复可站一段时间后切回队形');
 });

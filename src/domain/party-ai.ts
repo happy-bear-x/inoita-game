@@ -11,6 +11,8 @@ export interface PartyPort extends CombatPort {
   leader(): Combatant | undefined;
   /** 跟随队长时要走到的队形槽位；缺省时退回队长身边任意点。 */
   followGoal?(): Point | undefined;
+  /** 窄路时沿主角最近走过的路径跟随的目标点；没有轨迹时退回队形目标。 */
+  trailGoal?(): Point | undefined;
   focusTarget(): string | undefined;
   /** 主操作角色当前的战斗目标；队伍联动时让佣兵攻击同一个敌人。 */
   partyTarget?(): string | undefined;
@@ -57,6 +59,20 @@ const PARTY_CHASE_RECOVERY_MS = 2400;
 const PARTY_FOLLOW_PROGRESS_PX = 4;
 /** 几乎贴脸时才不触发收拢；薄墙两侧 8px 以上也要能脱困。 */
 const PARTY_REGROUP_MIN_DISTANCE_PX = 8;
+/** 队形点连续不可站这么久后，改走主角走过的路径。 */
+const PARTY_TRAIL_ENTER_MS = 350;
+/** 队形点恢复可站这么久后再切回队形，避免门口来回抖。 */
+const PARTY_TRAIL_EXIT_MS = 800;
+/** 绕行比超过这个值、且直线距离够近时，认为队形点不自然。 */
+const PARTY_TRAIL_DETOUR_RATIO = 1.6;
+const PARTY_TRAIL_DETOUR_MAX_PX = 96;
+/** 因绕行切到轨迹后，至少保持这么久再评估回队形，避免在连续拐角里来回切。 */
+const PARTY_TRAIL_DETOUR_HOLD_MS = 1500;
+
+/** 队形点能站，但寻路要绕很远时，下一帧改走主角路径。 */
+export function shouldUseTrailByDetour(pathLength:number, straightDistance:number):boolean {
+  return straightDistance>0&&straightDistance<=PARTY_TRAIL_DETOUR_MAX_PX&&pathLength/straightDistance>PARTY_TRAIL_DETOUR_RATIO;
+}
 
 /** 自动施法抽取 1 至 99 的整数，严格小于阈值时通过。 */
 export function partySkillThreshold(kind:PartySkillKind,frequency:number,following:boolean):number {
@@ -88,6 +104,11 @@ export class PartyController {
   /** 追击敌人或自动接近时的最近一次真实位移；和队长跟随分开记录，战斗状态不会互相清零。 */
   private chaseProgress?:{targetId:string;position:Point;since:number};
   private chaseRecoveryUntil=0;
+  private followMode:'formation'|'trail'='formation';
+  private formationBlockedSince=0;
+  private formationUsableSince=0;
+  private trailHoldUntil=0;
+  private searchKind:'follow-formation'|'follow-trail'|'chase'|undefined;
   private destination?:Point;
   private destinationTarget?:string;
   private destinationRange?:number;
@@ -111,6 +132,7 @@ export class PartyController {
     // 搜索持有的是旧场地的闭包，读档后必须重新开始。
     this.search=undefined;this.pathRetryAt=0;this.followProgress=undefined;this.followProgressAt=0;
     this.chaseProgress=undefined;this.chaseRecoveryUntil=0;
+    this.followMode='formation';this.formationBlockedSince=0;this.formationUsableSince=0;this.trailHoldUntil=0;this.searchKind=undefined;
   }
   targetRemoved(targetId:string):void {
     this.combatController.targetRemoved(targetId);
@@ -121,7 +143,8 @@ export class PartyController {
   cancel():void {this.combatController.cancel(true);this.path=[];this.search=undefined;this.pathRetryAt=0;
     this.followProgress=undefined;this.followProgressAt=0;this.chaseProgress=undefined;this.chaseRecoveryUntil=0;
     this.destination=undefined;this.destinationTarget=undefined;this.destinationRange=undefined;
-    this.nextPathAt=0;this.accumulator=0;this.port.stop();}
+    this.nextPathAt=0;this.accumulator=0;this.followMode='formation';this.formationBlockedSince=0;
+    this.formationUsableSince=0;this.trailHoldUntil=0;this.searchKind=undefined;this.port.stop();}
   disable():void {this.cancel();}
   reset():void {this.cancel();this.combatController.reset();}
   dispose():void {this.cancel();this.disposed=true;this.combatController.dispose();}
@@ -158,7 +181,7 @@ export class PartyController {
     ]);
     // 重新选中目标时清掉旧的队长跟随计时；没有目标但处于战斗时仍走队长跟随，
     // 这条计时不能被 inCombat 每帧清零，否则掉队收拢在战斗中永远等不到触发。
-    if(target){this.followProgress=undefined;this.followProgressAt=0;}
+    if(target){this.followProgress=undefined;this.followProgressAt=0;this.formationBlockedSince=0;this.formationUsableSince=0;}
     // 队伍未进入战斗时只跟随，不放任何主动技能；召唤物之类的无目标技能也不例外。
     if(inCombat){
       const cooldowns=this.combatController.snapshot().cooldowns;
@@ -192,7 +215,9 @@ export class PartyController {
     }
     this.chaseProgress=undefined;
     const leader=this.port.leader();
-    const goal=this.port.followGoal?.();
+    const formation=this.port.followGoal?.();
+    this.updateFollowMode(formation);
+    const goal=this.followMode==='trail'?this.port.trailGoal?.()??formation:formation;
     // 有队形槽位时按「离自己的槽位点多远」判断到没到，而不是离队长多远；
     // 否则槽位点在队长的跟随半径内，佣兵会在到达槽位前就停下。
     if(!leader||leader.id===actor.id||(goal
@@ -238,6 +263,32 @@ export class PartyController {
     // 宿主的收拢会调用本控制器的 cancel()；冷却必须放在收拢之后，否则会被清掉。
     this.chaseRecoveryUntil=this.clock+PARTY_CHASE_RECOVERY_MS;
     return true;
+  }
+  /** 队形点连续不可站就切轨迹；恢复可站一段时间后再切回，避免门口反复切换。 */
+  private updateFollowMode(formation?:Point):void {
+    if(!formation)return;
+    const usable=this.port.canStand(formation);
+    if(this.followMode==='formation'){
+      this.formationUsableSince=0;
+      if(usable){this.formationBlockedSince=0;return;}
+      if(!this.formationBlockedSince)this.formationBlockedSince=this.clock;
+      else if(this.clock-this.formationBlockedSince>=PARTY_TRAIL_ENTER_MS)this.switchFollowMode('trail');
+      return;
+    }
+    this.formationBlockedSince=0;
+    if(!usable){this.formationUsableSince=0;return;}
+    if(this.clock<this.trailHoldUntil){this.formationUsableSince=0;return;}
+    if(!this.formationUsableSince)this.formationUsableSince=this.clock;
+    else if(this.clock-this.formationUsableSince>=PARTY_TRAIL_EXIT_MS)this.switchFollowMode('formation');
+  }
+  /** 切换跟随方式时丢掉旧路线，下一帧从新目标重新找路。 */
+  private switchFollowMode(mode:'formation'|'trail',holdMs=0):void {
+    if(this.followMode===mode)return;
+    this.followMode=mode;
+    this.trailHoldUntil=mode==='trail'?this.clock+holdMs:0;
+    this.formationBlockedSince=0;this.formationUsableSince=0;
+    this.path=[];this.search=undefined;this.searchKind=undefined;this.destination=undefined;
+    this.pathRetryAt=0;this.nextPathAt=0;
   }
   private follow(actor:Combatant,leader:Combatant,range:number,regroup=false,goal?:Point):void {
     const capabilities=combatStateCapabilities(actor.states??[]);
@@ -298,6 +349,7 @@ export class PartyController {
   }
   private beginSearch(actor:Combatant,leader:Combatant,range:number,granted:number,goal?:Point):void {
     const target=goal??leader.position;
+    this.searchKind=goal?(this.followMode==='trail'?'follow-trail':'follow-formation'):'chase';
     this.nextPathAt=this.clock+PARTY_REPATH_INTERVAL_MS;this.destination={...target};
     const canStand=(point:Point)=>this.port.canStand(point);
     const radius=Math.hypot(actor.bounds.width+leader.bounds.width,actor.bounds.height+leader.bounds.height)+range*8;
@@ -317,6 +369,7 @@ export class PartyController {
     const search=this.search;if(!search)return;
     const result=search.step(granted);
     if(result.status==='pending')return;
+    const kind=this.searchKind;this.searchKind=undefined;
     this.search=undefined;
     if(result.status==='unreachable'){this.path=[];this.nextPathAt=this.clock+PARTY_FAILED_PATH_MS;return;}
     // 搜索跨了几帧，角色可能被其他系统挪过；从离当前位置最近的点继续，别掉头走回起点。
@@ -326,7 +379,14 @@ export class PartyController {
       if(distance>=nearest)break;
       start=index;nearest=distance;
     }
-    this.path=result.path.slice(start);
+    const path=result.path.slice(start);
+    // 队形点能站但路要绕很远时，下一帧改走主角路径；只在短距离内判断，避免长路误伤。
+    if(kind==='follow-formation'&&this.destination){
+      let pathLength=0,previous=actor.position;
+      for(const point of path){pathLength+=Math.hypot(point.x-previous.x,point.y-previous.y);previous=point;}
+      if(shouldUseTrailByDetour(pathLength,targetDistance(actor.position,this.destination))){this.switchFollowMode('trail',PARTY_TRAIL_DETOUR_HOLD_MS);return;}
+    }
+    this.path=path;
   }
   private readonly nextWaypoint=():Point|undefined=>{
     const actor=this.port.actor(this.id);if(!actor||this.disposed)return;

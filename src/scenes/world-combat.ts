@@ -35,6 +35,7 @@ import { FriendlySummonController } from '../domain/friendly-summon-ai.ts';
 import { SummonCombatAwareness } from '../domain/summon-tactics.ts';
 import { canTraverse } from '../domain/pathfinding.ts';
 import { choosePartyLanding, facingBackAngle, formationSlotOffset, partyBodyOverlaps, smoothFormationAngle } from '../domain/party-placement.ts';
+import { PARTY_TRAIL_OFFSETS_PX, PartyTrail } from '../domain/party-trail.ts';
 import type { NavigationActor, NavigationShape } from '../domain/navigation-world.ts';
 import { overlapsFootRect } from '../domain/navigation.ts';
 import { PartyController, type PartyPort } from '../domain/party-ai.ts';
@@ -233,6 +234,7 @@ export class WorldCombat {
   private formationLeaderId?:string;
   private formationLeaderPosition?:Point;
   private readonly followLandingCache = new Map<string,{key:string;point:Point}>();
+  private readonly partyTrail=new PartyTrail();
   private readonly regroupAttempts = new Map<string,number>();
   private readonly regroupCooldowns = new Map<string,number>();
   constructor(scene:WorldScene,app:StoryContext,roster:WorldEnemyRoster,hero:BattleCharacter,drops:DropCatalog){
@@ -1920,7 +1922,7 @@ captureStoryActors():SceneActorState[] {
       healScore:key=>this.healScoreFor(key),
       healCandidates:()=>this.healCandidates(),
       facing,
-      leader:()=>this.combatant(this.controlledId),followGoal:()=>this.partyFollowGoal(id),focusTarget:()=>this.focusTargetId,
+      leader:()=>this.combatant(this.controlledId),followGoal:()=>this.partyFollowGoal(id),trailGoal:()=>this.partyTrailGoal(id),focusTarget:()=>this.focusTargetId,
       partyTarget:()=>this.currentTargetOf(this.controlledId),
       // 玩家指派了目标，或队伍最近与敌人真实交战过，都算整个队伍已进入战斗。
       inCombat:()=>!!this.focusTargetId||this.awareness.inCombat((this.app.session.combatTick??0)*LOGIC_FRAME_MS),
@@ -2053,6 +2055,7 @@ captureStoryActors():SceneActorState[] {
     this.formationAngle=facingBackAngle(facing);
     this.formationLeaderId=this.controlledId;
     this.formationLeaderPosition=anchor?{...anchor}:undefined;
+    this.partyTrail.reset(anchor);
     this.followLandingCache.clear();
   }
   /**
@@ -2077,6 +2080,7 @@ captureStoryActors():SceneActorState[] {
       if(Math.hypot(dx,dy)>=1)
         this.formationFacing=Math.abs(dx)>=Math.abs(dy)?(dx>0?'east':'west'):(dy>0?'south':'north');
     }
+    this.partyTrail.record(anchor);
     // 约 350ms 沿最短圆弧完成换边，不会经过队长脚下。
     this.formationAngle=smoothFormationAngle(this.formationAngle,facingBackAngle(this.formationFacing),0.15);
   }
@@ -2106,9 +2110,12 @@ captureStoryActors():SceneActorState[] {
     const actor=this.movement.actor(visual),shape=actor.shape();
     const avoid=[anchor,...alive.map(other=>this.movement!.position(other.visual))];
     const occupied=avoid.some(other=>partyBodyOverlaps(preferred,other,shape));
-    if(!occupied&&this.movement.navigation.terrainFree(preferred)
-      &&this.movement.navigation.canPlaceBody(shape,preferred,actor))return preferred;
-    // 槽位被墙/同伴挡住时才做落点扫描；按锚点、角度和同伴位置缓存，避免每逻辑帧全图扫描。
+    const terrainBlocked=!this.movement.navigation.terrainFree(preferred)
+      ||!this.movement.navigation.canPlaceBody(shape,preferred,actor);
+    if(!occupied&&!terrainBlocked)return preferred;
+    // 地形挡住槽位时把原槽位交回 AI，让它切到沿主角路径跟随；只有被同伴占住才扫描附近落点。
+    if(terrainBlocked)return preferred;
+    // 槽位被同伴挡住时才做落点扫描；按锚点、角度和同伴位置缓存，避免每逻辑帧全图扫描。
     const key=`${slot}|${Math.round(anchor.x/8)}|${Math.round(anchor.y/8)}|${Math.round(this.formationAngle*20)}|`
       +avoid.map(point=>`${Math.round(point.x/8)},${Math.round(point.y/8)}`).join(';');
     const cached=this.followLandingCache.get(id);
@@ -2116,6 +2123,18 @@ captureStoryActors():SceneActorState[] {
     const landing=choosePartyLanding(this.movement.navigation,shape,preferred,actor,avoid);
     if(landing)this.followLandingCache.set(id,{key,point:landing});
     return landing??cached?.point;
+  }
+  /** 窄路回退目标：沿主角最近走过的路径，找一个自己能站稳的位置。 */
+  private partyTrailGoal(id:string):Point|undefined {
+    if(!this.movement)return undefined;
+    const visual=this.visualOf(id);
+    if(!visual)return undefined;
+    const actor=this.movement.actor(visual),shape=actor.shape();
+    for(const distance of PARTY_TRAIL_OFFSETS_PX){
+      const point=this.partyTrail.pointBehind(distance);
+      if(point&&this.movement.navigation.canPlaceBody(shape,point,actor))return point;
+    }
+    return undefined;
   }
   /**
    * 剧情把主角送到新位置后，把其余上阵队员收拢到主角身边。

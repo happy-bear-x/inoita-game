@@ -3,6 +3,7 @@ import { registerHooks } from 'node:module';
 import test from 'node:test';
 import { NavigationWorld, type NavigationActor } from '../src/domain/navigation-world.ts';
 import { facingBackAngle } from '../src/domain/party-placement.ts';
+import { PartyTrail } from '../src/domain/party-trail.ts';
 import type { Point } from '../src/domain/navigation.ts';
 
 const hook=registerHooks({resolve(specifier,context,next){
@@ -61,7 +62,7 @@ function fixture(options:{sealed?:boolean;wall?:boolean}={}){
   const allies=[ally('companion',{x:64,y:64}),ally('second',{x:600,y:600})];
   const state={app:{session:{party}},scene:{player:hero,facing:'south'},movement,allies,
     formationFacing:'south' as const,formationAngle:facingBackAngle('south'),
-    followLandingCache:new Map(),regroupAttempts:new Map(),regroupCooldowns:new Map(),
+    followLandingCache:new Map(),partyTrail:new PartyTrail(),regroupAttempts:new Map(),regroupCooldowns:new Map(),
     arena:[] as TestEnemy[],pendingDefeats:new Set<string>(),fallen:new Set<string>(),closed:false};
   const combat=Object.setPrototypeOf(state,WorldCombat.prototype) as unknown as InstanceType<typeof WorldCombat>;
   return {combat,navigation,movement,positions,actors,party,hero,allies,moved,cancelled,fallen:state.fallen,app:state.app,
