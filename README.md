@@ -111,7 +111,7 @@ GM 面板包含状态、人物、道具和剧情四个子页；浏览器里也�
 
 `npm run apk` 会把 `dist/` 打进 `android/` 提供的 WebView 壳。首次运行会自动下载 Android SDK 与 Gradle，并生成签名密钥到用户目录；`android/keystore.properties`、构建缓存和产物都不会进入仓库。
 
-热更新在 `npm run build` 时生成 `dist/update/` 清单和签名。首次打包前运行 `npm run update:key`，私钥保存在 `~/.config/inoita/update-signing.pem`，必须单独备份；公钥 `android/update-public-key.txt` 随仓库提交。`npm run apk` 会把更新器一起打进安装包，之后改网页层代码或内容只需重新构建和部署，不再重发 225MB 的 APK。细则见 [热更新（Android WebView）](docs/live-update.md)。
+热更新在 `npm run build` 时生成 `dist/update/` 清单和签名。首次打包前运行 `npm run update:key`，私钥保存在 `~/.config/inoita/update-signing.pem`，必须单独备份；公钥 `android/update-public-key.txt` 随仓库提交。`npm run apk` 会把更新器一起打进安装包，之后改网页层代码或内容只需重新构建和部署，不再重发约 230MB 的 APK。细则见 [热更新（Android WebView）](docs/live-update.md)。
 
 ## 特别感谢
 

@@ -101,11 +101,13 @@ config/                环境服务根地址（AGENTS.md；网页固定同源，
 tests/                 单元测试（AGENTS.md；helpers、support 另有）
 tools/                 构建、校验、调试现场表生成、静态服务、APK 打包（AGENTS.md；debug-start 另有）
 deploy/                nginx 站点等部署配置
-docs/                  架构、掉落、剧情创作、音频、部署、服务地址、热更新、调试与诊断
+docs/                  架构、模块原理、剧情创作、音频、掉落、云存档、部署、服务地址、热更新、调试与诊断
 android/               Android WebView 壳（可选，规则见 AGENTS.md）
 .agents/skills/        Phaser 4 开发技能
 .claude/skills         指向 ../.agents/skills 的符号链接
 ```
+
+`docs/` 只放长期维护的开发说明；一次性的交接、排查记录和已完成方案写进提交说明，做完即删。
 
 ## 6. 常用命令
 

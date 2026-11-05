@@ -1,6 +1,6 @@
 # 热更新（Android WebView）
 
-APK 把 Vite 构建的 `dist/`（225MB、12,438 个文件）打进 assets，WebView 通过 `WebViewAssetLoader` 从 `https://appassets.androidplatform.net/` 读取。没有热更新时，改一句剧情或一行代码都要重新打 225MB 的包发给玩家重装。
+APK 把 Vite 构建的 `dist/`（当前约 230MB、1.25 万个文件）打进 assets，WebView 通过 `WebViewAssetLoader` 从 `https://appassets.androidplatform.net/` 读取。没有热更新时，改一句剧情或一行代码都要重新打约 230MB 的包发给玩家重装。
 
 离线是硬前提：游戏必须断网可玩，所以继续把整包打进 APK，热更只做增量覆盖。不采用「壳直接加载远端 URL」的方案。
 
@@ -260,9 +260,9 @@ npm run verify:update -- --apk apk-out/Inotia-4-1.0.0.apk --url https://catgo.on
 - **回滚范围有限**：只处理启动失败。已经进过标题页的版本不会自动回退，避免碰到已升级的存档。失败版本记入 `failedBuildId`，不会反复弹窗。
 - **大改动仍要重装**：Java、权限、Gradle、新增原生桥方法都只能走 APK。`SHELL_VERSION` / `minShell` 就是为这种情况准备的闸门；新 APK 的 `versionCode` 必须递增。
 - **不支持降级**：`builtAt` 只增不减。要撤回线上版本时，部署一个内容正确的新构建，而不是把站点换回旧构建。
-- **存储**：应用总占用约为 APK 225MB + 当前版本 225MB；staging 只额外占用缺失文件。安装前按 `缺失总量 × 1.25 + 16MB` 检查剩余空间，空间不足时明确提示，而不是装到一半失败。
+- **存储**：应用总占用约为 APK 230MB + 当前版本 230MB；staging 只额外占用缺失文件。安装前按 `缺失总量 × 1.25 + 16MB` 检查剩余空间，空间不足时明确提示，而不是装到一半失败。
 - **清单体积**：约 1.18MB，gzip 后约 170KB，只在确实有更新时下载；常规剧情改动约 1–3MB，修 Phaser 代码约 2.6MB。
 - **首次检查开销**：每次冷启动一个几百字节的请求；失败后 30 秒重试，最多 3 次，不阻塞进游戏。前台恢复时 6 小时间隔检查。
 - **更新状态持久化**：最近检查时间/结果、待处理 buildId、已就绪 buildId、下载失败原因、启动失败 buildId 和时间、启动耗时都写进 SharedPreferences；Activity 重建或进程被杀后能恢复提示和重试，不再只存在内存弹窗里。
-- **下载与应用分开**：下载完成只标记 ready，不立刻切 active；玩家可以立即重启，也可以下次冷启动自动应用。冷启动应用仍走 `pendingBoot` / `markBootOk` 回退窗口。
+- **下载与应用分开**：下载完成只标记 ready，不立刻切 active；玩家可以立即重启，也可以下次冷启动自动应用。冷启动应用仍走 `pendingBoot` / `markBootOk` 回退窗口；已就绪版本的 `builtAt` 不高于当前版本或 `buildId` 相同时直接丢弃，避免装上新 APK 后又被旧网页包降级。
 - **更新生命周期上报**：检查结果、发现更新、开始下载、下载完成、切换版本、启动成功和回退都通过原生诊断桥写入 `kind=update-*` 的事件，细节带 buildId、文件数、失败原因和 `buildInfo`。

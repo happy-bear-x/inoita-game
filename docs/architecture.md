@@ -137,8 +137,8 @@
 
 ## 友方召唤物
 
-地狱之兵和驯兽召唤使用独立的自主决策，按固定主人跟随、护主和协同已发生的战斗；分步寻路及安全脱战召回见 [友方召唤物说明](friendly-summons.md)。世界快照按普通敌人与友方召唤区分行为类型，当前存档格式为42。
+地狱之兵和驯兽召唤使用独立的自主决策，按固定主人跟随、护主和协同已发生的战斗。分步寻路、安全脱战召回和战术参数以 `domain/friendly-summon-ai.ts` 与 `tests/friendly-summon-ai.test.ts`、`tests/friendly-summon-world.test.ts` 为准。世界快照按普通敌人与友方召唤区分行为类型，当前存档格式为42。
 
 ## Boss 全图参战
 
-当前两种地图战斗 Boss 使用显式的 `engagement: map-wide` 配置，加载和演出结束后发现整张地图中的队伍，继续使用原仇恨、技能和碰撞。普通怪物保持原有规则。内容与验证入口见 [Boss 进图主动开战](boss-engagement.md)。
+当前两种地图战斗 Boss 使用显式的 `engagement: map-wide` 配置，加载和演出结束后发现整张地图中的队伍，继续使用原仇恨、技能和碰撞。普通怪物保持原有规则。字段写在 `battle.json` 的敌人定义里，行为与验证以 `domain/enemy-engagement.ts`、`tests/boss-engagement.test.ts` 为准。

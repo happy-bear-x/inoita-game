@@ -96,7 +96,7 @@ bulkSellEquipment(entries, catalog, gradeTable, sellPrice, settings)
 
 - `ItemInstance.locked?: boolean`，整叠一起锁。
 - 锁定物品不与未锁定同种物品合并（`holdsInstanceState` 要包含 `locked`）。
-- `SAVE_FORMAT` 42 → 43；升级链补 42→43，旧档物品全部补 `locked = false`。
+- 提升 `SAVE_FORMAT`（以实现时的当前值为准）；升级链补上一版到新版的迁移，旧档物品全部补 `locked = false`。
 - `verifyBagState` 校验 `locked` 必须是布尔值。
 - 需要拦住的背包方法：`discard`、`take`、`use`、`remove`（跳过锁定条目）、`swapGem`（锁定宝石不能作为来源）。
 - `Storefront.sell` / `sellMany` 补明确的“物品已锁定，不能出售”错误。
@@ -121,7 +121,7 @@ bulkSellEquipment(entries, catalog, gradeTable, sellPrice, settings)
 | `src/domain/shop.ts` | `sellPrice`、`sell`、`sellMany` |
 | `src/application/saved-game.ts` | 存档升级链 |
 | `src/ui/item-name-color.ts` | 品质颜色与格子边框 |
-| `docs/gem-enhancement-handoff.md` | 原版动作叫“粉碎”，原版没有道具锁 |
+| 原版依据 | 原版动作叫“粉碎”，原版没有道具锁；本项是新增设计 |
 
 ## 6. 验证计划（后期实现时）
 
