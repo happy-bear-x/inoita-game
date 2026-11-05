@@ -1,5 +1,5 @@
 import type { Campaign, CampaignQuest } from '../../domain/campaign.ts';
-import { storyDebugEvidenceCount, type StoryDebugGap, type StoryDebugTask, type StoryDebugTarget } from '../../domain/story-debug.ts';
+import { storyDebugEvidenceCount, type StoryDebugTask, type StoryDebugTarget } from '../../domain/story-debug.ts';
 import type { GmActions, GmCharacterState, GmItemEntry, GmItemFilter } from '../../debug/gm-actions.ts';
 import { INVENTORY_LABELS } from '../../domain/inventory.ts';
 import type { UiSurface } from './widgets.ts';
@@ -64,10 +64,9 @@ const readableStoryText = (value:string):string => {
 };
 
 type StoryCategory = 'main' | 'side' | 'hidden';
-type StoryFilter = StoryCategory | 'gaps';
-const CATEGORY_LABELS: Record<StoryCategory, string> = { main: '主线', side: '支线', hidden: '隐藏' };
-const STORY_FILTERS: readonly (readonly [StoryFilter, string])[] = [
-  ['main', '主线'], ['side', '支线'], ['hidden', '隐藏'], ['gaps', '缺口'],
+const CATEGORY_LABELS: Record<StoryCategory, string> = { main: '主线', side: '支线', hidden: '日志外' };
+const STORY_FILTERS: readonly (readonly [StoryCategory, string])[] = [
+  ['main', '主线'], ['side', '支线'], ['hidden', '日志外'],
 ];
 const QUEST_STATUS_LABELS: Record<string, string> = {
   locked: '未解锁', available: '可接取', active: '进行中', ready: '待交付', completed: '已完成',
@@ -108,11 +107,10 @@ interface StoryTaskRow {
 
 export class GmPanel {
   private page: GmPage = 'status';
-  private filter: StoryFilter = 'main';
+  private filter: StoryCategory = 'main';
   private result = '';
   private ending = false;
   private selectedQuest?: string;
-  private selectedGap?: number;
   private storyCatalog?: StoryTaskRow[];
   /** 当前选中任务的预览请求；换任务就作废旧结果，迟到的响应不覆盖新选择。 */
   private previewQuest?: string;
@@ -342,8 +340,6 @@ export class GmPanel {
   /** 剧情页只有任务列表一层；Escape 交给菜单继续处理。 */
 
   private renderStory(body: UiSurface): string {
-    // 缺口分区读导出器台账：只说明缺哪条证据，不触发预览，也不能进入任务。
-    if (this.filter === 'gaps') return this.renderGaps(body);
     const debug = this.gm.storyDebug();
     const rows = this.storyTasks();
     if (!rows.some(row => row.task.quest === this.selectedQuest)) {
@@ -353,7 +349,7 @@ export class GmPanel {
     const row = rows.find(row => row.task.quest === this.selectedQuest);
     body.rect(60,100,352,336,0x120d08,.72); body.rect(430,100,490,336,0x120d08,.72);
     STORY_FILTERS.forEach(([value,label],index)=>body.button(label,60+index*110,54,104,30,()=>{
-      if(this.filter===value)return;this.filter=value;this.storyScroll=0;this.storyIntroScroll=0;this.selectedGap=undefined;this.hooks.render();
+      if(this.filter===value)return;this.filter=value;this.storyScroll=0;this.storyIntroScroll=0;this.hooks.render();
     },{selected:this.filter===value,fontSize:17}).setData('label',`分类 ${label}`));
     if (debug.focus) body.button(this.ending ? '正在结束调试…' : '结束本次调试',660,54,150,30,
       ()=>this.onEndDebug(),{disabled:this.ending}).setData('label','结束本次调试');
@@ -376,43 +372,6 @@ export class GmPanel {
     if(row)this.renderTaskDetail(body,row);
     else body.text('没有符合筛选条件的任务',442,112,466,19);
     return `可调任务 ${rows.length} 个${debug.focus?` · ${DEBUG_PAUSED_NOTE}`:''}`;
-  }
-
-  /** 缺口分区：每条缺口说明缺哪条证据与修复线索，不提供进入入口。 */
-  private renderGaps(body: UiSurface): string {
-    const gaps = this.gaps();
-    if (this.selectedGap === undefined || this.selectedGap >= gaps.length) this.selectedGap = gaps.length ? 0 : undefined;
-    body.rect(60,100,352,336,0x120d08,.72); body.rect(430,100,490,336,0x120d08,.72);
-    STORY_FILTERS.forEach(([value,label],index)=>body.button(label,60+index*110,54,104,30,()=>{
-      if(this.filter===value)return;this.filter=value;this.storyScroll=0;this.storyIntroScroll=0;this.hooks.render();
-    },{selected:this.filter===value,fontSize:17}).setData('label',`分类 ${label}`));
-    const list=body.scroll(60,100,352,336);list.setHeight(gaps.length*54);
-    list.setVirtual(gaps.length,54,(first,last)=>{
-      for(let index=first;index<last;index++){
-        const gap=gaps[index]!,selected=index===this.selectedGap,y=index*54;
-        body.rect(0,y,352,52,selected?0x6f5232:0x241a10,selected?.74:.46,list.content);
-        const button=body.button('',0,y,352,52,()=>{
-          if(index===this.selectedGap)return;
-          this.selectedGap=index;this.hooks.render();
-        },{bare:true,parent:list.content,guard:list.guard});
-        button.setData('label',`缺口 ${gap.quest}`);
-        body.text(clipText(this.questTitle(gap.quest),17),12,5,328,18,selected?'#fff':'#f3deb0',button);
-        body.text(clipText(gap.kind,26),12,29,328,15,'#b8ab92',button);
-      }
-    });
-    const gap=this.selectedGap!==undefined?gaps[this.selectedGap]:undefined;
-    if(gap)this.renderGapDetail(body,gap);
-    else body.text('没有缺口记录',442,112,466,19);
-    return `缺口 ${gaps.length} 条`;
-  }
-
-  private renderGapDetail(body: UiSurface, gap: StoryDebugGap): void {
-    body.text(clipText(this.questTitle(gap.quest),22),442,108,466,20,'#f3deb0');
-    body.text(clipText(gap.kind,26),442,136,466,16,'#b8ab92');
-    this.drawStoryDescription(body,gap.detail);
-    body.text(clipText(`证据：${gap.evidence ?? '—'}`,56),442,258,466,15,'#b8ab92');
-    body.text(clipText(`修复线索：${gap.fixHint ?? '继续查原版证据'}`,56),442,280,466,15,'#b8ab92');
-    body.text(clipText('缺口任务不生成现场表，也不进入任务列表。',54),442,322,466,15,'#b8ab92');
   }
 
   /** 选中任务的详情：进度、说明、现场表来源与开幕演出；预览完成前不开放进入。 */
@@ -456,9 +415,6 @@ export class GmPanel {
     const cut = CUT_LABELS[play.cut ?? 'before-opening'] ?? '剧情演出';
     return `开幕演出：${cut}${play.node?' · 指定节点':''}`;
   }
-
-  private gaps(): StoryDebugGap[] { return this.campaign.debugStory?.gaps ?? []; }
-  private questTitle(id: string): string { return this.campaign.quests.find(quest=>quest.id===id)?.title??id; }
 
   /** 预览只对当前选中任务发起一次；换任务后迟到的结果直接丢弃。 */
   private previewFor(quest: string): { result?: PreviewResult; ready: boolean } {
