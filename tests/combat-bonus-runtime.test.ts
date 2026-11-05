@@ -380,8 +380,7 @@ test('effective panel display matches fighter values for the same raw panel and 
   assert.equal(combat.magicResistance, display.magicResistance);
 });
 
-test('effective panel field matches fighter for evasionBase', () => {
-  // evasionBase 是内部战斗字段，不是人物菜单直接展示的一栏。
+test('effective panel applies evasionBase to both its field and the displayed evasion rate', () => {
   const panel = rawPanel();
   const passives = [add('evasionBase', 5)];
   const display = effectiveCharacterPanel(panel, 10, passives);
@@ -390,6 +389,8 @@ test('effective panel field matches fighter for evasionBase', () => {
   );
   assert.equal(combat.evasionBase, 25, 'fighter 会把 evasionBase 被动加进命中公式的分母');
   assert.equal(display.evasionBase, 25, '内部面板字段应与战斗值一致');
+  // 回避显示 = min(750, 1000 + 回避加成 − trunc((5000×等级+1000000)/(5×等级+回避基础+1200)))。
+  assert.equal(display.evasionRate, 177, '回避显示应使用叠加后的 evasionBase：1000 − trunc(1050000/1275)');
 });
 
 test('effective panel leaves base defense and base magic resistance untouched for combat reassembly', () => {

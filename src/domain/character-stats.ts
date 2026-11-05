@@ -128,6 +128,7 @@ export function effectiveCharacterPanel(panel:CharacterPanel,level:number,modifi
   const defenseRate=Math.max(0,value('defenseRate',panel.defenseRate));
   const effectiveDefense=calculateEffectiveDefense(defense,defenseRate);
   const hitBase=value('hitBase',panel.hitBase),hitBonus=Math.max(0,value('hitBonus',panel.hitBonus));
+  const evasionBase=value('evasionBase',panel.evasionBase);
   const evasionBonus=Math.max(0,Math.min(RATE_CAP,value('evasionBonus',panel.evasionBonus)));
   return {...panel,
     physicalAttack:Math.max(0,value('physicalAttack',panel.physicalAttack)),
@@ -141,7 +142,7 @@ export function effectiveCharacterPanel(panel:CharacterPanel,level:number,modifi
     defense:effectiveDefense,defenseRate,
     physicalResistance:physicalResistanceFor(effectiveDefense,level)+value('physicalResistanceBonus',0),
     magicResistance:calculateMagicResistance(value('magicResistance',panel.baseMagicResistance)),
-    evasionBonus,evasionRate:evasionRateFor(evasionBonus,panel.attributes.dexterity,level),
+    evasionBase,evasionBonus,evasionRate:evasionRateFor(evasionBonus,evasionBase,level),
     weaponBlock:Math.max(0,value('weaponBlock',panel.weaponBlock)),
     shieldBlock:eligibleShieldBlock(value('shieldBlock',panel.shieldBlock),panel.offhandShield)};
 }
