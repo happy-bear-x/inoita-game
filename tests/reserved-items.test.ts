@@ -57,13 +57,21 @@ test('shops never offer a reserved item', () => {
   }
 });
 
-test('unlearned book recipes stay hidden; learned ones become craftable; always-available reserved recipes stay hidden', () => {
+test('native standing recipes craft reserved potions; book recipes still gate on learning', () => {
   const session = new Session(campaign, undefined, undefined, items);
   const crafting = new EquipmentCrafting(session, craftingCatalog);
+  const native = new Set(['mix-life-potion-xl','mix-elixir','mix-supreme-elixir']);
   const reservedRecipes = Object.entries(items.recipes).filter(([, recipe]) => blocked.has(recipe.result));
   assert.equal(reservedRecipes.length, 55);
+  assert.deepEqual(new Set(reservedRecipes.filter(([, recipe]) => !recipe.book).map(([id]) => id)), native,
+    '只有这三条原版常备配方可以产出保留道具');
   const available = new Set(crafting.availableRecipes().map(entry => entry.id));
   for (const [id] of reservedRecipes) {
+    if (native.has(id)) {
+      assert.ok(available.has(id), `${id} is visible without a recipe book`);
+      assert.ok(crafting.recipe(id), `${id} is readable without a recipe book`);
+      continue;
+    }
     assert.ok(!available.has(id), `${id} is visible before learning`);
     assert.equal(crafting.recipe(id), undefined, `${id} is readable before learning`);
     assert.throws(() => crafting.recipeQuote(id), /无法进行合成/, `${id} is craftable before learning`);
@@ -77,9 +85,7 @@ test('unlearned book recipes stay hidden; learned ones become craftable; always-
       assert.ok(learned.has(id), `${id} stays hidden after learning`);
       assert.ok(crafting.recipe(id), `${id} is unreadable after learning`);
     } else {
-      assert.ok(!learned.has(id), `${id} is visible without a recipe book`);
-      assert.equal(crafting.recipe(id), undefined, `${id} is readable without a recipe book`);
-      assert.throws(() => crafting.recipeQuote(id), /无法进行合成/, `${id} is craftable without a recipe book`);
+      assert.ok(learned.has(id), `${id} stays visible after learning books`);
     }
   }
 });

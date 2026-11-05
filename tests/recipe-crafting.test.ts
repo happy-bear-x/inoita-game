@@ -26,8 +26,20 @@ test('learned book recipes appear and stay craftable even when the result is res
   ids=crafting.availableRecipes().map(entry=>entry.id);
   assert.ok(ids.includes('craft-angurvadel'),'学会后进入合成列表');
   assert.ok(crafting.recipe('craft-angurvadel'),'学会后可读取配方');
-  assert.ok(!ids.includes('mix-elixir'),'没有配方书的保留配方仍隐藏');
-  assert.equal(crafting.recipe('mix-elixir'),undefined);
+  for(const id of ['mix-life-potion-xl','mix-elixir','mix-supreme-elixir']){
+    assert.ok(ids.includes(id),'原版常备配方可以直接合成保留道具');
+    assert.ok(crafting.recipe(id),'原版常备配方可以直接读取');
+  }
+});
+
+test('native standing recipe crafts a reserved potion with normal materials',()=>{
+  const {hero,session,crafting}=fixture(),bag=hero.bag,recipe=items.recipes['mix-supreme-elixir'];
+  for(const material of recipe.materials)bag.add(material.item,material.quantity);
+  const money=session.money;
+  crafting.recipeCommit(crafting.recipeQuote('mix-supreme-elixir'));
+  assert.equal(bag.count('supreme-elixir'),1,'卓越灵药正常进入背包');
+  for(const material of recipe.materials)assert.equal(bag.count(material.item),0,'材料按配方扣除');
+  assert.equal(session.money,money-recipe.cost,'合成费正常扣除');
 });
 
 test('unlearned book recipe rejects and never charges',()=>{

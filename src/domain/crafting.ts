@@ -52,11 +52,12 @@ export class EquipmentCrafting {
   private readonly reserved:ReadonlySet<string>;
   constructor(session:Session,catalog:CraftingCatalog){this.session=session;this.catalog=catalog;this.reserved=reservedAcquisitionIds(session.bag.catalog);}
   /**
-   * 配方书配方只有学会后可见、可合成；常备配方仍排除结果是保留道具的那几条。
+   * 配方书配方只有学会后可见、可合成；常备配方默认排除结果是保留道具的条目，
+   * 但原版常备配方可以显式标记 `allowReservedResult`，按原版允许用正常材料合成。
    * 配方书本身通过 `reservedDrops` 独立通道获得，学会后合成是它的正常用途。
    */
   private available(id:string,recipe:ItemRecipe,learned:readonly string[]=this.session.bag.learnedRecipes):boolean {
-    return recipe.book?learned.includes(id):!this.reserved.has(recipe.result);
+    return recipe.book?learned.includes(id):recipe.allowReservedResult===true||!this.reserved.has(recipe.result);
   }
   recipe(id:string):ItemRecipe|undefined {
     const recipe=this.session.bag.catalog.recipes[id];

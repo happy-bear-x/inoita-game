@@ -215,7 +215,7 @@ const itemCatalog=shape<ItemCatalog>({items:record(object({name:text,description
   use:optional(object({kind:oneOf(...ITEM_USES),recovery:optional(variant('mode',{amount:object({mode:oneOf('amount'),minHealth:count,maxHealth:count,restoresMana:boolean,cooldownMs:count}),rate:object({mode:oneOf('rate'),ratePercent:count,restoresMana:boolean,cooldownMs:count})})),regenerate:optional(object({durationMs:count,healthRecoveryPerPulse:count,manaRecoveryPerPulse:count})),rewards:optional(array(object({item:text,quantity:count}))),classId:optional(text),elite:optional(boolean),recipes:optional(strings),
     target:optional(oneOf('weapon','armor')),maxLevel:optional(integer),requiresEnhanced:optional(boolean)}))})),
   startingEquipment:record(record(text)),startingInventory:array(object({item:text,quantity:count})),startingShortcut:text,
-  dualWieldClasses:strings,merchantItems:strings,reservedItems:optional(strings),classSkills:record(strings),skillDescriptions:optional(record(object({name:text,className:text}))),recipes:record(object({name:text,result:text,materials:array(object({item:text,quantity:count})),cost:count,book:boolean}))});
+  dualWieldClasses:strings,merchantItems:strings,reservedItems:optional(strings),classSkills:record(strings),skillDescriptions:optional(record(object({name:text,className:text}))),recipes:record(object({name:text,result:text,materials:array(object({item:text,quantity:count})),cost:count,book:boolean,allowReservedResult:optional(boolean)}))});
 export function parseItemCatalog(value:unknown):ItemCatalog {
   itemCatalog(value,'items');const result=value as ItemCatalog;
   const classes=Object.keys(result.startingEquipment);
@@ -266,6 +266,8 @@ export function parseItemCatalog(value:unknown):ItemCatalog {
   const reserved=result.reservedItems??[];
   requireValue(new Set(reserved).size===reserved.length,'items.reservedItems','保留道具重复');
   for(const id of reserved)requireValue(result.items[id],'items.reservedItems',`保留道具不存在 ${id}`);
+  for(const [id,recipe] of Object.entries(result.recipes))
+    if(recipe.allowReservedResult)requireValue(!recipe.book&&reserved.includes(recipe.result),id,'允许合成保留产物的标记只用于原版常备配方');
   const blocked=reservedAcquisitionIds(result);
   for(const entry of result.startingInventory)
     requireValue(!blocked.has(entry.item),'items.startingInventory',`初始物品不能是保留道具 ${entry.item}`);

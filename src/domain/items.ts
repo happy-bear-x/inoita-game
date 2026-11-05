@@ -93,6 +93,8 @@ export interface ItemRecipe {
   cost: number;
   /** 配方书配方只有学会后才出现在融合器列表里。 */
   book: boolean;
+  /** 原版常备配方允许直接产出保留道具；只用于原版配方表本来就常驻的三条药水配方。 */
+  allowReservedResult?: boolean;
 }
 export interface ItemCatalog {
   items: Record<string, ItemDefinition>;
