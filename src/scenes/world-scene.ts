@@ -1404,7 +1404,8 @@ export class WorldScene extends Phaser.Scene {
     const picked=store.collectNearby(this.map.id,position.x,position.y,reward=>this.receiveGroundReward(reward));
     if(!picked.length)return;
     session.questItemGenerators.collected(picked.map(drop=>drop.id),session.combatTick);
-    if(picked.some(drop=>drop.reward.kind==='item'&&this.app.items.items[drop.reward.item].pickup))this.app.audio?.ui('loot');
+    // 原版在批量拾取结束时播放音效 6，与捡到的是物品还是钱无关；魔法宝石另外在恢复时播音效 5。
+    if(picked.length)this.app.audio?.ui('loot');
     if(picked.some(drop=>drop.reward.kind==='item'))session.emit();
     this.groundLootView?.sync(store.forMap(this.map.id));
     if(visual){

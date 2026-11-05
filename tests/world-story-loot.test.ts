@@ -36,10 +36,10 @@ function fixture(){
   store.add(mapId,10,10,[{kind:'money',amount:5},{kind:'item',item:'healing-potion-s',quantity:1}]);
   store.addFlying(mapId,{x:1,y:1},{x:5,y:5,direction:0},'mana-gem',1000);
   store.add('shadow-forest-east',10,10,[{kind:'money',amount:9}]);
-  let mana=0,synced=0,messages=0,flushed=false;
+  let mana=0,synced=0,messages=0,flushed=false;const sounds:string[]=[];
   const state={
     map:{id:mapId},loadingWorld:false,destroyed:false,
-    app:{session,items,world,campaign,maxHealth:0},
+    app:{session,items,world,campaign,maxHealth:0,audio:{ui:(name:string)=>sounds.push(name)}},
     combat:{
       // 模拟 normalizeForStory 里 pendingDefeats.flush() 把最后一杀的掉落补进 store；只结算一次。
       normalizeForStory:async()=>{if(!flushed){flushed=true;store.add(mapId,20,20,[{kind:'money',amount:7}]);}},
@@ -52,7 +52,7 @@ function fixture(){
   const scene=Object.setPrototypeOf(state,WorldScene.prototype) as unknown as {
     normalizeForStory(signal:AbortSignal):Promise<void>;
   };
-  return {session,store,mapId,scene,mana:()=>mana,synced:()=>synced,messages:()=>messages};
+  return {session,store,mapId,scene,mana:()=>mana,synced:()=>synced,messages:()=>messages,sounds:()=>sounds};
 }
 
 test('loot landing stays off map exits',()=>{
@@ -82,6 +82,16 @@ test('story normalization collects the current map before the performance takes 
   assert.equal(run.store.forMap('shadow-forest-east').length,1,'其他地图的地面掉落保持原样');
   assert.equal(run.messages(),0,'自动拾取不刷逐件拾取飘字');
   assert.ok(run.synced()>=1,'地面图标同步移除');
+});
+
+test('walking over ordinary ground loot plays one pickup sound',()=>{
+  const run=fixture(),money=run.session.money,potions=run.session.itemCount('healing-potion-s');
+  const collect=Reflect.get(WorldScene.prototype,'collectGroundLoot') as
+    (this:unknown,position:{x:number;y:number})=>void;
+  collect.call(run.scene,{x:10,y:10});
+  assert.equal(run.session.money,money+5,'钱和普通物品都照常入账');
+  assert.equal(run.session.itemCount('healing-potion-s'),potions+1);
+  assert.deepEqual(run.sounds(),['loot'],'一次批量拾取只播一次音效，不区分物品类型');
 });
 
 test('story normalization is idempotent when the map is already empty',async()=>{
