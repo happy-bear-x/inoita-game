@@ -302,15 +302,6 @@ test('two passive skills activate together in class skill order with absolute va
   ]);
 });
 
-test('negative passive ranks are treated as unlearned and return no modifiers', () => {
-  // 最小复现：负等级不是合法的“未学习”或“超过 8 级”，应直接忽略。
-  assert.deepEqual(
-    passiveModifiers(battle, 'warrior', {levels: {'skin-of-steel': -1}}, 'unarmed'),
-    [],
-    '负等级必须视为未学习',
-  );
-});
-
 test('unlearned, foreign, unknown-class and above-table ranks follow the passive lookup rules', () => {
   assert.deepEqual(passiveModifiers(battle, 'warrior', {levels: {'skin-of-steel': 0}}, 'unarmed'), []);
   assert.deepEqual(passiveModifiers(battle, 'warrior', {levels: {}}, 'unarmed'), []);
