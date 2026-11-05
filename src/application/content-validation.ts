@@ -903,7 +903,7 @@ const skillRank=object({level:positive,manaCost:integer,requiredCharacterLevel:p
   details:optional(array(skillDetail)),displayValues:optional(array(number))});
 const skillGrowthFields={requiredInvestedSkillPoints:optional(integer),ranks:array(skillRank),display:optional(array(skillDisplayRow)),
   action:nullable(skillAction),followUpAction:optional(skillAction),passiveUnits:optional(array(passiveUnit)),reactionsByRank:optional(array(array(skillReaction)))};
-const battle=shape<BattleCatalog>({statusAttackBuffs:optional(object(Object.fromEntries(BATTLE_BUFF_KEYS.map(key=>[key,optional(buffEffect)])))),feedback,classes:array(object({id:text,name:text,description:text,preview:file,actor,attributes:array(object({name:text,value:number})),skills:strings,basicAttack:binding})),basicAttacks:record(basicAttack),skills:record(object({id:text,name:text,kind:oneOf('active','passive'),icon:file,description:text,descriptionParts:optional(descriptionParts),normalMaxLevel:positive,...skillGrowthFields,companion:object(skillGrowthFields)})),enemies:array(object({stateRules:optional(stateRules),acceptsBuffs:optional(boolean),waterImmune:optional(boolean),skills:optional(array(enemySkill)),commandAction:optional(enemySkill),id:text,name:text,level:nullable(count),maxHealth:count,attributes:enemyAttributes,variant:text,actor,behavior,basicAttack:nullable(binding),displayOnlyReason:optional(text),defeatPresentation:optional(oneOf('vanish'))})),attackEffects:record(object({clips:record(effectClip),attachmentPoint:optional(oneOf('feet','effect-anchor')),attachedLifetime:optional(oneOf('action','character'))}))});
+const battle=shape<BattleCatalog>({statusAttackBuffs:optional(object(Object.fromEntries(BATTLE_BUFF_KEYS.map(key=>[key,optional(buffEffect)])))),feedback,classes:array(object({id:text,name:text,description:text,preview:file,actor,attributes:array(object({name:text,value:number})),skills:strings,basicAttack:binding})),basicAttacks:record(basicAttack),skills:record(object({id:text,name:text,kind:oneOf('active','passive'),icon:file,description:text,descriptionParts:optional(descriptionParts),normalMaxLevel:positive,...skillGrowthFields,companion:object(skillGrowthFields)})),enemies:array(object({stateRules:optional(stateRules),acceptsBuffs:optional(boolean),waterImmune:optional(boolean),skills:optional(array(enemySkill)),commandAction:optional(enemySkill),id:text,name:text,specialRank:optional((v,p)=>{integer(v,p);requireValue((v as number)<=3,p,'特殊怪分类必须在 0-3');}),level:nullable(count),maxHealth:count,attributes:enemyAttributes,variant:text,actor,behavior,basicAttack:nullable(binding),displayOnlyReason:optional(text),defeatPresentation:optional(oneOf('vanish'))})),attackEffects:record(object({clips:record(effectClip),attachmentPoint:optional(oneOf('feet','effect-anchor')),attachedLifetime:optional(oneOf('action','character'))}))});
 
 export function parseWorld(value:unknown):WorldIndex{world(value,'world');const result=value as WorldIndex;unique(result.maps.map(m=>m.id),'world.maps');return result;}
 export function parseMap(value:unknown):WorldMap{
@@ -1222,7 +1222,7 @@ export function parseStatusHud(value:unknown):StatusHudSkin {
   object({assets:record(file),player:object({width:count,height:count,inset:hudInset,portrait:hudRect,level:hudRect,gauges}),
     member:object({slots:array(count),width:count,height:count,inset:hudInset,portrait:hudRect,level:hudRect,gauges}),
     buffIcons:object({size:count,step:count,catalog:record(file)}),
-    target:object({width:count,height:count,name:hudRect,gauge:hudGauge}),
+    target:object({width:count,height:count,name:hudRect,gauge:hudGauge,specialMark:optional(hudRect)}),
     overhead:object({frame:hudRect,leader:hudRect,
       health:object({x:number,y:number,width:count,height:count,color}),mana:object({x:number,y:number,width:count,height:count,color})}),
     levelColors:array(object({minDifference:number,color}))})(value,'statusHud');
@@ -1235,7 +1235,7 @@ export function parseStatusHud(value:unknown):StatusHudSkin {
     requireValue(left>=0&&top>=0&&right>=0&&bottom>=0&&left+right<panel.width&&top+bottom<panel.height,
       'statusHud.inset','面板透明留白必须非负且小于面板尺寸');
   }
-  for(const [size,rects] of [[result.player,[result.player.portrait,result.player.level]], [result.target,[result.target.name]],
+  for(const [size,rects] of [[result.player,[result.player.portrait,result.player.level]], [result.target,[result.target.name,...(result.target.specialMark?[result.target.specialMark]:[])]],
     [result.member,[result.member.portrait,result.member.level]]] as const)
     for(const rect of rects)requireValue(rect.x>=0&&rect.y>=0&&rect.x+rect.width<=size.width&&rect.y+rect.height<=size.height,'statusHud','布局超出面板');
   for(const [size,gauges] of [[result.player,Object.values(result.player.gauges)],[result.target,[result.target.gauge]],

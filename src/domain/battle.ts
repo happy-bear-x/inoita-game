@@ -456,6 +456,8 @@ export interface EnemyDefinition {
   displayOnlyReason?: string;
   id: string;
   name: string;
+  /** 原版怪物记录的分类档位：0 普通，1/2/3 特殊怪。用于小地图和目标面板标记。 */
+  specialRank?: 0 | 1 | 2 | 3;
   variant: string;
   actor: ActorDefinition;
 }

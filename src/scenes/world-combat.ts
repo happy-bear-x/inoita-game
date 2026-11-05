@@ -469,6 +469,18 @@ captureStoryActors():SceneActorState[] {
     return [...allies,...enemies];
   }
 
+  /** 小地图特殊怪标记：原版按怪物记录分类非零，精英和 Boss 共用同一个图标。 */
+  specialEnemyMarkers():{id:string;x:number;y:number}[] {
+    const markers:{id:string;x:number;y:number}[]=[];
+    for(const enemy of this.arena){
+      if(!enemy.definition.specialRank)continue;
+      if(enemy.summonedBy&&this.memberOf(enemy.summonedBy))continue;
+      if(!this.isActorAlive(enemy.key)||this.pendingDefeats.has(enemy.key)||!enemy.visual.container.active||!enemy.visual.container.visible)continue;
+      markers.push({id:enemy.key,...this.movement.position(enemy.visual)});
+    }
+    return markers;
+  }
+
   captureState():WorldCombatState {
     const roster=this.roster.captureState();
     for(const enemy of roster.enemies){const visual=this.visualOf(enemy.key);if(visual)Object.assign(enemy,this.movement.position(visual));}

@@ -21,7 +21,8 @@
     "member-portrait-down": "assets/ui/status/member-portrait-down.png",
     "player-portrait-down": "assets/ui/status/player-portrait-down.png",
     "overhead-frame": "assets/ui/status/overhead-frame.png",
-    "overhead-leader": "assets/ui/status/overhead-leader.png"
+    "overhead-leader": "assets/ui/status/overhead-leader.png",
+    "target-special": "assets/ui/status/target-special.png"
   },
   "player": {
     "width": 98,
@@ -200,6 +201,12 @@
       "startWidth": 6,
       "endWidth": 7,
       "height": 16
+    },
+    "specialMark": {
+      "x": 190,
+      "y": 80,
+      "width": 77,
+      "height": 37
     }
   },
   "levelColors": [

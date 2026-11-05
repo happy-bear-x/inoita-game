@@ -816,6 +816,11 @@ export const UI_ATLAS_FRAMES: Readonly<Record<string, { key: string; frame: stri
     "frame": "assets/ui/minimap/ready.png",
     "page": 0
   },
+  "assets/ui/minimap/special.png": {
+    "key": "interface:assets/ui/menu-ui-0.png",
+    "frame": "assets/ui/minimap/special.png",
+    "page": 0
+  },
   "assets/ui/shop/axe-selected.png": {
     "key": "interface:assets/ui/menu-ui-0.png",
     "frame": "assets/ui/shop/axe-selected.png",
@@ -1197,4 +1202,4 @@ export const UI_ATLAS_FRAMES: Readonly<Record<string, { key: string; frame: stri
     "page": 0
   }
 };
-export const UI_ATLAS_SOURCE_DIGEST = "ed5d0650c811828ccb50e52376a0c1c988591e061c6efaf5ff2fd327d052421a";
+export const UI_ATLAS_SOURCE_DIGEST = "a3e6d23a1b971bcc14572499baa0b157d5b9fe0f8a1c87eee89b13c45e0d7286";

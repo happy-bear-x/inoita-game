@@ -50,7 +50,7 @@ export class EnemyRoster {
     const snapshot=this.enemySnapshot(key,definition,1,sceneLevel);
     if(!snapshot)return;
     const {id,name,level,sceneLevel:usesSceneLevel,health,maxHealth}=snapshot;
-    return {id,name,level,sceneLevel:usesSceneLevel,health,maxHealth};
+    return {id,name,level,sceneLevel:usesSceneLevel,health,maxHealth,specialRank:definition.specialRank??0};
   }
   setEnemyHealth(key:string,value:number,definition:EnemyDefinition):void {
     const placed=this.enemies.find(enemy=>enemy.key===key&&enemy.enemyId===definition.id);

@@ -149,6 +149,7 @@ export class StatusHud {
   private readonly playerIcons:Phaser.GameObjects.Container;
   private readonly unsubscribe:()=>void;private player?:Readonly<StoryPlayerState>;private target?:TargetStatus;private visible=false;
   private targetSignature='';private lastTick=-1;
+  private targetSpecial?:Phaser.GameObjects.Image;
   private playerIconImages:Phaser.GameObjects.Image[]=[];private memberCount=0;
   private playerIconSignature='';private portraitKey?:string;private visibilityApplied=false;private levelSignature='';
   constructor(hud:Hud,skin:StatusHudSkin,readPlayer:()=>Readonly<StoryPlayerState>|undefined,subscribe:(listener:()=>void)=>()=>void,
@@ -166,6 +167,8 @@ export class StatusHud {
     const level=skin.player.level;this.level=text(level.x+level.width/2,level.y+level.height/2,17).setOrigin(.5);this.playerContainer.add(this.level);
     this.gauges=Object.fromEntries((['health','mana','experience'] as const).map(kind=>[kind,new Gauge(scene,this.playerContainer,skin,kind,skin.player.gauges[kind])])) as typeof this.gauges;
     const nameAnchor=targetNameAnchor(skin);this.name=text(nameAnchor.x,nameAnchor.y,18).setOrigin(.5,0);this.targetContainer.add(this.name);this.targetGauge=new Gauge(scene,this.targetContainer,skin,'target',skin.target.gauge);
+    const mark=skin.target.specialMark;
+    if(mark){this.targetSpecial=image(skin.assets['target-special'],mark.x,mark.y,mark.width,mark.height).setVisible(false);this.targetContainer.add(this.targetSpecial);}
     this.playerIcons=scene.add.container(0,0);this.playerContainer.add(this.playerIcons);
     // 点大面板找回当前操控角色；队友面板则切换操控者。
     // 点面板只走面板自己的 pointerup；世界级左键看到 `uiAction` 就不再普攻。
@@ -214,7 +217,7 @@ export class StatusHud {
     for(const panel of this.panels)panel.tick(tick);
   }
   setTarget(target:TargetStatus|undefined):void{
-    const signature=target?`${target.id}|${target.name}|${target.level}|${target.health}/${target.maxHealth}|${target.sceneLevel}|${this.player?.level??1}`:'';
+    const signature=target?`${target.id}|${target.name}|${target.level}|${target.health}/${target.maxHealth}|${target.sceneLevel}|${target.specialRank??0}|${this.player?.level??1}`:'';
     if(signature===this.targetSignature)return;
     this.targetSignature=signature;this.target=target;this.paintTarget();this.syncVisibility();
   }
@@ -225,6 +228,7 @@ export class StatusHud {
     // setColor 每次都会重画文字画布；颜色没变就跳过。
     if(this.name.style.color!==color)this.name.setColor(color);
     this.targetGauge.update(target.health,target.maxHealth);
+    this.targetSpecial?.setVisible((target.specialRank??0)!==0);
   }
   private paintPlayerIcons(conditions:readonly ActiveCondition[]):void{
     const skin=this.skin.buffIcons;

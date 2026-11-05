@@ -9,6 +9,8 @@ import type { PendingAsset } from './scene-assets.ts';
 import { UI_UNIT_HEIGHT, UI_UNIT_WIDTH, readSafeArea } from '../ui/viewport.ts';
 
 export interface MinimapTask extends Point { id: string; status: 'available' | 'active' | 'ready' }
+/** 原版小地图的特殊怪标记：精英和 Boss 共用同一个图标。 */
+export interface MinimapEnemy extends Point { id: string }
 
 export function minimapAssets(content: StoryInterface): PendingAsset[] {
   return MINIMAP_ASSETS.map(key => ({kind: 'image', key, file: content.assets[key]}));
@@ -24,8 +26,10 @@ export class StoryMinimap {
   private readonly terrainKey: string;
   private readonly cellSize: number;
   private readonly tasks = new Map<string, Phaser.GameObjects.Image>();
+  private readonly enemies = new Map<string, Phaser.GameObjects.Image>();
   /** 上次任务点的 id/状态/坐标；没变就不重设贴图与层序。 */
   private taskSignature = '';
+  private enemySignature = '';
   private playerPoint?: { x: number; y: number };
   private placed = { x: 0, y: 0, scale: 1 };
   constructor(owner: Phaser.Scene, hud: Hud, map: WorldMap) {
@@ -103,9 +107,30 @@ export class StoryMinimap {
     }
     this.container.bringToTop(this.player);
   }
+  /** 原版按怪物记录分类非零标记特殊怪；死亡、离场或离开当前地图时移除。 */
+  updateEnemies(enemies: readonly MinimapEnemy[]): void {
+    const projected = enemies.map(enemy => {
+      const p = this.project(enemy, 0);
+      return { id: enemy.id, x: p.x, y: p.y };
+    });
+    const signature = projected.map(enemy => `${enemy.id}|${enemy.x}|${enemy.y}`).join(';');
+    if (signature === this.enemySignature) return;
+    this.enemySignature = signature;
+    const ids = new Set(projected.map(enemy => enemy.id));
+    for (const [id, icon] of this.enemies) if (!ids.has(id)) { icon.destroy(); this.enemies.delete(id); }
+    for (const enemy of projected) {
+      let icon = this.enemies.get(enemy.id);
+      if (!icon) {
+        icon = this.image('special', 0, 0).setOrigin(0.5);
+        this.enemies.set(enemy.id, icon);
+      }
+      icon.setPosition(enemy.x, enemy.y);
+    }
+    this.container.bringToTop(this.player);
+  }
   setVisible(visible: boolean): void { this.hud.setVisible(this.container, visible); }
   destroy(): void {
-    this.tasks.clear(); this.container.destroy(true);
+    this.tasks.clear(); this.enemies.clear(); this.container.destroy(true);
     this.hud.scene.textures.remove(this.terrainKey);
   }
 }

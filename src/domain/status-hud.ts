@@ -3,7 +3,7 @@ export const STATUS_PARTS = ['player-shadow','player-frame','player-portrait',
   'member-shadow','member-frame','member-portrait','member-portrait-down','player-portrait-down',
   'health-start','health-fill','health-end','mana-start','mana-fill','mana-end',
   'experience-start','experience-fill','experience-end',
-  'target-start','target-fill','target-end','overhead-frame','overhead-leader'] as const;
+  'target-start','target-fill','target-end','target-special','overhead-frame','overhead-leader'] as const;
 export interface HudRect { x:number; y:number; width:number; height:number }
 /** 素材四周的透明留白（显示尺寸单位）；右缘对齐等视觉边界从这里算。 */
 export interface HudInset { left:number; top:number; right:number; bottom:number }
@@ -28,7 +28,7 @@ export interface StatusHudSkin {
   player: {width:number;height:number;inset:HudInset;portrait:HudRect;level:HudRect;gauges:HudGauges};
   member: MemberPanelSkin;
   buffIcons: BuffIconSkin;
-  target: {width:number;height:number;name:HudRect;gauge:HudGauge};
+  target: {width:number;height:number;name:HudRect;gauge:HudGauge;specialMark?:HudRect};
   /** 头顶状态槽相对头部锚点的布局，单位为地图像素。 */
   overhead: {frame:HudRect;leader:HudRect;health:HudRect & {color:string};mana:HudRect & {color:string}};
   levelColors:{minDifference:number;color:string}[];
@@ -88,7 +88,7 @@ const BLINK_PERIOD_FRAMES=4;
 export function buffIconBlinking(remainingFrames:number,globalTick:number):boolean {
   return remainingFrames<=BLINK_WINDOW_FRAMES&&Math.floor(globalTick/BLINK_PERIOD_FRAMES)%2===1;
 }
-export interface TargetStatus { id:string; name:string; level:number; health:number; maxHealth:number; sceneLevel:boolean }
+export interface TargetStatus { id:string; name:string; level:number; health:number; maxHealth:number; sceneLevel:boolean; specialRank?:number }
 
 /** 生命值的写入口：有限数字取整，再限制在零与生命上限之间。 */
 export function boundedHealth(value:number,maxHealth:number):number {

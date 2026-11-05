@@ -163,6 +163,7 @@ export class WorldScene extends Phaser.Scene {
     entries:(ShortcutEntry|null)[];levels:Record<string,number>;slotsSignature?:string};
   private nameBanner?: NameBanner;
   private minimap?: StoryMinimap;
+  private nextMinimapEnemyUpdate = 0;
   private fpsReadout?: { container: Phaser.GameObjects.Container; text: Phaser.GameObjects.Text; lastValue?: number; lastVisible?: boolean };
   private request = new AbortController();
   private mapAssets?: AssetLease;
@@ -1906,6 +1907,10 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     const walking = isBodyWalking(body);
     if(!this.combat?.playerCannotAct()&&this.combat?.attackState!=='attacking')setCharacterClip(this,controlled, `${walking ? 'walk' : 'idle'}-${this.combat?.facing??this.facing}`);
     this.combat?.afterMovement();
+    if (this.minimap && this.combat && this.time.now >= this.nextMinimapEnemyUpdate) {
+      this.nextMinimapEnemyUpdate = this.time.now + 100;
+      this.minimap.updateEnemies(this.combat.specialEnemyMarkers());
+    }
     this.collectGroundLoot(pos);
     this.updateInteractionTarget(); this.syncHud();
     const triggerIndex=this.triggerIndex;
