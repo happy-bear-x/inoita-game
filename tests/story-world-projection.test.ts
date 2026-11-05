@@ -172,12 +172,25 @@ test('a party wipe opens the defeat panel without settling the waiting encounter
   assert.equal(state.encounterResults.size,0,'阵亡不占用胜利结算的去重记录');
 });
 
-test('a story checkpoint does not record while a story encounter is waiting',()=>{
+test('a story checkpoint keeps the existing snapshot while a story encounter is waiting',()=>{
   let captures=0;
   const scene=Object.setPrototypeOf({app:{session:{hasWaitingStoryRun:true,hasLivingMember:true},
-    checkpoint:{capture(){captures++;return true;}}}},WorldScene.prototype) as unknown as InstanceType<typeof WorldScene>;
+    checkpoint:{available:true,capture(){captures++;return true;}}}},WorldScene.prototype) as unknown as InstanceType<typeof WorldScene>;
   scene.checkpointStoryWorld();
-  assert.equal(captures,0);
+  assert.equal(captures,0,'等待战斗时不覆盖已有的安全检查点');
+});
+
+test('a story checkpoint records a fallback when a story encounter is waiting and none exists',()=>{
+  let captures=0;
+  const player={},position={x:10,y:20};
+  const scene=Object.setPrototypeOf({
+    map:{id:'home',name:'Home'},player,movement:{position:()=>position},combat:{},
+    captureStoryWorld:()=>({location:{map:'home',x:position.x,y:position.y,facing:'south'},generatedEntities:[]}),
+    app:{session:{hasWaitingStoryRun:true,hasLivingMember:true},
+      checkpoint:{available:false,capture(){captures++;return true;}}},
+  },WorldScene.prototype) as unknown as InstanceType<typeof WorldScene>;
+  scene.checkpointStoryWorld();
+  assert.equal(captures,1,'没有检查点时，读档落入等待战斗也要记下兜底检查点');
 });
 
 test('saving refuses a party whose active members are all down',()=>{

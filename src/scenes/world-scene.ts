@@ -1522,8 +1522,13 @@ export class WorldScene extends Phaser.Scene {
   private captureCheckpoint():boolean {
     // 调试现场不是玩家进度：不覆盖检查点，否则死亡/重开会把 GM 现场带回正常流程。
     if(this.app.session.debugFocusQuest)return false;
-    // 遭遇正在等待战斗结果时不是安全点；等事件收尾后再记，死亡回检查点才不会直接落回同一场战斗。
-    if(this.app.session.hasWaitingStoryRun)return false;
+    // 遭遇正在等待战斗结果时，已有检查点就保留：死亡回滚才不会直接落回同一场战斗。
+    // 没有检查点时必须记一次兜底：读档会清空内存检查点，而读档可能正落在等待战斗的现场，
+    // 这时再拒绝就会让整场战斗没有可回退的检查点。
+    if(this.app.checkpoint.available&&this.app.session.hasWaitingStoryRun){
+      globalThis.storyDiagnostics?.record('checkpoint-kept-waiting-encounter',{map:this.map?.id});
+      return false;
+    }
     if(!this.map||!this.combat||!this.player||!this.movement)return false;
     if(!this.app.session.hasLivingMember){
       globalThis.storyDiagnostics?.record('checkpoint-skipped-no-survivor',{map:this.map.id});

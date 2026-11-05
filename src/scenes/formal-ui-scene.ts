@@ -222,13 +222,15 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
       block();v.frame(this.app.storyInterface?.assets??{},142,142,676,356);
       v.text('队伍全员阵亡',480,172,0,34,'#e4c58b').setOrigin(.5,0);
       const guard=()=>!ui.suspended&&!ui.defeatState?.busy;
+      // 读档进入剧情战斗时可能还没有任何检查点；按钮直接禁用，避免点下去才发现回不去。
+      const noCheckpoint=!this.app.checkpoint.available;
       if(defeat.confirmation){
         v.text('返回最近的检查点？此后的物品、经验、金钱和任务进度将回退。',190,242,580,25,'#f5eedf');
         v.button('取消',235,397,220,60,()=>ui.cancelDefeatConfirmation(),{disabled:defeat.busy,guard});
         v.button(defeat.busy?'正在恢复…':'确认',505,397,220,60,()=>{void ui.confirmDefeat();},{disabled:defeat.busy,guard});
       }else{
-        v.text(defeat.error??'选择处理方式',480,230,570,23,defeat.error?'#eb9587':'#f5eedf').setOrigin(.5,0);
-        v.button('返回检查点',225,301,510,60,()=>ui.selectDefeatAction('checkpoint'),{guard});
+        v.text(defeat.error??(noCheckpoint?'没有可返回的检查点，请读取存档。':'选择处理方式'),480,230,570,23,defeat.error?'#eb9587':'#f5eedf').setOrigin(.5,0);
+        v.button('返回检查点',225,301,510,60,()=>ui.selectDefeatAction('checkpoint'),{disabled:noCheckpoint,guard});
         v.button('读取存档',225,392,510,60,()=>ui.selectDefeatAction('load'),{disabled:!this.app.resumeSlot,guard});
       }
     }
