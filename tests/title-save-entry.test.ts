@@ -223,7 +223,7 @@ test('challenge mode is disabled and is excluded from native keyboard focus',()=
 test('the version number sits bottom-right at menu-button size and toggles GM',()=>{
   const gm={on:false,toggles:0,toggle(){this.on=!this.on;this.toggles+=1;return this.on;}};
   const f=fixture(gm);
-  const node=f.view.textNodes.find(text=>text.value==='v0.0.5');assert.ok(node);
+  const node=f.view.textNodes.find(text=>text.value==='v0.0.6');assert.ok(node);
   assert.equal(node.size,36,'版本号与主菜单按钮同字号');
   assert.deepEqual(node.origin,[1,1],'以右下角为锚点');
   assert.equal(node.x,1180);assert.equal(node.y,612);
@@ -237,7 +237,7 @@ test('the version number sits bottom-right at menu-button size and toggles GM',(
   assert.equal(gm.toggles,1);assert.equal(gm.on,true);
   assert.ok(f.view.texts.includes('调试：开'),'打开后左下角出现状态指示');
 
-  const again=f.view.textNodes.find(text=>text.value==='v0.0.5')!;
+  const again=f.view.textNodes.find(text=>text.value==='v0.0.6')!;
   again.handlers.get('pointerdown')!();
   assert.equal(gm.on,false);
   assert.ok(!f.view.texts.includes('调试：开'));
