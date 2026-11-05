@@ -1,6 +1,6 @@
 /**
- * 伙伴衣柜的全局上限：每个衣柜都持有该成员合成后的动作纹理，按成员永久累积会随招募人数上涨。
- * 8 套覆盖当前选中、三名上阵队员和最近翻看的几名，够菜单来回切换，又不会无限增长。
+ * 伙伴衣柜的默认上限。世界场景按「上阵佣兵数 + 当前预览」传入更小的值，
+ * 让缓存只保留正在用的成员；这个默认值只给没有上阵人数概念的调用方兜底。
  */
 export const COMPANION_WARDROBE_LIMIT = 8;
 
@@ -36,4 +36,19 @@ export function acquireCompanionWardrobe<K, V extends CompanionWardrobeCacheEntr
     }
   }
   return wardrobe;
+}
+
+/**
+ * 主动清掉不再需要保留的衣柜。菜单关闭或离开队伍页时调用，
+ * 只留下 `keep` 返回 true 的成员；被清掉的成员下次需要时重新合成。
+ */
+export function pruneCompanionWardrobes<K, V extends CompanionWardrobeCacheEntry>(
+  wardrobes: Map<K, V>, keep: (id: K) => boolean, onEvict?: (id: K) => void
+): void {
+  for (const [id, wardrobe] of [...wardrobes]) {
+    if (keep(id)) continue;
+    wardrobe.destroy();
+    wardrobes.delete(id);
+    onEvict?.(id);
+  }
 }

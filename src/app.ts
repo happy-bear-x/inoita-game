@@ -49,7 +49,7 @@ import { InputRouter } from './application/input-router.ts';
  * 3. `boot()`（Phaser 就绪）里接线：`game`、`enterGame`、`returnToMenu`、`startStory`、
  *    `prepareStory`、`prepareMenu`、`prefetchStory`、`storyUI`、`syncLifecycle`。
  * 4. `finishStoryStart()`（选定职业、进入世界）里接线：`session`、`storySignal`、`director`、
- *    `changeEquipment`、`equipmentAppearance`、`preparePartyMember`、
+ *    `changeEquipment`、`equipmentAppearance`、`preparePartyMember`、`releasePartyPreview`、
  *    `revivePartyMember`、`openCrafting`、`openShop`。
  * 5. **由场景填、不由 main.ts 填**：`audio` 由音效场景启动时写入；`uiAssets` 由正式界面场景
  *    或 UI 调试场景各登记一份；`useRecoveryItem` 由 `WorldCombat` 进入战斗时写入，
@@ -78,6 +78,8 @@ export class StoryApp {
   storySignal?:AbortSignal;
   revivePartyMember?: (id:string,item:string)=>ItemResult;
   preparePartyMember?: (id:string,signal?:AbortSignal,options?:{full?:boolean})=>Promise<void>;
+  /** 菜单关闭或离开队伍页：释放非上阵成员的合成外观。 */
+  releasePartyPreview?: () => void;
   audio?: GameAudio;
   useRecoveryItem?: (entry:string,memberId?:string)=>RecoveryResult;
   items!: ItemCatalog;

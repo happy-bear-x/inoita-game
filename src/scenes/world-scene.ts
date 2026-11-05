@@ -16,7 +16,7 @@ import { isBodyWalking } from '../rendering/arcade-movement.ts';
 import type { ClipName, EntityPlacement, ExitFacing, Facing, MapExit, QuestStatus, WorldMap } from '../domain/content.ts';
 import type { AssetLease } from '../application/assets.ts';
 import { Wardrobe } from '../rendering/wardrobe.ts';
-import { acquireCompanionWardrobe } from '../rendering/wardrobe-cache.ts';
+import { acquireCompanionWardrobe, pruneCompanionWardrobes } from '../rendering/wardrobe-cache.ts';
 import { costumeRecipe } from '../domain/wardrobe.ts';
 import { memberArt } from '../domain/menu-panels.ts';
 import type { EquipmentSlot } from '../domain/items.ts';
@@ -748,11 +748,32 @@ export class WorldScene extends Phaser.Scene {
     return acquireCompanionWardrobe(this.companionWardrobes,id,
       ()=>new Wardrobe(this,this.app.wardrobe,this.app.items,(ids,signal)=>this.app.content.wardrobePoses(ids,signal)),
       {keep:candidate=>this.companionWardrobeInUse(candidate),
-        onEvict:candidate=>{
-          this.companionOutfits.delete(candidate);this.companionPreparations.delete(candidate);
-          this.projectedMemberEquipment.delete(candidate);this.companionFull.delete(candidate);
-          if(this.companionPreviewId===candidate)this.companionPreviewId=undefined;
-        }});
+        limit:this.activeCompanionCount()+1,
+        onEvict:candidate=>this.forgetCompanionWardrobe(candidate)});
+  }
+  /** 上阵佣兵数；缓存上限只留他们和当前正在看的那一个。 */
+  private activeCompanionCount():number {
+    return (this.app.session.party?.activeIds??[]).filter(id=>id!=='player').length;
+  }
+  private forgetCompanionWardrobe(id:string):void {
+    this.companionOutfits.delete(id);this.companionPreparations.delete(id);
+    this.projectedMemberEquipment.delete(id);this.companionFull.delete(id);
+    if(this.companionPreviewId===id)this.companionPreviewId=undefined;
+  }
+  private releaseCompanionWardrobe(id:string):void {
+    const wardrobe=this.companionWardrobes.get(id);
+    if(wardrobe){wardrobe.destroy();this.companionWardrobes.delete(id);}
+    this.forgetCompanionWardrobe(id);
+  }
+  /**
+   * 菜单关闭或离开队伍页时调用：清掉预览标记，只留下上阵队员的衣柜。
+   * 下次再点开候补佣兵时按当前装备重新合成外观。
+   */
+  releasePartyPreview():void {
+    this.companionPreviewId=undefined;
+    pruneCompanionWardrobes(this.companionWardrobes,
+      id=>this.companionWardrobeInUse(id),
+      id=>this.forgetCompanionWardrobe(id));
   }
   /** 菜单刚选中的成员、上阵队员和正在准备的衣柜不参与 LRU 淘汰。 */
   private companionWardrobeInUse(id:string):boolean {
@@ -790,7 +811,11 @@ export class WorldScene extends Phaser.Scene {
       preparation={equipment:signature,full,promise};this.companionPreparations.set(id,preparation);
     }
     try{await preparation.promise;signal?.throwIfAborted();}
-    finally{if(this.companionPreparations.get(id)===preparation)this.companionPreparations.delete(id);}
+    finally{
+      if(this.companionPreparations.get(id)===preparation)this.companionPreparations.delete(id);
+      // 菜单在准备期间关闭时，预览标记已经清掉；准备完成后立即释放，不必等下次取用再淘汰。
+      if(!this.companionWardrobeInUse(id))this.releaseCompanionWardrobe(id);
+    }
   }
   equipmentAppearance(id:string):ActorDefinition|undefined{return id==='player'?this.player?.actor:this.companionOutfits.get(id)?.actor;}
   createActor(entity: EntityPlacement): Character {

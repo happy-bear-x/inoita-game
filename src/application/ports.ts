@@ -94,6 +94,8 @@ export interface StoryUIContext {
   promptText?: (initial:string)=>Promise<string|undefined>;
   revivePartyMember?: (id:string,item:string)=>import('../domain/items.ts').ItemResult;
   preparePartyMember?: (id:string,signal?:AbortSignal,options?:{full?:boolean})=>Promise<void>;
+  /** 菜单关闭或离开队伍页：释放非上阵成员的合成外观。 */
+  releasePartyPreview?: () => void;
   useRecoveryItem?: (entry:string,memberId?:string)=>RecoveryResult;
   readonly audio?: GameAudio;
   /** 存档槽读写；三个槽的本地持久化由它独占。 */
