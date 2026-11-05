@@ -282,9 +282,12 @@ export class BattleCharacter {
           return {level:Math.max(0,level-1),message:`${name} 强化失败，降为 +${Math.max(0,level-1)}`};
         // 第二次判定对所有卷轴生效，通过再升一级（总 +2）；特级卷轴的阈值加 300。
         const raised=level+1,rule=catalog.enchantments[source.item]?.[items.items[target.item].kind];
-        return enhancementSucceeds(random,doubleThreshold(raised,rule?.bonusChance??0))
-          ?{level:raised+1,message:`${name} 强化大成功 +${raised+1}`,notice:'enchant-double' as const}
-          :{level:raised,message:`${name} 强化 +${raised}`};
+        // 二段判定可能再升一级；结果必须夹在 +30 内，避免 +29 大成功写成 +31。
+        const next=enhancementSucceeds(random,doubleThreshold(raised,rule?.bonusChance??0))
+          ?Math.min(MAX_ENHANCEMENT_LEVEL,raised+1):raised;
+        return next>raised
+          ?{level:next,message:`${name} 强化大成功 +${next}`,notice:'enchant-double' as const}
+          :{level:next,message:`${name} 强化 +${next}`};
       },
       odds:(source,target)=>{
         const use=items.items[source.item].use;
