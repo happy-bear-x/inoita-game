@@ -23,18 +23,18 @@ test('six classes expose earned and spent level points through the live session'
     const changes: number[][] = [];
     session.subscribe(() => changes.push([session.player!.level, hero.statPoints, session.skills.points()]));
     session.party!.addExperience(hero.player.nextLevelExperience);
-    assert.deepEqual(changes.at(-1), [2, 3, 1]);
+    assert.deepEqual(changes.at(-1), [2, 5, 1]);
     hero.commitAllocation({ ...zero, vitality: 1 });
     hero.spendSkillPoints(1);
     session.party!.addExperience(stats.experience[1]! + stats.experience[2]!);
-    assert.deepEqual(changes.at(-1), [4, 8, 2]);
+    assert.deepEqual(changes.at(-1), [4, 14, 2]);
     session.party!.addExperience(Number.MAX_SAFE_INTEGER);
-    assert.deepEqual(changes.at(-1), [105, 311, 103]);
+    assert.deepEqual(changes.at(-1), [105, 519, 103]);
     const count = changes.length;
     session.party!.addExperience(100);
-    assert.deepEqual([hero.statPoints, session.skills.points()], [311, 103]);
+    assert.deepEqual([hero.statPoints, session.skills.points()], [519, 103]);
     // Party notifications may still occur, but cannot award more points.
-    assert(changes.slice(count).every(value => value.join() === '105,311,103'));
+    assert(changes.slice(count).every(value => value.join() === '105,519,103'));
   }
 });
 
@@ -47,8 +47,9 @@ test('allocation previews include equipment, undo only pending points, and cance
   hero.subscribe(() => notifications++);
   assert.throws(() => draft.change('strength', -1), /待确认/);
   draft.change('strength', 1);draft.change('vitality', 1);
+  draft.change('intelligence', 1);draft.change('mentality', 1);
   assert.equal(draft.remainingPoints, 0);
-  assert.throws(() => draft.change('intelligence', 1), /能力点/);
+  assert.throws(() => draft.change('dexterity', 1), /能力点/);
   assert.equal(draft.attributes.strength, before.attributes.strength + 1);
   assert.equal(draft.attributes.vitality, before.attributes.vitality + 1);
   assert.deepEqual(hero.panel, before);
@@ -76,7 +77,7 @@ test('confirmation commits once, publishes a complete panel, and later visits ca
   });
   draft.commit();draft.commit();
   assert.equal(observations.length, 1);
-  assert.equal(observations[0].points, 0);
+  assert.equal(observations[0].points, 2);
   assert.equal(observations[0].attributes.strength, before.attributes.strength + 1);
   assert.equal(observations[0].attributes.vitality, before.attributes.vitality + 1);
   assert.equal(observations[0].attributes.dexterity, before.attributes.dexterity + 1);
@@ -90,12 +91,12 @@ test('invalid or unaffordable allocation is rejected before any attribute or bal
   const { hero } = start();hero.addExperience(hero.player.nextLevelExperience);
   const before = hero.panel;
   for (const delta of [{ ...zero, strength: -1 }, { ...zero, vitality: 0.5 }, { ...zero, mentality: NaN },
-    { ...zero, intelligence: Infinity }, { ...zero, strength: 4 }, { strength: 1 }, { ...zero, extra: 1 }]) {
+    { ...zero, intelligence: Infinity }, { ...zero, strength: 6 }, { strength: 1 }, { ...zero, extra: 1 }]) {
     assert.throws(() => hero.commitAllocation(delta as PrimaryAttributes));
-    assert.equal(hero.statPoints, 3);assert.deepEqual(hero.panel, before);
+    assert.equal(hero.statPoints, 5);assert.deepEqual(hero.panel, before);
   }
   const draft = new AttributeAllocation(hero);draft.change('vitality', 1);
-  hero.commitAllocation({ ...zero, strength: 3 });
+  hero.commitAllocation({ ...zero, strength: 5 });
   assert.throws(() => draft.commit(), /能力点/);
   assert.equal(draft.pending.vitality, 1);
   assert.equal(hero.allocated.vitality, 0);
