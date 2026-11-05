@@ -74,6 +74,7 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     private AlertDialog updateDialog;
+    private AlertDialog checkFailedDialog;
     private ProgressDialog downloadDialog;
     private AlertDialog bootingDialog;
     private final Runnable bootWatchdog = this::onBootWatchdog;
@@ -321,6 +322,7 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
         if (isFinishing() || isDestroyed()) return;
         reportUpdateEvent("update-available", "buildId", buildId,
                 "files", String.valueOf(fileCount), "bytes", String.valueOf(downloadBytes));
+        dismissCheckFailedDialog();
         dismissUpdateDialog();
 
         String megabytes = String.format(Locale.US, "%.1f", downloadBytes / 1048576.0);
@@ -430,6 +432,24 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
                 "error", error == null ? "" : error, "buildInfo", updateManager.buildInfoJson());
     }
 
+    @Override
+    public void onUpdateCheckFailed(String reason) {
+        if (isFinishing() || isDestroyed()) return;
+        Log.w("InotiaUpdate", "检查更新失败: " + reason);
+        if (checkFailedDialog != null && checkFailedDialog.isShowing()) return;
+        checkFailedDialog = new AlertDialog.Builder(this)
+                .setTitle(R.string.update_check_failed_title)
+                .setMessage(R.string.update_check_failed_message)
+                .setPositiveButton(R.string.update_retry, (dialog, which) -> {
+                    checkFailedDialog = null;
+                    updateManager.retryUpdate();
+                })
+                .setNegativeButton(R.string.update_later,
+                        (dialog, which) -> checkFailedDialog = null)
+                .create();
+        checkFailedDialog.show();
+    }
+
     private void showDownloadDialog(int fileCount) {
         if (isFinishing() || isDestroyed()) return;
         dismissProgressDialog();
@@ -474,6 +494,13 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
         if (updateDialog != null) {
             updateDialog.dismiss();
             updateDialog = null;
+        }
+    }
+
+    private void dismissCheckFailedDialog() {
+        if (checkFailedDialog != null) {
+            checkFailedDialog.dismiss();
+            checkFailedDialog = null;
         }
     }
 
@@ -594,6 +621,7 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
     protected void onDestroy() {
         mainHandler.removeCallbacks(bootWatchdog);
         dismissUpdateDialog();
+        dismissCheckFailedDialog();
         dismissProgressDialog();
         dismissBootingDialog();
         if (updateManager != null) {

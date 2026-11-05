@@ -80,7 +80,12 @@ try {
   const badging = run(path.join(buildTools, 'aapt2'), ['dump', 'badging', apk]).stdout;
   check('包名', /package: name='io\.github\.sunflower9264\.inoita'/.test(badging));
   check('应用名 Inotia 4', /application-label:'Inotia 4'/.test(badging));
-  check('版本 1.0.1', /versionName='1\.0\.1'/.test(badging));
+  // 版本号只维护 android/app/build.gradle 一处，校验时直接读它。
+  const expectedVersion =
+    /versionName\s+'([^']+)'/.exec(
+      fs.readFileSync(path.join(root, 'android', 'app', 'build.gradle'), 'utf8'))?.[1] ?? '';
+  check(`版本 ${expectedVersion || '未知'}`,
+    expectedVersion !== '' && badging.includes(`versionName='${expectedVersion}'`));
   check('minSdk 26', /sdkVersion:'26'/.test(badging));
   check('targetSdk 34', /targetSdkVersion:'34'/.test(badging));
   check('启动 Activity', /launchable-activity: name='io\.github\.sunflower9264\.inoita\.MainActivity'/.test(badging));

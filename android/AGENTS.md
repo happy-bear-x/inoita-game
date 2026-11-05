@@ -18,8 +18,9 @@ Android WebView 壳：把 Vite 构建出的 `dist/` 原样打进 APK，提供本
 - 页面脚本运行前注入 `globalThis.__inoitaEndpoints = {version:1, cloudBase, diagnosticsReport}`；document-start 不可用时在 `onPageStarted` 补注入。原生桥只提供 `report()`、`markBootOk()` 和 `buildInfo()`，不传地址。页面只读 `__inoitaEndpoints`。
 - 明文只允许本机 `127.0.0.1` 与 `localhost`（`adb reverse` 调试）；release 的服务地址必须是 HTTPS。
 - 热更通道默认 `stable`，`-PupdateChannel=staging` 选择 `latest-staging.json`；debug 包跳过检查。
-- 更新检查不只做一次：冷启动检查，失败 30 秒后重试（最多 3 次），回到前台且距上次检查超过 6 小时再查。检查时间/结果、待处理 buildId、下载失败原因、失败 buildId 和时间、启动耗时都持久化到 SharedPreferences；Activity 重建后要按持久状态重新显示更新提示或失败重试。
-- 下载失败必须弹「更新失败」并允许重试，不能只关进度框写日志；「稍后」只在本进程内抑制重复提示。
+- 更新检查不只做一次：冷启动检查，失败 30 秒后重试（最多 3 次），重试用尽后弹出「检查更新失败」并允许手动重试；回到前台且距上次检查超过 6 小时再查。检查时间/结果、待处理 buildId、下载失败原因、失败 buildId 和时间、启动耗时都持久化到 SharedPreferences；Activity 重建后要按持久状态重新显示更新提示或失败重试。
+- 检查失败和下载失败都不能静默：检查失败重试用尽后弹提示，下载失败弹「更新失败」并允许重试，不能只关进度框写日志；「稍后」只在本进程内抑制重复提示。
+- 差量准备时，单个文件硬链接失败改为下载该文件，不中止整次更新；这类失败仍要写日志并随诊断上报具体错误号。
 - 下载和应用分开：下载并校验完成只记录持久化的 `readyBuildId`，弹「更新已准备好，重启后生效」；立即重启才切 active，选稍后或杀进程则在下次冷启动 `initialize()` 时自动应用。
 - 更新生命周期（检查、发现、开始下载、下载完成、切换、启动成功、回退）通过原生诊断桥写 `update-*` 事件，带 buildId、文件数、失败原因和 `buildInfo`。
 - 启动时先完成 `UpdateManager.initialize()`（读清单、发布不可变路径快照），再创建 WebView；加载地址带 `?v=<buildId>`。清单不可用时降级为只读 APK 资源。

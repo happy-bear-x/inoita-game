@@ -44,6 +44,9 @@ final class UpdateManager {
 
         void onUpdateCheckResult(String result, String error);
 
+        /** 自动重试已经用尽，玩家需要看到失败并有机会手动重试。 */
+        void onUpdateCheckFailed(String reason);
+
         void onDownloadProgress(int completed, int total);
 
         void onUpdateApplied(String buildId);
@@ -151,6 +154,7 @@ final class UpdateManager {
     private static final int DOWNLOAD_THREADS = 3;
     private static final long CHECK_INTERVAL_MS = 6L * 60L * 60L * 1000L;
     private static final long CHECK_RETRY_MS = 30L * 1000L;
+    private static final int CHECK_MAX_RETRIES = 3;
     private static final long FAILED_BUILD_COOLDOWN_MS = 24L * 60L * 60L * 1000L;
     private static volatile UpdateManager instance;
 
@@ -176,6 +180,7 @@ final class UpdateManager {
     private final AtomicBoolean checking = new AtomicBoolean(false);
     private final AtomicBoolean retryScheduled = new AtomicBoolean(false);
     private final AtomicInteger checkFailures = new AtomicInteger(0);
+    private final AtomicBoolean checkFailureNotified = new AtomicBoolean(false);
     private final AtomicBoolean applying = new AtomicBoolean(false);
 
     private volatile Snapshot snapshot = Snapshot.apkOnly("apk");
@@ -404,20 +409,43 @@ final class UpdateManager {
                 if (current != null) current.onUpdateAvailable(buildId, fileCount, bytes);
             });
         } catch (Exception error) {
-            String message = error.getClass().getSimpleName()
-                    + " " + error.getMessage();
+            String message = describe(error);
             Log.w(TAG, "检查更新失败: " + message);
             state.setLastCheck("error", message);
-            if (checkFailures.incrementAndGet() <= 3) scheduleCheckRetry();
+            int failures = checkFailures.incrementAndGet();
+            if (failures <= CHECK_MAX_RETRIES) {
+                scheduleCheckRetry();
+            } else if (checkFailureNotified.compareAndSet(false, true)) {
+                // 自动重试已经用尽，不再沉默：让玩家看到失败并可以手动重试。
+                postToMain(() -> {
+                    Listener current = listener;
+                    if (current != null) current.onUpdateCheckFailed(message);
+                });
+            }
         } finally {
             checking.set(false);
             String result = state.lastCheckResult();
+            if (!"error".equals(result)) checkFailureNotified.set(false);
             String error = state.lastCheckError();
             postToMain(() -> {
                 Listener current = listener;
                 if (current != null) current.onUpdateCheckResult(result, error);
             });
         }
+    }
+
+    /** 把异常链里最有用的几层拼成一行，诊断能看到外层描述和系统错误号。 */
+    private static String describe(Throwable error) {
+        StringBuilder text = new StringBuilder();
+        Throwable current = error;
+        for (int depth = 0; current != null && depth < 3; depth += 1) {
+            if (text.length() > 0) text.append(" <- ");
+            text.append(current.getClass().getSimpleName());
+            String detail = current.getMessage();
+            if (detail != null && !detail.isEmpty()) text.append(' ').append(detail);
+            current = current.getCause();
+        }
+        return text.toString();
     }
 
     /** 玩家点了「立即更新」：后台开 3 个线程下载，全部成功后切换版本。 */
@@ -513,6 +541,8 @@ final class UpdateManager {
         state.clearDownloadError();
         candidate = null;
         deferredBuildId = "";
+        checkFailures.set(0);
+        checkFailureNotified.set(false);
         requestCheck(true);
     }
 

@@ -53,8 +53,8 @@ final class UpdateInstaller {
     }
 
     /**
-     * 生成 staging 目录和差量计划。硬链接失败会直接抛异常中止本次更新：复制整份
-     * active（约 200MB）既慢又占空间，不如保留旧版本等下次重试。
+     * 生成 staging 目录和差量计划。某个文件硬链接失败时只为该文件改为下载，
+     * 不让整次更新中止；这样文件系统不支持硬链接的设备也能继续更新。
      */
     Plan prepare(UpdateManifest.Manifest target, UpdateManifest.Manifest baseline,
                  UpdateManifest.Manifest active, byte[] manifestBytes, String builtAt)
@@ -99,9 +99,14 @@ final class UpdateInstaller {
             if (matches(activeEntry, entry) && activeRoot != null) {
                 File source = new File(activeRoot, entry.path);
                 if (source.isFile()) {
-                    link(source, finalFile);
-                    state.deleteRecursively(part);
-                    continue;
+                    try {
+                        link(source, finalFile);
+                        state.deleteRecursively(part);
+                        continue;
+                    } catch (IOException error) {
+                        // 硬链接只是省下载和空间的手段；失败时退回下载，不阻断更新。
+                        Log.w(TAG, "硬链接失败，改为下载: " + entry.path, error);
+                    }
                 }
             }
 
@@ -211,8 +216,7 @@ final class UpdateInstaller {
         try {
             Os.link(source.getAbsolutePath(), target.getAbsolutePath());
         } catch (ErrnoException error) {
-            // 契约要求硬链接失败就中止，不能静默退化成复制。
-            throw new IOException("无法硬链接: " + source, error);
+            throw new IOException("无法硬链接（errno=" + error.errno + "）: " + source, error);
         }
     }
 
