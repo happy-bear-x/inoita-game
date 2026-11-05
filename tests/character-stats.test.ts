@@ -121,13 +121,13 @@ test('allocation, level cap, attribute reset, character isolation and invalid op
   const hero=create(),other=create('warlock'),initial=hero.panel;
   assert.equal(hero.player.nextLevelExperience,12802);assert.equal(hero.statPoints,0);assert.equal(hero.skillPoints,0);
   assert.throws(()=>hero.allocate('strength',1),/属性点/);
-  hero.addExperience(hero.player.nextLevelExperience);assert.equal(hero.statPoints,3);assert.equal(hero.skillPoints,1);assert.equal(hero.player.nextLevelExperience,16253);
+  hero.addExperience(hero.player.nextLevelExperience);assert.equal(hero.statPoints,5);assert.equal(hero.skillPoints,1);assert.equal(hero.player.nextLevelExperience,16253);
   hero.allocate('vitality',1);assert.equal(hero.panel.maxHealth,initial.maxHealth+72+80);
-  assert.equal(hero.statPoints,2);hero.allocate('vitality',-1);assert.equal(hero.statPoints,3);
+  assert.equal(hero.statPoints,4);hero.allocate('vitality',-1);assert.equal(hero.statPoints,5);
   assert.throws(()=>hero.allocate('vitality',-1));
-  hero.addExperience(Number.MAX_SAFE_INTEGER);assert.equal(hero.level,105);assert.equal(hero.statPoints,312);assert.equal(hero.skillPoints,104);
-  assert.equal(hero.player.nextLevelExperience,0);hero.addExperience(hero.player.nextLevelExperience);assert.equal(hero.statPoints,312);
-  hero.allocate('intelligence',1);hero.resetAttributes();assert.equal(hero.statPoints,312);assert.deepEqual(hero.allocated,zero);
+  hero.addExperience(Number.MAX_SAFE_INTEGER);assert.equal(hero.level,105);assert.equal(hero.statPoints,520);assert.equal(hero.skillPoints,104);
+  assert.equal(hero.player.nextLevelExperience,0);hero.addExperience(hero.player.nextLevelExperience);assert.equal(hero.statPoints,520);
+  hero.allocate('intelligence',1);hero.resetAttributes();assert.equal(hero.statPoints,520);assert.deepEqual(hero.allocated,zero);
   assert.equal(hero.player.health,hero.player.maxHealth);assert.equal(other.level,1);
 });
 
