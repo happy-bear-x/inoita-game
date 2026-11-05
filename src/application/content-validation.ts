@@ -179,8 +179,10 @@ export function validateStoryItems(campaign:Campaign, content:ItemCatalog):void 
     for(const goal of quest.goals)if(goal.kind==='item'||goal.kind==='recruit')requireValue(content.items[goal.target],quest.id,'任务目标物品不存在');
     for(const item of [...quest.onAcceptItems??[],...quest.handoverItems??[]])requireValue(content.items[item.item],quest.id,'任务收付物品不存在');
     for(const reward of quest.rewards?.items??[]){
-      requireValue(!!content.items[reward.item],quest.id,`奖励物品不存在 ${reward.item}`);
-      requireValue(!reserved.has(reward.item),quest.id,`任务奖励不能是保留道具 ${reward.item}`);
+      const definition=content.items[reward.item];
+      requireValue(!!definition,quest.id,`奖励物品不存在 ${reward.item}`);
+      // 配方书是解锁融合器配方的正常任务奖励；配方结果和其他保留道具仍然拒绝。
+      requireValue(!reserved.has(reward.item)||definition?.use?.kind==='recipe',quest.id,`任务奖励不能是保留道具 ${reward.item}`);
       for(const classId of reward.classIds??[])requireValue(!!content.classSkills[classId],quest.id,`奖励职业不存在 ${classId}`);
     }
   }

@@ -84,12 +84,36 @@ test('unlearned book recipes stay hidden; learned ones become craftable; always-
   }
 });
 
-test('quest rewards cannot grant reserved items or their containers', () => {
+test('quest rewards can grant recipe books but not other reserved items or their containers', () => {
   validateStoryItems(campaign, items);
+  const book = structuredClone(campaign);
+  book.quests.find(quest => quest.id === 'grafton-mission')!.rewards!.items.push({ item: 'lvl-d-weapon-combo-unit', quantity: 1 });
+  validateStoryItems(book, items);
   const direct = structuredClone(campaign);
   direct.quests.find(quest => quest.id === 'grafton-mission')!.rewards!.items.push({ item: 'supreme-elixir', quantity: 1 });
   assert.throws(() => validateStoryItems(direct, items), /保留道具/);
   const container = structuredClone(campaign);
   container.quests.find(quest => quest.id === 'grafton-mission')!.rewards!.items.push({ item: 'sealed-weapon-chest', quantity: 1 });
   assert.throws(() => validateStoryItems(container, items), /保留道具/);
+});
+
+test('fusion machine quests grant their original recipe books', () => {
+  const expected: Record<string, string[]> = {
+    'quest-353': ['lvl-d-weapon-combo-unit'],
+    'quest-354': ['d-armor-combo-unit'],
+    'quest-355': ['c-weapon-combo-unit'],
+    'quest-356': ['c-armor-combo-unit'],
+    'quest-357': ['b-weapon-combo-unit'],
+    'quest-358': ['b-armor-combo-unit-no-1'],
+    'quest-362': ['b-armor-combo-unit-no-2'],
+    'quest-363': ['a-weapon-combo-unit'],
+    'quest-364': ['s-weapon-combo-unit', 's-armor-combo-unit-no-1'],
+    'quest-365': ['s-armor-combo-unit-no-2'],
+    'quest-366': ['s-armor-combo-unit-no-3']
+  };
+  for (const [questId, books] of Object.entries(expected)) {
+    const quest = campaign.quests.find(value => value.id === questId);
+    assert.ok(quest, `${questId} 不存在`);
+    assert.deepEqual(quest.rewards?.items, books.map(item => ({ item, quantity: 1 })), questId);
+  }
 });

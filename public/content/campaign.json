@@ -332363,7 +332363,12 @@
       "rewards": {
         "experience": 366,
         "money": 0,
-        "items": []
+        "items": [
+          {
+            "item": "lvl-d-weapon-combo-unit",
+            "quantity": 1
+          }
+        ]
       },
       "offerScript": null,
       "completeScript": null,
@@ -332485,7 +332490,12 @@
       "rewards": {
         "experience": 706,
         "money": 0,
-        "items": []
+        "items": [
+          {
+            "item": "d-armor-combo-unit",
+            "quantity": 1
+          }
+        ]
       },
       "offerScript": null,
       "completeScript": null,
@@ -332619,7 +332629,12 @@
       "rewards": {
         "experience": 1250,
         "money": 0,
-        "items": []
+        "items": [
+          {
+            "item": "c-weapon-combo-unit",
+            "quantity": 1
+          }
+        ]
       },
       "offerScript": null,
       "completeScript": null,
@@ -332707,7 +332722,12 @@
       "rewards": {
         "experience": 1556,
         "money": 0,
-        "items": []
+        "items": [
+          {
+            "item": "c-armor-combo-unit",
+            "quantity": 1
+          }
+        ]
       },
       "offerScript": null,
       "completeScript": null,
@@ -332847,7 +332867,12 @@
       "rewards": {
         "experience": 1998,
         "money": 0,
-        "items": []
+        "items": [
+          {
+            "item": "b-weapon-combo-unit",
+            "quantity": 1
+          }
+        ]
       },
       "offerScript": null,
       "completeScript": null,
@@ -332969,7 +332994,12 @@
       "rewards": {
         "experience": 2338,
         "money": 0,
-        "items": []
+        "items": [
+          {
+            "item": "b-armor-combo-unit-no-1",
+            "quantity": 1
+          }
+        ]
       },
       "offerScript": null,
       "completeScript": null,
@@ -333411,7 +333441,12 @@
       "rewards": {
         "experience": 2542,
         "money": 0,
-        "items": []
+        "items": [
+          {
+            "item": "b-armor-combo-unit-no-2",
+            "quantity": 1
+          }
+        ]
       },
       "offerScript": null,
       "completeScript": null,
@@ -333629,7 +333664,12 @@
       "rewards": {
         "experience": 2780,
         "money": 0,
-        "items": []
+        "items": [
+          {
+            "item": "a-weapon-combo-unit",
+            "quantity": 1
+          }
+        ]
       },
       "offerScript": null,
       "completeScript": null,
@@ -333793,7 +333833,16 @@
       "rewards": {
         "experience": 3358,
         "money": 0,
-        "items": []
+        "items": [
+          {
+            "item": "s-weapon-combo-unit",
+            "quantity": 1
+          },
+          {
+            "item": "s-armor-combo-unit-no-1",
+            "quantity": 1
+          }
+        ]
       },
       "offerScript": null,
       "completeScript": null,
@@ -333904,7 +333953,12 @@
       "rewards": {
         "experience": 3494,
         "money": 0,
-        "items": []
+        "items": [
+          {
+            "item": "s-armor-combo-unit-no-2",
+            "quantity": 1
+          }
+        ]
       },
       "offerScript": null,
       "completeScript": null,
@@ -334050,7 +334104,12 @@
       "rewards": {
         "experience": 3562,
         "money": 0,
-        "items": []
+        "items": [
+          {
+            "item": "s-armor-combo-unit-no-3",
+            "quantity": 1
+          }
+        ]
       },
       "offerScript": null,
       "completeScript": null,
