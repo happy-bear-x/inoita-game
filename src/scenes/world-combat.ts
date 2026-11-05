@@ -618,6 +618,15 @@ captureStoryActors():SceneActorState[] {
         },
         canPlaceBody: (position, clearanceActorId) => this.canPlaceBodyAt(visual, position, clearanceActorId),
         canReach: position => this.movement!.navigation.path(this.movement!.actor(visual), position, 512) !== null,
+        canRelocateReach: position => {
+          const actor = this.movement!.actor(visual);
+          return this.movement!.navigation.sameTerrainRegion(actor.position(), position);
+        },
+        canRelocateVerify: position => {
+          const actor = this.movement!.actor(visual);
+          return this.movement!.navigation.reachableForPlacement(
+            actor.shape(), actor.position(), position, actor);
+        },
         relocate: (position, clearance) => this.relocateVisual(enemy.visual, position, clearance),
         face: direction => { enemy.facing = direction; },
         play: (action, frame, complete) => {
@@ -713,17 +722,6 @@ captureStoryActors():SceneActorState[] {
   private relocateVisual(visual: CharacterVisual, position: Point, clearanceActorId?: string): boolean {
     if (!this.movement) return false;
     if (this.canPlaceBodyAt(visual, position, clearanceActorId)) { this.movement.place(visual, position); return true; }
-    const actor = this.movement.actor(visual), shape = actor.shape();
-    const clearance = clearanceActorId ? this.visualOf(clearanceActorId) : undefined;
-    const clearanceActor = clearance ? this.movement.actor(clearance) : undefined;
-    const placements = clearanceActor
-      ? [{ actor: clearanceActor, position: clearanceActor.position(), enabled: false }]
-      : [];
-    // 兜底只放宽「整盒压墙、脚点可站」的情况；人物/机关占位仍要避开，
-    // 否则会把角色直接放进火焰、路障这类内容实体里，之后自愈也拉不出来。
-    if (this.movement.navigation.canPlace(shape, position, actor, placements)) {
-      this.movement.place(visual, position); return true;
-    }
     this.relocationFailures.push({ id: visual.entity.id, position: { ...position } });
     if (this.relocationFailures.length > 8) this.relocationFailures.shift();
     return false;
@@ -2020,6 +2018,14 @@ captureStoryActors():SceneActorState[] {
       regroup:()=>this.catchUpFollower(id),
       canPlaceBody:(position,clearanceActorId)=>this.canPlaceBodyAt(visual,position,clearanceActorId),
       canReach:position=>this.movement.navigation.path(this.movement.actor(visual),position,512)!==null,
+      canRelocateReach:position=>{
+        const actor=this.movement.actor(visual);
+        return this.movement.navigation.sameTerrainRegion(actor.position(),position);
+      },
+      canRelocateVerify:position=>{
+        const actor=this.movement.actor(visual);
+        return this.movement.navigation.reachableForPlacement(actor.shape(),actor.position(),position,actor);
+      },
       relocate:(position,clearance)=>this.relocateVisual(visual,position,clearance),face:setFacing,
       play:(action,frame,complete)=>{setFacing(action.facing);action.getAttackSpeedRate=()=>this.conditions.attribute(id,'attackSpeedRate',1000,this.partyPassives(id));return this.playAction(presenter,action,frame,complete);},
       frame:(action,index,contact,unitsReady,areaContact)=>{if(this.memberOf(action.caster.id)&&action.skill&&!this.soundedSkills.has(action)&&

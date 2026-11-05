@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {planCharge} from '../src/domain/target-charge.ts';
+import {planRearTeleport} from '../src/domain/rear-teleport.ts';
 import {CombatController} from '../src/domain/combat.ts';
 import type {CombatPort,Combatant,ActionPlayback} from '../src/domain/combat.ts';
 import {parseBattle} from '../src/application/content-validation.ts';
@@ -18,7 +19,7 @@ test('charge finds four grid landings, handles the close boundary, and respects 
   assert.equal(planCharge(caster,{...target,position:{x:320+31*dx,y:192+31*dy}},charge,()=>true)?.close,true);
   assert.equal(planCharge(caster,{...target,position:{x:320+32*dx,y:192+32*dy}},charge,()=>true)?.close,false);
  }
- assert.equal(planCharge(caster,enemy,charge,p=>p.x<344),undefined,'solid wall blocks every route');
+ assert.deepEqual(planCharge(caster,enemy,charge,p=>p.x<344),{destination:{x:336,y:192},close:false},'solid wall falls back to the furthest standable point');
  const detour=planCharge(caster,enemy,charge,p=>p.x!==344||p.y<=176);
  assert.ok(detour&&!detour.close);assert.ok(Math.abs(detour.destination.x-384)+Math.abs(detour.destination.y-192)<=24);
 });
@@ -59,4 +60,22 @@ test('arrival uses the saved landing despite new occupation; cancellation preser
   }else{assert.deepEqual(moves,[]);assert.equal(combat.snapshot().state,'idle');assert.ok(events.every(e=>e.index<2));}
   assert.equal(combat.snapshot().cooldowns['shield-bash'].remainingMs,skill.action.cooldownFrames*60);
  }
+});
+test('unreachable target area falls back toward the target instead of cancelling',()=>{
+ const plan=planCharge(caster,enemy,charge,point=>point.x<344,()=>true,()=>true);
+ assert.deepEqual(plan,{destination:{x:336,y:192},close:false});
+});
+test('charge verifies at most two reachable candidates before falling back',()=>{
+ let verifies=0;
+ const plan=planCharge(caster,enemy,charge,()=>true,()=>true,()=>{verifies++;return false;});
+ assert.equal(verifies,2);
+ assert.ok(plan);
+});
+test('charge stays put when even the caster position cannot stand',()=>{
+ assert.equal(planCharge(caster,enemy,charge,()=>false),undefined);
+});
+test('rear teleport requires a reachable landing',()=>{
+ const target={...enemy,facing:'east' as const};
+ assert.ok(planRearTeleport(caster,target,()=>true,()=>true));
+ assert.equal(planRearTeleport(caster,target,()=>true,()=>false),undefined);
 });

@@ -40,3 +40,15 @@ test('cached terrain components agree with an exact path search', () => {
   navigation.prepareTerrainRouting();
   assert.equal(components.terrainRoute(points[0]!, points[1]!), exact(points[0]!, points[1]!), '预先建表不改变结果');
 });
+
+test('same-region and placement reachability stop at the wall', () => {
+  const blocked = Array<boolean>(400).fill(false);
+  for (let row = 0; row < 20; row++) blocked[row * 20 + 10] = true;
+  const navigation = new NavigationWorld({ name: 'simple', columns: 20, rows: 20, tileSize: 16, blocked });
+  const shape = { collision: { x: -4, y: -4, width: 8, height: 8 } };
+  const left = { x: 72, y: 72 }, right = { x: 232, y: 72 }, next = { x: 72, y: 88 };
+  assert.equal(navigation.sameTerrainRegion(left, next), true);
+  assert.equal(navigation.sameTerrainRegion(left, right), false);
+  assert.equal(navigation.reachableForPlacement(shape, left, next), true);
+  assert.equal(navigation.reachableForPlacement(shape, left, right), false);
+});

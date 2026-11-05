@@ -361,6 +361,26 @@ export class NavigationWorld {
       heuristic: point => Math.max(0, Math.hypot(point.x - to.x, point.y - to.y) - PATH_GRID_SIZE),
     }, PLACEMENT_SEARCH_BUDGET) !== null;
   }
+  /** 两个点是否处于同一块可站立地形区域；查询预计算的连通块，常数时间。 */
+  sameTerrainRegion(from: Point, to: Point): boolean {
+    const fromLabels = this.terrainLabelsAt(from), toLabels = this.terrainLabelsAt(to);
+    return fromLabels.some(label => toLabels.includes(label));
+  }
+  /**
+   * 强制位移落点的可走性复核：只把地形和不会移动的内容实体当障碍，忽略会移动的角色。
+   * 预算耗尽按不可达处理，调用方继续找下一个落点或走方向兜底。
+   */
+  reachableForPlacement(shape: NavigationShape, from: Point, to: Point,
+    ignore?: NavigationActor): boolean {
+    const free = (point: Point) => this.terrainFree(point) && !this.blockedByContent(shape, point, ignore);
+    if (!free(from) || !free(to)) return false;
+    return findPath(from, {
+      bounds: this.bounds,
+      canStand: free,
+      isGoal: point => Math.hypot(point.x - to.x, point.y - to.y) <= PATH_GRID_SIZE && canTraverse(point, to, free),
+      heuristic: point => Math.max(0, Math.hypot(point.x - to.x, point.y - to.y) - PATH_GRID_SIZE),
+    }, PLACEMENT_SEARCH_BUDGET) !== null;
+  }
   /** 惰性建立 8 px 地形连通块；建表成本只发生在第一次落点/召唤查询。 */
   private terrainLabelsAt(point: Point): number[] {
     const components = this.terrainComponents ??= this.buildTerrainComponents();

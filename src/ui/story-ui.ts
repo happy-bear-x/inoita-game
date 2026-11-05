@@ -465,13 +465,20 @@ export class StoryUI {
     if(this.page==='forge'&&this.forge)this.forge.render(this.body,this.modal!,this.placeModal);
     if(this.page==='learn'&&this.skillBook)this.skillBook.render(this.body!);
     if(this.page==='system'){
-      const actions:[string,()=>void][]=[['保存游戏',()=>this.show('save')],['读取存档',()=>this.show('load')],['设置',()=>this.show('settings')]];
+      const actions:[string,()=>void][]=[['保存游戏',()=>this.show('save')],['读取存档',()=>this.show('load')],['设置',()=>this.show('settings')],['脱离卡死',()=>{
+        const result=this.app.rescuePlayer?.();
+        if(!result)this.app.ui.toast('当前不在游戏中');
+        else if(!result.ok)this.app.ui.toast(`脱困失败：${result.reason??'未知原因'}`);
+        else if(!result.moved)this.app.ui.toast('当前位置正常，不需要脱困');
+        else this.app.ui.toast('已脱离卡死');
+      }]];
       // 「调试」只在 GM 打开时出现；关闭时这一项根本不存在，不需要靠权限判断挡住。
       if(this.app.gm)actions.push(['调试',()=>this.show('debug')]);
       actions.push(['返回主菜单',()=>{this.close();this.app.returnToMenu?.();}]);
-      // 间距按条数收缩，多一项也不会顶出内容区。
-      const gap=Math.min(95,Math.floor((398-66)/Math.max(1,actions.length-1)));
-      actions.forEach(([label,action],index)=>this.body!.button(label,320,70+index*gap,300,66,action));
+      // 动作数量会随 GM 开关变化，放进滚动区，不再压缩按钮间距。
+      const scroll=this.scroll('system',0,0,960,431),content=scroll.content,gap=80;
+      actions.forEach(([label,action],index)=>this.body!.button(label,320,70+index*gap,300,66,action,{parent:content}));
+      this.finishScroll('system',scroll,70+(actions.length-1)*gap+66+20);
     }
     if(this.page==='debug'&&this.app.gm){
       // 面板按当前动作层实例缓存：同一会话里保留过滤与选中，换会话就重建。

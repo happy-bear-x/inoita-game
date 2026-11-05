@@ -89,6 +89,10 @@ export interface CombatPort {
   canStand(position: Point, clearanceActorId?: string): boolean;
   /** 强制位移的整盒判定；省略时退回 `canStand` 的窄足底口径。 */
   canPlaceBody?(position: Point, clearanceActorId?: string): boolean;
+  /** 位移落点是否与施法者同处一块可站立区域；省略表示不检查。 */
+  canRelocateReach?(position: Point): boolean;
+  /** 位移落点的可走性复核，只算地形和内容实体；省略表示不检查。 */
+  canRelocateVerify?(position: Point): boolean;
   canReach?(position: Point): boolean;
   navigationBounds?(): GameRectangle;
   /** 强制位移落位；`clearanceActorId` 指定的角色不参与占位（背后瞬移要贴着目标）。 */
@@ -310,7 +314,10 @@ export class CombatController {
       return;
     }
     if(target&&this.active.approached&&this.port.canFinishApproach?.(target.id)===false){this.cancel();return;}
-    const charge=skill?.action.charge&&target?planCharge(caster,target,skill.action.charge,position=>this.canRelocateTo(position)):undefined;
+    const charge=skill?.action.charge&&target?planCharge(caster,target,skill.action.charge,
+      position=>this.canRelocateTo(position),
+      position=>this.port.canRelocateReach?.(position)??true,
+      position=>this.port.canRelocateVerify?.(position)??true):undefined;
     if(skill?.action.charge&&!charge){this.cancel();return 'no-target';}
     const manaCost=skill?(this.port.manaCost?.(skill)??skill.manaCost):undefined;
     if(manaCost && this.port.spendMana && !this.port.spendMana(manaCost)) {this.cancel();return 'no-mana';}
@@ -349,7 +356,9 @@ export class CombatController {
               const dy=action.facing==='south'?1:action.facing==='north'?-1:0;
               for(let step=distance;step>=1;step--){
                 const lunge={x:action.charge.destination.x+dx*step,y:action.charge.destination.y+dy*step};
-                if(this.canRelocateTo(lunge)){this.port.relocate(lunge);break;}
+                if(this.canRelocateTo(lunge)
+                  &&(this.port.canRelocateReach?.(lunge)??true)
+                  &&(this.port.canRelocateVerify?.(lunge)??true)){this.port.relocate(lunge);break;}
               }
             }else if(next===skill.action.charge.arrivalFrame)this.port.relocate(action.charge.destination);
             live=this.port.actor(this.casterId)??live;
@@ -372,7 +381,9 @@ export class CombatController {
         if(skill?.action.rearTeleport?.frame===next){
           const target=action.target;
           const destination=target&&planRearTeleport(action.caster,target,point=>this.canRelocateTo(point,target.id),
-            point=>this.port.canReach?.(point)??true,this.port.navigationBounds?.());
+            point=>(this.port.canRelocateReach?.(point)??true)
+              &&(this.port.canRelocateVerify?.(point)??true),
+            this.port.navigationBounds?.());
           if(destination){
             this.port.relocate(destination,target.id);
             action.caster=this.port.actor(this.casterId)!;

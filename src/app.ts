@@ -151,6 +151,8 @@ export class StoryApp {
   readonly gmMode = new GmMode();
   /** GM（调试）动作层。**只在开关打开时装配**：关闭时它是 undefined，任何调试路径都跑不起来。 */
   gm?: GmActions;
+  /** 系统菜单的「脱离卡死」；由 main.ts 接到当前世界场景。 */
+  rescuePlayer?: () => { ok: boolean; reason?: string; moved?: boolean };
   /** Phaser 实例，启动完成后才有。 */
   game?: Phaser.Game;
   /** 播放剧情时锁住场景输入。 */

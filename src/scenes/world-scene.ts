@@ -1496,15 +1496,21 @@ export class WorldScene extends Phaser.Scene {
     if(!visual||!this.movement||!this.map)return {ok:false,reason:'地图尚未加载'};
     const actor=this.movement.actor(visual),shape=actor.shape(),navigation=this.movement.navigation;
     const from=this.movement.position(visual);
+    // 主区域以地图出口为锚点；出口本身一定在可行走区域内。
+    const exit=this.map.exits[0];
+    const anchor=exit?{x:exit.x+exit.width/2,y:exit.y+exit.height/2}:undefined;
+    const inMain=!anchor||navigation.sameTerrainRegion(from,anchor);
     // 地形合法还不够：火焰、路障这类内容机关会把身体压住，也属于需要脱困的状态。
-    if(navigation.terrainFree(from)&&navigation.bodyTerrainFree(shape,from)&&navigation.canStand(actor,from))
+    if(navigation.terrainFree(from)&&navigation.bodyTerrainFree(shape,from)&&navigation.canStand(actor,from)&&inMain)
       return {ok:true,moved:false,from};
     const recovered=this.movement.recoverContent(visual);
-    if(recovered){
+    if(recovered&&(!anchor||navigation.sameTerrainRegion(recovered.to,anchor))){
       this.combat?.stopMoving();this.syncControlledCharacter(true);
       return {ok:true,moved:true,from:recovered.from,to:recovered.to};
     }
-    const landing=navigation.nearestBody(shape,from,actor)??navigation.nearestReachableBody(shape,from,undefined,actor);
+    const landing=anchor
+      ? navigation.nearestSettledBody(shape,anchor,actor,[],point=>navigation.sameTerrainRegion(anchor,point))
+      : navigation.nearestBody(shape,from,actor)??navigation.nearestReachableBody(shape,from,undefined,actor);
     if(!landing)return {ok:false,reason:'附近没有可站的整盒落点',from};
     try{this.movement.place(visual,landing);}catch(error){return {ok:false,reason:error instanceof Error?error.message:String(error),from};}
     this.combat?.stopMoving();this.syncControlledCharacter(true);

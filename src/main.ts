@@ -589,6 +589,10 @@ function boot(): void {
     const signal = modeRequest.signal;
     void prepareStory(signal).then(() => prepareMenuCore(signal)).catch(() => {});
   });
+  app.rescuePlayer = () => {
+    const scene = worldScene();
+    return scene ? scene.rescuePlayer() : { ok: false, reason: '不在游戏场景里' };
+  };
   app.storyUI = new StoryUI(app);
   app.openCrafting=actorId=>app.storyUI.openCrafting(actorId);
   app.openShop=(shopId,mapId)=>app.storyUI.openShop(shopId,mapId);
