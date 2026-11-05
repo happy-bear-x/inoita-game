@@ -17,7 +17,7 @@ Android WebView 壳：把 Vite 构建出的 `dist/` 原样打进 APK，提供本
 - API 地址分开发与部署：Gradle 读取 `config/endpoints.json` 的 `androidRelease.serverBaseUrl`，派生云存档 `/__cloud`、诊断 `/__diagnostics/report` 和热更根地址，不在 Gradle、Java 或页面里另写域名。
 - 页面脚本运行前注入 `globalThis.__inoitaEndpoints = {version:1, cloudBase, diagnosticsReport}`；document-start 不可用时在 `onPageStarted` 补注入。原生桥只提供 `report()`、`markBootOk()` 和 `buildInfo()`，不传地址。页面只读 `__inoitaEndpoints`。
 - 明文只允许本机 `127.0.0.1` 与 `localhost`（`adb reverse` 调试）；release 的服务地址必须是 HTTPS。
-- 壳使用 edge-to-edge：`setDecorFitsSystemWindows(false)`，WebView 铺满整屏。Android 壳内网页不读 `env(safe-area-inset-*)`；只有浏览器和 iOS 使用网页安全区。
+- 壳使用 edge-to-edge：`setDecorFitsSystemWindows(false)`，WebView 铺满整屏；安全区只由网页用于 HUD、侧边按钮和文字避让，不参与画布尺寸。
 - 热更通道默认 `stable`，`-PupdateChannel=staging` 选择 `latest-staging.json`；debug 包跳过检查。
 - 更新检查不只做一次：冷启动检查，失败 30 秒后重试（最多 3 次），重试用尽后弹出「检查更新失败」并允许手动重试；回到前台且距上次检查超过 6 小时再查。检查时间/结果、待处理 buildId、下载失败原因、失败 buildId 和时间、启动耗时都持久化到 SharedPreferences；Activity 重建后要按持久状态重新显示更新提示或失败重试。
 - 检查失败和下载失败都不能静默：检查失败重试用尽后弹提示，下载失败弹「更新失败」并允许重试，不能只关进度框写日志；「稍后」只在本进程内抑制重复提示。

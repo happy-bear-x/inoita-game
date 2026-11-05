@@ -33,7 +33,7 @@ android {
         minSdk 26
         targetSdk 34
         versionCode 6
-        versionName '1.0.3'
+        versionName '1.0.2'
         // 诊断、云存档和热更都从同一个服务根地址派生；改服务器地址只改 config/endpoints.json。
         buildConfigField 'String', 'DIAGNOSTICS_URL',
                 JsonOutput.toJson(releaseServerBaseUrl + '/__diagnostics/report')
