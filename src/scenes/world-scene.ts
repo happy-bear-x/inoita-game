@@ -414,7 +414,7 @@ export class WorldScene extends Phaser.Scene {
     globalThis.storyDiagnostics?.record('start-phase',{phase:'wardrobe-ready',map:map.id});
     this.projectedPlayerEquipment=JSON.stringify(this.app.session.bag.equipmentItems());
     this.statusHud=new StatusHud(this.hud!,this.app.statusHud,()=>this.combat?.controlledState??this.app.session.player,listener=>this.app.session.subscribe(listener),
-      ()=>this.app.session.party?.snapshot(),id=>{this.switchControlled(id);},id=>{
+      ()=>this.app.session.party?.activeSnapshot(),id=>{this.switchControlled(id);},id=>{
         if(id==='player')return this.app.statusHud.assets['player-portrait'];
         const member=this.app.session.party?.get(id);if(!member)return undefined;
         const actor=this.app.world.actors[member.definition.actor];

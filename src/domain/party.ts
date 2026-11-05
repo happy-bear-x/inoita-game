@@ -36,6 +36,23 @@ export interface PartySnapshot {
   controlled: string;
   members: readonly CompanionSnapshot[];
 }
+/** HUD 只读上阵队员的轻量快照；不包含名册、技能和成长等菜单字段。 */
+export interface PartyActiveMember {
+  id: string;
+  level: number;
+  health: number;
+  maxHealth: number;
+  mana: number;
+  maxMana: number;
+  experience: number;
+  nextLevelExperience: number;
+}
+export interface PartyActiveSnapshot {
+  active: readonly string[];
+  living: readonly string[];
+  controlled: string;
+  members: readonly PartyActiveMember[];
+}
 interface CompanionSnapshot {
   id: string;
   definitionId: string;
@@ -268,6 +285,19 @@ export class PartyRoster {
   alive(id:string):boolean{return id==='player'?this.hero.player.health>0:this.owned.get(id)?.alive??false;}
   snapshot():PartySnapshot{const active=this.activeIds;return {active,living:this.livingIds,rosterSlots:[...this.rosterSlots],reserves:[...this.owned.keys()].filter(id=>!active.includes(id)),
     controlled:this.selected,members:[...this.owned.values()].map(member=>{const slot=this.rosterSlots.indexOf(member.id);return member.snapshot(slot<0?null:slot);})};}
+  /** HUD 只读上阵队员的轻量快照；不遍历候补名册，也不生成技能和成长字段。 */
+  activeSnapshot():PartyActiveSnapshot {
+    const active=this.activeIds,members:PartyActiveMember[]=[];
+    for(const id of active){
+      if(id==='player')continue;
+      const member=this.owned.get(id);if(!member)continue;
+      const values=member.player;
+      members.push({id,level:values.level,health:values.health,maxHealth:values.maxHealth,
+        mana:values.mana,maxMana:values.maxMana,experience:values.experience,
+        nextLevelExperience:values.nextLevelExperience});
+    }
+    return {active,living:this.livingIds,controlled:this.selected,members};
+  }
   private create(definition:CompanionDefinition,source:'story'|'mercenary',id:string,generated:GeneratedCompanion):CompanionMember{
     if(!this.catalog.growth[definition.classId])throw new Error('伙伴成长数据缺失');
     const member=new CompanionMember(id,definition,source,generated.level,this.stats,this.items,this.bag,

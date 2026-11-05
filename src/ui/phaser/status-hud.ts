@@ -5,7 +5,7 @@ import type { ActiveCondition } from '../../domain/combat-conditions.ts';
 import { LOGIC_FRAME_MS } from '../../domain/battle.ts';
 import { buffIconBlinking,buffIconPosition,gaugeFillWidth,memberColumnLayout,memberPanelIds,targetNameAnchor,targetNameColor } from '../../domain/status-hud.ts';
 import type { HudGauge,StatusHudSkin,TargetStatus } from '../../domain/status-hud.ts';
-import type { PartySnapshot } from '../../domain/party.ts';
+import type { PartyActiveSnapshot } from '../../domain/party.ts';
 import { readSafeArea, uiUnitScale } from '../viewport.ts';
 import { resolveControlLayout } from '../control-layout.ts';
 import { controlViewport } from './control-layout-viewport.ts';
@@ -153,7 +153,7 @@ export class StatusHud {
   private playerIconImages:Phaser.GameObjects.Image[]=[];private memberCount=0;
   private playerIconSignature='';private portraitKey?:string;private visibilityApplied=false;private levelSignature='';
   constructor(hud:Hud,skin:StatusHudSkin,readPlayer:()=>Readonly<StoryPlayerState>|undefined,subscribe:(listener:()=>void)=>()=>void,
-    readParty?:()=>PartySnapshot|undefined,onSelect?:(id:string)=>void,portraitFor?:(id:string)=>string|undefined,onFocus?:()=>void,
+    readParty?:()=>PartyActiveSnapshot|undefined,onSelect?:(id:string)=>void,portraitFor?:(id:string)=>string|undefined,onFocus?:()=>void,
     readConditions?:(id:string)=>readonly ActiveCondition[],readHero?:()=>MemberValues|undefined){
     this.hud=hud;this.skin=skin;
     const scene=hud.scene;
