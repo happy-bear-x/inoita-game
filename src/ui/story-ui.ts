@@ -467,10 +467,10 @@ export class StoryUI {
     if(this.page==='system'){
       const actions:[string,()=>void][]=[['保存游戏',()=>this.show('save')],['读取存档',()=>this.show('load')],['设置',()=>this.show('settings')],['脱离卡死',()=>{
         const result=this.app.rescuePlayer?.();
-        if(!result)this.app.ui.toast('当前不在游戏中');
-        else if(!result.ok)this.app.ui.toast(`脱困失败：${result.reason??'未知原因'}`);
-        else if(!result.moved)this.app.ui.toast('当前位置正常，不需要脱困');
-        else this.app.ui.toast('已脱离卡死');
+        if(!result)this.app.ui.showInstant('当前不在游戏中');
+        else if(!result.ok)this.app.ui.showInstant(`脱离卡死失败：${result.reason??'未知原因'}`);
+        else if(!result.moved)this.app.ui.showInstant('当前位置正常，不需要脱离卡死');
+        else this.app.ui.showInstant('已脱离卡死');
       }]];
       // 「调试」只在 GM 打开时出现；关闭时这一项根本不存在，不需要靠权限判断挡住。
       if(this.app.gm)actions.push(['调试',()=>this.show('debug')]);
