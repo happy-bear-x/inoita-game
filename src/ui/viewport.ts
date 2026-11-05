@@ -21,9 +21,12 @@ export function uiUnitScale(width: number, height: number): number {
 
 let safeAreaRevision = 0;
 let safeAreaCache: { revision: number; value: { left: number; right: number; top: number; bottom: number } } | undefined;
+const NO_SAFE_AREA = { left: 0, right: 0, top: 0, bottom: 0 };
 
 /** 设备安全区，单位为屏幕 CSS 像素。界面换算后使用，画布仍铺满窗口。 */
 export function readSafeArea(): { left: number; right: number; top: number; bottom: number } {
+  // Android 壳已经全屏铺满；壳内网页不再读设备安全区。浏览器和 iOS 仍按 env() 处理刘海。
+  if (typeof globalThis.InotiaNative !== 'undefined') return NO_SAFE_AREA;
   const cached = safeAreaCache;
   if (cached?.revision === safeAreaRevision) return cached.value;
   const safe = getComputedStyle(element('safe-area'));

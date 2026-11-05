@@ -11,6 +11,7 @@
 ## 规则
 
 - 本目录只做布局、断行、格式化和提示内容；实际绘制在 `src/ui/phaser/`。
+- **Android 壳内不读设备安全区。** `readSafeArea()` 检测到 `InotiaNative` 时固定返回 0；壳已经全屏铺满。浏览器和 iOS 仍按 `env(safe-area-inset-*)` 布局，避免刘海压住内容。
 - `story-ui.ts` 只在 `attach` 时向 `app.inputRouter` 注册一个 `menu` 作用域，菜单打开时独占键盘；场景不再单独订阅 `keydown`。
 - **页面 controller 拥有这一页的状态和操作。** `save-page.ts` 是存档/读档页的样板：确认框、改名输入、读写请求和 Escape 分层都在 controller 里，`StoryUI` 只保留路由、生命周期、共享输入和整页重绘。后续拆 `party`、`quests`、`shop` 等页面时沿用同一方向，不重写面板绘制。
 - **每个菜单页面都有显式签名。** 页面 viewModel 与签名集中在 `story-ui-signature.ts`：用 `page`、`selectedMemberId`、`bag.revision`、`questBook.version`、`party` 形状、技能版本、存档槽摘要、设置值和面板自己的 `viewModel()` 拼出来，不做对象深度哈希。新增 `Page` 必须同时在 `STORY_MENU_PAGES` 和签名分支里补上；会话通知只在该页签名变化时重绘，数据没变不重绘。
