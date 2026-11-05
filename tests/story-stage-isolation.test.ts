@@ -656,6 +656,41 @@ test('normal and skipped poses settle on identical held or idle animation frames
   }
 });
 
+test('skipping keeps logical positions without rebuilding the stage and flush paints once', async () => {
+  const run=harness(),signal=new AbortController().signal,skip=new AbortController(),playback={signal,skipSignal:skip.signal};
+  await run.presenter.begin(signal);
+  const guard={id:'guard',actor:'guard',worldEntityId:'persistent-guard',x:60,y:70,facing:'west' as const,visible:true};
+  await run.presenter.execute({type:'stage',map:'hall',x:30,y:40,facing:'east',playerVisible:true,cast:[guard]},playback);
+  run.presenter.committed();
+  const painted=run.rendered();
+  skip.abort();
+  await run.presenter.execute({type:'stage',map:'remote',x:12,y:22,facing:'north',playerVisible:true,
+    cast:[{...guard,x:70,y:80,facing:'south' as const}]},playback);
+  assert.equal(run.rendered(),painted,'跳过后不再重建舞台');
+  assert.equal(run.presenter.captureStage()!.map,'remote');
+  const staged=run.presenter.captureStage()!.cast.find(member=>member.id==='guard')!;
+  assert.deepEqual([staged.x,staged.y,staged.facing],[70,80,'south'],'舞台切换仍更新逻辑坐标');
+  await run.presenter.execute({type:'walk',target:'guard',x:100,y:120,speedPxPerSecond:100},playback);
+  assert.equal(run.rendered(),painted,'纯走位不碰画面');
+  const walked=run.presenter.captureStage()!.cast.find(member=>member.id==='guard')!;
+  assert.deepEqual([walked.x,walked.y],[100,120],'逻辑走位写进快照');
+  assert.deepEqual(run.presenter.getWorldChanges(),[{id:'persistent-guard',map:'remote',actor:'guard',
+    x:100,y:120,facing:'south',visible:true}],'正式世界仍能拿到跳过期间的逻辑走位');
+  await run.presenter.flushStage(signal);
+  assert.equal(run.rendered(),painted+1,'选择或任务弹窗前补画一次');
+  const shown=run.presenter.captureStage()!.cast.find(member=>member.id==='guard')!;
+  assert.deepEqual([shown.x,shown.y],[100,120],'补画沿用逻辑坐标');
+});
+
+test('a run skipped before its first frame never launches the stage scene', async () => {
+  const run=harness(),signal=new AbortController().signal,skip=new AbortController();skip.abort();
+  await run.presenter.begin(signal,undefined,undefined,false,skip.signal);
+  assert.equal(run.rendered(),0,'开场就跳过时不启动剧情舞台');
+  assert.equal(run.presenter.captureStage()!.map,'home');
+  await run.presenter.flushStage(signal);
+  assert.equal(run.rendered(),1,'真正需要画面时才补画');
+});
+
 test('restoring a scene on map B retains prepared map A objects and positions for the return trip',async()=>{
   const signal=new AbortController().signal,run=harness();
   const sceneCache=(run.presenter as unknown as {scenes:Map<string,import('../src/domain/scene-snapshot.ts').SceneSnapshot>}).scenes;

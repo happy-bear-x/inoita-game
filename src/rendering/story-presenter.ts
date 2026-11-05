@@ -21,6 +21,8 @@ import { freezeSnapshot, storyDevMode } from '../domain/dev-mode.ts';
 
 interface Performer { visual: CharacterVisual; facing: Facing; worldEntityId?: string; unpositioned?:boolean }
 type VisualAction = Exclude<PerformanceAction, { type: 'parallel' }>;
+/** 跳过时只需要改逻辑舞台状态的演员动作。 */
+type LogicalSceneAction = Extract<VisualAction, { type: 'world-object' | 'appear' | 'show' | 'leave' | 'face' | 'pose' | 'walk' }>;
 
 /** 独立舞台只产生语义结果，由运行时提交到正式世界。 */
 export class StoryPresenter implements StoryPresentationPort {
@@ -32,6 +34,8 @@ export class StoryPresenter implements StoryPresentationPort {
   private baseline?: StoryStageSnapshot;
   private finalStage?: StoryStageSnapshot;
   private state?: StoryStageSnapshot;
+  /** 跳过期间只推进逻辑舞台；需要选择或任务弹窗时才补画一次。 */
+  private skipping = false;
   /** 同一份舞台状态只抓一次快照；`getWorldChanges` 与 `committed` 共用它。 */
   private stageCapture?: { state: StoryStageSnapshot; value: StoryStageSnapshot };
   private scenes = new Map<string, SceneSnapshot>();
@@ -50,12 +54,13 @@ export class StoryPresenter implements StoryPresentationPort {
     this.scene = stage ?? (() => world().scene.get(SCENE_KEYS.storyStage) as StoryStageScene);
   }
   prefetchMap(map: string): void { this.world().prefetchMap(map); }
-  async begin(signal?: AbortSignal, restored?: StoryStage | StoryStageSnapshot, initialCurtain?: StoryCurtain, deferFirstStage = false): Promise<void> {
+  async begin(signal?: AbortSignal, restored?: StoryStage | StoryStageSnapshot, initialCurtain?: StoryCurtain, deferFirstStage = false, skipSignal?: AbortSignal): Promise<void> {
     if (!signal) throw new Error('剧情舞台需要导演的取消信号');
     signal.throwIfAborted();
     const world = this.world(), player = world.player;
     if (!player || !world.map) throw new Error('正式地图尚未准备好');
     this.appearance = player.actor;
+    this.skipping = !!skipSignal?.aborted;
     const source = world.captureStoryScene();
     const current = this.captureStage() ?? resolveStoryScene({
       type: 'stage', map: source.map, x: player.container.x, y: player.container.y,
@@ -66,6 +71,12 @@ export class StoryPresenter implements StoryPresentationPort {
     this.rememberScene(current.scene);
     const curtain = initialCurtain ?? (stage.map !== world.map.id ? { opacity: 1, color: 0 } : undefined);
     if (curtain) { this.opacity = curtain.opacity; this.color = curtain.color; }
+    if (this.skipping) {
+      const logical = deferFirstStage ? current
+        : 'scene' in stage ? structuredClone(stage as StoryStageSnapshot) : await this.resolveStage(stage, signal, undefined, true);
+      this.applyLogicalStage(logical);
+      return;
+    }
     await this.ready(signal, curtain);
     if (deferFirstStage) return;
     await this.stage(stage, signal);
@@ -88,6 +99,7 @@ export class StoryPresenter implements StoryPresentationPort {
     });
   }
   captureStage(): StoryStageSnapshot | undefined {
+    if (this.skipping) return this.captureLogicalStage();
     const scene = this.scene();
     if (!scene.map || !this.state || !this.actors.has('player')) return this.finalStage;
     // 舞台状态没换就直接复用上一次快照；节点提交后的改动都会先替换 `this.state`。
@@ -123,6 +135,37 @@ export class StoryPresenter implements StoryPresentationPort {
     const value = syncStoryScene(snapshot);
     this.stageCapture = { state: this.state, value };
     return value;
+  }
+
+  /** 跳过时没有实际演员对象，快照直接取逻辑舞台的坐标和显隐。 */
+  private captureLogicalStage(): StoryStageSnapshot | undefined {
+    const state = this.state;
+    if (!state) return this.finalStage;
+    const snapshot: StoryStageSnapshot = {
+      ...state,
+      scene: { ...state.scene, actors: state.scene.actors.map(actor => ({ ...actor })) },
+      cast: state.cast.map(member => ({ ...member })),
+      curtain: { opacity: this.opacity, color: this.color },
+      scenes: [...this.scenes.values()].filter(visited => visited.map !== state.map).map(visited => structuredClone(visited))
+    };
+    if (this.app.audio) snapshot.audio = this.app.audio.captureStoryAudio();
+    return syncStoryScene(snapshot);
+  }
+  private applyLogicalStage(snapshot: StoryStageSnapshot): void {
+    this.skipping = true;
+    this.state = snapshot;
+    this.scenes.set(snapshot.map, structuredClone(snapshot.scene));
+    this.stageCapture = undefined;
+  }
+  /** 选择或任务弹窗前把逻辑舞台真正画一次；素材走正常加载，缺什么补什么。 */
+  async flushStage(signal: AbortSignal): Promise<void> {
+    if (!this.skipping) return;
+    signal.throwIfAborted();
+    const stage = this.captureLogicalStage();
+    if (!stage) return;
+    await this.ready(signal);
+    this.skipping = false;
+    await this.renderStage(stage, signal, ++this.epoch);
   }
   getStageState(): StoryStageSnapshot | undefined { return this.captureStage(); }
   getWorldChanges(): readonly StoryEntityState[] {
@@ -210,12 +253,22 @@ export class StoryPresenter implements StoryPresentationPort {
     }
     this.toneFilter.setActive(enabled);
   }
-  private async stage(declaration: StoryStage | StoryStageSnapshot, signal: AbortSignal, pendingEntrances?: readonly string[]): Promise<void> {
+  private async stage(declaration: StoryStage | StoryStageSnapshot, signal: AbortSignal, pendingEntrances?: readonly string[], skipSignal?: AbortSignal): Promise<void> {
     const epoch = ++this.epoch;
+    const skipping = !!skipSignal?.aborted;
+    const snapshot = await this.resolveStage(declaration, signal, pendingEntrances, skipping);
+    if (skipping) {
+      if (epoch !== this.epoch) throw new DOMException('演出实例已更新', 'AbortError');
+      this.applyLogicalStage(snapshot);
+      return;
+    }
+    await this.renderStage(snapshot, signal, epoch);
+  }
+  private async resolveStage(declaration: StoryStage | StoryStageSnapshot, signal: AbortSignal, pendingEntrances?: readonly string[], skipPrefetch = false): Promise<StoryStageSnapshot> {
     const current = this.captureStage() ?? this.baseline;
     if (current) this.scenes.set(current.map, structuredClone(current.scene));
     const map = declaration.mapFromWorld ? current?.map ?? this.world().map!.id : declaration.map;
-    if (map !== this.world().map?.id) this.prefetchMap(map);
+    if (!skipPrefetch && map !== this.world().map?.id) this.prefetchMap(map);
     let snapshot: StoryStageSnapshot;
     if ('scene' in declaration) {
       snapshot = structuredClone(declaration);
@@ -249,6 +302,9 @@ export class StoryPresenter implements StoryPresentationPort {
     if (!('scene' in declaration) && pendingEntrances?.length)
       snapshot = hidePendingEntrances(snapshot, declaration, pendingEntrances);
     assertScenePlan(planScene(snapshot.scene, snapshot.bindings));
+    return snapshot;
+  }
+  private async renderStage(snapshot: StoryStageSnapshot, signal: AbortSignal, epoch: number): Promise<void> {
     if (!this.appearance) throw new Error('剧情玩家外观尚未准备好');
     await this.scene().showStage(snapshot, signal, this.appearance);
     signal.throwIfAborted();
@@ -256,6 +312,7 @@ export class StoryPresenter implements StoryPresentationPort {
     this.scene().clearEarlyCurtain();
     this.resetActors(true);
     this.state = snapshot;
+    this.stageCapture = undefined;
     const scene = this.scene();
     scene.cameras.main.stopFollow();
     for (const actor of snapshot.scene.actors) {
@@ -371,6 +428,8 @@ export class StoryPresenter implements StoryPresentationPort {
     const flatten = (action: PerformanceAction): VisualAction[] => action.type === 'parallel' ? action.actions.flatMap(flatten) : [action];
     const flat = actions.flatMap(flatten);
     await Promise.all(flat.map(action => this.executeAction(action, playback)));
+    // 跳过时没有实际演员对象，逻辑状态已经由每个子动作写好，不再做整组落位。
+    if (playback.skipSignal.aborted) return;
     // 每个动作结束时只按当时的位置单独落位；整组走完后再按最终站位统一落一次，
     // 让同时移动的角色作为一组互相校验，而不是按到达先后各自占位。
     const movement = this.scene().movement;
@@ -424,6 +483,22 @@ export class StoryPresenter implements StoryPresentationPort {
   private async executeAction(action: VisualAction, playback: PerformancePlayback, batch = false,
     pendingEntrances?: readonly string[]): Promise<void> {
     playback.signal.throwIfAborted();
+    this.skipping = playback.skipSignal.aborted;
+    if (this.skipping) {
+      // 跳过只推进逻辑舞台：舞台切换解析快照但不重建地图，演员动作只改坐标和显隐。
+      // 选择或任务弹窗之前会调用 flushStage 按这份逻辑快照补画一次。
+      switch (action.type) {
+        case 'instant-message': this.app.ui.showInstant(action.text); return;
+        case 'stage': await this.stage(action, playback.signal, pendingEntrances, playback.skipSignal); return;
+        case 'refresh-appearance': this.refreshLogicalAppearance(); return;
+        case 'fade': this.opacity = action.opacity; this.color = action.color; return;
+        case 'map-effect': if (this.scene()?.sys?.isActive()) this.applyMapEffect(action.enabled); return;
+        case 'pose': await this.poseAction(action, playback); return;
+        case 'world-object': case 'appear': case 'show': case 'leave': case 'face': case 'walk':
+          this.applyLogicalAction(action); return;
+        default: return;
+      }
+    }
     const scene = this.scene();
     switch (action.type) {
       case 'instant-message': this.app.ui.showInstant(action.text);return;
@@ -466,26 +541,7 @@ export class StoryPresenter implements StoryPresentationPort {
         if (!actor.unpositioned) {this.applySceneAction(action);this.face(actor,facing);}
         return;
       }
-      case 'pose': {
-        const actor = this.present(action.target);
-        if (!actor) return;
-        if (!playback.skipSignal.aborted) {
-          const clip = `${action.pose}-${actor.facing}` as const;
-          setCharacterClip(scene, actor.visual, clip, true);
-          // 原版按 `ACTDATABASE +4` 决定动作播完要不要排收尾：等于 1 的动作停在末帧保持姿势
-          // （114／115／147／149），其余回待机。待机自己循环，不需要收尾事件。
-          if (action.pose !== 'idle' && !action.hold) actor.visual.layers[0]?.once('animationcomplete', () => {
-            if (actor.visual.container.scene && actor.visual.clipName === clip) this.face(actor, actor.facing);
-          });
-        }
-        await this.delay(action.durationMs, playback);
-        if (action.hold && action.pose !== 'idle') {
-          const clip = `${action.pose}-${actor.facing}` as const;
-          setCharacterClip(scene, actor.visual, clip);
-          for (const layer of actor.visual.layers) { layer.anims.setProgress(1); layer.anims.stop(); }
-        } else this.face(actor, actor.facing);
-        return;
-      }
+      case 'pose': await this.poseAction(action, playback); return;
       case 'camera': {
         const actor = this.present(action.target);
         if (!actor) return;
@@ -534,13 +590,55 @@ export class StoryPresenter implements StoryPresentationPort {
       }
     }
   }
+  private async poseAction(action: Extract<VisualAction, { type: 'pose' }>, playback: PerformancePlayback): Promise<void> {
+    const actor = this.present(action.target);
+    if (!actor) {
+      // 逻辑舞台还没画出演员时，姿态仍要写进快照，之后补画才不会退回待机。
+      if (this.skipping && this.state?.scene) this.applyLogicalAction(action);
+      return;
+    }
+    const scene = this.scene();
+    const clip = `${action.pose}-${actor.facing}` as const;
+    setCharacterClip(scene, actor.visual, clip, true);
+    // 原版按 `ACTDATABASE +4` 决定动作播完要不要排收尾：等于 1 的动作停在末帧保持姿势
+    // （114／115／147／149），其余回待机。待机自己循环，不需要收尾事件。
+    if (action.pose !== 'idle' && !action.hold) actor.visual.layers[0]?.once('animationcomplete', () => {
+      if (actor.visual.container.scene && actor.visual.clipName === clip) this.face(actor, actor.facing);
+    });
+    await this.delay(action.durationMs, playback);
+    if (action.hold && action.pose !== 'idle') {
+      setCharacterClip(scene, actor.visual, clip);
+      for (const layer of actor.visual.layers) { layer.anims.setProgress(1); layer.anims.stop(); }
+    } else this.face(actor, actor.facing);
+    if (this.skipping && this.state?.scene) this.applyLogicalAction(action);
+  }
+
+  private applyLogicalAction(action: LogicalSceneAction): void {
+    if (!this.state) throw new Error('跳过时剧情舞台尚未准备好');
+    const next = applyStorySceneAction(this.state, action);
+    this.state = next;
+    this.scenes.set(next.map, structuredClone(next.scene));
+    this.stageCapture = undefined;
+  }
+  private refreshLogicalAppearance(): void {
+    const stage = this.captureLogicalStage();
+    if (!stage) return;
+    const changed = new Set((this.app.session.storyWorld.captureState().appearances ?? []).map(([actor]) => actor));
+    for (const actor of stage.scene.actors) if (actor.id === 'player' || actor.memberId || changed.has(actor.actor)) delete actor.appearance;
+    this.state = stage;
+    this.scenes.set(stage.map, structuredClone(stage.scene));
+    this.stageCapture = undefined;
+  }
   async finish(completed: boolean, signal?: AbortSignal): Promise<void> {
     if (completed) {
       signal?.throwIfAborted();
       this.finalStage = this.captureStage();
+      if (this.skipping) return;
       for (const actor of this.actors.values()) this.scene().movement?.stop(actor.visual);
       return;
     }
+    // 跳过时没有需要恢复的画面：逻辑状态已随命令回滚，直接拆掉舞台即可。
+    if (this.skipping) { await this.release(); return; }
     // 节点取消时正式世界尚未修改；恢复舞台由运行时提供仍有效的信号。
     this.epoch++;
     if (signal && !signal.aborted && this.baseline) await this.restoreStage(this.baseline, signal);
@@ -551,6 +649,7 @@ export class StoryPresenter implements StoryPresentationPort {
   }
   async release(): Promise<void> {
     if (this.closing) return this.closing;
+    this.skipping = false;
     this.epoch++;
     this.resetActors(); this.opacity = 0; this.finalStage = undefined; this.baseline = undefined;
     this.state = undefined; this.stageCapture = undefined; this.scenes.clear(); this.committedScenes.clear();

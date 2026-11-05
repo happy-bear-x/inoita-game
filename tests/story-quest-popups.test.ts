@@ -8,11 +8,11 @@ import {StoryDirector,type StoryUI} from '../src/domain/story-director.ts';
 const campaign=JSON.parse(readFileSync(new URL('../public/content/campaign.json',import.meta.url),'utf8')) as Campaign;
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 function harness(popup:StoryUI['questPopup']) {
-  const content={...campaign,events:[]},session=new Session(content),actions:string[]=[];
+  const content={...campaign,events:[]},session=new Session(content),actions:string[]=[];let flushes=0;
   const ui:StoryUI={async dialogue(){},async choice(){throw new Error('unexpected choice');},questPopup:popup,
     closeDialogue(){},skipDialogue(){},toast(){}};
-  const director=new StoryDirector(content,session,ui,()=>{},{begin(){},async execute(action){actions.push(action.type==='leave'?'leave:'+action.target:action.type);},async finish(){}});
-  return {session,director,actions};
+  const director=new StoryDirector(content,session,ui,()=>{},{begin(){},async execute(action){actions.push(action.type==='leave'?'leave:'+action.target:action.type);},async finish(){},async flushStage(){flushes++;}});
+  return {session,director,actions,flushes:()=>flushes};
 }
 
 test('native quest state commands commit before their popup and same-state guards bypass both',()=>{
@@ -44,6 +44,7 @@ test('the original forest quest popup observes committed acceptance and direct r
   const popups:string[]=[];
   const h=harness(async(kind,quest)=>{
     popups.push(`${kind}:${quest.id}`);
+    assert.equal(h.flushes(),1,'任务窗出现前先补画剧情舞台');
     assert.equal(h.session.questBook.accepted(quest.id),true);
     assert.ok(h.actions.includes('leave:darius'),'Darius departs before the quest is announced');
   });

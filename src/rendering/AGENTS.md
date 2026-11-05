@@ -15,6 +15,7 @@
 - **常驻战斗包按当前进度收窄。** `residentCombatAssets` 运行时只装当前主角职业、已拥有伙伴的外观和已学技能；未拥有伙伴和未学技能按需加载。构建期省略这些集合表示“覆盖全量”，用于 `combat-visual-coverage` 校验。新增常驻内容时保持这个收窄口径。
 - **衣柜预览只合成 `idle-south`。** 队伍面板选中成员时只准备预览需要的姿势，上阵/进战斗再补全套；伙伴外观走 `wardrobe-cache.ts` 的全局 LRU（上限 8 套），切换成员不会无上限堆积。
 - **剧情舞台快照共享演员外观引用。** `story-presenter` 只复制演员外壳，外观对象按引用共享；开发/测试模式冻结外观，任何原地改外观都会立刻报错。不要为了“保险”恢复逐角色深拷贝。
+- **跳过剧情只推进逻辑舞台。** 跳过信号中止后，`StoryPresenter` 只改逻辑快照（舞台解析、演员坐标与显隐），不重建地图和角色；选择或任务弹窗之前由 `flushStage` 按逻辑快照补画一次。`flushStage` 必须走正常舞台加载，缺的贴图、角色和衣柜资源当场补齐；新增演出动作时要同时决定它在跳过路径里改哪些逻辑状态。
 - **队伍单位被内容机关压住时要能自愈。** 火焰、路障、宝箱这类不会自己移动的 `content` 实体算落位障碍；移动自愈、GM 脱困和强制位移兜底都要按整盒避开所有角色，不能只看地形。
 - 动画名用游戏概念：`walk-east`、`idle-south`，不拼接帧号或方向偏移。
 - 沿用现有纹理、depth、filter 的组织方式；Phaser 4 写法以 `.agents/skills/` 和 4.2.1 文档为准。
@@ -29,3 +30,4 @@
 - `npm test -- tests/buff-loop-renderer.test.ts`：状态图标循环表现。
 - `npm test -- tests/movement-content-recovery.test.ts`：内容机关压住队伍单位后的自愈。
 - `npm test -- tests/state-markers.test.ts`：眩晕/睡眠状态标记的创建与销毁。
+- `npm test -- tests/story-skip.test.ts tests/story-stage-isolation.test.ts`：跳过剧情不重建舞台，选择与任务弹窗前按逻辑快照补画。

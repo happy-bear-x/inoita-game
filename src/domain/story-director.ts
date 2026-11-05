@@ -305,12 +305,13 @@ export class StoryDirector {
       await this.cleanup;
     }
     context.signal.throwIfAborted();
-    // 演出前确认这条脚本会经过的地图素材；缺则先加载，避免演出结束后再等。
+    // 演出前确认这条脚本会经过的立绘与音效；缺则先加载，避免演出结束后再等。
     if (this.prefetchedRun !== context.runId) {
       this.prefetchedRun = context.runId;
       this.prefetchedScripts.clear();
     }
     const script = this.runtime.runScript(context.runId);
+    // 立绘和音效仍按正常流程预取：跳过不该让后面的选项或对白缺资源。
     if (script && !this.prefetchedScripts.has(script)) {
       await this.world?.prefetch?.([script], context.signal);
       context.signal.throwIfAborted();
@@ -318,9 +319,10 @@ export class StoryDirector {
     }
     await this.recover(context.signal);
     await this.world?.normalize?.(context.signal);
-    await this.world?.prepare?.(node.commands, context.signal, context.stage, script);
+    // 跳过时不再为不会画出来的舞台地图预取整图素材；需要画面时由补画或世界投影按需加载。
+    if (!this.skipping) await this.world?.prepare?.(node.commands, context.signal, context.stage, script);
     if (context.stage && (node.stage || !this.presenting)) {
-      await this.presentation?.begin(context.signal, context.stage); this.presenting = !!this.presentation;
+      await this.presentation?.begin(context.signal, context.stage, undefined, false, this.skipRequest.signal); this.presenting = !!this.presentation;
       // `begin` 已经把这一幕画出来了；进图加载页到这里就可以收。
       if (this.presenting) { this.presentationRun = context.runId; this.markPresentationStarted(); }
     }
@@ -343,7 +345,11 @@ export class StoryDirector {
   }
   private async choice(prompt: string, options: ChoiceOption[], description?: string, signal = this.context?.signal ?? this.manual.signal): Promise<ChoiceOption> {
     signal.throwIfAborted(); this.skipping = false; this.skipRequest = new AbortController(); this.choosing = true;
-    try { const option = await this.ui.choice(prompt, options, description, signal); signal.throwIfAborted(); return option; }
+    try {
+      // 跳过到这里必须停下来让玩家选；先把逻辑舞台画出来，选择框背后的地图和人物才对。
+      await this.presentation?.flushStage?.(signal);
+      const option = await this.ui.choice(prompt, options, description, signal); signal.throwIfAborted(); return option;
+    }
     finally { this.choosing = false; }
   }
   private async perform(action: PerformanceAction, signal: AbortSignal, pendingEntrances?: readonly string[]): Promise<void> {
@@ -357,7 +363,7 @@ export class StoryDirector {
       const declaredStage = firstStage && !action.mapFromWorld ? action : undefined;
       await this.presentation.begin(signal, declaredStage,
         action.type === 'fade' && action.opacity === 1 && action.durationMs === 0 ? { opacity: action.opacity, color: action.color } : undefined,
-        firstStage);
+        firstStage, this.skipRequest.signal);
       this.presenting = true; this.presentationRun = this.context?.runId;
       drawingFirstStage = firstStage;
       // 首幕由紧随其后的 `execute` 画出；其它动作在 `begin` 里已经画出基线画面。
@@ -395,7 +401,11 @@ export class StoryDirector {
         const receipt = action.kind === 'complete' ? this.session.rewardReceiptFor(quest.id) : undefined;
         if (action.kind === 'complete' && !receipt) throw new Error(`任务尚未结算，无法展示奖励：${quest.id}`);
         this.confirming = true;
-        try { await this.ui.questPopup(action.kind, quest, receipt, context.signal); }
+        try {
+          // 任务窗要盖在剧情画面上；跳过期间先把当前逻辑舞台补画出来。
+          await this.presentation?.flushStage?.(context.signal);
+          await this.ui.questPopup(action.kind, quest, receipt, context.signal);
+        }
         finally { this.confirming = false; }
       } else {
         // 舞台只需要本幕稍后的出场别名；下一幕的动作在 pendingEntranceAliases 里会被 stage 截断。

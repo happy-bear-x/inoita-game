@@ -12,7 +12,7 @@ const campaign = parseCampaign(JSON.parse(fs.readFileSync(new URL('../public/con
 function harness(content: Campaign = campaign) {
   const session = new Session(content), lines: string[] = [], locks: boolean[] = [];
   let finish: (() => void) | undefined, choose: ((option: ChoiceOption) => void) | undefined;
-  let cancel: (() => void) | undefined;
+  let cancel: (() => void) | undefined, flushes = 0;
   const ui: StoryUI = {
     dialogue: (line, signal) => new Promise<void>((resolve, reject) => {
       lines.push(line.text);
@@ -25,8 +25,8 @@ function harness(content: Campaign = campaign) {
     async questPopup() {},
     skipDialogue: () => finish?.(), closeDialogue: () => cancel?.(), toast() {}
   };
-  const director = new StoryDirector(content, session, ui, value => locks.push(value), { begin() {}, async execute() {}, async finish() {} });
-  return { director, session, lines, locks, finish: () => finish?.(), choose: (option: ChoiceOption) => choose!(option) };
+  const director = new StoryDirector(content, session, ui, value => locks.push(value), { begin() {}, async execute() {}, async finish() {}, async flushStage() { flushes++; } });
+  return { director, session, lines, locks, flushes: () => flushes, finish: () => finish?.(), choose: (option: ChoiceOption) => choose!(option) };
 }
 const tick = () => new Promise(resolve => setImmediate(resolve));
 test('skip stops at choices, resumes selected lines normally and preserves completion flags', async () => {
@@ -39,6 +39,7 @@ test('skip stops at choices, resumes selected lines normally and preserves compl
   await tick();
   h.director.skip(); await tick();
   assert.deepEqual(h.lines, ['第一句']); assert.equal(h.director.busy, true);
+  assert.equal(h.flushes(), 1, '选择框出现前先把逻辑舞台补画一次');
   h.director.skip(); h.choose(option); await tick();
   assert.deepEqual(h.lines, ['第一句', '选项后的对白']);
   h.director.skip(); assert.equal(await result, true);
