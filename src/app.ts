@@ -128,6 +128,11 @@ export class StoryApp {
   set mode(value: GameMode) { this.ui.mode=value; }
   battleCatalog!: BattleCatalog;
   characterStats!: CharacterStatsCatalog;
+  /** 属性页读取当前战斗属性；由世界场景在装配时接到战斗条件上。 */
+  combatAttribute?: (actorId:string, attribute:import('./domain/battle-semantics.ts').BattleStatKey,
+    base:number, passives:readonly import('./domain/passive-skills.ts').PassiveModifier[])=>number;
+  /** 属性页判断成员当前是否潜行。 */
+  combatStealthed?: (actorId:string)=>boolean;
   storyUI!: StoryUI;
   statusHud!:StatusHudSkin;
   controlSkin!: ControlSkin;

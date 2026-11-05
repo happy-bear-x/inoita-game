@@ -11,6 +11,7 @@ import { SHORTCUT_PAGE_COUNT, SHORTCUT_SLOT_COUNT, ShortcutBar, type ShortcutEnt
 import { SLOT_ICON_SIZE, ITEM_ICON_SIZE, controlPlacement } from './phaser/action-controls.ts';
 import { AttributeAllocation } from '../domain/attribute-allocation.ts';
 import { effectiveCharacterPanel, PRIMARY_STATS, type Modifier, type PrimaryStat } from '../domain/character-stats.ts';
+import type { BattleStatKey } from '../domain/battle-semantics.ts';
 import { memberCombatModifiers } from '../domain/party-combat.ts';
 import { memberArt as memberArtwork } from '../domain/menu-panels.ts';
 import { characterCombatValues } from './character-values.ts';
@@ -658,12 +659,18 @@ export class StoryUI {
       const items=this.session!.bag.catalog.items,main=equipped['main-hand'];
       const weapon=main?items[main]?.kind??'unarmed':'unarmed';
       const armor=equipped.body?items[equipped.body].kind:'';
+      // 菜单打开时战斗被暂停，Buff 不会继续计时；这里按当前状态读一次，不挂逐帧刷新。
+      const stealthed=this.app.combatStealthed?.(this.selectedMemberId)??false;
       const modifiers=memberCombatModifiers({
         catalog:this.app.battleCatalog,classId:member.classId,loadout:this.configuration().draft(this.app.battleCatalog,member.classId),
         weaponKind:weapon,armorKind:armor,health:member.player.health,maxHealth:member.player.maxHealth,
-        groupEffects:this.session!.party?.groupModifiers()??{},growth:memberSkillGrowth(this.selectedMemberId)
+        groupEffects:this.session!.party?.groupModifiers()??{},growth:memberSkillGrowth(this.selectedMemberId),stealthed
       });
-      const values=characterCombatValues(effectiveCharacterPanel(panel,member.level,modifiers));
+      const combatAttribute=this.app.combatAttribute;
+      const resolve=combatAttribute
+        ?(key:string,base:number)=>combatAttribute(this.selectedMemberId,key as BattleStatKey,base,modifiers)
+        :undefined;
+      const values=characterCombatValues(effectiveCharacterPanel(panel,member.level,modifiers,resolve));
       v.border(panels.assets,722,0,224,431);panels.character.combatLabels.forEach((label,index)=>{v.text(label,738,24+index*35,110,19);v.text(values[index],928,24+index*35,0,19).setOrigin(1,0);});
     }else v.button('能力初始化',571,376,257,48,()=>this.action(()=>this.resetAttributes()));
     v.text(`${panels.character.labels.statPoints} ${statPoints}`,this.adjusting?534:522,14,0,20,AREA_TEXT);

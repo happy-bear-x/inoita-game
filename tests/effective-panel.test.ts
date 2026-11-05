@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import type {BattleCatalog} from '../src/domain/battle.ts';
-import {effectiveCharacterPanel, type CharacterPanel} from '../src/domain/character-stats.ts';
+import type {BattleStatKey} from '../src/domain/battle-semantics.ts';
+import {effectiveCharacterPanel, fighterBaseFromPanel, type CharacterPanel} from '../src/domain/character-stats.ts';
 import {CombatConditions} from '../src/domain/combat-conditions.ts';
 import {memberCombatModifiers} from '../src/domain/party-combat.ts';
 import type {PassiveModifier} from '../src/domain/passive-skills.ts';
@@ -54,4 +55,35 @@ test('member modifiers combine class passives with party group skills',()=>{
   assert.ok(modifiers.some(modifier=>modifier.attribute==='magicResistance'&&modifier.operation.kind==='add'&&modifier.operation.amount===45));
   assert.ok(modifiers.some(modifier=>modifier.attribute==='magicResistance'&&modifier.operation.kind==='add'&&modifier.operation.amount===30));
   assert.equal(effectiveCharacterPanel(panel,1,modifiers).magicResistance,75);
+});
+
+test('live resolver applies buffs and temporary attributes without double-counting passives',()=>{
+  const conditions=new CombatConditions();
+  conditions.applyBuff('hero','dark-strike',1,{
+    durationMs:10000,tickMs:0,states:[],periodic:[],modifiers:[
+      {attribute:'criticalRate',operation:{kind:'add',amount:50}},
+      {attribute:'maxHealth',operation:{kind:'add',amount:200}},
+    ],
+  },'caster');
+  // 临时属性只能通过快照注入；公开 setter 写的是已经算完的数值。
+  const state=conditions.captureState();
+  state.temporary=[['hero',[['physicalAttack',{operation:{kind:'add',amount:25}}]]]];
+  conditions.restoreState(state);
+  const passives=[add('criticalRate',10),add('criticalDamage',100)];
+  const resolve=(key:string,base:number)=>conditions.attribute('hero',key as BattleStatKey,base,passives);
+  const display=effectiveCharacterPanel(panel,1,passives,resolve);
+  const combat=conditions.fighter('hero',fighterBaseFromPanel(panel,1),passives);
+  assert.equal(display.criticalRate,90,'基础 30 + 被动 10 + Buff 50');
+  assert.equal(display.criticalRate,combat.criticalRate);
+  assert.equal(display.physicalAttack,125,'基础 100 + 临时 25');
+  assert.equal(display.physicalAttack,combat.physicalAttack);
+  assert.equal(display.maxHealth,1200,'基础 1000 + Buff 200');
+  assert.equal(display.maxHealth,combat.maxHealth);
+  assert.equal(display.criticalDamage,1100,'被动 100 只加一次');
+  assert.equal(display.criticalDamage,combat.criticalDamage);
+
+  // 传入 resolver 时，effectiveCharacterPanel 不再自己套 modifiers；两边都加会变成 40。
+  const plain=effectiveCharacterPanel(panel,1,passives,(_key,base)=>base);
+  assert.equal(plain.criticalRate,panel.criticalRate);
+  assert.equal(plain.criticalDamage,panel.criticalDamage);
 });

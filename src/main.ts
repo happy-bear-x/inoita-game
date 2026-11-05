@@ -401,6 +401,9 @@ function installSession(session: Session): void {
   app.equipmentAppearance=memberId=>worldScene()?.equipmentAppearance(memberId);
   app.preparePartyMember=async(id,signal,options)=>{const scene=worldScene();if(scene)await scene.preparePartyMember(id,signal,options);};
   app.releasePartyPreview=()=>worldScene()?.releasePartyPreview();
+  // 属性页只在菜单重绘时读一次；菜单打开期间战斗已暂停，Buff 不会继续走。
+  app.combatAttribute=(id,attribute,base,passives)=>worldScene()?.combatAttribute(id,attribute,base,passives)??base;
+  app.combatStealthed=id=>worldScene()?.combatStealthed(id)??false;
   app.revivePartyMember=(id,item)=>requireWorldScene().revivePartyMember(id,item);
   ui.playerActor = campaign.start.actor;
   app.storyUI.bind(session, app.world, presentation);

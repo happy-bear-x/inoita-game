@@ -106,6 +106,14 @@ export interface StoryUIContext {
   changeEquipment?: (entry: string | undefined, slot: EquipmentSlot, signal?: AbortSignal, memberId?:string) => Promise<string>;
   equipmentAppearance?:(memberId:string)=>import('../domain/content.ts').ActorDefinition|undefined;
   readonly battleCatalog: BattleCatalog;
+  /**
+   * 属性页读取当前战斗属性：把常驻被动、Buff 和临时属性一起叠到基础值上。
+   * 菜单打开时战斗暂停，页面重绘时调用一次即可，不要挂到每帧循环。
+   */
+  combatAttribute?: (actorId:string, attribute:import('../domain/battle-semantics.ts').BattleStatKey,
+    base:number, passives:readonly import('../domain/passive-skills.ts').PassiveModifier[])=>number;
+  /** 属性页判断成员当前是否潜行，用来把潜行条件的被动算进去。 */
+  combatStealthed?: (actorId:string)=>boolean;
   readonly storyClasses: StoryClassCatalog;
   readonly menuPanels: MenuPanels;
   /** 世界地图的目的地表（原版硬编码表的导出）。 */

@@ -121,9 +121,12 @@ function evasionRateFor(evasionBonus:number,dexterity:number,level:number):numbe
 /**
  * 把常驻被动叠到人物状态页上。只改显示用的派生字段；`baseDefense` 和
  * `baseMagicResistance` 保持原始值，战斗仍从基础值重新叠加，避免同一份被动算两次。
+ * `resolve` 可选：由战斗侧提供时，它已经负责叠加常驻被动和 Buff，本函数不再单独套 `modifiers`，
+ * 避免同一份被动算两次。菜单打开时战斗已暂停，调用方每次重绘读一次即可，不需要逐帧刷新。
  */
-export function effectiveCharacterPanel(panel:CharacterPanel,level:number,modifiers:readonly AttributeModifier[]):CharacterPanel {
-  const value=(key:string,base:number)=>applyAttributeModifiers(key,base,modifiers);
+export function effectiveCharacterPanel(panel:CharacterPanel,level:number,modifiers:readonly AttributeModifier[],
+  resolve?:(key:string,base:number)=>number):CharacterPanel {
+  const value=resolve??((key:string,base:number)=>applyAttributeModifiers(key,base,modifiers));
   const defense=Math.max(0,value('defense',panel.baseDefense));
   const defenseRate=Math.max(0,value('defenseRate',panel.defenseRate));
   const effectiveDefense=calculateEffectiveDefense(defense,defenseRate);

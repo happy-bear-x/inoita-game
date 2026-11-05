@@ -338,6 +338,11 @@ export class WorldCombat {
   get controlledState(){return this.controlledMember.player;}
   /** 状态面板读取的角色状态：增益与异常都在里面，用于图标行。 */
   activeConditions(id:string){return this.conditions.snapshot(id);}
+  /** 属性页只读当前属性；不推进 Buff、不写临时缓存之外的战斗状态。 */
+  effectiveAttribute(id:string,attribute:BattleStatKey,base:number,passives:readonly PassiveModifier[]):number {
+    return this.conditions.attribute(id,attribute,base,passives);
+  }
+  stealthed(id:string):boolean { return this.conditions.hasState(id,'stealthed'); }
   get activeParty(){return this.app.session?.party?.activeIds??['player'];}
   get movement(){return this.scene.movement!;}
   get facing():Facing{return this.controlledId==='player'?this.scene.facing:combatActor(this.allies,this.controlledId,actor=>actor.id)?.facing??'south';}

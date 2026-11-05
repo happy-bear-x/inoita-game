@@ -20,6 +20,8 @@ import { acquireCompanionWardrobe, pruneCompanionWardrobes } from '../rendering/
 import { costumeRecipe } from '../domain/wardrobe.ts';
 import { memberArt } from '../domain/menu-panels.ts';
 import type { EquipmentSlot } from '../domain/items.ts';
+import type { BattleStatKey } from '../domain/battle-semantics.ts';
+import type { PassiveModifier } from '../domain/passive-skills.ts';
 import type { ActorDefinition } from '../domain/content.ts';
 import type { StoryStageSnapshot } from '../domain/story-performance.ts';
 import { createEffect } from '../rendering/effects.ts';
@@ -1366,6 +1368,12 @@ export class WorldScene extends Phaser.Scene {
       && !this.app.locked && !this.app.suspended && !this.app.director?.busy;
   }
   get canCombatControl():boolean{return this.canControl&&!this.performing;}
+  /** 属性页读取当前战斗属性；战斗尚未建立时返回基础值。 */
+  combatAttribute(id:string,attribute:BattleStatKey,base:number,passives:readonly PassiveModifier[]):number {
+    return this.combat?.effectiveAttribute(id,attribute,base,passives)??base;
+  }
+  /** 属性页判断成员当前是否潜行。 */
+  combatStealthed(id:string):boolean { return this.combat?.stealthed(id)??false; }
   diagnosticSnapshot() {
     const player = this.player, movement = this.movement;
     let placement: Record<string, unknown> | null = null;
