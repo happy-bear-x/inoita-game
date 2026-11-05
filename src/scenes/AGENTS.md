@@ -27,6 +27,7 @@ Phaser 场景层：驱动生命周期、转发输入，把 domain、rendering、
 - **每帧读取的技能数据按版本复用。** `partyPassives`、`partySkillsFor`、`equipmentRecovery`、`combatProcs` 用技能版本、背包修订、生命阈值、潜行和组队光环版本缓存；`syncAiSkills` 每逻辑帧只更新蓝耗与频率。新增会影响这些结果的输入时，同步加进缓存键并在读档/成员移除时清空。
 - **地图触发用索引。** 进图和剧情投影后调用 `rebuildTriggerIndex`；`afterMovement` 只遍历本图的 region/near 候选，条件仍在判定时实时求值。新增会改变地图身份或角色集合的路径要重建索引。
 - **整图刷新和交互目标按签名早退。** `refreshStateSignature` 与 `interactionSignature` 覆盖地图、角色身份与外观、任务/世界/宝箱/古剑版本、操控者；新增可见性或标记输入时同步加进签名。任务投影由查询入口自己刷新，场景层不每帧强制 `session.refresh()`。
+- **任务标记按当前任务状态补建。** 任务可能在本图游玩中变为可接取；`refreshState` 对缺标记且有任务状态的角色补建头顶标记，不要只在 `createActor` 时判断一次。同一轮只取一次 `session.marker` 结果，同时用于头顶标记和小地图。
 - **战斗候选和名册按逻辑帧复用。** `combatants()` 在同一逻辑帧内共享快照，帧结束清空；名册刷新放在逻辑帧，最多晚约 60ms 生成。
 - `captureStoryScene` 与剧情舞台快照共享演员外观引用，只复制必要的外壳字段；开发/测试模式下外观是冻结的，原地修改会直接报错。
 - 喝泉水的回血回蓝和技能点结算调用 `domain/springs.ts` 的 `applySpringRecovery`、`grantSpringSkillPoint`；正面状态按存活上阵队员逐个施加，负面或攻防混合状态只给当前操控者。

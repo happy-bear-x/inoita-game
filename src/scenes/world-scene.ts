@@ -814,12 +814,18 @@ export class WorldScene extends Phaser.Scene {
         listener=>this.app.session.subscribe(listener));
       this.overheadStatus.setVisible(false);
     }
-    if (entity.id !== 'player' && this.app.session.markerActor(entity.actor,entity.characterId)) {
-      // 原版人物头顶只有字符本身（见 work/apk 位图字体 font_fnt_ascii 的 '!' 与 '?'），没有底板。
-      const glyph = this.add.text(0, -50, '!', { fontFamily: 'Georgia,serif', fontSize: '16px', fontStyle: 'bold', color: '#ffdb78' }).setOrigin(.5);
-      const marker = this.add.container(0, 0, [glyph]); container.add(marker); character.marker = { container: marker, glyph };
-    }
+    if (entity.id !== 'player' && this.app.session.markerActor(entity.actor,entity.characterId)) this.createQuestMarker(character);
     return character;
+  }
+
+  /** 任务标记按需创建：任务可能在进图后才变为可接取，不能只在建角色时判断一次。 */
+  private createQuestMarker(character: Character): void {
+    if (character.marker) return;
+    // 原版人物头顶只有字符本身（见 work/apk 位图字体 font_fnt_ascii 的 '!' 与 '?'），没有底板。
+    const glyph = this.add.text(0, -50, '!', { fontFamily: 'Georgia,serif', fontSize: '16px', fontStyle: 'bold', color: '#ffdb78' }).setOrigin(.5);
+    const marker = this.add.container(0, 0, [glyph]);
+    character.container.add(marker);
+    character.marker = { container: marker, glyph };
   }
   setClip(character: Character, name: ClipName): void {
     setCharacterClip(this, character, name);
@@ -964,6 +970,7 @@ export class WorldScene extends Phaser.Scene {
     const stateSignature=this.refreshStateSignature();
     if(stateSignature===this.refreshStateSignatureValue)return;
     this.refreshStateSignatureValue=stateSignature;
+    const taskMarkers: MinimapTask[] = [];
     for (const character of this.characters) {
       const opened = this.chestOpened(character), consumed = this.legendarySwordConsumed(character);
       // `actor-visibility` / `remove-character` 记在本图角色状态里；静态摆放也要立即隐藏并停碰撞。
@@ -971,26 +978,26 @@ export class WorldScene extends Phaser.Scene {
       character.container.setVisible(!this.performing && present && session.visible(character.entity) &&
         (!opened || this.chestFades.has(character.entity.id)) && !consumed);
       this.movement?.setEnabled(character, character.container.visible && !opened && !consumed);
+      const status = session.marker(character.entity.actor,character.entity.characterId);
+      // 任务可能在进图后才变为可接取：标记缺失时按当前任务状态补建，而不是只在建角色时判断一次。
+      if (character.entity.id !== 'player' && !character.marker && status
+        && session.markerActor(character.entity.actor,character.entity.characterId))
+        this.createQuestMarker(character);
       if (character.marker) {
-        const status = session.marker(character.entity.actor,character.entity.characterId);
         character.marker.container.setVisible(!!status);
         const glyph=character.marker.glyph,color=status==='active'?'#adb9bb':'#ffdb78';
         glyph.setText(status==='available'?'!':'?');
         // setColor 每次都会重画文字画布；状态颜色没变就跳过。
         if(glyph.style.color!==color)glyph.setColor(color);
       }
+      if (character.container.visible && status && status !== 'locked' && status !== 'completed')
+        taskMarkers.push({id: character.entity.id, x: character.container.x, y: character.container.y, status});
     }
     const map = this.map;
     if (!map) return;
     if (this.minimap) {
-      const markers: MinimapTask[] = [];
-      for (const character of this.characters) {
-        const status = session.marker(character.entity.actor,character.entity.characterId);
-        if (character.container.visible && status && status !== 'locked' && status !== 'completed')
-          markers.push({id: character.entity.id, x: character.container.x, y: character.container.y, status});
-      }
       if (this.player) this.minimap.updatePlayer((this.combat?.controlledVisual??this.player).container);
-      this.minimap.updateTasks(markers);
+      this.minimap.updateTasks(taskMarkers);
     }
   }
   resizeView(): void {
