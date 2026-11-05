@@ -59,13 +59,19 @@ test('accepting makes the quest ready without opening a page; the second talk co
   } finally { director.dispose(); }
 });
 
-test('a ready quest does not regenerate the NPC after a map visit', async () => {
+test('a ready quest places the delivery NPC again after a map visit, then removes it after completion', async () => {
   const { session, director, luna } = setup();
   try {
     await director.interact(luna, world.actors[luna.actor]);
+    assert.equal(session.status(quest.id), 'ready');
     visit(session, 'shadow-camp');
     visit(session, 'berkel-capital');
-    assert.equal(session.status(quest.id), 'ready');
-    assert.equal(session.storyWorld.projectEntities('berkel-capital', []).some(entity => entity.characterId === 'npc-651'), false);
+    const again = session.storyWorld.projectEntities('berkel-capital', []).find(entity => entity.characterId === 'npc-651');
+    assert.ok(again, '待交付时重新进图仍要找到露娜');
+    await director.interact(again, world.actors[again.actor]);
+    assert.equal(session.status(quest.id), 'completed');
+    visit(session, 'shadow-camp');
+    visit(session, 'berkel-capital');
+    assert.equal(session.storyWorld.projectEntities('berkel-capital', []).some(entity => entity.characterId === 'npc-651'), false, '任务完成后不再生成');
   } finally { director.dispose(); }
 });

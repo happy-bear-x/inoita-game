@@ -355013,9 +355013,19 @@
       "y": 312,
       "facing": "east",
       "condition": {
-        "type": "quest",
-        "quest": "quest-489",
-        "status": "available"
+        "type": "any",
+        "conditions": [
+          {
+            "type": "quest",
+            "quest": "quest-489",
+            "status": "available"
+          },
+          {
+            "type": "quest",
+            "quest": "quest-489",
+            "status": "ready"
+          }
+        ]
       }
     },
     {
@@ -355027,9 +355037,19 @@
       "y": 328,
       "facing": "west",
       "condition": {
-        "type": "quest",
-        "quest": "quest-489",
-        "status": "available"
+        "type": "any",
+        "conditions": [
+          {
+            "type": "quest",
+            "quest": "quest-489",
+            "status": "available"
+          },
+          {
+            "type": "quest",
+            "quest": "quest-489",
+            "status": "ready"
+          }
+        ]
       }
     },
     {
@@ -355041,9 +355061,19 @@
       "y": 88,
       "facing": "west",
       "condition": {
-        "type": "quest",
-        "quest": "quest-489",
-        "status": "available"
+        "type": "any",
+        "conditions": [
+          {
+            "type": "quest",
+            "quest": "quest-489",
+            "status": "available"
+          },
+          {
+            "type": "quest",
+            "quest": "quest-489",
+            "status": "ready"
+          }
+        ]
       }
     },
     {
@@ -355055,9 +355085,19 @@
       "y": 104,
       "facing": "west",
       "condition": {
-        "type": "quest",
-        "quest": "quest-489",
-        "status": "available"
+        "type": "any",
+        "conditions": [
+          {
+            "type": "quest",
+            "quest": "quest-489",
+            "status": "available"
+          },
+          {
+            "type": "quest",
+            "quest": "quest-489",
+            "status": "ready"
+          }
+        ]
       }
     },
     {
@@ -355069,9 +355109,19 @@
       "y": 296,
       "facing": "west",
       "condition": {
-        "type": "quest",
-        "quest": "quest-489",
-        "status": "available"
+        "type": "any",
+        "conditions": [
+          {
+            "type": "quest",
+            "quest": "quest-489",
+            "status": "available"
+          },
+          {
+            "type": "quest",
+            "quest": "quest-489",
+            "status": "ready"
+          }
+        ]
       }
     },
     {
@@ -355083,9 +355133,19 @@
       "y": 488,
       "facing": "west",
       "condition": {
-        "type": "quest",
-        "quest": "quest-489",
-        "status": "available"
+        "type": "any",
+        "conditions": [
+          {
+            "type": "quest",
+            "quest": "quest-489",
+            "status": "available"
+          },
+          {
+            "type": "quest",
+            "quest": "quest-489",
+            "status": "ready"
+          }
+        ]
       }
     },
     {
@@ -355097,9 +355157,19 @@
       "y": 328,
       "facing": "west",
       "condition": {
-        "type": "quest",
-        "quest": "quest-489",
-        "status": "available"
+        "type": "any",
+        "conditions": [
+          {
+            "type": "quest",
+            "quest": "quest-489",
+            "status": "available"
+          },
+          {
+            "type": "quest",
+            "quest": "quest-489",
+            "status": "ready"
+          }
+        ]
       }
     },
     {
@@ -355111,9 +355181,19 @@
       "y": 504,
       "facing": "west",
       "condition": {
-        "type": "quest",
-        "quest": "quest-489",
-        "status": "available"
+        "type": "any",
+        "conditions": [
+          {
+            "type": "quest",
+            "quest": "quest-489",
+            "status": "available"
+          },
+          {
+            "type": "quest",
+            "quest": "quest-489",
+            "status": "ready"
+          }
+        ]
       }
     },
     {
@@ -355125,9 +355205,19 @@
       "y": 408,
       "facing": "west",
       "condition": {
-        "type": "quest",
-        "quest": "quest-489",
-        "status": "available"
+        "type": "any",
+        "conditions": [
+          {
+            "type": "quest",
+            "quest": "quest-489",
+            "status": "available"
+          },
+          {
+            "type": "quest",
+            "quest": "quest-489",
+            "status": "ready"
+          }
+        ]
       }
     }
   ]
