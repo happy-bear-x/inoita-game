@@ -2,7 +2,7 @@ import { validateStoryDebug } from '../domain/story-debug.ts';
 import {ITEM_NOTICES} from '../domain/item-application.ts';
 import {buffEffectNames} from '../domain/buff-effects.ts';
 import { feedbackEffects, type CombatFeedbackDefinition } from '../domain/combat-feedback.ts';
-import { STATUS_PARTS, type HudGauge, type HudInset, type HudRect, type StatusHudSkin } from '../domain/status-hud.ts';
+import { STATUS_PARTS, type HudCenteredRect, type HudGauge, type HudInset, type HudRect, type StatusHudSkin } from '../domain/status-hud.ts';
 import { CHARACTER_ASSETS, ITEM_ACTION_ASSETS, SKILL_ASSETS, SKILL_AI_ASSETS, QUEST_ASSETS, PARTY_ASSETS, type MenuPanels } from '../domain/menu-panels.ts';
 import { CONTROL_PARTS, type ControlSkin } from '../domain/control-skin.ts';
 import type { ActorDefinition, WorldIndex, WorldMap, AnimationClip, DialogueAction, EffectClip, EffectLayer } from '../domain/content.ts';
@@ -1214,6 +1214,7 @@ export function parseControlSkin(value: unknown): ControlSkin {
 }
 
 const hudRect=shape<HudRect>({x:number,y:number,width:positive,height:positive});
+const hudCenteredRect=shape<HudCenteredRect>({centerX:number,centerY:number,width:positive,height:positive});
 const hudInset=shape<HudInset>({left:number,top:number,right:number,bottom:number});
 const hudGauge=shape<HudGauge>({x:number,y:number,fillOffset:integer,fillWidth:count,startWidth:count,endWidth:count,height:count});
 export function parseStatusHud(value:unknown):StatusHudSkin {
@@ -1222,7 +1223,7 @@ export function parseStatusHud(value:unknown):StatusHudSkin {
   object({assets:record(file),player:object({width:count,height:count,inset:hudInset,portrait:hudRect,level:hudRect,gauges}),
     member:object({slots:array(count),width:count,height:count,inset:hudInset,portrait:hudRect,level:hudRect,gauges}),
     buffIcons:object({size:count,step:count,catalog:record(file)}),
-    target:object({width:count,height:count,name:hudRect,gauge:hudGauge,specialMark:optional(hudRect)}),
+    target:object({width:count,height:count,name:hudRect,gauge:hudGauge,specialMark:optional(hudCenteredRect)}),
     overhead:object({frame:hudRect,leader:hudRect,
       health:object({x:number,y:number,width:count,height:count,color}),mana:object({x:number,y:number,width:count,height:count,color})}),
     levelColors:array(object({minDifference:number,color}))})(value,'statusHud');
@@ -1235,9 +1236,12 @@ export function parseStatusHud(value:unknown):StatusHudSkin {
     requireValue(left>=0&&top>=0&&right>=0&&bottom>=0&&left+right<panel.width&&top+bottom<panel.height,
       'statusHud.inset','面板透明留白必须非负且小于面板尺寸');
   }
-  for(const [size,rects] of [[result.player,[result.player.portrait,result.player.level]], [result.target,[result.target.name,...(result.target.specialMark?[result.target.specialMark]:[])]],
+  for(const [size,rects] of [[result.player,[result.player.portrait,result.player.level]], [result.target,[result.target.name]],
     [result.member,[result.member.portrait,result.member.level]]] as const)
     for(const rect of rects)requireValue(rect.x>=0&&rect.y>=0&&rect.x+rect.width<=size.width&&rect.y+rect.height<=size.height,'statusHud','布局超出面板');
+  const mark=result.target.specialMark;
+  if(mark)requireValue(mark.centerX-mark.width/2>=0&&mark.centerX+mark.width/2<=result.target.width
+    &&mark.centerY-mark.height/2>=0&&mark.centerY+mark.height/2<=result.target.height,'statusHud','特殊标记超出面板');
   for(const [size,gauges] of [[result.player,Object.values(result.player.gauges)],[result.target,[result.target.gauge]],
     [result.member,Object.values(result.member.gauges)]] as const)
     for(const g of gauges)requireValue(g.x>=0&&g.y>=0&&g.x+g.fillOffset+g.fillWidth+g.endWidth<=size.width&&g.y+g.height<=size.height,'statusHud','血条超出面板');

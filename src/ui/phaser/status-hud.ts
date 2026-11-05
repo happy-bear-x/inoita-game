@@ -166,9 +166,12 @@ export class StatusHud {
     const text=(x:number,y:number,size:number)=>scene.add.text(x,y,'',{fontFamily:FONT,fontSize:size,color:'#ffffff',resolution:3});
     const level=skin.player.level;this.level=text(level.x+level.width/2,level.y+level.height/2,17).setOrigin(.5);this.playerContainer.add(this.level);
     this.gauges=Object.fromEntries((['health','mana','experience'] as const).map(kind=>[kind,new Gauge(scene,this.playerContainer,skin,kind,skin.player.gauges[kind])])) as typeof this.gauges;
+    this.targetContainer.add(image(skin.assets['target-frame'],0,0,skin.target.width,skin.target.height));
     const nameAnchor=targetNameAnchor(skin);this.name=text(nameAnchor.x,nameAnchor.y,18).setOrigin(.5,0);this.targetContainer.add(this.name);this.targetGauge=new Gauge(scene,this.targetContainer,skin,'target',skin.target.gauge);
     const mark=skin.target.specialMark;
-    if(mark){this.targetSpecial=image(skin.assets['target-special'],mark.x,mark.y,mark.width,mark.height).setVisible(false);this.targetContainer.add(this.targetSpecial);}
+    // 原版按面板中心绘制特殊怪标记，mark 存的是中心点而不是左上角。
+    if(mark){this.targetSpecial=image(skin.assets['target-special'],mark.centerX,mark.centerY,mark.width,mark.height)
+      .setOrigin(.5).setVisible(false);this.targetContainer.add(this.targetSpecial);}
     this.playerIcons=scene.add.container(0,0);this.playerContainer.add(this.playerIcons);
     // 点大面板找回当前操控角色；队友面板则切换操控者。
     // 点面板只走面板自己的 pointerup；世界级左键看到 `uiAction` 就不再普攻。

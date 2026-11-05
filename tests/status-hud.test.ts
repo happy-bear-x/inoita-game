@@ -87,6 +87,21 @@ test('target name is anchored on the panel centre so both native lines stay cent
   assert.equal(skin.target.name.x+skin.target.name.width,skin.target.width-skin.target.name.x,'名字框左右留白对称');
 });
 
+test('target special mark is centred under the health bar on the native panel',()=>{
+  const mark=skin.target.specialMark;
+  assert.ok(mark);
+  assert.equal(mark.centerX,skin.target.width/2,'特殊标记取面板横向中心');
+  assert.equal(mark.centerY,80);
+  assert.equal(mark.width,77);assert.equal(mark.height,37);
+  const barBottom=skin.target.gauge.y+skin.target.gauge.height;
+  assert.equal(mark.centerY-mark.height/2-barBottom,5.5,'星星上沿紧贴血条下方');
+  const png=fs.readFileSync(new URL(`../public/${skin.assets['target-frame']}`,import.meta.url));
+  assert.equal(png.readUInt32BE(16),skin.target.width);
+  assert.equal(png.readUInt32BE(20),skin.target.height);
+  const off=structuredClone(skin);off.target.specialMark!.centerY=500;
+  assert.throws(()=>parseStatusHud(off),/特殊标记超出面板/);
+});
+
 test('six class health writes notify, clamp, refill on leveling and preserve class isolation',()=>{
   const stats=parseCharacterStats(read('character-stats')),items=parseItemCatalog(read('items'));
   for(const entry of battle.classes){

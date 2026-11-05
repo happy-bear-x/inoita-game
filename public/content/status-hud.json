@@ -12,6 +12,7 @@
     "experience-start": "assets/ui/status/experience-start.png",
     "experience-fill": "assets/ui/status/experience-fill.png",
     "experience-end": "assets/ui/status/experience-end.png",
+    "target-frame": "assets/ui/status/target-frame.png",
     "target-start": "assets/ui/status/target-start.png",
     "target-fill": "assets/ui/status/target-fill.png",
     "target-end": "assets/ui/status/target-end.png",
@@ -203,8 +204,8 @@
       "height": 16
     },
     "specialMark": {
-      "x": 190,
-      "y": 80,
+      "centerX": 229,
+      "centerY": 80,
       "width": 77,
       "height": 37
     }

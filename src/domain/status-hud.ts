@@ -3,8 +3,10 @@ export const STATUS_PARTS = ['player-shadow','player-frame','player-portrait',
   'member-shadow','member-frame','member-portrait','member-portrait-down','player-portrait-down',
   'health-start','health-fill','health-end','mana-start','mana-fill','mana-end',
   'experience-start','experience-fill','experience-end',
-  'target-start','target-fill','target-end','target-special','overhead-frame','overhead-leader'] as const;
+  'target-frame','target-start','target-fill','target-end','target-special','overhead-frame','overhead-leader'] as const;
 export interface HudRect { x:number; y:number; width:number; height:number }
+/** 以中心点定位的矩形：原版目标面板的特殊怪标记按中心绘制。 */
+export interface HudCenteredRect { centerX:number; centerY:number; width:number; height:number }
 /** 素材四周的透明留白（显示尺寸单位）；右缘对齐等视觉边界从这里算。 */
 export interface HudInset { left:number; top:number; right:number; bottom:number }
 export interface HudGauge {
@@ -28,7 +30,7 @@ export interface StatusHudSkin {
   player: {width:number;height:number;inset:HudInset;portrait:HudRect;level:HudRect;gauges:HudGauges};
   member: MemberPanelSkin;
   buffIcons: BuffIconSkin;
-  target: {width:number;height:number;name:HudRect;gauge:HudGauge;specialMark?:HudRect};
+  target: {width:number;height:number;name:HudRect;gauge:HudGauge;specialMark?:HudCenteredRect};
   /** 头顶状态槽相对头部锚点的布局，单位为地图像素。 */
   overhead: {frame:HudRect;leader:HudRect;health:HudRect & {color:string};mana:HudRect & {color:string}};
   levelColors:{minDifference:number;color:string}[];
