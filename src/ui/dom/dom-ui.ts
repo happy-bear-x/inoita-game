@@ -65,7 +65,10 @@ export class DomUi {
   label(name: DomLayerName, className = 'dom-label', anchor: DomPoint = { x: 0, y: 0 }): DomLabel {
     const parent = this.layer(name);
     const element = document.createElement('div');
-    element.className = className;
+    // 定位与换行规则统一由 `dom-label` 提供；调用方只补自己的样式类。
+    const classes = className.split(/\s+/).filter(Boolean);
+    if (!classes.includes('dom-label')) classes.unshift('dom-label');
+    element.className = classes.join(' ');
     let anchorX = anchor.x, anchorY = anchor.y, shown = this.visible.get(name) !== false;
     element.hidden = !shown;
     const applyAnchor = () => {
@@ -94,7 +97,10 @@ export class DomUi {
         return label;
       },
       setClassName(className: string): DomLabel {
-        if (element.className !== className) element.className = className;
+        const classes = className.split(/\s+/).filter(Boolean);
+        if (!classes.includes('dom-label')) classes.unshift('dom-label');
+        const name = classes.join(' ');
+        if (element.className !== name) element.className = name;
         return label;
       },
       setStyle(style: Partial<CSSStyleDeclaration>): DomLabel {

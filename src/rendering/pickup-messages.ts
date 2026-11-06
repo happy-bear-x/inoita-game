@@ -81,7 +81,7 @@ export class PickupMessages {
       const dom=document.createElement('div');dom.className='dom-pickup';
       Object.assign(dom.style,{position:'absolute',left:'0',top:'0',display:'flex',alignItems:'center',
         gap:`${4*unit}px`,fontSize:`${20*unit}px`,lineHeight:'1',whiteSpace:'nowrap',pointerEvents:'none',
-        color:'#ffffff',textShadow:'1px 1px 0 #000,-1px 1px 0 #000,1px -1px 0 #000,-1px -1px 0 #000'});
+        color:'#ffffff',textShadow:'0 1px 2px rgba(0,0,0,.7)'});
       if(reward.kind==='money'){
         const amount=splitMoney(reward.amount);
         for(const key of units){

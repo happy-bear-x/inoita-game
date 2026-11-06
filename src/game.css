@@ -6,7 +6,10 @@
 #ui-root{position:absolute;inset:0;z-index:4;pointer-events:none;contain:layout style paint;isolation:isolate;overflow:hidden;font-family:var(--font-game);-webkit-text-size-adjust:100%;text-size-adjust:100%}
 .dom-ui-layer{position:absolute;inset:0;overflow:hidden;pointer-events:none}
 #ui-world{z-index:1}#ui-hud{z-index:2}#ui-screen{z-index:3}
-.dom-label{position:absolute;left:0;top:0;white-space:nowrap;pointer-events:none;line-height:1.2;color:#f5f0df;text-shadow:0 0 1px #000,1px 1px 0 #000,-1px 1px 0 #000,1px -1px 0 #000,-1px -1px 0 #000}
+.dom-label{position:absolute;left:0;top:0;white-space:nowrap;pointer-events:none;line-height:1.2;color:#f5f0df}
+/* 只有压在游戏画面上的文字需要阴影；菜单文字站在面板底色上，描边会把笔画糊粗。 */
+#ui-world .dom-label,#ui-hud .dom-label{text-shadow:0 1px 2px rgba(0,0,0,.6)}
+.dom-menu-clip{position:absolute;left:0;top:0;overflow:hidden;pointer-events:none}
 .dom-label[hidden],.dom-ui-layer[hidden]{display:none!important}
 
 /* 手机系统键盘只能由真实 input 唤起：存档改名和修改密码用居中表单，云存档登录用面板内嵌输入框。 */

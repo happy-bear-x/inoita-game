@@ -1066,7 +1066,7 @@ export class WorldScene extends Phaser.Scene {
   /** 帧率显示：左上角小地图右边，设置里可关，默认开（application/display-settings）。 */
   private createFpsReadout(): { dom?: DomLabel } {
     const dom=this.app.domUi?.label('hud','dom-fps');
-    if(dom)dom.setStyle({fontSize:'22px',color:'#fff4dc',textShadow:'1px 0 0 #1b1408,-1px 0 0 #1b1408,0 1px 0 #1b1408,0 -1px 0 #1b1408'});
+    if(dom)dom.setStyle({fontSize:'22px',color:'#fff4dc',textShadow:'0 1px 2px rgba(0,0,0,.7)'});
     return { dom };
   }
   private layoutFps(): void {

@@ -51,6 +51,13 @@ interface MenuTextEntry {
   visible: boolean;
 }
 
+/** 一块滚动窗口的裁剪容器；标签挂进去后由浏览器按矩形裁边。 */
+interface MenuTextClipBox {
+  label: DomLabel;
+  top: number;
+  height: number;
+}
+
 /**
  * 菜单页面的 DOM 文字层。
  *
@@ -64,6 +71,8 @@ export class MenuTextLayer {
   private readonly scrollTopOf: (page: string, scroll: string) => number | undefined;
   private readonly renderers = new Map<string, MenuTextPageRenderer>();
   private readonly entries = new Map<string, MenuTextEntry>();
+  private readonly clips = new Map<string, MenuTextClipBox>();
+  private baseLayer?: HTMLElement;
   private specs: MenuTextSpec[] = [];
   private page = '';
   private shown = true;
@@ -111,6 +120,7 @@ export class MenuTextLayer {
     if (this.shown === visible) return;
     this.shown = visible;
     for (const entry of this.entries.values()) entry.label.setVisible(visible && entry.visible);
+    for (const clip of this.clips.values()) clip.label.setVisible(visible);
   }
 
   /** 滑条这类不走整页重绘的值：只改一条已存在的文字。 */
@@ -134,8 +144,38 @@ export class MenuTextLayer {
 
   private clearEntries(): void {
     for (const entry of this.entries.values()) entry.label.remove();
+    for (const clip of this.clips.values()) clip.label.remove();
     this.entries.clear();
+    this.clips.clear();
+    this.baseLayer = undefined;
     this.signature = '';
+  }
+
+  private newLabel(className: string, anchor: MenuTextPoint | { x: number; y: number }): DomLabel {
+    const label = this.dom.label('screen', className, anchor);
+    this.baseLayer ??= label.element.parentElement ?? undefined;
+    return label;
+  }
+
+  /** 同一组上下边界共用一个裁剪容器；滚动时只换标签位置，容器不动。 */
+  private clipBox(spec: MenuTextSpec): MenuTextClipBox | undefined {
+    if (!spec.clip) return undefined;
+    const key = `${spec.clip.top}|${spec.clip.bottom}`;
+    let box = this.clips.get(key);
+    if (!box) {
+      box = { label: this.newLabel('dom-menu-clip', { x: 0, y: 0 }), top: NaN, height: NaN };
+      box.label.setVisible(false);
+      this.clips.set(key, box);
+    }
+    const top = this.pointOf(0, spec.clip.top).y;
+    const height = Math.max(0, this.pointOf(0, spec.clip.bottom).y - top);
+    if (box.top !== top || box.height !== height) {
+      box.top = top;
+      box.height = height;
+      box.label.setStyle({ left: '0px', top: '0px', width: '100%', height: `${height.toFixed(2)}px` })
+        .setPosition(0, top).setVisible(this.shown);
+    }
+    return box;
   }
 
   private bodyY(spec: MenuTextSpec): number {
@@ -182,20 +222,24 @@ export class MenuTextLayer {
       this.clearEntries();
       return;
     }
-    const signature = JSON.stringify([this.page, ...this.specs.map(spec => {
+    const scale = this.pointOf(0, 0).scale;
+    const signature = JSON.stringify([this.page, scale, ...this.specs.map(spec => {
       const y = this.bodyY(spec);
       return [spec.key, spec.text, spec.style.size, spec.style.color ?? '', spec.style.anchorX ?? 0,
         spec.style.anchorY ?? 0, spec.style.align ?? 'left', spec.x, y, this.withinClip(spec, y),
-        spec.style.width ?? null, this.lineHeightOf(spec.style), spec.style.wrap ?? 'none'];
+        spec.style.width ?? null, this.lineHeightOf(spec.style), spec.style.wrap ?? 'none',
+        spec.clip ? [spec.clip.top, spec.clip.bottom] : null];
     })]);
     if (signature === this.signature) return;
     this.signature = signature;
 
-    const seen = new Set<string>();
+    const seen = new Set<string>(), usedClips = new Set<string>();
     for (const spec of this.specs) {
       seen.add(spec.key);
       const y = this.bodyY(spec);
       const point = this.pointOf(spec.x, y);
+      const box = this.clipBox(spec);
+      if (box) usedClips.add(`${spec.clip!.top}|${spec.clip!.bottom}`);
       const fontSize = Math.max(1, spec.style.size * point.scale);
       const anchorX = spec.style.anchorX ?? 0, anchorY = spec.style.anchorY ?? 0;
       const color = spec.style.color ?? '#f3deb0';
@@ -204,12 +248,16 @@ export class MenuTextLayer {
       const wrapping = this.wrappingOf(spec.style, point.scale);
       let entry = this.entries.get(spec.key);
       if (!entry) {
-        const label = this.dom.label('screen', 'dom-label dom-menu-text', { x: anchorX, y: anchorY });
+        const label = this.newLabel('dom-menu-text', { x: anchorX, y: anchorY });
         // 先隐藏；下面按可视结果统一决定，新建标签就不会闪一帧。
         label.setVisible(false);
         entry = { label, text: '', styleKey: '', wrapKey: '', x: NaN, y: NaN, visible: false };
         this.entries.set(spec.key, entry);
       }
+      // 裁剪窗口内的标签挂进容器，浏览器负责把越出窗口的部分裁掉；切回普通页时再挂回顶层。
+      const parent = box?.label.element ?? this.baseLayer;
+      if (parent && typeof parent.appendChild === 'function'
+        && entry.label.element.parentElement !== parent) parent.appendChild(entry.label.element);
       if (entry.text !== spec.text) {
         entry.text = spec.text;
         entry.label.setText(spec.text);
@@ -223,10 +271,11 @@ export class MenuTextLayer {
         entry.wrapKey = wrapping.key;
         entry.label.setStyle(wrapping.css);
       }
-      if (entry.x !== point.x || entry.y !== point.y) {
-        entry.x = point.x;
-        entry.y = point.y;
-        entry.label.setPosition(point.x, point.y);
+      const x = point.x, top = point.y - (box?.top ?? 0);
+      if (entry.x !== x || entry.y !== top) {
+        entry.x = x;
+        entry.y = top;
+        entry.label.setPosition(x, top);
       }
       const visible = this.withinClip(spec, y);
       if (entry.visible !== visible) {
@@ -238,6 +287,11 @@ export class MenuTextLayer {
       if (seen.has(key)) continue;
       entry.label.remove();
       this.entries.delete(key);
+    }
+    for (const [key, clip] of this.clips) {
+      if (usedClips.has(key)) continue;
+      clip.label.remove();
+      this.clips.delete(key);
     }
   }
 }
