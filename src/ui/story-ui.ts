@@ -707,7 +707,7 @@ export class StoryUI {
   private openControlEditor():void {
     if(!this.scene||!this.content||!this.open)return;
     this.cancelDrag();
-    this.controlEditor??=new ControlLayoutEditor(this.scene,this.app.controlLayout,this.app.controlSkin,this.app.menuPanels.assets,()=>this.closeControlEditor());
+    this.controlEditor??=new ControlLayoutEditor(this.scene,this.app.controlLayout,this.app.controlSkin,this.app.menuPanels.assets,()=>this.closeControlEditor(),this.app.domUi);
     this.controlEditor.open(this.app.captureControlPreview?.()??[]);
     this.app.ui.setControlLayoutEditing(true);this.render();
   }
@@ -717,7 +717,7 @@ export class StoryUI {
   private openKeyBindingEditor():void {
     if(!this.scene||!this.content||!this.open)return;
     this.cancelDrag();
-    this.keyBindingEditor??=new KeyBindingEditor(this.scene,this.app.keyBindings,this.app.menuPanels.assets,()=>this.closeKeyBindingEditor());
+    this.keyBindingEditor??=new KeyBindingEditor(this.scene,this.app.keyBindings,this.app.menuPanels.assets,()=>this.closeKeyBindingEditor(),this.app.domUi);
     this.keyBindingEditor.open();
     this.app.ui.setKeyBindingEditing(true);this.render();
   }

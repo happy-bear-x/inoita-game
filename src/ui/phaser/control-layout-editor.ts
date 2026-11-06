@@ -7,8 +7,9 @@ import type { ControlLayoutPreferences } from '../control-layout.ts';
 import { ITEM_ICON_SIZE, SLOT_ICON_SIZE, type ShortcutSlot } from './action-controls.ts';
 import { DPAD_ARROW_OFFSET, DPAD_ARROW_SCALE_NORM, DPAD_BASE_RADIUS, DPAD_RUNE_ALPHA, STICK_KNOB_RADIUS } from './move-stick.ts';
 import { controlSettings } from '../../application/control-settings.ts';
+import type { DomLabel, DomUi } from '../dom/dom-ui.ts';
 import { controlViewport } from './control-layout-viewport.ts';
-import { UiSurface } from './widgets.ts';
+import { GOLD, UiSurface } from './widgets.ts';
 
 /** 白色选中框离控件边缘的距离（屏幕像素）。 */
 const SELECTION_BLEED = 4;
@@ -54,10 +55,15 @@ export class ControlLayoutEditor {
   private readonly skin: ControlSkin;
   private readonly assets: Record<string,string>;
   private readonly closeEditor: () => void;
+  private readonly dom?: Pick<DomUi,'label'>;
+  /** 工具栏按钮文字和物品格数量文字的 DOM 标签；底图与命中区仍由 Phaser 画。 */
+  private readonly toolbarLabels = new Map<string, DomLabel>();
+  private readonly quantityLabels = new Map<ControlId, DomLabel>();
+  private quantities: {id:ControlId;text:string;fit:number}[] = [];
 
   constructor(scene: Phaser.Scene, preferences: ControlLayoutPreferences,
-    skin: ControlSkin, assets: Record<string,string>, close: () => void) {
-    this.scene=scene;this.preferences=preferences;this.skin=skin;this.assets=assets;this.closeEditor=close;
+    skin: ControlSkin, assets: Record<string,string>, close: () => void, dom?: Pick<DomUi,'label'>) {
+    this.scene=scene;this.preferences=preferences;this.skin=skin;this.assets=assets;this.closeEditor=close;this.dom=dom;
     this.canvas = new UiSurface(scene,960,640,350);
     this.toolbar = new UiSurface(scene,960,640,390);
     this.toolbar.enabled = () => this.active && this.toolbar.root.visible;
@@ -95,12 +101,16 @@ export class ControlLayoutEditor {
     this.moveButton?.setPosition(rowLeft+TOOLBAR_RESET_WIDTH+TOOLBAR_GAP,12);
     this.scaleButton?.setPosition(rowLeft+TOOLBAR_RESET_WIDTH+TOOLBAR_MODE_WIDTH+TOOLBAR_GAP*2,12);
     this.paintSelection();
+    this.placeToolbarText();
+    this.placeQuantityText();
   }
 
   visible(value: boolean): void {
     if(!value)this.cancel();
     this.canvas.visible(value&&this.active);this.toolbar.visible(value&&this.active);
     if(!value)this.drawSelection(undefined);
+    this.placeToolbarText();
+    this.placeQuantityText();
   }
 
   /** 预览框与实战一样按移动样式取尺寸：十字键 274，摇杆 210。 */
@@ -120,6 +130,11 @@ export class ControlLayoutEditor {
     this.scene.game.events.off(UI_EVENTS.cancelInput,this.cancel,this);
     this.scene.input.off('pointerupoutside',this.cancel,this);this.scene.input.off('gameout',this.cancel,this);
     this.canvas.destroy();this.toolbar.destroy();this.controls.clear();
+    for(const label of this.toolbarLabels.values())label.remove();
+    this.toolbarLabels.clear();
+    for(const label of this.quantityLabels.values())label.remove();
+    this.quantityLabels.clear();
+    this.quantities=[];
   }
 
   private resolve(viewport = controlViewport(this.scene)): Record<ControlId, ControlPlacement> {
@@ -130,12 +145,48 @@ export class ControlLayoutEditor {
   private paintToolbar(): void {
     this.toolbar.clear();
     this.toolbar.button('',12,12,67,67,this.closeEditor,{image:this.assets.close,pressed:this.assets['close-pressed']}).setData('label','关闭控件位置');
-    this.resetButton=this.toolbar.button('恢复默认',0,12,TOOLBAR_RESET_WIDTH,TOOLBAR_HEIGHT,
-      ()=>{this.cancel();this.preferences.reset();});
-    this.moveButton=this.toolbar.button('移动',0,12,TOOLBAR_MODE_WIDTH,TOOLBAR_HEIGHT,
-      ()=>this.setMode('move'),{selected:this.mode==='move'});
-    this.scaleButton=this.toolbar.button('缩放',0,12,TOOLBAR_MODE_WIDTH,TOOLBAR_HEIGHT,
-      ()=>this.setMode('scale'),{selected:this.mode==='scale'});
+    this.resetButton=this.toolbar.button('',0,12,TOOLBAR_RESET_WIDTH,TOOLBAR_HEIGHT,
+      ()=>{this.cancel();this.preferences.reset();}).setData('label','恢复默认');
+    this.moveButton=this.toolbar.button('',0,12,TOOLBAR_MODE_WIDTH,TOOLBAR_HEIGHT,
+      ()=>this.setMode('move'),{selected:this.mode==='move'}).setData('label','移动');
+    this.scaleButton=this.toolbar.button('',0,12,TOOLBAR_MODE_WIDTH,TOOLBAR_HEIGHT,
+      ()=>this.setMode('scale'),{selected:this.mode==='scale'}).setData('label','缩放');
+  }
+
+  /** 工具栏按钮文字投影到画框；按钮底图和命中区仍留在 Phaser。 */
+  private placeToolbarText(): void {
+    const dom=this.dom,shown=this.toolbar.root.visible,font=Math.min(22,TOOLBAR_HEIGHT*.42),seen=new Set<string>();
+    const entries:[string,string,Phaser.GameObjects.Container|undefined,number][] = [
+      ['reset','恢复默认',this.resetButton,TOOLBAR_RESET_WIDTH],
+      ['move','移动',this.moveButton,TOOLBAR_MODE_WIDTH],
+      ['scale','缩放',this.scaleButton,TOOLBAR_MODE_WIDTH]
+    ];
+    for(const [key,text,button,width] of entries){
+      if(!dom||!button)continue;
+      seen.add(key);
+      let label=this.toolbarLabels.get(key);
+      if(!label){label=dom.label('screen','dom-control-toolbar',{x:.5,y:.5});this.toolbarLabels.set(key,label);}
+      const matrix=button.getWorldTransformMatrix(),point=matrix.transformPoint(width/2,TOOLBAR_HEIGHT/2);
+      label.setText(text).setPosition(point.x,point.y)
+        .setStyle({fontSize:`${Math.max(1,font*matrix.scaleX)}px`,color:GOLD}).setVisible(shown);
+    }
+    for(const [key,label] of this.toolbarLabels){if(seen.has(key))continue;label.remove();this.toolbarLabels.delete(key);}
+  }
+
+  /** 物品格左上角数量文字：位置和字号取控件容器的世界变换。 */
+  private placeQuantityText(): void {
+    const dom=this.dom,shown=this.canvas.root.visible,seen=new Set<ControlId>();
+    for(const quantity of this.quantities){
+      const object=this.controls.get(quantity.id);
+      if(!dom||!object)continue;
+      seen.add(quantity.id);
+      let label=this.quantityLabels.get(quantity.id);
+      if(!label){label=dom.label('screen','dom-control-quantity',{x:.5,y:.5});this.quantityLabels.set(quantity.id,label);}
+      const matrix=object.getWorldTransformMatrix(),point=matrix.transformPoint(32,23);
+      label.setText(quantity.text).setAnchor(.5,.5).setPosition(point.x,point.y)
+        .setStyle({fontSize:`${Math.max(1,18*matrix.scaleX*quantity.fit)}px`,color:'#ffffff'}).setVisible(shown);
+    }
+    for(const [id,label] of this.quantityLabels){if(seen.has(id))continue;label.remove();this.quantityLabels.delete(id);}
   }
 
   private setMode(mode: EditMode): void {
@@ -151,7 +202,7 @@ export class ControlLayoutEditor {
 
   private rebuild(): void {
     this.cancelDrags();
-    this.canvas.clear();this.controls.clear();
+    this.canvas.clear();this.controls.clear();this.quantities=[];
     this.selectionFrame=undefined;this.handles.length=0;this.placements=undefined;
     // 点击空白处取消选中；这层透明底板垫在控件下面，不会抢控件的点击。
     const background=this.scene.add.rectangle(-4000,-4000,8000,8000,0,0).setOrigin(0).setInteractive();
@@ -191,8 +242,12 @@ export class ControlLayoutEditor {
         }
         if(isItem) {
           image(this.skin['quantity-badge'],38,40,13,3);
-          const quantity=this.canvas.text(String(slot!.quantity),32,23,0,18,'#ffffff',object).setOrigin(.5);
-          quantity.setScale(Math.min(1,30/Math.max(1,quantity.width),30/Math.max(1,quantity.height)));
+          const text=String(slot!.quantity);
+          // 文字交给 DOM；这里只留一个量字探针，量完立即销毁。
+          const probe=this.canvas.text(text,0,0,0,18,'#ffffff');
+          const fit=Math.min(1,30/Math.max(1,probe.width),30/Math.max(1,probe.height));
+          probe.destroy();
+          this.quantities.push({id,text,fit});
         }
       }
       // Container 的输入坐标会补上半宽、半高，命中区以图片左上角为原点。
@@ -217,6 +272,7 @@ export class ControlLayoutEditor {
         drag.point=normalizeControlPosition(viewport,id,{x,y},positions,moveSize);
         const position=resolveControlLayout(viewport,{...positions,[id]:drag.point},moveSize)[id];
         object.setPosition(position.x,position.y);
+        this.placeQuantityText();
         if(this.selected===id)this.drawSelection(position);
       });
       object.on('dragend',(pointer:Phaser.Input.Pointer)=>{

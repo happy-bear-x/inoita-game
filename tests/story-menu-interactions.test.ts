@@ -1261,7 +1261,7 @@ test('control editor hides the menu, keeps the shade and HUD buttons, previews t
     assert.equal(input.hitAreaCallback!(input.hitArea,object.width+1,object.height/2),false);
   }
   assert(editingControl(f,'slot-0').list.some(node=>node.texture.key===`interface:${icon}`),'读取实际操控者当前组的图标');
-  assert(editingControl(f,'slot-1').list.some(node=>node.text==='7'));
+  assert(visibleDomLabels(f).some(label=>label.text==='7'),'物品格数量文字走 DOM');
   const reset=f.scene.button('恢复默认'),close=f.scene.button('关闭控件位置');
   assert(reset.parentContainer!.depth>editingControl(f,'move').parentContainer!.depth,'工具栏在拖动控件上方');
   f.scene.click(close);
