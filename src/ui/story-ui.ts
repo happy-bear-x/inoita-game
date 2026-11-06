@@ -244,7 +244,9 @@ export class StoryUI {
         else panel.renderText(writer);
       });
       // GM 调试页的文字由面板自己收集；图框、按钮和滚动仍由 Phaser 画。
-      this.menuText.register('debug',writer=>{for(const spec of this.gmTextSpecs)writer.add(spec);});
+      this.menuText.register('debug',writer=>{
+        this.renderTabsText(writer);for(const spec of this.gmTextSpecs)writer.add(spec);
+      });
       // 通用原生提示盖在任何页面之上：页面文字让位，只输出这一份。
       this.menuText.register('native-notice',writer=>{for(const spec of this.noticeTextSpecs)writer.add(spec);});
       // 物品使用/丢弃弹层：本地坐标统一换成内容块坐标后输出。
@@ -623,10 +625,8 @@ export class StoryUI {
     const chromeKey=`chrome:${this.page}${this.page==='crafting'?`:${this.craftingActor}`:''}`;
     v.staticLayer(chromeKey,()=>{
       if(this.page!=='shop'&&this.page!=='crafting'&&this.page!=='forge'&&this.page!=='learn'&&this.page!=='save'&&this.page!=='load'){
-        // 系统页与已迁移的背包、人物、队伍、任务、技能页标题行走 DOM；其它页仍由 Phaser 画。
-        // 静态层按 chromeKey 重画，切页不会残留。
-        const domTabs=this.page==='bag'||this.page==='system'||this.page==='status'||this.page==='party'||this.page==='quests'||this.page==='skills';
-        tabs.forEach(([page,label],index)=>{const button=v.button('',35+index*149,25,102,116,()=>this.show(page),{bare:true,parent:v.staticRoot}).setData('label',label);v.image(this.content!.assets[`tab-${page}`],12,0,78,78,button);if(!domTabs)v.text(label,51,85,90,20,undefined,button).setOrigin(.5,0);button.setAlpha(this.page===page||(['settings','debug'] as Page[]).includes(this.page)&&page==='system'?1:.65);});
+        // 页签只留底图和命中区，文字统一由当前页的 DOM 渲染器输出。
+        tabs.forEach(([page,label],index)=>{const button=v.button('',35+index*149,25,102,116,()=>this.show(page),{bare:true,parent:v.staticRoot}).setData('label',label);v.image(this.content!.assets[`tab-${page}`],12,0,78,78,button);button.setAlpha(this.page===page||(['settings','debug'] as Page[]).includes(this.page)&&page==='system'?1:.65);});
       }
       // 融合器与强化台的顶部标题由 DOM 输出，静态层只留关闭钮。
       // 技能书页标题同样由 DOM 输出。
@@ -786,6 +786,7 @@ export class StoryUI {
   }
   /** 设置页的文字全部由 DOM 渲染；页面重绘时按 key 复用标签。 */
   private renderSettingsText(writer:MenuTextWriter):void{
+    this.renderTabsText(writer);
     const audio=this.app.audio;
     const add=(key:string,value:string,x:number,y:number,size:number,anchorX=0,anchorY=0):void=>
       writer.add({key,text:value,x,y,style:{size,color:GOLD,anchorX,anchorY},scroll:'settings',clip:{top:0,bottom:431}});
