@@ -117,7 +117,7 @@ export class UiSurface {
     this.staticKey=key; draw();
   }
   destroy(): void { this.scene.game.events.off(UI_EVENTS.cancelInput,this.cancelInput);this.scene.input.off('pointerupoutside',this.cancelInput);this.clearStatic();this.clear();this.staticRoot.destroy();this.root.destroy(); }
-  visible(value: boolean): void { this.root.setVisible(value); this.scrolls.forEach(scroll=>scroll.layer.setVisible(value&&scroll.visible)); }
+  visible(value: boolean): void { this.root.setVisible(value); this.scrolls.forEach(scroll=>scroll.syncVisibility()); }
   image(file: string, x: number, y: number, width?: number, height?: number, parent=this.root): Phaser.GameObjects.Image {
     const ref=uiImageFor(this.scene,file);
     const result=this.scene.add.image(x,y,ref.key,ref.frame).setOrigin(0);
@@ -312,6 +312,10 @@ export class ScrollArea {
   readonly layer:Phaser.GameObjects.Layer;
   readonly content:Phaser.GameObjects.Container;
   private mask:Phaser.GameObjects.Rectangle;
+  /** 滚动条单独一层：不被滚动遮罩裁掉，也不参与内容排版。 */
+  private barLayer:Phaser.GameObjects.Layer;
+  private barTrack:Phaser.GameObjects.Rectangle;
+  private barThumb:Phaser.GameObjects.Rectangle;
   /** WebGL 遮罩的滤镜控制器；静态化后只在几何变化时重做遮罩纹理。 */
   private maskFilter?:{autoUpdate:boolean;needsUpdate:boolean};
   private offRestore:()=>void=()=>{};
@@ -327,6 +331,11 @@ export class ScrollArea {
   constructor(surface:UiSurface,x:number,y:number,width:number,height:number,bleed=0){
     this.surface=surface;this.x=x;this.y=y;this.width=width;this.height=height;this.bleed=bleed;
     const scene=surface.scene;this.layer=scene.add.layer().setDepth(surface.depth+1);this.content=scene.add.container(0,0);this.layer.add(this.content);
+    // 滚动条按当前界面配色：半透明深色轨道 + 金色滑块。
+    this.barLayer=scene.add.layer().setDepth(surface.depth+1.5);
+    this.barTrack=scene.add.rectangle(0,0,1,1,0x000000,.38).setOrigin(0);
+    this.barThumb=scene.add.rectangle(0,0,1,1,0xe2c88d,.8).setOrigin(0).setStrokeStyle(1,0x6b5a37,.9);
+    this.barLayer.add([this.barTrack,this.barThumb]);this.barLayer.setVisible(false);
     this.mask=new Phaser.GameObjects.Rectangle(scene,0,0,1,1,0xffffff).setOrigin(0);
     if(scene.game.renderer.type===Phaser.WEBGL){
       this.layer.enableFilters();
@@ -348,7 +357,9 @@ export class ScrollArea {
   reveal(button:Phaser.GameObjects.Container):void{const height=button.input?.hitArea.height??0;if(button.y<this.offset)this.scrollTop=button.y;else if(button.y+height>this.offset+this.height)this.scrollTop=button.y+height-this.height;}
   cancelGesture():void{this.press=undefined;this.moved=true;}
   get visible():boolean{return this.shown;}
-  set visible(value:boolean){this.shown=value;this.layer.setVisible(value&&this.surface.root.visible);}
+  set visible(value:boolean){this.shown=value;this.syncVisibility();}
+  /** 画布整体显隐变化时同步内容层和滚动条。 */
+  syncVisibility():void{this.layer.setVisible(this.shown&&this.surface.root.visible);this.updateBar();}
   get scrollTop():number{return this.offset;}
   set scrollTop(value:number){this.offset=Phaser.Math.Clamp(value,0,Math.max(0,this.extent-this.height));this.layout();}
   setHeight(height:number):void{this.extent=height;this.scrollTop=this.offset;}
@@ -400,6 +411,21 @@ export class ScrollArea {
     this.zone.setPosition(this.mask.x,this.mask.y).setSize(this.mask.width,this.mask.height);
     if(this.zone.input)this.zone.input.hitArea.setSize(this.zone.width,this.zone.height);
     this.renderVirtual();
+    this.updateBar(matrix);
   }
-  destroy():void{this.offRestore();const scene=this.surface.scene;scrollAreas.get(scene)?.delete(this);scene.input.off('pointerdown',this.down,this);scene.input.off('pointermove',this.move,this);scene.input.off('pointerup',this.up,this);scene.input.off('wheel',this.wheel,this);this.zone.destroy();this.layer.destroy(true);this.mask.destroy();}
+  /** 只画可见时存在的滚动条：短内容、隐藏面板都不占绘制对象。 */
+  private updateBar(matrix=this.surface.root.getWorldTransformMatrix()):void{
+    const scrollable=this.shown&&this.surface.root.visible&&this.height>0&&this.extent>this.height+.5;
+    this.barLayer.setVisible(scrollable);
+    if(!scrollable)return;
+    const position=matrix.transformPoint(this.x,this.y);
+    const scale=matrix.scaleX,barWidth=Math.max(2,4*scale),inset=1*scale;
+    const x=position.x+this.width*scale-barWidth-inset,y=position.y,height=this.height*scale;
+    const thumb=Math.max(18*scale,height*this.height/Math.max(1,this.extent));
+    const travel=Math.max(0,height-thumb);
+    const ratio=travel?Phaser.Math.Clamp(this.offset/Math.max(1,this.extent-this.height),0,1):0;
+    this.barTrack.setPosition(x,y).setSize(barWidth,height);
+    this.barThumb.setPosition(x,y+ratio*travel).setSize(barWidth,thumb);
+  }
+  destroy():void{this.offRestore();const scene=this.surface.scene;scrollAreas.get(scene)?.delete(this);scene.input.off('pointerdown',this.down,this);scene.input.off('pointermove',this.move,this);scene.input.off('pointerup',this.up,this);scene.input.off('wheel',this.wheel,this);this.zone.destroy();this.barLayer.destroy(true);this.layer.destroy(true);this.mask.destroy();}
 }
