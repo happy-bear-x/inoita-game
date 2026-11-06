@@ -1449,8 +1449,8 @@ export class StoryUI {
     const scrollX=left+panel.scroll.x,scrollY=top+panel.scroll.y,
       clip={top:scrollY,bottom:scrollY+actionLayout.scrollHeight},
       writer={add:(spec:MenuTextSpec)=>this.bagTextSpecs.push(spec)};
-    drawDescriptionTitle(v,body.title,left,top,panel.width,body.color,{writer,keyPrefix:'item-title'});
-    let y=drawDescriptionRows(v,body.rows,panel.scroll.width,detail.content,
+    drawDescriptionTitle(body.title,left,top,panel.width,body.color,{writer,keyPrefix:'item-title'});
+    let y=drawDescriptionRows(v,body.rows,panel.scroll.width,
       {writer,keyPrefix:'item-row',x:scrollX,y:scrollY,scroll:'item',clip});
     this.finishScroll('item',detail,y);
     // 关闭按钮挂在面板右上角：那枚 67×67 的圆钮（原版矩形 349,−6，本作右移到贴边）。
@@ -1496,8 +1496,8 @@ export class StoryUI {
     const scrollX=left+panel.scroll.x,scrollY=top+panel.scroll.y,
       clip={top:scrollY,bottom:scrollY+panel.scroll.height},
       writer={add:(spec:MenuTextSpec)=>this.gmTextSpecs.push(spec)};
-    drawDescriptionTitle(v,body.title,left,top,panel.width,body.color,{writer,keyPrefix:'gm-item-title'});
-    const height=drawDescriptionRows(v,body.rows,panel.scroll.width,detail.content,
+    drawDescriptionTitle(body.title,left,top,panel.width,body.color,{writer,keyPrefix:'gm-item-title'});
+    const height=drawDescriptionRows(v,body.rows,panel.scroll.width,
       {writer,keyPrefix:'gm-item-row',x:scrollX,y:scrollY,scroll:'item',clip});
     this.finishScroll('item',detail,height);
     drawDescriptionClose(v,this.app.menuPanels.assets,panel,left,top,close);

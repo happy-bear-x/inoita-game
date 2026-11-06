@@ -331,11 +331,11 @@ export class ShopPanel {
     const body=itemDescriptionBody({item,entry,numbers:this.store.characterStats.equipment[entry.item],catalog:this.store.characterStats,
       grades:this.catalog.grades,member,classNames:this.classNames,gemNames:entry.gems.map(id=>this.session.bag.catalog.items[id]?.name),skill:entry.skill?this.session.bag.catalog.skillDescriptions?.[entry.skill]:undefined,concealed:offer?.concealed});
     const writer:MenuTextWriter={add:spec=>this.pageText.push(spec)};
-    drawDescriptionTitle(v,body.title,left,top,panel.width,body.color,{writer,keyPrefix:'shop-detail-title'});
+    drawDescriptionTitle(body.title,left,top,panel.width,body.color,{writer,keyPrefix:'shop-detail-title'});
     const detail=this.scrollAt(v,'shop-detail',left+panel.scroll.x,top+panel.scroll.y,panel.scroll.width,panel.scroll.height);
     detail.onScroll=()=>this.text?.refresh();
     const actionLabel=selection.kind==='buy'?'购买':'出售';
-    let y=drawDescriptionRows(v,body.rows,panel.scroll.width,detail.content,
+    let y=drawDescriptionRows(v,body.rows,panel.scroll.width,
       {writer,keyPrefix:'shop-detail-row',x:left+panel.scroll.x,y:top+panel.scroll.y,scroll:'shop-detail',
         clip:{top:top+panel.scroll.y,bottom:top+panel.scroll.y+panel.scroll.height}});
     detail.setHeight(y);

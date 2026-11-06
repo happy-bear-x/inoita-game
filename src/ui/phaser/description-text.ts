@@ -1,4 +1,3 @@
-import type Phaser from 'phaser';
 import type { DescriptionTextPart } from '../../domain/description-text.ts';
 import { layoutDescriptionText } from '../description-text-layout.ts';
 import { DESCRIPTION_TEXT } from '../bag-layout.ts';
@@ -27,17 +26,6 @@ export function layoutDescriptionTextForSurface(view: UiSurface, parts: readonly
   const lineHeight = probe.height + 5;
   probe.destroy();
   return { lines, lineHeight, height: Math.max(0, lines.length * lineHeight - 5) };
-}
-
-/** 原生 Text 负责绘字，返回排版后的实际高度供滚动区使用。 */
-export function drawDescriptionText(view: UiSurface, parts: readonly DescriptionTextPart[], x: number, y: number,
-  width: number, size: number, parent?: Phaser.GameObjects.Container): number {
-  const layout = layoutDescriptionTextForSurface(view, parts, width, size);
-  layout.lines.forEach((line, index) => {
-    for (const run of line.runs) view.text(run.text, x + run.x, y + index * layout.lineHeight, 0, size,
-      run.color ?? DESCRIPTION_TEXT, parent);
-  });
-  return layout.height;
 }
 
 /**
