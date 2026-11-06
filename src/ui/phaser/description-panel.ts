@@ -2,10 +2,25 @@ import type Phaser from 'phaser';
 import type { UiSurface } from './widgets.ts';
 import { DESCRIPTION_PANEL, DESCRIPTION_TEXT } from '../bag-layout.ts';
 import type { ItemDescriptionRow } from '../item-detail-lines.ts';
-import { drawDescriptionText } from './description-text.ts';
+import type { MenuTextClip, MenuTextWriter } from '../dom/menu-text.ts';
+import { drawDescriptionText, layoutDescriptionTextForSurface, writeDescriptionText } from './description-text.ts';
 
 /** 面板的关闭矩形；`descriptionPanel(width)` 收窄时它跟着右边缘走。 */
 type CloseRect = { close:{x:number; y:number; size:number} };
+
+/** 说明面板改用 DOM 文字时，正文相对内容块的落点和裁剪范围。 */
+export interface DescriptionDomTarget {
+  writer: MenuTextWriter;
+  /** 同一页内唯一；页内多份说明用不同前缀。 */
+  keyPrefix: string;
+  /** 滚动内容原点的内容块坐标。 */
+  x: number;
+  y: number;
+  /** 滚动区名；由 `MenuTextLayer` 按当前偏移重算位置。 */
+  scroll?: string;
+  /** 滚动视口在内容块坐标里的上下边界。 */
+  clip?: MenuTextClip;
+}
 
 /**
  * 说明面板自己的底色与图框，物品说明与商品说明共用。
@@ -27,9 +42,16 @@ export function drawDescriptionPanel(v: UiSurface, assets: Record<string, string
  * 占宽 `面板宽−82`（余下的右边留给关闭按钮），字号与商店页分类名同号。
  * 它不属于正文滚动区，所以画在面板上而不是滚动内容里——名字紧贴面板顶，正文从 +60 才开始。
  */
-export function drawDescriptionTitle(v: UiSurface, name: string, x: number, y: number, width: number, color: string = DESCRIPTION_TEXT): void {
+export function drawDescriptionTitle(v: UiSurface, name: string, x: number, y: number, width: number,
+  color: string = DESCRIPTION_TEXT, dom?: Pick<DescriptionDomTarget, 'writer' | 'keyPrefix'>): void {
   const title = DESCRIPTION_PANEL.title;
-  v.text(name, x + title.x, y + title.y, Math.max(0, width - title.right), title.size, color);
+  const textWidth = Math.max(0, width - title.right);
+  if (dom) {
+    dom.writer.add({ key: dom.keyPrefix, text: name, x: x + title.x, y: y + title.y,
+      style: { size: title.size, color, anchorX: 0, anchorY: 0, width: textWidth, wrap: 'word' } });
+    return;
+  }
+  v.text(name, x + title.x, y + title.y, textWidth, title.size, color);
 }
 
 /**
@@ -43,12 +65,24 @@ export function drawDescriptionSeparator(v: UiSurface, x: number, y: number, wid
 }
 
 /**
- * 说明面板的正文：逐行绘制 `row.parts`。返回正文总高，
- * 调用方接着画宝石图标或底部按钮。背包页与商店共用，保证两处行序与样式一致。
+ * 说明面板的正文：逐行处理 `row.parts` 并返回正文总高，调用方接着画宝石图标或底部按钮。
+ * 给出 `dom` 时只把断行结果写成 DOM 标签，图框和滚动仍留在 Phaser；背包页与商店
+ * 共用同一次断行和行序，保证两处样式一致。
  */
-export function drawDescriptionRows(v: UiSurface, rows: ItemDescriptionRow[], width: number, parent?: Phaser.GameObjects.Container): number {
+export function drawDescriptionRows(v: UiSurface, rows: ItemDescriptionRow[], width: number,
+  parent?: Phaser.GameObjects.Container, dom?: DescriptionDomTarget): number {
   let y = 0;
-  for (const row of rows) y += drawDescriptionText(v, row.parts, 0, y, width, 22, parent) + 5;
+  rows.forEach((row, index) => {
+    if (dom) {
+      // 高度仍按布局阶段的断行结果预留；DOM 只负责按这一份结果落字。
+      const layout = layoutDescriptionTextForSurface(v, row.parts, width, 22);
+      writeDescriptionText(dom.writer, `${dom.keyPrefix}-${index}`, layout, dom.x, dom.y + y, width, 22,
+        dom.scroll, dom.clip);
+      y += layout.height + 5;
+      return;
+    }
+    y += drawDescriptionText(v, row.parts, 0, y, width, 22, parent) + 5;
+  });
   return y;
 }
 

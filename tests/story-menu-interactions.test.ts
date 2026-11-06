@@ -586,7 +586,7 @@ test('custom menu buttons share native art and keep labels above their pressed l
     f.menu.show(page);
     if(page==='status')f.scene.click(f.scene.button('查看属性加点'));
     const tabLabels=new Set(['人物','背包','技能','队伍','任务','系统','关闭菜单']);
-    const domLabels=page==='system'||page==='status';
+    const domLabels=page==='bag'||page==='system'||page==='status';
     const commonButton=(node:Display)=>(node.getData('face') as Display|undefined)?.list.length===3;
     const buttons=f.scene.nodes.filter(node=>node.shown&&node.getData('uiAction')&&
       (domLabels?commonButton(node)&&node.getData('label')&&!tabLabels.has(node.getData('label')):node.getData('labelText')));
@@ -830,7 +830,8 @@ test('item description actions use text buttons instead of baked images', t => {
   f.menu.debugDescribe(weapon.id);
   for(const label of ['卸下','强化/镶嵌']){
     const button=f.scene.button(label);
-    assert.ok(button.getData('labelText'),`${label} 是文字按钮`);
+    assert.equal(button.getData('labelText'),undefined,`${label} 的文字改由 DOM 绘制`);
+    assert.ok(visibleDomLabels(f).some(value=>value.text===label),`${label} 有 DOM 文字`);
     assert.ok(!String(button.getData('face')?.texture?.key??'').includes('item-'),`${label} 不使用动作图`);
   }
 });
@@ -871,7 +872,8 @@ test('four actions use two rows including the forge entry', async t => {
   f.menu.debugDescribe(third.id);
   const buttons=['替换戒指','替换饰品','镶嵌','丢弃'].map(label=>f.scene.button(label));
   assert.ok(buttons.every(button=>button.input!.hitArea.width===168),'4 个动作改两行大按钮');
-  assert.ok(buttons.every(button=>button.getData('labelText')),'4 个动作都有文字');
+  assert.ok(buttons.every(button=>button.getData('labelText')===undefined&&button.getData('label')),'4 个动作都有文字');
+  assert.ok(['替换戒指','替换饰品','镶嵌','丢弃'].every(label=>visibleDomLabels(f).some(value=>value.text===label)),'4 个动作文字由 DOM 绘制');
   assert.deepEqual(buttons.map(button=>[button.x,button.y]),[[100,300],[276,300],[100,362],[276,362]],'两行两列');
 });
 
@@ -1012,7 +1014,7 @@ test('companion equipment buttons validate the selected member and hero buttons 
   assert.equal(f.scene.button('装备').input!.enabled, true); f.scene.click(f.scene.button('装备')); await Promise.resolve();
   assert.equal(f.session.bag.equipmentFor(member.id)['main-hand'], orb.id);
   f.select('player'); const other = f.add('crystal-orb'); f.menu.debugDescribe(other.id);
-  assert(f.scene.texts().includes('适合职业：黑魔导、祭司'), '装备详情写明适用职业');
+  assert(visibleDomLabels(f).map(label=>label.text).join('\n').includes('适合职业：黑魔导、祭司'), '装备详情写明适用职业');
   assert.equal(f.scene.buttons('装备').filter(button => button.input?.enabled).length, 0, '主角仍按黑暗骑士职业限制');
   assert.notEqual(f.session.bag.equipment['main-hand'], other.id);
 });
@@ -1424,7 +1426,7 @@ test('native rarity colors reach the real menu Text objects in bag, worn equipme
     f.session.bag.restoreState(state);
     for(const side of ['left','right'] as const){
       f.menu.debugDescribe(owned.id,side);
-      assert.equal(f.scene.nodes.find(node=>node.shown&&node.text===items.items[owned.item].name)!.color,color);
+      assert.equal(visibleDomLabels(f).find(label=>label.text===items.items[owned.item].name)!.style.color,color);
     }
   }
   t.mock.method(Math,'random',()=>.2);
@@ -1443,6 +1445,7 @@ test('rare shop conceals descriptions before purchase and preserves full instanc
   assert.equal(original.numbers?.gradeName, '生锈的', '固定随机源生成普通稀有度、带前缀的珍品');
   f.scene.click(f.scene.buttons(`购买 ${item.name}`)[0]!);
   const title = (name:string) => f.scene.nodes.find(node => node.shown && node.text === name)!;
+  const domTitle = (name:string) => visibleDomLabels(f).find(label => label.text === name)!;
   assert.equal(title(`${item.typeName}（未鉴定）`).color, '#808080', '购买前显示原版灰色未鉴定名称');
   assert.equal(f.internals.description.scrolls[0]!.content.list.length, 0, '购买前正文没有属性、品质、孔位或宝石图标');
   f.scene.click(f.scene.button('购买')); f.scene.click(f.scene.button('确定'));
@@ -1451,9 +1454,9 @@ test('rare shop conceals descriptions before purchase and preserves full instanc
   assert.deepEqual(purchased.gems, original.gems); assert.equal(purchased.enhancement, original.enhancement);
   assert.notEqual(purchased.id, original.id, '商品进入背包获得独立持有标识');
   f.menu.debugDescribe(purchased.id);
-  assert.equal(title(`生锈的 ${item.name}`).color, '#ffffff', '普通稀有度保持原版白色，品质前缀在名称中');
-  assert(f.scene.texts().join('\n').includes('防御力'), '背包中显示实际装备数值');
-  assert(f.scene.texts().join('\n').includes('宝石孔数量 1'), '拥有后可见原实例的一孔');
+  assert.equal(domTitle(`生锈的 ${item.name}`).style.color, '#ffffff', '普通稀有度保持原版白色，品质前缀在名称中');
+  assert(visibleDomLabels(f).map(label=>label.text).join('\n').includes('防御力'), '背包中显示实际装备数值');
+  assert(visibleDomLabels(f).map(label=>label.text).join('\n').includes('宝石孔数量 1'), '拥有后可见原实例的一孔');
   f.menu.openShop(rare, ''); f.scene.click(f.scene.button(`出售 ${item.name}`));
   assert(f.internals.description.scrolls[0]!.content.list.length > 0, '出售已拥有装备仍显示完整正文');
   assert.equal(title(`生锈的 ${item.name}`).color, '#ffffff', '出售说明保留原版名称与品质色');

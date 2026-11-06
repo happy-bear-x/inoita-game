@@ -1857,6 +1857,7 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     this.statusHud?.setVisible(backgroundVisible);
     this.overheadStatus?.setVisible(backgroundVisible);
     this.app.domUi?.setLayerVisible('hud', backgroundVisible);
+    this.app.domUi?.setLayerVisible('world', backgroundVisible && !this.performing && !this.stageOccluded);
     const target = this.near?.container.visible ? this.near : null;
     // 敌人数值只在逻辑帧里变化；同一战斗帧的多个渲染帧复用同一份目标状态。
     const tick=this.app.session?.combatTick,actorId=target?.entity.id??'';

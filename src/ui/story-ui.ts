@@ -94,6 +94,8 @@ export class StoryUI {
   private statusModalTextSpecs:MenuTextSpec[]=[];
   /** 技能页这一轮绘制收集到的文字；右侧说明区会随滚动一起换位置。 */
   private skillTextSpecs:MenuTextSpec[]=[];
+  /** 背包页与物品说明这一轮绘制收集到的文字；格子和说明正文都按滚动区跟随。 */
+  private bagTextSpecs:MenuTextSpec[]=[];
   /** 存档/读档页上一次绘制收集到的文字；确认框打开时改用它自己的那一份。 */
   private saveTextSpecs:MenuTextSpec[]=[];
   private saveModalTextSpecs:MenuTextSpec[]=[];
@@ -199,6 +201,11 @@ export class StoryUI {
       this.menuText.register('skills',writer=>{
         this.renderTabsText(writer);
         for(const spec of this.skillTextSpecs)writer.add(spec);
+        this.renderNoticeText(writer);
+      });
+      this.menuText.register('bag',writer=>{
+        this.renderTabsText(writer);
+        for(const spec of this.bagTextSpecs)writer.add(spec);
         this.renderNoticeText(writer);
       });
       // 技能书页顶部标题画在菜单画布坐标里，换算到内容块坐标后和面板文字一起输出。
@@ -443,7 +450,7 @@ export class StoryUI {
       style:{size:18,color:GOLD,anchorX:.5,anchorY:0,width:880,align:'center'}});
   }
   private isDomTextPage():boolean{
-    return this.page==='status'||this.page==='party'||this.page==='quests'||this.page==='skills';
+    return this.page==='bag'||this.page==='status'||this.page==='party'||this.page==='quests'||this.page==='skills';
   }
   /** 弹层文字规格换成内容块坐标；滚动裁剪边界和文字一起换算。 */
   private modalTextSpec(spec:MenuTextSpec):MenuTextSpec{
@@ -569,9 +576,9 @@ export class StoryUI {
     const chromeKey=`chrome:${this.page}${this.page==='crafting'?`:${this.craftingActor}`:''}`;
     v.staticLayer(chromeKey,()=>{
       if(this.page!=='shop'&&this.page!=='crafting'&&this.page!=='forge'&&this.page!=='learn'&&this.page!=='save'&&this.page!=='load'){
-        // 系统页与已迁移的人物、队伍、任务、技能页标题行走 DOM；其它页仍由 Phaser 画。
+        // 系统页与已迁移的背包、人物、队伍、任务、技能页标题行走 DOM；其它页仍由 Phaser 画。
         // 静态层按 chromeKey 重画，切页不会残留。
-        const domTabs=this.page==='system'||this.page==='status'||this.page==='party'||this.page==='quests'||this.page==='skills';
+        const domTabs=this.page==='bag'||this.page==='system'||this.page==='status'||this.page==='party'||this.page==='quests'||this.page==='skills';
         tabs.forEach(([page,label],index)=>{const button=v.button('',35+index*149,25,102,116,()=>this.show(page),{bare:true,parent:v.staticRoot}).setData('label',label);v.image(this.content!.assets[`tab-${page}`],12,0,78,78,button);if(!domTabs)v.text(label,51,85,90,20,undefined,button).setOrigin(.5,0);button.setAlpha(this.page===page||(['settings','debug'] as Page[]).includes(this.page)&&page==='system'?1:.65);});
       }
       if(this.page==='crafting'&&this.craftingPanel){
@@ -634,8 +641,8 @@ export class StoryUI {
     if(this.operation)this.renderOperation();if(this.allocationExit)this.renderAllocationConfirmation();if(this.skillReset)this.renderSkillResetConfirmation();
     if(this.itemNotice){this.beginModal(1024,640);drawNativeMessage(this.modal!,this.app.menuPanels.assets,this.itemNotice,()=>{this.itemNotice=undefined;this.render();});}
     if(this.page==='save'||this.page==='load')this.renderSaveConfirmations();else this.savePage.renderConfirmations();
-    // 人物、队伍、任务、技能和技能书页的文字在各自绘制阶段收集完，等弹层位置也确定后再统一交给 DOM 层。
-    if(this.page==='status'||this.page==='party'||this.page==='quests'||this.page==='skills'||this.page==='learn')this.menuText?.renderPage(this.page);
+    // 背包、人物、队伍、任务、技能和技能书页的文字在各自绘制阶段收集完，等弹层位置也确定后再统一交给 DOM 层。
+    if(this.page==='bag'||this.page==='status'||this.page==='party'||this.page==='quests'||this.page==='skills'||this.page==='learn')this.menuText?.renderPage(this.page);
     this.sync();
   }
   private openControlEditor():void {
@@ -996,8 +1003,14 @@ export class StoryUI {
    */
   private addDescriptionText(keyPrefix:string,layout:{lines:{runs:{text:string;color?:string;x:number}[]}[];lineHeight:number},
     x:number,top:number,width:number,size:number,scroll:string,clip:{top:number;bottom:number},baseY=0):void{
+    this.pushDescriptionText(this.skillTextSpecs,keyPrefix,layout,x,top,width,size,scroll,clip,baseY);
+  }
+  /** 说明正文的色块统一落成 DOM 规格；技能页和背包说明只是收进不同的数组。 */
+  private pushDescriptionText(target:MenuTextSpec[],keyPrefix:string,
+    layout:{lines:{runs:{text:string;color?:string;x:number}[]}[];lineHeight:number},
+    x:number,top:number,width:number,size:number,scroll:string,clip:{top:number;bottom:number},baseY=0):void{
     layout.lines.forEach((line,lineIndex)=>line.runs.forEach((run,runIndex)=>{
-      this.skillTextSpecs.push({key:`${keyPrefix}-${lineIndex}-${runIndex}`,text:run.text,
+      target.push({key:`${keyPrefix}-${lineIndex}-${runIndex}`,text:run.text,
         x:x+run.x,y:top+baseY+lineIndex*layout.lineHeight,
         style:{size,color:run.color??TEXT_COLORS.white,width,
           lineHeight:layout.lineHeight,wrap:'word'},scroll,clip});
@@ -1252,6 +1265,7 @@ export class StoryUI {
     if(this.shortcutEdit)this.closeShortcutScreen();
   }
   private renderBag():void{
+    this.bagTextSpecs=[];
     const v=this.body!,bag=this.session!.bag,panels=this.app.menuPanels,member=this.member()!,equipment=bag.equipmentFor(this.selectedMemberId),art=this.memberArt();
     // 两栏背景照原版：`UIEquip_DrawEquipBackground @0x14a7cc` 给左栏画图框加四块黑色 60% 的区域
     // （`GRPX_FillRectAlpha(..., 0xff000000, 0x3c)`），中间 (129,110,157,157) 那块留空放人物预览；
@@ -1289,20 +1303,34 @@ export class StoryUI {
       for(const slot of panels.equipmentSlots){const entry=equipment[slot.id as EquipmentSlot],instance=entry?bag.get(entry):undefined,item=instance?bag.catalog.items[instance.item]:undefined;const button=v.button('',85+slot.x,slot.y,74,74,()=>{if(!entry)return;this.selectItem(entry,'right');},{image:slotFrameImage(this.app,this.session!,instance)});v.image(item?.icon??slot.emptyIcon,item?5:13,item?5:13,item?64:48,item?64:48,button);button.setData('label',slot.name);this.drops.push({object:button,entry,slot:slot.id as EquipmentSlot});}
       // 等级／职业行：`UIEquip_DrawEquip` 在左框内 (46,368) 画 323 宽的文本底板，文字居中于它、
       // 颜色 #e2cb9e、纵向上沿在底板顶边下 7 像素（`GRPX_DrawStringWithFont(..., y+375, 居中)`）。
-      // 底板在静态层，这里只画会随成员变化的等级与职业文字。
-      v.text(`Lv. ${member.level}　${this.app.storyClasses.classes.find(c=>c.id===member.classId)!.name}`,292,375,0,22,TEXT_COLORS.primary).setOrigin(.5,0);
+      // 底板在静态层，这里只登记会随成员变化的等级与职业文字。
+      this.bagTextSpecs.push({key:'bag-level',text:`Lv. ${member.level}　${this.app.storyClasses.classes.find(c=>c.id===member.classId)!.name}`,
+        x:292,y:375,style:{size:22,color:TEXT_COLORS.primary,anchorX:.5,anchorY:0}});
     }
     if(showingResult){this.renderItemResult();}
     else if(describing)this.renderItemDetail(this.selectedItem!);
     const layout=bagLayout(),cells=layout.grid;
     const {slots,slotCount}=inventoryView({all:bag.allCells,...bag.pouchCells},this.filter),grid=this.scroll('inventory',cells.x,cells.y,cells.width,cells.height);
+    grid.onScroll=()=>this.menuText?.refresh();
+    const slotClip={top:cells.y,bottom:cells.y+cells.height};
     for(let index=0;index<slotCount;index++){const slot=slots[index]!,x=index%cells.columns*cells.stride,y=Math.floor(index/cells.columns)*cells.stride;
       if(slot.kind==='cell'){
         this.drops.push({object:v.image(panels.assets['inventory-slot'],x,y,layout.slot.size,layout.slot.size,grid.content),view:slot.view,cell:slot.cell});
         continue;
       }const entry=slot.entry,item=bag.catalog.items[entry.item];
       const button=v.button('',x,y,layout.slot.size,layout.slot.size,()=>{if(this.suppressClick)return;this.selectItem(entry.id,'left');},{image:slotFrameImage(this.app,this.session!,entry),parent:grid.content,guard:grid.guard}).setData('label',item.name);v.image(item.icon,layout.slot.icon.x,layout.slot.icon.y,layout.slot.icon.size,layout.slot.icon.size,button);if(entry.id===this.selectedItem)v.image(panels.assets['inventory-selected'],layout.slot.selection.x,layout.slot.selection.y,layout.slot.selection.size,layout.slot.selection.size,button);this.drops.push({object:button,entry:entry.id,view:slot.view,cell:slot.cell});
-      if(item.stackable)v.text(String(entry.quantity),layout.badge.x,layout.badge.y,0,20,layout.badge.color,button).setOrigin(1,0);if(entry.enhancement)v.text(`+${entry.enhancement}`,2,2,0,17,undefined,button);if(entry.gems.length)v.text('◆'.repeat(entry.gems.length),2,52,0,16,undefined,button);
+      // 格子角标和数量随网格一起滚动；key 用袋位+格号，翻物品时不新建标签。
+      // 说明面板盖住背包栏时这些标签不能留在 DOM 最上层，否则会浮在面板正文上面。
+      const slotKey=`bag-slot-${slot.view}-${slot.cell}`;
+      if(!panelCoversBag){
+        if(item.stackable)this.bagTextSpecs.push({key:`${slotKey}-quantity`,text:String(entry.quantity),
+          x:cells.x+x+layout.badge.x,y:cells.y+y+layout.badge.y,
+          style:{size:20,color:layout.badge.color,anchorX:1,anchorY:0},scroll:'inventory',clip:slotClip});
+        if(entry.enhancement)this.bagTextSpecs.push({key:`${slotKey}-enhancement`,text:`+${entry.enhancement}`,
+          x:cells.x+x+2,y:cells.y+y+2,style:{size:17,anchorX:0,anchorY:0},scroll:'inventory',clip:slotClip});
+        if(entry.gems.length)this.bagTextSpecs.push({key:`${slotKey}-gems`,text:'◆'.repeat(entry.gems.length),
+          x:cells.x+x+2,y:cells.y+y+52,style:{size:16,anchorX:0,anchorY:0},scroll:'inventory',clip:slotClip});
+      }
       if(!panelCoversBag)button.on('pointerdown',(pointer:Phaser.Input.Pointer)=>this.startDrag(pointer,entry.id,grid));
     }
     this.finishScroll('inventory',grid,Math.ceil(slotCount/cells.columns)*cells.stride);
@@ -1310,10 +1338,15 @@ export class StoryUI {
     const money=splitMoney(this.session!.money);
     (['gold','silver','copper'] as const).forEach((unit,index)=>{
       v.image(this.content!.assets[`money-${unit}`],layout.money.x+index*layout.money.stride,layout.money.y,layout.money.coin.width,layout.money.coin.height);
-      v.text(String(money[unit]),layout.money.x+index*layout.money.stride+layout.money.digit.x,layout.money.y+layout.money.digit.y,0,20,layout.money.color);
+      // 说明面板盖住背包栏时，金额和网格角标一样要一起让位。
+      if(!panelCoversBag)this.bagTextSpecs.push({key:`bag-money-${unit}`,text:String(money[unit]),
+        x:layout.money.x+index*layout.money.stride+layout.money.digit.x,y:layout.money.y+layout.money.digit.y,
+        style:{size:20,color:layout.money.color,anchorX:0,anchorY:0}});
     });
     const organize=layout.organize;
-    v.button('整理',organize.x,organize.y,organize.width,organize.height,()=>this.action(()=>bag.organize()));
+    v.button('',organize.x,organize.y,organize.width,organize.height,()=>this.action(()=>bag.organize())).setData('label','整理');
+    this.bagTextSpecs.push({key:'bag-organize',text:'整理',x:organize.x+organize.width/2,y:organize.y+organize.height/2,
+      style:{size:Math.min(22,organize.height*.42),anchorX:.5,anchorY:.5,width:organize.width-12,align:'center',wrap:'word'}});
     // 侧边按钮列：位置与尺寸按原版的按钮列（6 个 57×57，起点 885,12），次序见 INVENTORY_SIDE_FILTERS。
     // 每个按钮画法照 `UIEquip_DrawInvenBackground` + `UIEquip_DrawInvenBag`：常态外框是图组 15 索引 20、
     // 选中态在同一个位置叠索引 19，两者都是 72×84、落在按钮矩形 −(5,12)。原版按钮里是袋子图标加页号，
@@ -1325,7 +1358,9 @@ export class StoryUI {
       const button=v.button('',side.x,side.y+side.offsets[index],side.width,side.height,()=>{this.cancelDrag();this.filter=filter;this.itemResult=undefined;this.selectedItem=undefined;this.itemNotice=undefined;this.scrollOffsets.delete('bag:inventory');this.render();},{bare:true});
       v.image(panels.assets['page-button-frame'],-5,-12,undefined,undefined,button);
       if(this.filter===filter)v.image(panels.assets['page-button-selected'],-5,-12,undefined,undefined,button);
-      v.text(INVENTORY_LABELS[filter],side.width/2,side.height/2,side.width-6,SIDE_FILTER_TEXT_SIZE,undefined,button).setOrigin(.5);
+      this.bagTextSpecs.push({key:`bag-filter-${filter}`,text:INVENTORY_LABELS[filter],
+        x:side.x+side.width/2,y:side.y+side.offsets[index]+side.height/2,
+        style:{size:SIDE_FILTER_TEXT_SIZE,anchorX:.5,anchorY:.5,width:side.width-6,align:'center',wrap:'word'}});
       button.setData('label',INVENTORY_LABELS[filter]);
     });
     // 原版在第一个／最后一个按钮被选中时，会在这一列的两端各补一块 21×34 的角件
@@ -1350,11 +1385,17 @@ export class StoryUI {
     // 滚动区若留在内容块那一层（默认值）会被面板自己的黑底压住，正文看起来就是灰的。
     const actions=this.bagMenu(entry,worn),actionLayout=descriptionActionLayout(panel.width,actions.length);
     const detail=this.scroll('item',left+panel.scroll.x,top+panel.scroll.y,panel.scroll.width,actionLayout.scrollHeight,v);
+    detail.onScroll=()=>this.menuText?.refresh();
     // 标题、颜色与正文由同一个实例说明生成器提供；当前查看的成员决定职业与等级条件。
     const body=itemDescriptionBody({item,entry,numbers:this.app.characterStats.equipment[entry.item],catalog:this.app.characterStats,
       grades:this.app.shops.grades,member:this.member(),classNames:this.classNames(),gemNames:entry.gems.map(id=>bag.catalog.items[id]?.name),skill:entry.skill?bag.catalog.skillDescriptions?.[entry.skill]:undefined});
-    drawDescriptionTitle(v,body.title,left,top,panel.width,body.color);
-    let y=drawDescriptionRows(v,body.rows,panel.scroll.width,detail.content);
+    // 说明正文走 DOM：断行和高度仍在布局阶段算完，滚动时由文字层扣掉滚动偏移。
+    const scrollX=left+panel.scroll.x,scrollY=top+panel.scroll.y,
+      clip={top:scrollY,bottom:scrollY+actionLayout.scrollHeight},
+      writer={add:(spec:MenuTextSpec)=>this.bagTextSpecs.push(spec)};
+    drawDescriptionTitle(v,body.title,left,top,panel.width,body.color,{writer,keyPrefix:'item-title'});
+    let y=drawDescriptionRows(v,body.rows,panel.scroll.width,detail.content,
+      {writer,keyPrefix:'item-row',x:scrollX,y:scrollY,scroll:'item',clip});
     this.finishScroll('item',detail,y);
     // 关闭按钮挂在面板右上角：那枚 67×67 的圆钮（原版矩形 349,−6，本作右移到贴边）。
     drawDescriptionClose(v,this.app.menuPanels.assets,panel,left,top,()=>{this.itemNotice=undefined;this.selectedItem=undefined;this.render();});
@@ -1362,8 +1403,11 @@ export class StoryUI {
     if(actions.length){
       actions.forEach((action,index)=>{
         const button=actionLayout.buttons[index]!;
-        v.button(action.label,left+button.x,top+button.y,button.width,button.height,action.run,
+        v.button('',left+button.x,top+button.y,button.width,button.height,action.run,
           {fontSize:button.fontSize,disabled:action.disabled}).setData('label',action.label);
+        this.bagTextSpecs.push({key:`item-action-${index}`,text:action.label,
+          x:left+button.x+button.width/2,y:top+button.y+button.height/2,
+          style:{size:button.fontSize,anchorX:.5,anchorY:.5,width:button.width-12,align:'center',wrap:'word'}});
       });
     }
   }
@@ -1538,10 +1582,17 @@ export class StoryUI {
     drawDescriptionPanel(v,this.app.menuPanels.assets,left,top,panel.width);
     // 同物品说明：滚动区也建在说明层上，否则正文会被面板底色压暗。
     const detail=this.scroll('item',left+panel.scroll.x,top+panel.scroll.y,panel.scroll.width,panel.scroll.height,v);let y=0;
-    for(const line of itemResultDetails(this.itemResult,this.session!.bag.catalog,
-      id=>this.app.battleCatalog.skills[id]?.name??id,id=>this.app.storyClasses.classes.find(c=>c.id===id)?.name??id)){
-      const text=v.text(line,0,y,panel.scroll.width,22,undefined,detail.content);y+=text.height+13;
-    }
+    detail.onScroll=()=>this.menuText?.refresh();
+    const scrollX=left+panel.scroll.x,scrollY=top+panel.scroll.y,
+      clip={top:scrollY,bottom:scrollY+panel.scroll.height};
+    itemResultDetails(this.itemResult,this.session!.bag.catalog,
+      id=>this.app.battleCatalog.skills[id]?.name??id,id=>this.app.storyClasses.classes.find(c=>c.id===id)?.name??id)
+      .forEach((line,index)=>{
+        const layout=this.descriptionLayout(v,[{text:line,color:GOLD}],panel.scroll.width,22);
+        this.pushDescriptionText(this.bagTextSpecs,`item-result-${index}`,layout,scrollX,scrollY,panel.scroll.width,22,
+          'item',clip,y);
+        y+=layout.height+5+13;
+      });
     this.finishScroll('item',detail,y);
     drawDescriptionClose(v,this.app.menuPanels.assets,panel,left,top,()=>{this.itemResult=undefined;this.render();});
   }
