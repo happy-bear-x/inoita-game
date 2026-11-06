@@ -54,6 +54,10 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
   private domLoading?:DomLabel;
   private domLoadingAction?:DomLabel;
   private domLoadingMenu?:DomLabel;
+  /** 竖屏提示也放 overlay 层；横屏后立刻隐藏。 */
+  private domPortraitIcon?:DomLabel;
+  private domPortraitTitle?:DomLabel;
+  private domPortraitHint?:DomLabel;
   private dialogueDomRuns:DomLabel[]=[];
   /** 选项面板的 DOM 文字；提示、说明和每个选项各用一组复用的标签。 */
   private choiceDom?:ChoiceDom;
@@ -76,6 +80,9 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
       this.domLoading=domUi.label('overlay','dom-loading',{x:.5,y:0}).setVisible(false);
       this.domLoadingAction=domUi.label('overlay','dom-loading-action',{x:.5,y:.5}).setVisible(false);
       this.domLoadingMenu=domUi.label('overlay','dom-loading-menu',{x:.5,y:.5}).setVisible(false);
+      this.domPortraitIcon=domUi.label('overlay','dom-portrait-icon',{x:.5,y:0}).setVisible(false);
+      this.domPortraitTitle=domUi.label('overlay','dom-portrait-title',{x:.5,y:0}).setVisible(false);
+      this.domPortraitHint=domUi.label('overlay','dom-portrait-hint',{x:.5,y:0}).setVisible(false);
       this.layoutDomText();
     }
     this.questPopup=new QuestPopup(this,()=>this.app.ui.ready&&!this.app.ui.suspended,this.app.domUi);
@@ -101,7 +108,7 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     });
     this.input.on('pointerupoutside',(pointer:Phaser.Input.Pointer)=>this.app.ui.cancelPress(pointer.id));
     this.game.canvas.addEventListener('pointercancel',this.cancelInput);this.game.events.once('destroy',()=>this.game.canvas.removeEventListener('pointercancel',this.cancelInput));
-    this.events.once('shutdown',()=>{this.unregisterInput?.();this.unregisterInput=undefined;this.input.keyboard?.off('keydown',this.bridgeKey);this.uiAssets.releaseContent();this.surface.destroy();this.questPopup.destroy();this.baseLease?.release();this.domInstant?.remove();this.domInstant=undefined;this.domToast?.remove();this.domToast=undefined;this.domSpeaker?.remove();this.domSpeaker=undefined;for(const label of [this.domLoadingTitle,this.domLoading,this.domLoadingAction,this.domLoadingMenu])label?.remove();this.domLoadingTitle=undefined;this.domLoading=undefined;this.domLoadingAction=undefined;this.domLoadingMenu=undefined;for(const run of this.dialogueDomRuns)run.remove();this.dialogueDomRuns.length=0;this.removeChoiceDom();});
+    this.events.once('shutdown',()=>{this.unregisterInput?.();this.unregisterInput=undefined;this.input.keyboard?.off('keydown',this.bridgeKey);this.uiAssets.releaseContent();this.surface.destroy();this.questPopup.destroy();this.baseLease?.release();this.domInstant?.remove();this.domInstant=undefined;this.domToast?.remove();this.domToast=undefined;this.domSpeaker?.remove();this.domSpeaker=undefined;for(const label of [this.domLoadingTitle,this.domLoading,this.domLoadingAction,this.domLoadingMenu,this.domPortraitIcon,this.domPortraitTitle,this.domPortraitHint])label?.remove();this.domLoadingTitle=undefined;this.domLoading=undefined;this.domLoadingAction=undefined;this.domLoadingMenu=undefined;this.domPortraitIcon=undefined;this.domPortraitTitle=undefined;this.domPortraitHint=undefined;for(const run of this.dialogueDomRuns)run.remove();this.dialogueDomRuns.length=0;this.removeChoiceDom();});
     void loadUiImages(this,['/assets/ui/loading-background.webp']).then(lease=>{this.baseLease=lease;this.signature='';this.sync(this.app.ui);}).catch(console.error);
     this.app.storyUI.attach(this);this.sync(this.app.ui);
   }
@@ -308,7 +315,7 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     const signature=JSON.stringify([ui.mode,ui.loadingState?.label,!!ui.loadingState?.retry,ui.failed,ui.suspended,portrait,cover,defeat,ui.toastMessage,ui.dialogueLine,ui.portraitFile,ui.canSkip,showSkip,ui.choices?.prompt,ui.choices?.description,ui.choices?.options,ui.quest?.definition.id,ui.quest?.kind]);
     if(signature===this.signature){
       if(this.dialogueShell&&bodySignature!==this.dialogueBodySignature){this.dialogueBodySignature=bodySignature;this.renderDialogueBody(ui);}
-      this.progressBar?.setSize(560*progress,5);this.syncLoadingDom(ui,portrait);return;
+      this.progressBar?.setSize(560*progress,5);this.syncLoadingDom(ui,portrait);this.syncPortraitDom(portrait);return;
     }
     this.signature=signature;this.dialogueShell=false;this.resetChoiceDom();
     const v=this.surface;v.clear();v.layout(0);this.dialogueLayout=undefined;this.progressBar=undefined;v.visible(true);
@@ -317,7 +324,7 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     this.blocker.setVisible((modal||!!ui.quest||!!ui.dialogueLine||!!ui.choices)).setSize(this.scale.width,this.scale.height);if(this.blocker.input)this.blocker.input.hitArea.setSize(this.scale.width,this.scale.height);
     this.cover?.destroy();this.cover=undefined;
     const block=()=>{const zone=this.add.zone(0,0,960,640).setOrigin(0).setInteractive();v.root.add(zone);};
-    if(portrait){v.rect(0,0,960,640,0x101d24,1);block();v.text('↻',480,160,0,90).setOrigin(.5,0);v.text('横过手机，进入游戏',480,310,0,32).setOrigin(.5,0);v.text('请使用横屏继续',480,370,0,24).setOrigin(.5,0);}
+    if(portrait){v.rect(0,0,960,640,0x101d24,1);block();}
     else if(ui.loadingState){
       const file='/assets/ui/loading-background.webp';if(this.textures.exists(uiTexture(file))){this.cover=this.add.image(this.scale.width/2,this.scale.height/2,uiTexture(file)).setDepth(998.5);const factor=Math.max(this.scale.width/this.cover.width,this.scale.height/this.cover.height);this.cover.setScale(factor).setTint(0xaaaaaa);}
       block();v.rect(200,531,560,5,0xeee2cc,.3);this.progressBar=v.rect(200,531,560*progress,5,0xe2c88d,1);
@@ -427,7 +434,22 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     }
     this.dialogueBodySignature=bodySignature;
     v.layout(0);
-    this.syncLoadingDom(ui,portrait);
+    this.syncLoadingDom(ui,portrait);this.syncPortraitDom(portrait);
+  }
+  /** 竖屏提示改为 DOM：画布 1 倍渲染时 Phaser 文字会发虚。 */
+  private syncPortraitDom(portrait:boolean):void{
+    this.domPortraitIcon?.setVisible(portrait);
+    this.domPortraitTitle?.setVisible(portrait);
+    this.domPortraitHint?.setVisible(portrait);
+    if(!portrait)return;
+    const scale=this.surface.root.scaleX||1;
+    const icon=this.surfacePoint(480,160),title=this.surfacePoint(480,310),hint=this.surfacePoint(480,370);
+    this.domPortraitIcon?.setText('↻').setPosition(icon.x,icon.y)
+      .setStyle({fontSize:`${Math.max(16,90*scale)}px`,color:GOLD});
+    this.domPortraitTitle?.setText('横过手机，进入游戏').setPosition(title.x,title.y)
+      .setStyle({fontSize:`${Math.max(12,32*scale)}px`,color:GOLD});
+    this.domPortraitHint?.setText('请使用横屏继续').setPosition(hint.x,hint.y)
+      .setStyle({fontSize:`${Math.max(12,24*scale)}px`,color:GOLD});
   }
   /** 加载页文字改由 DOM 输出：背景、进度条和按钮皮肤仍留在画布上。 */
   private syncLoadingDom(ui:GameUI,portrait:boolean):void{
