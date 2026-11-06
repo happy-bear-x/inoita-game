@@ -74,7 +74,9 @@ class Display extends Events {
   private wrap?: (value: string) => string;
   private fontSize = 22;
   context = { measureText: (value: string) => ({ width: value.length * this.fontSize * .55 }) };
+  filters = { external: { addMask: () => ({ autoUpdate: true, needsUpdate: false }) } };
   constructor(x = 0, y = 0, width = 74, height = 74) { super(); this.x = x; this.y = y; this.width = width; this.height = height; }
+  enableFilters() { return this; }
   get length() { return this.list.length; }
   setDepth(value: number) { this.depth = value; return this; }
   setPosition(x: number, y: number) { this.x = x; this.y = y; return this; }
@@ -224,6 +226,18 @@ class MenuScene {
   resize(width: number, height: number) { this.scale.width = width; this.scale.height = height; this.scale.emit('resize'); }
 }
 
+class FakeDomLabel {
+  text = ''; x = 0; y = 0; visible = true; removed = false;
+  readonly style: Record<string, unknown> = {};
+  element = { remove: () => {} };
+  setText(value: string) { this.text = value; return this; }
+  setPosition(x: number, y: number) { this.x = x; this.y = y; return this; }
+  setAnchor() { return this; }
+  setVisible(value: boolean) { this.visible = value; return this; }
+  setStyle(value: Partial<CSSStyleDeclaration>) { Object.assign(this.style, value); return this; }
+  remove() { this.removed = true; }
+}
+
 const read = <T>(name: string): T => JSON.parse(readFileSync(new URL(`../public/content/${name}.json`, import.meta.url), 'utf8')) as T;
 const items = read<ItemCatalog>('items'), stats = read<CharacterStatsCatalog>('character-stats'), battle = read<BattleCatalog>('battle');
 const campaign = read<Campaign>('campaign'), companions = read<CompanionCatalog>('companions'), world = read<WorldIndex>('world');
@@ -267,8 +281,12 @@ function fixture(classId = 'dark-knight') {
       if (entry) session.bag.equip(entry, slot as EquipmentSlot, owner, member.classId, member.level); else session.bag.unequip(slot, owner);
       return '';
     } };
-  const scene = new MenuScene(), menu = new StoryUI(app); scene.router = inputRouter; menu.attach(scene as unknown as Phaser.Scene); menu.bind(session, world, content);
-  controls.view = {
+  // 菜单文字走 DOM：这里只记录标签内容，不碰真实 document。
+  const domLabels: FakeDomLabel[] = [];
+  Object.defineProperty(app, 'domUi', { value: { label: () => {
+    const label = new FakeDomLabel(); domLabels.push(label); return label;
+  } } });
+  const scene = new MenuScene(), menu = new StoryUI(app); scene.router = inputRouter; menu.attach(scene as unknown as Phaser.Scene); menu.bind(session, world, content);  controls.view = {
     sync: () => menu.sync(), resetInput: () => scene.game.events.emit(UI_EVENTS.cancelInput),
     renderText() {}, paginate: (_ui, text) => [{ text, end: text.length }], async portrait() {}
   };
@@ -283,7 +301,7 @@ function fixture(classId = 'dark-knight') {
     menu.show('bag'); const name = id === 'player' ? world.actors[campaign.start.actor].name : session.party!.get(id)!.definition.name;
     scene.click(scene.button(name)); assert.equal(internals.selectedMemberId, id);
   };
-  return { hero, session, scene, menu, internals, controls, app, entry, add, recruit, select, inputRouter,
+  return { hero, session, scene, menu, internals, controls, app, entry, add, recruit, select, inputRouter, domLabels,
     setTextFocused: (value: boolean) => { textFocused = value; },
     cleanup: () => scene.events.emit('shutdown') };
 }
@@ -490,13 +508,16 @@ test('system exposes load alongside save while settings keeps the working displa
   const audio={settings:{music:1,effects:1},setVolume(channel:'music'|'effects',value:number){this.settings[channel]=value;}};
   Object.defineProperty(f.app,'audio',{value:audio});
   f.menu.show('system');
-  const actions=f.scene.nodes.filter(node=>node.shown&&node.getData('uiAction')&&node.getData('labelText'));
-  assert.deepEqual(actions.map(node=>node.getData('label')),['保存游戏','读取存档','设置','返回主菜单']);
-  assert(actions.every(node=>node.y+node.input!.hitArea.height<=431),'四个系统操作都在内容区内');
+  const tabLabels=new Set(['人物','背包','技能','队伍','任务','系统','关闭菜单']);
+  const actions=f.scene.nodes.filter(node=>node.shown&&node.getData('uiAction')&&node.getData('label')&&!tabLabels.has(node.getData('label')));
+  assert.deepEqual(actions.map(node=>node.getData('label')),['保存游戏','读取存档','设置','脱离卡死','返回主菜单']);
+  assert(actions.every(node=>node.y+node.input!.hitArea.height<=476),'五个系统操作都在滚动内容内');
   f.scene.click(f.scene.button('设置'));
   assert.equal(f.scene.buttons('读取存档').length,0);assert.equal(f.scene.buttons('读档').length,0);
   assert(!f.scene.texts().some(text=>text.includes('语言')||text.includes('简体中文')));
-  assert(f.scene.texts().includes('音乐'));assert(f.scene.texts().includes('音效'));
+  // 设置页的文字由 DOM 层绘制，Phaser 只留图框、按钮和滑条。
+  const domTexts=()=>f.domLabels.filter(label=>label.visible&&!label.removed).map(label=>label.text);
+  assert(domTexts().includes('音乐'));assert(domTexts().includes('音效'));
   // 音乐、音效改成滑动条；帧率显示和暴击光效仍是开关。
   const sliders=f.internals.body.sliders;
   assert.deepEqual(sliders.map(slider=>slider.label),['music','effects']);
@@ -514,9 +535,9 @@ test('system exposes load alongside save while settings keeps the working displa
   f.scene.release(toggle(rows.critical));
   assert.equal(displaySettings.criticalDecorations,true,'拖动滚动区的抬手不切换暴击光效');
   sliders[0]!.setValue(.4);
-  assert.equal(audio.settings.music,.4);assert(f.scene.texts().includes('40%'));
+  assert.equal(audio.settings.music,.4);assert(domTexts().includes('40%'));
   sliders[0]!.setValue(0);
-  assert.equal(audio.settings.music,0);assert(f.scene.texts().includes('关闭'),'最左边显示关闭');
+  assert.equal(audio.settings.music,0);assert(domTexts().includes('关闭'),'最左边显示关闭');
   sliders[1]!.setValue(.25);
   assert.equal(audio.settings.effects,.25);
   assert.equal(toggle(rows.fps).getData('label'),'开启','帧率显示是画面偏好，不受音量影响');
@@ -542,10 +563,12 @@ test('organise sits above and centered on the all-items category without overlap
 test('custom menu buttons share native art and keep labels above their pressed layer', t => {
   const f=fixture();t.after(f.cleanup);
   Object.defineProperty(f.app,'audio',{value:{settings:{music:1,effects:1},setVolume(){}}});
-  for(const page of ['system','settings','bag','status'] as const){
+  for(const page of ['system','bag','status'] as const){
     f.menu.show(page);
     if(page==='status')f.scene.click(f.scene.button('查看属性加点'));
-    const buttons=f.scene.nodes.filter(node=>node.shown&&node.getData('uiAction')&&node.getData('labelText'));
+    const tabLabels=new Set(['人物','背包','技能','队伍','任务','系统','关闭菜单']);
+    const buttons=f.scene.nodes.filter(node=>node.shown&&node.getData('uiAction')&&
+      (page==='system'?node.getData('face')&&!tabLabels.has(node.getData('label')):node.getData('labelText')));
     assert(buttons.length>0,`${page}包含文字按钮`);
     for(const button of buttons){
       for(const [part,file] of [['face',COMMON_BUTTON.image],['highlight',COMMON_BUTTON.pressed]] as const){
@@ -553,7 +576,8 @@ test('custom menu buttons share native art and keep labels above their pressed l
         assert.equal(layer.list.length,3,'Canvas 按钮由原图左端、中段、右端组成');
         assert(layer.list.every(image=>image.texture.key===`interface:${file}`));
       }
-      assert.equal(button.list.at(-1),button.getData('labelText'),'文字画在按下亮图上方');
+      if(page==='system')assert.equal(button.getData('labelText'),undefined,'系统页文字改由 DOM 绘制');
+      else assert.equal(button.list.at(-1),button.getData('labelText'),'文字画在按下亮图上方');
     }
     const enabled=buttons.find(button=>f.scene.canHit(button));
     if(enabled){
@@ -562,6 +586,10 @@ test('custom menu buttons share native art and keep labels above their pressed l
       assert.equal(enabled.getData('highlight').visible,false,'取消输入后原版亮图收回');
     }
   }
+  // 设置页仍用同一套原版按钮，只是文字改由 DOM 绘制。
+  f.menu.show('settings');
+  assert(f.scene.nodes.filter(node=>node.shown&&node.getData('uiAction')&&node.getData('face')).length>0,'设置页包含共用按钮');
+  assert.equal(f.scene.nodes.filter(node=>node.shown&&node.getData('uiAction')&&node.getData('labelText')).length,0,'设置页文字改由 DOM 绘制');
 });
 
 test('WebGL common button slices stay inside hit areas and preserve selected feedback on input cancellation', t => {
@@ -569,8 +597,9 @@ test('WebGL common button slices stay inside hit areas and preserve selected fee
   // 窄按钮和方按钮覆盖两种宽高比，后者触及 NineSlice 的最小宽度。
   const narrow=f.internals.surface.button('窄按钮',0,0,84,44,()=>{}, {selected:true}) as unknown as Display;
   f.internals.surface.button('方按钮',0,70,58,58,()=>{});
-  const buttons=f.scene.nodes.filter(node=>node.shown&&node.getData('uiAction')&&node.getData('labelText'));
-  assert.equal(buttons.length,6);
+  const tabLabels=new Set(['人物','背包','技能','队伍','任务','系统','关闭菜单']);
+  const buttons=f.scene.nodes.filter(node=>node.shown&&node.getData('uiAction')&&node.getData('face')&&!tabLabels.has(node.getData('label')));
+  assert.ok(buttons.length>=6,`至少覆盖 6 个按钮，实际 ${buttons.length}`);
   for(const button of buttons){
     const area=button.input!.hitArea;
     for(const [part,file] of [['face',COMMON_BUTTON.image],['highlight',COMMON_BUTTON.pressed]] as const){
@@ -585,7 +614,6 @@ test('WebGL common button slices stay inside hit areas and preserve selected fee
       assert(group.y>=-1e-8&&group.y+slice.height*group.scaleY<=area.height+1e-8,'原图上下边保持在命中区内');
       assert(layout.left*group.scaleX+layout.right*group.scaleX<=area.width+1e-8,'两端不会反向挤压中段');
     }
-    assert.equal(button.list.at(-1),button.getData('labelText'),'文字位于原图和亮图上方');
   }
   assert(narrow.getData('highlight').visible);
   f.scene.press(narrow);f.scene.game.events.emit(UI_EVENTS.cancelInput);f.scene.release(narrow);
@@ -1587,12 +1615,12 @@ test('save page writes the loaded world into the chosen slot and asks before ove
 
   // 槽里的摘要回到面板上：标题、地图名与等级/职业。
   f.menu.show('save');
-  assert(f.scene.texts().includes('测试地图')&&f.scene.texts().includes('LV.1 · 黑暗骑士'));
+  assert(domTexts(f).includes('测试地图')&&domTexts(f).includes('LV.1 · 黑暗骑士'));
 
   // 已有存档的槽再存要先确认；选「否」时槽里的字节一个都不动。
   const bytes=JSON.stringify(f.app.saves.inspect(1));
   f.scene.click(f.scene.button('存档槽 2'));
-  assert(f.scene.texts().includes('这个存档槽里已经有存档，确定覆盖？'));
+  assert(domTexts(f).includes('这个存档槽里已经有存档，确定覆盖？'));
   // 确认层铺满整屏：花纹从屏幕左缘平铺，最后一格覆盖到右缘之外由画布裁掉。
   const edgeKey=`interface:${f.app.menuPanels.assets['message-edge']}`;
   const edges=f.scene.nodes.filter(node=>node.shown&&node.texture.key===edgeKey);
@@ -1612,6 +1640,7 @@ test('save page writes the loaded world into the chosen slot and asks before ove
 });
 
 /** 存档行按钮所在的滚动区；按行按钮的直接父容器匹配，顺带验证行确实画进了滚动内容。 */
+const domTexts=(f:ReturnType<typeof fixture>)=>f.domLabels.filter(label=>label.visible&&!label.removed).map(label=>label.text);
 function slotRowScroll(f:ReturnType<typeof fixture>,row:Display):ScrollArea{
   const scroll=f.internals.surface.scrolls.find(value=>(value.content as unknown as Display)===row.parentContainer);
   assert.ok(scroll,'行按钮位于滚动区内容容器里');return scroll;
@@ -1644,18 +1673,18 @@ test('dragging a save slot scrolls instead of saving or confirming an overwrite'
 
   // 行内「删除」控件也在同一个 content 里：拖动不弹删除确认。
   dragSlotRow(f,f.scene.button('存档槽 2 删除'));
-  assert(!f.scene.texts().includes('删除后无法恢复，确定删除这个存档？'));
+  assert(!domTexts(f).includes('删除后无法恢复，确定删除这个存档？'));
   assert.equal(f.internals.modal.root.visible,false);
 
   // 已有存档：拖动抬手不弹覆盖确认，原地点击才弹。
   dragSlotRow(f,f.scene.button('存档槽 2'));
-  assert(!f.scene.texts().includes('这个存档槽里已经有存档，确定覆盖？'));
+  assert(!domTexts(f).includes('这个存档槽里已经有存档，确定覆盖？'));
   assert.equal(f.internals.modal.root.visible,false);
   // 存档后列表按时间倒序，刚存的槽会跳到第一行；先把滚动位置拉回顶部再点。
   const row=f.scene.button('存档槽 2');
   slotRowScroll(f,row).scrollTop=0;
   f.scene.click(row);
-  assert(f.scene.texts().includes('这个存档槽里已经有存档，确定覆盖？'));
+  assert(domTexts(f).includes('这个存档槽里已经有存档，确定覆盖？'));
 });
 
 test('dragging a load slot scrolls instead of asking to load, and a tap afterwards still asks', async t => {
@@ -1666,12 +1695,12 @@ test('dragging a load slot scrolls instead of asking to load, and a tap afterwar
   const scroll=dragSlotRow(f,f.scene.button('存档槽 2'));
   assert.equal(scroll.moved,true,'拖动超过阈值');
   assert(scroll.scrollTop>0,'列表跟随手指滚动');
-  assert(!f.scene.texts().includes('读取存档将丢失当前未保存的进度，确定读取？'),'拖动不弹读档确认');
+  assert(!domTexts(f).includes('读取存档将丢失当前未保存的进度，确定读取？'),'拖动不弹读档确认');
   assert.equal(loads,0);
   assert.equal(f.internals.modal.root.visible,false);
 
   f.scene.click(f.scene.button('存档槽 2'));
-  assert(f.scene.texts().includes('读取存档将丢失当前未保存的进度，确定读取？'));
+  assert(domTexts(f).includes('读取存档将丢失当前未保存的进度，确定读取？'));
   f.scene.click(f.scene.button('是'));
   await Promise.resolve();
   assert.equal(loads,1);
@@ -1721,7 +1750,7 @@ test('the auto row is read-only while manual slots can be deleted after a confir
   f.scene.click(f.scene.button('存档槽 1'));f.scene.click(f.scene.button('确认'));
   assert.equal(f.app.saveSlot,0);
   f.scene.click(f.scene.button('存档槽 1 删除'));
-  assert(f.scene.texts().includes('删除后无法恢复，确定删除这个存档？'));
+  assert(domTexts(f).includes('删除后无法恢复，确定删除这个存档？'));
   f.scene.click(f.scene.button('否'));
   assert.equal(f.app.saves.inspect(0).kind,'ok','选「否」不动存档');
   f.scene.click(f.scene.button('存档槽 1 删除'));f.scene.click(f.scene.button('是'));
@@ -1742,7 +1771,7 @@ test('renaming a save asks for text and only stores Chinese, English and digits'
   assert.equal(after.game.summary.name,'第一章','只保留中文、英文和数字');
   assert.equal(after.game.summary.savedAt,before.game.summary.savedAt,'改名不动存档内容');
   // 改名后的行标题用新名字；行按钮的可访问名仍是「存档槽 N」。
-  assert(f.scene.texts().includes('第一章'));
+  assert(domTexts(f).includes('第一章'));
   f.scene.click(f.scene.button('存档槽 1 删除'));
   f.scene.click(f.scene.button('否'));
 });
@@ -1754,10 +1783,10 @@ test('system opens load slots and confirmation isolates input before restoring a
   const saved=f.app.saves.inspect(1);assert.equal(saved.kind,'ok');if(saved.kind!=='ok')return;
   const damaged=structuredClone(saved.game);Reflect.deleteProperty(damaged,'world');f.app.saves.write(0,damaged);assert.equal(f.app.saves.inspect(0).kind,'unreadable');
   f.menu.show('system');f.scene.click(f.scene.button('读取存档'));
-  assert(f.scene.texts().includes('读取存档'));
+  assert(domTexts(f).includes('读取存档'));
   assert.equal(f.scene.buttons('存档槽 1').length,0);assert.equal(f.scene.buttons('存档槽 3').length,0);
   f.scene.click(f.scene.button('存档槽 2'));
-  assert(f.scene.texts().includes('读取存档将丢失当前未保存的进度，确定读取？'));
+  assert(domTexts(f).includes('读取存档将丢失当前未保存的进度，确定读取？'));
   assert.equal(loads,0);assert.equal(f.scene.canHit(f.scene.button('存档槽 2')),false);
   f.scene.click(f.scene.button('否'));assert.equal(loads,0);
   f.scene.click(f.scene.button('存档槽 2'));f.scene.key('Escape');assert.equal(loads,0);assert.equal(f.internals.modal.root.visible,false);
@@ -1795,7 +1824,7 @@ test('the defeat load option opens the real load page and closing it returns to 
   f.controls.showDefeat({restore:()=>{},load:()=>f.menu.openDefeatLoad()});
   assert.equal(f.controls.locked,true);
   f.controls.selectDefeatAction('load');
-  assert.equal(f.internals.page,'load');assert(f.scene.texts().includes('读取存档'));
+  assert.equal(f.internals.page,'load');assert(domTexts(f).includes('读取存档'));
   assert.equal(f.controls.defeated,true,'阵亡流程没有被读档页顶掉');
   assert.equal(!!f.controls.defeatState,false,'读档页在阵亡面板之上时不再画阵亡面板');
   assert.equal(f.controls.locked,true,'读档页自己锁住世界');

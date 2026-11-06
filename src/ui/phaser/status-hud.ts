@@ -10,7 +10,7 @@ import { readSafeArea, uiUnitScale } from '../viewport.ts';
 import { resolveControlLayout } from '../control-layout.ts';
 import { controlViewport } from './control-layout-viewport.ts';
 import { uiImage } from './widgets.ts';
-import { FONT } from '../text-style.ts';
+import type { DomLabel,DomUi } from '../dom/dom-ui.ts';
 
 /** 大面板与队友列、队友面板之间的空隙，按 800×480 参考单位给，换算时只乘屏幕缩放。 */
 const MEMBER_COLUMN_GAP_UNITS=10;
@@ -43,9 +43,10 @@ class MemberPanel {
   private readonly scene:Phaser.Scene;private readonly hud:Hud;private readonly skin:StatusHudSkin;
   private readonly onSelect:(id:string)=>void;
   private readonly frame:Phaser.GameObjects.Image;private readonly portrait:Phaser.GameObjects.Image;
-  private readonly level:Phaser.GameObjects.Text;private readonly gauges:Record<'health'|'mana'|'experience',Gauge>;
+  private readonly domLevel?:DomLabel;private readonly gauges:Record<'health'|'mana'|'experience',Gauge>;
   private icons:Phaser.GameObjects.Image[]=[];private signature='';private contentSignature='';private visible=false;private iconSignature='';
-  constructor(scene:Phaser.Scene,hud:Hud,skin:StatusHudSkin,onSelect:(id:string)=>void){
+  private domVisible=false;private domFontSize=0;
+  constructor(scene:Phaser.Scene,hud:Hud,skin:StatusHudSkin,onSelect:(id:string)=>void,domUi?:DomUi){
     this.scene=scene;this.hud=hud;this.skin=skin;this.onSelect=onSelect;
     const layout=skin.member;
     this.container=hud.add(scene.add.container(0,0));
@@ -54,8 +55,8 @@ class MemberPanel {
     this.portrait=scene.add.image(p.x,p.y,skin.assets['member-portrait']).setOrigin(0).setDisplaySize(p.width,p.height);
     // 与大面板一致：框体压在头像之上，由框体盖住头像下缘；条和等级随后再加到最上层。
     this.container.add([this.portrait,this.frame]);
-    const level=layout.level;this.level=scene.add.text(level.x+level.width/2,level.y+level.height/2,'',{fontFamily:FONT,fontSize:14,color:'#ffffff',resolution:3}).setOrigin(.5);
-    this.container.add(this.level);
+    this.domLevel=domUi?.label('hud','dom-status-member-level',{x:.5,y:.5})
+      .setStyle({color:'#ffffff',lineHeight:'1',textShadow:'none'}).setVisible(false);
     this.gauges=Object.fromEntries((['health','mana','experience'] as const).map(kind=>[kind,new Gauge(scene,this.container,skin,kind,layout.gauges[kind])])) as typeof this.gauges;
     this.container.setInteractive(new Phaser.Geom.Rectangle(0,0,layout.width,layout.height),Phaser.Geom.Rectangle.Contains)
       .setData('uiAction',true);
@@ -69,7 +70,7 @@ class MemberPanel {
   /** 每帧写入成员、头像与三条槽。空成员隐藏整块。 */
   set(id:string|undefined,values:MemberValues|undefined,living:boolean,portrait?:string):void{
     const layout=this.skin.member;
-    if(!id||!values){this.hud.setVisible(this.container,false);this.id=undefined;this.signature='';this.contentSignature='';return;}
+    if(!id||!values){this.hud.setVisible(this.container,false);this.id=undefined;this.signature='';this.contentSignature='';this.setDomVisible(false);return;}
     this.id=id;
     // 显隐一律走 Hud：面板容器在 Hud 的登记表里，绕过它直接改会被下一次重排翻回来。
     this.hud.setVisible(this.container,this.visible);
@@ -85,9 +86,7 @@ class MemberPanel {
     this.portrait.setTexture(portraitImage.key,portraitImage.frame).setTint(down?0x777777:0xffffff);
     const p=layout.portrait;
     this.portrait.setPosition(p.x,p.y).setDisplaySize(p.width,p.height);
-    const level=layout.level;
-    this.level.setPosition(level.x+level.width/2,level.y+level.height/2)
-      .setText(String(values.level)).setScale(Math.min(1,(level.width-4)/Math.max(1,this.level.width),(level.height-4)/Math.max(1,this.level.height)));
+    this.domLevel?.setText(String(values.level));
     this.gauges.health.update(values.health,values.maxHealth);
     this.gauges.mana.update(values.mana,values.maxMana);
     this.gauges.experience.update(values.experience,values.nextLevelExperience);
@@ -118,6 +117,21 @@ class MemberPanel {
   setVisible(value:boolean):void{
     this.visible=value;
     this.hud.setVisible(this.container,value&&!!this.id);
+    // 场景暂停/睡眠时 Hud 会把容器压成不可见，DOM 标签跟着容器的实际值走。
+    this.setDomVisible(this.container.visible);
+  }
+  /** 等级文字的 DOM 标签按容器世界变换换算到屏幕 CSS 坐标。 */
+  syncDomPosition():void{
+    if(!this.domLevel)return;
+    const level=this.skin.member.level,m=this.container.getWorldTransformMatrix();
+    this.domLevel.setPosition(m.tx+(level.x+level.width/2)*m.scaleX,m.ty+(level.y+level.height/2)*m.scaleY);
+    const size=14*m.scaleX;
+    if(size!==this.domFontSize){this.domFontSize=size;this.domLevel.setStyle({fontSize:`${size}px`});}
+  }
+  /** 容器变换没变时跳过世界矩阵换算。 */
+  domLayoutKey():string{return `${this.container.x},${this.container.y},${this.container.scaleX}`;}
+  private setDomVisible(value:boolean):void{
+    if(this.domLevel&&this.domVisible!==value){this.domVisible=value;this.domLevel.setVisible(value);}
   }
   /** 每帧按逻辑帧计数切换闪烁；进入闪烁窗口的图标在暗相隐藏，槽位保留。 */
   tick(tick:number):void{
@@ -127,7 +141,7 @@ class MemberPanel {
       image.setVisible(!buffIconBlinking(Math.max(0,Math.ceil(remaining/LOGIC_FRAME_MS)),tick));
     }
   }
-  destroy():void{this.container.destroy(true);}
+  destroy():void{this.domLevel?.remove();this.container.destroy(true);}
 }
 
 interface PortraitRef{key:string;frame?:string}
@@ -144,17 +158,19 @@ function portraitRef(scene:Phaser.Scene,file:string|undefined):PortraitRef|undef
 export class StatusHud {
   private readonly hud:Hud;private readonly skin:StatusHudSkin;
   private readonly playerContainer:Phaser.GameObjects.Container;private readonly targetContainer:Phaser.GameObjects.Container;
-  private readonly portrait:Phaser.GameObjects.Image;private readonly level:Phaser.GameObjects.Text;private readonly name:Phaser.GameObjects.Text;
+  private readonly portrait:Phaser.GameObjects.Image;
   private readonly panels:MemberPanel[];private readonly gauges:Record<'health'|'mana'|'experience',Gauge>;private readonly targetGauge:Gauge;
   private readonly playerIcons:Phaser.GameObjects.Container;
   private readonly unsubscribe:()=>void;private player?:Readonly<StoryPlayerState>;private target?:TargetStatus;private visible=false;
+  private domLevel?:DomLabel;private domTarget?:DomLabel;private domTargetColor?:string;
+  private domLevelVisible?:boolean;private domTargetVisible?:boolean;private domLayoutKeyValue='';
   private targetSignature='';private lastTick=-1;
   private targetSpecial?:Phaser.GameObjects.Image;
   private playerIconImages:Phaser.GameObjects.Image[]=[];private memberCount=0;
-  private playerIconSignature='';private portraitKey?:string;private visibilityApplied=false;private levelSignature='';
+  private playerIconSignature='';private portraitKey?:string;private visibilityApplied=false;
   constructor(hud:Hud,skin:StatusHudSkin,readPlayer:()=>Readonly<StoryPlayerState>|undefined,subscribe:(listener:()=>void)=>()=>void,
     readParty?:()=>PartyActiveSnapshot|undefined,onSelect?:(id:string)=>void,portraitFor?:(id:string)=>string|undefined,onFocus?:()=>void,
-    readConditions?:(id:string)=>readonly ActiveCondition[],readHero?:()=>MemberValues|undefined){
+    readConditions?:(id:string)=>readonly ActiveCondition[],readHero?:()=>MemberValues|undefined,domUi?:DomUi){
     this.hud=hud;this.skin=skin;
     const scene=hud.scene;
     Object.values(skin.assets).forEach(file=>scene.textures.get(file).setFilter(Phaser.Textures.FilterMode.LINEAR));
@@ -163,11 +179,15 @@ export class StatusHud {
     const image=(file:string,x:number,y:number,w:number,h:number)=>scene.add.image(x,y,file).setOrigin(0).setDisplaySize(w,h);
     this.playerContainer.add(image(skin.assets['player-shadow'],0,0,skin.player.width,skin.player.height));const p=skin.player.portrait;
     this.portrait=image(skin.assets['player-portrait'],p.x,p.y,p.width,p.height);this.playerContainer.add([this.portrait,image(skin.assets['player-frame'],0,0,skin.player.width,skin.player.height)]);
-    const text=(x:number,y:number,size:number)=>scene.add.text(x,y,'',{fontFamily:FONT,fontSize:size,color:'#ffffff',resolution:3});
-    const level=skin.player.level;this.level=text(level.x+level.width/2,level.y+level.height/2,17).setOrigin(.5);this.playerContainer.add(this.level);
+    if(domUi){
+      this.domLevel=domUi.label('hud','dom-status-level',{x:.5,y:.5})
+        .setStyle({color:'#ffffff',lineHeight:'1',textShadow:'none'}).setVisible(false);
+      this.domTarget=domUi.label('hud','dom-status-target',{x:.5,y:0})
+        .setStyle({lineHeight:'1.2',textShadow:'none'}).setVisible(false);
+    }
     this.gauges=Object.fromEntries((['health','mana','experience'] as const).map(kind=>[kind,new Gauge(scene,this.playerContainer,skin,kind,skin.player.gauges[kind])])) as typeof this.gauges;
     this.targetContainer.add(image(skin.assets['target-frame'],0,0,skin.target.width,skin.target.height));
-    const nameAnchor=targetNameAnchor(skin);this.name=text(nameAnchor.x,nameAnchor.y,18).setOrigin(.5,0);this.targetContainer.add(this.name);this.targetGauge=new Gauge(scene,this.targetContainer,skin,'target',skin.target.gauge);
+    this.targetGauge=new Gauge(scene,this.targetContainer,skin,'target',skin.target.gauge);
     const mark=skin.target.specialMark;
     // 原版按面板中心绘制特殊怪标记，mark 存的是中心点而不是左上角。
     if(mark){this.targetSpecial=image(skin.assets['target-special'],mark.centerX,mark.centerY,mark.width,mark.height)
@@ -180,7 +200,7 @@ export class StatusHud {
     this.playerContainer.on('pointerup',(_pointer:Phaser.Input.Pointer,_x:number,_y:number,event:Phaser.Types.Input.EventData)=>{
       event.stopPropagation();if(this.visible&&this.player)onFocus?.();
     });
-    this.panels=(skin.member.slots??[]).map(()=>new MemberPanel(scene,hud,skin,id=>onSelect?.(id)));
+    this.panels=(skin.member.slots??[]).map(()=>new MemberPanel(scene,hud,skin,id=>onSelect?.(id),domUi));
     const refresh=()=>{
       this.player=readPlayer();const snapshot=readParty?.();
       const active=snapshot?.active??['player'];
@@ -198,10 +218,9 @@ export class StatusHud {
       if(ref&&portraitSignature!==this.portraitKey){this.portraitKey=portraitSignature;this.portrait.setTexture(ref.key,ref.frame).setDisplaySize(p.width,p.height);}
       this.paintPlayerIcons(readConditions?.(controlled)??[]);
       this.panels.forEach((panel,index)=>panel.paintIcons(index<others.length?(readConditions?.(others[index])??[]):[]));
-      if(this.player){const value=this.player,levelText=String(value.level);
-        // setText 会重新生成文字纹理；等级没变就只更新三条数值。
-        if(levelText!==this.levelSignature){this.levelSignature=levelText;this.level.setText(levelText).setScale(Math.min(1,(level.width-4)/Math.max(1,this.level.width),(level.height-4)/Math.max(1,this.level.height)));}
-        this.gauges.health.update(value.health,value.maxHealth);this.gauges.mana.update(value.mana,value.maxMana);this.gauges.experience.update(value.experience,value.nextLevelExperience);}this.paintTarget();this.syncVisibility();
+      if(this.player){const value=this.player;
+        this.domLevel?.setText(String(value.level));
+        this.gauges.health.update(value.health,value.maxHealth);this.gauges.mana.update(value.mana,value.maxMana);this.gauges.experience.update(value.experience,value.nextLevelExperience);}this.paintTarget();this.syncVisibility();this.syncDomPositions();
       // 面板数量变了，列的缩放与位置也要跟着重算。
       if(previousCount!==this.memberCount)this.layout();
     };
@@ -227,9 +246,9 @@ export class StatusHud {
   private paintTarget():void{
     if(!this.target)return;
     const target=this.target,color=targetNameColor(this.skin,this.player?.level??1,target);
-    this.name.setText(`${target.name} (Lv.${target.level})`);
-    // setColor 每次都会重画文字画布；颜色没变就跳过。
-    if(this.name.style.color!==color)this.name.setColor(color);
+    this.domTarget?.setText(`${target.name} (Lv.${target.level})`);
+    // 颜色没变就不重写 DOM 样式。
+    if(this.domTarget&&this.domTargetColor!==color){this.domTargetColor=color;this.domTarget.setStyle({color});}
     this.targetGauge.update(target.health,target.maxHealth);
     this.targetSpecial?.setVisible((target.specialRank??0)!==0);
   }
@@ -267,6 +286,23 @@ export class StatusHud {
     // 队友面板比大面板窄，可见右缘与大面板可见右缘齐平。
     this.panels.forEach((panel,index)=>{const y=column.tops[index];if(y===undefined)return;
       panel.container.setScale(size*column.scale).setPosition(right-memberEdge*size*column.scale,y);});
+    this.syncDomPositions(true);
+  }
+  /** 把等级与目标名换算到屏幕 CSS 坐标；容器变换没变时跳过。 */
+  private syncDomPositions(force=false):void{
+    if(!this.domLevel||!this.domTarget)return;
+    const key=[this.playerContainer.x,this.playerContainer.y,this.playerContainer.scaleX,
+      this.targetContainer.x,this.targetContainer.y,this.targetContainer.scaleX,
+      ...this.panels.map(panel=>panel.domLayoutKey())].join(',');
+    if(!force&&key===this.domLayoutKeyValue)return;
+    this.domLayoutKeyValue=key;
+    const level=this.skin.player.level,pm=this.playerContainer.getWorldTransformMatrix();
+    this.domLevel.setPosition(pm.tx+(level.x+level.width/2)*pm.scaleX,pm.ty+(level.y+level.height/2)*pm.scaleY)
+      .setStyle({fontSize:`${17*pm.scaleX}px`});
+    const anchor=targetNameAnchor(this.skin),tm=this.targetContainer.getWorldTransformMatrix();
+    this.domTarget.setPosition(tm.tx+anchor.x*tm.scaleX,tm.ty+anchor.y*tm.scaleY)
+      .setStyle({fontSize:`${18*tm.scaleX}px`});
+    for(const panel of this.panels)panel.syncDomPosition();
   }
   setVisible(value:boolean):void{
     // 第一次必须真正应用（构造时容器默认可见）；之后同值不重复遍历面板。
@@ -276,7 +312,11 @@ export class StatusHud {
   private syncVisibility():void{
     this.hud.setVisible(this.playerContainer,this.visible&&!!this.player);
     this.hud.setVisible(this.targetContainer,this.visible&&!!this.target);
+    // 场景暂停/睡眠时 Hud 会把容器压成不可见，DOM 标签跟着容器的实际值走。
+    const playerVisible=this.playerContainer.visible,targetVisible=this.targetContainer.visible;
+    if(this.domLevel&&this.domLevelVisible!==playerVisible){this.domLevelVisible=playerVisible;this.domLevel.setVisible(playerVisible);}
+    if(this.domTarget&&this.domTargetVisible!==targetVisible){this.domTargetVisible=targetVisible;this.domTarget.setVisible(targetVisible);}
     this.panels.forEach((panel,index)=>panel.setVisible(this.visible&&index<this.memberCount));
   }
-  destroy():void{this.unsubscribe();this.playerContainer.destroy(true);this.targetContainer.destroy(true);for(const panel of this.panels)panel.destroy();}
+  destroy():void{this.domLevel?.remove();this.domTarget?.remove();this.unsubscribe();this.playerContainer.destroy(true);this.targetContainer.destroy(true);for(const panel of this.panels)panel.destroy();}
 }

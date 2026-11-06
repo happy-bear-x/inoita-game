@@ -35,7 +35,9 @@ import { ControlLayoutEditor } from './phaser/control-layout-editor.ts';
 import { KeyBindingEditor } from './phaser/key-binding-editor.ts';
 import { CONTROL_SIZES, HUD_SIDE_BUTTON_SIZE, PENDING_OFFSET, resolveControlLayout, type ControlId } from './control-layout.ts';
 import { controlViewport } from './phaser/control-layout-viewport.ts';
-import { UiSurface, uiImageFor, type ScrollArea } from './phaser/widgets.ts';
+import { GOLD, UiSurface, uiImageFor, type ScrollArea } from './phaser/widgets.ts';
+import { MenuTextLayer, type MenuTextSpec, type MenuTextWriter } from './dom/menu-text.ts';
+import { setSaveBoardTextSink, type SaveBoardTextSpec } from './phaser/save-board.ts';
 import { drawDescriptionClose, drawDescriptionPanel, drawDescriptionRows, drawDescriptionSeparator, drawDescriptionTitle } from './phaser/description-panel.ts';
 import { drawNativeMessage } from './phaser/native-message.ts';
 import type { SaveGame } from '../domain/save-game.ts';
@@ -62,6 +64,8 @@ type Page=StoryMenuPage;
 const tabs:[Page,string][]=[['status','人物'],['bag','背包'],['skills','技能'],['party','队伍'],['quests','任务'],['system','系统']];
 /** 设置页「操作方式」一行上显示的当前选择。 */
 const CONTROL_MODE_LABELS:Record<ControlMode,string>={stick:'虚拟摇杆',dpad:'十字按键',keyboard:'电脑模式'};
+/** 音量滑条的读数；最左边是静音。 */
+const volumeText=(value:number):string=>value<=0?'关闭':`${Math.round(value*100)}%`;
 /** 原版按档位索引取 [9,8,7] 三张按钮图，0/1/2 依次对应。 */
 /** 原版菜单里正文与数值的米色：进绘制前调 `GRPX_SetFontColorFromRGB(0xe2,0xcb,0x9e)`。 */
 const AREA_TEXT=TEXT_COLORS.primary;
@@ -82,6 +86,11 @@ export class StoryUI {
   private gmPanelOwner?:GmActions;
   private minimapHeight=132;
   private scene?:Phaser.Scene;private surface?:UiSurface;private body?:UiSurface;private hudButtons?:UiSurface;private modal?:UiSurface;private description?:UiSurface;
+  /** 菜单页文字走 DOM；图框、按钮、滑条热区和滚动仍由 Phaser 画。 */
+  private menuText?:MenuTextLayer;
+  /** 存档/读档页上一次绘制收集到的文字；确认框打开时改用它自己的那一份。 */
+  private saveTextSpecs:MenuTextSpec[]=[];
+  private saveModalTextSpecs:MenuTextSpec[]=[];
   /** 登记快捷键那一屏单独一层：它盖在遮罩上，菜单本体整块藏起来。 */
   private shortcutScreen?:UiSurface;
   private controlEditor?:ControlLayoutEditor;
@@ -158,6 +167,17 @@ export class StoryUI {
     this.description=new UiSurface(scene,960,431,300);
     // 登记快捷键那一屏按原版的 960×640 全屏坐标摆控件，深度压在遮罩之上、菜单之下。
     this.shortcutScreen=new UiSurface(scene,960,640,150);this.backTab=new UiSurface(scene,960,640,160);
+    // 菜单文字以 DOM 为唯一出口：图框、按钮、滑条热区和滚动仍留在 Phaser。
+    // 页面按名字登记文字产出函数，后续迁移新页面只需再 register 一次。
+    if(this.app.domUi){
+      this.menuText=new MenuTextLayer(this.app.domUi,
+        (x,y)=>this.menuTextPoint(x,y),
+        (page,name)=>page===this.page?this.scrollNames.get(name)?.scrollTop:undefined);
+      this.menuText.register('settings',writer=>this.renderSettingsText(writer));
+      this.menuText.register('system',writer=>this.renderSystemText(writer));
+      this.menuText.register('save',writer=>this.renderSaveText(writer));
+      this.menuText.register('load',writer=>this.renderSaveText(writer));
+    }
     this.shortcutScreen.enabled=()=>this.open&&!this.app.ui.suspended&&!this.busy&&!!this.shortcutEdit;
     this.backTab.enabled=()=>this.shortcutScreen!.enabled();
     this.hudButtons=new UiSurface(scene,960,640,50);this.backdrop=scene.add.rectangle(0,0,1,1,0x000000,.65).setOrigin(0).setDepth(99).setInteractive();
@@ -175,7 +195,7 @@ export class StoryUI {
     this.unsubscribeFullscreen=onFullscreenChange(()=>{if(this.open&&this.page==='settings')this.render();});
     scene.input.on('pointermove',this.moveDrag,this);scene.input.on('pointerup',this.endDrag,this);scene.input.on('pointerupoutside',this.cancelDrag,this);
     scene.game.events.on(UI_EVENTS.minimapLayout,this.onMinimap,this);scene.game.events.on(UI_EVENTS.cancelInput,this.cancelDrag,this);
-    scene.events.once('shutdown',()=>{this.unregisterKeyboard?.();this.unregisterKeyboard=undefined;this.unsubscribe?.();this.unsubscribeFullscreen?.();this.discardAllocation();scene.scale.off('resize',this.resize,this);scene.game.events.off(UI_EVENTS.minimapLayout,this.onMinimap,this);scene.game.events.off(UI_EVENTS.cancelInput,this.cancelDrag,this);this.cancelOperation();this.savePage.destroy();this.surface!.root.remove(this.body!.root);this.surface?.destroy();this.body?.destroy();this.modal?.destroy();this.hudButtons?.destroy();this.description?.destroy();this.shortcutScreen?.destroy();this.backTab?.destroy();this.backdrop?.destroy();this.controlEditor?.destroy();this.controlEditor=undefined;this.keyBindingEditor?.destroy();this.keyBindingEditor=undefined;});
+    scene.events.once('shutdown',()=>{this.unregisterKeyboard?.();this.unregisterKeyboard=undefined;this.unsubscribe?.();this.unsubscribeFullscreen?.();this.discardAllocation();this.menuText?.destroy();this.menuText=undefined;scene.scale.off('resize',this.resize,this);scene.game.events.off(UI_EVENTS.minimapLayout,this.onMinimap,this);scene.game.events.off(UI_EVENTS.cancelInput,this.cancelDrag,this);this.cancelOperation();this.savePage.destroy();this.surface!.root.remove(this.body!.root);this.surface?.destroy();this.body?.destroy();this.modal?.destroy();this.hudButtons?.destroy();this.description?.destroy();this.shortcutScreen?.destroy();this.backTab?.destroy();this.backdrop?.destroy();this.controlEditor?.destroy();this.controlEditor=undefined;this.keyBindingEditor?.destroy();this.keyBindingEditor=undefined;});
     this.sync();
   }
   bind(session:Session,world:WorldIndex,content:StoryInterface):void{
@@ -205,6 +225,9 @@ export class StoryUI {
     const modal=menu&&(!!this.operation||!!this.itemNotice||!!this.allocationExit||this.skillReset||this.savePage?.modalOpen||!!this.craftingPanel?.modalOpen||!!this.shopPanel?.modalOpen||!!this.partyPanel?.modalOpen||!!this.forge?.confirming);
     if(modal&&!this.modalActive)this.app.ui.resetInput();
     this.modalActive=modal;this.modal?.visible(modal);
+    // DOM 文字盖在画布之上；弹层和菜单隐藏时必须一起让位，否则会浮在弹层上面。
+    // 存档确认框的文字也在 DOM 里，它打开时这一层要继续显示，但只保留确认框文字。
+    this.menuText?.setVisible(menu&&(!modal||this.savePage?.modalOpen));
     this.shortcutScreen?.visible(this.open&&!this.app.ui.suspended&&!!this.shortcutEdit);this.backTab?.visible(this.open&&!this.app.ui.suspended&&!!this.shortcutEdit);
     this.backdrop?.setVisible(this.open&&!this.app.ui.suspended);
     this.controlEditor?.visible(this.open&&this.app.ui.controlLayoutEditing&&!this.app.ui.suspended);
@@ -324,7 +347,7 @@ export class StoryUI {
       ?[this.modal!]:this.shortcutEdit?[this.shortcutScreen!,this.backTab!]:[this.surface!,this.body!,this.description!];
     const buttons=surfaces.flatMap(surface=>surface.focusables());
     if(this.keyboardFocus&&!buttons.includes(this.keyboardFocus))this.keyboardFocus=undefined;
-    if(event.key==='Tab'&&buttons.length){event.preventDefault();const current=this.keyboardFocus?buttons.indexOf(this.keyboardFocus):-1,index=current<0?(event.shiftKey?buttons.length-1:0):(current+(event.shiftKey?-1:1)+buttons.length)%buttons.length;this.keyboardFocus=buttons[index];surfaces.forEach(surface=>surface.focus(this.keyboardFocus!));return true;}
+    if(event.key==='Tab'&&buttons.length){event.preventDefault();const current=this.keyboardFocus?buttons.indexOf(this.keyboardFocus):-1,index=current<0?(event.shiftKey?buttons.length-1:0):(current+(event.shiftKey?-1:1)+buttons.length)%buttons.length;this.keyboardFocus=buttons[index];surfaces.forEach(surface=>surface.focus(this.keyboardFocus!));this.menuText?.refresh();return true;}
     if((event.key==='Enter'||event.key===' ')&&this.keyboardFocus&&buttons.includes(this.keyboardFocus)){event.preventDefault();this.scene!.game.events.emit(UI_EVENTS.select);this.keyboardFocus.getData('action')();return true;}
     return false;
   }
@@ -350,6 +373,17 @@ export class StoryUI {
     }
     this.body?.scrolls.forEach(scroll=>scroll.layout());this.description?.scrolls.forEach(scroll=>scroll.layout());this.modal?.scrolls.forEach(scroll=>scroll.layout());if(this.hudButtons&&this.scene){const bounds=this.scene.game.canvas.getBoundingClientRect(),safe=readSafeArea(),unit=this.scene.scale.width/Math.max(1,bounds.width),scale=uiUnitScale(this.scene.scale.width,this.scene.scale.height);this.hudButtons.root.setScale(scale).setPosition((safe.left+12)*unit,(safe.top+12)*unit);this.hudButtons.root.list.forEach((button,index)=>(button as Phaser.GameObjects.Container).setPosition(0,this.minimapHeight+12+index*(HUD_SIDE_BUTTON_SIZE+8)));}
     this.backdrop?.setSize(this.scene!.scale.width,this.scene!.scale.height);
+    // 画布缩放变化后，DOM 文字的 CSS 坐标和字号要跟着重算。
+    this.menuText?.refresh();
+  }
+  /** 内容块页面坐标 → 画框 CSS 坐标；和 `FormalUiScene.surfacePoint` 同一口径。 */
+  private menuTextPoint(x:number,y:number):{x:number;y:number;scale:number}{
+    // 系统页和存档/读档页按整块菜单画布排布（标签行 + 内容块），其它页用内容块坐标。
+    const fullPage=this.page==='system'||this.page==='save'||this.page==='load';
+    const root=fullPage?this.surface?.root:this.body?.root;
+    if(!root)return{x,y,scale:1};
+    const matrix=root.getWorldTransformMatrix(),point=matrix.transformPoint(x,y);
+    return{x:point.x,y:point.y,scale:matrix.scaleX};
   }
   private member(){return this.selectedMemberId==='player'?this.session!.hero:this.session!.party?.get(this.selectedMemberId);}
   private classNames(){return Object.fromEntries(this.app.storyClasses.classes.map(value=>[value.id,value.name]));}
@@ -443,6 +477,8 @@ export class StoryUI {
   }
   private renderNow():void{
     if(!this.open||!this.surface||!this.body||!this.session)return;
+    // 换页先收掉上一页的 DOM 文字；当前页由各自的面板在绘制时重新登记。
+    this.menuText?.beginPage(this.page);
     this.forge?.captureScroll();this.skillBook?.captureScroll();this.craftingPanel?.captureScroll();this.shopPanel?.captureScroll();this.questPanel?.captureScroll();this.partyPanel?.captureScroll();this.scrollNames.forEach((scroll,name)=>this.scrollOffsets.set(`${this.page}:${name}`,scroll.scrollTop));this.scrollNames.clear();this.surface.root.remove(this.body.root);this.surface.clear();this.bagPortrait?.detach();this.partyPanel?.detachPreview();this.body.clear();this.description?.clear();this.modal!.clear();this.surface.root.add(this.body.root);this.drops=[];this.keyboardFocus=undefined;
     if(!this.member()){this.discardAllocation();this.selectedMemberId='player';}const v=this.surface;
     this.body.root.setPosition(CONTENT_ORIGIN.x,CONTENT_ORIGIN.y);
@@ -453,7 +489,11 @@ export class StoryUI {
     if(this.page!=='bag'&&this.page!=='shop')this.body.clearStatic();
     const chromeKey=`chrome:${this.page}${this.page==='crafting'?`:${this.craftingActor}`:''}`;
     v.staticLayer(chromeKey,()=>{
-      if(this.page!=='shop'&&this.page!=='crafting'&&this.page!=='forge'&&this.page!=='learn'&&this.page!=='save'&&this.page!=='load')tabs.forEach(([page,label],index)=>{const button=v.button('',35+index*149,25,102,116,()=>this.show(page),{bare:true,parent:v.staticRoot}).setData('label',label);v.image(this.content!.assets[`tab-${page}`],12,0,78,78,button);v.text(label,51,85,90,20,undefined,button).setOrigin(.5,0);button.setAlpha(this.page===page||(['settings','debug'] as Page[]).includes(this.page)&&page==='system'?1:.65);});
+      if(this.page!=='shop'&&this.page!=='crafting'&&this.page!=='forge'&&this.page!=='learn'&&this.page!=='save'&&this.page!=='load'){
+        // 系统页的标题行也走 DOM；其它页仍由 Phaser 画。静态层按 chromeKey 重画，切页不会残留。
+        const domTabs=this.page==='system';
+        tabs.forEach(([page,label],index)=>{const button=v.button('',35+index*149,25,102,116,()=>this.show(page),{bare:true,parent:v.staticRoot}).setData('label',label);v.image(this.content!.assets[`tab-${page}`],12,0,78,78,button);if(!domTabs)v.text(label,51,85,90,20,undefined,button).setOrigin(.5,0);button.setAlpha(this.page===page||(['settings','debug'] as Page[]).includes(this.page)&&page==='system'?1:.65);});
+      }
       if(this.page==='crafting'&&this.craftingPanel){
         v.text(this.world!.actors[this.craftingActor!].name,512,25,0,28,undefined,v.staticRoot).setOrigin(.5,0);
       }
@@ -478,8 +518,11 @@ export class StoryUI {
       actions.push(['返回主菜单',()=>{this.close();this.app.returnToMenu?.();}]);
       // 动作数量会随 GM 开关变化，放进滚动区，不再压缩按钮间距。
       const scroll=this.scroll('system',0,0,960,431),content=scroll.content,gap=80;
-      actions.forEach(([label,action],index)=>this.body!.button(label,320,70+index*gap,300,66,action,{parent:content}));
+      // 按钮只留底图与命中区；文字统一由 DOM 层按 action 顺序生成。
+      actions.forEach(([label,action],index)=>this.body!.button('',320,70+index*gap,300,66,action,{parent:content}).setData('label',label));
       this.finishScroll('system',scroll,70+(actions.length-1)*gap+66+20);
+      scroll.onScroll=()=>this.menuText?.refresh();
+      this.menuText?.renderPage('system');
     }
     if(this.page==='debug'&&this.app.gm){
       // 面板按当前动作层实例缓存：同一会话里保留过滤与选中，换会话就重建。
@@ -505,12 +548,12 @@ export class StoryUI {
       }
       this.gmPanel?.render(this.body!);
     }
-    if(this.page==='save'||this.page==='load')this.savePage.render(this.surface!,this.page==='load');
+    if(this.page==='save'||this.page==='load')this.renderSavePage();
     if(this.page==='settings')this.renderSettings();
     if(this.notice)this.surface.text(this.notice,512,614,880,18).setOrigin(.5,0);
     if(this.operation)this.renderOperation();if(this.allocationExit)this.renderAllocationConfirmation();if(this.skillReset)this.renderSkillResetConfirmation();
     if(this.itemNotice){this.beginModal(1024,640);drawNativeMessage(this.modal!,this.app.menuPanels.assets,this.itemNotice,()=>{this.itemNotice=undefined;this.render();});}
-    this.savePage.renderConfirmations();
+    if(this.page==='save'||this.page==='load')this.renderSaveConfirmations();else this.savePage.renderConfirmations();
     this.sync();
   }
   private openControlEditor():void {
@@ -542,54 +585,164 @@ export class StoryUI {
   private renderSettings():void{
     const v=this.body!,audio=this.app.audio;
     const scroll=this.scroll('settings',0,0,960,431),content=scroll.content;
-    v.text('环境设置',473,15,0,29,undefined,content).setOrigin(.5,0);
-    if(audio)for(const [index,[channel,label]]of [['music','音乐'],['effects','音效']].entries()){
+    if(audio)for(const [index,[channel]]of [['music'],['effects']].entries()){
       const key=channel as 'music'|'effects',top=80+index*90;
-      v.text(label,260,top+15,0,25,undefined,content);
       // 最左边是静音；轨道一直伸到右侧面板边缘，百分比放在轨道右端。
-      v.slider(key,485,top+33,400,audio.settings[key],value=>audio.setVolume(key,value),content);
+      // 数值文字走 DOM，拖动时直接改那一枚标签，不触发整页重绘。
+      const slider=v.slider(key,485,top+33,400,audio.settings[key],value=>{
+        audio.setVolume(key,value);
+        this.menuText?.setText('settings',`${key}-value`,volumeText(value));
+      },content);
+      // 滑条自己的 Phaser 数值文字不再显示，只留轨道、滑块和热区。
+      this.hideSliderValueText(slider);
     }
     // 帧率显示和音量一样是画面/声音偏好，放在同一个面板里；默认开启。
-    v.text('帧率显示',260,275,0,25,undefined,content);
     const fps=displaySettings.fps;
-    v.button(fps?'开启':'关闭',485,260,220,66,()=>{displaySettings.setFps(!fps);this.render();},{parent:content});
+    v.button('',485,260,220,66,()=>{displaySettings.setFps(!fps);this.render();},{parent:content})
+      .setData('label',fps?'开启':'关闭');
     // 暴击光环和爆闪只影响画面，默认开启；不影响暴击冲击、数字、震屏或音效。
-    v.text('暴击光效',260,365,0,25,undefined,content);
     const decorations=displaySettings.criticalDecorations;
-    v.button(decorations?'开启':'关闭',485,350,220,66,()=>{
+    v.button('',485,350,220,66,()=>{
       displaySettings.setCriticalDecorations(!decorations);
       this.render();
-    },{parent:content});
+    },{parent:content}).setData('label',decorations?'开启':'关闭');
     // 全屏是浏览器能力；不支持的环境显示为不可用，APK 壳已经隐藏系统栏，显示为已全屏。
     let rowTop=440;
     const fullscreen=fullscreenStatus();
-    v.text('全屏',260,rowTop+15,0,25,undefined,content);
     if(fullscreen==='available'){
       const active=fullscreenActive();
-      v.button(active?'开启':'关闭',485,rowTop,220,66,()=>setFullscreen(!active),{parent:content})
+      v.button('',485,rowTop,220,66,()=>setFullscreen(!active),{parent:content})
         .setData('label','全屏：' + (active?'开启':'关闭'));
     }else{
       const label=fullscreen==='packaged'?'已全屏':'不支持';
-      v.button(label,485,rowTop,220,66,()=>{},{parent:content,disabled:true})
+      v.button('',485,rowTop,220,66,()=>{},{parent:content,disabled:true})
         .setData('label','全屏：'+label);
     }
     // 操作方式在本行点击轮换；触屏模式拖动控件位置，电脑模式改成键位映射。
     rowTop+=90;
     const modeLabel=CONTROL_MODE_LABELS[controlSettings.mode];
-    v.text('操作方式',260,rowTop+15,0,25,undefined,content);
-    v.button(modeLabel,485,rowTop,220,66,()=>{
+    v.button('',485,rowTop,220,66,()=>{
       controlSettings.setMode(nextControlMode(controlSettings.mode));
       this.render();
     },{parent:content}).setData('label',`操作方式：${modeLabel}`);
     rowTop+=90;
     if(controlSettings.mode==='keyboard'){
-      v.text('键位设置',260,rowTop+15,0,25,undefined,content);
-      v.button('修改键位',485,rowTop,220,66,()=>this.openKeyBindingEditor(),{parent:content});
+      v.button('',485,rowTop,220,66,()=>this.openKeyBindingEditor(),{parent:content}).setData('label','修改键位');
     }else{
-      v.text('控件位置',260,rowTop+15,0,25,undefined,content);
-      v.button('拖动调整',485,rowTop,220,66,()=>this.openControlEditor(),{parent:content});
+      v.button('',485,rowTop,220,66,()=>this.openControlEditor(),{parent:content}).setData('label','拖动调整');
     }
     this.finishScroll('settings',scroll,rowTop+80);
+    // 滚动时 DOM 文字跟着内容移动，并裁掉视口外的行。
+    scroll.onScroll=()=>this.menuText?.refresh();
+    this.menuText?.renderPage('settings');
+  }
+  /** 设置页的文字全部由 DOM 渲染；页面重绘时按 key 复用标签。 */
+  private renderSettingsText(writer:MenuTextWriter):void{
+    const audio=this.app.audio;
+    const add=(key:string,value:string,x:number,y:number,size:number,anchorX=0,anchorY=0):void=>
+      writer.add({key,text:value,x,y,style:{size,color:GOLD,anchorX,anchorY},scroll:'settings',clip:{top:0,bottom:431}});
+    add('title','环境设置',473,15,29,.5,0);
+    if(audio)for(const [index,[channel,label]]of [['music','音乐'],['effects','音效']].entries()){
+      const key=channel as 'music'|'effects',top=80+index*90;
+      add(`${key}-label`,label,260,top+15,25);
+      add(`${key}-value`,volumeText(audio.settings[key]),903,top+33,18,0,.5);
+    }
+    add('fps-label','帧率显示',260,275,25);
+    add('fps-toggle',displaySettings.fps?'开启':'关闭',595,293,22,.5,.5);
+    add('critical-label','暴击光效',260,365,25);
+    add('critical-toggle',displaySettings.criticalDecorations?'开启':'关闭',595,383,22,.5,.5);
+    let rowTop=440;
+    add('fullscreen-label','全屏',260,rowTop+15,25);
+    const fullscreen=fullscreenStatus();
+    add('fullscreen-toggle',fullscreen==='available'?(fullscreenActive()?'开启':'关闭'):(fullscreen==='packaged'?'已全屏':'不支持'),
+      595,rowTop+33,22,.5,.5);
+    rowTop+=90;
+    add('control-mode-label','操作方式',260,rowTop+15,25);
+    add('control-mode-toggle',CONTROL_MODE_LABELS[controlSettings.mode],595,rowTop+33,22,.5,.5);
+    rowTop+=90;
+    const keyboard=controlSettings.mode==='keyboard';
+    add('control-action-label',keyboard?'键位设置':'控件位置',260,rowTop+15,25);
+    add('control-action-toggle',keyboard?'修改键位':'拖动调整',595,rowTop+33,22,.5,.5);
+  }
+  /** 滑条的数值文字已交给 DOM；隐藏 VolumeSlider 自己那枚 Phaser Text。 */
+  private hideSliderValueText(slider:{root:Phaser.GameObjects.Container}):void{
+    for(const child of slider.root.list){
+      if((child as {type?:string}).type==='Text')(child as unknown as {setVisible(value:boolean):void}).setVisible(false);
+    }
+  }
+  /** 系统页文字：顶部标签行 + 滚动区里的操作按钮。 */
+  private renderSystemText(writer:MenuTextWriter):void{
+    tabs.forEach(([,label],index)=>writer.add({key:`system-tab-${index}`,text:label,
+      x:35+index*149+51,y:25+85,style:{size:20,color:GOLD,anchorX:.5,anchorY:0}}));
+    const labels=['保存游戏','读取存档','设置','脱离卡死',...(this.app.gm?['调试']:[]),'返回主菜单'];
+    labels.forEach((label,index)=>writer.add({key:`system-action-${index}`,text:label,
+      x:CONTENT_ORIGIN.x+470,y:CONTENT_ORIGIN.y+70+index*80+33,style:{size:22,color:GOLD,anchorX:.5,anchorY:.5},
+      scroll:'system',clip:{top:CONTENT_ORIGIN.y,bottom:CONTENT_ORIGIN.y+431}}));
+  }
+  /** 存档/读档页的当前文字；确认框打开时只保留确认框那一份。 */
+  private renderSaveText(writer:MenuTextWriter):void{
+    for(const spec of this.savePage.modalOpen?this.saveModalTextSpecs:this.saveTextSpecs)writer.add(spec);
+  }
+  /**
+   * 存档/读档页：槽位文字由 `save-board` 写进接收器，页标题仍由 controller 调用
+   * `surface.text`，在这里截下来换成 DOM 文字。图框、点击行和滚动仍归 Phaser。
+   */
+  private renderSavePage():void{
+    const surface=this.surface!,specs:MenuTextSpec[]=[];
+    this.saveTextSpecs=specs;this.saveModalTextSpecs=[];
+    setSaveBoardTextSink(surface,{add:spec=>specs.push(this.saveBoardText(spec))});
+    const originalText=surface.text;
+    const surfaceText=surface as unknown as {text:UiSurface['text']};
+    surfaceText.text=((value:string,x:number,y:number,width=0,size=22,color=GOLD)=>{
+      const spec:MenuTextSpec={key:'title',text:value,x,y,style:{size,color,width:width||undefined}};
+      specs.push(spec);return this.captureText(spec);
+    }) as UiSurface['text'];
+    try{ this.savePage.render(surface,this.page==='load'); }
+    finally{ surfaceText.text=originalText;setSaveBoardTextSink(surface,undefined); }
+    const slots=this.scrollNames.get('slots');
+    if(slots)slots.onScroll=()=>this.menuText?.refresh();
+    // 确认框打开时，主页面文字让位给确认框那一份，由 `renderSaveConfirmations` 统一渲染。
+    if(!this.savePage.modalOpen)this.menuText?.renderPage(this.page);
+  }
+  /** 存档确认框：保留 Phaser 的文字量高度来定横带位置，可见文字交给 DOM。 */
+  private renderSaveConfirmations():void{
+    if(!this.savePage.modalOpen){this.savePage.renderConfirmations();return;}
+    const modal=this.modal!,specs:MenuTextSpec[]=[];this.saveModalTextSpecs=specs;
+    const originalText=modal.text,made:{spec:MenuTextSpec;text:Phaser.GameObjects.Text}[]=[];
+    const modalText=modal as unknown as {text:UiSurface['text']};
+    modalText.text=((value:string,x:number,y:number,width=0,size=22,color=GOLD,parent=modal.root)=>{
+      const text=originalText.call(modal,value,x,y,width,size,color,parent).setVisible(false);
+      const spec:MenuTextSpec={key:`confirm-${made.length}`,text:value,x,y,
+        style:{size,color,width:width||undefined,wrap:'word',align:'center'}};
+      specs.push(spec);made.push({spec,text});return text;
+    }) as UiSurface['text'];
+    try{ this.savePage.renderConfirmations(); }
+    finally{ modalText.text=originalText; }
+    for(const {spec,text} of made){
+      // `drawNativeMessage` 会先量高度、最后才把文字挪到横带里；收尾时读回最终位置和原点。
+      const placed=text as unknown as {x:number;y:number;originX?:number;originY?:number};
+      spec.x=placed.x;spec.y=placed.y;
+      spec.style.anchorX=placed.originX??.5;spec.style.anchorY=placed.originY??0;
+    }
+    this.menuText?.renderPage(this.page);
+  }
+  /** 槽位文字（页面坐标）→ DOM 文字；有换行宽度时按词断行。 */
+  private saveBoardText(spec:SaveBoardTextSpec):MenuTextSpec{
+    return {key:spec.key,text:spec.text,x:spec.x,y:spec.y,scroll:spec.scroll,clip:spec.clip,
+      style:{size:spec.size,color:spec.color,anchorX:spec.anchorX,anchorY:spec.anchorY,align:spec.align,
+        width:spec.width,wrap:spec.width?'word':undefined}};
+  }
+  /** 一段只用于收集的文字：controller 的 `setOrigin/Align/Position` 改的是 DOM 规格。 */
+  private captureText(spec:MenuTextSpec):Phaser.GameObjects.Text{
+    const label={
+      height:spec.style.size+5,originX:spec.style.anchorX??0,originY:spec.style.anchorY??0,
+      setOrigin(anchorX=0,anchorY=0){spec.style.anchorX=anchorX;spec.style.anchorY=anchorY;label.originX=anchorX;label.originY=anchorY;return label;},
+      setAlign(align:'left'|'center'|'right'){spec.style.align=align;return label;},
+      setPosition(x:number,y:number){spec.x=x;spec.y=y;return label;},
+      setVisible(){return label;},
+      destroy(){}
+    };
+    return label as unknown as Phaser.GameObjects.Text;
   }
   /** 摘要与快照的唯一捕获口：手动保存与自动存档共用。 */
   captureSaveRecord():{ok:true;record:SaveGame<StoryWorldViewSnapshot>}|{ok:false;reason:SaveWorldReason}{

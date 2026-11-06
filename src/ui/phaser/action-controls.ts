@@ -8,8 +8,8 @@ import { CONTROL_SIZES, ControlLayoutPreferences, resolveControlLayout, type Con
 import { controlViewport } from './control-layout-viewport.ts';
 import { ActionPressGate } from '../action-press-gate.ts';
 import { uiImageFor } from './widgets.ts';
-import { FONT } from '../text-style.ts';
 import { cooldownFanState, drawCooldownFan, shortcutCooldown } from './cooldown-fan.ts';
+import type { DomLabel, DomUi } from '../dom/dom-ui.ts';
 
 interface ControlSize {width:number;height:number;hitRadius:number;iconSize:number}
 const ATTACK_SIZE:ControlSize = {width:CONTROL_SIZES.attack.width,height:CONTROL_SIZES.attack.height,hitRadius:CONTROL_SIZES.attack.width / 2,iconSize:0};
@@ -35,7 +35,7 @@ export interface ShortcutSlot {
   cooldown?: Cooldown;
 }
 
-interface Control {container:Phaser.GameObjects.Container;pressed:Phaser.GameObjects.Image;mask:Phaser.GameObjects.Graphics;size:ControlSize;pointer:number|null;icon?:Phaser.GameObjects.Image;iconSize:number;iconKey?:string;fanState?:string;badge?:Phaser.GameObjects.Container;quantityText?:Phaser.GameObjects.Text}
+interface Control {container:Phaser.GameObjects.Container;pressed:Phaser.GameObjects.Image;mask:Phaser.GameObjects.Graphics;size:ControlSize;pointer:number|null;icon?:Phaser.GameObjects.Image;iconSize:number;iconKey?:string;fanState?:string;badge?:Phaser.GameObjects.Container;quantityDom?:DomLabel;domKey?:string;dim?:boolean}
 export class ActionControls {
   private readonly hud:Hud;private readonly scene:Phaser.Scene;
   private readonly attack:Control;private readonly slots:Control[]=[];private readonly swap:Control;
@@ -48,15 +48,16 @@ export class ActionControls {
   private readonly preferences:ControlLayoutPreferences|undefined;
   private readonly unsubscribe:()=>void;
   private viewportSize:{width:number;height:number}|undefined;
-  constructor(_owner:Phaser.Scene,hud:Hud,handlers:ActionControlsHandlers,skin:ControlSkin,preferences?:ControlLayoutPreferences){
+  constructor(_owner:Phaser.Scene,hud:Hud,handlers:ActionControlsHandlers,skin:ControlSkin,preferences?:ControlLayoutPreferences,domUi?:DomUi){
     this.hud=hud;this.scene=hud.scene;this.preferences=preferences;
     this.unsubscribe=preferences?.subscribe(()=>{if(this.viewportSize)this.layout(this.viewportSize.width,this.viewportSize.height);})??(()=>{});
     this.attack=this.circle(ATTACK_SIZE,[skin.button],skin['button-pressed'],()=>handlers.attack());
     for(let index=0;index<SHORTCUT_SLOT_COUNT;index++){
       const slot=this.circle(SLOT_SIZE,[skin['slot-shadow'],skin['slot-ring']],skin['slot-pressed'],()=>this.activate(index,handlers));
-      const quantityText=this.scene.add.text(0,0,'',{fontFamily:FONT,fontSize:18,color:'#ffffff',resolution:3}).setOrigin(.5);
-      slot.quantityText=quantityText;
-      slot.badge=this.scene.add.container(32,23,[this.image(skin['quantity-badge'],38,40),quantityText]).setVisible(false);
+      slot.badge=this.scene.add.container(32,23,[this.image(skin['quantity-badge'],38,40)]).setVisible(false);
+      // 数量文字是 DOM 层的唯一实现；画布只留徽标底图和命中区。
+      slot.quantityDom=domUi?.label('hud','dom-label dom-slot-quantity',{x:.5,y:.5})
+        .setStyle({fontSize:'18px',lineHeight:'1',color:'#ffffff'}).setVisible(false);
       slot.container.add(slot.badge);
       this.slots.push(slot);
     }
@@ -112,11 +113,8 @@ export class ActionControls {
       const isItem=slot.entry?.kind==='item';
       this.icon(control,slot.entry?slot.icon:undefined,isItem?ITEM_ICON_SIZE:SLOT_ICON_SIZE);
       control.badge?.setVisible(!!slot.entry&&isItem);
-      const quantity=isItem&&slot.entry?String(slot.quantity):'';
-      if(control.quantityText&&control.quantityText.text!==quantity){
-        control.quantityText.setText(quantity);
-        control.quantityText.setScale(Math.min(1,30/Math.max(1,control.quantityText.width),30/Math.max(1,control.quantityText.height)));
-      }
+      const quantity=this.quantityOf(index);
+      control.quantityDom?.setText(quantity);
       const cooldown=shortcutCooldown(slot,this.cooldowns);
       this.paintFan(control,cooldown);
       // 未就绪的格子压暗图标并停掉点击：技能看起手条件，物品看数量与冷却。
@@ -124,26 +122,53 @@ export class ActionControls {
       // 冷却期间不再叠加图标压暗，只让扇形自己表示剩余时间；其它不可用原因仍压暗。
       const cooling=(cooldown?.remainingMs??0)>0;
       const dim=!!slot.entry&&!usable&&!cooling;
+      control.dim=dim;
       control.container.setAlpha(1);
       control.icon?.setAlpha(dim ? 0.4 : 1);
-      control.quantityText?.setAlpha(dim ? 0.4 : 1);
       control.badge?.setAlpha(dim ? 0.4 : 1);
+      this.placeDom(control,quantity,dim);
       if(control.container.input)control.container.input.enabled=usable;
     });
+  }
+  /** 物品格显示数量；技能格和空格没有数量文字。 */
+  private quantityOf(index:number):string{
+    const slot=this.page[index];
+    return slot?.entry?.kind==='item'?String(slot.quantity):'';
+  }
+  /**
+   * 数量文字放在 DOM 层：位置取徽标容器的世界变换，字号按容器世界缩放换算。
+   * 位置、字号、透明度和显隐都没变时不重复写样式。
+   */
+  private placeDom(control:Control,quantity:string,dim:boolean):void{
+    const label=control.quantityDom;if(!label)return;
+    const badge=control.badge;
+    const visible=!!quantity&&!!badge?.visible&&this.visibleApplied!==false;
+    if(!visible){
+      if(control.domKey!=='hidden'){control.domKey='hidden';label.setVisible(false);}
+      return;
+    }
+    const matrix=badge!.getWorldTransformMatrix();
+    const point=matrix.transformPoint(0,0);
+    const size=Math.max(1,18*Math.abs(matrix.scaleX||1));
+    const key=`${point.x}|${point.y}|${size}|${dim?0.4:1}`;
+    if(key===control.domKey)return;
+    control.domKey=key;
+    label.setStyle({fontSize:`${size}px`,opacity:String(dim?0.4:1)}).setPosition(point.x,point.y).setVisible(true);
   }
   layout(width:number,height:number):void{
     this.viewportSize={width,height};
     const positions=resolveControlLayout(controlViewport(this.scene,width,height),this.preferences?.snapshot());
     const place=(control:Control,id:ControlId)=>{const point=positions[id];control.container.setPosition(point.x,point.y).setScale(point.scale * point.userScale);};
     place(this.attack,'attack');
-    this.slots.forEach((control,index)=>place(control,`slot-${index}` as ControlId));
+    this.slots.forEach((control,index)=>{place(control,`slot-${index}` as ControlId);this.placeDom(control,this.quantityOf(index),!!control.dim);});
     place(this.swap,'swap');
   }
   setVisible(visible:boolean):void{
     if(this.visibleApplied===visible)return;
     this.visibleApplied=visible;
     for(const control of this.all())this.hud.setVisible(control.container,visible);
+    this.slots.forEach((control,index)=>this.placeDom(control,this.quantityOf(index),!!control.dim));
     if(!visible)this.resetInput();
   }
-  destroy():void{this.unsubscribe();this.scene.input.off('pointerup',this.release,this);this.scene.input.off('pointerupoutside',this.release,this);this.all().forEach(control=>control.container.destroy(true));}
+  destroy():void{this.unsubscribe();this.scene.input.off('pointerup',this.release,this);this.scene.input.off('pointerupoutside',this.release,this);for(const control of this.slots)control.quantityDom?.remove();this.all().forEach(control=>control.container.destroy(true));}
 }

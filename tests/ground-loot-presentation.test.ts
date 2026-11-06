@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import type Phaser from 'phaser';
 import { groundLootAssets, GroundLootView } from '../src/rendering/ground-loot.ts';
 import { pickupMessageAssets, PickupMessages, type PickupAnchor } from '../src/rendering/pickup-messages.ts';
+import type { DomUi } from '../src/ui/dom/dom-ui.ts';
 import { parseItemCatalog } from '../src/application/content-validation.ts';
 
 const items=parseItemCatalog(JSON.parse(fs.readFileSync(new URL('../public/content/items.json',import.meta.url),'utf8')));
@@ -44,9 +45,33 @@ class Visual {
 }
 interface Timer {paused:boolean;removed:boolean;delay:number;fire():void;remove():void}
 interface Tween {paused:boolean;removed:boolean;delay:number;duration:number;finish():void;pause():void;resume():void;remove():void}
+
+class FakeElement {
+  className='';hidden=false;textContent='';src='';alt='';removed=false;
+  readonly style:Record<string,string>={};
+  children:FakeElement[]=[];
+  parent?:FakeElement;
+  readonly tagName:string;
+  constructor(tagName:string){this.tagName=tagName;}
+  append(...nodes:FakeElement[]):void{for(const node of nodes)this.appendChild(node);}
+  appendChild(node:FakeElement):FakeElement{node.parent=this;this.children.push(node);return node;}
+  getBoundingClientRect(){const text=this.textContent||this.children.map(child=>child.textContent).join('');return{width:Math.max(8,text.length*8),height:16,left:0,top:0};}
+  remove(){this.removed=true;if(this.parent)this.parent.children=this.parent.children.filter(child=>child!==this);}
+}
+
+const documentStub={createElement:(tag:string)=>new FakeElement(tag)};
+(globalThis as unknown as {document:unknown}).document=documentStub;
+
 function sceneHarness(){
   const visuals:Visual[]=[],timers:Timer[]=[],tweens:Tween[]=[];
   const listeners=new Map<()=>void,()=>void>();
+  const domLayer=new FakeElement('div');
+  const domUi={
+    layer:()=>domLayer,
+    storyUnit:()=>1,
+    frameSize:()=>({width:800,height:480}),
+    worldToScreen:(_camera:unknown,x:number,y:number)=>({x,y}),
+  } as unknown as DomUi;
   const create=(kind:string,x=0,y=0,value='')=>{const visual=new Visual(kind,value).setPosition(x,y);visuals.push(visual);return visual;};
   const scene={
     add:{
@@ -66,10 +91,11 @@ function sceneHarness(){
     events:{on:(_event:string,callback:()=>void,context:unknown)=>listeners.set(callback,()=>callback.call(context)),
       off:(_event:string,callback:()=>void)=>listeners.delete(callback)},
     scale:{width:800,height:480},
-    cameras:{main:{zoom:3,worldView:{x:0,y:0,width:320,height:213}}},
+    cameras:{main:{zoom:1,worldView:{x:0,y:0,width:320,height:213}}},
   };
-  return {scene:scene as unknown as Phaser.Scene,visuals,timers,tweens,
-    update:()=>listeners.forEach(listener=>listener()),messages:()=>visuals.filter(visual=>visual.name==='pickup-message'&&visual.active)};
+  return {scene:scene as unknown as Phaser.Scene,domUi,domLayer,visuals,timers,tweens,
+    update:()=>listeners.forEach(listener=>listener()),
+    messages:()=>domLayer.children.filter(child=>child.className==='dom-pickup'&&!child.removed)};
 }
 
 test('ground rewards draw preloaded native sprites in a layer below all characters',()=>{
@@ -90,41 +116,44 @@ test('ground rewards draw preloaded native sprites in a layer below all characte
 
 const reward={kind:'item' as const,item:'ectoplasm',quantity:1 as const};
 const hero:PickupAnchor={x:100,y:100,headAnchor:{x:-5,y:-20}};
+const at=(element:FakeElement,x:number,y:number)=>element.style.transform===`translate3d(${x}px, ${y}px, 0)`;
 
 test('pickup messages remain separate, follow their own recipient, and reuse expired rows',()=>{
   const h=sceneHarness(),anchors:Record<string,PickupAnchor>={hero:{...hero},ally:{...hero,x:200}};
-  const view=new PickupMessages(h.scene,items,{anchor:id=>anchors[id]});
+  const view=new PickupMessages(h.scene,items,{anchor:id=>anchors[id],domUi:h.domUi});
   view.enqueue([reward,reward],'hero');
   assert.equal(h.messages().length,1);
-  assert.equal(h.messages()[0].children[0].value,items.items.ectoplasm.name);
-  assert.deepEqual([h.messages()[0].x,h.messages()[0].y],[115,43]);
+  assert.equal(h.messages()[0].children[0].textContent,items.items.ectoplasm.name);
+  assert.ok(at(h.messages()[0],115,43));
   assert.equal(h.timers[0].delay,120);h.timers[0].fire();
-  assert.deepEqual(h.messages().map(message=>message.y),[43,55]);
-  anchors.hero.x=110;h.update();assert.deepEqual(h.messages().map(message=>message.x),[125,125]);
+  assert.ok(at(h.messages()[1],115,55));
+  anchors.hero.x=110;h.update();assert.ok(h.messages().every(message=>message.style.transform?.includes('125px')));
   assert.equal(h.tweens[0].delay+h.tweens[0].duration,2400);
   h.tweens[0].finish();h.timers[1].fire();
   view.enqueue([reward],'ally');
-  assert.deepEqual(h.messages().map(message=>[message.x,message.y]),[[125,55],[215,43]]);
+  assert.ok(at(h.messages()[0],125,55));
+  assert.ok(at(h.messages()[1],215,43));
   delete anchors.hero;h.update();assert.equal(h.messages().length,1);
   view.destroy();assert.equal(h.messages().length,0);
 });
 
 test('pickup messages hide and stop timers while paused; destruction cancels queued rewards',()=>{
-  const h=sceneHarness(),view=new PickupMessages(h.scene,items,{anchor:()=>hero});
+  const h=sceneHarness(),view=new PickupMessages(h.scene,items,{anchor:()=>hero,domUi:h.domUi});
   view.enqueue([reward,reward,reward],'hero');view.setPaused(true);
-  assert.equal(h.messages()[0].visible,false);
+  assert.equal(h.messages()[0].style.display,'none');
   h.timers[0].fire();h.tweens[0].finish();assert.equal(h.messages().length,1);
-  view.setPaused(false);assert.equal(h.messages()[0].visible,true);
+  view.setPaused(false);assert.equal(h.messages()[0].style.display,'flex');
   h.timers[0].fire();assert.equal(h.messages().length,2);
   view.destroy();h.timers.forEach(timer=>timer.fire());
   assert.equal(h.messages().length,0);assert.ok(h.tweens.every(tween=>tween.removed));
 });
 
 test('money pickup uses small gold silver copper icons and omits zero units',()=>{
-  const h=sceneHarness(),view=new PickupMessages(h.scene,items,{anchor:()=>hero});
+  const h=sceneHarness(),view=new PickupMessages(h.scene,items,{anchor:()=>hero,domUi:h.domUi});
   view.enqueue([{kind:'money',amount:10203},{kind:'money',amount:4}],'hero');
-  assert.deepEqual(h.messages()[0].children.map(child=>child.value),['1','pickup-money-gold','2','pickup-money-silver','3','pickup-money-copper']);
+  assert.deepEqual(h.messages()[0].children.map(child=>child.textContent||child.src),
+    ['1','./assets/ui/items/pickup-money-gold.png','2','./assets/ui/items/pickup-money-silver.png','3','./assets/ui/items/pickup-money-copper.png']);
   h.timers[0].fire();
-  assert.deepEqual(h.messages()[1].children.map(child=>child.value),['4','pickup-money-copper']);
+  assert.deepEqual(h.messages()[1].children.map(child=>child.textContent||child.src),['4','./assets/ui/items/pickup-money-copper.png']);
   view.destroy();
 });

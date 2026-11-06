@@ -1,85 +1,134 @@
-import Phaser from 'phaser';
+import type Phaser from 'phaser';
 import type { Hud } from './hud.ts';
+import type { DomLabel, DomUi } from '../ui/dom/dom-ui.ts';
 import { readSafeArea } from '../ui/viewport.ts';
-import { FONT } from '../ui/text-style.ts';
 
-/** 地图入场提示与附近交互对象共用的屏幕名称条。 */
+const FADE_IN_MS = 150;
+const HOLD_MS = 2000;
+const FADE_OUT_MS = 400;
+const TICK_MS = 16;
+
+/** 地图入场提示与附近交互对象共用的屏幕名称条；文字只由 DOM 层绘制。 */
 export class NameBanner {
   private readonly scene: Phaser.Scene;
-  private readonly hud: Hud;
-  private readonly container: Phaser.GameObjects.Container;
-  private readonly background: Phaser.GameObjects.Rectangle;
-  private readonly label: Phaser.GameObjects.Text;
   private readonly mapName: string;
+  private domLabel?: DomLabel;
   private mapPending = true;
   private kind: 'map' | 'target' | null = null;
   private enabled = false;
-  private timer?: Phaser.Time.TimerEvent;
-  private tween?: Phaser.Tweens.Tween;
-  private textWidth = 0;
+  private domShown = false;
+  private domOpacity = 0;
+  private domPhase: 'idle' | 'in' | 'hold' | 'out' = 'idle';
+  private domElapsed = 0;
+  private domLastAt = 0;
+  private domTimer?: ReturnType<typeof setTimeout>;
 
-  constructor(scene: Phaser.Scene, hud: Hud, mapName: string) {
-    this.scene = scene; this.hud = hud; scene = hud.scene; this.mapName = mapName;
-    this.background = new Phaser.GameObjects.Rectangle(scene, 0, 0, 1, 1, 0x000000, 0.55);
-    this.label = scene.make.text({ x: 0, y: 0, text: '', style: {
-      fontFamily: FONT, fontSize: '18px', color: '#fff4dc'
-    } }, false).setOrigin(0.5);
-    this.container = hud.add(scene.make.container({ x: 0, y: 0 }, false));
-    this.container.add([this.background, this.label]); this.hud.setVisible(this.container, false);
+  constructor(scene: Phaser.Scene, _hud: Hud, mapName: string, domUi?: DomUi) {
+    this.scene = scene;
+    this.mapName = mapName;
+    if (!domUi) return;
+    this.domLabel = domUi.label('hud', 'dom-name-banner', { x: 0.5, y: 0 })
+      .setStyle({
+        background: 'rgba(0,0,0,0.55)', color: '#fff4dc', fontSize: '18px',
+        height: '34px', lineHeight: '34px', textAlign: 'center',
+        overflow: 'hidden', textOverflow: 'ellipsis', textShadow: 'none', opacity: '0'
+      })
+      .setVisible(false);
+    // 场景暂停/睡眠时旧实现靠 Phaser 计时器停表；DOM 计时器要自己停，恢复后再接上。
+    scene.events.on('pause', this.onScenePause, this);
+    scene.events.on('sleep', this.onScenePause, this);
+    scene.events.on('resume', this.onSceneWake, this);
+    scene.events.on('wake', this.onSceneWake, this);
   }
 
   layout(): void {
+    if (!this.domLabel) return;
     const bounds = this.scene.game.canvas.getBoundingClientRect();
     if (!bounds.width || !bounds.height) return;
-    const safe = readSafeArea(), unit = this.scene.scale.height / bounds.height;
-    const width = Math.min(480, Math.max(1, bounds.width - 2 * Math.max(safe.left, safe.right)) * 0.6) * unit;
-    this.background.setSize(width, 34 * unit);
-    this.container.setPosition(this.scene.scale.width / 2, (safe.top + 24 + 17) * unit);
-    this.label.setFontSize(18 * unit);
-    this.textWidth = Math.max(1, width - 32 * unit);
-    this.fitText();
+    const safe = readSafeArea();
+    const width = Math.min(480, Math.max(1, bounds.width - 2 * Math.max(safe.left, safe.right)) * 0.6);
+    this.domLabel.setStyle({ width: `${width}px` }).setPosition(bounds.width / 2, safe.top + 24);
   }
 
   /** 输入被流程接管时暂停提示；恢复后先重新判断当前目标。 */
   sync(enabled: boolean, targetName: string | null): void {
+    if (!this.domLabel) return;
     if (enabled !== this.enabled) {
       this.enabled = enabled;
-      if (this.timer) this.timer.paused = !enabled;
-      if (enabled) this.tween?.resume(); else this.tween?.pause();
+      if (enabled) this.resumeDom(); else this.pauseDom();
     }
-    this.hud.setVisible(this.container, enabled && this.kind !== null);
+    this.showDom(enabled && this.kind !== null);
     if (!enabled) return;
     if (targetName !== null) {
-      if (this.kind === 'target' && this.label.text === targetName) return;
-      this.cancelAnimation(); this.mapPending = false; this.kind = 'target';
-      this.setText(targetName); this.container.setAlpha(1); this.hud.setVisible(this.container, true);
+      if (this.kind === 'target' && this.domLabel.element.textContent === targetName) return;
+      this.cancelDomAnimation(); this.mapPending = false; this.kind = 'target';
+      this.domLabel.setText(targetName); this.setDomOpacity(1); this.showDom(true);
     } else if (this.kind === 'target') {
-      this.kind = null; this.hud.setVisible(this.container, false);
+      this.kind = null; this.showDom(false);
     } else if (this.mapPending) {
-      this.mapPending = false; this.kind = 'map'; this.setText(this.mapName);
-      this.container.setAlpha(0); this.hud.setVisible(this.container, true);
-      this.tween = this.scene.tweens.add({ targets: this.container, alpha: 1, duration: 150,
-        onComplete: () => {
-          this.tween = undefined;
-          this.timer = this.scene.time.delayedCall(2000, () => {
-            this.timer = undefined;
-            this.tween = this.scene.tweens.add({ targets: this.container, alpha: 0, duration: 400,
-              onComplete: () => { this.tween = undefined; this.kind = null; this.hud.setVisible(this.container, false); }
-            });
-          });
-        }
-      });
+      this.mapPending = false; this.kind = 'map';
+      this.domLabel.setText(this.mapName); this.setDomOpacity(0); this.showDom(true);
+      this.startDomAnimation();
     }
   }
 
-  private setText(value: string): void { this.label.setText(value); this.fitText(); }
-  private fitText(): void {
-    this.label.setScale(1);
-    if (this.textWidth && this.label.width > this.textWidth) this.label.setScale(this.textWidth / this.label.width);
+  private showDom(visible: boolean): void {
+    if (visible === this.domShown) return;
+    this.domShown = visible;
+    this.domLabel!.setVisible(visible);
   }
-  private cancelAnimation(): void {
-    this.timer?.remove(); this.timer = undefined;
-    this.tween?.remove(); this.tween = undefined;
+  private setDomOpacity(value: number): void {
+    if (value === this.domOpacity) return;
+    this.domOpacity = value;
+    this.domLabel!.setStyle({ opacity: String(value) });
   }
-  destroy(): void { this.cancelAnimation(); this.container.destroy(true); }
+  private startDomAnimation(): void {
+    this.domPhase = 'in'; this.domElapsed = 0; this.domLastAt = Date.now();
+    this.scheduleDomTick();
+  }
+  private scheduleDomTick(): void {
+    if (this.domTimer) return;
+    this.domTimer = setTimeout(() => { this.domTimer = undefined; this.stepDom(); }, TICK_MS);
+  }
+  private stepDom(): void {
+    if (!this.domLabel || !this.enabled || this.domPhase === 'idle') return;
+    const now = Date.now();
+    this.domElapsed += Math.max(0, now - this.domLastAt); this.domLastAt = now;
+    if (this.domPhase === 'in') {
+      const progress = Math.min(1, this.domElapsed / FADE_IN_MS);
+      this.setDomOpacity(progress);
+      if (progress >= 1) { this.domPhase = 'hold'; this.domElapsed = 0; }
+    } else if (this.domPhase === 'hold') {
+      if (this.domElapsed >= HOLD_MS) { this.domPhase = 'out'; this.domElapsed = 0; }
+    } else {
+      const progress = Math.min(1, this.domElapsed / FADE_OUT_MS);
+      this.setDomOpacity(1 - progress);
+      if (progress >= 1) { this.domPhase = 'idle'; this.kind = null; this.showDom(false); return; }
+    }
+    this.scheduleDomTick();
+  }
+  private pauseDom(): void {
+    if (this.domTimer) { clearTimeout(this.domTimer); this.domTimer = undefined; }
+  }
+  private resumeDom(): void {
+    if (!this.domLabel || this.domPhase === 'idle' || this.domTimer) return;
+    this.domLastAt = Date.now(); this.scheduleDomTick();
+  }
+  private cancelDomAnimation(): void {
+    this.pauseDom(); this.domPhase = 'idle'; this.domElapsed = 0;
+  }
+  private readonly onScenePause = (): void => {
+    this.pauseDom();
+    if (this.domShown) { this.domShown = false; this.domLabel?.setVisible(false); }
+  };
+  private readonly onSceneWake = (): void => { this.resumeDom(); };
+  destroy(): void {
+    this.cancelDomAnimation();
+    this.scene.events.off('pause', this.onScenePause, this);
+    this.scene.events.off('sleep', this.onScenePause, this);
+    this.scene.events.off('resume', this.onSceneWake, this);
+    this.scene.events.off('wake', this.onSceneWake, this);
+    this.domLabel?.remove();
+    this.domLabel = undefined;
+  }
 }

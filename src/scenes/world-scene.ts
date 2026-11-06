@@ -64,7 +64,6 @@ import { StoryMinimap, type MinimapTask } from '../rendering/story-minimap.ts';
 import { displaySettings } from '../application/display-settings.ts';
 import { controlSettings } from '../application/control-settings.ts';
 import { ComputerSkillHud } from '../ui/phaser/computer-skill-hud.ts';
-import { FONT } from '../ui/text-style.ts';
 import type { Cooldown } from '../domain/combat.ts';
 import { MoveStick } from '../ui/phaser/move-stick.ts';
 import { KeyboardActions } from '../ui/phaser/keyboard-actions.ts';
@@ -99,10 +98,8 @@ export type SaveWorldResult =
 
 /** 任务图标，浮在人物头顶。 */
 interface QuestMarker {
-  dom?: DomLabel;
-  container?: Phaser.GameObjects.Container;
-  glyph?: Phaser.GameObjects.Text;
-  visible?: boolean;
+  dom: DomLabel;
+  visible: boolean;
 }
 
 /** 场景里的一个人物：一个容器装着若干张动作图层。 */
@@ -169,7 +166,7 @@ export class WorldScene extends Phaser.Scene {
   private nameBanner?: NameBanner;
   private minimap?: StoryMinimap;
   private nextMinimapEnemyUpdate = 0;
-  private fpsReadout?: { container?: Phaser.GameObjects.Container; text?: Phaser.GameObjects.Text; dom?: DomLabel; lastValue?: number; lastVisible?: boolean };
+  private fpsReadout?: { dom?: DomLabel; lastValue?: number; lastVisible?: boolean };
   /** 真实游戏步进计数：只在场景 update 里自增，不受 120Hz 屏幕的 RAF 回调次数影响。 */
   private fpsFrames = 0;
   private fpsWindowStart = 0;
@@ -250,7 +247,7 @@ export class WorldScene extends Phaser.Scene {
       for(const lease of this.storyEntityAssets)lease.release();this.storyEntityAssets.length=0;
       this.groundLootView?.destroy();this.groundLootView=undefined;
       this.pickupMessages?.destroy();this.pickupMessages=undefined;this.pickupRecipients.clear();
-      for(const character of this.characters)character.marker?.dom?.remove();
+      for(const character of this.characters)character.marker?.dom.remove();
       this.movement?.destroy(); this.movement = undefined;
       this.mapLayers?.destroy(); this.mapLayers = undefined;
       this.stick?.destroy(); this.stick = undefined;
@@ -261,10 +258,12 @@ export class WorldScene extends Phaser.Scene {
       this.input.off(Phaser.Input.Events.POINTER_DOWN, this.onPointerDown, this);
       this.nameBanner?.destroy(); this.nameBanner = undefined;
       this.minimap?.destroy(); this.minimap = undefined;
-      this.fpsReadout?.container?.destroy(); this.fpsReadout?.dom?.remove(); this.fpsReadout = undefined;
+      this.fpsReadout?.dom?.remove(); this.fpsReadout = undefined;
       this.statusHud?.destroy();this.statusHud=undefined;
       this.overheadStatus?.destroy();this.overheadStatus=undefined;
       this.hud?.destroy(); this.hud = undefined;
+      this.app.domUi?.setLayerVisible('world', false);
+      this.app.domUi?.setLayerVisible('hud', false);
     });
     this.hud = new Hud(this);
     this.layoutHud();
@@ -429,23 +428,23 @@ export class WorldScene extends Phaser.Scene {
         const member=this.app.session.party?.get(id);if(!member)return undefined;
         const actor=this.app.world.actors[member.definition.actor];
         return memberArt(this.app.menuPanels,actor,member.classId,member.source).partyIcon;
-      },()=>{if(this.canControl)this.combat?.focusSelected();},id=>this.combat?.activeConditions(id)??[],()=>this.app.session.player);
+      },()=>{if(this.canControl)this.combat?.focusSelected();},id=>this.combat?.activeConditions(id)??[],()=>this.app.session.player,this.app.domUi);
     this.stick = new MoveStick(this, this.hud!, this.app.controlSkin, this.app.controlLayout, this.app.keyBindings, this.app.inputRouter);
     this.controls = new ActionControls(this, this.hud!, {
       attack: () => this.attackKey(), skill: key => {if(this.canControl)this.combat?.attack(key);},
       item: itemId => this.useShortcutItem(itemId), swap: () => this.cycleShortcutPage()
-    }, this.app.controlSkin, this.app.controlLayout);
+    }, this.app.controlSkin, this.app.controlLayout, this.app.domUi);
     this.keyboardActions = new KeyboardActions(this, this.app.keyBindings, {
       skill: slot => this.triggerShortcutSlot(slot),
       cycle: () => this.cycleShortcutPage(),
       previousMember: () => this.switchMember(-1),
       nextMember: () => this.switchMember(1)
     }, this.app.inputRouter);
-    this.skillHud = new ComputerSkillHud(this, this.hud!, this.app.controlSkin);
+    this.skillHud = new ComputerSkillHud(this, this.hud!, this.app.controlSkin, this.app.domUi);
     // 操作方式切换后立刻按新 HUD 显隐，不等下一帧兜底。
     this.unsubscribeControlMode = controlSettings.subscribeMode(() => this.syncHud());
     this.refreshLoadout();
-    this.nameBanner = new NameBanner(this, this.hud!, map.name);
+    this.nameBanner = new NameBanner(this, this.hud!, map.name, this.app.domUi);
     this.layoutHud();
     this.mapLayers = drawMapLayers(this, map, { keyPrefix: `${map.id}-dodge` });
     this.groundLootView=new GroundLootView(this,this.app.items,(clip,x,y)=>createEffect(this,clip,x,y,true));
@@ -859,17 +858,10 @@ export class WorldScene extends Phaser.Scene {
   /** 任务标记按需创建：任务可能在进图后才变为可接取，不能只在建角色时判断一次。 */
   private createQuestMarker(character: Character): void {
     if (character.marker) return;
-    if(this.app.domUi){
-      const dom=this.app.domUi.label('world','dom-quest-marker',{x:.5,y:.5});
-      dom.setStyle({fontFamily:'Georgia,serif',fontWeight:'bold',color:'#ffdb78',whiteSpace:'nowrap'});
-      character.marker={dom,visible:true};
-      return;
-    }
-    // 原版人物头顶只有字符本身（见 work/apk 位图字体 font_fnt_ascii 的 '!' 与 '?'），没有底板。
-    const glyph = this.add.text(0, -50, '!', { fontFamily: 'Georgia,serif', fontSize: '16px', fontStyle: 'bold', color: '#ffdb78' }).setOrigin(.5);
-    const marker = this.add.container(0, 0, [glyph]);
-    character.container.add(marker);
-    character.marker = { container: marker, glyph, visible:true };
+    const dom=this.app.domUi?.label('world','dom-quest-marker',{x:.5,y:.5});
+    if(!dom)return;
+    dom.setStyle({fontFamily:'Georgia,serif',fontWeight:'bold',color:'#ffdb78',whiteSpace:'nowrap'});
+    character.marker={dom,visible:true};
   }
   private updateQuestMarkers():void{
     const domUi=this.app.domUi;if(!domUi)return;
@@ -1046,18 +1038,10 @@ export class WorldScene extends Phaser.Scene {
         this.createQuestMarker(character);
       if (character.marker) {
         const color=status==='active'?'#adb9bb':'#ffdb78';
-        if(character.marker.dom){
-          character.marker.visible=!!status;
-          character.marker.dom.setVisible(!!status);
-          character.marker.dom.setText(status==='available'?'!':'?');
-          character.marker.dom.setStyle({color});
-        }else{
-          character.marker.container!.setVisible(!!status);
-          const glyph=character.marker.glyph!;
-          glyph.setText(status==='available'?'!':'?');
-          // setColor 每次都会重画文字画布；状态颜色没变就跳过。
-          if(glyph.style.color!==color)glyph.setColor(color);
-        }
+        character.marker.visible=!!status;
+        character.marker.dom.setVisible(!!status);
+        character.marker.dom.setText(status==='available'?'!':'?');
+        character.marker.dom.setStyle({color});
       }
       if (character.container.visible && status && status !== 'locked' && status !== 'completed')
         taskMarkers.push({id: character.entity.id, x: character.container.x, y: character.container.y, status});
@@ -1080,37 +1064,24 @@ export class WorldScene extends Phaser.Scene {
   }
   /** 界面层与摇杆随视口摆放，和地图是否就绪无关。 */
   /** 帧率显示：左上角小地图右边，设置里可关，默认开（application/display-settings）。 */
-  private createFpsReadout(): { container?: Phaser.GameObjects.Container; text?: Phaser.GameObjects.Text; dom?: DomLabel } {
+  private createFpsReadout(): { dom?: DomLabel } {
     const dom=this.app.domUi?.label('hud','dom-fps');
-    if(dom){
-      dom.setStyle({fontSize:'22px',color:'#fff4dc',textShadow:'1px 0 0 #1b1408,-1px 0 0 #1b1408,0 1px 0 #1b1408,0 -1px 0 #1b1408'});
-      return { dom };
-    }
-    const scene = this.hud!.scene;
-    // 字号和分辨率跟着菜单文本走（widgets.text 的 22px + devicePixelRatio），保持一致的可读性。
-    const text = scene.make.text({ x: 0, y: 0, text: '', style: {
-      fontFamily: FONT, fontSize: '22px', color: '#fff4dc',
-      resolution: Math.min(3, Math.max(1, window.devicePixelRatio || 1)),
-    } }, false).setOrigin(0).setStroke('#1b1408', 5);
-    const container = this.hud!.add(scene.make.container({ x: 0, y: 0 }, false));
-    container.add(text);
-    return { container, text };
+    if(dom)dom.setStyle({fontSize:'22px',color:'#fff4dc',textShadow:'1px 0 0 #1b1408,-1px 0 0 #1b1408,0 1px 0 #1b1408,0 -1px 0 #1b1408'});
+    return { dom };
   }
   private layoutFps(): void {
     const extent = this.minimap?.extent(), readout = this.fpsReadout;
-    if (!extent || !readout) return;
-    if(readout.dom){readout.dom.setPosition(extent.x + extent.width + 8, extent.y);return;}
-    readout.container!.setPosition(extent.x + extent.width + 8, extent.y);
+    if (!extent || !readout?.dom) return;
+    readout.dom.setPosition(extent.x + extent.width + 8, extent.y);
   }
   private updateFps(): void {
     const readout = this.fpsReadout;
-    if (!readout) return;
+    if (!readout?.dom) return;
     const visible = displaySettings.fps;
     if (readout.lastVisible !== visible) {
       readout.lastVisible = visible;
       this.fpsFrames = 0; this.fpsWindowStart = 0;
-      if(readout.dom)readout.dom.setVisible(visible);
-      else this.hud!.setVisible(readout.container!, visible);
+      readout.dom.setVisible(visible);
     }
     if (!visible) return;
     // updateFps 每个真实游戏步进只调用一次；不用 loop.actualFps，因为那个值按 RAF
@@ -1126,8 +1097,7 @@ export class WorldScene extends Phaser.Scene {
     this.fpsFrames = 0; this.fpsWindowStart = now;
     if (readout.lastValue !== value) {
       readout.lastValue = value;
-      if(readout.dom)readout.dom.setText(`${value} FPS`);
-      else readout.text!.setText(`${value} FPS`);
+      readout.dom.setText(`${value} FPS`);
     }
   }
   private layoutHud(): void {
@@ -1886,6 +1856,7 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     this.minimap?.setVisible(backgroundVisible);
     this.statusHud?.setVisible(backgroundVisible);
     this.overheadStatus?.setVisible(backgroundVisible);
+    this.app.domUi?.setLayerVisible('hud', backgroundVisible);
     const target = this.near?.container.visible ? this.near : null;
     // 敌人数值只在逻辑帧里变化；同一战斗帧的多个渲染帧复用同一份目标状态。
     const tick=this.app.session?.combatTick,actorId=target?.entity.id??'';
@@ -1967,6 +1938,7 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
   override update(_time:number,delta:number): void {
     // 舞台已经铺满画面时，正式世界这帧不跑战斗、HUD、掉落和移动；
     // 自愈检查保证舞台被关闭或重建后不会永远停在这里。
+    this.app.domUi?.setLayerVisible('world', this.canControl && !this.performing && !this.stageOccluded);
     if (this.stageOccluded) {
       this.syncStageOcclusion();
       if (this.stageOccluded) { this.updateQuestMarkers(); return; }

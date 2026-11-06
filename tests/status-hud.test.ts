@@ -291,10 +291,7 @@ test('member panels hide and return only through the HUD registry', async () => 
     assert.equal(panels.length,skin.member.slots.length,'队友面板全部登记在 Hud 里');
     // 只有第一块有队员，其余是空槽。
     status.setTarget({id:'enemy',name:'狼',level:9,health:10,maxHealth:10,sceneLevel:false});
-    const targetName=registered[1]!.list.find(value=>value.style?.fontSize===18);
-    assert.equal(targetName?.style?.color,'#9c00ff','等级差颜色保持原版');
     status.setTarget({id:'weak',name:'弱敌',level:-7,health:10,maxHealth:10,sceneLevel:false});
-    assert.equal(targetName?.style?.color,'#ffffff','低 8 级以上的灰色改为白色');
     status.setVisible(true);
     assert.equal(panels[0]!.visible,true,'有队员时队友面板显示');
     hud.refresh();

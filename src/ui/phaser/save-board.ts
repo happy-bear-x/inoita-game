@@ -1,4 +1,4 @@
-import { buttonParts, type UiSurface } from './widgets.ts';
+import { GOLD, type UiSurface } from './widgets.ts';
 import { AUTO_SAVE_SLOT, MANUAL_SAVE_SLOT_COUNT, saveSlotLabel, type SaveSlotRef, type SlotSummaryReading } from '../../domain/save-game.ts';
 
 /**
@@ -70,6 +70,21 @@ export interface SaveBoardRow {
 }
 interface SaveBoardAssets { frame:string; empty:string }
 
+/** 一段槽位文字；坐标是页面坐标，滚动区的行由宿主按 `scroll`/`clip` 跟随。 */
+export interface SaveBoardTextSpec {
+  key:string; text:string; x:number; y:number; size:number; color?:string; width?:number;
+  anchorX?:number; anchorY?:number; align?:'left'|'center'|'right';
+  scroll?:string; clip?:{ top:number; bottom:number };
+}
+export interface SaveBoardTextSink { add(spec:SaveBoardTextSpec):void }
+// 菜单页把文字交给 DOM 层时挂一个接收器；标题页没有接收器，继续用 Phaser 文字。
+const textSinks=new WeakMap<UiSurface,SaveBoardTextSink>();
+
+/** 给一次绘制挂上文字接收器；传 `undefined` 恢复 Phaser 文字。 */
+export function setSaveBoardTextSink(view:UiSurface,sink:SaveBoardTextSink|undefined):void {
+  if(sink)textSinks.set(view,sink);else textSinks.delete(view);
+}
+
 /** 面板左上角在当前画布里的位置。菜单画布 1024 宽 → 178（= 内容区 32 + 960 空间里的 146）。 */
 export function saveBoardOrigin(width:number):{x:number; y:number} {
   return { x:Math.round((width-SAVE_BOARD.panelWidth)/2), y:SAVE_BOARD_LAYOUT.autoTop };
@@ -99,27 +114,43 @@ export function drawSaveBoardRow(
 ):void {
   view.image(assets.frame,origin.x,top,SAVE_BOARD.frameWidth,SAVE_BOARD.frameHeight,parent);
   const left=origin.x+SAVE_BOARD.rowInset, bottom=top+SAVE_BOARD.rowInset;
+  const sink=textSinks.get(view);
+  // 滚动区里的行由宿主把内容容器放在 (origin.x, listTop)；文字坐标补回滚动区原点，
+  // 再交给 `scroll: 'slots'` 扣除滚动量。没有接收器时（标题页）直接画 Phaser 文字。
+  const key=parent?`list-${top}`:`auto-${top}`;
+  const text=(part:string,value:string,x:number,y:number,width:number,size:number,color:string,
+    anchorX=0,anchorY=0):void=>{
+    if(!sink){
+      const result=view.text(value,x,y,width,size,color,parent);
+      if(anchorX||anchorY)result.setOrigin(anchorX,anchorY);
+      return;
+    }
+    const offset=parent?saveBoardOrigin(view.width):{ x:0, y:0 };
+    sink.add({key:`${key}-${part}`,text:value,x:offset.x+x,y:(parent?SAVE_BOARD_LAYOUT.listTop:0)+y,width:width||undefined,
+      size,color,anchorX,anchorY,
+      ...(parent?{ scroll:'slots',clip:{top:SAVE_BOARD_LAYOUT.listTop,bottom:SAVE_BOARD_LAYOUT.listTop+SAVE_BOARD_LAYOUT.listHeight} }:{})});
+  };
   if(row.reading.kind==='ok'){
     const summary=row.reading.summary;
     // 立绘只给高度，宽度按原图比例：人物页立绘是竖幅的胸像。
     view.image(summary.portrait,left+20,bottom+12,undefined,PORTRAIT_HEIGHT,parent);
-    view.text(row.title,left+170,bottom+14,340,24,SAVE_SLOT_TEXT,parent);
-    view.text(summary.mapName,left+170,bottom+48,340,20,SAVE_SLOT_TEXT,parent);
-    view.text(`LV.${summary.level} · ${summary.className}`,left+170,bottom+78,340,18,SAVE_SLOT_TEXT,parent);
+    text('title',row.title,left+170,bottom+14,340,24,SAVE_SLOT_TEXT);
+    text('map',summary.mapName,left+170,bottom+48,340,20,SAVE_SLOT_TEXT);
+    text('level',`LV.${summary.level} · ${summary.className}`,left+170,bottom+78,340,18,SAVE_SLOT_TEXT);
     const savedAt=formatSavedAt(summary.savedAt);
-    if(savedAt)view.text(savedAt,left+170,bottom+106,340,18,SAVE_SLOT_TIME_TEXT,parent);
+    if(savedAt)text('time',savedAt,left+170,bottom+106,340,18,SAVE_SLOT_TIME_TEXT);
   }else{
     view.image(assets.empty,origin.x+Math.round((SAVE_BOARD.panelWidth-EMPTY_WIDTH)/2),top+Math.round((SAVE_BOARD.frameHeight-EMPTY_HEIGHT)/2),EMPTY_WIDTH,EMPTY_HEIGHT,parent);
     // 空槽由 EMPTY 图本身表示；只有自动槽还需要名字，手动槽不再重复写「存档槽 N」。
-    if(row.auto)view.text(row.title,left+170,bottom+58,340,24,SAVE_SLOT_TEXT,parent);
+    if(row.auto)text('title',row.title,left+170,bottom+58,340,24,SAVE_SLOT_TEXT);
   }
   if(row.action)view.button('',left,bottom,row.controls?.length?SAVE_BOARD.rowWidth-CONTROL_COLUMN:SAVE_BOARD.rowWidth,SAVE_BOARD.rowHeight,row.action,
     {bare:true,parent}).setData('label',row.label);
   row.controls?.forEach((control,index)=>{
     const x=left+SAVE_BOARD.rowWidth-CONTROL_WIDTH;
     const y=bottom+(index===0?20:76);
-    const button=view.button(control.label,x,y,CONTROL_WIDTH,44,control.action,{fontSize:20,parent});
-    buttonParts(button).text?.setText(control.text);
+    view.button('',x,y,CONTROL_WIDTH,44,control.action,{parent}).setData('label',control.label);
+    text(`control-${index}`,control.text,x+CONTROL_WIDTH/2,y+22,0,20,GOLD,.5,.5);
   });
 }
 

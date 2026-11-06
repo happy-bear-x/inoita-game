@@ -21,8 +21,8 @@ test('a quest marker is created when a quest becomes available after the map is 
     add(child: unknown) { container.children.push(child); },
   };
   interface Marker {
-    container: { visible: boolean; setVisible(value: boolean): void };
-    glyph: { text: string; style: { color: string }; setText(value: string): void; setColor(value: string): void };
+    dom: { visible: boolean; text: string; style: { color: string }; setVisible(value: boolean): void; setText(value: string): void; setStyle(value: { color: string }): void };
+    visible: boolean;
   }
   const character = {
     entity: { id: 'npc-1', actor: 'elder', characterId: 'npc-1' },
@@ -45,27 +45,23 @@ test('a quest marker is created when a quest becomes available after the map is 
     movement: { setEnabled() {} },
     createQuestMarker(target: typeof character) {
       created.push(target);
-      const glyph = { text: '', style: { color: '#ffdb78' },
-        setText(value: string) { glyph.text = value; },
-        setColor(value: string) { glyph.style.color = value; } };
-      const markerContainer = { visible: true,
-        setVisible(value: boolean) { markerContainer.visible = value; } };
-      target.container.add(markerContainer);
-      target.marker = { container: markerContainer, glyph };
+      const dom = { visible: true, text: '', style: { color: '#ffdb78' },
+        setVisible(value: boolean) { dom.visible = value; },
+        setText(value: string) { dom.text = value; },
+        setStyle(value: { color: string }) { Object.assign(dom.style, value); } };
+      target.marker = { dom, visible: true };
     },
   });
 
   invoke(host, 'refreshState');
   assert.equal(created.length, 0, '任务尚不可接取，不创建头顶标记');
-  assert.equal(container.children.length, 0);
 
   // 前置任务完成：当前地图和角色没有重建，只是任务状态变为可接取。
   status = 'available'; marked = true; version += 1; session.questBook.version = version;
   invoke(host, 'refreshState');
   assert.equal(created.length, 1, '任务变为可接取后补建头顶标记');
-  assert.equal(container.children.length, 1, '标记挂在角色容器里');
-  assert.equal(character.marker?.container.visible, true);
-  assert.equal(character.marker?.glyph.text, '!');
+  assert.equal(character.marker?.dom.visible, true);
+  assert.equal(character.marker?.dom.text, '!');
   assert.deepEqual(taskLists.at(-1), [{ id: 'npc-1', x: 120, y: 80, status: 'available' }]);
 
   // 同一状态没有变化时不再刷新；状态再变也复用已有标记，不重复创建。
