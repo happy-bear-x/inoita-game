@@ -694,9 +694,9 @@ test('forge opens as a menu page and enhances continuously', t => {
   assert.equal(f.scene.buttons('镶嵌').length,1,'镶嵌页签唯一');
   assert.equal(f.scene.button('强化').x,885,'页签在右侧边栏');
   assert.equal(f.scene.button('强化').input!.hitArea.width,57);
-  assert.ok(f.scene.texts().some(text=>text.includes('选择一张强化卷轴')));
+  assert.ok(visibleDomLabels(f).some(label=>label.text.includes('选择一张强化卷轴')));
   f.scene.click(f.scene.button('卷轴:低级武器强化卷轴'));
-  assert.ok(f.scene.texts().some(text=>text.includes('当前 +0：75% 到 +1，25% 到 +2')),'选中卷轴显示结果和概率');
+  assert.ok(visibleDomLabels(f).some(label=>label.text.includes('当前 +0：75% 到 +1，25% 到 +2')),'选中卷轴显示结果和概率');
   f.scene.click(f.scene.button('确定强化'));
   assert.equal(f.hero.bag.get(weapon.id)!.enhancement,1);
   assert.equal(f.hero.bag.get(weapon.id)!.numbers!.enhancementUses,2);
@@ -724,14 +724,14 @@ test('forge explains unavailable scrolls and highlights chaos at zero durability
   const weapon=setHeroWeapon(f,3,0,10);f.add('novice-weapon-scroll');f.add('chaos-weapon-scroll');
   openHeroForge(f);
   f.scene.click(f.scene.button('卷轴:低级武器强化卷轴'));
-  assert.ok(f.scene.texts().some(text=>text.includes('耐久度不足')),'选中普通卷轴显示原因');
+  assert.ok(visibleDomLabels(f).some(label=>label.text.includes('耐久度不足')),'选中普通卷轴显示原因');
   assert.equal(f.scene.button('确定强化').input!.enabled,false,'耐久不足时动作按钮不可点');
   assert.ok(f.scene.nodes.some(node=>node.shown&&node.getData('forge-highlight')==='chaos'),'混沌卷轴高亮');
   f.scene.click(f.scene.button('卷轴:混沌武器强化卷轴'));
   assert.ok(f.scene.button('确定强化').input!.enabled,'混沌卷轴可用');
-  assert.ok(f.scene.texts().some(text=>text.includes('当前 +10')),'混沌卷轴显示当前等级');
-  assert.ok(f.scene.texts().some(text=>text.includes('→ +9')),'混沌卷轴显示降级结果');
-  assert.ok(f.scene.texts().some(text=>text.includes('不消耗耐久')),'混沌卷轴不消耗耐久');
+  assert.ok(visibleDomLabels(f).some(label=>label.text.includes('当前 +10')),'混沌卷轴显示当前等级');
+  assert.ok(visibleDomLabels(f).some(label=>label.text.includes('→ +9')),'混沌卷轴显示降级结果');
+  assert.ok(visibleDomLabels(f).some(label=>label.text.includes('不消耗耐久')),'混沌卷轴不消耗耐久');
   t.mock.method(Math,'random',()=>0.999);
   f.scene.click(f.scene.button('确定强化'));
   assert.equal(f.hero.bag.get(weapon.id)!.enhancement,9,'混沌失败降 1 级');
@@ -744,17 +744,17 @@ test('forge sockets, removes and replaces gems with confirmation', t => {
   const first=f.add('novice-jewel'),second=f.add('standard-jewel'),replacement=f.add('advanced-jewel');
   openHeroForge(f);
   f.scene.click(f.scene.button('镶嵌'));
-  assert.ok(f.scene.texts().some(text=>text.includes('从右侧选择一颗宝石')),'空孔提示从右侧选宝石');
+  assert.ok(visibleDomLabels(f).some(label=>label.text.includes('从右侧选择一颗宝石')),'空孔提示从右侧选宝石');
   f.scene.click(f.scene.button(`宝石:${first.id}`));
-  assert.ok(f.scene.texts().some(text=>text.includes('低级宝石')),'选中宝石后左侧显示宝石信息');
-  assert.ok(!f.scene.texts().some(text=>text.includes('待镶')),'不再显示待镶字样');
-  assert.ok(!f.scene.texts().some(text=>text.includes('角色面板无变化')),'不再显示角色面板差值');
+  assert.ok(visibleDomLabels(f).some(label=>label.text.includes('低级宝石')),'选中宝石后左侧显示宝石信息');
+  assert.ok(!visibleDomLabels(f).some(label=>label.text.includes('待镶')),'不再显示待镶字样');
+  assert.ok(!visibleDomLabels(f).some(label=>label.text.includes('角色面板无变化')),'不再显示角色面板差值');
   f.scene.click(f.scene.button('确认镶嵌'));
   assert.equal(f.hero.bag.get(weapon.id)!.gems.length,1);
   assert.equal(f.hero.bag.get(weapon.id)!.numbers!.gemModifiers.length,1);
-  assert.ok(f.scene.texts().some(text=>text.includes('低级宝石')),'已镶宝石和效果常驻显示');
+  assert.ok(visibleDomLabels(f).some(label=>label.text.includes('低级宝石')),'已镶宝石和效果常驻显示');
   f.scene.click(f.scene.button('孔位1'));
-  assert.ok(f.scene.texts().some(text=>text.includes('取出后')),'选中已镶孔后显示取出差值');
+  assert.ok(visibleDomLabels(f).some(label=>label.text.includes('取出后')),'选中已镶孔后显示取出差值');
   f.scene.click(f.scene.button('取出'));
   assert.ok(f.internals.forge!.confirming);
   f.scene.click(f.scene.button('是'));
@@ -772,7 +772,7 @@ test('forge sockets, removes and replaces gems with confirmation', t => {
   const after=f.hero.bag.get(weapon.id)!;
   assert.equal(after.gems[0],replacement.item);
   assert.equal(f.hero.bag.count('standard-jewel'),1,'旧宝石回到背包');
-  assert.ok(!f.scene.texts().some(text=>text.includes('已替换')),'不再显示结果行');
+  assert.ok(!visibleDomLabels(f).some(label=>label.text.includes('已替换')),'不再显示结果行');
 });
 
 test('forge disables socketing when the target is full until a replacement is chosen', t => {
@@ -786,7 +786,7 @@ test('forge disables socketing when the target is full until a replacement is ch
   assert.equal(f.hero.bag.get(weapon.id)!.gems.length,1);
   f.scene.click(f.scene.button(`宝石:${second.id}`));
   assert.equal(f.scene.button('确认镶嵌').input!.enabled,false,'满孔时不能继续镶嵌');
-  assert.ok(f.scene.texts().some(text=>text.includes('宝石孔已满')));
+  assert.ok(visibleDomLabels(f).some(label=>label.text.includes('宝石孔已满')));
   f.scene.click(f.scene.button('孔位1'));
   f.scene.click(f.scene.button('替换'));
   f.scene.click(f.scene.button(`宝石:${second.id}`));
@@ -958,8 +958,7 @@ test('shop equipment condition colors use the viewed member across menu pages',t
   f.add(key);
   for(const [owner,color]of [[member.id,'#ffffff'],['player','#ff0000']]){
     f.select(owner);f.menu.openShop('merchandise-dealer-b09d9585','');f.scene.click(f.scene.button(`出售 ${item.name}`));
-    const body=f.internals.description.scrolls[0].content as unknown as Display;
-    assert.equal(body.list.find(node=>node.text===item.typeName)!.color,color);
+    assert.equal(visibleDomLabels(f).filter(label=>label.text===item.typeName).at(-1)!.style.color,color);
   }
 });
 
@@ -1088,7 +1087,7 @@ test('discarding a lamp only removes inventory; using a lamp opens its shop', t 
   assert(f.scene.buttons('背包').length, '丢弃后留在背包页');
   f.menu.debugUse(f.entry('lamp').id); f.scene.click(f.scene.button('确定'));
   assert.equal(f.session.bag.count('lamp'), 0); assert.equal(f.scene.buttons('背包').length, 0, '使用后进入商店而非菜单标签页');
-  assert(f.scene.texts().some(value => value.includes('神灯')), '真实商店面板已经绘制');
+  assert(visibleDomLabels(f).some(label => label.text.includes('神灯')), '真实商店面板已经绘制');
 });
 
 test('description buttons and scrolling reject modal, busy, suspended and closed input', t => {
@@ -1433,7 +1432,7 @@ test('native rarity colors reach the real menu Text objects in bag, worn equipme
   f.menu.openShop('rare-items-dealer-2d609a7f','');
   const offer=f.internals.shopPanel!.store.offers[0];offer.concealed=false;offer.instance.numbers!.grade=10;
   f.scene.click(f.scene.buttons(`购买 ${items.items[offer.instance.item].name}`)[0]!);
-  assert.equal(f.scene.nodes.find(node=>node.shown&&node.text===items.items[offer.instance.item].name)!.color,'#ffe600');
+  assert.equal(visibleDomLabels(f).find(label=>label.text===items.items[offer.instance.item].name)!.style.color,'#ffe600');
 });
 
 test('rare shop conceals descriptions before purchase and preserves full instances after purchase', t => {
@@ -1444,10 +1443,9 @@ test('rare shop conceals descriptions before purchase and preserves full instanc
   assert.equal(offer.concealed, true); assert.equal(original.numbers?.sockets, 1);
   assert.equal(original.numbers?.gradeName, '生锈的', '固定随机源生成普通稀有度、带前缀的珍品');
   f.scene.click(f.scene.buttons(`购买 ${item.name}`)[0]!);
-  const title = (name:string) => f.scene.nodes.find(node => node.shown && node.text === name)!;
   const domTitle = (name:string) => visibleDomLabels(f).find(label => label.text === name)!;
-  assert.equal(title(`${item.typeName}（未鉴定）`).color, '#808080', '购买前显示原版灰色未鉴定名称');
-  assert.equal(f.internals.description.scrolls[0]!.content.list.length, 0, '购买前正文没有属性、品质、孔位或宝石图标');
+  assert.equal(domTitle(`${item.typeName}（未鉴定）`).style.color, '#808080', '购买前显示原版灰色未鉴定名称');
+  assert(!visibleDomLabels(f).some(label => label.text.includes('防御力') || label.text.includes('物理攻击')), '购买前正文没有属性、品质、孔位或宝石图标');
   f.scene.click(f.scene.button('购买')); f.scene.click(f.scene.button('确定'));
   const purchased = f.session.bag.entries.find(entry => entry.item === original.item)!;
   assert(purchased); assert.deepEqual(purchased.numbers, original.numbers, '购买完整保留原数值实例');
@@ -1458,13 +1456,13 @@ test('rare shop conceals descriptions before purchase and preserves full instanc
   assert(visibleDomLabels(f).map(label=>label.text).join('\n').includes('防御力'), '背包中显示实际装备数值');
   assert(visibleDomLabels(f).map(label=>label.text).join('\n').includes('宝石孔数量 1'), '拥有后可见原实例的一孔');
   f.menu.openShop(rare, ''); f.scene.click(f.scene.button(`出售 ${item.name}`));
-  assert(f.internals.description.scrolls[0]!.content.list.length > 0, '出售已拥有装备仍显示完整正文');
-  assert.equal(title(`生锈的 ${item.name}`).color, '#ffffff', '出售说明保留原版名称与品质色');
+  assert(visibleDomLabels(f).some(label => label.text.includes('防御力') || label.text.includes('物理攻击')), '出售已拥有装备仍显示完整正文');
+  assert.equal(domTitle(`生锈的 ${item.name}`).style.color, '#ffffff', '出售说明保留原版名称与品质色');
 
   const regular = Object.entries(f.app.shops.shops).find(([, shop]) => shop.categories.length && shop.stockRules.some(rule => rule.kind === 'level-range'))![0];
   f.menu.openShop(regular, ''); const ordinary = f.internals.shopPanel!.store.offers[0];
   assert.equal(ordinary.concealed, false); f.scene.click(f.scene.buttons(`购买 ${items.items[ordinary.instance.item].name}`)[0]!);
-  assert(f.internals.description.scrolls[0]!.content.list.length > 0, '普通商品购买前保持正常说明');
+  assert(visibleDomLabels(f).some(label => label.text.includes('防御力') || label.text.includes('物理攻击') || label.text.includes('魔法攻击')), '普通商品购买前保持正常说明');
 });
 
 test('shop category changes reset scrolling while details, transactions and session updates preserve it', t => {
@@ -1559,14 +1557,14 @@ test('fusion menu selects or drags equipment, confirms once and blocks underlyin
   const machine=Object.keys(world.actors).find(id=>world.actors[id].service==='fusion-machine')!;
   f.menu.openCrafting(machine);f.scene.click(f.scene.button('切换融合模式'));f.scene.click(f.scene.button('深渊混沌合成'));
   f.scene.click(f.scene.button(item.name));
-  assert(f.scene.texts().some(text=>text.replace(/\n/g,'')==='深渊混沌道具只适用于混沌道具。'));
+  assert(visibleDomLabels(f).some(label=>label.text.replace(/\n/g,'')==='深渊混沌道具只适用于混沌道具。'));
   f.scene.key('Escape');f.scene.click(f.scene.button('混沌合成'));
   f.scene.press(f.scene.button(item.name));f.scene.hold();f.scene.pointAt(f.scene.button('合成装备'));
   f.scene.input.activePointer.isDown=false;f.scene.input.emit('pointerup',f.scene.input.activePointer);
-  assert(f.scene.texts().includes(item.name));
+  assert(visibleDomLabels(f).some(label=>label.text===item.name));
   const before=bag.captureState(),money=f.session.money;
   f.scene.click(f.scene.button('组合'));
-  assert(f.scene.texts().includes('是否以当前的配方来合成？'));
+  assert(domTexts(f).includes('是否以当前的配方来合成？'));
   assert.equal(f.scene.canHit(f.scene.button('深渊混沌合成')),false);
   const no=f.scene.button('否');f.scene.click(no);assert.deepEqual(bag.captureState(),before);assert.equal(f.session.money,money);
   f.scene.click(f.scene.button('组合'));
@@ -1589,7 +1587,7 @@ test('fusion recipe detail stays open and crafts again on the next 组合', t =>
   const potions=()=>f.session.bag.count('healing-potion-s'),before=potions();
   for(const round of [1,2]){
     f.scene.click(f.scene.button('组合'));
-    assert(f.scene.texts().includes('是否以当前的配方来合成？'),`第 ${round} 次组合仍弹确认框`);
+    assert(domTexts(f).includes('是否以当前的配方来合成？'),`第 ${round} 次组合仍弹确认框`);
     f.scene.click(f.scene.button('是'));
     assert.equal(potions(),before+round,`第 ${round} 次合成产出`);
     assert.equal(f.scene.buttons('组合').length,1,'成功后仍停在配方详情页');
@@ -1619,7 +1617,7 @@ test('fusion socket creation only accepts hole-less equipment and creates the ro
   assert.equal(bag.count('sharp-claw'),claws);
   assert.equal(bag.count('novice-jewel'),jewels);
   f.scene.click(f.scene.button(name));
-  assert(f.scene.texts().some(text=>text.replace(/\n/g,'')==='不含宝石孔的道具才可以进行合成。'));
+  assert(visibleDomLabels(f).some(label=>label.text.replace(/\n/g,'')==='不含宝石孔的道具才可以进行合成。'));
 });
 
 test('save page writes the loaded world into the chosen slot and asks before overwriting it', t => {
@@ -1635,7 +1633,7 @@ test('save page writes the loaded world into the chosen slot and asks before ove
   assert.ok(Number.isFinite(written.game.summary.savedAt),'手动保存写入了时间');
   assert.equal(written.game.world.location.x,16);
   assert.deepEqual(written.game.session.money,f.session.money);
-  assert(f.scene.texts().includes('保存成功'));
+  assert(domTexts(f).includes('保存成功'));
   f.scene.click(f.scene.button('确认'));
   assert.equal(f.internals.modal.root.visible,false);
 
@@ -1662,7 +1660,7 @@ test('save page writes the loaded world into the chosen slot and asks before ove
   f.scene.click(f.scene.button('存档槽 2'));f.scene.click(f.scene.button('是'));
   const overwritten=f.app.saves.inspect(1);
   assert.equal(overwritten.kind==='ok'&&overwritten.game.session.money,f.session.money,'确认后写入当前状态');
-  assert(f.scene.texts().includes('保存成功'));
+  assert(domTexts(f).includes('保存成功'));
 });
 
 /** 存档行按钮所在的滚动区；按行按钮的直接父容器匹配，顺带验证行确实画进了滚动内容。 */
@@ -1688,13 +1686,13 @@ test('dragging a save slot scrolls instead of saving or confirming an overwrite'
   assert.equal(scroll.moved,true,'拖动超过阈值');
   assert(scroll.scrollTop>0,'列表跟随手指滚动');
   assert.deepEqual(f.app.saves.inspect(1),{kind:'empty'},'拖动抬手不写空槽');
-  assert(!f.scene.texts().includes('保存成功'));
+  assert(!domTexts(f).includes('保存成功'));
   assert.equal(f.internals.modal.root.visible,false);
 
   // 拖动后原地点同一行仍然存档：新的 pointerdown 会重置滚动区的拖动标记。
   f.scene.click(f.scene.button('存档槽 2'));
   assert.equal(f.app.saves.inspect(1).kind,'ok');
-  assert(f.scene.texts().includes('保存成功'));
+  assert(domTexts(f).includes('保存成功'));
   f.scene.click(f.scene.button('确认'));
 
   // 行内「删除」控件也在同一个 content 里：拖动不弹删除确认。
@@ -1737,7 +1735,7 @@ test('saving without a loaded world reports the original refusal and leaves the 
   f.app.captureSaveWorld=undefined;
   f.menu.show('save');
   f.scene.click(f.scene.button('存档槽 1'));
-  assert(f.scene.texts().includes('在当前的地图中无法进行存档。'));
+  assert(domTexts(f).includes('在当前的地图中无法进行存档。'));
   assert.deepEqual(f.app.saves.inspect(0),{kind:'empty'});
   f.scene.click(f.scene.button('确认'));
   assert.deepEqual(f.app.saves.inspect(0),{kind:'empty'});
@@ -1747,19 +1745,19 @@ test('save refusal distinguishes a debug scene, map loading, a missing world and
   const f=fixture();t.after(f.cleanup);
   f.app.captureSaveWorld=()=>({ok:false,reason:'debug'});
   f.menu.show('save');f.scene.click(f.scene.button('存档槽 1'));
-  assert(f.scene.texts().includes('调试现场不能存档，请先在调试面板点「结束本次调试」。'));
+  assert(domTexts(f).includes('调试现场不能存档，请先在调试面板点「结束本次调试」。'));
   f.scene.click(f.scene.button('确认'));
   f.app.captureSaveWorld=()=>({ok:false,reason:'loading'});
   f.menu.show('save');f.scene.click(f.scene.button('存档槽 1'));
-  assert(f.scene.texts().includes('地图正在载入，请稍后再存档。'));
+  assert(domTexts(f).includes('地图正在载入，请稍后再存档。'));
   f.scene.click(f.scene.button('确认'));
   f.app.captureSaveWorld=()=>({ok:false,reason:'not-ready'});
   f.menu.show('save');f.scene.click(f.scene.button('存档槽 1'));
-  assert(f.scene.texts().includes('在当前的地图中无法进行存档。'));
+  assert(domTexts(f).includes('在当前的地图中无法进行存档。'));
   f.scene.click(f.scene.button('确认'));
   f.app.captureSaveWorld=()=>({ok:false,reason:'no-survivors'});
   f.menu.show('save');f.scene.click(f.scene.button('存档槽 1'));
-  assert(f.scene.texts().includes('队伍已经全员阵亡，无法存档。'));
+  assert(domTexts(f).includes('队伍已经全员阵亡，无法存档。'));
   f.scene.click(f.scene.button('确认'));
   assert.deepEqual(f.app.saves.inspect(0),{kind:'empty'});
 });
@@ -1830,7 +1828,7 @@ test('load preparation keeps the game menu alive under loading and reports failu
   f.menu.show('load');f.scene.click(f.scene.button('存档槽 1'));f.scene.click(f.scene.button('是'));
   assert.equal(signal?.aborted,false);assert.equal(f.internals.busy,true);assert.equal(f.controls.locked,true);
   reject(new Error('存档内容无效'));await new Promise<void>(resolve=>setImmediate(resolve));
-  assert.equal(f.internals.busy,false);assert(f.scene.texts().includes('存档内容无效'));
+  assert.equal(f.internals.busy,false);assert(domTexts(f).includes('存档内容无效'));
   assert.deepEqual(f.session.captureState(),before);assert.equal(f.controls.mode,'game');assert.equal(f.controls.ready,true);
   f.scene.click(f.scene.button('确认'));assert.equal(f.scene.canHit(f.scene.button('存档槽 1')),true);
 });
@@ -1842,7 +1840,7 @@ test('closing a pending load cancels its preparation and a late error cannot reo
   f.menu.show('load');f.scene.click(f.scene.button('存档槽 1'));f.scene.click(f.scene.button('是'));
   f.scene.key('Escape');assert.equal(signal?.aborted,true);assert.equal(f.controls.locked,false);
   reject(new Error('late failure'));await new Promise<void>(resolve=>setImmediate(resolve));
-  assert.equal(f.internals.surface.root.visible,false);assert(!f.scene.texts().includes('late failure'));
+  assert.equal(f.internals.surface.root.visible,false);assert(!domTexts(f).includes('late failure'));
 });
 
 test('the defeat load option opens the real load page and closing it returns to the defeat panel', t => {

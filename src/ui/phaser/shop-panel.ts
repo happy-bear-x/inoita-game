@@ -11,7 +11,15 @@ import { BAG_DESCRIPTION_WIDTH, descriptionPanel, SIDE_FILTER_TEXT_SIZE } from '
 import type { PlaceModal } from './modal-placement.ts';
 import { drawDescriptionClose, drawDescriptionPanel, drawDescriptionRows, drawDescriptionTitle } from './description-panel.ts';
 import { drawPopupPanel } from './popup-panel.ts';
+import type { MenuTextSpec, MenuTextWriter } from '../dom/menu-text.ts';
 import type { UiSurface, ScrollArea } from './widgets.ts';
+
+/** 商店页文字落点：页面文字与弹层文字分开收集，弹层坐标由 `StoryUI` 换算。 */
+export interface ShopTextTarget {
+  scroll(name:string,x:number,y:number,width:number,height:number,surface?:UiSurface):ScrollArea;
+  setText(key:string,text:string):void;
+  refresh():void;
+}
 
 type Selection = {kind:'buy'|'sell'; id:string; step:'description'|'quantity'|'confirm'|'notice'; quantity:number; error?:string};
 
@@ -35,9 +43,12 @@ export class ShopPanel {
    * 数量框里会变的三个东西：中间的数字、下面那行金额的每一位、左右两枚箭头。
    * 加减只改它们三个，不触发整页重画——玩家明确要求过数量变化不能重刷界面。
    */
-  private quantityCount?:Phaser.GameObjects.Text;
-  private quantityMoney?:Phaser.GameObjects.Text[];
   private quantityButtons?:{minus:Phaser.GameObjects.Container;plus:Phaser.GameObjects.Container};
+  /** 这一轮绘制收集的文字；弹层打开时只输出后者。 */
+  private pageText:MenuTextSpec[]=[];
+  private modalText:MenuTextSpec[]=[];
+  private text?:ShopTextTarget;
+
   private bagOffset=0;
   private categoryOffset=0;
   /** 背包栏那 6 个按钮的筛选：卖东西时看的是背包的哪一类。 */
@@ -162,20 +173,41 @@ export class ShopPanel {
     const entry=this.session.bag.get(selection.id);
     return entry?this.store.sellPrice(entry):0;
   }
-  /**
-   * 原版先画币再画数字：单位间距 103，币 44×40，数字左对齐于币右侧 44、下移 6、白色。
-   * 返回三个数字对象，加减数量时只改它们的文字。
-   */
-  private money(v:UiSurface,amount:number,x:number,y:number):Phaser.GameObjects.Text[]{
-    const {stride,coin,digit,color}=this.layout.money,value=splitMoney(amount),digits:Phaser.GameObjects.Text[]=[];
+  private pageTextSpec(key:string,text:string,x:number,y:number,size:number,color?:string,
+    anchorX=0,anchorY=0,style:Partial<MenuTextSpec['style']>={},extras:Pick<MenuTextSpec,'scroll'|'clip'>={}):MenuTextSpec{
+    return{key,text,x,y,style:{size,color,anchorX,anchorY,...style},...extras};
+  }
+  private addPage(key:string,text:string,x:number,y:number,size:number,color?:string,
+    anchorX=0,anchorY=0,style:Partial<MenuTextSpec['style']>={},extras:Pick<MenuTextSpec,'scroll'|'clip'>={}):void{
+    this.pageText.push(this.pageTextSpec(key,text,x,y,size,color,anchorX,anchorY,style,extras));
+  }
+  private addModal(key:string,text:string,x:number,y:number,size:number,color?:string,
+    anchorX=0,anchorY=0,style:Partial<MenuTextSpec['style']>={}):void{
+    this.modalText.push({key,text,x,y,style:{size,color,anchorX,anchorY,...style}});
+  }
+  private buttonText(key:string,label:string,x:number,y:number,width:number,height:number,
+    modal=false,size=Math.min(22,height*.42),extras:Pick<MenuTextSpec,'scroll'|'clip'>={}):void{
+    if(modal)this.addModal(key,label,x+width/2,y+height/2,size,undefined,.5,.5);
+    else this.addPage(key,label,x+width/2,y+height/2,size,undefined,.5,.5,{},extras);
+  }
+  /** 页面与弹层共用的金币数字；`prefix` 区分主界面、数量框和确认框三份。 */
+  private money(v:UiSurface,amount:number,x:number,y:number,prefix:string,modal=false):void{
+    const {stride,coin,digit,color}=this.layout.money,value=splitMoney(amount);
     MONEY_UNITS.forEach((unit,index)=>{
       v.image(this.catalog.assets[unit],x+index*stride,y,coin.width,coin.height);
-      digits.push(v.text(String(value[unit]),x+index*stride+digit.x,y+digit.y,0,21,color));
+      const key=`${prefix}-${unit}`;
+      if(modal)this.addModal(key,String(value[unit]),x+index*stride+digit.x,y+digit.y,21,color);
+      else this.addPage(key,String(value[unit]),x+index*stride+digit.x,y+digit.y,21,color);
     });
-    return digits;
   }
-  render(v:UiSurface,modal:UiSurface,placeModal?:PlaceModal,description?:UiSurface):void{
-    this.placeModal=placeModal;
+  /** 页面文字交给 `StoryUI` 的 DOM 层；弹层坐标仍是弹层本地坐标。 */
+  renderText(writer:MenuTextWriter):void{for(const spec of this.pageText)writer.add(spec);}
+  renderModalText(writer:MenuTextWriter):void{for(const spec of this.modalText)writer.add(spec);}
+  private scrollAt(surface:UiSurface,name:string,x:number,y:number,width:number,height:number):ScrollArea{
+    return this.text?.scroll(name,x,y,width,height,surface)??surface.scroll(x,y,width,height);
+  }
+  render(v:UiSurface,modal:UiSurface,placeModal?:PlaceModal,description?:UiSurface,text?:ShopTextTarget):void{
+    this.placeModal=placeModal;this.pageText=[];this.modalText=[];this.text=text;
     const {store,session,catalog}=this,classified=store.shop.categories.length>0;
     const layout=this.layout=shopLayout(classified),{leftFrame,bagFrame,title,shelf,bag,slot,category}=layout;
     // 两栏都只有图框：`UIStore_Draw` 与 `UIStore_DrawInvenBackground` 都只调 `UI_DrawBorderRect`，
@@ -186,7 +218,6 @@ export class ShopPanel {
       v.border(this.frames,leftFrame.x,leftFrame.y,leftFrame.width,leftFrame.height,v.staticRoot);
       v.border(this.frames,bagFrame.x,bagFrame.y,bagFrame.width,bagFrame.height,v.staticRoot);
       v.image(catalog.assets['merchant-title'],title.x,title.y,title.width,title.height,v.staticRoot);
-      v.text(store.shop.name,layout.titleName.x,layout.titleName.y,230,26,AREA_COLOR,v.staticRoot).setOrigin(.5);
       if(classified){
         const column=layout.categoryColumn;
         v.image(catalog.assets['category-cap-top'],column.cap.x,column.cap.y,column.cap.width,column.cap.height,v.staticRoot);
@@ -200,15 +231,16 @@ export class ShopPanel {
         v.image(catalog.assets.slot,x,y,slot.size,slot.size,v.staticRoot);
       }
     });
+    this.addPage('shop-title',store.shop.name,layout.titleName.x,layout.titleName.y,26,AREA_COLOR,.5,.5);
     if(classified){
       // 分类列的滚动区与按钮随筛选重建；端盖和竖条已经在静态层。
-      this.categoryScroll=v.scroll(category.scroll.x,category.scroll.y,category.scroll.width,category.scroll.height);
+      this.categoryScroll=this.scrollAt(v,'shop-category',category.scroll.x,category.scroll.y,category.scroll.width,category.scroll.height);
       store.shop.categories.forEach((name,index)=>v.button('',0,index*category.button.stride,category.button.width,category.button.height,
         ()=>{store.selectCategory(name);this.changed();},
         {image:catalog.assets[`${name}${store.category===name?'-selected':''}`],parent:this.categoryScroll!.content,guard:this.categoryScroll!.guard})
         .setData('label',catalog.categories[name].name));
       this.categoryScroll.setHeight(store.shop.categories.length*category.button.stride);this.categoryScroll.scrollTop=this.categoryOffset;
-      v.text(catalog.categories[store.category!].name,category.name.x,category.name.y,290,22,AREA_COLOR).setOrigin(.5);
+      this.addPage('shop-category-name',catalog.categories[store.category!].name,category.name.x,category.name.y,22,AREA_COLOR,.5,.5);
     }
     for(let index=0;index<SHELF_SLOTS;index++){
       const x=shelf.x+index%4*slot.stride,y=shelf.y+Math.floor(index/4)*slot.stride,offer=store.offers[index];
@@ -218,7 +250,7 @@ export class ShopPanel {
       v.image(item.icon,slot.icon.x,slot.icon.y,slot.icon.size,slot.icon.size,button);
       if(this.selection?.id===offer.id)v.image(catalog.assets.selection,slot.selection.x,slot.selection.y,slot.selection.size,slot.selection.size,button);
     }
-    this.bagScroll=v.scroll(bag.x,bag.y,bag.width,bag.height);
+    this.bagScroll=this.scrollAt(v,'shop-bag',bag.x,bag.y,bag.width,bag.height);
     const entries=session.bag.entries.filter(entry=>matchesFilter(session.bag.catalog.items[entry.item],this.filter)
         &&(!this.batch||this.store.sellPrice(entry)>0)),
       slots=Math.max(SHELF_SLOTS,Math.ceil(entries.length/bag.columns)*bag.columns);
@@ -231,8 +263,9 @@ export class ShopPanel {
         ()=>this.batch?this.toggleBatchEntry(entry.id):this.select('sell',entry.id),
         {bare:true,parent:this.bagScroll.content,guard:this.bagScroll.guard}).setData('label',`${this.batch?'选择':'出售'} ${item.name}`);
       v.image(item.icon,slot.icon.x,slot.icon.y,slot.icon.size,slot.icon.size,button);
-      // 角标挂在格子容器上，坐标相对格子左上角。
-      if(entry.quantity>1)v.text(String(entry.quantity),layout.badge.x,layout.badge.y,0,20,layout.badge.color,button).setOrigin(1,0);
+      // 角标挂在格子容器上，坐标相对格子左上角；DOM 文字仍按滚动区内容坐标落点。
+      if(entry.quantity>1)this.addPage(`shop-badge-${index}`,String(entry.quantity),bag.x+x+layout.badge.x,bag.y+y+layout.badge.y,
+        20,layout.badge.color,1,0,{},{scroll:'shop-bag',clip:{top:bag.y,bottom:bag.y+bag.height}});
       if(this.selection?.id===entry.id||this.batchSelection.has(entry.id))v.image(catalog.assets.selection,slot.selection.x,slot.selection.y,slot.selection.size,slot.selection.size,button);
     }
     this.bagScroll.setHeight(Math.ceil(slots/bag.columns)*bag.stride);this.bagScroll.scrollTop=this.bagOffset;
@@ -241,8 +274,9 @@ export class ShopPanel {
     if(this.batch){
       // 批量模式把金额栏临时改成“本次出售合计”，避免和当前持有金币混在一起。
       const plate=layout.money.plate,label=this.batchError??`合计 ${moneyText(batchTotal)}`;
-      v.text(label,plate.x+plate.width/2,plate.y+2,plate.width,20,this.batchError?'#e9a08a':layout.money.color).setOrigin(.5,0);
-    }else this.money(v,session.money,layout.money.x,layout.money.y);
+      this.addPage('shop-batch-label',label,plate.x+plate.width/2,plate.y+2,20,
+        this.batchError?'#e9a08a':layout.money.color,.5,0,{width:plate.width,align:'center',wrap:'word'});
+    }else this.money(v,session.money,layout.money.x,layout.money.y,'shop-money');
     // 背包栏右侧那 6 个按钮与背包页是同一列、同一套画法：常态外框是图组 15 索引 20，
     // 选中的那一个在按钮矩形 −(5,12) 上再叠索引 19。原版 `UIStore_DrawInvenBagGroup`
     // 用它们切换背包分类，所以卖东西时看到的就是筛出来的那一类。
@@ -255,7 +289,9 @@ export class ShopPanel {
             this.batchSelection.clear();this.batchError=undefined;this.changed();},{bare:true});
         v.image(this.frames['page-button-frame'],-5,-12,undefined,undefined,button);
         if(this.filter===filter)v.image(this.frames['page-button-selected'],-5,-12,undefined,undefined,button);
-        v.text(INVENTORY_LABELS[filter],side.width/2,side.height/2,side.width-6,SIDE_FILTER_TEXT_SIZE,undefined,button).setOrigin(.5);
+        this.addPage(`shop-filter-${filter}`,INVENTORY_LABELS[filter],side.x+side.width/2,
+          side.y+side.offsets[index]+side.height/2,SIDE_FILTER_TEXT_SIZE,undefined,.5,.5,
+          {width:side.width-6,align:'center',wrap:'word'});
       button.setData('label',INVENTORY_LABELS[filter]);
     });
     if(this.filter===INVENTORY_SIDE_FILTERS[0])v.image(this.frames['column-cap-top'],side.x-19,side.y-12,21,34);
@@ -263,11 +299,16 @@ export class ShopPanel {
     // 批量出售的入口与动作放在背包框上方那一条空带里（和标题框同一高度），不占格子。
     // 说明面板打开时先收起，避免和“出售”那一步抢同一块区域。
     if(!this.selection){
-      const batchBar=this.layout.bagFrame;
-      v.button(this.batch?'退出批量':'批量出售',batchBar.x,batchBar.y-42,150,40,()=>this.toggleBatch(),
-        {fontSize:16,selected:this.batch}).setData('label',this.batch?'退出批量':'批量出售');
-      if(this.batch)v.button(`出售选中（${batchItems.length}）`,batchBar.x+158,batchBar.y-42,batchBar.width-158,40,
-        ()=>this.sellBatch(),{fontSize:16,disabled:!batchItems.length}).setData('label','出售选中');
+      const batchBar=this.layout.bagFrame,batchLabel=this.batch?'退出批量':'批量出售';
+      v.button('',batchBar.x,batchBar.y-42,150,40,()=>this.toggleBatch(),
+        {fontSize:16,selected:this.batch}).setData('label',batchLabel);
+      this.buttonText('shop-batch-toggle',batchLabel,batchBar.x,batchBar.y-42,150,40,false,16);
+      if(this.batch){
+        const pickLabel=`出售选中（${batchItems.length}）`,width=batchBar.width-158;
+        v.button('',batchBar.x+158,batchBar.y-42,width,40,
+          ()=>this.sellBatch(),{fontSize:16,disabled:!batchItems.length}).setData('label','出售选中');
+        this.buttonText('shop-batch-sell',pickLabel,batchBar.x+158,batchBar.y-42,width,40,false,16);
+      }
     }
     if(this.selection)this.selection.step==='description'?this.renderDescription(description??v,this.selection):this.renderModal(modal);
   }
@@ -289,13 +330,20 @@ export class ShopPanel {
     const member=this.viewedMember();
     const body=itemDescriptionBody({item,entry,numbers:this.store.characterStats.equipment[entry.item],catalog:this.store.characterStats,
       grades:this.catalog.grades,member,classNames:this.classNames,gemNames:entry.gems.map(id=>this.session.bag.catalog.items[id]?.name),skill:entry.skill?this.session.bag.catalog.skillDescriptions?.[entry.skill]:undefined,concealed:offer?.concealed});
-    drawDescriptionTitle(v,body.title,left,top,panel.width,body.color);
-    const detail=v.scroll(left+panel.scroll.x,top+panel.scroll.y,panel.scroll.width,panel.scroll.height);
-    let y=drawDescriptionRows(v,body.rows,panel.scroll.width,detail.content);
+    const writer:MenuTextWriter={add:spec=>this.pageText.push(spec)};
+    drawDescriptionTitle(v,body.title,left,top,panel.width,body.color,{writer,keyPrefix:'shop-detail-title'});
+    const detail=this.scrollAt(v,'shop-detail',left+panel.scroll.x,top+panel.scroll.y,panel.scroll.width,panel.scroll.height);
+    detail.onScroll=()=>this.text?.refresh();
+    const actionLabel=selection.kind==='buy'?'购买':'出售';
+    let y=drawDescriptionRows(v,body.rows,panel.scroll.width,detail.content,
+      {writer,keyPrefix:'shop-detail-row',x:left+panel.scroll.x,y:top+panel.scroll.y,scroll:'shop-detail',
+        clip:{top:top+panel.scroll.y,bottom:top+panel.scroll.y+panel.scroll.height}});
     detail.setHeight(y);
     drawDescriptionClose(v,this.frames,panel,left,top,()=>this.cancel());
-    v.button(selection.kind==='buy'?'购买':'出售',left+panel.menu.x+panel.menu.offsets[1],top+panel.menu.y,
-      panel.menu.button.width,panel.menu.button.height,()=>this.beginTrade());
+    const actionX=left+panel.menu.x+panel.menu.offsets[1],actionY=top+panel.menu.y;
+    v.button('',actionX,actionY,panel.menu.button.width,panel.menu.button.height,()=>this.beginTrade())
+      .setData('label',actionLabel);
+    this.buttonText('shop-detail-action',actionLabel,actionX,actionY,panel.menu.button.width,panel.menu.button.height);
   }
   private renderModal(v:UiSurface):void{
     const selection=this.selection!;
@@ -333,14 +381,16 @@ export class ShopPanel {
       {image:this.catalog.assets['count-left'],pressed:this.catalog.assets['count-left-pressed'],disabled:selection.quantity<=1,hold:QUANTITY_HOLD});
     const plus=v.button('',field.x+step.right,field.y,step.width,step.height,()=>this.stepQuantity(1),
       {image:this.catalog.assets['count-right'],pressed:this.catalog.assets['count-right-pressed'],disabled:selection.quantity>=maximum,hold:QUANTITY_HOLD});
-    this.quantityCount=v.text(String(selection.quantity),box.count.x,box.count.y,0,30,box.count.color);
+    this.addModal('shop-quantity-count',String(selection.quantity),box.count.x,box.count.y,30,box.count.color);
     v.textPlate(this.catalog.assets['text-plate-left'],this.catalog.assets['text-plate-right'],box.textPlate.x,box.textPlate.y,box.textPlate.width);
     this.quantityButtons={minus,plus};
-    this.quantityMoney=this.money(v,total,box.money.x,box.money.y);
+    this.money(v,total,box.money.x,box.money.y,'shop-quantity-money',true);
     // 重画时（比如买完之后会话又通知了一次）把箭头按当前数量重新摆好，不能沿用上一件的灰态。
     this.syncQuantity();
-    v.button('确定',button.left,button.y,button.width,button.height,()=>{selection.step='confirm';this.changed();});
-    v.button('取消',button.right,button.y,button.width,button.height,()=>this.cancel());
+    v.button('',button.left,button.y,button.width,button.height,()=>{selection.step='confirm';this.changed();}).setData('label','确定');
+    this.buttonText('shop-quantity-confirm','确定',button.left,button.y,button.width,button.height,true);
+    v.button('',button.right,button.y,button.width,button.height,()=>this.cancel()).setData('label','取消');
+    this.buttonText('shop-quantity-cancel','取消',button.right,button.y,button.width,button.height,true);
   }
   /**
    * 数量加减只改数量框里的数字、金额和两枚箭头的灰/亮，不通知菜单重画。
@@ -356,11 +406,12 @@ export class ShopPanel {
   }
   /** 把当前数量刷到已经画好的数量框上；数量框还没画出来时什么都不做。 */
   private syncQuantity():void{
-    const selection=this.selection,count=this.quantityCount,buttons=this.quantityButtons;
-    if(!selection||!count||!buttons)return;
+    const selection=this.selection,buttons=this.quantityButtons;
+    if(!selection||!buttons)return;
     const quantity=selection.quantity,maximum=this.maximum(selection.kind),value=splitMoney(this.price(selection)*quantity);
-    count.setText(String(quantity));
-    this.quantityMoney?.forEach((text,index)=>text.setText(String(value[MONEY_UNITS[index]])));
+    // 数量框已经渲染过、DOM 层也应用过这一页时才存在这些标签；第一次绘制由规格直接带上当前值。
+    this.text?.setText('shop-quantity-count',String(quantity));
+    MONEY_UNITS.forEach(unit=>this.text?.setText(`shop-quantity-money-${unit}`,String(value[unit])));
     this.enableButton(buttons.minus,quantity>1);
     this.enableButton(buttons.plus,quantity<maximum);
   }
@@ -382,13 +433,19 @@ export class ShopPanel {
     shown.forEach((value,line)=>{
       const question=value.includes('？');
       // 纵轴原点取顶边：布局里的 text.y 是问题行的上沿，与黑底的上边同一行。
-      v.text(value,box.text.x,box.text.y+line*box.text.step,410,question?26:22,question?undefined:'#e9a08a').setOrigin(.5,0);
+      this.addModal(`shop-confirm-line-${line}`,value,box.text.x,box.text.y+line*box.text.step,
+        question?26:22,question?undefined:'#e9a08a',.5,0,{width:410,align:'center',wrap:'word'});
     });
     if(total){
       v.textPlate(this.catalog.assets['text-plate-left'],this.catalog.assets['text-plate-right'],box.textPlate.x,box.textPlate.y,box.textPlate.width);
-      this.money(v,total,box.money.x,box.money.y);
+      this.money(v,total,box.money.x,box.money.y,'shop-confirm-money',true);
     }
-    if(cancel)v.button('取消',button.right,button.y,button.width,button.height,()=>this.cancel());
-    v.button('确定',cancel?button.left:(box.width-button.width)/2,button.y,button.width,button.height,confirm,{disabled});
+    if(cancel){
+      v.button('',button.right,button.y,button.width,button.height,()=>this.cancel()).setData('label','取消');
+      this.buttonText('shop-confirm-cancel','取消',button.right,button.y,button.width,button.height,true);
+    }
+    const confirmX=cancel?button.left:(box.width-button.width)/2;
+    v.button('',confirmX,button.y,button.width,button.height,confirm,{disabled}).setData('label','确定');
+    this.buttonText('shop-confirm-accept','确定',confirmX,button.y,button.width,button.height,true);
   }
 }

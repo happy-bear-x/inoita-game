@@ -10,7 +10,14 @@ import { SIDE_BUTTON_OFFSETS, SLOT, SLOT_STRIDE } from '../item-layout.ts';
 import { ENHANCEMENT_ODDS_ROW_STRIDE, ENHANCEMENT_ODDS_ROW_TOP, ENHANCEMENT_ODDS_TOP, enhancementOddsView, type EnhancementOutcomeTone } from '../enhancement-odds-lines.ts';
 import { drawNativeMessage } from './native-message.ts';
 import type { UiSurface, ScrollArea } from './widgets.ts';
+import { GOLD } from './widgets.ts';
+import type { MenuTextSpec, MenuTextWriter } from '../dom/menu-text.ts';
 
+/** 强化台文字落点：滚动区由宿主登记，刷新只重算 DOM 位置。 */
+export interface ForgeTextTarget {
+  scroll(name:string,x:number,y:number,width:number,height:number,surface?:UiSurface):ScrollArea;
+  refresh():void;
+}
 export type ForgeTab='enchant'|'socket'|'purify';
 type Confirmation={kind:'unsocket';index:number}|{kind:'swap';index:number;gem:string};
 const OUTCOME_COLORS:Record<EnhancementOutcomeTone,string>={loss:TEXT_COLORS.danger,single:TEXT_COLORS.secondary,double:'#ffd75e'};
@@ -29,6 +36,10 @@ export class ForgePanel {
   private selectedItem?:string;private socketIndex?:number;private replaceIndex?:number;
   private offset=0;private leftOffset=0;
   private confirmation?:Confirmation;private scroll?:ScrollArea;private leftScroll?:ScrollArea;
+  private pageText:MenuTextSpec[]=[];private modalText:MenuTextSpec[]=[];
+  private text?:ForgeTextTarget;
+  /** 左框可滚动区从 (0,0) 开始，正文坐标就是内容坐标。 */
+  private static readonly LEFT_CLIP={top:0,bottom:431};
   constructor(bag:Bag,panels:MenuPanels,stats:CharacterStatsCatalog,memberId:string,
     changed:()=>void,sound:()=>void,notify:(message:string)=>void,
     preview:(targetId:string,gemModifiers:Modifier[])=>CharacterPanel|undefined){
@@ -48,15 +59,37 @@ export class ForgePanel {
     this.leftOffset=this.leftScroll?.scrollTop??this.leftOffset;
   }
   cancelConfirmation():void {this.confirmation=undefined;this.changed();}
-  render(v:UiSurface,modal:UiSurface,placeModal:(width:number,height:number)=>void):void {
+  private addText(key:string,text:string,x:number,y:number,size:number,color?:string,anchorX=0,anchorY=0,
+    style:Partial<MenuTextSpec['style']>={},extras:Pick<MenuTextSpec,'scroll'|'clip'>=ForgePanel.LEFT_EXTRAS):void {
+    this.pageText.push({key,text,x,y,style:{size,color,anchorX,anchorY,...style},...extras});
+  }
+  private addGridText(key:string,text:string,x:number,y:number,size:number,color?:string,anchorX=0,anchorY=0,
+    style:Partial<MenuTextSpec['style']>={}):void {
+    this.addText(key,text,x,y,size,color,anchorX,anchorY,style,{scroll:'forge-grid',clip:this.gridClip});
+  }
+  private buttonText(key:string,label:string,x:number,y:number,width:number,height:number,size=Math.min(22,height*.42)):void {
+    this.addText(key,label,x+width/2,y+height/2,size,GOLD,.5,.5);
+  }
+  /** 右栏格子的滚动视口；每次画格子前更新。 */
+  private gridClip={top:0,bottom:0};
+  private static readonly LEFT_EXTRAS={scroll:'forge-left',clip:ForgePanel.LEFT_CLIP} as const;
+  private scrollAt(name:string,x:number,y:number,width:number,height:number):ScrollArea {
+    return this.text?.scroll(name,x,y,width,height)??this.surface!.scroll(x,y,width,height);
+  }
+  private surface?:UiSurface;
+  renderText(writer:MenuTextWriter):void {for(const spec of this.pageText)writer.add(spec);}
+  renderModalText(writer:MenuTextWriter):void {for(const spec of this.modalText)writer.add(spec);}
+  render(v:UiSurface,modal:UiSurface,placeModal:(width:number,height:number)=>void,text?:ForgeTextTarget):void {
+    this.pageText=[];this.modalText=[];this.text=text;this.surface=v;
     const assets=this.panels.assets;
     v.border(assets,10,0,462,431);v.border(assets,496,0,395,431);
     this.scroll=undefined;this.leftScroll=undefined;
     // 左框内容可能随强化概率、宝石孔和属性条数变长，统一放进可滚动区。
-    const left=v.scroll(0,0,458,431);this.leftScroll=left;
+    const left=this.scrollAt('forge-left',0,0,458,431);this.leftScroll=left;
+    left.onScroll=()=>this.text?.refresh();
     const target=this.targetId?this.bag.get(this.targetId):undefined,item=target?this.bag.catalog.items[target.item]:undefined;
     if(!target||!item?.equipment){
-      v.text('装备已不存在，点右上角关闭返回背包。',40,160,400,24,TEXT_COLORS.primary,left.content);
+      this.addText('forge-missing','装备已不存在，点右上角关闭返回背包。',40,160,24,TEXT_COLORS.primary);
       left.setHeight(431);return;
     }
     this.validateState(target);
@@ -66,7 +99,7 @@ export class ForgePanel {
     const detailsBottom=this.renderDetails(v,target,item,left);
     left.setHeight(Math.max(431,summaryBottom,detailsBottom));
     left.scrollTop=this.leftOffset;
-    left.onScroll=()=>{this.leftOffset=left.scrollTop;};
+    left.onScroll=()=>{this.leftOffset=left.scrollTop;this.text?.refresh();};
     if(this.confirmation)this.renderConfirmation(modal,placeModal);
   }
   private renderTabs(v:UiSurface):void {
@@ -75,7 +108,8 @@ export class ForgePanel {
       const button=v.button('',885,12+SIDE_BUTTON_OFFSETS[index]!,57,57,()=>this.setTab(tab),{bare:true}).setData('label',label);
       v.image(assets['page-button-frame'],-5,-12,undefined,undefined,button);
       if(this.tab===tab)v.image(assets['page-button-selected'],-5,-12,undefined,undefined,button);
-      v.text(label,28.5,28.5,51,19,undefined,button).setOrigin(.5);
+      this.addText(`forge-tab-${tab}`,label,885+28.5,12+SIDE_BUTTON_OFFSETS[index]!+28.5,19,GOLD,.5,.5,
+        {width:51,align:'center',wrap:'word'},{});
     });
   }
   private setTab(tab:ForgeTab):void {
@@ -92,9 +126,11 @@ export class ForgePanel {
   private renderSummary(v:UiSurface,target:ItemInstance,item:ItemDefinition,left:ScrollArea):number {
     const numbers=this.stats.equipment[target.item];
     v.image(item.icon,384,36,56,56,left.content);
-    v.text(`${item.name}${target.enhancement?` +${target.enhancement}`:''}`,40,36,320,22,TEXT_COLORS.primary,left.content);
-    let y=64;
-    const line=(text:string)=>{v.text(text,40,y,320,18,TEXT_COLORS.secondary,left.content);y+=20;};
+    this.addText('forge-summary-name',`${item.name}${target.enhancement?` +${target.enhancement}`:''}`,40,36,22,TEXT_COLORS.primary,0,0,
+      {width:320,wrap:'word'});
+    let y=64,lineIndex=0;
+    const line=(text:string)=>{this.addText(`forge-summary-line-${lineIndex++}`,text,40,y,18,TEXT_COLORS.secondary,0,0,
+      {width:320,wrap:'word'});y+=20;};
     line(`等级 ${equipmentLevel(item,target)}`);
     line(`强化耐久度 ${target.numbers?.enhancementUses??0}`);
     line(`宝石孔 ${target.gems.length}/${target.numbers?.sockets??item.equipment!.socketCapacity}`);
@@ -118,11 +154,14 @@ export class ForgePanel {
     const entries=this.gridEntries(),assets=this.panels.assets;
     if(!entries.length){
       const message=this.tab==='enchant'?'背包里没有强化卷轴。':this.tab==='socket'?'背包里没有宝石。':'背包里没有净化之宝石。';
-      v.text(message,681,180,0,20,TEXT_COLORS.secondary).setOrigin(.5,0);return;
+      this.addText('forge-grid-empty',message,681,180,20,TEXT_COLORS.secondary,.5,0,{},{});
+      return;
     }
     const layout=bagLayout(),grid=layout.grid;
     // 右栏底部不再写宝石预览：网格一直排到框底边框内沿（431 − 24），多露一行格子且不被边框压住。
-    const scroll=v.scroll(grid.x,grid.y,grid.width,431-24-grid.y);this.scroll=scroll;
+    const scroll=this.scrollAt('forge-grid',grid.x,grid.y,grid.width,431-24-grid.y);this.scroll=scroll;
+    this.gridClip={top:grid.y,bottom:grid.y+scroll.height};
+    scroll.onScroll=()=>this.text?.refresh();
     entries.forEach((entry,index)=>{
       const definition=this.bag.catalog.items[entry.item];
       const x=index%4*SLOT_STRIDE,y=Math.floor(index/4)*SLOT_STRIDE;
@@ -133,12 +172,14 @@ export class ForgePanel {
       const button=v.button('',x,y,SLOT.size,SLOT.size,()=>this.selectGridEntry(entry),{image:assets['inventory-slot'],parent:scroll.content,guard:scroll.guard})
         .setData('label',this.gridLabel(entry));
       v.image(definition.icon,SLOT.icon.x,SLOT.icon.y,SLOT.icon.size,SLOT.icon.size,button);
-      if(definition.stackable)v.text(String(entry.quantity),layout.badge.x,layout.badge.y,0,20,layout.badge.color,button).setOrigin(1,0);
+      if(definition.stackable)this.addGridText(`forge-grid-badge-${index}`,String(entry.quantity),
+        grid.x+x+layout.badge.x,grid.y+y+layout.badge.y,20,layout.badge.color,1,0);
       if(selected||chaos)v.image(assets['inventory-selected'],SLOT.selection.x,SLOT.selection.y,SLOT.selection.size,SLOT.selection.size,button)
         .setData('forge-highlight',chaos?'chaos':'selected');
       if(problem||broken)button.setAlpha(.45);
     });
-    scroll.setHeight(Math.ceil(entries.length/4)*SLOT_STRIDE);scroll.scrollTop=this.offset;scroll.onScroll=()=>{this.offset=scroll.scrollTop;};
+    scroll.setHeight(Math.ceil(entries.length/4)*SLOT_STRIDE);scroll.scrollTop=this.offset;
+    scroll.onScroll=()=>{this.offset=scroll.scrollTop;this.text?.refresh();};
   }
   private selectGridEntry(entry:ItemInstance):void {
     this.selectedItem=entry.id;this.socketIndex=undefined;this.changed();
@@ -154,39 +195,41 @@ export class ForgePanel {
     return this.renderPurifyDetails(v,target,left);
   }
   private renderEnchantDetails(v:UiSurface,target:ItemInstance,item:ItemDefinition,left:ScrollArea):number {
-    if(!item.equipment?.enchantable){v.text('这件装备不能强化。',40,190,400,18,TEXT_COLORS.danger,left.content);return 208;}
+    if(!item.equipment?.enchantable){this.addText('forge-enchant-unavailable','这件装备不能强化。',40,190,18,TEXT_COLORS.danger,0,0,{width:400,wrap:'word'});return 208;}
     const selected=this.selectedItem?this.bag.get(this.selectedItem):undefined;
     if(!selected){
-      v.text('选择一张强化卷轴。',40,190,400,18,TEXT_COLORS.secondary,left.content);
-      v.button('确定强化',139,342,205,55,()=>{}, {fontSize:20,disabled:true,parent:left.content,guard:left.guard});
+      this.addText('forge-enchant-empty','选择一张强化卷轴。',40,190,18,TEXT_COLORS.secondary,0,0,{width:400,wrap:'word'});
+      v.button('',139,342,205,55,()=>{}, {fontSize:20,disabled:true,parent:left.content,guard:left.guard}).setData('label','确定强化');
+      this.buttonText('forge-enchant-confirm','确定强化',139,342,205,55,20);
       return 397;
     }
     const definition=this.bag.catalog.items[selected.item],problem=this.problemText(selected,target),odds=problem?undefined:this.bag.applicationOdds(selected.id,target.id);
-    v.text(definition.name,40,190,400,18,TEXT_COLORS.primary,left.content);
+    this.addText('forge-enchant-name',definition.name,40,190,18,TEXT_COLORS.primary,0,0,{width:400,wrap:'word'});
     let buttonY=342;
-    if(problem)v.text(problem,40,214,400,18,TEXT_COLORS.danger,left.content);
+    if(problem)this.addText('forge-enchant-problem',problem,40,214,18,TEXT_COLORS.danger,0,0,{width:400,wrap:'word'});
     else if(odds){
       const view=enhancementOddsView(odds,target.enhancement,target.numbers?.enhancementUses);
-      if(view.sentence)v.text(view.sentence,40,ENHANCEMENT_ODDS_TOP,400,18,TEXT_COLORS.secondary,left.content);
-      if(view.current)v.text(view.current,40,ENHANCEMENT_ODDS_TOP,400,18,TEXT_COLORS.secondary,left.content);
+      if(view.sentence)this.addText('forge-enchant-sentence',view.sentence,40,ENHANCEMENT_ODDS_TOP,18,TEXT_COLORS.secondary,0,0,{width:400,wrap:'word'});
+      if(view.current)this.addText('forge-enchant-current',view.current,40,ENHANCEMENT_ODDS_TOP,18,TEXT_COLORS.secondary,0,0,{width:400,wrap:'word'});
       view.rows.forEach((row,index)=>{
         const y=ENHANCEMENT_ODDS_ROW_TOP+index*ENHANCEMENT_ODDS_ROW_STRIDE,color=OUTCOME_COLORS[row.tone];
-        v.text(row.result,40,y,360,18,color,left.content);
-        v.text(row.chance,440,y,0,18,color,left.content).setOrigin(1,0);
+        this.addText(`forge-enchant-result-${index}`,row.result,40,y,18,color,0,0,{width:360,wrap:'word'});
+        this.addText(`forge-enchant-chance-${index}`,row.chance,440,y,18,color,1,0,{},{scroll:'forge-left',clip:ForgePanel.LEFT_CLIP});
       });
-      v.text(view.cost,40,view.costY,400,18,TEXT_COLORS.secondary,left.content);
+      this.addText('forge-enchant-cost',view.cost,40,view.costY,18,TEXT_COLORS.secondary,0,0,{width:400,wrap:'word'});
       // 概率行多时费用会往下走，按钮必须跟着下移，不能压住费用。
       buttonY=Math.max(342,view.costY+28);
     }
-    v.button('确定强化',139,buttonY,205,55,()=>this.useScroll(selected.id),{fontSize:20,disabled:!!problem,parent:left.content,guard:left.guard});
+    v.button('',139,buttonY,205,55,()=>this.useScroll(selected.id),{fontSize:20,disabled:!!problem,parent:left.content,guard:left.guard}).setData('label','确定强化');
+    this.buttonText('forge-enchant-confirm','确定强化',139,buttonY,205,55,20);
     return buttonY+55;
   }
   private renderSocketDetails(v:UiSurface,target:ItemInstance,item:ItemDefinition,left:ScrollArea):number {
     const equipment=item.equipment;
     if(!equipment)return 208;
-    if(equipment.locked){v.text('这件装备已锁定，不能镶嵌。',40,190,400,18,TEXT_COLORS.danger,left.content);return 208;}
+    if(equipment.locked){this.addText('forge-socket-locked','这件装备已锁定，不能镶嵌。',40,190,18,TEXT_COLORS.danger,0,0,{width:400,wrap:'word'});return 208;}
     const sockets=target.numbers?.sockets??equipment.socketCapacity;
-    if(sockets<=0){v.text('这件装备没有宝石孔。',40,190,400,18,TEXT_COLORS.danger,left.content);return 208;}
+    if(sockets<=0){this.addText('forge-socket-none','这件装备没有宝石孔。',40,190,18,TEXT_COLORS.danger,0,0,{width:400,wrap:'word'});return 208;}
     const modifiers=target.numbers?.gemModifiers;
     const valid=!!target.numbers&&!!modifiers&&modifiers.length===target.gems.length;
     const activeIndex=this.socketIndex??this.replaceIndex;
@@ -197,15 +240,17 @@ export class ForgePanel {
       if(filled){const gemItem=this.bag.catalog.items[target.gems[index]!];if(gemItem)v.image(gemItem.icon,5,5,44,44,button);}
       if(activeIndex===index)v.image(this.panels.assets['inventory-selected'],-5,-5,64,64,button).setData('forge-highlight','socket');
     }
-    if(!valid){v.text('宝石数据不完整，无法修改宝石。',40,252,400,18,TEXT_COLORS.danger,left.content);return 270;}
+    if(!valid){this.addText('forge-socket-invalid','宝石数据不完整，无法修改宝石。',40,252,18,TEXT_COLORS.danger,0,0,{width:400,wrap:'word'});return 270;}
     // 每个孔固定占一行，任何时候都能看到已镶宝石带来的属性。
     for(let index=0;index<sockets;index++){
       const y=252+index*22,filled=index<target.gems.length;
-      v.text(`孔${index+1}`,40,y,40,18,TEXT_COLORS.secondary,left.content);
-      if(!filled){v.text('空',84,y,110,18,TEXT_COLORS.secondary,left.content);continue;}
+      this.addText(`forge-socket-label-${index}`,`孔${index+1}`,40,y,18,TEXT_COLORS.secondary,0,0,{width:40,wrap:'word'});
+      if(!filled){this.addText(`forge-socket-empty-${index}`,'空',84,y,18,TEXT_COLORS.secondary,0,0,{width:110,wrap:'word'});continue;}
       const gemItem=this.bag.catalog.items[target.gems[index]!],modifier=modifiers[index];
-      v.text(gemItem?.name??'宝石',84,y,110,18,activeIndex===index?TEXT_COLORS.white:TEXT_COLORS.primary,left.content);
-      if(modifier)v.text(this.gemEffectText(modifier),198,y,242,18,TEXT_COLORS.gemModifier,left.content);
+      this.addText(`forge-socket-gem-${index}`,gemItem?.name??'宝石',84,y,18,
+        activeIndex===index?TEXT_COLORS.white:TEXT_COLORS.primary,0,0,{width:110,wrap:'word'});
+      if(modifier)this.addText(`forge-socket-effect-${index}`,this.gemEffectText(modifier),198,y,18,TEXT_COLORS.gemModifier,0,0,
+        {width:242,wrap:'word'});
     }
     const canAdd=target.gems.length<sockets;
     // 孔位越多，属性行越长；提示和操作按钮跟着属性行下移，避免和内容叠在一起。
@@ -214,41 +259,44 @@ export class ForgePanel {
     const actionY=Math.max(342,hintY+24);
     if(this.socketIndex!==undefined){
       const index=this.socketIndex,gemItem=this.bag.catalog.items[target.gems[index]!],modifier=modifiers[index];
-      if(!gemItem||!modifier){v.text('宝石数据不完整，无法修改宝石。',40,hintY,400,14,TEXT_COLORS.danger,left.content);return hintY+18;}
+      if(!gemItem||!modifier){this.addText('forge-socket-invalid-hint','宝石数据不完整，无法修改宝石。',40,hintY,14,TEXT_COLORS.danger,0,0,{width:400,wrap:'word'});return hintY+18;}
       const outcome=this.socketOutcome(target.id,modifiers,modifiers.filter((_value,slot)=>slot!==index),'取出后');
-      if(outcome)this.socketHint(v,outcome,TEXT_COLORS.primary,left,hintY);
-      v.button('取出',40,actionY,195,55,()=>{this.confirmation={kind:'unsocket',index};this.changed();},{fontSize:20,parent:left.content,guard:left.guard});
-      v.button('替换',245,actionY,195,55,()=>{this.replaceIndex=index;this.socketIndex=undefined;this.selectedItem=undefined;this.changed();},{fontSize:20,parent:left.content,guard:left.guard});
+      if(outcome)this.socketHint(outcome,TEXT_COLORS.primary,hintY);
+      v.button('',40,actionY,195,55,()=>{this.confirmation={kind:'unsocket',index};this.changed();},{fontSize:20,parent:left.content,guard:left.guard}).setData('label','取出');
+      this.buttonText('forge-socket-remove','取出',40,actionY,195,55,20);
+      v.button('',245,actionY,195,55,()=>{this.replaceIndex=index;this.socketIndex=undefined;this.selectedItem=undefined;this.changed();},{fontSize:20,parent:left.content,guard:left.guard}).setData('label','替换');
+      this.buttonText('forge-socket-replace','替换',245,actionY,195,55,20);
       return actionY+55;
     }
-    if(!canAdd&&this.replaceIndex===undefined)this.socketHint(v,'宝石孔已满',TEXT_COLORS.danger,left,hintY);
-    else if(this.replaceIndex!==undefined&&!this.selectedItem)this.socketHint(v,'从右侧选择要替换的宝石',TEXT_COLORS.secondary,left,hintY);
-    else if(!this.selectedItem)this.socketHint(v,'从右侧选择一颗宝石',TEXT_COLORS.secondary,left,hintY);
+    if(!canAdd&&this.replaceIndex===undefined)this.socketHint('宝石孔已满',TEXT_COLORS.danger,hintY);
+    else if(this.replaceIndex!==undefined&&!this.selectedItem)this.socketHint('从右侧选择要替换的宝石',TEXT_COLORS.secondary,hintY);
+    else if(!this.selectedItem)this.socketHint('从右侧选择一颗宝石',TEXT_COLORS.secondary,hintY);
     // 宝石名称和效果放回左栏，右栏底部整块留给背包格子。
     let selectionBottom=hintY;
     if(this.selectedItem){
       const gem=this.bag.get(this.selectedItem),definition=gem?this.bag.catalog.items[gem.item]:undefined,modifier=gem?.numbers?.modifiers?.[0];
-      if(!gem||!definition||!modifier){v.text('宝石数据不完整。',40,hintY,400,14,TEXT_COLORS.danger,left.content);return hintY+18;}
+      if(!gem||!definition||!modifier){this.addText('forge-socket-gem-invalid','宝石数据不完整。',40,hintY,14,TEXT_COLORS.danger,0,0,{width:400,wrap:'word'});return hintY+18;}
       if(this.replaceIndex!==undefined){
         const index=this.replaceIndex,oldName=this.bag.catalog.items[target.gems[index]!]?.name??`孔${index+1}`;
-        v.text(`替换 孔${index+1} ${oldName} → ${definition.name}`,40,hintY,400,14,TEXT_COLORS.primary,left.content);
-        v.text(this.gemEffectText(modifier),40,hintY+20,400,14,TEXT_COLORS.gemModifier,left.content);
+        this.addText('forge-socket-swap-line',`替换 孔${index+1} ${oldName} → ${definition.name}`,40,hintY,14,TEXT_COLORS.primary,0,0,{width:400,wrap:'word'});
+        this.addText('forge-socket-swap-effect',this.gemEffectText(modifier),40,hintY+20,14,TEXT_COLORS.gemModifier,0,0,{width:400,wrap:'word'});
         selectionBottom=hintY+40;
       }else{
-        v.text(`${definition.name} · ${this.gemEffectText(modifier)}`,40,hintY,400,14,TEXT_COLORS.primary,left.content);
+        this.addText('forge-socket-picked',`${definition.name} · ${this.gemEffectText(modifier)}`,40,hintY,14,TEXT_COLORS.primary,0,0,{width:400,wrap:'word'});
         selectionBottom=hintY+20;
       }
     }
-    const buttonY=Math.max(actionY,selectionBottom+4);
-    v.button(this.replaceIndex===undefined?'确认镶嵌':'确认替换',139,buttonY,205,55,()=>this.confirmSocket(),{fontSize:20,
+    const buttonY=Math.max(actionY,selectionBottom+4),confirmLabel=this.replaceIndex===undefined?'确认镶嵌':'确认替换';
+    v.button('',139,buttonY,205,55,()=>this.confirmSocket(),{fontSize:20,
       disabled:!this.selectedItem||!this.bag.get(this.selectedItem)?.numbers?.modifiers?.length||(!canAdd&&this.replaceIndex===undefined),
-      parent:left.content,guard:left.guard});
+      parent:left.content,guard:left.guard}).setData('label',confirmLabel);
+    this.buttonText('forge-socket-confirm',confirmLabel,139,buttonY,205,55,20);
     return buttonY+55;
   }
 
   /** 左栏只留一句状态或结果，放在孔位效果列表下面。 */
-  private socketHint(v:UiSurface,text:string,color:string,left:ScrollArea,y:number):void {
-    v.text(text,40,y,400,14,color,left.content);
+  private socketHint(text:string,color:string,y:number):void {
+    this.addText('forge-socket-hint',text,40,y,14,color,0,0,{width:400,wrap:'word'});
   }
 
   /** 宝石词条的短写法：`暴击率 +2.5%`，用于孔位效果列表和镶嵌预览。 */
@@ -284,17 +332,19 @@ export class ForgePanel {
     return lines.slice(0,5);
   }
   private renderPurifyDetails(v:UiSurface,target:ItemInstance,left:ScrollArea):number {
-    if(!target.numbers?.chaos){v.text('这件装备没有混沌属性。',40,190,400,18,TEXT_COLORS.danger,left.content);return 208;}
+    if(!target.numbers?.chaos){this.addText('forge-purify-none','这件装备没有混沌属性。',40,190,18,TEXT_COLORS.danger,0,0,{width:400,wrap:'word'});return 208;}
     const selected=this.selectedItem?this.bag.get(this.selectedItem):undefined;
     if(!selected){
-      v.text('选择净化之宝石。',40,190,400,18,TEXT_COLORS.secondary,left.content);
-      v.button('确定净化',139,342,205,55,()=>{}, {fontSize:20,disabled:true,parent:left.content,guard:left.guard});
+      this.addText('forge-purify-empty','选择净化之宝石。',40,190,18,TEXT_COLORS.secondary,0,0,{width:400,wrap:'word'});
+      v.button('',139,342,205,55,()=>{}, {fontSize:20,disabled:true,parent:left.content,guard:left.guard}).setData('label','确定净化');
+      this.buttonText('forge-purify-confirm','确定净化',139,342,205,55,20);
       return 397;
     }
     const definition=this.bag.catalog.items[selected.item];
-    v.text(definition.name,40,190,400,18,TEXT_COLORS.primary,left.content);
-    v.text('净化后清除混沌属性，保留强化、耐久和宝石。',40,214,400,18,TEXT_COLORS.secondary,left.content);
-    v.button('确定净化',139,342,205,55,()=>this.usePurify(selected.id),{fontSize:20,parent:left.content,guard:left.guard});
+    this.addText('forge-purify-name',definition.name,40,190,18,TEXT_COLORS.primary,0,0,{width:400,wrap:'word'});
+    this.addText('forge-purify-explain','净化后清除混沌属性，保留强化、耐久和宝石。',40,214,18,TEXT_COLORS.secondary,0,0,{width:400,wrap:'word'});
+    v.button('',139,342,205,55,()=>this.usePurify(selected.id),{fontSize:20,parent:left.content,guard:left.guard}).setData('label','确定净化');
+    this.buttonText('forge-purify-confirm','确定净化',139,342,205,55,20);
     return 397;
   }
   private useScroll(sourceId:string):void {
@@ -326,7 +376,8 @@ export class ForgePanel {
       ?'取出后这颗宝石会回到背包，装备上的这条属性会消失。确定取出？'
       :'替换后旧宝石会回到背包，装备上的属性会改为新宝石。确定替换？';
     placeModal(1024,640);
-    drawNativeMessage(modal,this.panels.assets,message,()=>this.confirm(),()=>this.cancelConfirmation());
+    const writer:MenuTextWriter={add:spec=>this.modalText.push(spec)};
+    drawNativeMessage(modal,this.panels.assets,message,()=>this.confirm(),()=>this.cancelConfirmation(),writer);
   }
   private confirm():void {
     const confirmation=this.confirmation,targetId=this.targetId;

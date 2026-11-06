@@ -99,6 +99,8 @@ export class StoryUI {
   /** 存档/读档页上一次绘制收集到的文字；确认框打开时改用它自己的那一份。 */
   private saveTextSpecs:MenuTextSpec[]=[];
   private saveModalTextSpecs:MenuTextSpec[]=[];
+  /** 通用原生提示（`drawNativeMessage`）的 DOM 文字；弹层坐标已换成当前页坐标。 */
+  private noticeTextSpecs:MenuTextSpec[]=[];
   /** 登记快捷键那一屏单独一层：它盖在遮罩上，菜单本体整块藏起来。 */
   private shortcutScreen?:UiSurface;
   private controlEditor?:ControlLayoutEditor;
@@ -214,6 +216,29 @@ export class StoryUI {
           style:{size:28,color:GOLD,anchorX:.5,anchorY:0}});
         this.skillBook?.renderText(writer);
       });
+      // 商店、融合器与强化台的页面文字由面板收集；弹层打开时只输出弹层那一份。
+      this.menuText.register('shop',writer=>{
+        const panel=this.shopPanel;if(!panel)return;
+        if(panel.modalOpen)panel.renderModalText({add:spec=>writer.add(this.modalTextSpec(spec))});
+        else panel.renderText(writer);
+      });
+      this.menuText.register('crafting',writer=>{
+        const actor=this.craftingActor?this.world?.actors[this.craftingActor]:undefined;
+        if(actor)writer.add({key:'crafting-title',text:actor.name,x:512-CONTENT_ORIGIN.x,y:25-CONTENT_ORIGIN.y,
+          style:{size:28,color:GOLD,anchorX:.5,anchorY:0}});
+        const panel=this.craftingPanel;if(!panel)return;
+        if(panel.modalOpen)panel.renderModalText({add:spec=>writer.add(this.modalTextSpec(spec))});
+        else panel.renderText(writer);
+      });
+      this.menuText.register('forge',writer=>{
+        writer.add({key:'forge-title',text:'装备强化',x:512-CONTENT_ORIGIN.x,y:25-CONTENT_ORIGIN.y,
+          style:{size:28,color:GOLD,anchorX:.5,anchorY:0}});
+        const panel=this.forge;if(!panel)return;
+        if(panel.confirming)panel.renderModalText({add:spec=>writer.add(this.modalTextSpec(spec))});
+        else panel.renderText(writer);
+      });
+      // 通用原生提示盖在任何页面之上：页面文字让位，只输出这一份。
+      this.menuText.register('native-notice',writer=>{for(const spec of this.noticeTextSpecs)writer.add(spec);});
     }
     this.shortcutScreen.enabled=()=>this.open&&!this.app.ui.suspended&&!this.busy&&!!this.shortcutEdit;
     this.backTab.enabled=()=>this.shortcutScreen!.enabled();
@@ -269,7 +294,9 @@ export class StoryUI {
     // DOM 文字盖在画布之上；弹层和菜单隐藏时必须一起让位，否则会浮在弹层上面。
     // 存档确认框、人物加点确认框和队伍弹层的文字也在 DOM 里，它们打开时这一层继续显示，
     // 但页面渲染函数只产出弹层那一份文字。
-    const textModal=this.savePage?.modalOpen||(this.page==='status'&&!!this.allocationExit)||(this.page==='party'&&!!this.partyPanel?.modalOpen);
+    const textModal=this.savePage?.modalOpen||(this.page==='status'&&!!this.allocationExit)||(this.page==='party'&&!!this.partyPanel?.modalOpen)
+      ||(this.page==='shop'&&!!this.shopPanel?.modalOpen)||(this.page==='crafting'&&!!this.craftingPanel?.modalOpen)
+      ||(this.page==='forge'&&!!this.forge?.confirming)||!!this.itemNotice;
     this.menuText?.setVisible(menu&&(!modal||!!textModal));
     this.shortcutScreen?.visible(this.open&&!this.app.ui.suspended&&!!this.shortcutEdit);this.backTab?.visible(this.open&&!this.app.ui.suspended&&!!this.shortcutEdit);
     this.backdrop?.setVisible(this.open&&!this.app.ui.suspended);
@@ -581,16 +608,17 @@ export class StoryUI {
         const domTabs=this.page==='bag'||this.page==='system'||this.page==='status'||this.page==='party'||this.page==='quests'||this.page==='skills';
         tabs.forEach(([page,label],index)=>{const button=v.button('',35+index*149,25,102,116,()=>this.show(page),{bare:true,parent:v.staticRoot}).setData('label',label);v.image(this.content!.assets[`tab-${page}`],12,0,78,78,button);if(!domTabs)v.text(label,51,85,90,20,undefined,button).setOrigin(.5,0);button.setAlpha(this.page===page||(['settings','debug'] as Page[]).includes(this.page)&&page==='system'?1:.65);});
       }
-      if(this.page==='crafting'&&this.craftingPanel){
-        v.text(this.world!.actors[this.craftingActor!].name,512,25,0,28,undefined,v.staticRoot).setOrigin(.5,0);
-      }
-      if(this.page==='forge')v.text('装备强化',512,25,0,28,undefined,v.staticRoot).setOrigin(.5,0);
-      // 技能书页标题由 DOM 输出，静态层只留关闭钮。
+      // 融合器与强化台的顶部标题由 DOM 输出，静态层只留关闭钮。
+      // 技能书页标题同样由 DOM 输出。
       v.button('',947,24,51,51,()=>this.page==='forge'?this.closeForge():this.page==='learn'?this.closeSkillBook():this.close(),{image:this.content!.assets.close,pressed:this.content!.assets['close-pressed'],parent:v.staticRoot}).setData('label',this.page==='forge'?'关闭强化':this.page==='learn'?'关闭技能书':'关闭菜单');
     });
-    if(this.page==='bag')this.renderBag();if(this.page==='status')this.renderStatus();if(this.page==='skills')this.renderSkills();if(this.page==='party')this.renderParty();if(this.page==='quests')this.renderQuests();if(this.page==='shop')this.shopPanel?.render(this.body,this.modal!,this.placeModal,this.description!);
-    if(this.page==='crafting'&&this.craftingPanel){this.craftingPanel.render(this.body,this.modal!,this.placeModal,(pointer,entry,scroll)=>this.startDrag(pointer,entry,scroll));this.drops=this.craftingPanel.drops;}
-    if(this.page==='forge'&&this.forge)this.forge.render(this.body,this.modal!,this.placeModal);
+    const textScroll=(name:string,x:number,y:number,width:number,height:number,surface?:UiSurface)=>this.scroll(name,x,y,width,height,surface??this.body!);
+    const refreshText=()=>this.menuText?.refresh();
+    if(this.page==='bag')this.renderBag();if(this.page==='status')this.renderStatus();if(this.page==='skills')this.renderSkills();if(this.page==='party')this.renderParty();if(this.page==='quests')this.renderQuests();
+    if(this.page==='shop')this.shopPanel?.render(this.body,this.modal!,this.placeModal,this.description!,{scroll:textScroll,refresh:refreshText,
+      setText:(key,text)=>this.menuText?.setText('shop',key,text)});
+    if(this.page==='crafting'&&this.craftingPanel){this.craftingPanel.render(this.body,this.modal!,this.placeModal,(pointer,entry,scroll)=>this.startDrag(pointer,entry,scroll),{scroll:textScroll,refresh:refreshText});this.drops=this.craftingPanel.drops;}
+    if(this.page==='forge'&&this.forge)this.forge.render(this.body,this.modal!,this.placeModal,{scroll:textScroll,refresh:refreshText});
     if(this.page==='learn'&&this.skillBook)this.skillBook.render(this.body!);
     if(this.page==='system'){
       const actions:[string,()=>void][]=[['保存游戏',()=>this.show('save')],['读取存档',()=>this.show('load')],['设置',()=>this.show('settings')],['脱离卡死',()=>{
@@ -639,10 +667,17 @@ export class StoryUI {
     if(this.page==='settings')this.renderSettings();
     if(this.notice&&!this.isDomTextPage())this.surface.text(this.notice,512,614,880,18).setOrigin(.5,0);
     if(this.operation)this.renderOperation();if(this.allocationExit)this.renderAllocationConfirmation();if(this.skillReset)this.renderSkillResetConfirmation();
-    if(this.itemNotice){this.beginModal(1024,640);drawNativeMessage(this.modal!,this.app.menuPanels.assets,this.itemNotice,()=>{this.itemNotice=undefined;this.render();});}
+    if(this.itemNotice){
+      this.beginModal(1024,640);this.noticeTextSpecs=[];
+      // 系统页与存档页按 1024 画布排版，弹层本地坐标就是页面坐标；其余页换算到内容块坐标。
+      const fullPage=this.page==='system'||this.page==='save'||this.page==='load';
+      const writer:MenuTextWriter={add:spec=>this.noticeTextSpecs.push(fullPage?spec:this.modalTextSpec(spec))};
+      drawNativeMessage(this.modal!,this.app.menuPanels.assets,this.itemNotice,()=>{this.itemNotice=undefined;this.render();},undefined,writer);
+    }
     if(this.page==='save'||this.page==='load')this.renderSaveConfirmations();else this.savePage.renderConfirmations();
-    // 背包、人物、队伍、任务、技能和技能书页的文字在各自绘制阶段收集完，等弹层位置也确定后再统一交给 DOM 层。
-    if(this.page==='bag'||this.page==='status'||this.page==='party'||this.page==='quests'||this.page==='skills'||this.page==='learn')this.menuText?.renderPage(this.page);
+    // 页面文字在各自绘制阶段收集完，等弹层位置也确定后再统一交给 DOM 层；原生提示盖在页面之上。
+    if(this.itemNotice)this.menuText?.renderPage('native-notice');
+    else if(this.page==='bag'||this.page==='status'||this.page==='party'||this.page==='quests'||this.page==='skills'||this.page==='learn'||this.page==='shop'||this.page==='crafting'||this.page==='forge')this.menuText?.renderPage(this.page);
     this.sync();
   }
   private openControlEditor():void {

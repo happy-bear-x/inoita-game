@@ -1763,11 +1763,11 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     }
     const projectedIds=new Set(projected.map(entity=>entity.id));
     for(const character of [...this.characters])if(!projectedIds.has(character.entity.id)){
-      this.movement.remove(character);character.container.destroy();this.characters.splice(this.characters.indexOf(character),1);
+      this.movement.remove(character);character.marker?.dom.remove();character.container.destroy();this.characters.splice(this.characters.indexOf(character),1);
     }
     for(const entity of projected){
       const old=this.characters.find(character=>character.entity.id===entity.id);
-      if(old&&old.actor.id!==this.app.session.storyWorld.actorAppearance(entity.actor)){this.movement.remove(old);old.container.destroy();this.characters.splice(this.characters.indexOf(old),1);}
+      if(old&&old.actor.id!==this.app.session.storyWorld.actorAppearance(entity.actor)){this.movement.remove(old);old.marker?.dom.remove();old.container.destroy();this.characters.splice(this.characters.indexOf(old),1);}
       const character=this.characters.find(character=>character.entity.id===entity.id)??this.createActor(entity);
       if(!this.characters.includes(character))this.characters.push(character);
       character.entity={...entity};

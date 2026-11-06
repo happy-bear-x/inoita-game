@@ -97,10 +97,25 @@ const open=(id:string,changed:()=>void=()=>{})=>{
   const parent=new Surface();
   // 说明面板画在单独一层上：停在右栏时它压在背包格子上，画在内容块里会被格子的图层盖住。
   const description=new Surface();
-  const draw=()=>{surface.calls=[];description.calls=[];panel.render(surface as never,surface as never,(width,height)=>centerModal(surface as never,parent as never,width,height),description as never);};
+  // DOM 文字层替身：记录页面与弹层规格，滚动区仍转交绘制层创建。
+  const texts:{page:Record<string,unknown>[];modal:Record<string,unknown>[];updated:Record<string,string>}=
+    {page:[],modal:[],updated:{}};
+  const target={
+    scroll(_name:string,x:number,y:number,width:number,height:number,surfaceArg?:Surface){return (surfaceArg??surface).scroll(x,y,width,height);},
+    setText(key:string,value:string){texts.updated[key]=value;},
+    refresh(){},
+  };
+  const collect=()=>{
+    texts.page=[];texts.modal=[];
+    panel.renderText({add:spec=>texts.page.push(spec as unknown as Record<string,unknown>)});
+    panel.renderModalText({add:spec=>texts.modal.push(spec as unknown as Record<string,unknown>)});
+  };
+  const draw=()=>{surface.calls=[];description.calls=[];panel.render(surface as never,surface as never,(width,height)=>centerModal(surface as never,parent as never,width,height),description as never,target as never);collect();};
   draw();
-  return {store,session,surface,description,panel,draw};
+  return {store,session,surface,description,panel,draw,texts};
 };
+const textSpecs=(texts:{page:Record<string,unknown>[];modal:Record<string,unknown>[]},value:string,mode:'page'|'modal'='page')=>
+  texts[mode].filter(spec=>spec.text===value);
 /** 货架格与背包格是 bare 按钮，标签由 setData('label') 给出。 */
 const press=(surface:Surface,label:string)=>{
   const call=surface.calls.find(call=>call.kind==='button'&&String(call.node?.label??'').startsWith(label));
@@ -222,14 +237,15 @@ test('shop assets keep their native pixel sizes',()=>{
 });
 
 test('shop panel draws money, slots and badges at the native coordinates',()=>{
-  const {surface}=open('merchandise-dealer-b09d9585');
+  const {surface,texts}=open('merchandise-dealer-b09d9585');
   // 两栏只画图框，不铺底：面板里露出来的是黑色 65% 遮罩下的世界画面。
   assert.deepEqual(surface.calls.filter(call=>call.kind==='border').map(call=>[call.x,call.y,call.width,call.height]),
     [[85,0,395,431],[484,0,395,431]]);
   assert.equal(surface.calls.filter(call=>call.kind==='frame').length,0,'两栏都不铺底');
   const title=surface.images.find(call=>String(call.file).includes('merchant-title'))!;
   assert.deepEqual([title.x,title.y,title.width,title.height],[138,-35,288,82]);
-  assert.deepEqual([surface.texts('杂货商人')[0].x,surface.texts('杂货商人')[0].y], [282,6]);
+  const titleText=textSpecs(texts,'杂货商人')[0]!;
+  assert.deepEqual([titleText.x,titleText.y], [282,6]);
   const slots=surface.images.filter(call=>String(call.file).includes('/slot.png'));
   assert.equal(slots.length,32);assert.deepEqual([slots[0].x,slots[0].y,slots[0].width,slots[0].height],[121,80,74,74]);
   const icons=surface.images.filter(call=>String(call.file).includes('/items/'));
@@ -238,19 +254,19 @@ test('shop panel draws money, slots and badges at the native coordinates',()=>{
   // 金币：先币后数字，单位间距 103，数字左对齐于币右侧 44、下移 6、白色。
   const coins=surface.images.filter(call=>/(gold|silver|copper)\.png$/.test(String(call.file)));
   assert.deepEqual(coins.map(call=>[call.x,call.y,call.width,call.height]),[[518,365,44,40],[621,365,44,40],[724,365,44,40]]);
-  const digits=surface.calls.filter(call=>call.kind==='text'&&call.color==='#ffffff'&&(call.x as number)>=518);
-  assert.deepEqual(digits.map(call=>[call.x,call.y]),[[562,371],[665,371],[768,371]]);
+  const digits=texts.page.filter(spec=>String(spec.key).startsWith('shop-money-'));
+  assert.deepEqual(digits.map(spec=>[spec.x,spec.y]),[[562,371],[665,371],[768,371]]);
   assert.deepEqual([surface.calls.find(call=>call.kind==='textPlate')!.x,surface.calls.find(call=>call.kind==='textPlate')!.y], [518,368]);
   const scrolls=surface.calls.filter(call=>call.kind==='scroll');
   assert.deepEqual(scrolls.map(call=>[call.x,call.y,call.width,call.height]),[[518,27,323,323]]);
-  // 起始背包的恢复药水有 5 个，数量角标按原版画在 (+67,+47)、白色、右对齐。
-  const badge=surface.calls.find(call=>call.kind==='text'&&call.value==='5')!;
-  assert.equal(badge.color,'#ffffff');assert.deepEqual([(badge.node as Node).origin.x,(badge.node as Node).origin.y],[1,0]);
-  assert.deepEqual([badge.x,badge.y],[67,47]);
+  // 起始背包的恢复药水有 5 个，数量角标按原版落在格子 (+67,+47)、白色、右对齐。
+  const badge=texts.page.find(spec=>spec.text==='5')! as {x:number;y:number;style:{color?:string;anchorX?:number;anchorY?:number}};
+  assert.equal(badge.style.color,'#ffffff');assert.deepEqual([badge.style.anchorX,badge.style.anchorY],[1,0]);
+  assert.deepEqual([badge.x,badge.y],[518+67,27+47]);
 });
 
 test('classified shops draw the native category column and name plate',()=>{
-  const {surface}=open('weapons-dealer-f31d78ce');
+  const {surface,texts}=open('weapons-dealer-f31d78ce');
   const title=surface.images.find(call=>String(call.file).includes('merchant-title'))!;
   assert.deepEqual([title.x,title.y],[149,-35]);
   const buttons=surface.calls.filter(call=>call.kind==='button'&&String((call.options as Record<string,unknown>).image??'').includes('/shop/'));
@@ -259,9 +275,10 @@ test('classified shops draw the native category column and name plate',()=>{
   assert.deepEqual(buttons.map(call=>call.y),[0,69,138,207,276,345,414,483,552]);
   const plate=surface.calls.find(call=>call.kind==='textPlate')!;
   assert.deepEqual([plate.x,plate.y,plate.width],[135,41,323]);
-  const categories=surface.calls.filter(call=>call.kind==='text'&&call.color==='#e2cb9e');
-  assert.deepEqual([categories.at(-1)!.x,categories.at(-1)!.y],[296,58]);
-  assert.deepEqual([(categories.at(-1)!.node as Node).origin.x,(categories.at(-1)!.node as Node).origin.y],[.5,.5],'分类名居中于底板');
+  const category=texts.page.find(spec=>spec.key==='shop-category-name')! as
+    {x:number;y:number;style:{anchorX?:number;anchorY?:number}};
+  assert.deepEqual([category.x,category.y],[296,58]);
+  assert.deepEqual([category.style.anchorX,category.style.anchorY],[.5,.5],'分类名居中于底板');
   const scrolls=surface.calls.filter(call=>call.kind==='scroll');
   assert.deepEqual(scrolls.map(call=>[call.x,call.y,call.width,call.height]),[[28,10,88,412],[518,27,323,323]]);
   // 分类列的端盖与竖条：`UIStore_Draw` 画在左框 (0,0)、(0,407) 与 (93,10)。
@@ -308,21 +325,21 @@ test('both shops keep the bag category column on the right of the bag frame',()=
 });
 
 test('picking an item first opens the description panel on the opposite column',()=>{
-  const {surface,description,session,draw}=open('merchandise-dealer-b09d9585');
+  const {surface,description,session,draw,texts}=open('merchandise-dealer-b09d9585');
   session.gainMoney(1_000_000);
   const general=shopLayout(false),potion=item('恢复药水（小）');
   // 买入：原版把买入记成 mode 1，说明面板因此落背包那一栏（点选来源的对面）。
   press(surface,'购买 恢复药水（小）');draw();
   assert.equal(surface.visibleCalls,0,'说明面板不占弹层画布');
   assert.deepEqual(surface.frames,[],'主画布上不开弹框');
-  assert.equal(description.texts(potion.name).length,1,'面板不画物品图片，只写一行物品名');
-  assert.equal(description.texts(potion.typeName).length,0,'正文不再写「药水（恢复）」这类类型名');
-  assert.equal(description.texts(`等级 ${potion.level}`).length,potion.level?1:0,'有等级的物品才写等级行（这瓶药水是 0 级）');
-  assert.equal(description.texts(potion.description).length,1);
+  assert.equal(textSpecs(texts,potion.name).length,1,'面板不画物品图片，只写一行物品名');
+  assert.equal(textSpecs(texts,potion.typeName).length,0,'正文不再写「药水（恢复）」这类类型名');
+  assert.equal(textSpecs(texts,`等级 ${potion.level}`).length,potion.level?1:0,'有等级的物品才写等级行（这瓶药水是 0 级）');
+  assert.equal(textSpecs(texts,potion.description).length,1);
   // 说明面板整块画在它自己那一层上，内容块上不留任何一件；否则停在右栏时会被背包格子的图层盖住。
   assert.equal(surface.descriptionFills.length,0,'底色不画在内容块上');
   assert.equal(surface.descriptionBorders.length,0,'图框不画在内容块上');
-  assert.equal(surface.texts(potion.description).length,0);
+  assert.equal((textSpecs(texts,potion.description)[0] as {scroll?:string}).scroll,'shop-detail','说明正文跟随说明面板自己的滚动区');
   // 买入时面板盖背包栏，所以宽度取 395。
   // 买入时面板盖背包栏：宽度受限于右侧那一列分类按钮，右边缘停在分类列外框之前。
   const panel=descriptionPanel(BAG_DESCRIPTION_WIDTH),left=general.bagFrame.x,close=boxButton(description,'关闭'),buy=boxButton(description,'购买');
@@ -334,7 +351,7 @@ test('picking an item first opens the description panel on the opposite column',
   assert.deepEqual(description.descriptionFills.map(call=>[call.x,call.y,call.width,call.height]),
     [[left+panel.inset,panel.y+panel.inset,panel.width-panel.inset*2,panel.height-panel.inset*2]]);
   // 物品名画在面板顶上（不在滚动区里），右侧留出关闭按钮那段宽度。
-  assert.deepEqual(description.texts(potion.name).map(call=>[call.x,call.y,call.width,call.size]),
+  assert.deepEqual(textSpecs(texts,potion.name).map(spec=>[spec.x,spec.y,(spec.style as {width?:number}).width,(spec.style as {size:number}).size]),
     [[left+panel.title.x,panel.y+panel.title.y,panel.width-panel.title.right,panel.title.size]]);
   // 关闭钮用原版那张 67×67 的圆图，落点取面板的 close 矩形。
   assert.deepEqual([close.x,close.y],[left+panel.close.x,panel.y+panel.close.y]);
@@ -347,7 +364,7 @@ test('picking an item first opens the description panel on the opposite column',
   assert.deepEqual([buy.width,buy.height],[panel.menu.button.width,panel.menu.button.height]);
   // 关闭按钮把面板撤掉，回到只有货架与背包的商店界面。
   (close.action as ()=>void)();draw();
-  assert.equal(description.texts(potion.description).length,0);
+  assert.equal(textSpecs(texts,potion.description).length,0);
   // 卖出：mode 0 落货架那一栏，底部改挂"出售"，堆叠物品补一行持有数量。
   press(surface,'出售 恢复药水（小）');draw();
   const sell=boxButton(description,'出售');
@@ -355,16 +372,16 @@ test('picking an item first opens the description panel on the opposite column',
   assert.deepEqual([sell.x,sell.y],[general.leftFrame.x+shelfPanel.menu.x+shelfPanel.menu.offsets[1],panel.y+shelfPanel.menu.y]);
   assert.equal(shelfPanel.width,general.leftFrame.width,'卖出时与货架栏同宽');
   assert.equal(description.descriptionBorders.at(-1)!.x,general.leftFrame.x,'卖出时面板落在货架那一栏');
-  assert.equal(description.texts(`数量：${session.bag.get(session.bag.entries[0].id)!.quantity}`).length,0,'数量显示在物品格角标中');
+  assert.equal(textSpecs(texts,`数量：${session.bag.get(session.bag.entries[0].id)!.quantity}`).length,0,'数量显示在物品格角标中');
   // 不可出售的物品跳过说明面板，仍按原样直接提示。
   session.bag.add('skills-reset-spell');draw();
   press(surface,'出售 技能初始化卷轴');draw();
-  assert.equal(surface.texts('此物品无法出售').length,1);
-  assert.equal(description.texts(item('技能初始化卷轴').description).length,0);
+  assert.equal(textSpecs(texts,'此物品无法出售','modal').length,1);
+  assert.equal(textSpecs(texts,item('技能初始化卷轴').description).length,0);
 });
 
 test('batch sale hides unsellable items, toggles picks and sells the whole stack at once',()=>{
-  const {surface,session,store,draw}=open('merchandise-dealer-b09d9585');
+  const {surface,session,store,draw,texts}=open('merchandise-dealer-b09d9585');
   session.bag.add('skills-reset-spell');draw();
   press(surface,'批量出售');draw();
   assert.ok(surface.buttons.some(call=>String(call.node?.label)==='退出批量'),'开启后按钮变成退出批量');
@@ -374,20 +391,20 @@ test('batch sale hides unsellable items, toggles picks and sells the whole stack
   press(surface,'选择 恢复药水（小）');draw();
   const action=surface.buttons.find(call=>String(call.node?.label)==='出售选中')!;
   assert.equal((action.options as {disabled?:boolean}).disabled,false);
-  assert.ok(surface.calls.some(call=>call.kind==='text'&&String(call.value).startsWith('合计 ')),'金额栏改显示本次合计');
+  assert.ok(texts.page.some(spec=>String(spec.text).startsWith('合计 ')),'金额栏改显示本次合计');
   (action.action as ()=>void)();draw();
   assert.equal(session.money,before+price);assert.equal(session.bag.count('healing-potion-s'),0,'整组一次卖完');
   assert.ok(surface.buttons.some(call=>String(call.node?.label)==='出售选中'),'卖完仍留在批量模式');
 });
 
 test('trade follows the native steps: description, quantity box, then confirmation',()=>{
-  const {surface,description,session,draw}=open('merchandise-dealer-b09d9585');
+  const {surface,description,session,draw,texts}=open('merchandise-dealer-b09d9585');
   // 给够金币，确认框里就只有问题行，不再多一行「金币不足」。
   session.gainMoney(1_000_000);
   assert.equal(surface.visibleCalls,0,'没有选中时不开弹层');
   // 原版点商品先弹物品说明面板，点面板上的"购买"才进数量框；堆叠商品可一次买 1–99。
   press(surface,'购买 恢复药水（小）');draw();
-  assert.equal(description.texts(item('恢复药水（小）').description).length,1,'说明面板画出物品说明');
+  assert.equal(textSpecs(texts,item('恢复药水（小）').description).length,1,'说明面板画出物品说明');
   (boxButton(description,'购买').action as ()=>void)();draw();
   const {field,step,button,plate,icon,textPlate}=tradeLayout.quantity;
   // 弹层用的是图组 19 的边框家族，不是内容栏那套九宫格。
@@ -401,9 +418,10 @@ test('trade follows the native steps: description, quantity box, then confirmati
   const arrows=surface.calls.filter(call=>call.kind==='button'&&String((call.options as Record<string,unknown>|undefined)?.image??'').includes('count-'));
   assert.deepEqual(arrows.map(call=>[call.x,call.y,call.width,call.height]),[[95,50,51,58],[95+209,50,51,58]]);
   // 数量左对齐于计数区右侧、米色；金额与 323 宽的文本底板左端对齐。
-  const count=surface.calls.find(call=>call.kind==='text'&&call.value==='1'&&call.x===233)!;
-  assert.deepEqual([count.y,count.color],[56,'#e2cb9e']);
-  assert.deepEqual([(count.node as Node).origin.x],[0]);
+  const count=texts.modal.find(spec=>spec.key==='shop-quantity-count')! as
+    {x:number;y:number;style:{color?:string;anchorX?:number}};
+  assert.deepEqual([count.y,count.style.color],[56,'#e2cb9e']);
+  assert.deepEqual([count.style.anchorX],[0]);
   const moneyPlate=surface.calls.find(call=>call.kind==='textPlate'&&call.x===textPlate.x&&call.y===textPlate.y)!;
   assert.equal(moneyPlate.width,323);
   assert.deepEqual([boxButton(surface,'确定').x,boxButton(surface,'确定').y,boxButton(surface,'确定').width,boxButton(surface,'确定').height],
@@ -414,7 +432,7 @@ test('trade follows the native steps: description, quantity box, then confirmati
   // 框从画布左上角开始画，垂直居中交给锚点；桩 Surface 不传父画布，所以只看框内坐标。
   const message=tradeMessageLayout(1,true),boxTop=0;
   assert.deepEqual(popupFrame(surface),nativePopupFrame(450,message.height));
-  assert.equal(surface.texts('确定购买 恢复药水（小）？').length,1);
+  assert.equal(textSpecs(texts,'确定购买 恢复药水（小）？','modal').length,1);
   // 面板本身的金币仍在 (518,365)，弹层里的金额画在弹层画布坐标上。
   const coins=surface.images.filter(call=>/(gold|silver|copper)\.png$/.test(String(call.file))&&(call.x as number)<400);
   assert.deepEqual(coins.map(call=>[call.x,call.y]),
@@ -422,8 +440,9 @@ test('trade follows the native steps: description, quantity box, then confirmati
   // 问题行、金额、按钮行三段互不重叠，且按钮行到框底留出内边距。
   // 正文落在黑底上半区（内缩 35 到 235）里居中：text.y 是这一行的上沿。
   assert.ok(message.text.y>=message.plate.y&&message.text.y+34<=message.plate.y+200,'问题行落在黑底上半区');
-  const question=surface.texts('确定购买 恢复药水（小）？')[0];
-  assert.deepEqual([(question.node as Node).origin.x,(question.node as Node).origin.y],[.5,0],'纵轴原点取顶边');
+  const question=textSpecs(texts,'确定购买 恢复药水（小）？','modal')[0] as
+    {y:number;style:{anchorX?:number;anchorY?:number}};
+  assert.deepEqual([question.style.anchorX,question.style.anchorY],[.5,0],'纵轴原点取顶边');
   const buttonTop=boxTop+message.button.y,buttonBottom=buttonTop+message.button.height;
   assert.ok((question.y as number)+16<=(coins[0].y as number),'问题行不压金额');
   assert.ok((coins[0].y as number)+40<=buttonTop,'金额不压按钮行');
@@ -458,7 +477,7 @@ test('non-stackable and unsellable items skip the quantity box',()=>{
   const general=open('merchandise-dealer-b09d9585');
   general.session.bag.add('skills-reset-spell');general.draw();
   press(general.surface,'出售 技能初始化卷轴');general.draw();
-  assert.equal(general.surface.texts('此物品无法出售').length,1);
+  assert.equal(textSpecs(general.texts,'此物品无法出售','modal').length,1);
   const notice=tradeMessageLayout(1,false),noticeTop=0;
   assert.deepEqual([boxButton(general.surface,'确定').x,boxButton(general.surface,'确定').y],[(450-125)/2,noticeTop+notice.button.y]);
   assert.equal(general.surface.buttons.filter(call=>call.label==='取消').length,0);
@@ -466,16 +485,15 @@ test('non-stackable and unsellable items skip the quantity box',()=>{
 
 test('quantity arrows repaint only the box, never the whole menu',()=>{
   let repaints=0;
-  const {surface,description,store,session,draw}=open('merchandise-dealer-b09d9585',()=>{repaints++;});
+  const {surface,description,store,session,draw,texts}=open('merchandise-dealer-b09d9585',()=>{repaints++;});
   session.gainMoney(1_000_000);
   press(surface,'购买 恢复药水（小）');draw();
   (boxButton(description,'购买').action as ()=>void)();draw();
   const arrow=(name:string)=>surface.calls.find(call=>call.kind==='button'&&String((call.options as Record<string,unknown>|undefined)?.image??'').includes(name))!;
   const plus=arrow('count-right'),minus=arrow('count-left');
-  const count=()=>surface.calls.find(call=>call.kind==='text'&&call.x===233&&call.y===56)!.node as Node;
-  // 弹层里那行金额的三个数字：横坐标都在弹层画布上（<400），面板自己的金币在 562 之后。
-  const digits=()=>surface.calls.filter(call=>call.kind==='text'&&call.size===21&&call.color==='#ffffff'&&(call.x as number)<400)
-    .map(call=>(call.node as Node).text);
+  const count=()=>({text:texts.updated['shop-quantity-count']??'1'});
+  // 数量就地更新时 DOM 层只改这三条金额文字。
+  const digits=()=>['gold','silver','copper'].map(unit=>texts.updated[`shop-quantity-money-${unit}`]??'');
   const offer=store.offers.find(value=>!value.sold&&session.bag.catalog.items[value.instance.item].name==='恢复药水（小）')!;
   const price=store.buyPrice(offer.id);
   assert.deepEqual([count().text,(minus.node as Node).interactive],['1',false],'数量 1 时减号是灰的');
