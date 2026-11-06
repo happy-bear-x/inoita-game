@@ -349,7 +349,10 @@ export class MenuScene extends Phaser.Scene {
     this.domSpecs=texts;
     this.menuText?.renderPage(this.page);
     // 确认框盖住页面时先收起页面文字；确认框正文由独立的 DOM 标签绘制。
-    this.menuText?.setVisible(this.confirmAction===undefined);
+    // 加载页会盖住画布，但 DOM 在画布之上；加载或挂起时页面文字必须让位。
+    const textVisible=this.confirmAction===undefined&&this.app.ui.ready&&!this.app.ui.suspended;
+    this.menuText?.setVisible(textVisible);
+    if(!textVisible)for(const label of this.modalLabels)label.setVisible(false);
     this.clearModalLabels();
     if(this.confirmAction){
       const action=this.confirmAction,modal=this.modal!;

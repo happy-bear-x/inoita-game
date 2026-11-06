@@ -217,3 +217,9 @@ export class GameUI {
   }
   closeDialogue():void{this.cancelDialogue?.();this.portraitToken=Symbol('closed');this.portraitFile=undefined;this.dialogueLine=undefined;this.choices=undefined;this.dialogueState=null;this.pending=null;this.page='';this.updateControls();}
 }
+
+/** 全屏遮罩判定：这些状态下收起普通 DOM 文字，加载页自己的文字在 overlay 层显示。 */
+export function uiOcclusion(ui: GameUI): boolean {
+  const portrait = typeof window !== 'undefined' && window.innerHeight > window.innerWidth;
+  return !!ui.loadingState || !!ui.defeatState || ui.worldRebuildCover || ui.suspended || portrait;
+}

@@ -454,7 +454,8 @@ export class WorldScene extends Phaser.Scene {
       const character=this.pickupRecipients.get(id);
       if(!character?.container.active)return undefined;
       return {...this.movement!.displayPosition(character),headAnchor:character.actor.headAnchor??{x:0,y:0}};
-    },domUi:this.app.domUi,visible:()=>this.canCombatControl&&!this.performing&&!this.stageOccluded});
+    },domUi:this.app.domUi,visible:()=>this.canCombatControl&&!this.performing&&!this.stageOccluded
+      &&!this.app.ui.loadingState});
     const mapNavigation = new NavigationWorld(map);
     mapNavigation.prepareTerrainRouting();
     this.movement = new MovementWorld(this, mapNavigation);

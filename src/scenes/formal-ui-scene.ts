@@ -2,7 +2,7 @@ import { SCENE_KEYS } from '../application/scene-keys.ts';
 import { UI_EVENTS } from '../application/ui-events.ts';
 import Phaser from 'phaser';
 import type { StoryApp } from '../app.ts';
-import type { GameUI, GameUiView } from '../ui/game-ui.ts';
+import { uiOcclusion, type GameUI, type GameUiView } from '../ui/game-ui.ts';
 import { UiSurface,loadUiImages,uiTexture,GOLD,type ScrollArea } from '../ui/phaser/widgets.ts';
 import { FONT, TEXT_COLORS } from '../ui/text-style.ts';
 import { dialoguePages, layoutDialogueText, layoutMarkupText, revealedRuns, type DialoguePage, type DialogueTextLayout } from '../ui/dialogue-text.ts';
@@ -71,10 +71,11 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
       this.domInstant=domUi.label('screen','dom-instant',{x:.5,y:0});
       this.domToast=domUi.label('screen','dom-toast',{x:.5,y:0});
       this.domSpeaker=domUi.label('screen','dom-speaker');
-      this.domLoadingTitle=domUi.label('screen','dom-loading-title',{x:.5,y:0}).setVisible(false);
-      this.domLoading=domUi.label('screen','dom-loading',{x:.5,y:0}).setVisible(false);
-      this.domLoadingAction=domUi.label('screen','dom-loading-action',{x:.5,y:.5}).setVisible(false);
-      this.domLoadingMenu=domUi.label('screen','dom-loading-menu',{x:.5,y:.5}).setVisible(false);
+      // 加载页文字放在 overlay 层：它要活过全局遮挡开关，其余文字一律收起。
+      this.domLoadingTitle=domUi.label('overlay','dom-loading-title',{x:.5,y:0}).setVisible(false);
+      this.domLoading=domUi.label('overlay','dom-loading',{x:.5,y:0}).setVisible(false);
+      this.domLoadingAction=domUi.label('overlay','dom-loading-action',{x:.5,y:.5}).setVisible(false);
+      this.domLoadingMenu=domUi.label('overlay','dom-loading-menu',{x:.5,y:.5}).setVisible(false);
       this.layoutDomText();
     }
     this.questPopup=new QuestPopup(this,()=>this.app.ui.ready&&!this.app.ui.suspended,this.app.domUi);
@@ -128,7 +129,7 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
    */
   private syncInstantMessage():void{
     const ui=this.app.ui,message=ui.instant.text;
-    const hidden=!message||!!ui.loadingState||ui.defeated||ui.worldRebuildCover||!!ui.dialogueLine||!!ui.choices||!!ui.quest;
+    const hidden=!message||!!ui.loadingState||ui.defeated||ui.suspended||ui.worldRebuildCover||!!ui.dialogueLine||!!ui.choices||!!ui.quest;
     if(!this.domInstant)return;
     this.domInstant.setVisible(!hidden);
     if(hidden)return;
@@ -300,6 +301,8 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     const progress=Phaser.Math.Clamp(ui.loadingState?.progress??0,0,1);
     const showSkip=ui.mode==='game'&&ui.ready&&!ui.suspended&&!portrait&&!cover&&!ui.loadingState&&!ui.defeated&&!ui.choices&&!ui.quest&&!!this.app.director?.canSkip;
     const defeat=ui.defeatState;
+    // 全屏遮罩出现时统一收起 world/hud/screen 的文字；加载页文字在 overlay 层，不受影响。
+    this.app.domUi?.setOccluded(uiOcclusion(ui));
     // 正文页不进整屏签名：同一句对白翻页时只换正文，不重建框、立绘和控件。
     const bodySignature=JSON.stringify([ui.page,ui.dialogueLine?.presentation]);
     const signature=JSON.stringify([ui.mode,ui.loadingState?.label,!!ui.loadingState?.retry,ui.failed,ui.suspended,portrait,cover,defeat,ui.toastMessage,ui.dialogueLine,ui.portraitFile,ui.canSkip,showSkip,ui.choices?.prompt,ui.choices?.description,ui.choices?.options,ui.quest?.definition.id,ui.quest?.kind]);
@@ -416,7 +419,7 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
       this.dialogueShell=true;
     }
     if(showSkip){const skin=this.app.controlSkin;v.button('',this.dialogueSafeEdges().right-168,16,136,62,()=>this.app.director?.skip(),{image:skin?.skip?skin.skip:undefined,pressed:skin?.['skip-pressed'],guard:()=>ui.ready&&!ui.suspended&&!!this.app.director?.canSkip}).setData('label','跳过');}
-    const toastVisible=!!ui.toastMessage&&!portrait&&!cover&&!ui.loadingState&&!ui.defeated;
+    const toastVisible=!!ui.toastMessage&&!portrait&&!cover&&!ui.loadingState&&!ui.defeated&&!ui.suspended;
     this.domToast?.setVisible(toastVisible);
     if(this.domToast&&toastVisible){
       const scale=this.surface.root.scaleX||1,m=this.surface.root.getWorldTransformMatrix();

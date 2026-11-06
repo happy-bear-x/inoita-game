@@ -28,7 +28,7 @@ import { MenuScene } from './scenes/menu-scene.ts';
 import { AudioScene } from './scenes/audio-scene.ts';
 
 import { WorldScene } from './scenes/world-scene.ts';
-import { GameUI } from './ui/game-ui.ts';
+import { GameUI, uiOcclusion } from './ui/game-ui.ts';
 import { StoryUI } from './ui/story-ui.ts';
 import { validateCharacterStats, validateMenuClasses, validateItemSkills, validateStoryItems, validateStoryPortraits, validateWardrobe, validateShops, validateCompanions } from './application/content-validation.ts';
 
@@ -586,6 +586,7 @@ function runtimeDiagnostics(): Record<string, unknown> {
 function boot(): void {
   app.domUi = domUi;
   domUi.attach();
+  domUi.setOccluded(uiOcclusion(ui));
   document.fonts?.ready.then(() => domUi.layout()).catch(() => {});
   app.enterGame = enterGame; app.returnToMenu = returnToMenu; app.startStory = startStory;
   app.prepareStory = prepareStory; app.prepareMenu = prepareMenu;
@@ -605,7 +606,7 @@ function boot(): void {
   app.storyUI = new StoryUI(app);
   app.openCrafting=actorId=>app.storyUI.openCrafting(actorId);
   app.openShop=(shopId,mapId)=>app.storyUI.openShop(shopId,mapId);
-  ui.onStateChange = () => { if(app.game)configureCanvas(app.game); app.storyUI.sync(); worldScene()?.syncHud(); };
+  ui.onStateChange = () => { if(app.game)configureCanvas(app.game); app.storyUI.sync(); worldScene()?.syncHud(); domUi.setOccluded(uiOcclusion(ui)); };
   ui.onMenu = returnToMenu;
   ui.onResetInput = () => {
     if (animationDebug) (currentScene() as AnimationDebugScene | undefined)?.resetInput();

@@ -2,7 +2,7 @@ import type Phaser from 'phaser';
 import { FONT } from '../text-style.ts';
 import { readSafeArea, UI_UNIT_HEIGHT, UI_UNIT_WIDTH } from '../viewport.ts';
 
-export type DomLayerName = 'world' | 'hud' | 'screen';
+export type DomLayerName = 'world' | 'hud' | 'screen' | 'overlay';
 
 /** 一个 DOM 文字节点；只改内容、位置和显隐，不参与 Phaser 渲染。 */
 export interface DomLabel {
@@ -30,6 +30,8 @@ export class DomUi {
   private frame?: HTMLElement;
   private readonly layers = new Map<DomLayerName, HTMLDivElement>();
   private readonly visible = new Map<DomLayerName, boolean>();
+  /** 全屏遮罩出现时统一收起普通文字层；overlay 层不受影响。 */
+  private occluded = false;
   private destroyed = false;
 
   /** 幂等：重复调用不会创建第二个根节点。 */
@@ -42,7 +44,7 @@ export class DomUi {
     const root = document.createElement('div');
     root.id = 'ui-root';
     root.style.setProperty('--font-game', FONT);
-    for (const name of ['world', 'hud', 'screen'] as const) {
+    for (const name of ['world', 'hud', 'screen', 'overlay'] as const) {
       const layer = document.createElement('div');
       layer.id = `ui-${name}`;
       layer.className = 'dom-ui-layer';
@@ -53,6 +55,8 @@ export class DomUi {
     frame.appendChild(root);
     this.root = root;
     this.layout();
+    // attach 之前设置的遮挡状态在这里补应用；正常情况下四层都先按原可见性还原。
+    for (const name of this.layers.keys()) this.applyLayer(name);
   }
 
   get attached(): boolean { return !!this.root?.isConnected; }
@@ -118,8 +122,26 @@ export class DomUi {
     if (!this.attached) return;
     if (this.visible.get(name) === visible) return;
     this.visible.set(name, visible);
+    this.applyLayer(name);
+  }
+
+  /**
+   * 全屏遮罩（加载页、阵亡面板、跨图黑幕、横屏提示）出现时收起普通文字层。
+   * 只改四个层的 `hidden`，不遍历标签；恢复时按各层原来的可见性还原。
+   */
+  setOccluded(value: boolean): void {
+    if (this.occluded === value) return;
+    // 先记状态：attach 之前调用也要在 attach 后生效。
+    this.occluded = value;
+    if (typeof document !== 'undefined') document.body.classList.toggle('ui-occluded', value);
+    if (!this.attached) return;
+    for (const name of this.layers.keys()) this.applyLayer(name);
+  }
+
+  private applyLayer(name: DomLayerName): void {
     const layer = this.layers.get(name);
-    if (layer) layer.hidden = !visible;
+    if (!layer) return;
+    layer.hidden = this.visible.get(name) === false || (this.occluded && name !== 'overlay');
   }
 
   isLayerVisible(name: DomLayerName): boolean {
