@@ -58,15 +58,14 @@ export function fitViewport(options?: { keepSize?: boolean }): void {
   }
 }
 
-/** 高清界面使用设备像素；地图镜头同步换算，视野仍按参考尺寸展开。 */
+/** 画布按 CSS 尺寸渲染，不按设备像素比放大；地图镜头同步换算，视野仍按参考尺寸展开。 */
 export function configureCanvas(game:import('phaser').Game):void {
   const bounds=element('game-frame').getBoundingClientRect();
-  const density=Math.min(3,Math.max(1,window.devicePixelRatio||1));
-  const width=Math.round(bounds.width*density),height=Math.round(bounds.height*density);
+  const width=Math.round(bounds.width),height=Math.round(bounds.height);
   const resized=game.scale.width!==width||game.scale.height!==height;
   if(resized)game.scale.resize(width,height);
   // Scale.NONE 在 zoom=1 时 resize 不更新 CSS 尺寸；新尺寸就绪后由 setZoom 同步。
-  if(resized||game.scale.zoom!==1/density)game.scale.setZoom(1/density);
+  if(resized||game.scale.zoom!==1)game.scale.setZoom(1);
   game.canvas.style.imageRendering='auto';
 }
 /**
@@ -76,9 +75,8 @@ export function configureCanvas(game:import('phaser').Game):void {
 const WORLD_ZOOM_SCALE = 3;
 
 /**
- * 地图镜头的缩放：世界倍率 × 画框内的等比缩放 × 设备像素密度。
- * 后两项分别是 `fit` 与 `scene.scale.width / bounds.width`——画布按 density 放大过，
- * 见 `configureCanvas`。改动这里会整体改变地图视野大小。
+ * 地图镜头的缩放：世界倍率 × 画框内的等比缩放 × 画布像素与 CSS 像素的比例。
+ * 画布按 CSS 尺寸渲染时比例为 1；改动这里会整体改变地图视野大小。
  */
 export function worldZoom(scene:import('phaser').Scene):number {
   const bounds=scene.game.canvas.getBoundingClientRect();

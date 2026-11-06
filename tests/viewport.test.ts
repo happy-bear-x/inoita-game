@@ -78,7 +78,7 @@ test('safe area is measured once until the viewport changes',()=>{
  }
 });
 
-test('canvas keeps CSS size and pointer scale after returning to density one and resizing again',()=>{
+test('canvas keeps CSS size and ignores the device pixel ratio',()=>{
  const globals=globalThis as unknown as Record<string,unknown>;
  const original=['window','document'].map(name=>[name,Object.getOwnPropertyDescriptor(globalThis,name)] as const);
  const bounds={width:844,height:390},style={width:'',height:'',imageRendering:''};
@@ -88,11 +88,11 @@ test('canvas keeps CSS size and pointer scale after returning to density one and
  };
  try{
   globals.document={getElementById:()=>({getBoundingClientRect:()=>bounds})};
-  globals.window={devicePixelRatio:2};
+  globals.window={devicePixelRatio:3};
   const game={scale,canvas:{style}} as unknown as import('phaser').Game;
   configureCanvas(game);
-  assert.deepEqual([scale.width,scale.height,style.width,style.height],[1688,780,'844px','390px']);
-  globals.window={devicePixelRatio:1};bounds.width=960;bounds.height=640;configureCanvas(game);
+  assert.deepEqual([scale.width,scale.height,style.width,style.height],[844,390,'844px','390px']);
+  bounds.width=960;bounds.height=640;configureCanvas(game);
   assert.deepEqual([scale.width,scale.height,style.width,style.height],[960,640,'960px','640px']);
   bounds.width=1280;bounds.height=720;configureCanvas(game);
   assert.deepEqual([scale.width,scale.height,style.width,style.height],[1280,720,'1280px','720px']);
