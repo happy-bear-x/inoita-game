@@ -58,6 +58,13 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
   private domPortraitIcon?:DomLabel;
   private domPortraitTitle?:DomLabel;
   private domPortraitHint?:DomLabel;
+  /** 阵亡面板是全屏遮罩，`uiOcclusion` 会收起 screen 层，所以文字固定放 overlay。 */
+  private domDefeatTitle?:DomLabel;
+  private domDefeatMessage?:DomLabel;
+  private domDefeatCancel?:DomLabel;
+  private domDefeatConfirm?:DomLabel;
+  private domDefeatCheckpoint?:DomLabel;
+  private domDefeatLoad?:DomLabel;
   private dialogueDomRuns:DomLabel[]=[];
   /** 选项面板的 DOM 文字；提示、说明和每个选项各用一组复用的标签。 */
   private choiceDom?:ChoiceDom;
@@ -83,6 +90,12 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
       this.domPortraitIcon=domUi.label('overlay','dom-portrait-icon',{x:.5,y:0}).setVisible(false);
       this.domPortraitTitle=domUi.label('overlay','dom-portrait-title',{x:.5,y:0}).setVisible(false);
       this.domPortraitHint=domUi.label('overlay','dom-portrait-hint',{x:.5,y:0}).setVisible(false);
+      this.domDefeatTitle=domUi.label('overlay','dom-defeat-title',{x:.5,y:0}).setVisible(false);
+      this.domDefeatMessage=domUi.label('overlay','dom-defeat-message').setVisible(false);
+      this.domDefeatCancel=domUi.label('overlay','dom-defeat-button',{x:.5,y:.5}).setVisible(false);
+      this.domDefeatConfirm=domUi.label('overlay','dom-defeat-button',{x:.5,y:.5}).setVisible(false);
+      this.domDefeatCheckpoint=domUi.label('overlay','dom-defeat-button',{x:.5,y:.5}).setVisible(false);
+      this.domDefeatLoad=domUi.label('overlay','dom-defeat-button',{x:.5,y:.5}).setVisible(false);
       this.layoutDomText();
     }
     this.questPopup=new QuestPopup(this,()=>this.app.ui.ready&&!this.app.ui.suspended,this.app.domUi);
@@ -108,7 +121,7 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     });
     this.input.on('pointerupoutside',(pointer:Phaser.Input.Pointer)=>this.app.ui.cancelPress(pointer.id));
     this.game.canvas.addEventListener('pointercancel',this.cancelInput);this.game.events.once('destroy',()=>this.game.canvas.removeEventListener('pointercancel',this.cancelInput));
-    this.events.once('shutdown',()=>{this.unregisterInput?.();this.unregisterInput=undefined;this.input.keyboard?.off('keydown',this.bridgeKey);this.uiAssets.releaseContent();this.surface.destroy();this.questPopup.destroy();this.baseLease?.release();this.domInstant?.remove();this.domInstant=undefined;this.domToast?.remove();this.domToast=undefined;this.domSpeaker?.remove();this.domSpeaker=undefined;for(const label of [this.domLoadingTitle,this.domLoading,this.domLoadingAction,this.domLoadingMenu,this.domPortraitIcon,this.domPortraitTitle,this.domPortraitHint])label?.remove();this.domLoadingTitle=undefined;this.domLoading=undefined;this.domLoadingAction=undefined;this.domLoadingMenu=undefined;this.domPortraitIcon=undefined;this.domPortraitTitle=undefined;this.domPortraitHint=undefined;for(const run of this.dialogueDomRuns)run.remove();this.dialogueDomRuns.length=0;this.removeChoiceDom();});
+    this.events.once('shutdown',()=>{this.unregisterInput?.();this.unregisterInput=undefined;this.input.keyboard?.off('keydown',this.bridgeKey);this.uiAssets.releaseContent();this.surface.destroy();this.questPopup.destroy();this.baseLease?.release();this.domInstant?.remove();this.domInstant=undefined;this.domToast?.remove();this.domToast=undefined;this.domSpeaker?.remove();this.domSpeaker=undefined;for(const label of [this.domLoadingTitle,this.domLoading,this.domLoadingAction,this.domLoadingMenu,this.domPortraitIcon,this.domPortraitTitle,this.domPortraitHint,this.domDefeatTitle,this.domDefeatMessage,this.domDefeatCancel,this.domDefeatConfirm,this.domDefeatCheckpoint,this.domDefeatLoad])label?.remove();this.domLoadingTitle=undefined;this.domLoading=undefined;this.domLoadingAction=undefined;this.domLoadingMenu=undefined;this.domPortraitIcon=undefined;this.domPortraitTitle=undefined;this.domPortraitHint=undefined;this.domDefeatTitle=undefined;this.domDefeatMessage=undefined;this.domDefeatCancel=undefined;this.domDefeatConfirm=undefined;this.domDefeatCheckpoint=undefined;this.domDefeatLoad=undefined;for(const run of this.dialogueDomRuns)run.remove();this.dialogueDomRuns.length=0;this.removeChoiceDom();});
     void loadUiImages(this,['/assets/ui/loading-background.webp']).then(lease=>{this.baseLease=lease;this.signature='';this.sync(this.app.ui);}).catch(console.error);
     this.app.storyUI.attach(this);this.sync(this.app.ui);
   }
@@ -319,7 +332,7 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     const signature=JSON.stringify([ui.mode,ui.loadingState?.label,!!ui.loadingState?.retry,ui.failed,ui.suspended,portrait,cover,defeat,ui.toastMessage,shell,ui.portraitFile,ui.canSkip,showSkip,ui.choices?.prompt,ui.choices?.description,ui.choices?.options,ui.quest?.definition.id,ui.quest?.kind]);
     if(signature===this.signature){
       if(this.dialogueShell&&bodySignature!==this.dialogueBodySignature){this.dialogueBodySignature=bodySignature;this.renderDialogueBody(ui);}
-      this.progressBar?.setSize(560*progress,5);this.syncLoadingDom(ui,portrait);this.syncPortraitDom(portrait);return;
+      this.progressBar?.setSize(560*progress,5);this.syncLoadingDom(ui,portrait);this.syncPortraitDom(portrait);this.syncDefeatDom(ui,portrait,cover);return;
     }
     this.signature=signature;this.dialogueShell=false;this.resetChoiceDom();
     const v=this.surface;v.clear();v.layout(0);this.dialogueLayout=undefined;this.progressBar=undefined;v.visible(true);
@@ -335,18 +348,16 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
       if(ui.loadingState.retry){v.button('',380,552,200,48,ui.loadingState.retry);if(ui.canReturn)v.button('',26,20,180,48,()=>ui.onMenu?.());}
     }else if(defeat){
       block();v.frame(this.app.storyInterface?.assets??{},142,142,676,356);
-      v.text('队伍全员阵亡',480,172,0,34,'#e4c58b').setOrigin(.5,0);
       const guard=()=>!ui.suspended&&!ui.defeatState?.busy;
       // 读档进入剧情战斗时可能还没有任何检查点；按钮直接禁用，避免点下去才发现回不去。
       const noCheckpoint=!this.app.checkpoint.available;
       if(defeat.confirmation){
-        v.text('返回最近的检查点？此后的物品、经验、金钱和任务进度将回退。',190,242,580,25,'#f5eedf');
-        v.button('取消',235,397,220,60,()=>ui.cancelDefeatConfirmation(),{disabled:defeat.busy,guard});
-        v.button(defeat.busy?'正在恢复…':'确认',505,397,220,60,()=>{void ui.confirmDefeat();},{disabled:defeat.busy,guard});
+        v.button('',235,397,220,60,()=>ui.cancelDefeatConfirmation(),{disabled:defeat.busy,guard}).setData('label','取消');
+        v.button('',505,397,220,60,()=>{void ui.confirmDefeat();},{disabled:defeat.busy,guard})
+          .setData('label',defeat.busy?'正在恢复…':'确认');
       }else{
-        v.text(defeat.error??(noCheckpoint?'没有可返回的检查点，请读取存档。':'选择处理方式'),480,230,570,23,defeat.error?'#eb9587':'#f5eedf').setOrigin(.5,0);
-        v.button('返回检查点',225,301,510,60,()=>ui.selectDefeatAction('checkpoint'),{disabled:noCheckpoint,guard});
-        v.button('读取存档',225,392,510,60,()=>ui.selectDefeatAction('load'),{disabled:!this.app.resumeSlot,guard});
+        v.button('',225,301,510,60,()=>ui.selectDefeatAction('checkpoint'),{disabled:noCheckpoint,guard}).setData('label','返回检查点');
+        v.button('',225,392,510,60,()=>ui.selectDefeatAction('load'),{disabled:!this.app.resumeSlot,guard}).setData('label','读取存档');
       }
     }
     else if(!cover&&ui.choices&&!ui.quest){
@@ -437,6 +448,7 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
       this.domToast.setText(ui.toastMessage!);this.domToast.setPosition(m.tx+480*scale,m.ty+164*scale);
     }
     this.dialogueBodySignature=bodySignature;
+    this.syncDefeatDom(ui,portrait,cover);
     v.layout(0);
     this.syncLoadingDom(ui,portrait);this.syncPortraitDom(portrait);
   }
@@ -454,6 +466,47 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
       .setStyle({fontSize:`${Math.max(12,32*scale)}px`,color:GOLD});
     this.domPortraitHint?.setText('请使用横屏继续').setPosition(hint.x,hint.y)
       .setStyle({fontSize:`${Math.max(12,24*scale)}px`,color:GOLD});
+  }
+  /** 阵亡面板的文字；全屏遮罩收起 screen 层时，overlay 里的这一份仍然可见。 */
+  private syncDefeatDom(ui:GameUI,portrait:boolean,cover:boolean):void{
+    const defeat=ui.defeatState;
+    const labels=[this.domDefeatTitle,this.domDefeatMessage,this.domDefeatCancel,this.domDefeatConfirm,
+      this.domDefeatCheckpoint,this.domDefeatLoad];
+    if(!defeat||portrait||cover||ui.loadingState){for(const label of labels)label?.setVisible(false);return;}
+    const scale=this.surface.root.scaleX||1;
+    const title=this.surfacePoint(480,172);
+    this.domDefeatTitle?.setText('队伍全员阵亡').setPosition(title.x,title.y)
+      .setStyle({fontSize:`${34*scale}px`,color:'#e4c58b'}).setVisible(true);
+    if(defeat.confirmation){
+      const message=this.surfacePoint(190,242);
+      this.domDefeatMessage?.setAnchor(0,0)
+        .setText('返回最近的检查点？此后的物品、经验、金钱和任务进度将回退。')
+        .setPosition(message.x,message.y)
+        .setStyle({fontSize:`${25*scale}px`,color:'#f5eedf',width:`${580*scale}px`,whiteSpace:'pre-wrap',
+          overflowWrap:'break-word',lineHeight:`${30*scale}px`}).setVisible(true);
+      this.placeDefeatButton(this.domDefeatCancel,'取消',this.surfacePoint(345,427),scale,defeat.busy);
+      this.placeDefeatButton(this.domDefeatConfirm,defeat.busy?'正在恢复…':'确认',
+        this.surfacePoint(615,427),scale,defeat.busy);
+      this.domDefeatCheckpoint?.setVisible(false);
+      this.domDefeatLoad?.setVisible(false);
+    }else{
+      const noCheckpoint=!this.app.checkpoint.available,message=this.surfacePoint(480,230);
+      this.domDefeatMessage?.setAnchor(.5,0)
+        .setText(defeat.error??(noCheckpoint?'没有可返回的检查点，请读取存档。':'选择处理方式'))
+        .setPosition(message.x,message.y)
+        .setStyle({fontSize:`${23*scale}px`,color:defeat.error?'#eb9587':'#f5eedf',width:`${570*scale}px`,
+          whiteSpace:'pre-wrap',overflowWrap:'break-word',lineHeight:`${28*scale}px`}).setVisible(true);
+      this.domDefeatCancel?.setVisible(false);
+      this.domDefeatConfirm?.setVisible(false);
+      this.placeDefeatButton(this.domDefeatCheckpoint,'返回检查点',this.surfacePoint(480,331),scale,noCheckpoint);
+      this.placeDefeatButton(this.domDefeatLoad,'读取存档',this.surfacePoint(480,422),scale,!this.app.resumeSlot);
+    }
+  }
+  /** 按钮标签和 Phaser 按钮禁用时一样淡显示；底图与命中区仍由按钮自己画。 */
+  private placeDefeatButton(label:DomLabel|undefined,text:string,point:{x:number;y:number},
+    scale:number,disabled:boolean):void{
+    label?.setText(text).setAnchor(.5,.5).setPosition(point.x,point.y)
+      .setStyle({fontSize:`${22*scale}px`,color:disabled?'rgba(243,222,176,.4)':GOLD}).setVisible(true);
   }
   /** 加载页文字改由 DOM 输出：背景、进度条和按钮皮肤仍留在画布上。 */
   private syncLoadingDom(ui:GameUI,portrait:boolean):void{
