@@ -202,6 +202,8 @@ export class WorldScene extends Phaser.Scene {
   /** 普攻连打门控：发起过一次普攻后，站定就自动接下一击，摇杆一动即停。 */
   private readonly autoAttack=new BasicAttackRepeat();
   private checkpointPending=false;
+  /** 同一段等待遭遇只记一条诊断；条件解除后重新允许记录。 */
+  private checkpointWaitLogged=false;
 
   constructor(app: StoryContext) { super({ key: SCENE_KEYS.world, physics: { default: 'arcade', arcade: { gravity: { x: 0, y: 0 }, debug: false } } }); this.app = app; }
   init(options: SceneOptions): void {
@@ -214,7 +216,7 @@ export class WorldScene extends Phaser.Scene {
     this.performing = false; this.player = undefined; this.noclipVisual = undefined; this.map = undefined;
     this.options = options; this.characters = []; this.near = null; this.loadingWorld = true; this.destroyed = false;
     this.stageOccluded = false;
-    this.movement = undefined; this.lastPlayerPosition = undefined;this.combat=undefined;this.checkpointPending=!options.checkpoint;
+    this.movement = undefined; this.lastPlayerPosition = undefined;this.combat=undefined;this.checkpointPending=!options.checkpoint;this.checkpointWaitLogged=false;
     this.shortcutPageCache=undefined;
     this.dropCatalog=undefined;this.springCatalog=undefined;this.groundLootView=undefined;this.pickupMessages=undefined;this.pickupRecipients.clear();
     this.questStatuses.clear();this.questStatusVersion=undefined;
@@ -1578,9 +1580,13 @@ export class WorldScene extends Phaser.Scene {
     // 没有检查点时必须记一次兜底：读档会清空内存检查点，而读档可能正落在等待战斗的现场，
     // 这时再拒绝就会让整场战斗没有可回退的检查点。
     if(this.app.checkpoint.available&&this.app.session.hasWaitingStoryRun){
-      globalThis.storyDiagnostics?.record('checkpoint-kept-waiting-encounter',{map:this.map?.id});
+      if(!this.checkpointWaitLogged){
+        this.checkpointWaitLogged=true;
+        globalThis.storyDiagnostics?.record('checkpoint-kept-waiting-encounter',{map:this.map?.id});
+      }
       return false;
     }
+    this.checkpointWaitLogged=false;
     if(!this.map||!this.combat||!this.player||!this.movement)return false;
     if(!this.app.session.hasLivingMember){
       globalThis.storyDiagnostics?.record('checkpoint-skipped-no-survivor',{map:this.map.id});
