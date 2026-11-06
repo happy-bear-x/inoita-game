@@ -38,6 +38,7 @@ import { CONTROL_SIZES, HUD_SIDE_BUTTON_SIZE, PENDING_OFFSET, resolveControlLayo
 import { controlViewport } from './phaser/control-layout-viewport.ts';
 import { GOLD, UiSurface, uiImageFor, type ScrollArea } from './phaser/widgets.ts';
 import { MenuTextLayer, type MenuTextSpec, type MenuTextWriter } from './dom/menu-text.ts';
+import type { DomLabel } from './dom/dom-ui.ts';
 import { setSaveBoardTextSink, type SaveBoardTextSpec } from './phaser/save-board.ts';
 import { drawDescriptionClose, drawDescriptionPanel, drawDescriptionRows, drawDescriptionSeparator, drawDescriptionTitle } from './phaser/description-panel.ts';
 import { drawNativeMessage } from './phaser/native-message.ts';
@@ -106,8 +107,12 @@ export class StoryUI {
   private noticeTextSpecs:MenuTextSpec[]=[];
   /** 物品使用/丢弃弹层的文字规格；仍是弹层本地坐标，输出时统一换算。 */
   private operationTextSpecs:MenuTextSpec[]=[];
+  /** 技能初始化确认框的文字规格；仍是弹层本地坐标，输出时统一换算。 */
+  private skillResetTextSpecs:MenuTextSpec[]=[];
   /** 登记快捷键那一屏单独一层：它盖在遮罩上，菜单本体整块藏起来。 */
   private shortcutScreen?:UiSurface;
+  /** 登记快捷键那一屏的顶部提示；菜单文字层此时整体让位，所以单独挂一个标签。 */
+  private shortcutPrompt?:DomLabel;
   private controlEditor?:ControlLayoutEditor;
   private keyBindingEditor?:KeyBindingEditor;
   /** 左上角圆形关闭钮单独一层：不随 960 内容区居中，靠安全区左上角摆放。 */
@@ -189,6 +194,7 @@ export class StoryUI {
       this.menuText=new MenuTextLayer(this.app.domUi,
         (x,y)=>this.menuTextPoint(x,y),
         (_page,name)=>this.scrollNames.get(name)?.scrollTop);
+      this.shortcutPrompt=this.app.domUi.label('screen','dom-shortcut-prompt',{x:.5,y:0}).setVisible(false);
       this.menuText.register('settings',writer=>this.renderSettingsText(writer));
       this.menuText.register('system',writer=>this.renderSystemText(writer));
       this.menuText.register('save',writer=>this.renderSaveText(writer));
@@ -207,6 +213,8 @@ export class StoryUI {
         this.renderTabsText(writer);this.questPanel?.renderText(writer);this.renderNoticeText(writer);
       });
       this.menuText.register('skills',writer=>{
+        // 技能初始化确认框打开时只留弹层文字，页面文字整层让位。
+        if(this.skillReset){for(const spec of this.skillResetTextSpecs)writer.add(this.modalTextSpec(spec));return;}
         this.renderTabsText(writer);
         for(const spec of this.skillTextSpecs)writer.add(spec);
         this.renderNoticeText(writer);
@@ -245,7 +253,7 @@ export class StoryUI {
       });
       // GM 调试页的文字由面板自己收集；图框、按钮和滚动仍由 Phaser 画。
       this.menuText.register('debug',writer=>{
-        this.renderTabsText(writer);for(const spec of this.gmTextSpecs)writer.add(spec);
+        this.renderTabsText(writer);for(const spec of this.gmTextSpecs)writer.add(spec);this.renderNoticeText(writer);
       });
       // 通用原生提示盖在任何页面之上：页面文字让位，只输出这一份。
       this.menuText.register('native-notice',writer=>{for(const spec of this.noticeTextSpecs)writer.add(spec);});
@@ -271,7 +279,7 @@ export class StoryUI {
     this.unsubscribeFullscreen=onFullscreenChange(()=>{if(this.open&&this.page==='settings')this.render();});
     scene.input.on('pointermove',this.moveDrag,this);scene.input.on('pointerup',this.endDrag,this);scene.input.on('pointerupoutside',this.cancelDrag,this);
     scene.game.events.on(UI_EVENTS.minimapLayout,this.onMinimap,this);scene.game.events.on(UI_EVENTS.cancelInput,this.cancelDrag,this);
-    scene.events.once('shutdown',()=>{this.unregisterKeyboard?.();this.unregisterKeyboard=undefined;this.unsubscribe?.();this.unsubscribeFullscreen?.();this.discardAllocation();this.menuText?.destroy();this.menuText=undefined;scene.scale.off('resize',this.resize,this);scene.game.events.off(UI_EVENTS.minimapLayout,this.onMinimap,this);scene.game.events.off(UI_EVENTS.cancelInput,this.cancelDrag,this);this.cancelOperation();this.savePage.destroy();this.surface!.root.remove(this.body!.root);this.surface?.destroy();this.body?.destroy();this.modal?.destroy();this.hudButtons?.destroy();this.description?.destroy();this.shortcutScreen?.destroy();this.backTab?.destroy();this.backdrop?.destroy();this.controlEditor?.destroy();this.controlEditor=undefined;this.keyBindingEditor?.destroy();this.keyBindingEditor=undefined;});
+    scene.events.once('shutdown',()=>{this.unregisterKeyboard?.();this.unregisterKeyboard=undefined;this.unsubscribe?.();this.unsubscribeFullscreen?.();this.discardAllocation();this.menuText?.destroy();this.menuText=undefined;this.shortcutPrompt?.remove();this.shortcutPrompt=undefined;scene.scale.off('resize',this.resize,this);scene.game.events.off(UI_EVENTS.minimapLayout,this.onMinimap,this);scene.game.events.off(UI_EVENTS.cancelInput,this.cancelDrag,this);this.cancelOperation();this.savePage.destroy();this.surface!.root.remove(this.body!.root);this.surface?.destroy();this.body?.destroy();this.modal?.destroy();this.hudButtons?.destroy();this.description?.destroy();this.shortcutScreen?.destroy();this.backTab?.destroy();this.backdrop?.destroy();this.controlEditor?.destroy();this.controlEditor=undefined;this.keyBindingEditor?.destroy();this.keyBindingEditor=undefined;});
     this.sync();
   }
   bind(session:Session,world:WorldIndex,content:StoryInterface):void{
@@ -312,9 +320,10 @@ export class StoryUI {
     // 但页面渲染函数只产出弹层那一份文字。
     const textModal=this.savePage?.modalOpen||(this.page==='status'&&!!this.allocationExit)||(this.page==='party'&&!!this.partyPanel?.modalOpen)
       ||(this.page==='shop'&&!!this.shopPanel?.modalOpen)||(this.page==='crafting'&&!!this.craftingPanel?.modalOpen)
-      ||(this.page==='forge'&&!!this.forge?.confirming)||!!this.itemNotice||!!this.operation;
+      ||(this.page==='forge'&&!!this.forge?.confirming)||this.skillReset||!!this.itemNotice||!!this.operation;
     this.menuText?.setVisible(menu&&(!modal||!!textModal));
     this.shortcutScreen?.visible(this.open&&!this.app.ui.suspended&&!!this.shortcutEdit);this.backTab?.visible(this.open&&!this.app.ui.suspended&&!!this.shortcutEdit);
+    this.shortcutPrompt?.setVisible(this.open&&!this.app.ui.suspended&&!!this.shortcutEdit);
     this.backdrop?.setVisible(this.open&&!this.app.ui.suspended);
     this.controlEditor?.visible(this.open&&this.app.ui.controlLayoutEditing&&!this.app.ui.suspended);
     this.keyBindingEditor?.visible(this.open&&this.app.ui.keyBindingEditing&&!this.app.ui.suspended);this.layout();
@@ -467,6 +476,7 @@ export class StoryUI {
     this.backdrop?.setSize(this.scene!.scale.width,this.scene!.scale.height);
     // 画布缩放变化后，DOM 文字的 CSS 坐标和字号要跟着重算。
     this.menuText?.refresh();
+    if(this.shortcutEdit)this.placeShortcutPrompt();
   }
   /** 内容块页面坐标 → 画框 CSS 坐标；和 `FormalUiScene.surfacePoint` 同一口径。 */
   private menuTextPoint(x:number,y:number):{x:number;y:number;scale:number}{
@@ -492,14 +502,11 @@ export class StoryUI {
       x:35+index*149+51-CONTENT_ORIGIN.x,y:25+85-CONTENT_ORIGIN.y,
       style:{size:20,color:GOLD,anchorX:.5,anchorY:0,width:90,align:'center'}}));
   }
-  /** 底部提示行原本画在菜单画布坐标里；这三个内容页改由 DOM 输出。 */
-  private renderNoticeText(writer:MenuTextWriter):void{
+  /** 底部提示行；设置等页用内容块坐标，系统/存档页用整页菜单坐标。 */
+  private renderNoticeText(writer:MenuTextWriter,fullPage=false):void{
     if(!this.notice)return;
-    writer.add({key:'notice',text:this.notice,x:512-CONTENT_ORIGIN.x,y:614-CONTENT_ORIGIN.y,
+    writer.add({key:'notice',text:this.notice,x:fullPage?512:512-CONTENT_ORIGIN.x,y:fullPage?614:614-CONTENT_ORIGIN.y,
       style:{size:18,color:GOLD,anchorX:.5,anchorY:0,width:880,align:'center'}});
-  }
-  private isDomTextPage():boolean{
-    return this.page==='bag'||this.page==='status'||this.page==='party'||this.page==='quests'||this.page==='skills';
   }
   /** 弹层文字规格换成内容块坐标；滚动裁剪边界和文字一起换算。 */
   private modalTextSpec(spec:MenuTextSpec):MenuTextSpec{
@@ -688,7 +695,6 @@ export class StoryUI {
     }
     if(this.page==='save'||this.page==='load')this.renderSavePage();
     if(this.page==='settings')this.renderSettings();
-    if(this.notice&&!this.isDomTextPage())this.surface.text(this.notice,512,614,880,18).setOrigin(.5,0);
     if(this.operation)this.renderOperation();if(this.allocationExit)this.renderAllocationConfirmation();if(this.skillReset)this.renderSkillResetConfirmation();
     if(this.itemNotice){
       this.beginModal(1024,640);this.noticeTextSpecs=[];
@@ -812,6 +818,7 @@ export class StoryUI {
     const keyboard=controlSettings.mode==='keyboard';
     add('control-action-label',keyboard?'键位设置':'控件位置',260,rowTop+15,25);
     add('control-action-toggle',keyboard?'修改键位':'拖动调整',595,rowTop+33,22,.5,.5);
+    this.renderNoticeText(writer);
   }
   /** 滑条的数值文字已交给 DOM；隐藏 VolumeSlider 自己那枚 Phaser Text。 */
   private hideSliderValueText(slider:{root:Phaser.GameObjects.Container}):void{
@@ -827,10 +834,12 @@ export class StoryUI {
     labels.forEach((label,index)=>writer.add({key:`system-action-${index}`,text:label,
       x:CONTENT_ORIGIN.x+470,y:CONTENT_ORIGIN.y+70+index*80+33,style:{size:22,color:GOLD,anchorX:.5,anchorY:.5},
       scroll:'system',clip:{top:CONTENT_ORIGIN.y,bottom:CONTENT_ORIGIN.y+431}}));
+    this.renderNoticeText(writer,true);
   }
   /** 存档/读档页的当前文字；确认框打开时只保留确认框那一份。 */
   private renderSaveText(writer:MenuTextWriter):void{
     for(const spec of this.savePage.modalOpen?this.saveModalTextSpecs:this.saveTextSpecs)writer.add(spec);
+    if(!this.savePage.modalOpen)this.renderNoticeText(writer,true);
   }
   /**
    * 存档/读档页：槽位文字由 `save-board` 写进接收器，页标题仍由 controller 调用
@@ -1234,17 +1243,27 @@ export class StoryUI {
   /** 初始化技能点是不可逆操作，沿用体验版对不可逆操作的模态确认，结果由面板更新呈现。 */
   private renderSkillResetConfirmation():void{
     const v=this.modal!,panels=this.app.menuPanels;
+    this.skillResetTextSpecs=[];
+    const add=(key:string,text:string,x:number,y:number,size:number,width:number):void=>{
+      this.skillResetTextSpecs.push({key,text,x,y,style:{size,color:GOLD,width,wrap:'word'}});
+    };
+    const button=(key:string,text:string,x:number,y:number,width:number,height:number):void=>{
+      this.skillResetTextSpecs.push({key,text,x:x+width/2,y:y+height/2,
+        style:{size:Math.min(22,height*.42),color:GOLD,anchorX:.5,anchorY:.5}});
+    };
     this.beginModal(718,415);v.visible(true);v.frame(panels.assets,0,0,718,415);
-    v.text(`确定为${this.actor().name}初始化技能点？`,35,30,648,26);
-    v.text('清空已学技能与快捷栏，返还正常加点的技能点。',35,91,648,22);
-    v.button('取消',270,350,170,48,()=>{this.skillReset=false;this.render();});
-    v.button('确定',480,350,190,48,()=>{
+    add('skill-reset-title',`确定为${this.actor().name}初始化技能点？`,35,30,26,648);
+    add('skill-reset-description','清空已学技能与快捷栏，返还正常加点的技能点。',35,91,22,648);
+    v.button('',270,350,170,48,()=>{this.skillReset=false;this.render();}).setData('label','取消');
+    button('skill-reset-cancel','取消',270,350,170,48);
+    v.button('',480,350,190,48,()=>{
       if(this.busy)return;this.busy=true;
       try{this.session!.skills.reset();this.skillReset=false;}
       catch(error){this.notice=(error as Error).message;}
       finally{this.busy=false;}
       this.render();
-    });
+    }).setData('label','确定');
+    button('skill-reset-confirm','确定',480,350,190,48);
   }
   /** 当前选中成员的快捷栏。默认内容按已学会的主动技能算，主角第一组第六格还带开局的消耗品。 */
   private shortcutBar():ShortcutBar {
@@ -1285,7 +1304,7 @@ export class StoryUI {
     if(!edit||!screen||!scene)return;
     screen.clear();const v=screen,{scale,anchor}=controlPlacement(scene,scene.scale.width,scene.scale.height),slots=this.shortcutBar().page(edit.page),positions=resolveControlLayout(controlViewport(scene),this.app.controlLayout.snapshot());
     // 顶部提示：原版 `GRPX_DrawStringWithFont(TEXTDATABASE[146], 屏宽/2, 110)`，白字居中。
-    v.text(SHORTCUT_PROMPT,scene.scale.width/scale/2,110,0,26,TEXT_COLORS.white).setOrigin(.5,0);
+    this.placeShortcutPrompt();
     // 六个圆槽：输入矩形与槽框都乘设备倍率，换组后沿用同一个槽位的尺寸。
     for(let slot=0;slot<SHORTCUT_SLOT_COUNT;slot++){const point=positions[`slot-${slot}` as ControlId],userScale=point.userScale;
       const slotFrame=CONTROL_SIZES.slot.width*userScale,input=80*userScale,slotBleed=(slotFrame-input)/2;
@@ -1306,6 +1325,16 @@ export class StoryUI {
     v.image(skin['slot-shadow'],pending.x-slotFrame/2,pending.y-slotFrame/2,slotFrame,slotFrame);
     v.image(skin['slot-ring'],pending.x-slotFrame/2,pending.y-slotFrame/2,slotFrame,slotFrame);
     if(icon)v.image(icon,pending.x-size/2,pending.y-size/2,size,size);
+  }
+  /** 登记快捷键那一屏的顶部提示：位置按该屏画布的缩放换算，文字交给 DOM。 */
+  private placeShortcutPrompt():void{
+    const edit=this.shortcutEdit,screen=this.shortcutScreen,scene=this.scene,prompt=this.shortcutPrompt;
+    if(!edit||!screen||!scene||!prompt)return;
+    const {scale}=controlPlacement(scene,scene.scale.width,scene.scale.height);
+    const matrix=screen.root.getWorldTransformMatrix();
+    const point=matrix.transformPoint(scene.scale.width/scale/2,110);
+    prompt.setText(SHORTCUT_PROMPT).setPosition(point.x,point.y)
+      .setStyle({fontSize:`${26*matrix.scaleX}px`,color:TEXT_COLORS.white});
   }
   /**
    * 登记快捷键屏左上角的关闭钮。全菜单统一用菜单页右上角那枚圆形关闭图，
