@@ -103,6 +103,8 @@ export class StoryUI {
   private saveModalTextSpecs:MenuTextSpec[]=[];
   /** 通用原生提示（`drawNativeMessage`）的 DOM 文字；弹层坐标已换成当前页坐标。 */
   private noticeTextSpecs:MenuTextSpec[]=[];
+  /** 物品使用/丢弃弹层的文字规格；仍是弹层本地坐标，输出时统一换算。 */
+  private operationTextSpecs:MenuTextSpec[]=[];
   /** 登记快捷键那一屏单独一层：它盖在遮罩上，菜单本体整块藏起来。 */
   private shortcutScreen?:UiSurface;
   private controlEditor?:ControlLayoutEditor;
@@ -185,7 +187,7 @@ export class StoryUI {
     if(this.app.domUi){
       this.menuText=new MenuTextLayer(this.app.domUi,
         (x,y)=>this.menuTextPoint(x,y),
-        (page,name)=>page===this.page?this.scrollNames.get(name)?.scrollTop:undefined);
+        (_page,name)=>this.scrollNames.get(name)?.scrollTop);
       this.menuText.register('settings',writer=>this.renderSettingsText(writer));
       this.menuText.register('system',writer=>this.renderSystemText(writer));
       this.menuText.register('save',writer=>this.renderSaveText(writer));
@@ -244,6 +246,10 @@ export class StoryUI {
       this.menuText.register('debug',writer=>{for(const spec of this.gmTextSpecs)writer.add(spec);});
       // 通用原生提示盖在任何页面之上：页面文字让位，只输出这一份。
       this.menuText.register('native-notice',writer=>{for(const spec of this.noticeTextSpecs)writer.add(spec);});
+      // 物品使用/丢弃弹层：本地坐标统一换成内容块坐标后输出。
+      this.menuText.register('operation-notice',writer=>{
+        for(const spec of this.operationTextSpecs)writer.add(this.modalTextSpec(spec));
+      });
     }
     this.shortcutScreen.enabled=()=>this.open&&!this.app.ui.suspended&&!this.busy&&!!this.shortcutEdit;
     this.backTab.enabled=()=>this.shortcutScreen!.enabled();
@@ -301,7 +307,7 @@ export class StoryUI {
     // 但页面渲染函数只产出弹层那一份文字。
     const textModal=this.savePage?.modalOpen||(this.page==='status'&&!!this.allocationExit)||(this.page==='party'&&!!this.partyPanel?.modalOpen)
       ||(this.page==='shop'&&!!this.shopPanel?.modalOpen)||(this.page==='crafting'&&!!this.craftingPanel?.modalOpen)
-      ||(this.page==='forge'&&!!this.forge?.confirming)||!!this.itemNotice;
+      ||(this.page==='forge'&&!!this.forge?.confirming)||!!this.itemNotice||!!this.operation;
     this.menuText?.setVisible(menu&&(!modal||!!textModal));
     this.shortcutScreen?.visible(this.open&&!this.app.ui.suspended&&!!this.shortcutEdit);this.backTab?.visible(this.open&&!this.app.ui.suspended&&!!this.shortcutEdit);
     this.backdrop?.setVisible(this.open&&!this.app.ui.suspended);
@@ -684,7 +690,8 @@ export class StoryUI {
     }
     if(this.page==='save'||this.page==='load')this.renderSaveConfirmations();else this.savePage.renderConfirmations();
     // 页面文字在各自绘制阶段收集完，等弹层位置也确定后再统一交给 DOM 层；原生提示盖在页面之上。
-    if(this.itemNotice)this.menuText?.renderPage('native-notice');
+    if(this.operation)this.menuText?.renderPage('operation-notice');
+    else if(this.itemNotice)this.menuText?.renderPage('native-notice');
     else if(this.page==='bag'||this.page==='status'||this.page==='party'||this.page==='quests'||this.page==='skills'||this.page==='learn'||this.page==='shop'||this.page==='crafting'||this.page==='forge'||this.page==='debug')this.menuText?.renderPage(this.page);
     this.sync();
   }
@@ -1471,11 +1478,17 @@ export class StoryUI {
     // 每次打开都从正文顶部开始，不沿用上一件物品的滚动位置。
     this.scrollOffsets.delete('debug:item');
     const detail=this.scroll('item',left+panel.scroll.x,top+panel.scroll.y,panel.scroll.width,panel.scroll.height,v);
+    detail.onScroll=()=>this.menuText?.refresh();
     const body=itemDescriptionBody({item,entry,numbers:this.app.characterStats.equipment[entry.item],
       catalog:this.app.characterStats,grades:this.app.shops.grades,member:this.member(),
       classNames:this.classNames(),gemNames:entry.gems.map(id=>catalog.items[id]?.name),skill:entry.skill?catalog.skillDescriptions?.[entry.skill]:undefined});
-    drawDescriptionTitle(v,body.title,left,top,panel.width,body.color);
-    const height=drawDescriptionRows(v,body.rows,panel.scroll.width,detail.content);
+    // 说明层坐标与内容块一致；调试页的文字层按内容块坐标输出。
+    const scrollX=left+panel.scroll.x,scrollY=top+panel.scroll.y,
+      clip={top:scrollY,bottom:scrollY+panel.scroll.height},
+      writer={add:(spec:MenuTextSpec)=>this.gmTextSpecs.push(spec)};
+    drawDescriptionTitle(v,body.title,left,top,panel.width,body.color,{writer,keyPrefix:'gm-item-title'});
+    const height=drawDescriptionRows(v,body.rows,panel.scroll.width,detail.content,
+      {writer,keyPrefix:'gm-item-row',x:scrollX,y:scrollY,scroll:'item',clip});
     this.finishScroll('item',detail,height);
     drawDescriptionClose(v,this.app.menuPanels.assets,panel,left,top,close);
   }
@@ -1575,13 +1588,48 @@ export class StoryUI {
     // 与商店的数量框同一个原版弹层：同样的图组 19 外框，同样的内缩 35 黑底。
     drawPopupPanel(v,this.app.menuPanels.assets,box.width,box.height);
     // 正文与按钮都躲进黑底：黑底占 (35,35,380,280)，底部按钮行在第 275 行。
-    const inner=box.plate,scroll=this.scroll('operation',inner.x,inner.y+37,inner.width,inner.height-80,v);let y=0;
-    const line=(value:string,size=22)=>{const text=v.text(value,0,y,inner.width,size,undefined,scroll.content);y+=text.height+13;};
-    const reward=(items:{item:string;quantity:number}[])=>items.forEach(entry=>{v.image(bag.catalog.items[entry.item].icon,0,y,44,44,scroll.content);v.text(`${bag.catalog.items[entry.item].name} × ${entry.quantity}`,60,y+6,inner.width-60,22,undefined,scroll.content);y+=57;});
+    const inner=box.plate,scroll=this.scroll('operation',inner.x,inner.y+37,inner.width,inner.height-80,v);
+    this.operationTextSpecs=[];const specs=this.operationTextSpecs;
+    scroll.onScroll=()=>this.menuText?.refresh();
+    const clip={top:inner.y+37,bottom:inner.y+37+inner.height-80};
+    let y=0,serial=0;
+    const key=()=>`operation-${serial++}`;
+    const line=(value:string,size=22)=>{
+      // 仍用排版探针算换行高度，但不再创建可见的 Phaser 文字。
+      const layout=this.descriptionLayout(v,[{text:value,color:GOLD}],inner.width,size);
+      specs.push({key:key(),text:value,x:inner.x,y:inner.y+37+y,
+        style:{size,color:GOLD,width:inner.width,wrap:'word'},scroll:'operation',clip});
+      y+=layout.height+13;
+    };
+    /** 滚动区文字：左对齐传左边缘，按钮文字传中心点。 */
+    const scrollText=(value:string,x:number,width:number,size:number,offsetY:number,centered=false)=>{
+      specs.push({key:key(),text:value,x:inner.x+x,y:inner.y+37+y+offsetY,
+        style:{size,color:GOLD,width:width||undefined,wrap:width?'word':undefined,
+          ...(centered?{anchorX:.5,anchorY:.5}:{})},scroll:'operation',clip});
+    };
+    const reward=(items:{item:string;quantity:number}[])=>items.forEach(entry=>{
+      v.image(bag.catalog.items[entry.item].icon,0,y,44,44,scroll.content);
+      scrollText(`${bag.catalog.items[entry.item].name} × ${entry.quantity}`,60,inner.width-60,22,6);
+      y+=57;
+    });
 
     const entry=bag.get(op.entry);if(!entry){this.operation=undefined;v.visible(false);return;}const item=bag.catalog.items[entry.item],use=item.use;
-    v.text(op.kind==='discard'?'丢弃物品':USE_LABELS[use!.kind],inner.x,inner.y+5,inner.width,26);line(item.name,25);line(item.description||'确认后执行本次操作。');
-    if(op.kind==='discard'){line(`确定丢弃 ${item.name}？`);if(entry.quantity>1){v.button('−',0,y,80,48,()=>{op.quantity=Math.max(1,op.quantity-1);this.render();},{parent:scroll.content,guard:scroll.guard});v.text(String(op.quantity),108,y+8,0,24,undefined,scroll.content);v.button('＋',190,y,80,48,()=>{op.quantity=Math.min(entry.quantity,op.quantity+1);this.render();},{parent:scroll.content,guard:scroll.guard});v.button('全部',260,y,inner.width-260,48,()=>{op.quantity=entry.quantity;this.render();},{parent:scroll.content,guard:scroll.guard});y+=64;}}
+    specs.push({key:'operation-title',text:op.kind==='discard'?'丢弃物品':USE_LABELS[use!.kind],
+      x:inner.x,y:inner.y+5,style:{size:26,color:GOLD,width:inner.width,wrap:'word'}});
+    line(item.name,25);line(item.description||'确认后执行本次操作。');
+    if(op.kind==='discard'){
+      line(`确定丢弃 ${item.name}？`);
+      if(entry.quantity>1){
+        v.button('',0,y,80,48,()=>{op.quantity=Math.max(1,op.quantity-1);this.render();},{parent:scroll.content,guard:scroll.guard}).setData('label','减少数量');
+        scrollText('−',40,68,20,24,true);
+        scrollText(String(op.quantity),108,0,24,8);
+        v.button('',190,y,80,48,()=>{op.quantity=Math.min(entry.quantity,op.quantity+1);this.render();},{parent:scroll.content,guard:scroll.guard}).setData('label','增加数量');
+        scrollText('＋',230,68,20,24,true);
+        v.button('',260,y,inner.width-260,48,()=>{op.quantity=entry.quantity;this.render();},{parent:scroll.content,guard:scroll.guard}).setData('label','全部');
+        scrollText('全部',260+(inner.width-260)/2,inner.width-272,20,24,true);
+        y+=64;
+      }
+    }
     else if(use?.kind==='pack'||use?.kind==='box'){line(use.kind==='pack'?'礼盒内含以下物品：':'获得下列物品中的一种：');reward(use.rewards!);}
     else if(use?.kind==='recipe'){line('随机展开下列一种配方：');for(const id of use.recipes!)line(`${bag.catalog.recipes[id].name}${bag.learnedRecipes.includes(id)?' · 已收录':''}`);}
     else if(use?.kind==='recruit')line(`加入佣兵名册 · ${use.classId?this.app.storyClasses.classes.find(c=>c.id===use.classId)!.name:'随机职业'}`);
@@ -1603,8 +1651,14 @@ export class StoryUI {
     const using=op.kind==='use',revivalBlocked=using&&use?.kind==='revive'&&!op.member;
     const disabled=op.confirmed||this.busy||(using&&!!this.itemUseProblem(entry))||revivalBlocked;
     // 底部按钮沿用原版数量框的排布：确定在左、取消在右，125×55。
-    v.button('取消',box.button.right,box.button.y,box.button.width,box.button.height,()=>{this.operation=undefined;this.render();});
-    v.button('确定',box.button.left,box.button.y,box.button.width,box.button.height,()=>this.confirmOperation(),{disabled:!!disabled});
+    const modalButton=(label:string,x:number,action:()=>void,isDisabled=false)=>{
+      v.button('',x,box.button.y,box.button.width,box.button.height,action,{disabled:isDisabled}).setData('label',label);
+      specs.push({key:key(),text:label,x:x+box.button.width/2,y:box.button.y+box.button.height/2,
+        style:{size:Math.min(22,box.button.height*.42),color:GOLD,anchorX:.5,anchorY:.5,
+          width:box.button.width-12,align:'center',wrap:'word'}});
+    };
+    modalButton('取消',box.button.right,()=>{this.operation=undefined;this.render();});
+    modalButton('确定',box.button.left,()=>this.confirmOperation(),!!disabled);
   }
   private itemUseProblem(entry:ItemInstance):string|undefined{
     const definition=this.session!.bag.catalog.items[entry.item];
