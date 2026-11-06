@@ -1,4 +1,5 @@
 import { UI_EVENTS } from '../application/ui-events.ts';
+import { SCENE_KEYS } from '../application/scene-keys.ts';
 import { displaySettings } from '../application/display-settings.ts';
 import { fullscreenActive, fullscreenStatus, onFullscreenChange, setFullscreen } from '../application/fullscreen.ts';
 import { controlSettings, nextControlMode, type ControlMode } from '../application/control-settings.ts';
@@ -298,6 +299,8 @@ export class StoryUI {
     if(active&&this.hudButtons&&this.hudButtons.root.length===0){const v=this.hudButtons;v.button('',0,0,HUD_SIDE_BUTTON_SIZE,HUD_SIDE_BUTTON_SIZE,()=>this.show('save'),{image:this.content!.assets.save}).setData('label','存档');v.button('',0,HUD_SIDE_BUTTON_SIZE+8,HUD_SIDE_BUTTON_SIZE,HUD_SIDE_BUTTON_SIZE,()=>this.show('bag'),{image:this.content!.assets.menu}).setData('label','菜单');}
     // 登记快捷键时菜单本体整块让位，只留背后的遮罩与这一屏自己，画面里那层游戏背景就露出来了。
     const menu=this.open&&this.app.ui.ready&&!this.app.ui.suspended&&!this.shortcutEdit&&!this.app.ui.controlLayoutEditing&&!this.app.ui.keyBindingEditing;
+    // 菜单期间世界场景不再渲染，省掉整张地图的绘制开销；关闭菜单立即恢复。
+    this.setWorldRendered(!menu);
     this.surface?.visible(menu);this.body?.visible(menu);this.description?.visible(menu&&!this.forge);
     const modal=menu&&(!!this.operation||!!this.itemNotice||!!this.allocationExit||this.skillReset||this.savePage?.modalOpen||!!this.craftingPanel?.modalOpen||!!this.shopPanel?.modalOpen||!!this.partyPanel?.modalOpen||!!this.forge?.confirming);
     if(modal&&!this.modalActive)this.app.ui.resetInput();
@@ -333,6 +336,12 @@ export class StoryUI {
     }
     // render() 末尾已经 sync 过；这里再调一次会把整层再排版一遍。
     this.page=page;this.render();
+  }
+  /** 菜单打开时让世界场景停止渲染；世界场景不存在（标题/调试模式）时什么都不做。 */
+  private setWorldRendered(rendered:boolean):void{
+    const scene=this.scene;
+    if(!scene?.scene?.manager?.keys?.[SCENE_KEYS.world])return;
+    scene.scene.setVisible(rendered,SCENE_KEYS.world);
   }
   /** 调试收尾后回到设置里的调试剧情页，保留面板原来的筛选与选中任务。 */
   openDebugStory():void{
