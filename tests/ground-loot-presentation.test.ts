@@ -126,12 +126,12 @@ test('pickup messages remain separate, follow their own recipient, and reuse exp
   assert.equal(h.messages()[0].children[0].textContent,items.items.ectoplasm.name);
   assert.ok(at(h.messages()[0],115,43));
   assert.equal(h.timers[0].delay,120);h.timers[0].fire();
-  assert.ok(at(h.messages()[1],115,55));
+  assert.ok(at(h.messages()[1],115,67));
   anchors.hero.x=110;h.update();assert.ok(h.messages().every(message=>message.style.transform?.includes('125px')));
   assert.equal(h.tweens[0].delay+h.tweens[0].duration,2400);
   h.tweens[0].finish();h.timers[1].fire();
   view.enqueue([reward],'ally');
-  assert.ok(at(h.messages()[0],125,55));
+  assert.ok(at(h.messages()[0],125,67));
   assert.ok(at(h.messages()[1],215,43));
   delete anchors.hero;h.update();assert.equal(h.messages().length,1);
   view.destroy();assert.equal(h.messages().length,0);

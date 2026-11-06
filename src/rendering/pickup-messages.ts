@@ -8,6 +8,10 @@ import type { PendingAsset } from './scene-assets.ts';
 
 const MESSAGE_LIMIT=32;
 const MESSAGE_SPACING_MS=120;
+/** 多条拾取提示的纵向行距：字号 20，留 4 像素空隙，避免同一时刻的两条文字压在一起。 */
+const MESSAGE_ROW_STEP=24;
+/** 上浮距离必须小于行距，否则旧消息上浮后仍会压住刚复用的下一行。 */
+const MESSAGE_LIFT=4;
 const units=['gold','silver','copper'] as const;
 const textureKey=(unit:typeof units[number]):string=>`pickup-money-${unit}`;
 
@@ -98,7 +102,7 @@ export class PickupMessages {
       layer.appendChild(dom);
       const entry:ActiveMessage={dom,width:dom.getBoundingClientRect().width,recipientId,row,lift:0};
       this.active.add(entry);this.position(entry);
-      entry.tween=this.scene.tweens.add({targets:entry,lift:16,delay:1440,duration:960,ease:'Linear',
+      entry.tween=this.scene.tweens.add({targets:entry,lift:MESSAGE_LIFT,delay:1440,duration:960,ease:'Linear',
         onComplete:()=>this.remove(entry)});
     }
   }
@@ -111,7 +115,7 @@ export class PickupMessages {
     if(!entry.width)entry.width=width;
     const right=point.x+anchor.headAnchor.x*zoom+20*zoom;
     const x=right+width>this.domUi.frameSize().width-8?point.x-anchor.headAnchor.x*zoom-20*zoom-width:right;
-    const y=point.y+(entry.row*12-37-entry.lift)*unit;
+    const y=point.y+(entry.row*MESSAGE_ROW_STEP-37-entry.lift)*unit;
     entry.dom.style.transform=`translate3d(${x}px, ${y}px, 0)`;
     entry.dom.style.display=this.visible()?'flex':'none';
   }
