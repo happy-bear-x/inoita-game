@@ -57,7 +57,7 @@ function fakeView(width:number,height:number){
       const node:TextNode={value,x,y,size,origin:[0,0],handlers:new Map()};this.textNodes.push(node);
       const label={setOrigin:(originX:number,originY:number)=>{node.origin=[originX,originY];return label;},
         setPosition:(nextX:number,nextY:number)=>{node.x=nextX;node.y=nextY;return label;},
-        setAlign:()=>label,
+        setAlign:()=>label,destroy:()=>{},
         setInteractive:()=>label,on:(event:string,handler:()=>void)=>{node.handlers.set(event,handler);return label;}};
       return label;
     },rect:()=>{},
@@ -93,7 +93,7 @@ function fixture(gmMode?:MenuContext['gmMode'],cloud?:CloudSavePort){
   const state={app,surface:view,modal,page:'home',cloudSerial:0,cloudBusy:false,cloudAccountInput:'',cloudPassword:'',
     cloudStatus:undefined,cloudCount:undefined,cloudRequest:undefined,confirmAction:undefined,confirmResolve:undefined,
     renameRef:undefined,slotRequest:undefined,slotPortraits:undefined,prompt:undefined,settingsScroll:0,backdrop:undefined,
-    domSpecs:[] as MenuTextSpec[],menuText:undefined as MenuTextLayer|undefined,
+    domSpecs:[] as MenuTextSpec[],menuText:undefined as MenuTextLayer|undefined,modalLabels:[] as FakeDomLabel[],
     sys:{isActive:()=>true},textures:{exists:()=>true}};
   const menuText=new MenuTextLayer(domUi as unknown as Pick<DomUi,'label'>,(x,y)=>({x,y,scale:1}),()=>undefined);
   for(const page of ['home','slots','settings','cloud'] as const)menuText.register(page,writer=>{for(const spec of state.domSpecs)writer.add(spec);});
@@ -151,7 +151,7 @@ test('title slots delete a manual save only after the native confirmation',()=>{
   f.click('存档槽 1 删除');
   // 确认之前不动存档，底下的存档页也不接受输入。
   assert.equal(f.entries.has('inotia4.story.v1.slot0'),true);
-  assert(f.modal.texts.includes('删除后无法恢复，确定删除这个存档？'));
+  assert(f.domTexts().includes('删除后无法恢复，确定删除这个存档？'));
   assert.equal(f.view.enabled(),false,'确认框打开时存档页不接受输入');
   f.clickModal('否');
   assert.equal(f.entries.has('inotia4.story.v1.slot0'),true);
@@ -466,7 +466,7 @@ test('cloud backup asks before overwriting and does not upload when cancelled',a
   f.entries.set('inotia4.story.v1.slot0',saved());
   f.click('开始游戏');f.click('云存档');await settle();
   f.click('导入本机存档');await settle();
-  assert(f.modal.texts.some(text=>text.includes('覆盖')));
+  assert(f.domTexts().some(text=>text.includes('覆盖')));
   assert.equal(cloud.uploads.length,0,'确认前不上传');
   f.clickModal('是');await settle();
   assert.deepEqual(cloud.uploads.map(item=>item.slot),[0]);

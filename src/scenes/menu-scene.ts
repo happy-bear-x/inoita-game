@@ -7,8 +7,8 @@ import type { MenuContext } from '../application/ports.ts';
 import { TITLE_MESSAGE_ASSETS, titleMenuImages } from '../application/menu-images.ts';
 import { GOLD, UiSurface, loadUiImages, uiTexture, type ScrollArea } from '../ui/phaser/widgets.ts';
 import { SAVE_BOARD, SAVE_BOARD_LAYOUT, drawSaveBoardRow, newestFirstSlots, saveBoardOrigin, saveRowTitle, setSaveBoardTextSink, type SaveBoardControl, type SaveBoardTextSpec } from '../ui/phaser/save-board.ts';
-import { MenuTextLayer, type MenuTextClip, type MenuTextPoint, type MenuTextSpec } from '../ui/dom/menu-text.ts';
-import type { DomUi } from '../ui/dom/dom-ui.ts';
+import { MenuTextLayer, type MenuTextClip, type MenuTextPoint, type MenuTextSpec, type MenuTextWriter } from '../ui/dom/menu-text.ts';
+import type { DomLabel, DomUi } from '../ui/dom/dom-ui.ts';
 import { drawNativeMessage } from '../ui/phaser/native-message.ts';
 import { centerModal } from '../ui/phaser/modal-placement.ts';
 import { TextPrompt } from '../ui/text-prompt.ts';
@@ -83,6 +83,7 @@ export class MenuScene extends Phaser.Scene {
   private settingsScroll=0;
   /** 菜单文字走 DOM；图框、按钮、滚动和命中区仍由 Phaser 画。 */
   private menuText?:MenuTextLayer;
+  private modalLabels:DomLabel[]=[];
   /** 本次重画收集到的文字规格；各页面的 DOM 渲染函数按它生成标签。 */
   private domSpecs:MenuTextSpec[]=[];
   /** 滚动区文字重算位置时读当前偏移；每次整页重画指向新的滚动区。 */
@@ -97,7 +98,7 @@ export class MenuScene extends Phaser.Scene {
   create(options:{page?:'home'|'slots'}={}):void {
     this.page='home';this.app.ui.setMode('menu');this.app.ui.loading('正在准备主菜单…');
     const controller=new AbortController();
-    this.events.once('shutdown',()=>{this.unregisterInput?.();this.unregisterInput=undefined;controller.abort();this.cancelCloudRequest();this.settleConfirm(false,false);this.slotRequest?.abort();this.prompt?.close();this.passwordPrompt?.close();this.credentials?.destroy();this.credentials=undefined;this.menuText?.destroy();this.menuText=undefined;this.domSpecs=[];this.slotsScroll=undefined;this.settingsList=undefined;this.cloudScroll=undefined;this.surface?.destroy();this.surface=undefined;this.modal?.destroy();this.modal=undefined;this.slotPortraits?.release();this.slotPortraits=undefined;this.events.off(Phaser.Scenes.Events.RESUME,this.renderCloudOnResume);this.events.off(Phaser.Scenes.Events.PAUSE,this.hideCredentials);this.scale.off('resize',this.layout,this);});
+    this.events.once('shutdown',()=>{this.unregisterInput?.();this.unregisterInput=undefined;controller.abort();this.cancelCloudRequest();this.settleConfirm(false,false);this.slotRequest?.abort();this.prompt?.close();this.passwordPrompt?.close();this.credentials?.destroy();this.credentials=undefined;this.clearModalLabels();this.menuText?.destroy();this.menuText=undefined;this.domSpecs=[];this.slotsScroll=undefined;this.settingsList=undefined;this.cloudScroll=undefined;this.surface?.destroy();this.surface=undefined;this.modal?.destroy();this.modal=undefined;this.slotPortraits?.release();this.slotPortraits=undefined;this.events.off(Phaser.Scenes.Events.RESUME,this.renderCloudOnResume);this.events.off(Phaser.Scenes.Events.PAUSE,this.hideCredentials);this.scale.off('resize',this.layout,this);});
     // 标题页整屏独占键盘；原始事件由正式界面场景那一处桥接进 router。
     this.unregisterInput?.();this.unregisterInput=this.app.inputRouter.register('menu',this.routeKey,{exclusive:()=>true});
     this.events.on(Phaser.Scenes.Events.RESUME,this.renderCloudOnResume);
@@ -339,15 +340,35 @@ export class MenuScene extends Phaser.Scene {
     }
     this.domSpecs=texts;
     this.menuText?.renderPage(this.page);
-    // 确认框盖住页面时先收起页面文字；确认框自己的文字仍是 Phaser 原生提示。
+    // 确认框盖住页面时先收起页面文字；确认框正文由独立的 DOM 标签绘制。
     this.menuText?.setVisible(this.confirmAction===undefined);
+    this.clearModalLabels();
     if(this.confirmAction){
       const action=this.confirmAction,modal=this.modal!;
       // 先按父画布的缩放放好弹层，横带才能按实际可见范围铺满屏幕。
       centerModal(modal,view,1024,640);
-      drawNativeMessage(modal,TITLE_MESSAGE_ASSETS,action.message,()=>action.accept(),()=>action.cancel());
+      drawNativeMessage(modal,TITLE_MESSAGE_ASSETS,action.message,()=>action.accept(),()=>action.cancel(),this.modalTextWriter());
     }
     this.layout();
+  }
+  private clearModalLabels():void{
+    for(const label of this.modalLabels)label.remove();
+    this.modalLabels.length=0;
+  }
+  /** 确认框正文：DOM 标签独立于页面文字层，确认框关闭时一起移除。 */
+  private modalTextWriter():MenuTextWriter|undefined{
+    const domUi=this.domUi;if(!domUi)return{add:()=>{}};
+    return{add:spec=>{
+      const point=this.menuTextPoint(spec.x,spec.y),scale=point.scale;
+      const anchorX=spec.style.anchorX??0,anchorY=spec.style.anchorY??0;
+      const label=domUi.label('screen','dom-label dom-native-message',{x:anchorX,y:anchorY});
+      label.setText(spec.text).setPosition(point.x,point.y).setStyle({
+        fontSize:`${spec.style.size*scale}px`,color:spec.style.color??'#ffffff',textAlign:spec.style.align??'center',
+        width:spec.style.width===undefined?undefined:`${spec.style.width*scale}px`,
+        lineHeight:`${(spec.style.lineHeight??spec.style.size+5)*scale}px`,whiteSpace:'pre-wrap'
+      });
+      this.modalLabels.push(label);
+    }};
   }
   private cloudState():CloudPageState {
     return {
