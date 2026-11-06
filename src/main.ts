@@ -38,6 +38,7 @@ import { UI_ICON_ATLAS_FILE } from './generated/icon-atlas.ts';
 import { GAME_FRAME_TIMING, installFrameLimitClock } from './application/game-timing.ts';
 import { installGameDiagnostics } from './application/game-diagnostics.ts';
 import { createGmActions, type GmActions } from './debug/gm-actions.ts';
+import { DomUi } from './ui/dom/dom-ui.ts';
 
 declare global {
   /** 地址里带 `?inspect` 时暴露出来的运行实例，浏览器测试用它检查状态。 */
@@ -88,6 +89,7 @@ const scheduleLayout = () => {
     app.game?.scale.refresh();
     ui.resetInput();
     ui.reflowDialogue();
+    domUi.layout();
   });
 };
 for (const event of ['resize', 'orientationchange', 'pageshow']) window.addEventListener(event, scheduleLayout);
@@ -95,6 +97,7 @@ window.visualViewport?.addEventListener('resize', scheduleLayout);
 window.visualViewport?.addEventListener('scroll', scheduleLayout);
 const ui = new GameUI();
 const app = new StoryApp(ui);
+const domUi = new DomUi();
 ui.onQuestPopup = kind => app.audio?.ui(kind === 'start' ? 'questStart' : 'questComplete');
 
 const addressParams = new URLSearchParams(location.search);
@@ -581,6 +584,9 @@ function runtimeDiagnostics(): Record<string, unknown> {
   };
 }
 function boot(): void {
+  app.domUi = domUi;
+  domUi.attach();
+  document.fonts?.ready.then(() => domUi.layout()).catch(() => {});
   app.enterGame = enterGame; app.returnToMenu = returnToMenu; app.startStory = startStory;
   app.prepareStory = prepareStory; app.prepareMenu = prepareMenu;
   app.resumeSlot = resumeSlot;

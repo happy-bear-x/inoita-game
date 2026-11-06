@@ -55,6 +55,7 @@ import { drawMapLayers, type MapLayerHandles } from '../rendering/map-layers.ts'
 import type { CharacterVisual } from '../rendering/characters.ts';
 import { loadSceneAssets, missingSceneAssets, retainLoadedSceneAssets } from '../rendering/scene-assets.ts';
 import { Hud } from '../rendering/hud.ts';
+import type { DomLabel } from '../ui/dom/dom-ui.ts';
 import { ActionControls, type ShortcutSlot } from '../ui/phaser/action-controls.ts';
 import { ShortcutBar, type ShortcutEntry } from '../domain/shortcut-bar.ts';
 import type { SkillConfiguration } from '../domain/skill-configuration.ts';
@@ -98,8 +99,10 @@ export type SaveWorldResult =
 
 /** 任务图标，浮在人物头顶。 */
 interface QuestMarker {
-  container: Phaser.GameObjects.Container;
-  glyph: Phaser.GameObjects.Text;
+  dom?: DomLabel;
+  container?: Phaser.GameObjects.Container;
+  glyph?: Phaser.GameObjects.Text;
+  visible?: boolean;
 }
 
 /** 场景里的一个人物：一个容器装着若干张动作图层。 */
@@ -166,7 +169,7 @@ export class WorldScene extends Phaser.Scene {
   private nameBanner?: NameBanner;
   private minimap?: StoryMinimap;
   private nextMinimapEnemyUpdate = 0;
-  private fpsReadout?: { container: Phaser.GameObjects.Container; text: Phaser.GameObjects.Text; lastValue?: number; lastVisible?: boolean };
+  private fpsReadout?: { container?: Phaser.GameObjects.Container; text?: Phaser.GameObjects.Text; dom?: DomLabel; lastValue?: number; lastVisible?: boolean };
   /** 真实游戏步进计数：只在场景 update 里自增，不受 120Hz 屏幕的 RAF 回调次数影响。 */
   private fpsFrames = 0;
   private fpsWindowStart = 0;
@@ -204,6 +207,8 @@ export class WorldScene extends Phaser.Scene {
   private checkpointPending=false;
   /** 同一段等待遭遇只记一条诊断；条件解除后重新允许记录。 */
   private checkpointWaitLogged=false;
+  /** DOM 任务标记上一帧的相机缩放，避免每帧重写字号。 */
+  private questMarkerZoom=0;
 
   constructor(app: StoryContext) { super({ key: SCENE_KEYS.world, physics: { default: 'arcade', arcade: { gravity: { x: 0, y: 0 }, debug: false } } }); this.app = app; }
   init(options: SceneOptions): void {
@@ -245,6 +250,7 @@ export class WorldScene extends Phaser.Scene {
       for(const lease of this.storyEntityAssets)lease.release();this.storyEntityAssets.length=0;
       this.groundLootView?.destroy();this.groundLootView=undefined;
       this.pickupMessages?.destroy();this.pickupMessages=undefined;this.pickupRecipients.clear();
+      for(const character of this.characters)character.marker?.dom?.remove();
       this.movement?.destroy(); this.movement = undefined;
       this.mapLayers?.destroy(); this.mapLayers = undefined;
       this.stick?.destroy(); this.stick = undefined;
@@ -255,7 +261,7 @@ export class WorldScene extends Phaser.Scene {
       this.input.off(Phaser.Input.Events.POINTER_DOWN, this.onPointerDown, this);
       this.nameBanner?.destroy(); this.nameBanner = undefined;
       this.minimap?.destroy(); this.minimap = undefined;
-      this.fpsReadout?.container.destroy(); this.fpsReadout = undefined;
+      this.fpsReadout?.container?.destroy(); this.fpsReadout?.dom?.remove(); this.fpsReadout = undefined;
       this.statusHud?.destroy();this.statusHud=undefined;
       this.overheadStatus?.destroy();this.overheadStatus=undefined;
       this.hud?.destroy(); this.hud = undefined;
@@ -449,7 +455,7 @@ export class WorldScene extends Phaser.Scene {
       const character=this.pickupRecipients.get(id);
       if(!character?.container.active)return undefined;
       return {...this.movement!.displayPosition(character),headAnchor:character.actor.headAnchor??{x:0,y:0}};
-    }});
+    },domUi:this.app.domUi,visible:()=>this.canCombatControl&&!this.performing&&!this.stageOccluded});
     const mapNavigation = new NavigationWorld(map);
     mapNavigation.prepareTerrainRouting();
     this.movement = new MovementWorld(this, mapNavigation);
@@ -853,11 +859,34 @@ export class WorldScene extends Phaser.Scene {
   /** 任务标记按需创建：任务可能在进图后才变为可接取，不能只在建角色时判断一次。 */
   private createQuestMarker(character: Character): void {
     if (character.marker) return;
+    if(this.app.domUi){
+      const dom=this.app.domUi.label('world','dom-quest-marker',{x:.5,y:.5});
+      dom.setStyle({fontFamily:'Georgia,serif',fontWeight:'bold',color:'#ffdb78',whiteSpace:'nowrap'});
+      character.marker={dom,visible:true};
+      return;
+    }
     // 原版人物头顶只有字符本身（见 work/apk 位图字体 font_fnt_ascii 的 '!' 与 '?'），没有底板。
     const glyph = this.add.text(0, -50, '!', { fontFamily: 'Georgia,serif', fontSize: '16px', fontStyle: 'bold', color: '#ffdb78' }).setOrigin(.5);
     const marker = this.add.container(0, 0, [glyph]);
     character.container.add(marker);
-    character.marker = { container: marker, glyph };
+    character.marker = { container: marker, glyph, visible:true };
+  }
+  private updateQuestMarkers():void{
+    const domUi=this.app.domUi;if(!domUi)return;
+    const camera=this.cameras.main,zoom=camera.zoom,frame=domUi.frameSize();
+    if(zoom!==this.questMarkerZoom){
+      this.questMarkerZoom=zoom;
+      for(const character of this.characters)character.marker?.dom?.setStyle({fontSize:`${Math.max(8,16*zoom)}px`});
+    }
+    for(const character of this.characters){
+      const marker=character.marker;if(!marker?.dom)continue;
+      const visible=!!marker.visible&&character.container.visible&&!this.performing&&!this.stageOccluded;
+      if(!visible){marker.dom.setVisible(false);continue;}
+      const point=domUi.worldToScreen(camera,character.container.x,character.container.y-50);
+      const onScreen=point.x>-24&&point.y>-24&&point.x<frame.width+24&&point.y<frame.height+24;
+      marker.dom.setVisible(onScreen);if(!onScreen)continue;
+      marker.dom.setPosition(point.x,point.y);
+    }
   }
   setClip(character: Character, name: ClipName): void {
     setCharacterClip(this, character, name);
@@ -1016,11 +1045,19 @@ export class WorldScene extends Phaser.Scene {
         && session.markerActor(character.entity.actor,character.entity.characterId))
         this.createQuestMarker(character);
       if (character.marker) {
-        character.marker.container.setVisible(!!status);
-        const glyph=character.marker.glyph,color=status==='active'?'#adb9bb':'#ffdb78';
-        glyph.setText(status==='available'?'!':'?');
-        // setColor 每次都会重画文字画布；状态颜色没变就跳过。
-        if(glyph.style.color!==color)glyph.setColor(color);
+        const color=status==='active'?'#adb9bb':'#ffdb78';
+        if(character.marker.dom){
+          character.marker.visible=!!status;
+          character.marker.dom.setVisible(!!status);
+          character.marker.dom.setText(status==='available'?'!':'?');
+          character.marker.dom.setStyle({color});
+        }else{
+          character.marker.container!.setVisible(!!status);
+          const glyph=character.marker.glyph!;
+          glyph.setText(status==='available'?'!':'?');
+          // setColor 每次都会重画文字画布；状态颜色没变就跳过。
+          if(glyph.style.color!==color)glyph.setColor(color);
+        }
       }
       if (character.container.visible && status && status !== 'locked' && status !== 'completed')
         taskMarkers.push({id: character.entity.id, x: character.container.x, y: character.container.y, status});
@@ -1043,7 +1080,12 @@ export class WorldScene extends Phaser.Scene {
   }
   /** 界面层与摇杆随视口摆放，和地图是否就绪无关。 */
   /** 帧率显示：左上角小地图右边，设置里可关，默认开（application/display-settings）。 */
-  private createFpsReadout(): { container: Phaser.GameObjects.Container; text: Phaser.GameObjects.Text } {
+  private createFpsReadout(): { container?: Phaser.GameObjects.Container; text?: Phaser.GameObjects.Text; dom?: DomLabel } {
+    const dom=this.app.domUi?.label('hud','dom-fps');
+    if(dom){
+      dom.setStyle({fontSize:'22px',color:'#fff4dc',textShadow:'1px 0 0 #1b1408,-1px 0 0 #1b1408,0 1px 0 #1b1408,0 -1px 0 #1b1408'});
+      return { dom };
+    }
     const scene = this.hud!.scene;
     // 字号和分辨率跟着菜单文本走（widgets.text 的 22px + devicePixelRatio），保持一致的可读性。
     const text = scene.make.text({ x: 0, y: 0, text: '', style: {
@@ -1057,7 +1099,8 @@ export class WorldScene extends Phaser.Scene {
   private layoutFps(): void {
     const extent = this.minimap?.extent(), readout = this.fpsReadout;
     if (!extent || !readout) return;
-    readout.container.setPosition(extent.x + extent.width + 8, extent.y);
+    if(readout.dom){readout.dom.setPosition(extent.x + extent.width + 8, extent.y);return;}
+    readout.container!.setPosition(extent.x + extent.width + 8, extent.y);
   }
   private updateFps(): void {
     const readout = this.fpsReadout;
@@ -1066,7 +1109,8 @@ export class WorldScene extends Phaser.Scene {
     if (readout.lastVisible !== visible) {
       readout.lastVisible = visible;
       this.fpsFrames = 0; this.fpsWindowStart = 0;
-      this.hud!.setVisible(readout.container, visible);
+      if(readout.dom)readout.dom.setVisible(visible);
+      else this.hud!.setVisible(readout.container!, visible);
     }
     if (!visible) return;
     // updateFps 每个真实游戏步进只调用一次；不用 loop.actualFps，因为那个值按 RAF
@@ -1082,7 +1126,8 @@ export class WorldScene extends Phaser.Scene {
     this.fpsFrames = 0; this.fpsWindowStart = now;
     if (readout.lastValue !== value) {
       readout.lastValue = value;
-      readout.text.setText(`${value} FPS`);
+      if(readout.dom)readout.dom.setText(`${value} FPS`);
+      else readout.text!.setText(`${value} FPS`);
     }
   }
   private layoutHud(): void {
@@ -1924,7 +1969,7 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     // 自愈检查保证舞台被关闭或重建后不会永远停在这里。
     if (this.stageOccluded) {
       this.syncStageOcclusion();
-      if (this.stageOccluded) return;
+      if (this.stageOccluded) { this.updateQuestMarkers(); return; }
     }
     // 卡顿时最多补 2 个逻辑帧；补 3 帧会把 AI/寻路/状态的尖峰叠成三倍。
     const stepDelta=Math.min(delta,120);
@@ -1942,6 +1987,7 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
       this.playStory(()=>this.app.director.encounterResult(encounter.id,'won',`result:${encounter.id}:won`));break;
     }
     this.statusHud?.update(this.app.session.combatTick);
+    this.updateQuestMarkers();
     this.groundLootView?.setPaused(!this.canCombatControl);
     if(this.canCombatControl&&this.map){const store=groundLootFor(this.app.session);store.advance(this.map.id,stepDelta);
       if(store.revision!==this.groundLootRevision){this.groundLootRevision=store.revision;this.groundLootView?.sync(store.forMap(this.map.id));}}

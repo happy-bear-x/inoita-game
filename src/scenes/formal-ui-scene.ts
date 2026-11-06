@@ -4,7 +4,7 @@ import Phaser from 'phaser';
 import type { StoryApp } from '../app.ts';
 import type { GameUI, GameUiView } from '../ui/game-ui.ts';
 import { UiSurface,loadUiImages,uiTexture,GOLD } from '../ui/phaser/widgets.ts';
-import { FONT } from '../ui/text-style.ts';
+import { FONT, TEXT_COLORS } from '../ui/text-style.ts';
 import { dialoguePages, layoutDialogueText, layoutMarkupText, revealedRuns, type DialoguePage, type DialogueTextLayout } from '../ui/dialogue-text.ts';
 import { instantMessagePoint } from '../ui/instant-message.ts';
 import { layoutChoicePanel } from '../ui/choice-layout.ts';
@@ -13,6 +13,7 @@ import { QuestPopup } from '../ui/phaser/quest-popup.ts';
 import { screenCoverage } from '../ui/phaser/modal-placement.ts';
 import { readSafeArea } from '../ui/viewport.ts';
 import type { AssetLease } from '../application/assets.ts';
+import type { DomLabel } from '../ui/dom/dom-ui.ts';
 
 /** 对白框的基础字色。`$B` 与未带色码的文字都用它——不是任务窗口的白色。 */
 const DIALOGUE_TEXT_COLOR='#f5eedf';
@@ -39,6 +40,10 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
   private blocker!:Phaser.GameObjects.Zone;
   /** 原版 `INSTANTMSG` 的屏幕提示；不进 surface，因为它要逐帧淡出而 surface 每次 sync 整体重建。 */
   private instantText?:Phaser.GameObjects.Text;
+  private domInstant?:DomLabel;
+  private domToast?:DomLabel;
+  private domSpeaker?:DomLabel;
+  private dialogueDomRuns:DomLabel[]=[];
   /** 场景键盘只做一次桥接：原始事件交给全局 router，自己不再按页面各订阅一份。 */
   private readonly bridgeKey=(event:KeyboardEvent):void=>{this.app.inputRouter.dispatch(event);};
   private unregisterInput?:()=>void;
@@ -49,9 +54,17 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     this.instantText=this.add.text(0,0,'',{fontFamily:FONT,fontSize:24,color:GOLD,
       resolution:Math.min(3,Math.max(1,window.devicePixelRatio||1))}).setOrigin(.5,0)
       .setShadow(1,1,'#000000',0).setDepth(997).setVisible(false);
+    const domUi=this.app.domUi;
+    if(domUi){
+      this.domInstant=domUi.label('screen','dom-instant',{x:.5,y:0});
+      this.domToast=domUi.label('screen','dom-toast',{x:.5,y:0});
+      this.domSpeaker=domUi.label('screen','dom-speaker');
+      this.layoutDomText();
+      this.instantText.setVisible(false);
+    }
     this.questPopup=new QuestPopup(this,()=>this.app.ui.ready&&!this.app.ui.suspended);
     this.surface.enabled=()=>!this.app.ui.suspended;
-    this.scale.on('resize',()=>{this.signature='';this.sync(this.app.ui);this.app.ui.reflowDialogue();});
+    this.scale.on('resize',()=>{this.signature='';this.layoutDomText();this.sync(this.app.ui);this.app.ui.reflowDialogue();});
     // 场景里只保留这一份键盘监听：它只把原始事件交给 router，由作用域决定消费者。
     this.input.keyboard?.on('keydown',this.bridgeKey);
     this.unregisterInput=this.app.inputRouter.register('modal',this.routeKey,{
@@ -72,7 +85,7 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     });
     this.input.on('pointerupoutside',(pointer:Phaser.Input.Pointer)=>this.app.ui.cancelPress(pointer.id));
     this.game.canvas.addEventListener('pointercancel',this.cancelInput);this.game.events.once('destroy',()=>this.game.canvas.removeEventListener('pointercancel',this.cancelInput));
-    this.events.once('shutdown',()=>{this.unregisterInput?.();this.unregisterInput=undefined;this.input.keyboard?.off('keydown',this.bridgeKey);this.uiAssets.releaseContent();this.surface.destroy();this.questPopup.destroy();this.baseLease?.release();});
+    this.events.once('shutdown',()=>{this.unregisterInput?.();this.unregisterInput=undefined;this.input.keyboard?.off('keydown',this.bridgeKey);this.uiAssets.releaseContent();this.surface.destroy();this.questPopup.destroy();this.baseLease?.release();this.domInstant?.remove();this.domInstant=undefined;this.domToast?.remove();this.domToast=undefined;this.domSpeaker?.remove();this.domSpeaker=undefined;for(const run of this.dialogueDomRuns)run.remove();this.dialogueDomRuns.length=0;});
     void loadUiImages(this,['/assets/ui/loading-background.webp']).then(lease=>{this.baseLease=lease;this.signature='';this.sync(this.app.ui);}).catch(console.error);
     this.app.storyUI.attach(this);this.sync(this.app.ui);
   }
@@ -99,12 +112,26 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
    * 对白与弹窗期间不显示（原版这时画的是事件层界面）；菜单遮罩在 998 层，本来就压住它。
    */
   private syncInstantMessage():void{
-    const text=this.instantText,ui=this.app.ui;if(!text)return;
-    const message=ui.instant.text;
+    const ui=this.app.ui,message=ui.instant.text;
     const hidden=!message||!!ui.loadingState||ui.defeated||ui.worldRebuildCover||!!ui.dialogueLine||!!ui.choices||!!ui.quest;
+    if(this.domInstant){
+      this.instantText?.setVisible(false);
+      this.domInstant.setVisible(!hidden);
+      if(hidden)return;
+      const point=instantMessagePoint(this.scale.width,this.scale.height);
+      this.domInstant.setText(message!);this.domInstant.setPosition(point.x,point.y);this.domInstant.setStyle({opacity:String(ui.instant.alpha)});
+      return;
+    }
+    const text=this.instantText;if(!text)return;
     text.setVisible(!hidden);if(hidden)return;
     const point=instantMessagePoint(this.scale.width,this.scale.height);
     text.setText(message).setFontSize(24*(this.surface.root.scaleX||1)).setPosition(point.x,point.y).setAlpha(ui.instant.alpha);
+  }
+  private layoutDomText():void{
+    const scale=this.surface.root.scaleX||1;
+    this.domInstant?.setStyle({fontSize:`${Math.max(12,24*scale)}px`,color:GOLD});
+    this.domToast?.setStyle({fontSize:`${Math.max(12,24*scale)}px`,width:`${600*scale}px`,minHeight:`${90*scale}px`,
+      padding:`${14*scale}px ${20*scale}px 0`,background:'rgba(16,29,36,.95)',color:'#f5f0df',textAlign:'center',whiteSpace:'pre-wrap'});
   }
   async preloadPortraits(files:string[],signal:AbortSignal,progress:(value:number)=>void):Promise<void>{
     const missing=[...new Set(files)].filter(file=>!this.textures.exists(uiTexture(file)));
@@ -155,6 +182,11 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     const layout=this.dialogueLayout;if(!layout)return;
     // 排版按整页算好，揭示只是把每个色段的文字截短——位置全程不动，不会随揭示重排。
     let index=0;
+    if(this.app.domUi){
+      for(const line of revealedRuns(layout,ui.revealed))
+        for(const run of line.runs){const target=this.dialogueDomRuns[index++];if(target)target.setText(run.text);}
+      return;
+    }
     for(const line of revealedRuns(layout,ui.revealed))
       for(const run of line.runs){const target=this.dialogueRuns[index++];if(target)target.setText(run.text);}
   }
@@ -162,6 +194,14 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
    * 只重建对白正文：框、立绘、说话人和控件留在原地，正文 Text 按位置复用。
    * Phaser 的每个 Text 都有自己的画布纹理；翻页时销毁再新建几十个是演出卡顿的主因。
    */
+  private surfacePoint(x:number,y:number):{x:number;y:number;scale:number}{
+    const m=this.surface.root.getWorldTransformMatrix();
+    return{x:m.tx+x*m.scaleX,y:m.ty+y*m.scaleY,scale:m.scaleX};
+  }
+  private hideDialogueDom():void{
+    this.domSpeaker?.setVisible(false);
+    for(const run of this.dialogueDomRuns)run.setVisible(false);
+  }
   private renderDialogueBody(ui:GameUI):void {
     const v=this.surface,box=this.textBox(ui),screen=ui.dialogueLine?.presentation==='screen';
     const next:{text:string;x:number;y:number;color:string}[]=[];
@@ -174,6 +214,20 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
         for(const run of line.runs)next.push({text:run.text,x:box.x+offset+run.x,y:top+index*lineHeight,color:run.key});
       });
     });
+    if(this.app.domUi){
+      for(const run of this.dialogueRuns)run.destroy();this.dialogueRuns.length=0;
+      for(const [index,run] of next.entries()){
+        let target=this.dialogueDomRuns[index];
+        if(!target){target=this.app.domUi.label('screen','dom-dialogue-run');this.dialogueDomRuns.push(target);}
+        const point=this.surfacePoint(run.x,run.y);
+        target.setText(run.text).setPosition(point.x,point.y);
+        target.setStyle({fontSize:`${Math.max(10,box.size*point.scale)}px`,color:run.color});
+        target.setVisible(true);
+      }
+      for(let index=next.length;index<this.dialogueDomRuns.length;index++)this.dialogueDomRuns[index].setVisible(false);
+      this.renderText(ui);
+      return;
+    }
     const keep=Math.min(this.dialogueRuns.length,next.length);
     for(let index=0;index<keep;index++){
       const target=this.dialogueRuns[index]!,run=next[index]!;
@@ -191,6 +245,7 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
   }
   sync(ui:GameUI):void{
     if(!this.surface)return;
+    if(!ui.dialogueLine)this.hideDialogueDom();
     const portrait=window.innerHeight>window.innerWidth;
     const cover=ui.worldRebuildCover;
     const quest=ui.mode==='game'&&!portrait&&!cover&&!ui.loadingState&&!ui.defeated?ui.quest:undefined;
@@ -266,13 +321,23 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
       block();const edges=this.dialogueSafeEdges(),box=this.textBox(ui);if(ui.dialogueLine.presentation!=='screen'){
         const screen=screenCoverage(v);v.rect(screen.left,399,screen.width,218,0x000000,.7);const edge=this.app.storyInterface?.assets['dialogue-edge'];if(edge){v.image(edge,screen.left,399,screen.width,17);v.image(edge,screen.left,600,screen.width,17);}
         if(ui.portraitFile){const left=ui.dialogueLine.actor===ui.playerActor;v.image(ui.portraitFile,left?edges.left:edges.right,606,undefined,516).setOrigin(left?0:1,1);}
-        v.text(ui.dialogueLine.speaker??'',box.x,428,box.width,25);
-      }
+        if(this.app.domUi){
+          const point=this.surfacePoint(box.x,428),speaker=ui.dialogueLine.speaker??'';
+          this.domSpeaker?.setText(speaker).setPosition(point.x,point.y).setStyle({fontSize:`${Math.max(10,25*point.scale)}px`,color:TEXT_COLORS.primary}).setVisible(!!speaker);
+        }else v.text(ui.dialogueLine.speaker??'',box.x,428,box.width,25);
+      }else this.domSpeaker?.setVisible(false);
       this.renderDialogueBody(ui);
       this.dialogueShell=true;
     }
     if(showSkip){const skin=this.app.controlSkin;v.button('',this.dialogueSafeEdges().right-168,16,136,62,()=>this.app.director?.skip(),{image:skin?.skip?skin.skip:undefined,pressed:skin?.['skip-pressed'],guard:()=>ui.ready&&!ui.suspended&&!!this.app.director?.canSkip}).setData('label','跳过');}
-    if(ui.toastMessage&&!portrait&&!cover&&!ui.loadingState&&!ui.defeated){v.rect(180,150,600,90,0x101d24,.95);v.text(ui.toastMessage,480,164,560,24).setOrigin(.5,0);}
+    const toastVisible=!!ui.toastMessage&&!portrait&&!cover&&!ui.loadingState&&!ui.defeated;
+    if(this.domToast){
+      this.domToast.setVisible(toastVisible);
+      if(toastVisible){
+        const scale=this.surface.root.scaleX||1,m=this.surface.root.getWorldTransformMatrix();
+        this.domToast.setText(ui.toastMessage!);this.domToast.setPosition(m.tx+480*scale,m.ty+164*scale);
+      }
+    }else if(toastVisible){v.rect(180,150,600,90,0x101d24,.95);v.text(ui.toastMessage,480,164,560,24).setOrigin(.5,0);}
     this.dialogueBodySignature=bodySignature;
     v.layout(0);
   }

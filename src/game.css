@@ -2,6 +2,13 @@
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}html,body{margin:0;width:100%;height:100%;overflow:hidden;overscroll-behavior:none;background:#080d12;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;color:#f5f0df;touch-action:none;-webkit-user-select:none;user-select:none}button{font:inherit;color:inherit;cursor:pointer;touch-action:none}button:focus-visible{outline:2px solid var(--gold);outline-offset:4px}[hidden]{display:none!important}
 #safe-area{position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}#game-frame{position:fixed;overflow:hidden;background:var(--ink)}#game{position:absolute;inset:0}#game canvas{display:block}
 
+/* DOM 文字层：画布继续 1 倍渲染世界，界面文字由浏览器按物理像素绘制。 */
+#ui-root{position:absolute;inset:0;z-index:4;pointer-events:none;contain:layout style paint;isolation:isolate;overflow:hidden;font-family:var(--font-game);-webkit-text-size-adjust:100%;text-size-adjust:100%}
+.dom-ui-layer{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+#ui-world{z-index:1}#ui-hud{z-index:2}#ui-screen{z-index:3}
+.dom-label{position:absolute;left:0;top:0;white-space:nowrap;pointer-events:none;line-height:1.2;color:#f5f0df;text-shadow:0 0 1px #000,1px 1px 0 #000,-1px 1px 0 #000,1px -1px 0 #000,-1px -1px 0 #000}
+.dom-label[hidden],.dom-ui-layer[hidden]{display:none!important}
+
 /* 手机系统键盘只能由真实 input 唤起：存档改名和修改密码用居中表单，云存档登录用面板内嵌输入框。 */
 .text-prompt{position:fixed;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.65);touch-action:auto}
 .text-prompt form{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;gap:12px;min-width:min(360px,84vw);max-height:calc(100vh - 24px);overflow-y:auto;overscroll-behavior:contain;padding:20px 24px;border-radius:10px;background:#1b262c;box-shadow:0 8px 32px rgba(0,0,0,.6)}

@@ -26,6 +26,7 @@ import type { WardrobeCatalog } from './domain/wardrobe.ts';
 import type { GameAudio } from './application/game-audio.ts';
 import type { ShopCatalog } from './domain/shop.ts';
 import type { CompanionCatalog } from './domain/party.ts';
+import type { DomUi } from './ui/dom/dom-ui.ts';
 
 import type { GameMode } from './application/control-state.ts';
 import { ContentLoader } from './application/content-loader.ts';
@@ -160,6 +161,8 @@ export class StoryApp {
   rescuePlayer?: () => { ok: boolean; reason?: string; moved?: boolean };
   /** Phaser 实例，启动完成后才有。 */
   game?: Phaser.Game;
+  /** 画布上方的 DOM 文字层；启动时创建，场景和界面通过它写文字。 */
+  domUi?: DomUi;
   /** 播放剧情时锁住场景输入。 */
   get locked() { return this.ui.locked; }
   /** 竖屏或切到后台时暂停。 */

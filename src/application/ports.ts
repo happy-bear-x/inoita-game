@@ -21,6 +21,7 @@ import type { ControlLayoutPreferences } from '../ui/control-layout.ts';
 import type { KeyBindingPreferences } from './key-bindings.ts';
 import type { InputRouter } from './input-router.ts';
 import type { SaveWorldResult } from '../scenes/world-scene.ts';
+import type { DomUi } from '../ui/dom/dom-ui.ts';
 
 export interface StoryClassContext {
   readonly inputRouter: InputRouter;
@@ -36,6 +37,7 @@ export interface StoryClassContext {
 type SceneUI = Pick<GameUI,'ready'|'locked'|'mode'|'loading'|'loaded'|'error'|'toast'|'showInstant'|'resetInput'|'setMode'|'showDefeat'|'closeDefeat'|'controlLayoutEditing'|'keyBindingEditing'|'preloadPortraits'|'setWorldRebuildCover'>;
 export interface StoryContext {
   readonly inputRouter: InputRouter;
+  readonly domUi?: DomUi;
   readonly controlLayout:ControlLayoutPreferences;
   readonly keyBindings:KeyBindingPreferences;
   gmNoclip?: boolean;
@@ -84,6 +86,7 @@ export interface StoryContext {
 }
 export interface StoryUIContext {
   readonly inputRouter: InputRouter;
+  readonly domUi?: DomUi;
   /** 商店装备表按需加载（生产内容包与 shops.json 分开）。 */
   readonly content: Pick<ContentLoader,'shopEquipment'>;
   readonly controlLayout:ControlLayoutPreferences;
