@@ -310,9 +310,13 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     const defeat=ui.defeatState;
     // 全屏遮罩出现时统一收起 world/hud/screen 的文字；加载页文字在 overlay 层，不受影响。
     this.app.domUi?.setOccluded(uiOcclusion(ui));
-    // 正文页不进整屏签名：同一句对白翻页时只换正文，不重建框、立绘和控件。
+    // 正文不进整屏签名：同一说话人的下一句只换正文，不重建框、立绘和控件。
+    // 外壳只由说话人、演员、立绘和呈现方式决定；文本变化交给 bodySignature。
+    const shell=ui.dialogueLine
+      ?JSON.stringify([ui.dialogueLine.speaker,ui.dialogueLine.actor,ui.dialogueLine.portrait??null,ui.dialogueLine.presentation??'box'])
+      :null;
     const bodySignature=JSON.stringify([ui.page,ui.dialogueLine?.presentation]);
-    const signature=JSON.stringify([ui.mode,ui.loadingState?.label,!!ui.loadingState?.retry,ui.failed,ui.suspended,portrait,cover,defeat,ui.toastMessage,ui.dialogueLine,ui.portraitFile,ui.canSkip,showSkip,ui.choices?.prompt,ui.choices?.description,ui.choices?.options,ui.quest?.definition.id,ui.quest?.kind]);
+    const signature=JSON.stringify([ui.mode,ui.loadingState?.label,!!ui.loadingState?.retry,ui.failed,ui.suspended,portrait,cover,defeat,ui.toastMessage,shell,ui.portraitFile,ui.canSkip,showSkip,ui.choices?.prompt,ui.choices?.description,ui.choices?.options,ui.quest?.definition.id,ui.quest?.kind]);
     if(signature===this.signature){
       if(this.dialogueShell&&bodySignature!==this.dialogueBodySignature){this.dialogueBodySignature=bodySignature;this.renderDialogueBody(ui);}
       this.progressBar?.setSize(560*progress,5);this.syncLoadingDom(ui,portrait);this.syncPortraitDom(portrait);return;
