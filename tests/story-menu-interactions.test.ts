@@ -438,7 +438,7 @@ test('holding an allocation arrow keeps adding points until released',t=>{
 test('skill settings page drops the initial-point label and keeps the reset button',t=>{
   const f=fixture();t.after(f.cleanup);
   f.menu.show('skills');f.scene.click(f.scene.button('设置'));
-  assert(!f.scene.texts().includes(panels.skillPanel.labels.initialSkillPoints),'设置页不再画「初始技能点」');
+  assert(!visibleDomLabels(f).some(label=>label.text===panels.skillPanel.labels.initialSkillPoints),'设置页不再画「初始技能点」');
   assert(f.scene.canHit(f.scene.button(panels.skillPanel.labels.resetButton)),'初始化按钮仍在');
 });
 
@@ -453,17 +453,17 @@ test('AI settings shows two columns and clears the description for unlearned ski
   const unlearned=character.skills.slice(0,9).find(id=>!(draft.levels[id]>0))!;
   const learned=character.skills.slice(0,9).find(id=>(draft.levels[id]??0)>0)!;
   f.scene.click(f.scene.button(battle.skills[unlearned].name));
-  assert(!f.scene.texts().some(text=>text.includes(`${battle.skills[unlearned].name} (LV`)),'未学会技能不显示虚假的 LV 1');
+  assert(!visibleDomLabels(f).some(label=>label.text.includes(`${battle.skills[unlearned].name} (LV`)),'未学会技能不显示虚假的 LV 1');
   f.scene.click(f.scene.button(battle.skills[learned].name));
-  assert(f.scene.texts().some(text=>text.includes(`${battle.skills[learned].name} (LV`)),'已学会技能仍显示说明');
+  assert(visibleDomLabels(f).some(label=>label.text.includes(`${battle.skills[learned].name} (LV`)),'已学会技能仍显示说明');
 });
 
 test('story companions use their own skill label and no mercenary group',t=>{
   const f=fixture();t.after(f.cleanup);
   const story=f.session.party!.joinStory('mercenary-portia');
   f.select(story.id);f.menu.show('skills');
-  assert(f.scene.texts().includes('伙伴技能'));
-  assert(!f.scene.texts().includes('佣兵技能'));
+  assert(visibleDomLabels(f).some(label=>label.text==='伙伴技能'));
+  assert(!visibleDomLabels(f).some(label=>label.text==='佣兵技能'));
   f.menu.show('party');f.scene.click(f.scene.button(story.definition.name));f.scene.click(f.scene.button('技能目录'));
   assert(!visibleDomLabels(f).some(label=>label.text==='佣兵团'),'剧情伙伴不显示佣兵团区');
 
@@ -917,7 +917,7 @@ test('skill book page only lists upgradable skills and has an empty state', t =>
   const capped = skills[0]!;
   const book = f.add('skillbook');
   f.menu.debugDescribe(book.id); f.scene.click(f.scene.button('使用'));
-  assert(f.scene.texts().includes('暂无可升级技能'), '没有技能达到上限时显示空状态');
+  assert(visibleDomLabels(f).some(label=>label.text==='暂无可升级技能'), '没有技能达到上限时显示空状态');
   assert.equal(f.scene.button('使用技能书').input!.enabled, false, '空状态下不能使用');
   for (const id of skills) assert.equal(f.scene.buttons(battle.skills[id].name).length, 0);
   f.scene.click(f.scene.button('关闭技能书'));
@@ -933,18 +933,20 @@ test('skill book page only lists upgradable skills and has an empty state', t =>
 test('skill description colors, unchanged comparisons and learning button share native requirements',t=>{
   const f=fixture();t.after(f.cleanup);const skill=battle.skills['phantom-clash'];
   f.hero.addExperience(Number.MAX_SAFE_INTEGER);f.menu.show('skills');f.scene.click(f.scene.button(skill.name));
-  const condition=()=>f.scene.nodes.find(node=>node.shown&&node.text==='条件：投入6技能点')!;
+  // 说明区可以滚动，停在视口外的行会被 DOM 层隐藏；颜色取自仍在页面上的标签。
+  const pageLabels=()=>f.domLabels.filter(label=>!label.removed);
+  const condition=()=>pageLabels().find(label=>label.text==='条件：投入6技能点')!;
   const learn=()=>f.scene.nodes.find(node=>node.shown&&String(node.getData('label')).startsWith('学习'))!;
-  assert.equal(condition().color,'#ff0000');assert.equal(learn().input!.enabled,false);
-  assert(f.scene.nodes.some(node=>node.shown&&node.text==='225.0%'&&node.color==='#00b4ff'));
+  assert.equal(condition().style.color,'#ff0000');assert.equal(learn().input!.enabled,false);
+  assert(pageLabels().some(label=>label.text==='225.0%'&&label.style.color==='#00b4ff'));
   f.session.skills.learn('dark-strike');f.session.skills.learn('dark-strike');f.menu.sync();
-  assert.equal(condition().color,'#ffffff');assert.equal(learn().input!.enabled,true);
+  assert.equal(condition().style.color,'#ffffff');assert.equal(learn().input!.enabled,true);
   f.scene.click(learn());
   const arrows=()=>f.scene.nodes.filter(node=>node.shown&&node.texture.key===`interface:${panels.assets['skill-compare-arrow']}`);
   assert.equal(arrows().length,4,'魔耗和三个效果都比较，固定持续时间也显示');
   while(f.session.skills.level(skill.id)<skill.normalMaxLevel)f.session.skills.learn(skill.id);
   f.menu.sync();assert.equal(arrows().length,0,'普通学习上限收起整段预览');
-  assert(!f.scene.texts().some(text=>text.startsWith('条件：投入')));
+  assert(!pageLabels().some(label=>label.text.startsWith('条件：投入')));
   assert.equal(learn().input!.enabled,false);
 });
 
@@ -963,8 +965,8 @@ test('companion skill descriptions use the member cap and next learning level',t
   const f=fixture();t.after(f.cleanup);const member=f.recruit('warlock');f.select(member.id);
   const id=battle.classes.find(character=>character.id===member.classId)!.skills.find(id=>member.snapshot().skillCaps[id]>0)!;
   f.menu.show('skills');f.scene.click(f.scene.button(battle.skills[id].name));
-  assert(f.scene.texts().includes(`最高等级： LV ${member.snapshot().skillCaps[id]}`));
-  assert(!f.scene.texts().some(text=>text.startsWith('需要技能点数：')));
+  assert(visibleDomLabels(f).some(label=>label.text===`最高等级： LV ${member.snapshot().skillCaps[id]}`));
+  assert(!visibleDomLabels(f).some(label=>label.text.startsWith('需要技能点数：')));
 });
 
 test('learning immediately redraws skill lock, rank, description and shortcut availability', t => {
@@ -979,7 +981,7 @@ test('learning immediately redraws skill lock, rank, description and shortcut av
   learn(); assert.equal(f.session.skills.level(id), 1); assert(!hasImage('skill-locked')); assert(hasImage('skill-rank-1'));
   assert.equal(f.scene.button('快捷键').input!.enabled, true);
   learn(); assert.equal(f.session.skills.level(id), 2); assert(hasImage('skill-rank-2'));
-  assert(f.scene.texts().includes(`${skill.name} (LV 2)`), '同一技能页即时重绘当前等级说明');
+  assert(visibleDomLabels(f).some(label=>label.text===`${skill.name} (LV 2)`), '同一技能页即时重绘当前等级说明');
 });
 
 test('a skill moves to the last registered shortcut and clicking that slot again cancels it',t=>{

@@ -53,7 +53,8 @@ import { itemDescriptionBody } from './item-detail-lines.ts';
 import { slotFrameImage } from './slot-frame.ts';
 import { bagLayout, BAG_DESCRIPTION_WIDTH, DESCRIPTION_PANEL, descriptionActionLayout, descriptionPanel, SIDE_FILTER_TEXT_SIZE } from './bag-layout.ts';
 import { skillDescriptionParts, skillLearningParts, skillNextLevelPreview } from './skill-detail-lines.ts';
-import { drawDescriptionText } from './phaser/description-text.ts';
+import { layoutDescriptionText } from './description-text-layout.ts';
+import type { DescriptionTextPart } from '../domain/description-text.ts';
 import { tradeLayout } from './shop-layout.ts';
 import { TEXT_COLORS } from './text-style.ts';
 import { splitMoney } from '../domain/money.ts';
@@ -91,6 +92,8 @@ export class StoryUI {
   /** 人物页与人物加点确认框的文字；确认框打开时只保留后者。 */
   private statusTextSpecs:MenuTextSpec[]=[];
   private statusModalTextSpecs:MenuTextSpec[]=[];
+  /** 技能页这一轮绘制收集到的文字；右侧说明区会随滚动一起换位置。 */
+  private skillTextSpecs:MenuTextSpec[]=[];
   /** 存档/读档页上一次绘制收集到的文字；确认框打开时改用它自己的那一份。 */
   private saveTextSpecs:MenuTextSpec[]=[];
   private saveModalTextSpecs:MenuTextSpec[]=[];
@@ -192,6 +195,17 @@ export class StoryUI {
       });
       this.menuText.register('quests',writer=>{
         this.renderTabsText(writer);this.questPanel?.renderText(writer);this.renderNoticeText(writer);
+      });
+      this.menuText.register('skills',writer=>{
+        this.renderTabsText(writer);
+        for(const spec of this.skillTextSpecs)writer.add(spec);
+        this.renderNoticeText(writer);
+      });
+      // 技能书页顶部标题画在菜单画布坐标里，换算到内容块坐标后和面板文字一起输出。
+      this.menuText.register('learn',writer=>{
+        writer.add({key:'learn-title',text:'使用技能书',x:512-CONTENT_ORIGIN.x,y:25-CONTENT_ORIGIN.y,
+          style:{size:28,color:GOLD,anchorX:.5,anchorY:0}});
+        this.skillBook?.renderText(writer);
       });
     }
     this.shortcutScreen.enabled=()=>this.open&&!this.app.ui.suspended&&!this.busy&&!!this.shortcutEdit;
@@ -429,7 +443,7 @@ export class StoryUI {
       style:{size:18,color:GOLD,anchorX:.5,anchorY:0,width:880,align:'center'}});
   }
   private isDomTextPage():boolean{
-    return this.page==='status'||this.page==='party'||this.page==='quests';
+    return this.page==='status'||this.page==='party'||this.page==='quests'||this.page==='skills';
   }
   /** 弹层文字规格换成内容块坐标；滚动裁剪边界和文字一起换算。 */
   private modalTextSpec(spec:MenuTextSpec):MenuTextSpec{
@@ -555,16 +569,16 @@ export class StoryUI {
     const chromeKey=`chrome:${this.page}${this.page==='crafting'?`:${this.craftingActor}`:''}`;
     v.staticLayer(chromeKey,()=>{
       if(this.page!=='shop'&&this.page!=='crafting'&&this.page!=='forge'&&this.page!=='learn'&&this.page!=='save'&&this.page!=='load'){
-        // 系统页与本次迁移的人物、队伍、任务页标题行走 DOM；其它页仍由 Phaser 画。
+        // 系统页与已迁移的人物、队伍、任务、技能页标题行走 DOM；其它页仍由 Phaser 画。
         // 静态层按 chromeKey 重画，切页不会残留。
-        const domTabs=this.page==='system'||this.page==='status'||this.page==='party'||this.page==='quests';
+        const domTabs=this.page==='system'||this.page==='status'||this.page==='party'||this.page==='quests'||this.page==='skills';
         tabs.forEach(([page,label],index)=>{const button=v.button('',35+index*149,25,102,116,()=>this.show(page),{bare:true,parent:v.staticRoot}).setData('label',label);v.image(this.content!.assets[`tab-${page}`],12,0,78,78,button);if(!domTabs)v.text(label,51,85,90,20,undefined,button).setOrigin(.5,0);button.setAlpha(this.page===page||(['settings','debug'] as Page[]).includes(this.page)&&page==='system'?1:.65);});
       }
       if(this.page==='crafting'&&this.craftingPanel){
         v.text(this.world!.actors[this.craftingActor!].name,512,25,0,28,undefined,v.staticRoot).setOrigin(.5,0);
       }
       if(this.page==='forge')v.text('装备强化',512,25,0,28,undefined,v.staticRoot).setOrigin(.5,0);
-      if(this.page==='learn')v.text('使用技能书',512,25,0,28,undefined,v.staticRoot).setOrigin(.5,0);
+      // 技能书页标题由 DOM 输出，静态层只留关闭钮。
       v.button('',947,24,51,51,()=>this.page==='forge'?this.closeForge():this.page==='learn'?this.closeSkillBook():this.close(),{image:this.content!.assets.close,pressed:this.content!.assets['close-pressed'],parent:v.staticRoot}).setData('label',this.page==='forge'?'关闭强化':this.page==='learn'?'关闭技能书':'关闭菜单');
     });
     if(this.page==='bag')this.renderBag();if(this.page==='status')this.renderStatus();if(this.page==='skills')this.renderSkills();if(this.page==='party')this.renderParty();if(this.page==='quests')this.renderQuests();if(this.page==='shop')this.shopPanel?.render(this.body,this.modal!,this.placeModal,this.description!);
@@ -620,8 +634,8 @@ export class StoryUI {
     if(this.operation)this.renderOperation();if(this.allocationExit)this.renderAllocationConfirmation();if(this.skillReset)this.renderSkillResetConfirmation();
     if(this.itemNotice){this.beginModal(1024,640);drawNativeMessage(this.modal!,this.app.menuPanels.assets,this.itemNotice,()=>{this.itemNotice=undefined;this.render();});}
     if(this.page==='save'||this.page==='load')this.renderSaveConfirmations();else this.savePage.renderConfirmations();
-    // 人物、队伍和任务页的文字在各自绘制阶段收集完，等弹层位置也确定后再统一交给 DOM 层。
-    if(this.page==='status'||this.page==='party'||this.page==='quests')this.menuText?.renderPage(this.page);
+    // 人物、队伍、任务、技能和技能书页的文字在各自绘制阶段收集完，等弹层位置也确定后再统一交给 DOM 层。
+    if(this.page==='status'||this.page==='party'||this.page==='quests'||this.page==='skills'||this.page==='learn')this.menuText?.renderPage(this.page);
     this.sync();
   }
   private openControlEditor():void {
@@ -971,7 +985,36 @@ export class StoryUI {
     v.button('',480,350,190,48,()=>this.finishAllocation(true)).setData('label','确定');
     button('alloc-cancel','取消',270,350,170,48);button('alloc-confirm','确定',480,350,190,48);
   }
+  /** 技能页的一段文字；页面重绘时按 key 复用 DOM 标签。 */
+  private addSkillText(key:string,text:string,x:number,y:number,size:number,color=GOLD,anchorX=0,anchorY=0,
+    style:Partial<MenuTextSpec['style']>={},extras:Pick<MenuTextSpec,'scroll'|'clip'>={}):void{
+    this.skillTextSpecs.push({key,text,x,y,style:{size,color,anchorX,anchorY,...style},...extras});
+  }
+  /**
+   * 说明正文先按现有断行算出每行高度和每个色块的横向位置；DOM 只负责按结果落字。
+   * 每个色块带剩余宽度和行高，字号与换行口径跟 Phaser 版一致。
+   */
+  private addDescriptionText(keyPrefix:string,layout:{lines:{runs:{text:string;color?:string;x:number}[]}[];lineHeight:number},
+    x:number,top:number,width:number,size:number,scroll:string,clip:{top:number;bottom:number},baseY=0):void{
+    layout.lines.forEach((line,lineIndex)=>line.runs.forEach((run,runIndex)=>{
+      this.skillTextSpecs.push({key:`${keyPrefix}-${lineIndex}-${runIndex}`,text:run.text,
+        x:x+run.x,y:top+baseY+lineIndex*layout.lineHeight,
+        style:{size,color:run.color??TEXT_COLORS.white,width,
+          lineHeight:layout.lineHeight,wrap:'word'},scroll,clip});
+    }));
+  }
+  /** 说明正文的断行和行高仍在布局阶段算完；测量用的 Phaser 文字当场销毁，不参与显示。 */
+  private descriptionLayout(view:UiSurface,parts:readonly DescriptionTextPart[],width:number,size:number):
+    {lines:{runs:{text:string;color?:string;x:number}[]}[];lineHeight:number;height:number}{
+    if(!parts.length)return{lines:[],lineHeight:0,height:0};
+    const probe=view.text('测',0,0,0,size,TEXT_COLORS.white);
+    const lines=layoutDescriptionText(parts,width,text=>probe.context.measureText(text).width);
+    const lineHeight=probe.height+5;
+    probe.destroy();
+    return{lines,lineHeight,height:Math.max(0,lines.length*lineHeight-5)};
+  }
   private renderSkills():void{
+    this.skillTextSpecs=[];
     // 设置页只剩主角的技能点初始化；选中佣兵时回到技能目录，不展示空页。
     if(this.skillSection==='settings'&&this.selectedMemberId!=='player')this.skillSection='directory';
     const v=this.body!,member=this.member()!,panels=this.app.menuPanels,configuration=this.configuration(),character=this.app.battleCatalog.classes.find(value=>value.id===member.classId)!;
@@ -987,7 +1030,9 @@ export class StoryUI {
     (['directory','ai','settings'] as const).forEach((section,index)=>v.button('',486,38+index*118,46,118,()=>{this.skillSection=section;this.scrollOffsets.delete('skills:description');this.render();},{image:panels.assets[`skill-tab-${section}`],disabled:section!=='directory'&&(!this.session!.party||(section==='settings'&&this.selectedMemberId!=='player'))}).setData('label',{directory:'技能目录',ai:'AI 设置',settings:'设置'}[section]));
     // 剧情伙伴的定义 id 也叫 mercenary-*，身份只能看 source。
     const companion=progression?undefined:this.session!.party?.get(this.selectedMemberId);
-    v.text(progression?`${panels.character.labels.skillPoints} ${progression.points()}`:(companion?.source==='story'?'伙伴技能':'佣兵技能'),561,14,350,19);
+    this.addSkillText('skills-header',progression?`${panels.character.labels.skillPoints} ${progression.points()}`
+      :(companion?.source==='story'?'伙伴技能':'佣兵技能'),561,14,19,GOLD,0,0,
+      {width:350,wrap:'word',lineHeight:24});
     this.renderSkillAside(draft,progression);
   }
   /** 技能目录：原版三列技能格，左侧两列主动、第三列被动。 */
@@ -1046,7 +1091,8 @@ export class StoryUI {
   /** 设置：只剩主角的技能点初始化；佣兵没有独立设置项。 */
   private renderSkillSettings():void{
     const v=this.body!,labels=this.app.menuPanels.skillPanel.labels;
-    v.button(labels.resetButton,161,290,257,63,()=>{this.skillReset=true;this.render();});
+    v.button('',161,290,257,63,()=>{this.skillReset=true;this.render();}).setData('label',labels.resetButton);
+    this.addSkillText('skills-reset',labels.resetButton,161+257/2,290+63/2,22,GOLD,.5,.5);
   }
   /** 说明区由技能目录与 AI 设置共享；设置页与原版一样留空。 */
   /**
@@ -1063,22 +1109,30 @@ export class StoryUI {
       maximum=companion?(companion.snapshot().skillCaps[skill.id]??0):skill.normalMaxLevel;
     // AI 页未掌握的格子只保留选中状态，右侧说明区清空（原版 UISkill_AIMainExe 调 UIDesc_SetOff）。
     if(this.skillSection==='ai'&&level===0)return;
-    const detail=this.scroll('description',565,71,353,this.skillSection==='ai'?342:279);
-    let y=drawDescriptionText(v,skillDescriptionParts(skill,level,companion?maximum:undefined),0,0,353,22,detail.content);
+    const detailHeight=this.skillSection==='ai'?342:279;
+    const detail=this.scroll('description',565,71,353,detailHeight);
+    detail.onScroll=()=>this.menuText?.refresh();
+    const clip={top:71,bottom:71+detailHeight};
+    // 说明正文按现有断行结果落字；滚动时 DOM 层按 `description` 的偏移重算位置。
+    const description=this.descriptionLayout(v,skillDescriptionParts(skill,level,companion?maximum:undefined),353,22);
+    this.addDescriptionText('skill-desc',description,565,71,353,22,'description',clip);
+    let y=description.height;
     if(this.skillSection==='ai'){this.finishScroll('description',detail,y);return;}
     if(level<maximum&&skill.ranks[level]){
       drawDescriptionSeparator(v,0,y+5,353,detail.content);y+=20;
-      y+=drawDescriptionText(v,skillLearningParts(skill.name,level,progression?.learningRequirements(skill.id),
-        companion?skill.ranks[level].requiredCharacterLevel:undefined),0,y,353,22,detail.content)+12;
-      for(const row of skillNextLevelPreview(skill.ranks,level,skill.kind,maximum,skill.display)){
+      const learning=this.descriptionLayout(v,skillLearningParts(skill.name,level,progression?.learningRequirements(skill.id),
+        companion?skill.ranks[level].requiredCharacterLevel:undefined),353,22);
+      this.addDescriptionText('skill-learn',learning,565,71,353,22,'description',clip,y);
+      y+=learning.height+12;
+      skillNextLevelPreview(skill.ranks,level,skill.kind,maximum,skill.display).forEach((row,index)=>{
         const center=353/2,labelColor=row.kind==='mana'?'#0f7cf9':TEXT_COLORS.white,valueColor=row.kind==='mana'?'#0f7cf9':'#ff0000';
-        v.text(row.label,center,y,0,19,labelColor,detail.content).setOrigin(.5,0);
-        const valuesY=y+26;
-        v.text(row.from,center-12,valuesY,0,19,valueColor,detail.content).setOrigin(1,0);
-        v.image(panels.assets['skill-compare-arrow'],center-10.5,valuesY-1,21,24,detail.content);
-        v.text(row.to,center+12,valuesY,0,19,valueColor,detail.content);
+        this.addSkillText(`skill-preview-${index}-label`,row.label,565+center,71+y,19,labelColor,.5,0,{}, {scroll:'description',clip});
+        const valuesY=71+y+26;
+        this.addSkillText(`skill-preview-${index}-from`,row.from,565+center-12,valuesY,19,valueColor,1,0,{}, {scroll:'description',clip});
+        v.image(panels.assets['skill-compare-arrow'],center-10.5,y+25,21,24,detail.content);
+        this.addSkillText(`skill-preview-${index}-to`,row.to,565+center+12,valuesY,19,valueColor,0,0,{}, {scroll:'description',clip});
         y+=52;
-      }
+      });
     }
     this.finishScroll('description',detail,y);
     // 底部两枚按钮按原版：学习（学习就是升级，立即扣点，条件不足时禁用）与快捷键（主动技能才有，
@@ -1408,7 +1462,8 @@ export class StoryUI {
     if(!bag||!instance||this.busy)return;
     this.cancelDrag();this.operation=undefined;this.itemNotice=undefined;this.notice='';
     this.skillBook=new SkillBookPanel(bag,this.session!.skills,this.app.battleCatalog,this.app.menuPanels,entry,
-      ()=>this.render(),()=>this.app.audio?.ui('select'),(message)=>this.closeSkillBook(message));
+      ()=>this.render(),()=>this.app.audio?.ui('select'),(message)=>this.closeSkillBook(message),
+      (view,name,x,y,width,height)=>this.scroll(name,x,y,width,height,view),()=>this.menuText?.refresh());
     this.skillBook.open();this.page='learn';this.render();
   }
   private closeSkillBook(message?:string):void {

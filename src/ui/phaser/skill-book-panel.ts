@@ -1,18 +1,26 @@
 import type { BattleCatalog } from '../../domain/battle.ts';
 import type { Bag } from '../../domain/bag.ts';
+import type { DescriptionTextPart } from '../../domain/description-text.ts';
 import type { MenuPanels } from '../../domain/menu-panels.ts';
 import type { StorySkillProgression } from '../../domain/story-skills.ts';
+import { layoutDescriptionText } from '../description-text-layout.ts';
+import type { MenuTextSpec, MenuTextWriter } from '../dom/menu-text.ts';
 import { skillDescriptionParts, skillNextLevelPreview } from '../skill-detail-lines.ts';
 import { SKILL_BOOK, skillBookCell } from '../skill-book-layout.ts';
 import { TEXT_COLORS } from '../text-style.ts';
-import { drawDescriptionText } from './description-text.ts';
-import type { ScrollArea, UiSurface } from './widgets.ts';
+import { GOLD, type ScrollArea, type UiSurface } from './widgets.ts';
+
+type DescriptionLines = ReturnType<typeof layoutDescriptionText>;
+interface DescriptionLayout { lines: DescriptionLines; lineHeight: number; height: number }
+/** 面板借宿主的滚动区登记位置，滚动时 DOM 文字才能跟着内容一起移动。 */
+type ScrollFactory = (view: UiSurface, name: string, x: number, y: number, width: number, height: number) => ScrollArea;
 
 /**
  * 技能书页面：从背包点「使用」进入的独立菜单页，和强化台同级。
  *
  * 左框只列当前能升级的技能图标，右框显示所选技能当前等级、使用后的等级变化和下一级数值预览。
  * 确认后才真正消耗技能书，结算走 `Bag.use`，和背包弹层用的是同一条领域路径。
+ * 文字统一交给菜单 DOM 层；图框、图标、滚动和按钮底图仍由 Phaser 画。
  */
 export class SkillBookPanel {
   readonly bag: Bag;
@@ -23,15 +31,22 @@ export class SkillBookPanel {
   private readonly changed: () => void;
   private readonly sound: () => void;
   private readonly close: (message?: string) => void;
+  private readonly scrollArea: ScrollFactory;
+  private readonly refreshText: () => void;
   private selected?: string;
   private message = '';
   private scroll?: ScrollArea;
   private offset = 0;
+  /** 这一轮绘制要显示的文字；页面重绘时按 key 复用 DOM 标签。 */
+  private textSpecs: MenuTextSpec[] = [];
 
   constructor(bag: Bag, skills: StorySkillProgression, catalog: BattleCatalog, panels: MenuPanels,
-    entryId: string, changed: () => void, sound: () => void, close: (message?: string) => void) {
+    entryId: string, changed: () => void, sound: () => void, close: (message?: string) => void,
+    scrollArea?: ScrollFactory, refreshText: () => void = () => {}) {
     this.bag = bag; this.skills = skills; this.catalog = catalog; this.panels = panels;
     this.entryId = entryId; this.changed = changed; this.sound = sound; this.close = close;
+    this.scrollArea = scrollArea ?? ((view, _name, x, y, width, height) => view.scroll(x, y, width, height));
+    this.refreshText = refreshText;
   }
 
   get skillIds(): string[] {
@@ -54,8 +69,14 @@ export class SkillBookPanel {
     this.offset = this.scroll?.scrollTop ?? this.offset;
   }
 
+  /** 页面文字交给菜单 DOM 层。 */
+  renderText(writer: MenuTextWriter): void {
+    for (const spec of this.textSpecs) writer.add(spec);
+  }
+
   render(v: UiSurface): void {
     const layout = SKILL_BOOK;
+    this.textSpecs = [];
     v.border(this.panels.assets, layout.leftFrame.x, layout.leftFrame.y, layout.leftFrame.width, layout.leftFrame.height);
     v.border(this.panels.assets, layout.rightFrame.x, layout.rightFrame.y, layout.rightFrame.width, layout.rightFrame.height);
     this.scroll = undefined;
@@ -71,7 +92,8 @@ export class SkillBookPanel {
   private renderGrid(v: UiSurface): void {
     const layout = SKILL_BOOK, assets = this.panels.assets, skills = this.upgradable;
     if (!skills.length) {
-      v.text('暂无可升级技能', layout.empty.x, layout.empty.y, 0, layout.empty.size).setOrigin(.5);
+      this.textSpecs.push({key: 'book-empty', text: '暂无可升级技能', x: layout.empty.x, y: layout.empty.y,
+        style: {size: layout.empty.size, color: GOLD, anchorX: .5, anchorY: .5}});
       return;
     }
     skills.forEach((id, index) => {
@@ -96,46 +118,92 @@ export class SkillBookPanel {
   private renderDetails(v: UiSurface): void {
     const layout = SKILL_BOOK, skill = this.selected ? this.catalog.skills[this.selected] : undefined;
     if (!skill) {
-      if (this.message) v.text(this.message, layout.title.x, layout.title.y, layout.title.width, 20);
+      if (this.message) this.textSpecs.push({key: 'book-message', text: this.message,
+        x: layout.title.x, y: layout.title.y,
+        style: {size: 20, color: GOLD, width: layout.title.width, lineHeight: 25, wrap: 'word'}});
       this.renderButtons(v, false);
       return;
     }
     const rank = this.skills.level(skill.id), problem = this.problemFor(skill.id), entry = this.bag.get(this.entryId);
-    v.text(skill.name, layout.title.x, layout.title.y, layout.title.width, layout.title.size);
-    v.text(`当前等级 LV ${rank}　持有技能书 ${entry?.quantity ?? 0} 本`,
-      layout.level.x, layout.level.y, layout.level.width, layout.level.size, TEXT_COLORS.primary);
-    v.text(problem ?? `使用技能书：LV ${rank} → ${rank + 1}`, layout.status.x, layout.status.y,
-      layout.status.width, layout.status.size, problem ? TEXT_COLORS.danger : '#ffd75e');
-    if (this.message) v.text(this.message, layout.message.x, layout.message.y, layout.message.width,
-      layout.message.size, '#ffd75e');
+    this.textSpecs.push({key: 'book-title', text: skill.name, x: layout.title.x, y: layout.title.y,
+      style: {size: layout.title.size, color: GOLD}});
+    this.textSpecs.push({key: 'book-level', text: `当前等级 LV ${rank}　持有技能书 ${entry?.quantity ?? 0} 本`,
+      x: layout.level.x, y: layout.level.y,
+      style: {size: layout.level.size, color: TEXT_COLORS.primary, width: layout.level.width,
+        lineHeight: layout.level.size + 5, wrap: 'word'}});
+    this.textSpecs.push({key: 'book-status', text: problem ?? `使用技能书：LV ${rank} → ${rank + 1}`,
+      x: layout.status.x, y: layout.status.y,
+      style: {size: layout.status.size, color: problem ? TEXT_COLORS.danger : '#ffd75e',
+        width: layout.status.width, lineHeight: layout.status.size + 5, wrap: 'word'}});
+    if (this.message) this.textSpecs.push({key: 'book-message', text: this.message,
+      x: layout.message.x, y: layout.message.y,
+      style: {size: layout.message.size, color: '#ffd75e', width: layout.message.width,
+        lineHeight: layout.message.size + 5, wrap: 'word'}});
 
-    const detail = v.scroll(layout.scroll.x, layout.scroll.y, layout.scroll.width, layout.scroll.height);
-    let y = drawDescriptionText(v, skillDescriptionParts(skill, rank), 0, 0, layout.scroll.width, 20, detail.content);
+    const scrollName = 'skill-book-description';
+    const detail = this.scrollArea(v, scrollName, layout.scroll.x, layout.scroll.y,
+      layout.scroll.width, layout.scroll.height);
+    const clip = {top: layout.scroll.y, bottom: layout.scroll.y + layout.scroll.height};
+    const description = this.descriptionLayout(v, skillDescriptionParts(skill, rank), layout.scroll.width, 20);
+    this.addDescriptionText('book-desc', description, layout.scroll.x, layout.scroll.y,
+      layout.scroll.width, 20, scrollName, clip);
+    let y = description.height;
     if (!problem) {
       if (y) y += 8;
       const center = layout.scroll.width / 2;
-      for (const row of skillNextLevelPreview(skill.ranks, rank, skill.kind, skill.ranks.length, skill.display)) {
-        const labelColor = row.kind === 'mana' ? '#0f7cf9' : TEXT_COLORS.white,
-          valueColor = row.kind === 'mana' ? '#0f7cf9' : '#ff0000';
-        v.text(row.label, center, y, 0, 17, labelColor, detail.content).setOrigin(.5, 0);
-        const valuesY = y + 24;
-        v.text(row.from, center - 12, valuesY, 0, 17, valueColor, detail.content).setOrigin(1, 0);
-        v.image(this.panels.assets['skill-compare-arrow'], center - 10.5, valuesY - 1, 21, 24, detail.content);
-        v.text(row.to, center + 12, valuesY, 0, 17, valueColor, detail.content);
-        y += 48;
-      }
+      skillNextLevelPreview(skill.ranks, rank, skill.kind, skill.ranks.length, skill.display)
+        .forEach((row, index) => {
+          const labelColor = row.kind === 'mana' ? '#0f7cf9' : TEXT_COLORS.white,
+            valueColor = row.kind === 'mana' ? '#0f7cf9' : '#ff0000';
+          this.textSpecs.push({key: `book-preview-${index}-label`, text: row.label,
+            x: layout.scroll.x + center, y: layout.scroll.y + y,
+            style: {size: 17, color: labelColor, anchorX: .5, anchorY: 0}, scroll: scrollName, clip});
+          const valuesY = y + 24;
+          this.textSpecs.push({key: `book-preview-${index}-from`, text: row.from,
+            x: layout.scroll.x + center - 12, y: layout.scroll.y + valuesY,
+            style: {size: 17, color: valueColor, anchorX: 1, anchorY: 0}, scroll: scrollName, clip});
+          v.image(this.panels.assets['skill-compare-arrow'], center - 10.5, valuesY - 1, 21, 24, detail.content);
+          this.textSpecs.push({key: `book-preview-${index}-to`, text: row.to,
+            x: layout.scroll.x + center + 12, y: layout.scroll.y + valuesY,
+            style: {size: 17, color: valueColor, anchorX: 0, anchorY: 0}, scroll: scrollName, clip});
+          y += 48;
+        });
     }
     detail.setHeight(Math.max(layout.scroll.height, y));
     detail.scrollTop = this.offset;
-    detail.onScroll = () => { this.offset = detail.scrollTop; };
+    detail.onScroll = () => { this.offset = detail.scrollTop; this.refreshText(); };
     this.scroll = detail;
     this.renderButtons(v, !problem && !!entry);
   }
 
   private renderButtons(v: UiSurface, canUse: boolean): void {
     const layout = SKILL_BOOK;
-    v.button('使用技能书', layout.primary.x, layout.primary.y, layout.primary.width, layout.primary.height,
-      () => this.use(), { disabled: !canUse, fontSize: 20 });
+    v.button('', layout.primary.x, layout.primary.y, layout.primary.width, layout.primary.height,
+      () => this.use(), { disabled: !canUse }).setData('label', '使用技能书');
+    this.textSpecs.push({key: 'book-use', text: '使用技能书',
+      x: layout.primary.x + layout.primary.width / 2, y: layout.primary.y + layout.primary.height / 2,
+      style: {size: 20, color: GOLD, anchorX: .5, anchorY: .5}});
+  }
+
+  /** 断行和行高沿用 Phaser 版；测量用的文字当场销毁，不参与显示。 */
+  private descriptionLayout(view: UiSurface, parts: readonly DescriptionTextPart[], width: number, size: number):
+    DescriptionLayout {
+    if (!parts.length) return {lines: [], lineHeight: 0, height: 0};
+    const probe = view.text('测', 0, 0, 0, size, TEXT_COLORS.white);
+    const lines = layoutDescriptionText(parts, width, text => probe.context.measureText(text).width);
+    const lineHeight = probe.height + 5;
+    probe.destroy();
+    return {lines, lineHeight, height: Math.max(0, lines.length * lineHeight - 5)};
+  }
+
+  private addDescriptionText(prefix: string, layout: DescriptionLayout, x: number, top: number,
+    width: number, size: number, scroll: string, clip: {top: number; bottom: number}): void {
+    layout.lines.forEach((line, lineIndex) => line.runs.forEach((run, runIndex) => {
+      this.textSpecs.push({key: `${prefix}-${lineIndex}-${runIndex}`, text: run.text,
+        x: x + run.x, y: top + lineIndex * layout.lineHeight,
+        style: {size, color: run.color ?? TEXT_COLORS.white, width,
+          lineHeight: layout.lineHeight, wrap: 'word'}, scroll, clip});
+    }));
   }
 
   private select(id: string): void {
