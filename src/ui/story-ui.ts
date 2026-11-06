@@ -88,6 +88,9 @@ export class StoryUI {
   private scene?:Phaser.Scene;private surface?:UiSurface;private body?:UiSurface;private hudButtons?:UiSurface;private modal?:UiSurface;private description?:UiSurface;
   /** 菜单页文字走 DOM；图框、按钮、滑条热区和滚动仍由 Phaser 画。 */
   private menuText?:MenuTextLayer;
+  /** 人物页与人物加点确认框的文字；确认框打开时只保留后者。 */
+  private statusTextSpecs:MenuTextSpec[]=[];
+  private statusModalTextSpecs:MenuTextSpec[]=[];
   /** 存档/读档页上一次绘制收集到的文字；确认框打开时改用它自己的那一份。 */
   private saveTextSpecs:MenuTextSpec[]=[];
   private saveModalTextSpecs:MenuTextSpec[]=[];
@@ -177,6 +180,19 @@ export class StoryUI {
       this.menuText.register('system',writer=>this.renderSystemText(writer));
       this.menuText.register('save',writer=>this.renderSaveText(writer));
       this.menuText.register('load',writer=>this.renderSaveText(writer));
+      this.menuText.register('status',writer=>{
+        // 加点确认框打开时只留弹层文字，页面文字整层让位。
+        if(this.allocationExit){this.renderStatusModalText(writer);return;}
+        this.renderTabsText(writer);this.renderStatusText(writer);this.renderNoticeText(writer);
+      });
+      this.menuText.register('party',writer=>{
+        const panel=this.partyPanel;if(!panel)return;
+        if(panel.modalOpen){panel.renderText({add:spec=>writer.add(this.modalTextSpec(spec))});return;}
+        this.renderTabsText(writer);panel.renderText(writer);this.renderNoticeText(writer);
+      });
+      this.menuText.register('quests',writer=>{
+        this.renderTabsText(writer);this.questPanel?.renderText(writer);this.renderNoticeText(writer);
+      });
     }
     this.shortcutScreen.enabled=()=>this.open&&!this.app.ui.suspended&&!this.busy&&!!this.shortcutEdit;
     this.backTab.enabled=()=>this.shortcutScreen!.enabled();
@@ -202,8 +218,12 @@ export class StoryUI {
     this.discardAllocation();
     this.loadReturnToDefeat=false;
     this.close();this.hudButtons?.clear();this.unsubscribe?.();this.session=session;this.world=world;this.content=content;this.page='bag';this.selectedMemberId='player';this.filter='all';this.selectedItem=undefined;this.itemResult=undefined;this.scrollOffsets.clear();this.sessionSignature='';
-    this.questPanel=new QuestPanel(session,world,this.app.menuPanels,()=>this.render());
-    this.partyPanel?.destroyPreview();this.partyPanel=new PartyPanel(session,world,this.app,()=>this.render(),(id,page)=>this.selectMember(id,page));
+    this.questPanel=new QuestPanel(session,world,this.app.menuPanels,()=>this.render(),
+      (view,name,x,y,width,height)=>this.scroll(name,x,y,width,height,view),
+      ()=>this.menuText?.refresh(),()=>this.menuText?.renderPage('quests'));
+    this.partyPanel?.destroyPreview();
+    this.partyPanel=new PartyPanel(session,world,this.app,()=>this.render(),(id,page)=>this.selectMember(id,page),
+      (view,name,x,y,width,height)=>this.scroll(name,x,y,width,height,view),()=>this.menuText?.refresh());
     this.unsubscribe=session.subscribe(()=>{
       // 快捷键登记、控制布局编辑与强化台/技能书页打开时由各自的界面显式重绘；
       // 子页面的动作在完成后调 changed 统一重绘一次，避免会话通知再画一遍。
@@ -226,8 +246,10 @@ export class StoryUI {
     if(modal&&!this.modalActive)this.app.ui.resetInput();
     this.modalActive=modal;this.modal?.visible(modal);
     // DOM 文字盖在画布之上；弹层和菜单隐藏时必须一起让位，否则会浮在弹层上面。
-    // 存档确认框的文字也在 DOM 里，它打开时这一层要继续显示，但只保留确认框文字。
-    this.menuText?.setVisible(menu&&(!modal||this.savePage?.modalOpen));
+    // 存档确认框、人物加点确认框和队伍弹层的文字也在 DOM 里，它们打开时这一层继续显示，
+    // 但页面渲染函数只产出弹层那一份文字。
+    const textModal=this.savePage?.modalOpen||(this.page==='status'&&!!this.allocationExit)||(this.page==='party'&&!!this.partyPanel?.modalOpen);
+    this.menuText?.setVisible(menu&&(!modal||!!textModal));
     this.shortcutScreen?.visible(this.open&&!this.app.ui.suspended&&!!this.shortcutEdit);this.backTab?.visible(this.open&&!this.app.ui.suspended&&!!this.shortcutEdit);
     this.backdrop?.setVisible(this.open&&!this.app.ui.suspended);
     this.controlEditor?.visible(this.open&&this.app.ui.controlLayoutEditing&&!this.app.ui.suspended);
@@ -385,6 +407,49 @@ export class StoryUI {
     const matrix=root.getWorldTransformMatrix(),point=matrix.transformPoint(x,y);
     return{x:point.x,y:point.y,scale:matrix.scaleX};
   }
+  /** 弹层本地坐标 → 内容块坐标；DOM 层统一按内容块根节点换算 CSS 位置。 */
+  private modalToPagePoint(x:number,y:number):{x:number;y:number}{
+    const modal=this.modal,body=this.body;
+    if(!modal||!body)return{x,y};
+    const world=modal.root.getWorldTransformMatrix().transformPoint(x,y);
+    // 画布容器只有平移和缩放，没有旋转；用原点加比例反算，不依赖矩阵的 applyInverse。
+    const matrix=body.root.getWorldTransformMatrix(),origin=matrix.transformPoint(0,0);
+    return{x:(world.x-origin.x)/matrix.scaleX,y:(world.y-origin.y)/matrix.scaleY};
+  }
+  /** 三个内容页共用的顶部标签行；坐标从菜单画布换到内容块。 */
+  private renderTabsText(writer:MenuTextWriter):void{
+    tabs.forEach(([,label],index)=>writer.add({key:`tab-${index}`,text:label,
+      x:35+index*149+51-CONTENT_ORIGIN.x,y:25+85-CONTENT_ORIGIN.y,
+      style:{size:20,color:GOLD,anchorX:.5,anchorY:0,width:90,align:'center'}}));
+  }
+  /** 底部提示行原本画在菜单画布坐标里；这三个内容页改由 DOM 输出。 */
+  private renderNoticeText(writer:MenuTextWriter):void{
+    if(!this.notice)return;
+    writer.add({key:'notice',text:this.notice,x:512-CONTENT_ORIGIN.x,y:614-CONTENT_ORIGIN.y,
+      style:{size:18,color:GOLD,anchorX:.5,anchorY:0,width:880,align:'center'}});
+  }
+  private isDomTextPage():boolean{
+    return this.page==='status'||this.page==='party'||this.page==='quests';
+  }
+  /** 弹层文字规格换成内容块坐标；滚动裁剪边界和文字一起换算。 */
+  private modalTextSpec(spec:MenuTextSpec):MenuTextSpec{
+    const point=this.modalToPagePoint(spec.x,spec.y);
+    const clip=spec.clip?{top:this.modalToPagePoint(0,spec.clip.top).y,
+      bottom:this.modalToPagePoint(0,spec.clip.bottom).y}:undefined;
+    return{...spec,x:point.x,y:point.y,clip};
+  }
+  /** 人物页文字；数值颜色和落点沿用 Phaser 版本的语义。 */
+  private renderStatusText(writer:MenuTextWriter):void{
+    for(const spec of this.statusTextSpecs)writer.add(spec);
+  }
+  /** 加点确认框文字；坐标先换到内容块，避免 DOM 按弹层本地坐标错位。 */
+  private renderStatusModalText(writer:MenuTextWriter):void{
+    for(const spec of this.statusModalTextSpecs)writer.add(this.modalTextSpec(spec));
+  }
+  private addStatusText(key:string,text:string,x:number,y:number,size:number,color=GOLD,anchorX=0,anchorY=0,
+    style:Partial<MenuTextSpec['style']>={}):void{
+    this.statusTextSpecs.push({key,text,x,y,style:{size,color,anchorX,anchorY,...style}});
+  }
   private member(){return this.selectedMemberId==='player'?this.session!.hero:this.session!.party?.get(this.selectedMemberId);}
   private classNames(){return Object.fromEntries(this.app.storyClasses.classes.map(value=>[value.id,value.name]));}
   private actor(){const member=this.member();return this.world!.actors[this.selectedMemberId==='player'?this.session!.campaign.start.actor:(member as CompanionMember).definition.actor];}
@@ -490,8 +555,9 @@ export class StoryUI {
     const chromeKey=`chrome:${this.page}${this.page==='crafting'?`:${this.craftingActor}`:''}`;
     v.staticLayer(chromeKey,()=>{
       if(this.page!=='shop'&&this.page!=='crafting'&&this.page!=='forge'&&this.page!=='learn'&&this.page!=='save'&&this.page!=='load'){
-        // 系统页的标题行也走 DOM；其它页仍由 Phaser 画。静态层按 chromeKey 重画，切页不会残留。
-        const domTabs=this.page==='system';
+        // 系统页与本次迁移的人物、队伍、任务页标题行走 DOM；其它页仍由 Phaser 画。
+        // 静态层按 chromeKey 重画，切页不会残留。
+        const domTabs=this.page==='system'||this.page==='status'||this.page==='party'||this.page==='quests';
         tabs.forEach(([page,label],index)=>{const button=v.button('',35+index*149,25,102,116,()=>this.show(page),{bare:true,parent:v.staticRoot}).setData('label',label);v.image(this.content!.assets[`tab-${page}`],12,0,78,78,button);if(!domTabs)v.text(label,51,85,90,20,undefined,button).setOrigin(.5,0);button.setAlpha(this.page===page||(['settings','debug'] as Page[]).includes(this.page)&&page==='system'?1:.65);});
       }
       if(this.page==='crafting'&&this.craftingPanel){
@@ -550,10 +616,12 @@ export class StoryUI {
     }
     if(this.page==='save'||this.page==='load')this.renderSavePage();
     if(this.page==='settings')this.renderSettings();
-    if(this.notice)this.surface.text(this.notice,512,614,880,18).setOrigin(.5,0);
+    if(this.notice&&!this.isDomTextPage())this.surface.text(this.notice,512,614,880,18).setOrigin(.5,0);
     if(this.operation)this.renderOperation();if(this.allocationExit)this.renderAllocationConfirmation();if(this.skillReset)this.renderSkillResetConfirmation();
     if(this.itemNotice){this.beginModal(1024,640);drawNativeMessage(this.modal!,this.app.menuPanels.assets,this.itemNotice,()=>{this.itemNotice=undefined;this.render();});}
     if(this.page==='save'||this.page==='load')this.renderSaveConfirmations();else this.savePage.renderConfirmations();
+    // 人物、队伍和任务页的文字在各自绘制阶段收集完，等弹层位置也确定后再统一交给 DOM 层。
+    if(this.page==='status'||this.page==='party'||this.page==='quests')this.menuText?.renderPage(this.page);
     this.sync();
   }
   private openControlEditor():void {
@@ -749,6 +817,7 @@ export class StoryUI {
     return this.savePage.captureSaveRecord();
   }
   private renderStatus():void{
+    this.statusTextSpecs=[];
     const v=this.body!,member=this.member()!,actor=this.actor(),panels=this.app.menuPanels,character=this.app.storyClasses.classes.find(value=>value.id===member.classId)!,art=this.memberArt();
     const hero=this.selectedMemberId==='player'?this.session!.hero:undefined,panel=member.panel;
     const statPoints=this.allocation?.remainingPoints??hero?.statPoints??0;
@@ -765,11 +834,15 @@ export class StoryUI {
     // 等级、职业、姓名三行都在 x=458 右对齐（`+0x1ca`），全部按上沿对齐：
     // 等级 `+0x5f`(95)、职业 `+0x78`(120)、姓名再让出字距落在 152。
     // 姓名不再以 150 为中线，否则更大的字号会压到职业行上。三行都是原版的米色 #e2cb9e。
-    v.text(`等级 ${member.level}`,458,95,200,20,AREA_TEXT).setOrigin(1,0);
-    v.text(character.name,458,120,200,20,AREA_TEXT).setOrigin(1,0);
-    v.text(actor.name,458,152,200,26,AREA_TEXT).setOrigin(1,0);
+    this.addStatusText('level',`等级 ${member.level}`,458,95,20,AREA_TEXT,1,0,{width:200,align:'right'});
+    this.addStatusText('class',character.name,458,120,20,AREA_TEXT,1,0,{width:200,align:'right'});
+    this.addStatusText('name',actor.name,458,152,26,AREA_TEXT,1,0,{width:200,align:'right'});
     (['health','mana','experience'] as const).forEach((kind,index)=>{const player=member.player,value=player[kind],max=kind==='experience'?player.nextLevelExperience:kind==='health'?player.maxHealth:player.maxMana,y=258+index*44,ratio=kind==='experience'&&max===0?1:max>0?Math.max(0,Math.min(1,value/max)):0;
-      v.image(panels.assets['character-gauge'],168,y+15,243,37);v.text(panels.character.labels[kind],118,y+21,46,19);v.text(max===0?'已满级':`${value} / ${max}`,290,y,223,17).setOrigin(.5,0);v.text(`${Math.floor(ratio*100)}%`,455,y+21,0,17).setOrigin(1,0);const width=223*ratio,fill=v.image(panels.assets[`character-${kind}-fill`],178,y+27,223,13);fill.setCrop(0,0,fill.width*ratio,fill.height).setVisible(width>0);if(width>0){v.image(panels.assets[`character-${kind}-start`],178,y+27,7,13);v.image(panels.assets[`character-${kind}-end`],178+Math.max(0,width-7),y+27,7,13);}
+      v.image(panels.assets['character-gauge'],168,y+15,243,37);
+      this.addStatusText(`resource-${kind}-label`,panels.character.labels[kind],118,y+21,19,GOLD,1,0,{width:46,align:'right'});
+      this.addStatusText(`resource-${kind}-value`,max===0?'已满级':`${value} / ${max}`,290,y,17,GOLD,.5,0,{width:223,align:'center'});
+      this.addStatusText(`resource-${kind}-percent`,`${Math.floor(ratio*100)}%`,455,y+21,17,GOLD,1,0);
+      const width=223*ratio,fill=v.image(panels.assets[`character-${kind}-fill`],178,y+27,223,13);fill.setCrop(0,0,fill.width*ratio,fill.height).setVisible(width>0);if(width>0){v.image(panels.assets[`character-${kind}-start`],178,y+27,7,13);v.image(panels.assets[`character-${kind}-end`],178+Math.max(0,width-7),y+27,7,13);}
     });
     // 右侧两块同样只有图框：原版 `Scene_Draw_...` 只对它们调 `UI_DrawBorderRect`，
     // 加点时属性栏宽 409（画到 x=905），常态宽 224，战斗指标栏固定在 `+0xe2`(226) 处、224 宽。
@@ -791,10 +864,10 @@ export class StoryUI {
       if(adjusting)drawRoundBand(v,panels.assets,519,index*64+75,364,48,50);
       else drawRoundBand(v,panels.assets,513,index*69+75,190,48,50);
       const nameX=adjusting?531:525,nameY=adjusting?index*64+85:index*69+85;
-      v.text(attribute.name,nameX,nameY,0,23);
-      v.text(String(attributes[stat]),adjusting?751:684,adjusting?index*64+84:index*69+84,0,23).setOrigin(1,0);
+      this.addStatusText(`attribute-${stat}-name`,attribute.name,nameX,nameY,23);
+      this.addStatusText(`attribute-${stat}-value`,String(attributes[stat]),adjusting?751:684,adjusting?index*64+84:index*69+84,23,GOLD,1,0);
       const added=(allocated?.[stat]??0)+(this.allocation?.pending[stat]??0);
-      if(adjusting&&added>=1)v.text(`+${added}`,781,index*64+84,0,23,'#e1823b');
+      if(adjusting&&added>=1)this.addStatusText(`attribute-${stat}-added`,`+${added}`,781,index*64+84,23,'#e1823b');
       if(adjusting&&this.allocation){
         // 原版减点使用左箭头，增点翻转同图；按下叠加对应亮图，透明处露出属性行底带。
         for(const [delta,x,label,disabled] of [[-1,630,'减少',this.allocation.pending[stat]===0],[1,822,'增加',statPoints<1]] as const){
@@ -824,9 +897,16 @@ export class StoryUI {
         ?(key:string,base:number)=>combatAttribute(this.selectedMemberId,key as BattleStatKey,base,modifiers)
         :undefined;
       const values=characterCombatValues(effectiveCharacterPanel(panel,member.level,modifiers,resolve));
-      v.border(panels.assets,722,0,224,431);panels.character.combatLabels.forEach((label,index)=>{v.text(label,738,24+index*35,110,19);v.text(values[index],928,24+index*35,0,19).setOrigin(1,0);});
-    }else v.button('能力初始化',571,376,257,48,()=>this.action(()=>this.resetAttributes()));
-    v.text(`${panels.character.labels.statPoints} ${statPoints}`,this.adjusting?534:522,14,0,20,AREA_TEXT);
+      v.border(panels.assets,722,0,224,431);
+      panels.character.combatLabels.forEach((label,index)=>{
+        this.addStatusText(`combat-${index}-label`,label,738,24+index*35,19,GOLD,0,0,{width:110,align:'left'});
+        this.addStatusText(`combat-${index}-value`,values[index],928,24+index*35,19,GOLD,1,0);
+      });
+    }else{
+      v.button('',571,376,257,48,()=>this.action(()=>this.resetAttributes())).setData('label','能力初始化');
+      this.addStatusText('reset-attributes','能力初始化',571+257/2,376+48/2,Math.min(22,48*.42),GOLD,.5,.5);
+    }
+    this.addStatusText('stat-points',`${panels.character.labels.statPoints} ${statPoints}`,this.adjusting?534:522,14,20,AREA_TEXT);
   }
   private toggleAllocation():void{
     if(this.adjusting){if(this.requestAllocationExit(()=>this.render()))return;}
@@ -875,10 +955,21 @@ export class StoryUI {
   }
   private renderAllocationConfirmation():void{
     const v=this.modal!,character=this.app.storyClasses.classes.find(value=>value.id===this.session!.hero!.classId)!,pending=this.allocation!.pending;
-    this.beginModal(718,415);v.frame(this.app.menuPanels.assets,0,0,718,415);v.text('确定按当前分配增加能力？',35,30,648,26);
-    character.attributes.forEach((attribute,index)=>v.text(`${attribute.name}　＋${pending[PRIMARY_STATS[index]]}`,65,91+index*38,580,22));
-    if(this.allocationError)v.text(this.allocationError,35,292,648,20);
-    v.button('取消',270,350,170,48,()=>this.finishAllocation(false));v.button('确定',480,350,190,48,()=>this.finishAllocation(true));
+    this.statusModalTextSpecs=[];
+    const add=(key:string,text:string,x:number,y:number,size:number,width:number):void=>{
+      this.statusModalTextSpecs.push({key,text,x,y,style:{size,color:GOLD,width,wrap:'word'}});
+    };
+    const button=(key:string,text:string,x:number,y:number,width:number,height:number):void=>{
+      this.statusModalTextSpecs.push({key,text,x:x+width/2,y:y+height/2,
+        style:{size:Math.min(22,height*.42),color:GOLD,anchorX:.5,anchorY:.5}});
+    };
+    this.beginModal(718,415);v.frame(this.app.menuPanels.assets,0,0,718,415);
+    add('alloc-title','确定按当前分配增加能力？',35,30,26,648);
+    character.attributes.forEach((attribute,index)=>add(`alloc-${PRIMARY_STATS[index]}`,`${attribute.name}　＋${pending[PRIMARY_STATS[index]]}`,65,91+index*38,22,580));
+    if(this.allocationError)add('alloc-error',this.allocationError,35,292,20,648);
+    v.button('',270,350,170,48,()=>this.finishAllocation(false)).setData('label','取消');
+    v.button('',480,350,190,48,()=>this.finishAllocation(true)).setData('label','确定');
+    button('alloc-cancel','取消',270,350,170,48);button('alloc-confirm','确定',480,350,190,48);
   }
   private renderSkills():void{
     // 设置页只剩主角的技能点初始化；选中佣兵时回到技能目录，不展示空页。

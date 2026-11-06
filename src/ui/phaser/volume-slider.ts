@@ -1,6 +1,5 @@
 import type Phaser from 'phaser';
 import { UI_EVENTS } from '../../application/ui-events.ts';
-import { FONT } from '../text-style.ts';
 
 const TRACK_HEIGHT = 10;
 const KNOB_WIDTH = 18;
@@ -23,7 +22,6 @@ export class VolumeSlider {
   private readonly trackWidth: number;
   private readonly fill: Phaser.GameObjects.Rectangle;
   private readonly knob: Phaser.GameObjects.Rectangle;
-  private readonly valueText: Phaser.GameObjects.Text;
   private readonly onChange: (value: number) => void;
   private current: number;
   private press?: { id: number; startX: number; startValue: number };
@@ -37,10 +35,7 @@ export class VolumeSlider {
     const track = scene.add.rectangle(0, 0, width, TRACK_HEIGHT, 0x4a3b28).setOrigin(0, .5);
     this.fill = scene.add.rectangle(0, 0, width * this.current, TRACK_HEIGHT, 0xc9ad78).setOrigin(0, .5);
     this.knob = scene.add.rectangle(0, 0, KNOB_WIDTH, KNOB_HEIGHT, 0xf3deb0).setOrigin(.5);
-    this.valueText = scene.add.text(width + 18, 0, '', {
-      fontFamily: FONT, fontSize: 18, color: '#f3deb0', resolution: 3
-    }).setOrigin(0, .5);
-    this.root.add([track, this.fill, this.knob, this.valueText]);
+    this.root.add([track, this.fill, this.knob]);
     this.root.setData('volumeSlider', label);
 
     // 热区比可见轨道略宽，手指更容易按中；命中时阻止场景级 pointerdown，避免滚动区接管。
@@ -96,7 +91,5 @@ export class VolumeSlider {
   private apply(): void {
     this.fill.setSize(this.trackWidth * this.current, TRACK_HEIGHT);
     this.knob.setPosition(this.trackWidth * this.current, 0);
-    const text = this.current <= 0 ? '关闭' : `${Math.round(this.current * 100)}%`;
-    if (this.valueText.text !== text) this.valueText.setText(text);
   }
 }

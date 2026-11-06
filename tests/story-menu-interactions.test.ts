@@ -238,6 +238,25 @@ class FakeDomLabel {
   remove() { this.removed = true; }
 }
 
+/** 当前还活着的 DOM 文字；菜单隐藏或换页后旧标签会被移除或隐藏。 */
+function visibleDomLabels(f: ReturnType<typeof fixture>): FakeDomLabel[] {
+  return f.domLabels.filter(label => label.visible && !label.removed);
+}
+function domLabel(f: ReturnType<typeof fixture>, text: string): FakeDomLabel | undefined {
+  return visibleDomLabels(f).find(label => label.text === text);
+}
+function domLabelsStarting(f: ReturnType<typeof fixture>, prefix: string): FakeDomLabel[] {
+  return visibleDomLabels(f).filter(label => label.text.startsWith(prefix));
+}
+/** DOM 标签的屏幕坐标反算回内容块坐标，和 `menuTextPoint` 同一口径。 */
+function labelPagePoint(f: ReturnType<typeof fixture>, label: FakeDomLabel): { x: number; y: number } {
+  const matrix = f.internals.body.root.getWorldTransformMatrix(), origin = matrix.transformPoint(0, 0);
+  return { x: (label.x - origin.x) / matrix.scaleX, y: (label.y - origin.y) / matrix.scaleY };
+}
+function labelScreenHeight(label: FakeDomLabel, scale = 1): number {
+  return Number.parseFloat(String(label.style.fontSize ?? '0')) * 1.2 / scale;
+}
+
 const read = <T>(name: string): T => JSON.parse(readFileSync(new URL(`../public/content/${name}.json`, import.meta.url), 'utf8')) as T;
 const items = read<ItemCatalog>('items'), stats = read<CharacterStatsCatalog>('character-stats'), battle = read<BattleCatalog>('battle');
 const campaign = read<Campaign>('campaign'), companions = read<CompanionCatalog>('companions'), world = read<WorldIndex>('world');
@@ -332,8 +351,8 @@ test('character allocation uses native arrow art and keeps points in the allocat
   const f=fixture();t.after(f.cleanup);f.hero.addExperience(f.hero.player.nextLevelExperience);
   const before=f.hero.panel.attributes,points=f.hero.statPoints;
   f.menu.show('status');
-  assert.equal(f.scene.texts().filter(text=>text.startsWith(panels.character.labels.statPoints)).length,1);
-  assert(!f.scene.texts().some(text=>text.includes(panels.character.labels.skillPoints)));
+  assert.equal(visibleDomLabels(f).filter(label=>label.text.startsWith(panels.character.labels.statPoints)).length,1);
+  assert(!visibleDomLabels(f).some(label=>label.text.includes(panels.character.labels.skillPoints)));
   f.scene.click(f.scene.button('查看属性加点'));
   const plus=f.scene.button('增加力量'),minus=f.scene.button('减少力量');
   assert.equal(plus.list.length,2,'按钮只画原版箭头与按下图，不叠矩形或加减文字');
@@ -369,25 +388,25 @@ test('character allocation uses native arrow art and keeps points in the allocat
 
 test('character level, class and name stack without overlapping',t=>{
   const f=fixture();t.after(f.cleanup);f.menu.show('status');
-  const node=(text:string)=>f.scene.nodes.find(value=>value.shown&&value.text===text)!;
-  const level=node(`等级 ${f.hero.level}`);
-  const profession=node(f.app.storyClasses.classes.find(value=>value.id===f.hero.classId)!.name);
-  const name=node(world.actors[campaign.start.actor].name);
-  assert.ok(level.y+level.height<=profession.y,`等级与职业行重叠：${level.y+level.height} > ${profession.y}`);
-  assert.ok(profession.y+profession.height<=name.y,`职业与姓名重叠：${profession.y+profession.height} > ${name.y}`);
+  const label=(text:string)=>domLabel(f,text)!;
+  const level=label(`等级 ${f.hero.level}`);
+  const profession=label(f.app.storyClasses.classes.find(value=>value.id===f.hero.classId)!.name);
+  const name=label(world.actors[campaign.start.actor].name);
+  assert.ok(level.y+labelScreenHeight(level)<=profession.y,`等级与职业行重叠：${level.y+labelScreenHeight(level)} > ${profession.y}`);
+  assert.ok(profession.y+labelScreenHeight(profession)<=name.y,`职业与姓名重叠：${profession.y+labelScreenHeight(profession)} > ${name.y}`);
 });
 
 test('ability allocation counts added points per attribute and the reset button returns them for free',t=>{
   const f=fixture();t.after(f.cleanup);f.hero.addExperience(f.hero.player.nextLevelExperience);
   const points=f.hero.statPoints,base=f.hero.panel.attributes;
   f.menu.show('status');f.scene.click(f.scene.button('查看属性加点'));
-  const added=()=>f.scene.nodes.find(node=>node.shown&&node.color==='#e1823b'&&node.x===781&&node.y===84);
+  const added=()=>visibleDomLabels(f).find(label=>label.style.color==='#e1823b'&&label.text.startsWith('+'));
   assert.equal(added(),undefined,'没有投入时不画计数');
   f.scene.click(f.scene.button('增加力量'));
   assert.equal(added()?.text,'+1','本轮投入立即计入右侧总数');
   f.scene.click(f.scene.button('增加力量'));
   assert.equal(added()?.text,'+2');
-  const strengthValue=f.scene.nodes.find(node=>node.shown&&node.x===751&&node.y===84);
+  const strengthValue=visibleDomLabels(f).find(label=>label.text===String(base.strength+2)&&Math.abs(label.y-added()!.y)<.01);
   assert.equal(strengthValue?.text,String(base.strength+2),'加点预览同步显示本轮增量');
   f.scene.click(f.scene.button('确认属性加点'));f.scene.click(f.scene.button('确定'));
   assert.equal(f.hero.allocated.strength,2);
@@ -398,13 +417,13 @@ test('ability allocation counts added points per attribute and the reset button 
   assert.equal(f.hero.statPoints,points,'初始化不消耗任何道具，点数全部返还');
   assert.deepEqual(f.hero.panel.attributes,base);
   assert.equal(added(),undefined,'初始化后计数清零');
-  assert(f.scene.texts().includes(`${panels.character.labels.statPoints} ${points}`),'标题栏显示返还后的全部点数');
+  assert(visibleDomLabels(f).some(label=>label.text===`${panels.character.labels.statPoints} ${points}`),'标题栏显示返还后的全部点数');
 });
 
 test('holding an allocation arrow keeps adding points until released',t=>{
   const f=fixture();t.after(f.cleanup);f.hero.addExperience(f.hero.player.nextLevelExperience);
   f.menu.show('status');f.scene.click(f.scene.button('查看属性加点'));
-  const added=()=>f.scene.nodes.find(node=>node.shown&&node.color==='#e1823b'&&node.x===781&&node.y===84);
+  const added=()=>visibleDomLabels(f).find(label=>label.style.color==='#e1823b'&&label.text.startsWith('+'));
   f.scene.press(f.scene.button('增加力量'));
   assert.equal(added(),undefined,'还没到长按阈值时不加点');
   f.scene.hold();
@@ -446,11 +465,11 @@ test('story companions use their own skill label and no mercenary group',t=>{
   assert(f.scene.texts().includes('伙伴技能'));
   assert(!f.scene.texts().includes('佣兵技能'));
   f.menu.show('party');f.scene.click(f.scene.button(story.definition.name));f.scene.click(f.scene.button('技能目录'));
-  assert(!f.scene.texts().includes('佣兵团'),'剧情伙伴不显示佣兵团区');
+  assert(!visibleDomLabels(f).some(label=>label.text==='佣兵团'),'剧情伙伴不显示佣兵团区');
 
   const mercenary=f.recruit('warlock');
   f.menu.show('party');f.scene.click(f.scene.button(mercenary.definition.name));f.scene.click(f.scene.button('技能目录'));
-  assert(f.scene.texts().includes('佣兵团'),'佣兵仍显示佣兵团区');
+  assert(visibleDomLabels(f).some(label=>label.text==='佣兵团'),'佣兵仍显示佣兵团区');
 });
 
 test('party skill cells hide the zero badge and show the locked overlay instead',t=>{
@@ -470,8 +489,8 @@ test('party skill cells hide the zero badge and show the locked overlay instead'
 test('status page shows party group magic resistance and drops it when the member leaves',t=>{
   const f=fixture();t.after(f.cleanup);f.menu.show('status');
   const value=()=>{
-    const label=[...f.scene.nodes].reverse().find(node=>node.shown&&node.text==='魔法抗性')!;
-    return Number(([...f.scene.nodes].reverse().find(node=>node.shown&&node.x===928&&node.y===label.y)!.text).replace('%',''));
+    const label=[...visibleDomLabels(f)].reverse().find(candidate=>candidate.text==='魔法抗性')!;
+    return Number([...visibleDomLabels(f)].reverse().find(candidate=>candidate.text.endsWith('%')&&Math.abs(candidate.y-label.y)<.01)!.text.replace('%',''));
   };
   const before=value();
   const member=f.recruit('warlock');
@@ -488,16 +507,16 @@ test('character titles stay clear of content-frame shadows and all attribute lab
   const labels=['物理攻击','魔法攻击','暴击率','命中率','暴击伤害','防御力',
     '物理抗性','魔法抗性','闪避率','武器格挡率','盾牌格挡率'];
   assert.deepEqual(panels.character.combatLabels,labels);
-  for(const label of [...labels,'生命','魔法','经验',`等级 ${f.hero.level}`])assert(f.scene.texts().includes(label));
+  for(const label of [...labels,'生命','魔法','经验',`等级 ${f.hero.level}`])assert(domLabel(f,label),`显示属性标签：${label}`);
   for(const adjusting of [false,true]){
     if(adjusting)f.scene.click(f.scene.button('查看属性加点'));
-    const title=f.scene.nodes.find(node=>node.shown&&node.text.startsWith(panels.character.labels.statPoints))!;
-    const body=title.parentContainer!;
-    const corners=body.list.filter(node=>node.texture.key===`interface:${panels.assets['corner-nw']}`&&node.x===496);
+    const title=domLabelsStarting(f,panels.character.labels.statPoints)[0]!;
+    const corners=(f.internals.body.root.list as unknown as Display[]).filter(node=>node.texture.key===`interface:${panels.assets['corner-nw']}`&&node.x===496);
     assert.equal(corners.length,1);assert.equal(corners[0].y,49,'属性内容框从标题下方开始');
-    assert(title.y+title.height<=corners[0].y,'标题文字位于内容边框上方');
-    assert.equal(title.x,adjusting?534:522,'原版标题内边距让开左上装饰');
-    assert.equal(body.list.at(-1),title,'标题文字在装饰和按钮之后绘制');
+    const point=labelPagePoint(f,title),scale=f.internals.body.root.getWorldTransformMatrix().scaleX;
+    assert.ok(point.y+labelScreenHeight(title,scale)<=corners[0].y,'标题文字位于内容边框上方');
+    assert.equal(Math.round(point.x),adjusting?534:522,'原版标题内边距让开左上装饰');
+    assert.equal(title.visible,true,'标题文字保持可见');
   }
 });
 
@@ -567,8 +586,10 @@ test('custom menu buttons share native art and keep labels above their pressed l
     f.menu.show(page);
     if(page==='status')f.scene.click(f.scene.button('查看属性加点'));
     const tabLabels=new Set(['人物','背包','技能','队伍','任务','系统','关闭菜单']);
+    const domLabels=page==='system'||page==='status';
+    const commonButton=(node:Display)=>(node.getData('face') as Display|undefined)?.list.length===3;
     const buttons=f.scene.nodes.filter(node=>node.shown&&node.getData('uiAction')&&
-      (page==='system'?node.getData('face')&&!tabLabels.has(node.getData('label')):node.getData('labelText')));
+      (domLabels?commonButton(node)&&node.getData('label')&&!tabLabels.has(node.getData('label')):node.getData('labelText')));
     assert(buttons.length>0,`${page}包含文字按钮`);
     for(const button of buttons){
       for(const [part,file] of [['face',COMMON_BUTTON.image],['highlight',COMMON_BUTTON.pressed]] as const){
@@ -576,7 +597,7 @@ test('custom menu buttons share native art and keep labels above their pressed l
         assert.equal(layer.list.length,3,'Canvas 按钮由原图左端、中段、右端组成');
         assert(layer.list.every(image=>image.texture.key===`interface:${file}`));
       }
-      if(page==='system')assert.equal(button.getData('labelText'),undefined,'系统页文字改由 DOM 绘制');
+      if(domLabels)assert.equal(button.getData('labelText'),undefined,`${page}文字改由 DOM 绘制`);
       else assert.equal(button.list.at(-1),button.getData('labelText'),'文字画在按下亮图上方');
     }
     const enabled=buttons.find(button=>f.scene.canHit(button));

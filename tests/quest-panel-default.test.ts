@@ -40,14 +40,20 @@ function surface() {
 test('the quest panel selects the first group and shows its detail on open', () => {
   const session = new Session(campaign);
   assert.equal(session.accept('grafton-mission'), true);
-  const { view, texts, scrolls } = surface();
+  const { view, scrolls } = surface();
   const panel = new QuestPanel(session, world, { assets: {
     'quest-row': 'row', 'quest-row-selected': 'row-selected', 'quest-row-pressed': 'row-pressed',
     'quest-main': 'main', 'quest-ready': 'ready',
   } } as never, () => {});
   panel.render(view as never);
   assert.equal(scrolls.length, 2, '列表之外还画出第一组的详情');
-  assert.match(texts.join(''), /格里普顿伯爵/);
+  const text=() => {
+    const specs: {key: string; text: string}[] = [];
+    panel.renderText({add: spec => specs.push(spec)});
+    return specs;
+  };
+  assert.match(text().map(spec => spec.text).join(''), /格里普顿伯爵/);
+  assert(text().some(spec => spec.key.startsWith('quest-detail-')), '详情文字同样交给 DOM 层');
 
   // 再次绘制（会话通知）仍保留选中；滚动收起详情后不会因为重画又自动弹出。
   panel.render(view as never);

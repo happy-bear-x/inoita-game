@@ -5,8 +5,10 @@ import { fullscreenActive, fullscreenStatus, onFullscreenChange, setFullscreen }
 import Phaser from 'phaser';
 import type { MenuContext } from '../application/ports.ts';
 import { TITLE_MESSAGE_ASSETS, titleMenuImages } from '../application/menu-images.ts';
-import { UiSurface, loadUiImages, uiTexture } from '../ui/phaser/widgets.ts';
-import { SAVE_BOARD, SAVE_BOARD_LAYOUT, drawSaveBoardRow, newestFirstSlots, saveBoardOrigin, saveRowTitle, type SaveBoardControl } from '../ui/phaser/save-board.ts';
+import { GOLD, UiSurface, loadUiImages, uiTexture, type ScrollArea } from '../ui/phaser/widgets.ts';
+import { SAVE_BOARD, SAVE_BOARD_LAYOUT, drawSaveBoardRow, newestFirstSlots, saveBoardOrigin, saveRowTitle, setSaveBoardTextSink, type SaveBoardControl, type SaveBoardTextSpec } from '../ui/phaser/save-board.ts';
+import { MenuTextLayer, type MenuTextClip, type MenuTextPoint, type MenuTextSpec } from '../ui/dom/menu-text.ts';
+import type { DomUi } from '../ui/dom/dom-ui.ts';
 import { drawNativeMessage } from '../ui/phaser/native-message.ts';
 import { centerModal } from '../ui/phaser/modal-placement.ts';
 import { TextPrompt } from '../ui/text-prompt.ts';
@@ -35,6 +37,13 @@ const GAME_VERSION='v0.0.6';
 const FAN_WORK_NOTICE='同人作品 · 仅供个人学习研究 · 请支持官方正版';
 const CLOSE_IMAGE='/assets/ui/menus/close.png';
 const CLOSE_PRESSED='/assets/ui/menus/close-pressed.png';
+/** DOM 文字不跟随 Phaser 容器的 alpha；禁用按钮的标签用同透明度的颜色变暗。 */
+function fadeColor(color:string,alpha:number):string {
+  const match=/^#([0-9a-f]{6})$/i.exec(color);
+  if(!match)return color;
+  const value=parseInt(match[1],16);
+  return `rgba(${value>>16&255},${value>>8&255},${value&255},${Math.max(0,Math.min(1,alpha)).toFixed(2)})`;
+}
 
 interface ConfirmRequest {
   message:string;
@@ -72,6 +81,14 @@ export class MenuScene extends Phaser.Scene {
   private cloudCount?:number;
   /** 环境设置列表的滚动位置：开关后整页重画，位置要接着上次的来。 */
   private settingsScroll=0;
+  /** 菜单文字走 DOM；图框、按钮、滚动和命中区仍由 Phaser 画。 */
+  private menuText?:MenuTextLayer;
+  /** 本次重画收集到的文字规格；各页面的 DOM 渲染函数按它生成标签。 */
+  private domSpecs:MenuTextSpec[]=[];
+  /** 滚动区文字重算位置时读当前偏移；每次整页重画指向新的滚动区。 */
+  private slotsScroll?:ScrollArea;
+  private settingsList?:ScrollArea;
+  private cloudScroll?:ScrollArea;
   private readonly renderCloudOnResume=():void=>{
     if(this.page==='cloud'&&this.surface&&this.sys.isActive())this.render();
   };
@@ -80,7 +97,7 @@ export class MenuScene extends Phaser.Scene {
   create(options:{page?:'home'|'slots'}={}):void {
     this.page='home';this.app.ui.setMode('menu');this.app.ui.loading('正在准备主菜单…');
     const controller=new AbortController();
-    this.events.once('shutdown',()=>{this.unregisterInput?.();this.unregisterInput=undefined;controller.abort();this.cancelCloudRequest();this.settleConfirm(false,false);this.slotRequest?.abort();this.prompt?.close();this.passwordPrompt?.close();this.credentials?.destroy();this.credentials=undefined;this.surface?.destroy();this.surface=undefined;this.modal?.destroy();this.modal=undefined;this.slotPortraits?.release();this.slotPortraits=undefined;this.events.off(Phaser.Scenes.Events.RESUME,this.renderCloudOnResume);this.events.off(Phaser.Scenes.Events.PAUSE,this.hideCredentials);this.scale.off('resize',this.layout,this);});
+    this.events.once('shutdown',()=>{this.unregisterInput?.();this.unregisterInput=undefined;controller.abort();this.cancelCloudRequest();this.settleConfirm(false,false);this.slotRequest?.abort();this.prompt?.close();this.passwordPrompt?.close();this.credentials?.destroy();this.credentials=undefined;this.menuText?.destroy();this.menuText=undefined;this.domSpecs=[];this.slotsScroll=undefined;this.settingsList=undefined;this.cloudScroll=undefined;this.surface?.destroy();this.surface=undefined;this.modal?.destroy();this.modal=undefined;this.slotPortraits?.release();this.slotPortraits=undefined;this.events.off(Phaser.Scenes.Events.RESUME,this.renderCloudOnResume);this.events.off(Phaser.Scenes.Events.PAUSE,this.hideCredentials);this.scale.off('resize',this.layout,this);});
     // 标题页整屏独占键盘；原始事件由正式界面场景那一处桥接进 router。
     this.unregisterInput?.();this.unregisterInput=this.app.inputRouter.register('menu',this.routeKey,{exclusive:()=>true});
     this.events.on(Phaser.Scenes.Events.RESUME,this.renderCloudOnResume);
@@ -95,6 +112,13 @@ export class MenuScene extends Phaser.Scene {
       this.events.once('shutdown',()=>lease.release());
       this.backdrop=this.add.image(0,0,uiTexture(art('background'))).setOrigin(.5);
       this.surface=new UiSurface(this,1200,640);this.modal=new UiSurface(this,1024,640,200);this.prompt=new TextPrompt();this.passwordPrompt=new PasswordChangePrompt();
+      const domUi=this.domUi;
+      if(domUi){
+        this.menuText=new MenuTextLayer(domUi,(x,y)=>this.menuTextPoint(x,y),(page)=>this.menuScrollTop(page));
+        for(const page of ['home','slots','settings','cloud'] as const){
+          this.menuText.register(page,writer=>{for(const spec of this.domSpecs)writer.add(spec);});
+        }
+      }
       this.credentials=new CloudCredentialsInput({
         onAccount:value=>{this.cloudAccountInput=value;},
         onPassword:value=>{this.cloudPassword=value;},
@@ -124,67 +148,166 @@ export class MenuScene extends Phaser.Scene {
    * 不需要连点防误触。打开时左下角常驻一行「调试：开」——它是状态指示，不是操作结果提示。
    * 开关关闭时这一行不存在。
    */
-  private addVersion(view:UiSurface):void {
-    const label=view.text(GAME_VERSION,1180,612,0,36).setOrigin(1,1);
-    view.text(FAN_WORK_NOTICE,1180,632,0,14,'#b8ab92').setOrigin(1,1);
-    const gm=this.app.gmMode;if(!gm)return;
-    label.setInteractive({useHandCursor:true});
-    label.on('pointerdown',()=>{
+  private addVersion(view:UiSurface,texts:MenuTextSpec[]):void {
+    texts.push({key:'version',text:GAME_VERSION,x:1180,y:612,style:{size:36,anchorX:1,anchorY:1}});
+    texts.push({key:'notice',text:FAN_WORK_NOTICE,x:1180,y:632,style:{size:14,color:'#b8ab92',anchorX:1,anchorY:1}});
+    const gm=this.app.gmMode;if(!gm||!this.menuText)return;
+    // DOM 文字不接收指针：版本号仍用贴在画布上的透明命中区切换 GM。
+    const zone=view.scene.add.zone(1055,565,125,50).setOrigin(0).setInteractive({useHandCursor:true});
+    view.root.add(zone);
+    zone.on('pointerdown',()=>{
       if(!this.app.ui.ready||this.app.ui.suspended||!this.sys.isActive())return;
       // 开关状态先同步画出来；目录是可选依赖，没有它也不能让「调试：开」一直不出现。
       if(gm.toggle()){this.render();void this.app.loadDebugCatalog?.().then(()=>this.render(),error=>console.error(error));}
       else this.render();
     });
-    if(gm.on)view.text('调试：开',8,610,0,18);
+    if(gm.on)texts.push({key:'gm-on',text:'调试：开',x:8,y:610,style:{size:18}});
+  }
+
+  /** DOM 文字层由启动装配注入；菜单接口没有它，运行时从应用实例取。 */
+  private get domUi():DomUi|undefined {
+    return (this.app as MenuContext&{readonly domUi?:DomUi}).domUi;
+  }
+  /** 页面坐标 → 画框 CSS 坐标；和 `UiSurface` 的根变换同一口径。 */
+  private menuTextPoint(x:number,y:number):MenuTextPoint {
+    const root=this.surface?.root;
+    if(!root)return{x,y,scale:1};
+    const matrix=root.getWorldTransformMatrix(),point=matrix.transformPoint(x,y);
+    return{x:point.x,y:point.y,scale:matrix.scaleX};
+  }
+  /** 滚动文字按当前偏移重算；每次整页重画后指向新的滚动区。 */
+  private menuScrollTop(page:string):number|undefined {
+    if(page==='slots')return this.slotsScroll?.scrollTop;
+    if(page==='settings')return this.settingsList?.scrollTop;
+    if(page==='cloud')return this.cloudScroll?.scrollTop;
+    return undefined;
+  }
+  /** 存档槽绘制的文字规格转成菜单文字规格。 */
+  private saveBoardSpec(spec:SaveBoardTextSpec):MenuTextSpec {
+    return {key:spec.key,text:spec.text,x:spec.x,y:spec.y,scroll:spec.scroll,clip:spec.clip,
+      style:{size:spec.size,color:spec.color,anchorX:spec.anchorX,anchorY:spec.anchorY,align:spec.align,
+        width:spec.width,wrap:spec.width?'word':undefined}};
+  }
+  /**
+   * 云存档页的文字由面板绘制函数产出。这里截下 `text` 的调用换成 DOM 规格，
+   * 图框、按钮和滚动区仍照常画；面板没有文字接收器，所以只在菜单场景这一层适配。
+   */
+  private drawCloudPage(view:UiSurface):MenuTextSpec[] {
+    const made:{spec:MenuTextSpec;parent:Phaser.GameObjects.Container}[]=[];
+    const target=view as unknown as {text:UiSurface['text']};
+    const original=target.text;
+    target.text=((value:string,x:number,y:number,width=0,size=22,color=GOLD,parent=view.root)=>{
+      const spec:MenuTextSpec={key:`cloud-${made.length}`,text:value,x,y,
+        style:{size,color,anchorX:0,anchorY:0,width:width||undefined,wrap:width?'word':undefined}};
+      const fake:{
+        height:number;
+        setOrigin:(anchorX?:number,anchorY?:number)=>unknown;
+        setAlign:(align:'left'|'center'|'right')=>unknown;
+        setPosition:(x:number,y:number)=>unknown;
+        setVisible:(visible?:boolean)=>unknown;
+      }={
+        height:size+5,
+        setOrigin(anchorX=0,anchorY=0){spec.style.anchorX=anchorX;spec.style.anchorY=anchorY;return fake;},
+        setAlign(align){spec.style.align=align;return fake;},
+        setPosition(nextX,nextY){spec.x=nextX;spec.y=nextY;return fake;},
+        setVisible(){return fake;},
+      };
+      made.push({spec,parent});
+      return fake as unknown as Phaser.GameObjects.Text;
+    }) as UiSurface['text'];
+    try{
+      drawCloudSavePage(view,this.cloudState(),this.cloudActions(),{frame:art('slot'),close:CLOSE_IMAGE,closePressed:CLOSE_PRESSED});
+    }finally{
+      target.text=original;
+    }
+    // 云页只有说明和状态在一个滚动区里；按钮文字直接挂在画布根节点上。
+    const note=view.scrolls.at(-1);
+    this.cloudScroll=note;
+    if(note)note.onScroll=()=>this.menuText?.refresh();
+    const specs:MenuTextSpec[]=[];
+    for(const {spec,parent} of made){
+      if(note&&parent===note.content){
+        spec.x+=note.x;spec.y+=note.y;spec.scroll='cloud-note';
+        spec.clip={top:note.y,bottom:note.y+note.height};
+      }else if(parent!==view.root){
+        spec.x+=parent.x;spec.y+=parent.y;
+        if(parent.alpha<1&&spec.style.color)spec.style.color=fadeColor(spec.style.color,parent.alpha);
+      }
+      // 按钮标签在原实现里以自身中心为原点；有换行宽度时也要居中对齐。
+      if(spec.style.anchorX===.5)spec.style.align='center';
+      specs.push(spec);
+    }
+    return specs;
   }
   private render():void {
     // 异步目录加载和指针回调可能在场景关闭后才回来；surface 此时已经销毁。
     if(!this.surface||!this.sys.isActive())return;
     const view=this.surface;view.clear();this.modal?.clear();
+    // DOM 标签直接写屏幕坐标；先让根节点用当前窗口尺寸完成布局，避免首帧按旧变换闪一下。
+    view.layout();
     const guard=()=>this.app.ui.ready&&!this.app.ui.suspended&&this.sys.isActive()&&this.confirmAction===undefined&&this.renameRef===undefined;
     view.enabled=guard;
-    const button=(label:string,x:number,y:number,w:number,h:number,action:()=>void,fontSize=36,parent?:Phaser.GameObjects.Container)=>view.button(label,x,y,w,h,action,{fontSize,guard,parent});
+    const texts:MenuTextSpec[]=[];
+    const buttonText=(key:string,label:string,x:number,y:number,width:number,height:number,size:number,
+      color=GOLD,scroll?:string,clip?:MenuTextClip):void=>{
+      texts.push({key,text:label,x:x+width/2,y:y+height/2,style:{size,color,anchorX:.5,anchorY:.5},
+        ...(scroll?{scroll,clip}:{})});
+    };
     if(this.page==='home'){
       view.image(art('logo'),291,52,617,353);view.image(art('subtitle-left'),305,385,undefined,122);view.image(art('subtitle-right'),601,385,undefined,122);
-      button('开始游戏',416,457,369,124,()=>this.openSlots());
-      button('环境设置',65,472,300,92,()=>{this.page='settings';this.render();});
-      view.button('挑战模式',835,472,300,92,()=>{},{fontSize:36,disabled:true});
-      this.addVersion(view);
+      const menuButton=(key:string,label:string,x:number,y:number,width:number,height:number,action:()=>void,disabled=false):void=>{
+        view.button('',x,y,width,height,action,{fontSize:36,disabled,guard}).setData('label',label);
+        buttonText(key,label,x,y,width,height,36,disabled?'rgba(243,222,176,.4)':GOLD);
+      };
+      menuButton('home-start','开始游戏',416,457,369,124,()=>this.openSlots());
+      menuButton('home-settings','环境设置',65,472,300,92,()=>{this.page='settings';this.render();});
+      menuButton('home-challenge','挑战模式',835,472,300,92,()=>{},true);
+      this.addVersion(view,texts);
     }else if(this.page==='cloud'){
-      drawCloudSavePage(view,this.cloudState(),this.cloudActions(),{frame:art('slot'),close:CLOSE_IMAGE,closePressed:CLOSE_PRESSED});
+      texts.push(...this.drawCloudPage(view));
     }else{
       view.button('',28,21,67,67,()=>this.showHome(),{image:CLOSE_IMAGE,pressed:CLOSE_PRESSED,guard}).setData('label','返回主菜单');
       if(this.page==='slots'){
-        view.text('存档槽',600,20,760,49).setOrigin(.5,0);
-        view.button('云存档',CLOUD_PAGE.entry.x,CLOUD_PAGE.entry.y,CLOUD_PAGE.entry.width,CLOUD_PAGE.entry.height,()=>this.openCloud(),{fontSize:26,guard});
+        texts.push({key:'slots-title',text:'存档槽',x:600,y:20,style:{size:49,anchorX:.5,anchorY:0}});
+        view.button('',CLOUD_PAGE.entry.x,CLOUD_PAGE.entry.y,CLOUD_PAGE.entry.width,CLOUD_PAGE.entry.height,()=>this.openCloud(),{fontSize:26,guard}).setData('label','云存档');
+        buttonText('cloud-entry','云存档',CLOUD_PAGE.entry.x,CLOUD_PAGE.entry.y,CLOUD_PAGE.entry.width,CLOUD_PAGE.entry.height,26);
         const assets={frame:art('slot'),empty:art('slot-empty')};
         const origin=saveBoardOrigin(view.width);
-        // 自动存档固定一行置顶；它没有改名与删除。
-        const auto=this.app.saves.peek(AUTO_SAVE_SLOT),autoTitle=saveRowTitle(AUTO_SAVE_SLOT,auto);
-        drawSaveBoardRow(view,assets,origin,SAVE_BOARD_LAYOUT.autoTop,
-          {reading:auto,action:auto.kind==='ok'?()=>this.resume(AUTO_SAVE_SLOT):undefined,label:autoTitle,title:autoTitle,auto:true});
-        // 十个手动槽放进滚动区；按写入时间倒序，最新的排最前，空槽排在后面。
-        const scroll=view.scroll(origin.x,SAVE_BOARD_LAYOUT.listTop,SAVE_BOARD.panelWidth,SAVE_BOARD_LAYOUT.listHeight);
-        newestFirstSlots(slot=>this.app.saves.peek(slot)).forEach((slot,index)=>{
-          const ref=slot,reading=this.app.saves.peek(ref),title=saveRowTitle(ref,reading);
-          drawSaveBoardRow(view,assets,{x:0,y:0},index*SAVE_BOARD.rowStep,{
-            reading,label:title,title,
-            action:reading.kind==='ok'?()=>this.resume(ref):reading.kind==='empty'?()=>{void this.app.enterGame?.(slot);}:undefined,
-            ...this.slotControls(ref,reading),
-          },scroll.content);
-        });
-        scroll.setHeight((MANUAL_SAVE_SLOT_COUNT-1)*SAVE_BOARD.rowStep+SAVE_BOARD.frameHeight);
+        setSaveBoardTextSink(view,{add:spec=>texts.push(this.saveBoardSpec(spec))});
+        try{
+          // 自动存档固定一行置顶；它没有改名与删除。
+          const auto=this.app.saves.peek(AUTO_SAVE_SLOT),autoTitle=saveRowTitle(AUTO_SAVE_SLOT,auto);
+          drawSaveBoardRow(view,assets,origin,SAVE_BOARD_LAYOUT.autoTop,
+            {reading:auto,action:auto.kind==='ok'?()=>this.resume(AUTO_SAVE_SLOT):undefined,label:autoTitle,title:autoTitle,auto:true});
+          // 十个手动槽放进滚动区；按写入时间倒序，最新的排最前，空槽排在后面。
+          const scroll=view.scroll(origin.x,SAVE_BOARD_LAYOUT.listTop,SAVE_BOARD.panelWidth,SAVE_BOARD_LAYOUT.listHeight);
+          this.slotsScroll=scroll;scroll.onScroll=()=>this.menuText?.refresh();
+          newestFirstSlots(slot=>this.app.saves.peek(slot)).forEach((slot,index)=>{
+            const ref=slot,reading=this.app.saves.peek(ref),title=saveRowTitle(ref,reading);
+            drawSaveBoardRow(view,assets,{x:0,y:0},index*SAVE_BOARD.rowStep,{
+              reading,label:title,title,
+              action:reading.kind==='ok'?()=>this.resume(ref):reading.kind==='empty'?()=>{void this.app.enterGame?.(slot);}:undefined,
+              ...this.slotControls(ref,reading),
+            },scroll.content);
+          });
+          scroll.setHeight((MANUAL_SAVE_SLOT_COUNT-1)*SAVE_BOARD.rowStep+SAVE_BOARD.frameHeight);
+        }finally{setSaveBoardTextSink(view,undefined);}
       }else{
-        view.text('环境设置',600,20,760,49).setOrigin(.5,0);
+        texts.push({key:'settings-title',text:'环境设置',x:600,y:20,style:{size:49,anchorX:.5,anchorY:0}});
         // 边框固定在原版位置；选项排进金色边线内侧的滚动区，行数增加时只滚动，不会压到边线。
         // 边线在 slot.png 原图里内缩约 18×20 像素，按显示尺寸换算后水平约 28、垂直约 47。
         const panel={x:200,y:126,width:800,height:425};
         view.image(art('slot'),panel.x,panel.y,panel.width,panel.height);
         const list=view.scroll(panel.x+40,panel.y+64,panel.width-80,panel.height-128),content=list.content;
+        this.settingsList=list;
+        const clip={top:list.y,bottom:list.y+list.height};
+        const rowText=(key:string,value:string,x:number,y:number,size:number,color=GOLD,anchorX=0,anchorY=0):void=>{
+          texts.push({key,text:value,x:list.x+x,y:list.y+y,style:{size,color,anchorX,anchorY},scroll:'settings',clip});
+        };
         // 音频用滑动条实时改音量，其余项仍是开关；整页重画，滚动位置由 settingsScroll 接续。
         let rowTop=20;
         for(const [channel,label]of ([['music','背景音乐'],['effects','音效']]as const)){
-          view.text(label,38,rowTop+12,0,34,undefined,content);
+          rowText(`settings-label-${channel}`,label,38,rowTop+12,34);
           // 轨道伸到面板右侧，百分比留在轨道右端。
           view.slider(channel,270,rowTop+33,380,this.app.audio?.settings[channel]??1,
             value=>this.app.audio?.setVolume(channel,value),content);
@@ -203,16 +326,21 @@ export class MenuScene extends Phaser.Scene {
           rows.push({label:'全屏',value:fullscreen==='packaged'?'已全屏':'不支持',action:()=>{},disabled:true});
         }
         rows.forEach((row,index)=>{
-          const top=rowTop+index*100;
-          view.text(row.label,38,top+12,0,34,undefined,content);
-          button(row.value,270,top,190,67,row.action,row.value.length>2?30:34,content)
+          const top=rowTop+index*100,size=row.value.length>2?30:34;
+          rowText(`settings-label-${index}`,row.label,38,top+12,34);
+          view.button('',270,top,190,67,row.action,{fontSize:size,guard,parent:content})
             .setData('label',`${row.label}：${row.value}`);
+          rowText(`settings-value-${index}`,row.value,270+95,top+33.5,size,GOLD,.5,.5);
         });
         list.setHeight(20+(2+rows.length-1)*100+67+20);
-        list.onScroll=()=>{this.settingsScroll=list.scrollTop;};
+        list.onScroll=()=>{this.settingsScroll=list.scrollTop;this.menuText?.refresh();};
         list.scrollTop=this.settingsScroll;
       }
     }
+    this.domSpecs=texts;
+    this.menuText?.renderPage(this.page);
+    // 确认框盖住页面时先收起页面文字；确认框自己的文字仍是 Phaser 原生提示。
+    this.menuText?.setVisible(this.confirmAction===undefined);
     if(this.confirmAction){
       const action=this.confirmAction,modal=this.modal!;
       // 先按父画布的缩放放好弹层，横带才能按实际可见范围铺满屏幕。
@@ -633,6 +761,8 @@ export class MenuScene extends Phaser.Scene {
     this.surface?.layout();
     if(this.surface&&this.modal&&this.confirmAction!==undefined)centerModal(this.modal,this.surface,1024,640);
     this.syncCredentials();
+    // 画布缩放或安全区变化后，DOM 文字的 CSS 坐标和字号要跟着重算。
+    this.menuText?.refresh();
   }
 
   /** 云页、确认框和输入弹层互斥；只有账号/密码真正可见时才让 DOM 覆盖层出现。 */

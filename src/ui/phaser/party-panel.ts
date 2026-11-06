@@ -10,12 +10,16 @@ import { skillDetailEntries } from '../../domain/skill-display.ts';
 import { CharacterPreview } from './character-preview.ts';
 import type { PlaceModal } from './modal-placement.ts';
 import { drawRoundBand } from './round-band.ts';
-import { UiSurface, type ScrollArea } from './widgets.ts';
+import { GOLD, UiSurface, type ScrollArea } from './widgets.ts';
 import { slotFrameImage } from '../slot-frame.ts';
 import { TEXT_COLORS } from '../text-style.ts';
+import { wrapText } from '../text-layout.ts';
+import type { MenuTextSpec, MenuTextWriter } from '../dom/menu-text.ts';
 
 type DetailTab = 'info'|'equipment'|'skills';
 type PartyModal = {kind:'dismiss';id:string;error?:string}|{kind:'skill';id:string;skill:string}|{kind:'group-skill';id:string;skill:CompanionGroupEffect};
+/** 面板借宿主的滚动区登记文字位置；未注入时退回本画布自己的滚动区。 */
+type ScrollFactory = (view:UiSurface,name:string,x:number,y:number,width:number,height:number)=>ScrollArea;
 
 /** Original two-page mercenary roster, with character details kept beside the roster. */
 export class PartyPanel {
@@ -24,6 +28,12 @@ export class PartyPanel {
   private readonly app:StoryUIContext;
   private readonly changed:()=>void;
   private readonly inspect:(id:string,page:'bag'|'skills')=>void;
+  private readonly scrollArea:ScrollFactory;
+  private readonly refreshText:()=>void;
+  /** 这一页要显示的文字；图框和按钮仍由 Phaser 画。 */
+  private pageText:MenuTextSpec[]=[];
+  /** 弹层打开时只保留弹层文字，页面文字不叠在框上。 */
+  private modalText:MenuTextSpec[]=[];
   private page=0;
   private selected?:string;
   private tab:DetailTab='info';
@@ -37,8 +47,10 @@ export class PartyPanel {
   private preview?:CharacterPreview;
 
   constructor(session:Session,world:WorldIndex,app:StoryUIContext,changed:()=>void,
-    inspect:(id:string,page:'bag'|'skills')=>void){
+    inspect:(id:string,page:'bag'|'skills')=>void,scrollArea?:ScrollFactory,refreshText:()=>void=()=>{}){
     this.session=session;this.world=world;this.app=app;this.changed=changed;this.inspect=inspect;
+    this.scrollArea=scrollArea??((view,_name,x,y,width,height)=>view.scroll(x,y,width,height));
+    this.refreshText=refreshText;
   }
   get modalOpen():boolean{return !!this.modal;}
   /** 重绘前把合成立绘摘下来，避免被页面清理销毁后无法复用。 */
@@ -73,8 +85,39 @@ export class PartyPanel {
     // 成功时队伍变更已经通过 session 通知重画过；只有失败要本地重画显示错误。
     if(failed)this.changed();
   }
+  /** 页面或弹层文字交给菜单 DOM 层；弹层坐标由宿主的包装器换算。 */
+  renderText(writer:MenuTextWriter):void{
+    for(const spec of this.modal?this.modalText:this.pageText)writer.add(spec);
+  }
+  private text(key:string,value:string,x:number,y:number,size:number,color=GOLD,anchorX=0,anchorY=0,
+    style:Partial<MenuTextSpec['style']>={}):void{
+    this.pageText.push({key,text:value,x,y,style:{size,color,anchorX,anchorY,...style}});
+  }
+  private scrolledText(key:string,value:string,x:number,y:number,size:number,color:string,
+    scroll:string,clip:{top:number;bottom:number},style:Partial<MenuTextSpec['style']>={}):void{
+    this.pageText.push({key,text:value,x,y,scroll,clip,style:{size,color,...style}});
+  }
+  private modalEntry(key:string,value:string,x:number,y:number,size:number,color=GOLD,anchorX=0,anchorY=0,
+    style:Partial<MenuTextSpec['style']>={},scroll?:string,clip?:{top:number;bottom:number}):void{
+    this.modalText.push({key,text:value,x,y,scroll,clip,style:{size,color,anchorX,anchorY,...style}});
+  }
+  private buttonText(key:string,label:string,x:number,y:number,width:number,height:number):void{
+    this.text(key,label,x+width/2,y+height/2,Math.min(22,height*.42),GOLD,.5,.5);
+  }
+  private modalButtonText(key:string,label:string,x:number,y:number,width:number,height:number):void{
+    this.modalEntry(key,label,x+width/2,y+height/2,Math.min(22,height*.42),GOLD,.5,.5);
+  }
+  /** 与原 Phaser 文本同一口径量出折行高度；只做排版，不保留文字对象。 */
+  private measure(view:UiSurface,value:string,width:number,size:number):{lineHeight:number;height:number}{
+    if(!value)return{lineHeight:size+5,height:0};
+    const probe=view.text('测',0,0,0,size);
+    const lines=wrapText(value,width,text=>probe.context.measureText(text).width);
+    const lineHeight=probe.height+5;
+    probe.destroy();
+    return{lineHeight,height:Math.max(0,lines.length*lineHeight-5)};
+  }
   render(v:UiSurface,modal:UiSurface,placeModal?:PlaceModal):void{
-    this.placeModal=placeModal;
+    this.placeModal=placeModal;this.pageText=[];
     const party=this.session.party;if(!party)return;
     const snapshot=party.snapshot(),assets=this.app.menuPanels.assets;
     // The protagonist and story members do not consume mercenary roster slots.
@@ -87,7 +130,7 @@ export class PartyPanel {
     story.forEach((id,index)=>{
       const button=v.button('',6,80+index*91,52,65,()=>this.select(id),{bare:true}).setData('label',this.name(id));
       v.image(this.portrait(id),0,0,52,58,button).setAlpha(this.member(id)!.player.health>0?1:.45);
-      v.text(id==='player'?'主角':'伙伴',26,63,0,16,undefined,button).setOrigin(.5,0);
+      this.text(`story-role-${id}`,id==='player'?'主角':'伙伴',6+26,80+index*91+63,16,GOLD,.5,0);
       if(this.selected===id)v.rect(0,0,52,58,0xffda88,.12,button).setStrokeStyle(2,0xffda88);
     });
     for(let index=0;index<9;index++){
@@ -95,7 +138,10 @@ export class PartyPanel {
       const button=v.button('',x,y,127,114,()=>{if(id)this.select(id);},{bare:true}).setData('label',id?this.name(id):`空佣兵槽 ${this.page*9+index+1}`);
       v.image(assets['party-slot'],0,0,127,114,button);
       const portrait=v.image(id?this.portrait(id):assets['party-empty'],0,0,127,114,button);
-      if(id&&this.member(id)!.player.health<=0){portrait.setAlpha(.45);v.text('阵亡',63,88,0,18,TEXT_COLORS.dangerSoft,button).setOrigin(.5,0);}
+      if(id&&this.member(id)!.player.health<=0){
+        portrait.setAlpha(.45);
+        this.text(`roster-dead-${index}`,'阵亡',x+63,y+88,18,TEXT_COLORS.dangerSoft,.5,0);
+      }
       v.image(assets['party-frame'],-7,-7,141,128,button);
       if(id===this.selected)v.image(assets['party-selected'],-7,-7,141,128,button);
       if(id&&snapshot.active.includes(id))v.image(assets['party-deployed'],68,54,78,64,button);
@@ -117,35 +163,38 @@ export class PartyPanel {
       else this.renderSkills(v,id);
       if(id!=='player'&&(member as CompanionMember).source==='mercenary'){
         const deployed=snapshot.active.includes(id);
-        this.menuButton(v,deployed?'移出队伍':'加入队伍',70,
+        this.menuButton(v,'deployed',deployed?'移出队伍':'加入队伍',70,
           ()=>this.run(()=>deployed?party.reserve(id):party.deployFirstAvailable(id)),deployed?member.player.health<=0:snapshot.active.length>=3||member.player.health<=0);
-        this.menuButton(v,'放逐',272,()=>{this.modal={kind:'dismiss',id};this.changed();},deployed);
+        this.menuButton(v,'dismiss','放逐',272,()=>{this.modal={kind:'dismiss',id};this.changed();},deployed);
       }
     }
-    if(this.error)v.text(this.error,70,434,808,18,TEXT_COLORS.dangerSoft);
+    if(this.error)this.text('error',this.error,70,434,18,TEXT_COLORS.dangerSoft,0,0,{width:808,wrap:'word'});
     if(this.modal)this.renderModal(modal);
   }
-  private menuButton(v:UiSurface,label:string,x:number,action:()=>void,disabled:boolean):void{
-    v.button(label,x,374,197,52,action,{disabled}).setData('label',label);
+  /** 底部动作按钮；文字单独写进 DOM，按钮本身只保留图框和命中区。 */
+  private menuButton(v:UiSurface,key:'deployed'|'dismiss',label:string,x:number,action:()=>void,disabled:boolean):void{
+    v.button('',x,374,197,52,action,{disabled}).setData('label',label);
+    this.buttonText(`action-${key}`,label,x,374,197,52);
   }
   private renderInfo(v:UiSurface,id:string):void{
     const member=this.member(id)!,character=this.app.storyClasses.classes.find(c=>c.id===member.classId)!,panels=this.app.menuPanels;
-    v.text(`Lv. ${member.level}`,686,21,0,21).setOrigin(.5,0);
-    v.text(character.name,686,49,0,21).setOrigin(.5,0);
-    v.text(this.name(id),686,78,350,25).setOrigin(.5,0);
+    this.text('info-level',`Lv. ${member.level}`,686,21,21,GOLD,.5,0);
+    this.text('info-class',character.name,686,49,21,GOLD,.5,0);
+    this.text('info-name',this.name(id),686,78,25,GOLD,.5,0,{width:350,align:'center'});
     character.attributes.forEach((attribute,index)=>{
       const x=536+index%2*162,y=147+Math.floor(index/2)*28;
-      v.text(attribute.name,x,y,0,18);v.text(String(member.panel.attributes[PRIMARY_STATS[index]]),x+138,y,0,18,TEXT_COLORS.white).setOrigin(1,0);
+      this.text(`info-attribute-${index}`,attribute.name,x,y,18);
+      this.text(`info-attribute-value-${index}`,String(member.panel.attributes[PRIMARY_STATS[index]]),x+138,y,18,TEXT_COLORS.white,1,0);
     });
     (['health','mana','experience'] as const).forEach((kind,index)=>{
       const resources=member.player,value=resources[kind],max=kind==='health'?resources.maxHealth:kind==='mana'?resources.maxMana:resources.nextLevelExperience;
       const y=273+index*50,ratio=max?Math.max(0,Math.min(1,value/max)):kind==='experience'?1:0;
-      v.text(panels.character.labels[kind],551,y+6,0,18).setOrigin(1,0);
+      this.text(`info-${kind}-label`,panels.character.labels[kind],551,y+6,18,GOLD,1,0);
       v.image(panels.assets['character-gauge'],565,y,243,37);
-      v.text(max?`${value} / ${max}`:'已满级',687,y-18,232,17).setOrigin(.5,0);
+      this.text(`info-${kind}-value`,max?`${value} / ${max}`:'已满级',687,y-18,17,GOLD,.5,0,{width:232,align:'center'});
       const fill=v.image(panels.assets[`character-${kind}-fill`],575,y+12,223,13);
       fill.setCrop(0,0,fill.width*ratio,fill.height).setVisible(ratio>0);
-      v.text(`${Math.floor(ratio*100)}%`,863,y+8,0,16).setOrigin(1,0);
+      this.text(`info-${kind}-percent`,`${Math.floor(ratio*100)}%`,863,y+8,16,GOLD,1,0);
     });
   }
   private renderEquipment(v:UiSurface,id:string):void{
@@ -161,25 +210,30 @@ export class PartyPanel {
       const button=v.button('',482+slot.x,slot.y,74,74,()=>this.inspect(id,'bag'),{image:slotFrameImage(this.app,this.session,instance)}).setData('label',`${slot.name}：${item?.name??'空'}`);
       v.image(item?.icon??slot.emptyIcon,item?5:13,item?5:13,item?64:48,item?64:48,button);
     }
-    v.button('更换装备',568,374,230,44,()=>this.inspect(id,'bag'));
-    v.text(`Lv. ${member.level}`,686,331,0,20).setOrigin(.5,0);
+    v.button('',568,374,230,44,()=>this.inspect(id,'bag')).setData('label','更换装备');
+    this.buttonText('equipment-change','更换装备',568,374,230,44);
+    this.text('equipment-level',`Lv. ${member.level}`,686,331,20,GOLD,.5,0);
   }
   private renderSkills(v:UiSurface,id:string):void{
     const member=this.member(id)!,panels=this.app.menuPanels,character=this.app.battleCatalog.classes.find(c=>c.id===member.classId)!;
     const configuration=id==='player'?this.session.skills:(member as CompanionMember).skills,loadout=configuration.draft(this.app.battleCatalog,member.classId);
     const companion=id==='player'?undefined:(member as CompanionMember).snapshot();
-    this.skillsScroll=v.scroll(503,18,374,342);const scroll=this.skillsScroll;
+    this.skillsScroll=this.scrollArea(v,'party-skills',503,18,374,342);const scroll=this.skillsScroll;
+    scroll.onScroll=()=>this.refreshText();
     panels.skillColumns.forEach((column,index)=>v.image(column.image,index*91,0,72,17,scroll.content));
     character.skills.forEach((skillId,index)=>{
       const skill=this.app.battleCatalog.skills[skillId],position=panels.skillPositions[index],level=loadout.levels[skillId]??0,available=!companion||!!companion.skillCaps[skillId];
       const button=v.button('',position.column*91,20+position.row*89,75,75,()=>{this.modal={kind:'skill',id,skill:skillId};this.changed();},
         {image:available?skill.icon:panels.assets['party-skill-unavailable'],parent:scroll.content,guard:scroll.guard}).setData('label',`${skill.name} ${available?`${level} 级`:'未开放'}`);
       button.addAt(v.image(panels.assets['skill-slot'],-9,-9,93,93,button),0);
-      if(available&&level>0){v.image(panels.assets['skill-rank'],57,51,24,25,button);v.text(String(level),69,54,0,18,undefined,button).setOrigin(.5,0);}
-      else if(available)v.image(panels.assets['skill-locked'],0,0,75,75,button);
+      if(available&&level>0){
+        v.image(panels.assets['skill-rank'],57,51,24,25,button);
+        this.scrolledText(`skill-rank-${skillId}`,String(level),503+position.column*91+69,18+20+position.row*89+54,18,GOLD,
+          'party-skills',{top:18,bottom:360},{anchorX:.5,anchorY:0});
+      }else if(available)v.image(panels.assets['skill-locked'],0,0,75,75,button);
     });
     if(companion?.source==='mercenary'){
-      v.text('佣兵团',309,0,0,17,undefined,scroll.content).setOrigin(.5,0);
+      this.scrolledText('party-group-title','佣兵团',503+309,18,17,GOLD,'party-skills',{top:18,bottom:360},{anchorX:.5,anchorY:0});
       for(let index=0;index<2;index++){
         const group=companion.groupSkills[index],skill=group?this.session.party!.catalog.groupSkills[group]:undefined;
         const button=v.button('',273,20+index*178,75,75,()=>{if(group){this.modal={kind:'group-skill',id,skill:group};this.changed();}},
@@ -188,41 +242,70 @@ export class PartyPanel {
       }
     }
     scroll.setHeight(554);scroll.scrollTop=this.skillsOffset;
-    v.button('技能与自动战斗设置',537,374,305,44,()=>this.inspect(id,'skills'));
+    v.button('',537,374,305,44,()=>this.inspect(id,'skills')).setData('label','技能与自动战斗设置');
+    this.buttonText('skills-settings','技能与自动战斗设置',537,374,305,44);
   }
   private renderModal(v:UiSurface):void{
+    this.modalText=[];
     const modal=this.modal!,member=this.member(modal.id);if(!member){this.modal=undefined;return;}
     const panels=this.app.menuPanels;
     this.placeModal?.(718,415);
     v.frame(panels.assets,0,0,718,415);
     if(modal.kind==='dismiss'){
       v.image(this.portrait(modal.id),38,66,127,114);
-      v.text(`确定放逐 ${this.name(modal.id)}？`,196,70,470,25);
-      v.text('放逐后，该佣兵和其穿戴的装备将一起离开。',196,132,465,23);
-      if(modal.error)v.text(modal.error,35,279,648,22,TEXT_COLORS.dangerSoft);
-      v.button('取消',270,350,170,48,()=>this.cancel());
-      v.button('确定',480,350,190,48,()=>{
+      this.modalEntry('dismiss-title',`确定放逐 ${this.name(modal.id)}？`,196,70,25,GOLD,0,0,{width:470,wrap:'word'});
+      this.modalEntry('dismiss-body','放逐后，该佣兵和其穿戴的装备将一起离开。',196,132,23,GOLD,0,0,{width:465,wrap:'word'});
+      if(modal.error)this.modalEntry('dismiss-error',modal.error,35,279,22,TEXT_COLORS.dangerSoft,0,0,{width:648,wrap:'word'});
+      v.button('',270,350,170,48,()=>this.cancel()).setData('label','取消');
+      v.button('',480,350,190,48,()=>{
         this.modal=undefined;
         try{this.session.party!.dismiss(modal.id);this.selected=undefined;}
         catch(error){modal.error=(error as Error).message;this.modal=modal;}
         this.changed();
-      });
+      }).setData('label','确定');
+      this.modalButtonText('dismiss-cancel','取消',270,350,170,48);
+      this.modalButtonText('dismiss-confirm','确定',480,350,190,48);
       return;
     }
     if(modal.kind==='group-skill'){
       const skill=this.session.party!.catalog.groupSkills[modal.skill];
-      v.image(skill.icon,35,25,75,75);v.text(skill.name,135,30,550,26);v.text('佣兵团技能',135,70,550,21);
-      const scroll=v.scroll(35,124,648,197),description=v.text(skill.description,0,0,632,22,undefined,scroll.content);
-      const effect=v.text('该佣兵留在名册中即可生效。相同的佣兵团技能只生效一次。',0,description.height+18,632,21,undefined,scroll.content);
-      scroll.setHeight(effect.y+effect.height);v.button('关闭',480,350,190,48,()=>this.cancel());return;
+      v.image(skill.icon,35,25,75,75);
+      this.modalEntry('group-skill-name',skill.name,135,30,26,GOLD,0,0,{width:550,wrap:'word'});
+      this.modalEntry('group-skill-kind','佣兵团技能',135,70,21,GOLD,0,0,{width:550,wrap:'word'});
+      const scroll=this.scrollArea(v,'party-modal',35,124,648,197),description=this.measure(v,skill.description,632,22);
+      scroll.onScroll=()=>this.refreshText();
+      this.modalEntry('group-skill-description',skill.description,35,124,22,GOLD,0,0,
+        {width:632,wrap:'word',lineHeight:description.lineHeight},'party-modal',{top:124,bottom:321});
+      const effectText='该佣兵留在名册中即可生效。相同的佣兵团技能只生效一次。';
+      const effect=this.measure(v,effectText,632,21),effectY=124+description.height+18;
+      this.modalEntry('group-skill-effect',effectText,35,effectY,21,GOLD,0,0,
+        {width:632,wrap:'word',lineHeight:effect.lineHeight},'party-modal',{top:124,bottom:321});
+      scroll.setHeight(description.height+18+effect.height);
+      v.button('',480,350,190,48,()=>this.cancel()).setData('label','关闭');
+      this.modalButtonText('group-skill-close','关闭',480,350,190,48);
+      return;
     }
     const skill=skillForGrowth(this.app.battleCatalog.skills[modal.skill],memberSkillGrowth(modal.id)),configuration=modal.id==='player'?this.session.skills:(member as CompanionMember).skills;
     const level=configuration.draft(this.app.battleCatalog,member.classId).levels[skill.id]??0;
     const cap=modal.id==='player'?skill.normalMaxLevel:(member as CompanionMember).snapshot().skillCaps[skill.id]??0;
-    v.image(skill.icon,35,25,75,75);v.text(skill.name,135,30,550,26);v.text(level?`等级 ${level} / ${cap}`:cap?'尚未习得':'该佣兵未开放此技能',135,70,550,21);
-    const scroll=v.scroll(35,124,648,197);let y=0;
-    const text=v.text(skill.description,0,y,632,22,undefined,scroll.content);y+=text.height+15;
-    if(level)for(const entry of skillDetailEntries(skill,skill.ranks[level-1]!)){const row=v.text(`${entry.label}：${entry.text}`,0,y,632,20,undefined,scroll.content);y+=row.height+10;}
-    scroll.setHeight(y);v.button('关闭',480,350,190,48,()=>this.cancel());
+    v.image(skill.icon,35,25,75,75);
+    this.modalEntry('skill-name',skill.name,135,30,26,GOLD,0,0,{width:550,wrap:'word'});
+    this.modalEntry('skill-level',level?`等级 ${level} / ${cap}`:cap?'尚未习得':'该佣兵未开放此技能',135,70,21,GOLD,0,0,{width:550,wrap:'word'});
+    const scroll=this.scrollArea(v,'party-modal',35,124,648,197);
+    scroll.onScroll=()=>this.refreshText();
+    let y=0;
+    const description=this.measure(v,skill.description,632,22);
+    this.modalEntry('skill-description',skill.description,35,124+y,22,GOLD,0,0,
+      {width:632,wrap:'word',lineHeight:description.lineHeight},'party-modal',{top:124,bottom:321});
+    y+=description.height+15;
+    if(level)for(const [index,entry] of skillDetailEntries(skill,skill.ranks[level-1]!).entries()){
+      const rowText=`${entry.label}：${entry.text}`,row=this.measure(v,rowText,632,20);
+      this.modalEntry(`skill-detail-${index}`,rowText,35,124+y,20,GOLD,0,0,
+        {width:632,wrap:'word',lineHeight:row.lineHeight},'party-modal',{top:124,bottom:321});
+      y+=row.height+10;
+    }
+    scroll.setHeight(y);
+    v.button('',480,350,190,48,()=>this.cancel()).setData('label','关闭');
+    this.modalButtonText('skill-close','关闭',480,350,190,48);
   }
 }

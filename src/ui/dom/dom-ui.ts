@@ -66,7 +66,8 @@ export class DomUi {
     const parent = this.layer(name);
     const element = document.createElement('div');
     element.className = className;
-    let anchorX = anchor.x, anchorY = anchor.y;
+    let anchorX = anchor.x, anchorY = anchor.y, shown = this.visible.get(name) !== false;
+    element.hidden = !shown;
     const applyAnchor = () => {
       element.style.transformOrigin = `${anchorX * 100}% ${anchorY * 100}%`;
     };
@@ -87,6 +88,8 @@ export class DomUi {
         return label;
       },
       setVisible(visible: boolean): DomLabel {
+        if (shown === visible) return label;
+        shown = visible;
         element.hidden = !visible;
         return label;
       },
