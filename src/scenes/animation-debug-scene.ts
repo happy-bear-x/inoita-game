@@ -11,7 +11,9 @@ import { MovementWorld } from '../rendering/movement-world.ts';
 import { loadSceneAssets } from '../rendering/scene-assets.ts';
 import { Wardrobe } from '../rendering/wardrobe.ts';
 import { MoveStick } from '../ui/phaser/move-stick.ts';
-import { UiSurface } from '../ui/phaser/widgets.ts';
+import { GOLD, UiSurface } from '../ui/phaser/widgets.ts';
+import { MenuTextLayer, type MenuTextSpec } from '../ui/dom/menu-text.ts';
+import type { DomLabel } from '../ui/dom/dom-ui.ts';
 import { worldZoom } from '../ui/viewport.ts';
 
 interface AnimationSample {
@@ -36,8 +38,13 @@ export class AnimationDebugScene extends Phaser.Scene {
   private wardrobe?: Wardrobe;
   private player?: CharacterVisual;
   private samples: AnimationSample[] = [];
-  private labels: Phaser.GameObjects.Text[] = [];
-  private stats?: Phaser.GameObjects.Text;
+  /** 角色头顶的名字改用 DOM；它跟着世界坐标投影，缩放随相机。 */
+  private labels: DomLabel[] = [];
+  /** 控制面板文字走 DOM；状态行和统计块按 key 原地更新。 */
+  private uiText?: MenuTextLayer;
+  private textSpecs: MenuTextSpec[] = [];
+  private statusText = '正在加载动画测试资源…';
+  private statsText = '';
   private floor?: Phaser.GameObjects.Image;
   private floorTexture?: Phaser.Textures.CanvasTexture;
   private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
@@ -60,13 +67,24 @@ export class AnimationDebugScene extends Phaser.Scene {
   create(): void {
     this.request = new AbortController();
     this.ready = false; this.failure = ''; this.facing = 'south'; this.mode = 'in-place';
-    this.samples = []; this.labels = [];
+    this.samples = []; this.labels = []; this.textSpecs = []; this.statsText = '';
+    this.statusText = '正在加载动画测试资源…';
     this.hud = new Hud(this);
     this.surface = new UiSurface(this.hud.scene, 960, 640);
     this.hud.add(this.surface.root);
     this.surface.enabled = () => this.sys.isActive();
-    this.surface.text('正在加载动画测试资源…', 24, 24, 900, 24);
     this.surface.layout();
+    if (this.app.domUi) {
+      this.uiText = new MenuTextLayer(this.app.domUi, (x, y) => this.textPoint(x, y), () => undefined);
+      this.uiText.register('animation-loading', writer => {
+        writer.add({ key: 'status', text: this.statusText, x: 24, y: 24,
+          style: { size: 24, color: this.failure ? '#f0b0a0' : GOLD, width: 900, wrap: 'word' } });
+        if (this.failure) writer.add({ key: 'retry', text: '重试', x: 94, y: 107,
+          style: { size: 20, color: GOLD, anchorX: .5, anchorY: .5, width: 128, align: 'center' } });
+      });
+      this.uiText.register('animation-debug', writer => { for (const spec of this.textSpecs) writer.add(spec); });
+      this.uiText.renderPage('animation-loading');
+    }
     this.events.on(Phaser.Scenes.Events.PRE_UPDATE, this.advanceClock, this);
     this.events.on(Phaser.Scenes.Events.POST_UPDATE, this.afterMovement, this);
     this.scale.on('resize', this.layout, this);
@@ -81,11 +99,13 @@ export class AnimationDebugScene extends Phaser.Scene {
       this.input.keyboard?.off('keydown', this.onKey);
       for (const sample of this.samples) sample.sprite?.off('animationupdate', sample.onFrame);
       this.movement?.destroy(); this.stick?.destroy(); this.wardrobe?.clear();
+      this.uiText?.destroy(); this.uiText = undefined;
+      for (const label of this.labels) label.remove();
       this.surface?.destroy(); this.hud?.destroy();
       this.player = undefined; this.movement = undefined; this.stick = undefined;
       this.floor = undefined; this.floorTexture = undefined; this.wardrobe = undefined;
-      this.surface = undefined; this.hud = undefined; this.stats = undefined; this.cursors = undefined;
-      this.samples = []; this.labels = [];
+      this.surface = undefined; this.hud = undefined; this.cursors = undefined;
+      this.samples = []; this.labels = []; this.textSpecs = [];
       this.events.removeListener(Phaser.Scenes.Events.PRE_UPDATE, this.advanceClock, this);
       this.events.removeListener(Phaser.Scenes.Events.POST_UPDATE, this.afterMovement, this);
       this.events.removeListener(Phaser.Scenes.Events.PRE_RENDER, this.placeSamples, this);
@@ -93,6 +113,19 @@ export class AnimationDebugScene extends Phaser.Scene {
       this.events.removeListener('resume', this.resetMeasurement, this);
     });
     void this.loadSamples();
+  }
+
+  /** 控制面板本地坐标 → 画框 CSS 坐标。 */
+  private textPoint(x: number, y: number): { x: number; y: number; scale: number } {
+    const root = this.surface?.root;
+    if (!root) return { x, y, scale: 1 };
+    const matrix = root.getWorldTransformMatrix(), point = matrix.transformPoint(x, y);
+    return { x: point.x, y: point.y, scale: matrix.scaleX };
+  }
+
+  private setStatus(text: string): void {
+    this.statusText = text;
+    this.uiText?.setText('animation-loading', 'status', text);
   }
 
   private async loadSamples(): Promise<void> {
@@ -111,9 +144,8 @@ export class AnimationDebugScene extends Phaser.Scene {
         clips: Object.fromEntries(Object.entries(actor.clips).filter(([name]) => name.startsWith('idle-') || name.startsWith('walk-'))) });
       const actors = [hero, wolf, torch, merchant].map(movementClips);
       await loadSceneAssets(this, [...actors.flatMap(characterAssets), ...controlSkinAssets(skin),
-        ...wardrobe.textures.map(texture => ({ kind: 'image' as const, ...texture }))], progress => {
-        this.surface?.root.list.find(object => object instanceof Phaser.GameObjects.Text)?.setText(`正在加载动画测试资源… ${Math.round(progress * 100)}%`);
-      });
+        ...wardrobe.textures.map(texture => ({ kind: 'image' as const, ...texture }))],
+        progress => this.setStatus(`正在加载动画测试资源… ${Math.round(progress * 100)}%`));
       signal.throwIfAborted();
       const equipment = items.startingEquipment['dark-knight'];
       const main = items.items[equipment['main-hand']!].kind;
@@ -143,7 +175,8 @@ export class AnimationDebugScene extends Phaser.Scene {
           if (!sample.changes) sample.firstChangeMs = this.elapsedMs;
           sample.changes++; sample.lastChangeMs = this.elapsedMs;
         } };
-        this.labels.push(this.add.text(0, 0, plan.label, { fontSize: 6, color: '#ffffff' }).setOrigin(.5));
+        const label = this.app.domUi?.label('screen', 'dom-animation-label', { x: .5, y: .5 }).setText(plan.label);
+        if (label) this.labels.push(label.setStyle({ fontSize: '8px', color: '#ffffff' }).setVisible(false));
         return sample;
       });
       this.player = this.samples[2].visual;
@@ -158,28 +191,41 @@ export class AnimationDebugScene extends Phaser.Scene {
       if (signal.aborted) return;
       console.error(error);
       this.failure = error instanceof Error ? error.message : String(error);
+      this.statusText = `动画测试加载失败：${this.failure}`;
+      this.uiText?.renderPage('animation-loading');
       this.surface?.clear();
-      this.surface?.text(`动画测试加载失败：${this.failure}`, 24, 24, 900, 24);
-      this.surface?.button('重试', 24, 84, 140, 46, () => this.scene.restart());
+      this.surface?.button('', 24, 84, 140, 46, () => this.scene.restart()).setData('label', '重试');
     }
   }
 
   private drawControls(): void {
     const ui = this.surface!;
     ui.clear();
-    ui.text('动画与移动检查 · 黑暗骑士初始装备', 24, 12, 900, 25);
+    this.textSpecs = [];
+    const label = (key: string, text: string, x: number, y: number, width: number, size: number,
+      color = GOLD, anchorX = 0, anchorY = 0): void => {
+      this.textSpecs.push({ key, text, x, y, style: { size, color, anchorX, anchorY,
+        width: width || undefined, wrap: width ? 'word' : undefined } });
+    };
+    const button = (key: string, text: string, x: number, y: number, width: number, height: number,
+      action: () => void): void => {
+      ui.button('', x, y, width, height, action).setData('label', text);
+      label(key, text, x + width / 2, y + height / 2, width - 12, Math.min(22, height * .42), GOLD, .5, .5);
+    };
+    label('title', '动画与移动检查 · 黑暗骑士初始装备', 24, 12, 900, 25);
     const directions: { facing: Facing; label: string }[] = [{ facing: 'south', label: '南 ↓' }, { facing: 'west', label: '西 ←' }, { facing: 'north', label: '北 ↑' }, { facing: 'east', label: '东 →' }];
-    directions.forEach((direction, index) => ui.button(direction.label, 24 + index * 108, 52, 100, 42, () => {
+    directions.forEach((direction, index) => button(`direction-${index}`, direction.label, 24 + index * 108, 52, 100, 42, () => {
       this.facing = direction.facing; this.resetMeasurement();
     }));
-    ui.button(this.mode === 'in-place' ? '切到摇杆移动' : '切到原地行走', 476, 52, 192, 42, () => {
+    button('mode', this.mode === 'in-place' ? '切到摇杆移动' : '切到原地行走', 476, 52, 192, 42, () => {
       this.mode = this.mode === 'in-place' ? 'movement' : 'in-place';
       this.resetInput(); this.resetMeasurement(); this.drawControls(); this.layout();
     });
-    ui.button('重置测量', 688, 52, 140, 42, () => this.resetMeasurement());
-    ui.text('原地模式看四向姿势；移动模式使用左下摇杆或方向键。', 24, 106, 920, 19);
+    button('reset', '重置测量', 688, 52, 140, 42, () => this.resetMeasurement());
+    label('hint', '原地模式看四向姿势；移动模式使用左下摇杆或方向键。', 24, 106, 920, 19);
     ui.rect(270, 402, 666, 214, 0x101d24, .92);
-    this.stats = ui.text('', 286, 414, 630, 19, '#dcebef');
+    label('stats', this.statsText, 286, 414, 630, 19, '#dcebef');
+    this.uiText?.renderPage('animation-debug');
   }
 
   private layout(): void {
@@ -198,7 +244,7 @@ export class AnimationDebugScene extends Phaser.Scene {
       this.floor.setTexture(texture.key).setDisplaySize(width, height);
     }
     this.hud?.layout(this.scale.width, this.scale.height);
-    this.surface?.layout(); this.stick?.layout(this.scale.height);
+    this.surface?.layout(); this.uiText?.refresh(); this.stick?.layout(this.scale.height);
     this.stick?.setVisible(this.ready && this.mode === 'movement');
   }
 
@@ -246,11 +292,12 @@ export class AnimationDebugScene extends Phaser.Scene {
     if (this.elapsedMs >= this.nextStatsMs) {
       this.nextStatsMs = this.elapsedMs + 250;
       const snapshot = this.snapshot();
-      this.stats?.setText([
+      this.statsText = [
         `实测绘制 ${snapshot.renderFps.toFixed(1)} FPS  ·  计时比例 ${snapshot.clockRatio.toFixed(3)}`,
         `移动 ${snapshot.speedPxPerSecond.toFixed(2)} 像素/秒  ·  方向 ${this.facing}`,
         ...snapshot.animations.map(sample => `${sample.label}：${sample.entryMs.toFixed(1)}ms/条目 · 周期 ${sample.cycleMs.toFixed(0)}ms`)
-      ].join('\n'));
+      ].join('\n');
+      this.uiText?.setText('animation-debug', 'stats', this.statsText);
     }
   }
 
@@ -258,9 +305,12 @@ export class AnimationDebugScene extends Phaser.Scene {
     if (!this.ready || !this.player || !this.movement) return;
     const position = this.movement.displayPosition(this.player);
     this.floor?.setPosition(this.scale.width / 2 - position.x % 16, this.scale.height / 2 - position.y % 16);
+    const camera = this.cameras.main, fontSize = Math.max(8, 6 * camera.zoom);
     this.samples.forEach((sample, index) => {
       if (sample.visual !== this.player) sample.visual.container.setPosition(position.x + sample.offset, position.y);
-      this.labels[index].setPosition(position.x + sample.offset, position.y + 10);
+      const label = this.labels[index], point = this.app.domUi?.worldToScreen(camera, position.x + sample.offset, position.y + 10);
+      if (label && point) label.setPosition(point.x, point.y)
+        .setStyle({ fontSize: `${fontSize}px`, textShadow: '0 1px 2px rgba(0,0,0,.8)' }).setVisible(true);
     });
   }
 

@@ -96,6 +96,8 @@ export class StoryUI {
   private skillTextSpecs:MenuTextSpec[]=[];
   /** 背包页与物品说明这一轮绘制收集到的文字；格子和说明正文都按滚动区跟随。 */
   private bagTextSpecs:MenuTextSpec[]=[];
+  /** GM 调试页这一轮绘制收集到的文字。 */
+  private gmTextSpecs:MenuTextSpec[]=[];
   /** 存档/读档页上一次绘制收集到的文字；确认框打开时改用它自己的那一份。 */
   private saveTextSpecs:MenuTextSpec[]=[];
   private saveModalTextSpecs:MenuTextSpec[]=[];
@@ -167,6 +169,7 @@ export class StoryUI {
       activeRequest:()=>this.request,
       setItemNotice:message=>{this.itemNotice=message;},
       modal:()=>this.modal!,
+      modalWriter:()=>this.saveModalWriter(),
       beginModal:(width,height)=>this.beginModal(width,height),
       scroll:(name,x,y,width,height,surface)=>this.scroll(name,x,y,width,height,surface),
       finishScroll:(name,scroll,height)=>this.finishScroll(name,scroll,height)
@@ -237,6 +240,8 @@ export class StoryUI {
         if(panel.confirming)panel.renderModalText({add:spec=>writer.add(this.modalTextSpec(spec))});
         else panel.renderText(writer);
       });
+      // GM 调试页的文字由面板自己收集；图框、按钮和滚动仍由 Phaser 画。
+      this.menuText.register('debug',writer=>{for(const spec of this.gmTextSpecs)writer.add(spec);});
       // 通用原生提示盖在任何页面之上：页面文字让位，只输出这一份。
       this.menuText.register('native-notice',writer=>{for(const spec of this.noticeTextSpecs)writer.add(spec);});
     }
@@ -658,10 +663,13 @@ export class StoryUI {
           itemSlot:this.app.menuPanels.assets['inventory-slot'],
           itemSelected:this.app.menuPanels.assets['inventory-selected'],
           itemDetail:(itemId,close)=>this.renderGmItemDetail(itemId,close),
+          registerScroll:(name,scroll)=>this.scrollNames.set(name,scroll),
+          refresh:()=>this.menuText?.refresh(),
         });
         this.gmPanelOwner=gm;
       }
-      this.gmPanel?.render(this.body!);
+      this.gmTextSpecs=[];
+      this.gmPanel?.render(this.body!,{add:spec=>this.gmTextSpecs.push(spec)});
     }
     if(this.page==='save'||this.page==='load')this.renderSavePage();
     if(this.page==='settings')this.renderSettings();
@@ -669,15 +677,15 @@ export class StoryUI {
     if(this.operation)this.renderOperation();if(this.allocationExit)this.renderAllocationConfirmation();if(this.skillReset)this.renderSkillResetConfirmation();
     if(this.itemNotice){
       this.beginModal(1024,640);this.noticeTextSpecs=[];
-      // 系统页与存档页按 1024 画布排版，弹层本地坐标就是页面坐标；其余页换算到内容块坐标。
+      // 系统页与存档页按整块菜单画布排版，换算到整页表面；其余页换算到内容块坐标。
       const fullPage=this.page==='system'||this.page==='save'||this.page==='load';
-      const writer:MenuTextWriter={add:spec=>this.noticeTextSpecs.push(fullPage?spec:this.modalTextSpec(spec))};
+      const writer:MenuTextWriter={add:spec=>this.noticeTextSpecs.push(fullPage?this.modalSurfaceTextSpec(spec):this.modalTextSpec(spec))};
       drawNativeMessage(this.modal!,this.app.menuPanels.assets,this.itemNotice,()=>{this.itemNotice=undefined;this.render();},undefined,writer);
     }
     if(this.page==='save'||this.page==='load')this.renderSaveConfirmations();else this.savePage.renderConfirmations();
     // 页面文字在各自绘制阶段收集完，等弹层位置也确定后再统一交给 DOM 层；原生提示盖在页面之上。
     if(this.itemNotice)this.menuText?.renderPage('native-notice');
-    else if(this.page==='bag'||this.page==='status'||this.page==='party'||this.page==='quests'||this.page==='skills'||this.page==='learn'||this.page==='shop'||this.page==='crafting'||this.page==='forge')this.menuText?.renderPage(this.page);
+    else if(this.page==='bag'||this.page==='status'||this.page==='party'||this.page==='quests'||this.page==='skills'||this.page==='learn'||this.page==='shop'||this.page==='crafting'||this.page==='forge'||this.page==='debug')this.menuText?.renderPage(this.page);
     this.sync();
   }
   private openControlEditor():void {
@@ -828,27 +836,23 @@ export class StoryUI {
     // 确认框打开时，主页面文字让位给确认框那一份，由 `renderSaveConfirmations` 统一渲染。
     if(!this.savePage.modalOpen)this.menuText?.renderPage(this.page);
   }
-  /** 存档确认框：保留 Phaser 的文字量高度来定横带位置，可见文字交给 DOM。 */
+  /** 存档确认框：横带和按钮留在 Phaser，正文与按钮文字由宿主提供的 writer 收集。 */
   private renderSaveConfirmations():void{
     if(!this.savePage.modalOpen){this.savePage.renderConfirmations();return;}
-    const modal=this.modal!,specs:MenuTextSpec[]=[];this.saveModalTextSpecs=specs;
-    const originalText=modal.text,made:{spec:MenuTextSpec;text:Phaser.GameObjects.Text}[]=[];
-    const modalText=modal as unknown as {text:UiSurface['text']};
-    modalText.text=((value:string,x:number,y:number,width=0,size=22,color=GOLD,parent=modal.root)=>{
-      const text=originalText.call(modal,value,x,y,width,size,color,parent).setVisible(false);
-      const spec:MenuTextSpec={key:`confirm-${made.length}`,text:value,x,y,
-        style:{size,color,width:width||undefined,wrap:'word',align:'center'}};
-      specs.push(spec);made.push({spec,text});return text;
-    }) as UiSurface['text'];
-    try{ this.savePage.renderConfirmations(); }
-    finally{ modalText.text=originalText; }
-    for(const {spec,text} of made){
-      // `drawNativeMessage` 会先量高度、最后才把文字挪到横带里；收尾时读回最终位置和原点。
-      const placed=text as unknown as {x:number;y:number;originX?:number;originY?:number};
-      spec.x=placed.x;spec.y=placed.y;
-      spec.style.anchorX=placed.originX??.5;spec.style.anchorY=placed.originY??0;
-    }
+    this.saveModalTextSpecs=[];
+    this.savePage.renderConfirmations();
     this.menuText?.renderPage(this.page);
+  }
+  private saveModalWriter():MenuTextWriter{
+    return {add:spec=>this.saveModalTextSpecs.push(this.modalSurfaceTextSpec(spec))};
+  }
+  /** 弹层本地坐标 → 整页表面坐标；存档页按整块菜单画布排版。 */
+  private modalSurfaceTextSpec(spec:MenuTextSpec):MenuTextSpec{
+    const modal=this.modal,surface=this.surface;
+    if(!modal||!surface)return spec;
+    const world=modal.root.getWorldTransformMatrix().transformPoint(spec.x,spec.y);
+    const matrix=surface.root.getWorldTransformMatrix(),origin=matrix.transformPoint(0,0);
+    return{...spec,x:(world.x-origin.x)/matrix.scaleX,y:(world.y-origin.y)/matrix.scaleY};
   }
   /** 槽位文字（页面坐标）→ DOM 文字；有换行宽度时按词断行。 */
   private saveBoardText(spec:SaveBoardTextSpec):MenuTextSpec{

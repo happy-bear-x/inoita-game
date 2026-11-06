@@ -1867,7 +1867,7 @@ test('the GM story page lists tasks and enters the selected one without exposing
   f.menu.show('debug');f.scene.click(f.scene.button('调试页 剧情'));
   assert.equal(f.scene.buttons('分类 全部').length,0,'不再提供混合全部栏');
   assert.ok(f.scene.button('分类 主线')&&f.scene.button('分类 支线'));
-  const texts=()=>f.scene.texts().join(' ');
+  const texts=()=>visibleDomLabels(f).map(label=>label.text).join(' ');
   const taskButtons=()=>f.scene.nodes.filter(node=>node.shown&&node.getData('uiAction')&&String(node.getData('label')).startsWith('任务 '));
   assert(taskButtons().length>0,'剧情页没有列出任务');
   assert(!/event-\d|scene-\d|quest-\d|shadow-camp/.test(texts()));
@@ -1894,7 +1894,7 @@ test('openDebugStory returns to the story tab without opening a completion dialo
   f.menu.show('debug');f.scene.click(f.scene.button('调试页 人物'));
   assert.ok(f.scene.button('调试页 剧情'));
   f.menu.openDebugStory();
-  const texts=()=>f.scene.texts().join(' ');
+  const texts=()=>visibleDomLabels(f).map(label=>label.text).join(' ');
   assert.ok(f.scene.button('分类 主线'),'应回到剧情页');
   assert.ok(f.scene.button('进入任务'),'剧情页操作仍可用');
   assert(!texts().includes('调试已结束'),'不应弹出调试结束提示');
@@ -1920,7 +1920,7 @@ test('task previews keep late results on their own selection and disable unprepa
   requests[1]!.resolve({ok:false,reason:'测试现场缺少前置人物'});
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(f.scene.button('进入任务').input?.enabled,false);
-  assert(f.scene.texts().join(' ').includes('测试现场缺少前置人物'));
+  assert(visibleDomLabels(f).some(label=>label.text.includes('测试现场缺少前置人物')));
   f.scene.click(taskButtons()[2]??taskButtons()[0]!);
   assert.equal(requests.length,3);
   requests[2]!.resolve({ok:true,preview:{quest:requests[2]!.target.quest,phase:'active',location:campaign.start}});
@@ -1950,7 +1950,8 @@ test('the GM character page levels, heals and toggles the debug switches', async
   }
 
   f.scene.click(f.scene.button('调试页 人物'));
-  assert.ok(f.scene.texts().some(text => text.includes('等级 Lv.')), f.scene.texts().join(' | '));
+  assert.ok(visibleDomLabels(f).some(label => label.text.includes('等级 Lv.')),
+    visibleDomLabels(f).map(label => label.text).join(' | '));
   assert.equal(f.scene.buttons('角色 player').length, 1);
   for (const label of ['升一级', '回满 HP', '回满 MP', '全队回满', '无敌', '技能无 CD', '一击必杀']) {
     assert.equal(f.scene.buttons(label).length, 1, label);
@@ -1998,7 +1999,8 @@ test('the GM item page scrolls addable items, shows details and gives a chosen q
   assert.ok(f.scene.nodes.some(node => node.shown && node.texture.key === 'interface:assets/ui/menus/inventory-selected.png'),
     '选中后叠背包选中框');
   // 点物品打开与背包同一套说明面板；标题是物品名，关闭按钮独立于菜单关闭。
-  assert.ok(f.scene.texts().some(text => text.includes(items.items[id]!.name)), f.scene.texts().join(' | '));
+  assert.ok(visibleDomLabels(f).some(label => label.text.includes(items.items[id]!.name)),
+    visibleDomLabels(f).map(label => label.text).join(' | '));
   assert.equal(f.scene.buttons('关闭').length, 1);
   // 详情层停在左半边：右栏的数量/发放按钮（x≥786）与底排金币按钮（y≥404）都不被盖住。
   const detailClose = f.scene.button('关闭');
@@ -2015,7 +2017,7 @@ test('the GM item page scrolls addable items, shows details and gives a chosen q
   // 列表用滚动，不再有翻页按钮。
   assert.equal(f.scene.buttons('上一页').length, 0);
   assert.equal(f.scene.buttons('下一页').length, 0);
-  assert.ok(f.scene.texts().includes('滚轮或拖动列表查看更多'));
+  assert.ok(visibleDomLabels(f).some(label => label.text === '滚轮或拖动列表查看更多'));
 
   const money = f.session.money;
   f.scene.click(f.scene.button('金币 +1万'));

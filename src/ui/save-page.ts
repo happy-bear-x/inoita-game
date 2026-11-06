@@ -9,6 +9,7 @@ import type { SaveWorldReason, StoryWorldViewSnapshot } from '../scenes/world-sc
 import { SAVE_BOARD, SAVE_BOARD_LAYOUT, drawSaveBoardRow, newestFirstSlots, saveBoardOrigin, saveRowTitle, type SaveBoardRow } from './phaser/save-board.ts';
 import { drawNativeMessage } from './phaser/native-message.ts';
 import type { ScrollArea, UiSurface } from './phaser/widgets.ts';
+import type { MenuTextWriter } from './dom/menu-text.ts';
 import { TextPrompt } from './text-prompt.ts';
 
 /** 存档结果与「不能存取」的提示文本，原版取文本表 35331／35332／35342 条。 */
@@ -37,6 +38,8 @@ export interface SavePageHost {
   activeRequest(): AbortController;
   setItemNotice(message: string): void;
   modal(): UiSurface;
+  /** 弹层文字的 DOM 出口；确认框正文与按钮文字都从这里登记。 */
+  modalWriter(): MenuTextWriter;
   beginModal(width: number, height: number): void;
   scroll(name: string, x: number, y: number, width: number, height: number, surface: UiSurface): ScrollArea;
   finishScroll(name: string, scroll: ScrollArea, height: number): void;
@@ -94,21 +97,21 @@ export class SavePage {
       this.host.beginModal(1024, 640);
       drawNativeMessage(this.host.modal(), app.menuPanels.assets, '读取存档将丢失当前未保存的进度，确定读取？',
         () => { this.loadConfirm = undefined; void this.loadFromSlot(slot); },
-        () => { this.loadConfirm = undefined; this.host.render(); });
+        () => { this.loadConfirm = undefined; this.host.render(); }, this.host.modalWriter());
     }
     if (this.saveConfirm !== undefined) {
       const slot = this.saveConfirm;
       this.host.beginModal(1024, 640);
       drawNativeMessage(this.host.modal(), app.menuPanels.assets, '这个存档槽里已经有存档，确定覆盖？',
         () => { this.saveConfirm = undefined; this.saveToSlot(slot); },
-        () => { this.saveConfirm = undefined; this.host.render(); });
+        () => { this.saveConfirm = undefined; this.host.render(); }, this.host.modalWriter());
     }
     if (this.deleteConfirm !== undefined) {
       const slot = this.deleteConfirm;
       this.host.beginModal(1024, 640);
       drawNativeMessage(this.host.modal(), app.menuPanels.assets, '删除后无法恢复，确定删除这个存档？',
         () => this.deleteSlot(slot),
-        () => { this.deleteConfirm = undefined; this.host.render(); });
+        () => { this.deleteConfirm = undefined; this.host.render(); }, this.host.modalWriter());
     }
   }
 

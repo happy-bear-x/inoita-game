@@ -2,8 +2,9 @@ import type { Campaign, CampaignQuest } from '../../domain/campaign.ts';
 import { storyDebugEvidenceCount, type StoryDebugTask, type StoryDebugTarget } from '../../domain/story-debug.ts';
 import type { GmActions, GmCharacterState, GmItemEntry, GmItemFilter } from '../../debug/gm-actions.ts';
 import { INVENTORY_LABELS } from '../../domain/inventory.ts';
-import type { UiSurface } from './widgets.ts';
-import { drawQuestText, measureQuestText } from './quest-text.ts';
+import { GOLD, type ScrollArea, type UiSurface } from './widgets.ts';
+import { measureQuestText, QUEST_TEXT_COLORS } from './quest-text.ts';
+import type { MenuTextClip, MenuTextWriter } from '../dom/menu-text.ts';
 
 /**
  * 游戏内的 GM 面板——`gm-actions` 的人类通道，只负责显示与收集点击，不做任何动作逻辑。
@@ -37,6 +38,10 @@ interface GmReferences {
   questGroup?(id: string): string | undefined;
   /** 小任务进度：完成量/总量与当前状态，在任务详情显示一次。 */
   questProgress?(id: string): { status: string; done: number; total: number } | undefined;
+  /** 把页面里的滚动区登记给菜单文字层，滚轮和拖动时 DOM 文字才能跟着走。 */
+  registerScroll?(name: string, scroll: ScrollArea): void;
+  /** 滚动后重算 DOM 文字位置。 */
+  refresh?(): void;
 }
 
 type GmPage = 'status' | 'character' | 'items' | 'story';
@@ -126,6 +131,9 @@ export class GmPanel {
   /** 选中任务和换筛选会重画整页，列表与说明各存一份滚动位置。 */
   private storyScroll = 0;
   private storyIntroScroll = 0;
+  /** 本次重画的 DOM 文字出口；GM 页的文字全部按内容块坐标登记。 */
+  private writer?: MenuTextWriter;
+  private textSerial = 0;
 
   private readonly gm: GmActions;
   private readonly campaign: Campaign;
@@ -143,16 +151,42 @@ export class GmPanel {
     this.hooks.render();
   }
 
-  render(body: UiSurface): void {
+  /** GM 页文字统一走 DOM；`writer` 由菜单提供，图框、按钮和滚动仍由 Phaser 画。 */
+  render(body: UiSurface, writer?: MenuTextWriter): void {
+    this.writer = writer;
+    this.textSerial = 0;
     // 四个页签必须落在 960 宽的 body 内：536 + 3×108 + 104 = 964，右端贴到内容区边。
     PAGES.forEach(([page, label], index) =>
-      body.button(label, 532 + index * 108, 8, 104, 46, () => { this.page = page; this.result = ''; this.hooks.render(); },
-        { selected: this.page === page, fontSize: 20 }).setData('label', `调试页 ${label}`));
+      this.button(body, label, 532 + index * 108, 8, 104, 46, () => { this.page = page; this.result = ''; this.hooks.render(); },
+        { selected: this.page === page, fontSize: 20 }, `调试页 ${label}`));
     const hint = this.page === 'story' ? this.renderStory(body)
       : this.page === 'character' ? this.renderCharacter(body)
       : this.page === 'items' ? this.renderItems(body)
       : this.renderStatus(body);
-    body.text(this.result || hint, 60, 452, 900, 17, this.result ? '#ffd8a0' : '#c8bda6');
+    this.text(this.result || hint, 60, 452, 900, 17, this.result ? '#ffd8a0' : '#c8bda6');
+    this.writer = undefined;
+  }
+
+  /** 登记一段文字；key 只在本页内唯一，重画时按顺序复用同一个标签。 */
+  private text(value: string, x: number, y: number, width = 0, size = 22, color = GOLD,
+    scroll?: string, clip?: MenuTextClip): void {
+    this.writer?.add({
+      key: `gm-text-${this.textSerial++}`, text: value, x, y,
+      style: { size, color, width: width || undefined, wrap: width ? 'word' : undefined },
+      ...(scroll ? { scroll } : {}), ...(clip ? { clip } : {})
+    });
+  }
+
+  /** 画一枚共用按钮皮肤，并把按钮文字登记到 DOM。 */
+  private button(v: UiSurface, label: string, x: number, y: number, width: number, height: number,
+    action: () => void, options: Parameters<UiSurface['button']>[6] = {}, dataLabel = label) {
+    const button = v.button('', x, y, width, height, action, options).setData('label', dataLabel);
+    if (label && this.writer) this.writer.add({
+      key: `gm-text-${this.textSerial++}`, text: label, x: x + width / 2, y: y + height / 2,
+      style: { size: options.fontSize ?? Math.min(22, height * .42), color: GOLD,
+        anchorX: .5, anchorY: .5, width: width - 12, align: 'center', wrap: 'word' }
+    });
+    return button;
   }
 
   /** 状态页：摘要 + 上报 + 命名标记。 */
@@ -161,27 +195,27 @@ export class GmPanel {
     const quests = digest.quests as { active: unknown[]; ready: unknown[] };
     const location = digest.location as { map: string; x: number; y: number } | null;
     const story = digest.story as { completedEvents: number; runs: unknown[] };
-    body.text(`地图 ${location ? `${location.map} (${location.x},${location.y})` : '还没进图'}`, 60, 70, 0, 20);
-    body.text(`任务 进行中 ${quests.active.length} · 待交付 ${quests.ready.length}`, 60, 102, 0, 20);
-    body.text(`剧情 已完成 ${story.completedEvents} 个事件 · 在跑 ${story.runs.length} 段`, 60, 134, 0, 20);
-    body.button('上报当前状态', 60, 180, 220, 52, () => void this.onReport()).setData('label', '上报当前状态');
-    body.button('记一个状态标记', 300, 180, 220, 52, () => this.onMark()).setData('label', '记一个状态标记');
+    this.text(`地图 ${location ? `${location.map} (${location.x},${location.y})` : '还没进图'}`, 60, 70, 0, 20);
+    this.text(`任务 进行中 ${quests.active.length} · 待交付 ${quests.ready.length}`, 60, 102, 0, 20);
+    this.text(`剧情 已完成 ${story.completedEvents} 个事件 · 在跑 ${story.runs.length} 段`, 60, 134, 0, 20);
+    this.button(body, '上报当前状态', 60, 180, 220, 52, () => void this.onReport()).setData('label', '上报当前状态');
+    this.button(body, '记一个状态标记', 300, 180, 220, 52, () => this.onMark()).setData('label', '记一个状态标记');
     const marks = this.gm.marks();
-    body.button(marks.length ? `回到「${marks.at(-1)}」` : '回到状态标记', 540, 180, 220, 52,
+    this.button(body, marks.length ? `回到「${marks.at(-1)}」` : '回到状态标记', 540, 180, 220, 52,
       () => this.onRecall(), { disabled: !marks.length }).setData('label', '回到状态标记');
-    body.button('脱困', 780, 180, 180, 52, () => this.onRescue()).setData('label', '脱困');
-    body.text(marks.length ? `已有标记：${marks.join('、')}` : '还没有状态标记。', 60, 244, 900, 16);
-    body.text(`最近操作：${this.gm.actions().slice(-3).map(entry => entry.call).join(' → ') || '（还没有）'}`, 60, 276, 900, 16);
+    this.button(body, '脱困', 780, 180, 180, 52, () => this.onRescue()).setData('label', '脱困');
+    this.text(marks.length ? `已有标记：${marks.join('、')}` : '还没有状态标记。', 60, 244, 900, 16);
+    this.text(`最近操作：${this.gm.actions().slice(-3).map(entry => entry.call).join(' → ') || '（还没有）'}`, 60, 276, 900, 16);
 
     const activeList = quests.active as { id: string; title: string }[];
     const currentId = (digest.quests as { current?: string }).current ?? activeList[0]?.id;
     const currentQuest = currentId ? this.campaign.quests.find(q => q.id === currentId) : undefined;
     const questBtnLabel = currentQuest ? `完成任务：「${clipText(currentQuest.title, 8)}」` : '立刻完成当前任务';
-    body.button(questBtnLabel, 60, 316, 360, 48, () => this.onCompleteCurrentQuest(),
+    this.button(body, questBtnLabel, 60, 316, 360, 48, () => this.onCompleteCurrentQuest(),
       { disabled: !currentQuest }).setData('label', '立刻完成当前任务');
-    body.button(`穿墙：${this.gm.isNoclip() ? '开' : '关'}`, 440, 316, 220, 48,
+    this.button(body, `穿墙：${this.gm.isNoclip() ? '开' : '关'}`, 440, 316, 220, 48,
       () => this.onToggleNoclip(), { selected: this.gm.isNoclip() }).setData('label', '穿墙');
-    body.button(`2倍速度：${this.gm.isDoubleSpeed() ? '开' : '关'}`, 680, 316, 220, 48,
+    this.button(body, `2倍速度：${this.gm.isDoubleSpeed() ? '开' : '关'}`, 680, 316, 220, 48,
       () => this.onToggleDoubleSpeed(), { selected: this.gm.isDoubleSpeed() }).setData('label', '2倍速度');
 
     return '提示：穿墙开启后可自由穿越障碍与NPC；2倍速度提升移动跑图效率；完成当前任务可直接结算奖励。';
@@ -191,36 +225,36 @@ export class GmPanel {
   private renderCharacter(body: UiSurface): string {
     const characters = this.gm.characters();
     if (!characters.length) {
-      body.text('当前会话没有角色数据。', 60, 80, 900, 20);
+      this.text('当前会话没有角色数据。', 60, 80, 900, 20);
       return '';
     }
     if (!characters.some(character => character.id === this.characterId)) this.characterId = characters[0]!.id;
     characters.forEach((character, index) => {
-      body.button(`${character.name} Lv.${character.level}`, 60 + index * 180, 56, 170, 42,
+      this.button(body, `${character.name} Lv.${character.level}`, 60 + index * 180, 56, 170, 42,
         () => { this.characterId = character.id; this.result = ''; this.hooks.render(); },
         { selected: character.id === this.characterId }).setData('label', `角色 ${character.id}`);
     });
     const selected = characters.find(character => character.id === this.characterId)!;
-    body.text(`等级 Lv.${selected.level}`, 60, 112, 900, 20);
-    body.text(selected.nextLevelExperience > 0
+    this.text(`等级 Lv.${selected.level}`, 60, 112, 900, 20);
+    this.text(selected.nextLevelExperience > 0
       ? `经验 ${selected.experience} / ${selected.nextLevelExperience}`
       : '经验 —（已满级）', 60, 144, 900, 18);
-    body.text(`HP ${selected.health} / ${selected.maxHealth}`, 60, 176, 900, 18);
-    body.text(`MP ${selected.mana} / ${selected.maxMana}`, 60, 208, 900, 18);
-    body.text(`无敌 ${selected.invincible ? '开' : '关'} · 一击必杀 ${selected.oneHitKill ? '开' : '关'} · 技能 ${selected.noCooldown ? '无 CD' : '正常冷却'}`,
+    this.text(`HP ${selected.health} / ${selected.maxHealth}`, 60, 176, 900, 18);
+    this.text(`MP ${selected.mana} / ${selected.maxMana}`, 60, 208, 900, 18);
+    this.text(`无敌 ${selected.invincible ? '开' : '关'} · 一击必杀 ${selected.oneHitKill ? '开' : '关'} · 技能 ${selected.noCooldown ? '无 CD' : '正常冷却'}`,
       60, 240, 900, 18);
     // 回满 HP 对倒下的角色也开放：动作层会走战斗侧复活，所以不按存活禁用。
-    body.button('升一级', 60, 286, 160, 46, () => this.onLevelUp(),
+    this.button(body, '升一级', 60, 286, 160, 46, () => this.onLevelUp(),
       { disabled: !selected.alive || selected.nextLevelExperience <= 0 }).setData('label', '升一级');
-    body.button('回满 HP', 232, 286, 160, 46, () => this.onRestoreHealth()).setData('label', '回满 HP');
-    body.button('回满 MP', 404, 286, 160, 46, () => this.onRestoreMana(),
+    this.button(body, '回满 HP', 232, 286, 160, 46, () => this.onRestoreHealth()).setData('label', '回满 HP');
+    this.button(body, '回满 MP', 404, 286, 160, 46, () => this.onRestoreMana(),
       { disabled: !selected.alive }).setData('label', '回满 MP');
-    body.button('全队回满', 576, 286, 160, 46, () => this.onRecoverParty()).setData('label', '全队回满');
-    body.button(`无敌：${selected.invincible ? '开' : '关'}`, 60, 346, 160, 46,
+    this.button(body, '全队回满', 576, 286, 160, 46, () => this.onRecoverParty()).setData('label', '全队回满');
+    this.button(body, `无敌：${selected.invincible ? '开' : '关'}`, 60, 346, 160, 46,
       () => this.onToggleInvincible(selected), { selected: selected.invincible }).setData('label', '无敌');
-    body.button(`技能无 CD：${selected.noCooldown ? '开' : '关'}`, 232, 346, 170, 46,
+    this.button(body, `技能无 CD：${selected.noCooldown ? '开' : '关'}`, 232, 346, 170, 46,
       () => this.onToggleNoCooldown(selected), { selected: selected.noCooldown }).setData('label', '技能无 CD');
-    body.button(`一击必杀：${selected.oneHitKill ? '开' : '关'}`, 416, 346, 190, 46,
+    this.button(body, `一击必杀：${selected.oneHitKill ? '开' : '关'}`, 416, 346, 190, 46,
       () => this.onToggleOneHitKill(selected), { selected: selected.oneHitKill }).setData('label', '一击必杀');
     return '升级只升不降；倒下角色点「回满 HP」即可复活。无敌只挡战斗伤害，不挡剧情直接改血；一击必杀在命中敌人时直接击杀，未命中仍然落空。';
   }
@@ -232,7 +266,7 @@ export class GmPanel {
     entries.forEach((entry, index) => {
       const x = (index % ITEM_COLUMNS) * ITEM_STRIDE;
       const y = Math.floor(index / ITEM_COLUMNS) * ITEM_STRIDE;
-      const button = body.button('', x, y, ITEM_SLOT, ITEM_SLOT,
+      const button = this.button(body, '', x, y, ITEM_SLOT, ITEM_SLOT,
         () => { this.itemSelected = entry.id; this.itemDetail = entry.id; this.itemQuantity = 1; this.result = ''; this.hooks.render(); },
         { ...(this.references.itemSlot ? { image: this.references.itemSlot } : {}), parent: grid.content, guard: grid.guard });
       body.image(entry.icon, 4, 4, ITEM_SLOT - 8, ITEM_SLOT - 8, button);
@@ -247,31 +281,31 @@ export class GmPanel {
 
     const selected = entries.find(entry => entry.id === this.itemSelected);
     if (selected) {
-      body.text(clipText(selected.name, 10), 786, 92, 150, 15);
-      body.text(`${INVENTORY_LABELS[selected.category]} · Lv.${selected.level}`, 786, 136, 150, 14);
-      body.text(`持有 ${selected.owned}`, 786, 160, 150, 14);
+      this.text(clipText(selected.name, 10), 786, 92, 150, 15);
+      this.text(`${INVENTORY_LABELS[selected.category]} · Lv.${selected.level}`, 786, 136, 150, 14);
+      this.text(`持有 ${selected.owned}`, 786, 160, 150, 14);
     } else {
-      body.text('选一件物品', 786, 96, 150, 16);
+      this.text('选一件物品', 786, 96, 150, 16);
     }
-    body.text(`数量 ${this.itemQuantity}`, 786, 184, 150, 16);
+    this.text(`数量 ${this.itemQuantity}`, 786, 184, 150, 16);
     // 按钮上的字要短到能放进 66×34；完整含义留在 label 上，键盘与测试仍按它查找。
-    body.button('-10', 786, 210, 66, 34, () => this.stepQuantity(-10)).setData('label', '数量 -10');
-    body.button('+10', 866, 210, 66, 34, () => this.stepQuantity(10)).setData('label', '数量 +10');
-    body.button('-1', 786, 246, 66, 34, () => this.stepQuantity(-1)).setData('label', '数量 -1');
-    body.button('+1', 866, 246, 66, 34, () => this.stepQuantity(1)).setData('label', '数量 +1');
-    body.button('+100', 786, 282, 66, 34, () => this.stepQuantity(100)).setData('label', '数量 +100');
-    body.button('归 1', 866, 282, 66, 34,
+    this.button(body, '-10', 786, 210, 66, 34, () => this.stepQuantity(-10)).setData('label', '数量 -10');
+    this.button(body, '+10', 866, 210, 66, 34, () => this.stepQuantity(10)).setData('label', '数量 +10');
+    this.button(body, '-1', 786, 246, 66, 34, () => this.stepQuantity(-1)).setData('label', '数量 -1');
+    this.button(body, '+1', 866, 246, 66, 34, () => this.stepQuantity(1)).setData('label', '数量 +1');
+    this.button(body, '+100', 786, 282, 66, 34, () => this.stepQuantity(100)).setData('label', '数量 +100');
+    this.button(body, '归 1', 866, 282, 66, 34,
       () => { this.itemQuantity = 1; this.hooks.render(); }).setData('label', '数量归 1');
-    body.button('加入背包', 786, 324, 150, 44, () => this.onGiveItem(selected),
+    this.button(body, '加入背包', 786, 324, 150, 44, () => this.onGiveItem(selected),
       { disabled: !selected }).setData('label', '加入背包');
-    body.text(`金币 ${this.gm.money()}`, 60, 412, 200, 16);
+    this.text(`金币 ${this.gm.money()}`, 60, 412, 200, 16);
     const moneyBands: readonly (readonly [string, number])[] = [['+1万', 10_000], ['+10万', 100_000], ['+100万', 1_000_000]];
     moneyBands.forEach(([label, amount], index) =>
-      body.button(label, 280 + index * 100, 404, index === 2 ? 100 : 90, 40,
+      this.button(body, label, 280 + index * 100, 404, index === 2 ? 100 : 90, 40,
         () => this.onGainMoney(amount)).setData('label', `金币 ${label}`));
-    body.text('滚轮或拖动列表查看更多', 610, 412, 340, 16);
+    this.text('滚轮或拖动列表查看更多', 610, 412, 340, 16);
     ITEM_FILTERS.forEach((filter, index) =>
-      body.button(INVENTORY_LABELS[filter], 60 + index * 110, 56, 104, 32,
+      this.button(body, INVENTORY_LABELS[filter], 60 + index * 110, 56, 104, 32,
         () => {
           this.itemFilter = filter; this.itemScroll = 0; this.itemSelected = undefined;
           this.itemDetail = undefined; this.result = ''; this.hooks.render();
@@ -348,29 +382,32 @@ export class GmPanel {
     }
     const row = rows.find(row => row.task.quest === this.selectedQuest);
     body.rect(60,100,352,336,0x120d08,.72); body.rect(430,100,490,336,0x120d08,.72);
-    STORY_FILTERS.forEach(([value,label],index)=>body.button(label,60+index*110,54,104,30,()=>{
+    STORY_FILTERS.forEach(([value,label],index)=>this.button(body, label,60+index*110,54,104,30,()=>{
       if(this.filter===value)return;this.filter=value;this.storyScroll=0;this.storyIntroScroll=0;this.hooks.render();
     },{selected:this.filter===value,fontSize:17}).setData('label',`分类 ${label}`));
-    if (debug.focus) body.button(this.ending ? '正在结束调试…' : '结束本次调试',660,54,150,30,
+    if (debug.focus) this.button(body, this.ending ? '正在结束调试…' : '结束本次调试',660,54,150,30,
       ()=>this.onEndDebug(),{disabled:this.ending}).setData('label','结束本次调试');
-    const list=body.scroll(60,100,352,336);list.onScroll=()=>{this.storyScroll=list.scrollTop;};list.setHeight(rows.length*54);
-    list.setVirtual(rows.length,54,(first,last)=>{
-      for(let index=first;index<last;index++){
-        const item=rows[index]!,selected=item.task.quest===this.selectedQuest,y=index*54;
-        body.rect(0,y,352,52,selected?0x6f5232:0x241a10,selected?.74:.46,list.content);
-        const button=body.button('',0,y,352,52,()=>{
-          if(item.task.quest===this.selectedQuest)return;
-          this.selectedQuest=item.task.quest;this.storyIntroScroll=0;this.hooks.render();
-        },{bare:true,parent:list.content,guard:list.guard});
-        button.setData('label',`任务 ${item.title}`).setData('category',item.category);
-        body.text(clipText(item.title,17),12,5,328,18,selected?'#fff':'#f3deb0',button);
-        const progress=this.references.questProgress?.(item.quest.id);
-        body.text([CATEGORY_LABELS[item.category],progress?QUEST_STATUS_LABELS[progress.status]??'':undefined]
-          .filter(Boolean).join(' · '),12,29,328,15,'#b8ab92',button);
-      }
-    });list.scrollTop=this.storyScroll;
+    const list=body.scroll(60,100,352,336);this.references.registerScroll?.('gm-story-list',list);
+    list.onScroll=()=>{this.storyScroll=list.scrollTop;this.references.refresh?.();};
+    list.setHeight(rows.length*54);
+    // 行数不多，整表一次画完：DOM 文字跟着滚动区偏移走，不必为虚拟列表再补一套文字池。
+    const listClip={top:100,bottom:436};
+    rows.forEach((item,index)=>{
+      const selected=item.task.quest===this.selectedQuest,y=index*54;
+      body.rect(0,y,352,52,selected?0x6f5232:0x241a10,selected?.74:.46,list.content);
+      const button=this.button(body,'',0,y,352,52,()=>{
+        if(item.task.quest===this.selectedQuest)return;
+        this.selectedQuest=item.task.quest;this.storyIntroScroll=0;this.hooks.render();
+      },{bare:true,parent:list.content,guard:list.guard});
+      button.setData('label',`任务 ${item.title}`).setData('category',item.category);
+      this.text(clipText(item.title,17),72,105+y,328,18,selected?'#fff':'#f3deb0','gm-story-list',listClip);
+      const progress=this.references.questProgress?.(item.quest.id);
+      this.text([CATEGORY_LABELS[item.category],progress?QUEST_STATUS_LABELS[progress.status]??'':undefined]
+        .filter(Boolean).join(' · '),72,129+y,328,15,'#b8ab92','gm-story-list',listClip);
+    });
+    list.scrollTop=this.storyScroll;
     if(row)this.renderTaskDetail(body,row);
-    else body.text('没有符合筛选条件的任务',442,112,466,19);
+    else this.text('没有符合筛选条件的任务',442,112,466,19);
     return `可调任务 ${rows.length} 个${debug.focus?` · ${DEBUG_PAUSED_NOTE}`:''}`;
   }
 
@@ -380,25 +417,25 @@ export class GmPanel {
     const progressLabel=progress
       ?`${QUEST_STATUS_LABELS[progress.status]??progress.status}${progress.total?` · 进度 ${progress.done}/${progress.total}`:''}`
       :CATEGORY_LABELS[row.category];
-    body.text(clipText(row.title,22),442,108,466,20,'#f3deb0');
-    body.text(progressLabel,442,136,466,16,'#b8ab92');
+    this.text(clipText(row.title,22),442,108,466,20,'#f3deb0');
+    this.text(progressLabel,442,136,466,16,'#b8ab92');
     this.drawStoryDescription(body,row.quest.description,68);
     const prepared=this.previewFor(row.task.quest);
     const preview=prepared.result?.preview;
     const map=preview?.location.map??row.task.entry.map;
     const mapName=this.references.mapName?.(map)??'剧情发生地';
     const phase=preview?.phase??row.task.phase;
-    body.text(clipText(`地点：${mapName}`,28),442,234,466,15,'#b8ab92');
-    body.text(`默认起点：${PHASE_LABELS[phase]}`,442,254,466,15,'#b8ab92');
-    body.text(clipText(this.startSourceLabel(row.task,preview),58),442,274,466,15,'#b8ab92');
-    body.text(clipText(this.playLabel(row.task,preview),58),442,314,466,15,'#b8ab92');
+    this.text(clipText(`地点：${mapName}`,28),442,234,466,15,'#b8ab92');
+    this.text(`默认起点：${PHASE_LABELS[phase]}`,442,254,466,15,'#b8ab92');
+    this.text(clipText(this.startSourceLabel(row.task,preview),58),442,274,466,15,'#b8ab92');
+    this.text(clipText(this.playLabel(row.task,preview),58),442,314,466,15,'#b8ab92');
     const failure=!prepared.result?'正在准备任务现场…'
       :!prepared.result.ok?prepared.result.reason??'预览失败，原因未记录'
       :!preview?'预览没有返回任务现场':undefined;
-    if(failure)body.text(clipText(failure,56),442,338,466,15,
+    if(failure)this.text(clipText(failure,56),442,338,466,15,
       prepared.result&&!prepared.result.ok?'#ffd8a0':'#b8ab92');
-    body.text(clipText(DEBUG_SCENE_NOTE,54),442,362,466,15,'#b8ab92');
-    body.button('进入任务',442,392,466,40,()=>this.onPlay({quest:row.task.quest}),
+    this.text(clipText(DEBUG_SCENE_NOTE,54),442,362,466,15,'#b8ab92');
+    this.button(body, '进入任务',442,392,466,40,()=>this.onPlay({quest:row.task.quest}),
       {disabled:!prepared.ready,fontSize:20}).setData('label','进入任务');
   }
 
@@ -437,8 +474,14 @@ export class GmPanel {
   }
 
   private drawStoryDescription(body: UiSurface, text: string, height = 92): void {
-    const scroll=body.scroll(442,162,466,height);scroll.onScroll=()=>{this.storyIntroScroll=scroll.scrollTop;};
-    const layout=measureQuestText(body,readableStoryText(text),452,18);drawQuestText(body,layout,0,0,452,18,scroll.content);
+    const scroll=body.scroll(442,162,466,height);this.references.registerScroll?.('gm-story-desc',scroll);
+    scroll.onScroll=()=>{this.storyIntroScroll=scroll.scrollTop;this.references.refresh?.();};
+    const layout=measureQuestText(body,readableStoryText(text),452,18);
+    const clip={top:162,bottom:162+height};
+    layout.lines.forEach((line,index)=>line.runs.forEach(run=>{
+      this.writer?.add({key:`gm-text-${this.textSerial++}`,text:run.text,x:442+run.x,y:162+index*layout.lineHeight,
+        style:{size:18,color:QUEST_TEXT_COLORS[run.tone]},scroll:'gm-story-desc',clip});
+    }));
     scroll.setHeight(layout.height);scroll.scrollTop=this.storyIntroScroll;
   }
 

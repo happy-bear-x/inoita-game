@@ -176,6 +176,14 @@ export class MenuScene extends Phaser.Scene {
     const matrix=root.getWorldTransformMatrix(),point=matrix.transformPoint(x,y);
     return{x:point.x,y:point.y,scale:matrix.scaleX};
   }
+  /** 弹层本地坐标先换到整页表面，再走和页面文字同一套屏幕换算。 */
+  private modalTextPoint(x:number,y:number):MenuTextPoint {
+    const modal=this.modal,root=this.surface?.root;
+    if(!modal||!root)return this.menuTextPoint(x,y);
+    const world=modal.root.getWorldTransformMatrix().transformPoint(x,y);
+    const matrix=root.getWorldTransformMatrix(),origin=matrix.transformPoint(0,0);
+    return{x:(world.x-origin.x)/matrix.scaleX,y:(world.y-origin.y)/matrix.scaleY,scale:matrix.scaleX};
+  }
   /** 滚动文字按当前偏移重算；每次整页重画后指向新的滚动区。 */
   private menuScrollTop(page:string):number|undefined {
     if(page==='slots')return this.slotsScroll?.scrollTop;
@@ -359,7 +367,7 @@ export class MenuScene extends Phaser.Scene {
   private modalTextWriter():MenuTextWriter|undefined{
     const domUi=this.domUi;if(!domUi)return{add:()=>{}};
     return{add:spec=>{
-      const point=this.menuTextPoint(spec.x,spec.y),scale=point.scale;
+      const point=this.modalTextPoint(spec.x,spec.y),scale=point.scale;
       const anchorX=spec.style.anchorX??0,anchorY=spec.style.anchorY??0;
       const label=domUi.label('screen','dom-label dom-native-message',{x:anchorX,y:anchorY});
       label.setText(spec.text).setPosition(point.x,point.y).setStyle({

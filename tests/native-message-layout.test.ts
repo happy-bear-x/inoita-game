@@ -9,7 +9,7 @@ interface ButtonCall { x:number; y:number }
 function surface() {
   const rects:RectCall[]=[], buttons:ButtonCall[]=[];
   const text={height:48,
-    setOrigin(){return text;},setAlign(){return text;},setPosition(){return text;}};
+    setOrigin(){return text;},setAlign(){return text;},setPosition(){return text;},destroy(){}};
   const image={setOrigin(){return image;},setFlipY(){return image;}};
   const view={
     // 弹层实际画布可以很小（450×350），确认层按 1024×640 的外框居中。

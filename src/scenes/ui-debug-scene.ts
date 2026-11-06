@@ -1,7 +1,8 @@
 import { SCENE_KEYS } from '../application/scene-keys.ts';
 import Phaser from 'phaser';
 import type { StoryApp } from '../app.ts';
-import { UiSurface } from '../ui/phaser/widgets.ts';
+import { GOLD, UiSurface } from '../ui/phaser/widgets.ts';
+import { MenuTextLayer, type MenuTextSpec } from '../ui/dom/menu-text.ts';
 import { SceneUiAssets } from '../ui/phaser/ui-asset-host.ts';
 import { newStorySession } from '../domain/story-class.ts';
 import { readSafeArea } from '../ui/viewport.ts';
@@ -47,6 +48,9 @@ export class UiDebugScene extends Phaser.Scene {
   private readonly assets = new SceneUiAssets(this);
   private readonly abort = new AbortController();
   private strip?: UiSurface;
+  /** 调试条文字走 DOM，按钮皮肤和命中区仍由 Phaser 画。 */
+  private menuText?: MenuTextLayer;
+  private textSpecs: MenuTextSpec[] = [];
   private view = VIEWS[0]!.key;
   private ready = false;
   private failure = '';
@@ -57,6 +61,10 @@ export class UiDebugScene extends Phaser.Scene {
     this.strip = new UiSurface(this, STRIP_WIDTH, STRIP_HEIGHT, 600);
     // 调试条不属于菜单的输入锁，菜单一打开它照样要能点。
     this.strip.enabled = () => true;
+    if (this.app.domUi) {
+      this.menuText = new MenuTextLayer(this.app.domUi, (x, y) => this.textPoint(x, y), () => undefined);
+      this.menuText.register('ui-debug', writer => { for (const spec of this.textSpecs) writer.add(spec); });
+    }
     this.drawStrip();
     this.input.keyboard?.on('keydown', this.onKey);
     this.scale.on('resize', this.layoutStrip, this);
@@ -65,9 +73,20 @@ export class UiDebugScene extends Phaser.Scene {
       this.input.keyboard?.off('keydown', this.onKey);
       this.abort.abort();
       this.assets.releaseContent();
+      this.menuText?.destroy();
+      this.menuText = undefined;
+      this.textSpecs = [];
       this.strip?.destroy();
     });
     void this.init();
+  }
+
+  /** 调试条本地坐标 → 画框 CSS 坐标；缩放跟着 `layoutStrip` 的根节点走。 */
+  private textPoint(x: number, y: number): { x: number; y: number; scale: number } {
+    const root = this.strip?.root;
+    if (!root) return { x, y, scale: 1 };
+    const matrix = root.getWorldTransformMatrix(), point = matrix.transformPoint(x, y);
+    return { x: point.x, y: point.y, scale: matrix.scaleX };
   }
 
   private onKey = (event: KeyboardEvent): void => {
@@ -90,6 +109,8 @@ export class UiDebugScene extends Phaser.Scene {
     const factor = Math.min((this.scale.width - left - right) / strip.width, 1);
     strip.root.setScale(factor).setPosition(left, this.scale.height - bottom - strip.height * factor);
     strip.scrolls.forEach(scroll => scroll.layout());
+    // 根节点换了位置和缩放，DOM 文字按同一份变换重算。
+    this.menuText?.refresh();
   }
 
   private drawStrip(): void {
@@ -98,20 +119,30 @@ export class UiDebugScene extends Phaser.Scene {
     strip.clear();
     strip.visible(true);
     this.layoutStrip();
+    this.textSpecs = [];
     if (this.failure) {
       strip.rect(0, 0, STRIP_WIDTH, STRIP_HEIGHT, 0x3a1414, .96);
-      strip.text(`调试场景启动失败：${this.failure}`, BUTTON.padding + 4, 10, STRIP_WIDTH - 20, 20, '#f0b0a0');
-      strip.text('看浏览器控制台；修好后刷新页面。', BUTTON.padding + 4, 70, STRIP_WIDTH - 20, 18, '#d0a090');
+      this.textSpecs.push({ key: 'failure', text: `调试场景启动失败：${this.failure}`,
+        x: BUTTON.padding + 4, y: 10, style: { size: 20, color: '#f0b0a0', width: STRIP_WIDTH - 20, wrap: 'word' } });
+      this.textSpecs.push({ key: 'failure-hint', text: '看浏览器控制台；修好后刷新页面。',
+        x: BUTTON.padding + 4, y: 70, style: { size: 18, color: '#d0a090', width: STRIP_WIDTH - 20, wrap: 'word' } });
+      this.menuText?.renderPage('ui-debug');
       return;
     }
     strip.rect(0, 0, STRIP_WIDTH, STRIP_HEIGHT, 0x101820, .96);
     VIEWS.forEach((view, index) => {
       const column = index % COLUMNS, row = Math.floor(index / COLUMNS);
-      strip.button(`${index === 9 ? 0 : index + 1}　${view.label}`,
-        BUTTON.padding + column * (BUTTON.width + BUTTON.gapX), BUTTON.padding + row * (BUTTON.height + BUTTON.gapY),
-        BUTTON.width, BUTTON.height, () => this.show(view.key),
-        { selected: view.key === this.view, fontSize: BUTTON.size });
+      const x = BUTTON.padding + column * (BUTTON.width + BUTTON.gapX);
+      const y = BUTTON.padding + row * (BUTTON.height + BUTTON.gapY);
+      const label = `${index === 9 ? 0 : index + 1}　${view.label}`;
+      strip.button('', x, y, BUTTON.width, BUTTON.height, () => this.show(view.key),
+        { selected: view.key === this.view, fontSize: BUTTON.size }).setData('label', label);
+      this.textSpecs.push({ key: `view-${index}`, text: label,
+        x: x + BUTTON.width / 2, y: y + BUTTON.height / 2,
+        style: { size: BUTTON.size, color: GOLD, anchorX: .5, anchorY: .5,
+          width: BUTTON.width - 12, align: 'center', wrap: 'word' } });
     });
+    this.menuText?.renderPage('ui-debug');
   }
 
   private async init(): Promise<void> {

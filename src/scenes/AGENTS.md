@@ -34,6 +34,7 @@ Phaser 场景层：驱动生命周期、转发输入，把 domain、rendering、
 - **任务目标完成提示走 `showInstant`。** 只在任务簿版本变化时对比状态，只提示 `completion: 'all'` 的可见任务进入待交付；对话/剧情任务已有任务窗，不重复提示。
 - 场景键从 `SCENE_KEYS`（`src/application/scene-keys.ts`）取，构造、查找、启动都用它，不写裸字符串。
 - 新增场景在 `src/main.ts` 注册，并接上对应模式与 URL 参数的启动分支。
+- **调试场景的文字也走 DOM。** `UiDebugScene`、`AnimationDebugScene` 和游戏内 GM 面板用 `MenuTextLayer` 或 `MenuTextWriter` 输出文字；按钮只留共用皮肤和命中区，角色头顶的调试标签用 `worldToScreen` 跟随相机。
 - 跨场景状态通过 `src/application/ports.ts` 的能力接口传递，不挂全局变量或模块级可变状态。
 - 云存档页从存档槽页右上角进入，返回和 Escape 都回存档槽页；忙碌时只禁用云操作，返回始终可用，离开页面 abort 请求。账号/密码框直接盖在面板对应行上，输入框有焦点时场景键盘处理器让路；确认框、改名和修改密码表单打开时隐藏输入覆盖层。
 - 云存档续期只在打开云页时检查：token 剩余不足 7 天才发 `/__cloud/refresh`，不在游戏循环或后台定时。

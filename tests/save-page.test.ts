@@ -53,6 +53,7 @@ function fixture() {
     activeRequest: () => new AbortController(),
     setItemNotice: message => { notice = message; },
     modal: () => { throw new Error('测试不画弹层'); },
+    modalWriter: () => ({ add: () => {} }),
     beginModal: () => {},
     scroll: () => { throw new Error('测试不画滚动区'); },
     finishScroll: () => {}
