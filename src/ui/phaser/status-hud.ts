@@ -163,11 +163,11 @@ export class StatusHud {
   private readonly playerIcons:Phaser.GameObjects.Container;
   private readonly unsubscribe:()=>void;private player?:Readonly<StoryPlayerState>;private target?:TargetStatus;private visible=false;
   private domLevel?:DomLabel;private domTarget?:DomLabel;private domTargetColor?:string;
-  private domLevelVisible?:boolean;private domTargetVisible?:boolean;private domLayoutKeyValue='';
+  private domLayoutKeyValue='';
   private targetSignature='';private lastTick=-1;
   private targetSpecial?:Phaser.GameObjects.Image;
   private playerIconImages:Phaser.GameObjects.Image[]=[];private memberCount=0;
-  private playerIconSignature='';private portraitKey?:string;private visibilityApplied=false;
+  private playerIconSignature='';private portraitKey?:string;
   constructor(hud:Hud,skin:StatusHudSkin,readPlayer:()=>Readonly<StoryPlayerState>|undefined,subscribe:(listener:()=>void)=>()=>void,
     readParty?:()=>PartyActiveSnapshot|undefined,onSelect?:(id:string)=>void,portraitFor?:(id:string)=>string|undefined,onFocus?:()=>void,
     readConditions?:(id:string)=>readonly ActiveCondition[],readHero?:()=>MemberValues|undefined,domUi?:DomUi){
@@ -305,17 +305,17 @@ export class StatusHud {
     for(const panel of this.panels)panel.syncDomPosition();
   }
   setVisible(value:boolean):void{
-    // 第一次必须真正应用（构造时容器默认可见）；之后同值不重复遍历面板。
-    if(this.visibilityApplied&&this.visible===value)return;
-    this.visibilityApplied=true;this.visible=value;this.syncVisibility();
+    // 每帧对齐一次：Hud 的 sleep/wake 会直接改容器显隐，DOM 标签必须跟着实际值走。
+    this.visible=value;this.syncVisibility();
   }
   private syncVisibility():void{
     this.hud.setVisible(this.playerContainer,this.visible&&!!this.player);
     this.hud.setVisible(this.targetContainer,this.visible&&!!this.target);
     // 场景暂停/睡眠时 Hud 会把容器压成不可见，DOM 标签跟着容器的实际值走。
     const playerVisible=this.playerContainer.visible,targetVisible=this.targetContainer.visible;
-    if(this.domLevel&&this.domLevelVisible!==playerVisible){this.domLevelVisible=playerVisible;this.domLevel.setVisible(playerVisible);}
-    if(this.domTarget&&this.domTargetVisible!==targetVisible){this.domTargetVisible=targetVisible;this.domTarget.setVisible(targetVisible);}
+    // Hud 的 sleep/wake 会直接改容器显隐，缓存值可能和实际值不一致；每次都对齐，同值由标签自己跳过。
+    this.domLevel?.setVisible(playerVisible);
+    this.domTarget?.setVisible(targetVisible);
     this.panels.forEach((panel,index)=>panel.setVisible(this.visible&&index<this.memberCount));
   }
   destroy():void{this.domLevel?.remove();this.domTarget?.remove();this.unsubscribe();this.playerContainer.destroy(true);this.targetContainer.destroy(true);for(const panel of this.panels)panel.destroy();}
