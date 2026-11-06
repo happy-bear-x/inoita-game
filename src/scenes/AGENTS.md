@@ -19,7 +19,7 @@ Phaser 场景层：驱动生命周期、转发输入，把 domain、rendering、
 
 - 场景只驱动生命周期、转发输入、调度下层模块；判定和数值规则写进 `src/domain/`，具体绘制交给 `src/rendering/` 与 `src/ui/phaser/`。
 - 击杀奖励结算、召唤生命周期和交互决策在 `src/domain/`：场景只收集输入、播放表现、决定落点并执行 domain 返回的动作/奖励清单。
-- `WorldScene.interact()` 把附近目标、朝向、任务槽和商店状态交给 `domain/interaction.ts` 的 `resolveInteraction`；选目标的 `updateInteractionTarget` 留在场景。
+- `WorldScene.interact()` 把附近目标、任务槽和商店状态交给 `domain/interaction.ts` 的 `resolveInteraction`；选目标的 `updateInteractionTarget` 只按距离挑最近的一个，交互前场景把角色转向目标，朝向不参与能否交互的判定。
 - 有商店的 NPC 无论有没有招呼语，都算可交互目标；交互优先级仍由 `resolveInteraction` 决定。
 - 掉落落点用 `lootLanding` 避开地图进出口；不要把物品图标落在门洞上。
 - 伙伴外观按需加载：队伍面板预览只准备 `idle-south`，进战斗开场再补全套；使用勇士徽章招募后由招募确认或队伍面板调用 `preparePartyMember`，不要为了省事把全部伙伴重新塞回常驻包。

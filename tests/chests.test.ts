@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { ChestVisits, canReachChest, facesTarget, nearInteractable, nearInteractive, rollPlacement, SHOP_COUNTER_GAP } from '../src/domain/chests.ts';
+import { ChestVisits, canReachChest, nearInteractable, nearInteractive, rollPlacement, SHOP_COUNTER_GAP } from '../src/domain/chests.ts';
 import { rollChestLoot, parseDrops, type DropCatalog } from '../src/domain/drops.ts';
 import { parseCharacterStats, parseMap } from '../src/application/content-validation.ts';
 import { Session, DEFAULT_ENEMY_RESPAWN_MS } from '../src/domain/session.ts';
@@ -178,7 +178,7 @@ test('chest placement rerolls each entry: ordinary passes one gate, improved pas
   assert.equal(rollPlacement(plain,dice(99)),plain);
 });
 
-test('chest interaction follows the native near-object, rect-distance and facing rules',()=>{
+test('chest interaction follows the native near-object and rect-distance rules',()=>{
   // 身边对象：脚底坐标的曼哈顿距离不超过 24 px（PLAYER_DoCheckNearNPC 0x1be0b0）。
   assert.equal(nearInteractable({x:0,y:0},{x:24,y:0}),true);
   assert.equal(nearInteractable({x:0,y:0},{x:16,y:8}),true);
@@ -206,11 +206,6 @@ test('chest interaction follows the native near-object, rect-distance and facing
   // 商店隔柜台：16×16 的商人在 48 px 外，间隙 32，用商店上限能选中；普通上限不行。
   assert.equal(nearInteractive({x:0,y:0},{x:0,y:48},body,false,SHOP_COUNTER_GAP),true);
   assert.equal(nearInteractive({x:0,y:0},{x:0,y:48},body),false);
-  // 朝向：目标落在哪一轴就得朝哪一边（GAMESTATE_PressKeyPlay 0x12f6f8）。
-  assert.equal(facesTarget({x:0,y:0},'east',{x:20,y:4}),true);
-  assert.equal(facesTarget({x:0,y:0},'north',{x:20,y:4}),false);
-  assert.equal(facesTarget({x:0,y:0},'south',{x:4,y:20}),true);
-  assert.equal(facesTarget({x:0,y:0},'west',{x:4,y:20}),false);
 });
 
 

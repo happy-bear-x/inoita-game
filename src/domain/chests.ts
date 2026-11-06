@@ -1,4 +1,4 @@
-import type { CollisionBox, EnemySpawn, EntityPlacement, Facing } from './content.ts';
+import type { CollisionBox, EnemySpawn, EntityPlacement } from './content.ts';
 import type { ChestOpenResult } from './drops.ts';
 
 export const CHEST_OPEN_MS = 600;
@@ -166,15 +166,4 @@ export function canReachChest(from: {x:number;y:number}, chest: {x:number;y:numb
   const gapX = Math.max(0, Math.abs(from.x - chest.x) - FOOT_BOX_SIZE);
   const gapY = Math.max(0, Math.abs(from.y - chest.y) - FOOT_BOX_SIZE);
   return (gapX + gapY) / RECT_DISTANCE_UNIT <= RECT_DISTANCE_LIMIT;
-}
-
-/**
- * 原版 `GAMESTATE_PressKeyPlay` 在按攻击键时还要求玩家正面朝着目标：
- * `CHAR_GetDirectionForCharacter`（0x184dfc）给出目标所在的方向码（0 南／1 西／2 北／3 东，
- * 取间隙较大的那一轴），必须等于玩家当前朝向，否则这一下是普攻。
- */
-export function facesTarget(from: {x:number;y:number}, facing: Facing, target: {x:number;y:number}): boolean {
-  const dx = target.x - from.x, dy = target.y - from.y;
-  if (Math.abs(dx) >= Math.abs(dy)) return facing === (dx >= 0 ? 'east' : 'west');
-  return facing === (dy >= 0 ? 'south' : 'north');
 }

@@ -56,7 +56,7 @@ const sourceChest=sourceMap.entities.find(entity=>world.actors[entity.actor].che
 interface Character {entity:EntityPlacement;actor:ActorDefinition;container:Display;marker:null}
 interface SceneHooks {
   createActor(entity:EntityPlacement):Character;
-  openChest(character:Character,requireFacing?:boolean):void;
+  openChest(character:Character):void;
   attackKey():void;
   updateInteractionTarget():void;
   refreshState():void;
@@ -79,6 +79,7 @@ function fixture(map:WorldMap,entity:EntityPlacement,session=new Session(campaig
     app:{world,items,session,campaign:{quests:[]},locked:false,suspended:false,characterStats:stats,
       ui:{ready:true,controlLayoutEditing:false},audio:{ui:(sound:string)=>calls.push(sound)}},
     map,dropCatalog:drops,player:{container:new Display()},characters:[] as Character[],near:null as Character|null,
+    questStatuses:new Map(),questStatusVersion:undefined,
     combat,autoAttack:new BasicAttackRepeat(),performing:false,loadingWorld:false,active:true,
     chestFades:new Map(),sys:{isActive:()=>state.active},
     add:{container:(x:number,y:number)=>new Display(x,y),sprite:()=>new Display()},
@@ -179,17 +180,19 @@ test('every treasure actor opens with the attack key from each side while facing
   }
 });
 
-test('manual opening keeps the separate click distance and attack-key facing rules and never moves the character',t=>{
+test('manual opening keeps the separate click distance and attack-key reach rules and never moves the character',t=>{
   t.mock.method(Math,'random',()=>.9999);
   const {map,entity}=arena(),f=fixture(map,entity);
   f.position(entity.x-25,entity.y);f.combat.facing='east';f.scene.attackKey();
   assert.equal(f.opened(),false,'攻击键 25px 尚未选到箱子');assert(f.calls.includes('attack'));
   f.position(entity.x-24,entity.y);f.combat.facing='west';f.scene.attackKey();
-  assert.equal(f.opened(),false,'背向箱子不会由攻击键开箱');
-  f.position(entity.x-65,entity.y);assert(f.click());assert.equal(f.opened(),false,'点击距离超界');
-  assert.deepEqual([f.state.player.container.x,f.state.player.container.y],[entity.x-65,entity.y]);
-  f.position(entity.x-64,entity.y);assert(f.click());assert(f.opened(),'直接点击够得着即可，不要求转身');
-  assert.deepEqual([f.state.player.container.x,f.state.player.container.y],[entity.x-64,entity.y]);
+  assert.equal(f.opened(),true,'背向箱子也能由攻击键开箱');
+
+  const clicker=fixture(map,entity);
+  clicker.position(entity.x-65,entity.y);assert(clicker.click());assert.equal(clicker.opened(),false,'点击距离超界');
+  assert.deepEqual([clicker.state.player.container.x,clicker.state.player.container.y],[entity.x-65,entity.y]);
+  clicker.position(entity.x-64,entity.y);assert(clicker.click());assert(clicker.opened(),'直接点击够得着即可，不要求转身');
+  assert.deepEqual([clicker.state.player.container.x,clicker.state.player.container.y],[entity.x-64,entity.y]);
 });
 
 test('a controlled companion supplies position and facing while treasure drops still use the hero level',t=>{
@@ -216,7 +219,7 @@ test('all six scenery or story box placements stay outside the random treasure i
     t.mock.restoreAll();const f=fixture(map,entity);
     t.mock.method(Math,'random',()=>{assert.fail('场景箱没有掉落抽取');});
     assert.equal(f.chest.container.input,undefined);f.position(entity.x-24,entity.y);f.combat.facing='east';
-    f.scene.openChest(f.chest,false);f.scene.attackKey();
+    f.scene.openChest(f.chest);f.scene.attackKey();
     assert.equal(f.opened(),false);assert.deepEqual(f.loot(),[]);assert.equal(f.tweens.length,0);checked++;
   }
   assert.equal(checked,6);
@@ -232,7 +235,7 @@ test('menu, suspension, control editing, unavailable actors and loading reject s
   for(const guard of guards) {
     t.mock.restoreAll();const f=fixture(map,entity);f.position(entity.x-24,entity.y);f.combat.facing='east';guard(f);
     t.mock.method(Math,'random',()=>{assert.fail('被拦截的开箱事件没有随机结算');});
-    f.scene.openChest(f.chest,false);f.scene.attackKey();
+    f.scene.openChest(f.chest);f.scene.attackKey();
     assert.equal(f.opened(),false);assert.deepEqual(f.loot(),[]);assert.equal(f.tweens.length,0);
     assert.equal(f.calls.includes('chestOpen'),false);assert.equal(f.enabled.get(f.chest),true);
   }
@@ -249,7 +252,7 @@ test('opening settles once, frees collision, spawns original rewards and pauses 
   assert.deepEqual(f.loot().map(drop=>drop.reward.kind==='item'?{kind:'item',item:drop.reward.item,quantity:drop.reward.quantity}:drop.reward),
     expected.rewards.map(reward=>reward.kind==='item'?{kind:'item',item:reward.item,quantity:reward.quantity}:reward));
   assert.deepEqual(f.session.chests.spawns.map(spawn=>spawn.enemyId),expected.enemies);
-  const settled=f.loot();f.scene.openChest(f.chest,false);assert.equal(f.click(),false);
+  const settled=f.loot();f.scene.openChest(f.chest);assert.equal(f.click(),false);
   assert.deepEqual(f.loot(),settled);assert.equal(f.calls.filter(call=>call==='chestOpen').length,1);assert.equal(f.tweens.length,1);
   const tween=f.tweens[0];assert.equal(tween.duration,600);assert.equal(tween.ease(.19),.1);
   f.state.app.locked=true;f.scene.syncHud();assert(tween.paused);

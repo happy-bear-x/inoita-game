@@ -31,7 +31,8 @@ import { WorldCombat, type WorldCombatState } from './world-combat.ts';
 import { QuestEnemyWatch } from '../domain/quest-enemies.ts';
 import { parseDrops, rollChestLoot, type DropCatalog, type DropReward } from '../domain/drops.ts';
 import { resolveInteraction } from '../domain/interaction.ts';
-import { BODY_ADJACENT_GAP, canReachChest, CHEST_OPEN_MS, facesTarget, nearInteractable, nearInteractive, SHOP_COUNTER_GAP } from '../domain/chests.ts';
+import { faceTarget } from '../domain/basic-attack.ts';
+import { BODY_ADJACENT_GAP, canReachChest, CHEST_OPEN_MS, nearInteractable, nearInteractive, SHOP_COUNTER_GAP } from '../domain/chests.ts';
 import { applySpringRecovery, grantSpringSkillPoint, parseSprings, rollSpringEffect, springBuffScope, type SpringCatalog, type SpringPartyResources } from '../domain/springs.ts';
 import { groundLootFor } from '../domain/ground-loot.ts';
 import { innRestQuote, payForInnRest } from '../domain/inns.ts';
@@ -843,7 +844,7 @@ export class WorldScene extends Phaser.Scene {
       container.setInteractive(new Phaser.Geom.Rectangle(left, -clip.frameHeight * clip.originY,
         clip.frameWidth, clip.frameHeight), Phaser.Geom.Rectangle.Contains);
       container.on('pointerdown', (_pointer: Phaser.Input.Pointer, _x: number, _y: number, event: Phaser.Types.Input.EventData) => {
-        event.stopPropagation(); this.openChest(character, false);
+        event.stopPropagation(); this.openChest(character);
       });
     }
     if(entity.id==='player'){
@@ -1142,9 +1143,8 @@ export class WorldScene extends Phaser.Scene {
     this.app.ui.error(this.recordFailure(error), () => this.scene.restart(this.options));
   }
   /**
-   * 攻击键这一帧做什么。原版 `GAMESTATE_PressKeyPlay` 先查身边的 NPC（距离、朝向、有没有功能），
-   * 命中就走交互，落空才发起普攻；复刻沿用这个顺序，所以选中敌人时也能开箱、喝泉水、找 NPC 说话。
-   * `interact` 返回假（身边有对象但没朝着它、或这一下不满足交互条件）时按原版落回普攻。
+   * 攻击键这一帧做什么。先查身边有没有可交互对象，命中就走交互，落空才发起普攻；
+   * 所以选中敌人时也能开箱、喝泉水、找 NPC 说话。`interact` 返回假（身边没有可交互对象）时落回普攻。
    */
   private attackKey(): void {
     if (!this.canControl) return;
@@ -1180,7 +1180,6 @@ export class WorldScene extends Phaser.Scene {
     const questSlot = service ? this.takesQuestSlot(target.entity)
       : shop && !target.entity.objective ? this.takesQuestSlot(target.entity) : false;
     const action = resolveInteraction({
-      facing: facesTarget(this.controlledPosition(), this.currentFacing, target.container),
       chest,
       spring,
       service,
@@ -1188,8 +1187,9 @@ export class WorldScene extends Phaser.Scene {
       questSlot,
       shop,
     });
+    // 朝向只决定交互时的表演方向，不再参与“能不能交互”的判定。
+    this.turnToInteractionTarget(target);
     switch (action.kind) {
-      case 'none': return false;
       case 'chest': this.openChest(target); return true;
       case 'spring': this.drinkSpring(target); return true;
       case 'crafting': this.app.openCrafting?.(target.actor.id); return true;
@@ -1241,8 +1241,12 @@ export class WorldScene extends Phaser.Scene {
   private controlledPosition():{x:number;y:number}{
     return this.combat?.controlledVisual?.container ?? this.player?.container ?? {x:0,y:0};
   }
-  /** 当前受控角色的朝向；战斗中由战斗状态给出，平时跟着移动方向。 */
-  private get currentFacing(): Facing { return this.combat?.facing ?? this.facing; }
+  /** 交互前把操控者转向目标：朝向只影响表现和剧情快照，不再是交互门槛。 */
+  private turnToInteractionTarget(target: Character): void {
+    const facing = faceTarget(this.controlledPosition(), target.container);
+    if (this.combat) this.combat.facing = facing;
+    else this.facing = facing;
+  }
   /**
    * 泉水喝过一次就空了。原版 `CHAR_DrinkSpring` 的公共尾把泉水对象的 id 字段写成水井（npc 38）
    * 再重算外观——水井用的是没有液体的那张图，而且它没有 NPC 功能，所以再交互不会有效果也不提示。
@@ -1294,15 +1298,14 @@ export class WorldScene extends Phaser.Scene {
     this.updateInteractionTarget(); this.syncHud();
   }
   /**
-   * 开箱。`requireFacing` 对应原版按攻击键时「必须正面朝着目标」那条判定；直接点箱子开是
-   * 复刻追加的点击交互（原版没有这个输入），只要求站得够近，不要求朝向。
+   * 开箱。攻击键选中宝箱后与直接点击共用这条可动作距离检查；直接点箱子是复刻追加的
+   * 点击交互（原版没有这个输入），两条路径都不要求朝向。
    */
-  private openChest(character: Character, requireFacing = true): void {
+  private openChest(character: Character): void {
     const controlled = this.combat?.controlledVisual ?? this.player;
     const kind = character.actor.chest, map = this.map;
     if (!this.canCombatControl || this.combat?.playerCannotAct() || !controlled || !kind || !map ||
       !character.container.visible || !canReachChest(controlled.container, character.container)) return;
-    if (requireFacing && !facesTarget(controlled.container, this.currentFacing, character.container)) return;
     if (map.lootLevel === undefined || !this.dropCatalog) throw new Error('宝箱缺少地图掉落数据');
     const chestLevel = map.chestLevel ?? (map.lootLevel > 0 ? map.lootLevel : 1);
     const session=this.app.session,pity=this.dropCatalog!.pity;

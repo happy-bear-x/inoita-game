@@ -80,11 +80,11 @@ function merchandiseDealer(map:WorldMap):EntityPlacement {
 }
 
 /** 站在融合器正下方，面朝它按一次攻击键。 */
-function pressAttack(mapId:string,current=new Session(campaign,undefined,undefined,items,new BattleCharacter('dark-knight',stats,items)),select=(map:WorldMap)=>machine(map)) {
+function pressAttack(mapId:string,current=new Session(campaign,undefined,undefined,items,new BattleCharacter('dark-knight',stats,items)),select=(map:WorldMap)=>machine(map),facing:Facing='north') {
   const map=mapOf(mapId),entity=select(map),calls:string[]=[],animations=new Set<string>();
   current.chests.enterMap(map.id);
   const combat={controlledVisual:undefined as {container:Display}|undefined,controlledMember:{level:100},
-    facing:'north' as Facing,cannotAct:false,playerCannotAct:()=>false,hasHostileTarget:()=>false,
+    facing,cannotAct:false,playerCannotAct:()=>false,hasHostileTarget:()=>false,
     attack:()=>calls.push('attack'),setPerformanceActive(){},syncChestEnemies(){}};
   const state={
     app:{world,items,session:current,campaign,locked:false,suspended:false,characterStats:stats,
@@ -108,7 +108,7 @@ function pressAttack(mapId:string,current=new Session(campaign,undefined,undefin
   state.characters.push(scene.createActor({...entity}));
   state.player.container.x=entity.x;state.player.container.y=entity.y+16;
   scene.attackKey();
-  return {calls,entity};
+  return {calls,entity,combat};
 }
 
 test('an available fusion quest takes the interaction before the crafting panel',()=>{
@@ -169,6 +169,13 @@ test('a shop NPC without a greeting opens the shop instead of attacking',()=>{
   assert.equal(entity.actor,'merchandise-dealer-4156e064');
   assert.equal(world.actors[entity.actor].description,'');
   assert.deepEqual(calls,[`openShop:${entity.actor}`]);
+});
+
+test('a target behind the player still interacts and the character turns toward it',()=>{
+  const {calls,entity,combat}=pressAttack('steel-orc-village-57c67f8c',undefined,map=>merchandiseDealer(map),'south');
+  assert.equal(entity.actor,'merchandise-dealer-4156e064');
+  assert.deepEqual(calls,[`openShop:${entity.actor}`],'背对目标也打开商店');
+  assert.equal(combat.facing,'north','交互前转向目标');
 });
 
 test('a successful ancient sword pull grants a weapon and plays the sword sound',()=>{

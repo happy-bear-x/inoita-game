@@ -3,15 +3,9 @@ import test from 'node:test';
 import { resolveInteraction, type InteractionTarget } from '../src/domain/interaction.ts';
 
 const base: InteractionTarget = {
-  facing: true, chest: false, spring: false,
+  chest: false, spring: false,
   objective: false, questSlot: false, shop: false,
 };
-
-test('a target behind the player never interacts', () => {
-  assert.deepEqual(resolveInteraction({ ...base, facing: false }), { kind: 'none' });
-  assert.deepEqual(resolveInteraction({ ...base, facing: false, chest: true }), { kind: 'none' },
-    '没朝向时宝箱也不开');
-});
 
 test('chests and springs win over services and story', () => {
   assert.deepEqual(resolveInteraction({ ...base, chest: true }), { kind: 'chest' });

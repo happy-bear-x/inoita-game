@@ -44,7 +44,7 @@ function sceneFixture(){
     cancelAttack:()=>calls.push('cancelAttack'),clearTarget:()=>calls.push('clearTarget'),cancelAmbushOnDirection(){},controlledId:'player',
     switchControl:()=>true,switchMember:()=>true};
   const state={
-    player:{},characters:[],performing:false,loadingWorld:false,destroyed:false,
+    player:{container:{x:0,y:0}},characters:[],near:null,performing:false,loadingWorld:false,destroyed:false,
     autoAttack:new BasicAttackRepeat(),
     stick:{axis:{x:0,y:0}},
     movement:{drive:()=>calls.push('drive'),stop(){}},
@@ -134,7 +134,7 @@ test('interacting does not arm the repeat',()=>{
 test('the attack key interacts with a nearby object before attacking',()=>{
   const calls:string[]=[];
   const state={
-    player:{},characters:[],performing:false,loadingWorld:false,destroyed:false,
+    player:{container:{x:0,y:0}},characters:[],performing:false,loadingWorld:false,destroyed:false,
     autoAttack:new BasicAttackRepeat(),
     near:{actor:{},entity:{}} as {actor:object;entity:object}|null,
     stick:{axis:{x:0,y:0}},movement:{drive(){},stop(){}},
@@ -154,7 +154,7 @@ test('the attack key interacts with a nearby object before attacking',()=>{
   scene.attackKey();
   assert.deepEqual(calls,['interact','attack'],'身边没有可交互物才落普攻');
   assert.equal(scene.autoAttack.active,true);
-  // 身边有可交互物、但这一下交互没成（例如没朝着它）也按原版落回普攻。
+  // 身边有可交互物、但这一下交互没成（例如目标这一刻不能交互）也落回普攻。
   state.interact=()=>{calls.push('interact');return false;};
   state.near={actor:{},entity:{}} as {actor:object;entity:object}|null;
   scene.attackKey();
