@@ -33,6 +33,8 @@ export class StoryClassScene extends Phaser.Scene {
   private request=new AbortController();
   /** DOM 是这一页唯一的文字路径：没有 DOM 文字层时宁可不显示文字，也不回退 Phaser 文字。 */
   private domText?:ClassDomText;
+  /** 加载遮罩期间隐藏职业文案，避免 DOM 文字浮在加载页上。 */
+  private domShown?:boolean;
   private descriptionScroll?:ScrollArea;
   /** 职业选择整屏独占键盘；场景关闭时注销，避免回到标题页后继续处理按键。 */
   private unregisterInput?:()=>void;
@@ -44,6 +46,23 @@ export class StoryClassScene extends Phaser.Scene {
     this.events.once('shutdown',()=>{this.unregisterInput?.();this.unregisterInput=undefined;this.request.abort();this.scale.off('resize',this.layout,this);this.surface?.destroy();this.surface=undefined;this.preview=undefined;this.clearDomText();this.descriptionScroll=undefined;});
     const signal=this.request.signal;
     void this.open(signal).catch(error=>{if(!signal.aborted)this.app.ui.error((error as Error).message,()=>this.scene.restart());});
+  }
+  /** 加载开始/结束时同步隐藏或恢复职业文案；DOM 在画布之上，不主动让位会盖住加载页。 */
+  override update():void{
+    const shown=this.app.ui.ready&&!this.app.suspended;
+    if(shown===this.domShown)return;
+    this.domShown=shown;
+    this.setDomVisible(shown);
+  }
+  private setDomVisible(shown:boolean):void{
+    const dom=this.domText;if(!dom)return;
+    dom.title.setVisible(shown);
+    dom.descriptionClip.setVisible(shown);
+    dom.description.setVisible(shown);
+    this.selected?.attributes.forEach((_attribute,index)=>{
+      const pair=dom.attributes[index];
+      pair?.name.setVisible(shown);pair?.value.setVisible(shown);
+    });
   }
   private routeKey=(event:KeyboardEvent):boolean=>{
     if(this.app.suspended)return false;
@@ -70,7 +89,11 @@ export class StoryClassScene extends Phaser.Scene {
       const [x,y]=positions[index];const button=view.button('',x,y,116,114,()=>this.choose(character),{image:character.icon,guard}).setData('label',character.name);
       if(character.id===entry.id)view.image(catalog.assets.selected,0,0,116,114,button).setBlendMode(Phaser.BlendModes.ADD);
     });
-    view.button('',334,388,292,77,()=>this.app.startStory?.(this.selected!.id),{image:catalog.assets.start,pressed:catalog.assets.startPressed,guard}).setData('label','开始游戏');
+    view.button('',334,388,292,77,()=>{
+      // 加载页由正式界面场景画在画布上，DOM 文案要先让位，别浮到加载背景上面。
+      this.domShown=false;this.setDomVisible(false);
+      this.app.startStory?.(this.selected!.id);
+    },{image:catalog.assets.start,pressed:catalog.assets.startPressed,guard}).setData('label','开始游戏');
     view.rect(42,464,699,174,0x000000,.4);
     view.image(catalog.assets.descriptionTop,71,456);
     view.image(catalog.assets.panelLeft,32,455);view.image(catalog.assets.panelRight,712,455);
@@ -114,13 +137,16 @@ export class StoryClassScene extends Phaser.Scene {
   /** 职业名、说明和属性都只写 DOM；说明的换行宽度和行高按页面坐标乘当次缩放。 */
   private renderDomText(entry:StoryClass):void{
     const dom=this.ensureDomText();if(!dom)return;
-    dom.title.setText(entry.name).setVisible(true);
-    dom.description.setText(entry.description);
+    const shown=this.app.ui.ready&&!this.app.suspended;
+    this.domShown=shown;
+    dom.title.setText(entry.name).setVisible(shown);
+    dom.description.setText(entry.description).setVisible(shown);
+    dom.descriptionClip.setVisible(shown);
     dom.attributes.forEach(pair=>{pair.name.setVisible(false);pair.value.setVisible(false);});
     entry.attributes.forEach((attribute,index)=>{
       const pair=this.attributeLabels(index);
-      pair.name.setText(attribute.name).setVisible(true);
-      pair.value.setText(String(attribute.value)).setVisible(true);
+      pair.name.setText(attribute.name).setVisible(shown);
+      pair.value.setText(String(attribute.value)).setVisible(shown);
     });
     this.layoutDomText();
   }

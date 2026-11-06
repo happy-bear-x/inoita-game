@@ -49,6 +49,11 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
   private domInstant?:DomLabel;
   private domToast?:DomLabel;
   private domSpeaker?:DomLabel;
+  /** 加载页的标题、状态行与两枚按钮文字；加载背景和进度条仍由 Phaser 画。 */
+  private domLoadingTitle?:DomLabel;
+  private domLoading?:DomLabel;
+  private domLoadingAction?:DomLabel;
+  private domLoadingMenu?:DomLabel;
   private dialogueDomRuns:DomLabel[]=[];
   /** 选项面板的 DOM 文字；提示、说明和每个选项各用一组复用的标签。 */
   private choiceDom?:ChoiceDom;
@@ -66,6 +71,10 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
       this.domInstant=domUi.label('screen','dom-instant',{x:.5,y:0});
       this.domToast=domUi.label('screen','dom-toast',{x:.5,y:0});
       this.domSpeaker=domUi.label('screen','dom-speaker');
+      this.domLoadingTitle=domUi.label('screen','dom-loading-title',{x:.5,y:0}).setVisible(false);
+      this.domLoading=domUi.label('screen','dom-loading',{x:.5,y:0}).setVisible(false);
+      this.domLoadingAction=domUi.label('screen','dom-loading-action',{x:.5,y:.5}).setVisible(false);
+      this.domLoadingMenu=domUi.label('screen','dom-loading-menu',{x:.5,y:.5}).setVisible(false);
       this.layoutDomText();
     }
     this.questPopup=new QuestPopup(this,()=>this.app.ui.ready&&!this.app.ui.suspended,this.app.domUi);
@@ -91,7 +100,7 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     });
     this.input.on('pointerupoutside',(pointer:Phaser.Input.Pointer)=>this.app.ui.cancelPress(pointer.id));
     this.game.canvas.addEventListener('pointercancel',this.cancelInput);this.game.events.once('destroy',()=>this.game.canvas.removeEventListener('pointercancel',this.cancelInput));
-    this.events.once('shutdown',()=>{this.unregisterInput?.();this.unregisterInput=undefined;this.input.keyboard?.off('keydown',this.bridgeKey);this.uiAssets.releaseContent();this.surface.destroy();this.questPopup.destroy();this.baseLease?.release();this.domInstant?.remove();this.domInstant=undefined;this.domToast?.remove();this.domToast=undefined;this.domSpeaker?.remove();this.domSpeaker=undefined;for(const run of this.dialogueDomRuns)run.remove();this.dialogueDomRuns.length=0;this.removeChoiceDom();});
+    this.events.once('shutdown',()=>{this.unregisterInput?.();this.unregisterInput=undefined;this.input.keyboard?.off('keydown',this.bridgeKey);this.uiAssets.releaseContent();this.surface.destroy();this.questPopup.destroy();this.baseLease?.release();this.domInstant?.remove();this.domInstant=undefined;this.domToast?.remove();this.domToast=undefined;this.domSpeaker?.remove();this.domSpeaker=undefined;for(const label of [this.domLoadingTitle,this.domLoading,this.domLoadingAction,this.domLoadingMenu])label?.remove();this.domLoadingTitle=undefined;this.domLoading=undefined;this.domLoadingAction=undefined;this.domLoadingMenu=undefined;for(const run of this.dialogueDomRuns)run.remove();this.dialogueDomRuns.length=0;this.removeChoiceDom();});
     void loadUiImages(this,['/assets/ui/loading-background.webp']).then(lease=>{this.baseLease=lease;this.signature='';this.sync(this.app.ui);}).catch(console.error);
     this.app.storyUI.attach(this);this.sync(this.app.ui);
   }
@@ -128,7 +137,7 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
   }
   private layoutDomText():void{
     const scale=this.surface.root.scaleX||1;
-    this.domInstant?.setStyle({fontSize:`${Math.max(12,24*scale)}px`,color:GOLD});
+    this.domInstant?.setStyle({fontSize:`${Math.max(12,24*scale)}px`,color:GOLD,textShadow:'0 1px 2px rgba(0,0,0,.7)'});
     this.domToast?.setStyle({fontSize:`${Math.max(12,24*scale)}px`,width:`${600*scale}px`,minHeight:`${90*scale}px`,
       padding:`${14*scale}px ${20*scale}px 0`,background:'rgba(16,29,36,.95)',color:'#f5f0df',textAlign:'center',whiteSpace:'pre-wrap'});
   }
@@ -296,7 +305,7 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     const signature=JSON.stringify([ui.mode,ui.loadingState?.label,!!ui.loadingState?.retry,ui.failed,ui.suspended,portrait,cover,defeat,ui.toastMessage,ui.dialogueLine,ui.portraitFile,ui.canSkip,showSkip,ui.choices?.prompt,ui.choices?.description,ui.choices?.options,ui.quest?.definition.id,ui.quest?.kind]);
     if(signature===this.signature){
       if(this.dialogueShell&&bodySignature!==this.dialogueBodySignature){this.dialogueBodySignature=bodySignature;this.renderDialogueBody(ui);}
-      this.progressBar?.setSize(560*progress,5);return;
+      this.progressBar?.setSize(560*progress,5);this.syncLoadingDom(ui,portrait);return;
     }
     this.signature=signature;this.dialogueShell=false;this.resetChoiceDom();
     const v=this.surface;v.clear();v.layout(0);this.dialogueLayout=undefined;this.progressBar=undefined;v.visible(true);
@@ -308,9 +317,8 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     if(portrait){v.rect(0,0,960,640,0x101d24,1);block();v.text('↻',480,160,0,90).setOrigin(.5,0);v.text('横过手机，进入游戏',480,310,0,32).setOrigin(.5,0);v.text('请使用横屏继续',480,370,0,24).setOrigin(.5,0);}
     else if(ui.loadingState){
       const file='/assets/ui/loading-background.webp';if(this.textures.exists(uiTexture(file))){this.cover=this.add.image(this.scale.width/2,this.scale.height/2,uiTexture(file)).setDepth(998.5);const factor=Math.max(this.scale.width/this.cover.width,this.scale.height/this.cover.height);this.cover.setScale(factor).setTint(0xaaaaaa);}
-      block();v.text('艾诺迪亚',480,410,0,42).setOrigin(.5,0);
-      v.text(ui.loadingState.label,480,476,820,22).setOrigin(.5,0);v.rect(200,531,560,5,0xeee2cc,.3);this.progressBar=v.rect(200,531,560*progress,5,0xe2c88d,1);
-      if(ui.loadingState.retry){v.button(ui.loadingState.actionLabel??'重新加载',380,552,200,48,ui.loadingState.retry);if(ui.canReturn)v.button('返回主菜单',26,20,180,48,()=>ui.onMenu?.());}
+      block();v.rect(200,531,560,5,0xeee2cc,.3);this.progressBar=v.rect(200,531,560*progress,5,0xe2c88d,1);
+      if(ui.loadingState.retry){v.button('',380,552,200,48,ui.loadingState.retry);if(ui.canReturn)v.button('',26,20,180,48,()=>ui.onMenu?.());}
     }else if(defeat){
       block();v.frame(this.app.storyInterface?.assets??{},142,142,676,356);
       v.text('队伍全员阵亡',480,172,0,34,'#e4c58b').setOrigin(.5,0);
@@ -416,5 +424,27 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     }
     this.dialogueBodySignature=bodySignature;
     v.layout(0);
+    this.syncLoadingDom(ui,portrait);
+  }
+  /** 加载页文字改由 DOM 输出：背景、进度条和按钮皮肤仍留在画布上。 */
+  private syncLoadingDom(ui:GameUI,portrait:boolean):void{
+    const state=ui.loadingState,show=!!state&&!portrait;
+    this.domLoadingTitle?.setVisible(show);
+    this.domLoading?.setVisible(show);
+    this.domLoadingAction?.setVisible(show&&!!state?.retry);
+    this.domLoadingMenu?.setVisible(show&&!!state?.retry&&ui.canReturn);
+    if(!show||!state)return;
+    const scale=this.surface.root.scaleX||1,title=this.surfacePoint(480,410),label=this.surfacePoint(480,476);
+    this.domLoadingTitle?.setText('艾诺迪亚').setPosition(title.x,title.y)
+      .setStyle({fontSize:`${42*scale}px`,color:GOLD});
+    this.domLoading?.setText(state.label).setPosition(label.x,label.y)
+      .setStyle({fontSize:`${22*scale}px`,color:GOLD,width:`${820*scale}px`,whiteSpace:'pre-wrap',
+        overflowWrap:'break-word',textAlign:'center',lineHeight:`${27*scale}px`});
+    const action=this.surfacePoint(480,576);
+    this.domLoadingAction?.setText(state.actionLabel??'重新加载').setPosition(action.x,action.y)
+      .setStyle({fontSize:`${20*scale}px`,color:GOLD});
+    const menu=this.surfacePoint(116,44);
+    this.domLoadingMenu?.setText('返回主菜单').setPosition(menu.x,menu.y)
+      .setStyle({fontSize:`${20*scale}px`,color:GOLD});
   }
 }
