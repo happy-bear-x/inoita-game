@@ -13,6 +13,7 @@ export class Hud {
   private readonly owner: Phaser.Scene;
   private readonly layer: Phaser.GameObjects.Layer;
   private readonly visibility = new Map<Phaser.GameObjects.Container, boolean>();
+  private readonly domListeners = new Set<(active: boolean) => void>();
 
   constructor(owner: Phaser.Scene) {
     this.owner = owner;
@@ -40,14 +41,21 @@ export class Hud {
   }
   private refresh(): void {
     for (const [object, visible] of this.visibility) this.applyVisibility(object, visible);
+    for (const listener of this.domListeners) listener(this.owner.sys.isActive());
     if(this.owner.sys.isActive()){this.scene.scene.bringToTop();if(this.owner.scene.manager.keys['formal-ui'])this.owner.scene.bringToTop('formal-ui');}
   }
   layout(width: number, height: number): void {
     this.scene.cameras.main.setSize(width, height);
     this.refresh();
   }
+  watchVisibility(listener: (active: boolean) => void): () => void {
+    this.domListeners.add(listener);
+    listener(this.owner.sys.isActive());
+    return () => { this.domListeners.delete(listener); };
+  }
   destroy(): void {
     for (const event of ['sleep', 'wake', 'pause', 'resume']) this.owner.events.off(event, this.refresh, this);
-    this.visibility.clear(); this.layer.destroy(true);
+    for (const listener of this.domListeners) listener(false);
+    this.domListeners.clear(); this.visibility.clear(); this.layer.destroy(true);
   }
 }

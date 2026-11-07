@@ -128,3 +128,6 @@ const browserImageLoader: DomImageLoader = {
     return await response.json() as AtlasData;
   }
 };
+
+/** 同一页面的所有屏幕组件共享图片和图集下载。 */
+export const domAssets = new DomAssets();

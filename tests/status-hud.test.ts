@@ -3,8 +3,6 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { registerHooks } from 'node:module';
 import { boundedHealth,buffIconBlinking,buffIconPosition,gaugeFillWidth,memberColumnLayout,memberPanelIds,targetNameAnchor,targetNameColor } from '../src/domain/status-hud.ts';
-import type { PartySnapshot } from '../src/domain/party.ts';
-import type { Hud } from '../src/rendering/hud.ts';
 import { parseStatusHud,parseBattle,parseCharacterStats,parseItemCatalog,parseCampaign,parseStoryClasses } from '../src/application/content-validation.ts';
 import { BattleCharacter } from '../src/domain/character-stats.ts';
 import { EnemyRoster } from '../src/domain/enemy-roster.ts';
@@ -234,77 +232,46 @@ test('the member column stacks below the main panel and never reaches the swap b
  * 下一次重排（切图重建、旋转、从后台回来都会走到 `Hud.refresh`）会把旧值贴回去——表现为
  * 剧情演出、对白和菜单期间本该隐藏的佣兵面板又冒出来，而且一直留到演出结束。
  */
-test('member panels hide and return only through the HUD registry', async () => {
-  class Node {
-    x=0;y=0;width=0;height=0;visible=true;scaleX=1;scaleY=1;list:Node[]=[];style?:{color?:string;fontSize?:number};
-    textureKey?:string;tint?:number;
-    setOrigin(){return this;}setDisplaySize(){return this;}setSize(){return this;}
-    setPosition(x:number,y:number){this.x=x;this.y=y;return this;}setX(x:number){this.x=x;return this;}
-    setScale(x:number,y=x){this.scaleX=x;this.scaleY=y;return this;}
-    setVisible(value:boolean){this.visible=value;return this;}
-    setTexture(key:string){this.textureKey=key;return this;}setTint(tint:number){this.tint=tint;return this;}setCrop(){return this;}setText(){return this;}
-    setColor(value:string){if(this.style)this.style.color=value;return this;}
-    setData(){return this;}getData(){return undefined;}
-    setInteractive(){return this;}disableInteractive(){return this;}on(){return this;}
-    add(child:Node|Node[]){for(const value of Array.isArray(child)?child:[child])this.list.push(value);return this;}
-    destroy(){}
-  }
-  const node=(x=0,y=0)=>Object.assign(new Node(),{x,y});
-  const text=(x=0,y=0,_value='',style?:{color?:string;fontSize?:number})=>Object.assign(node(x,y),{style});
-  const scene={
-    add:{container:node,image:node,text},
-    textures:{get:()=>({setFilter(){}}),exists:()=>true},
-    game:{canvas:{getBoundingClientRect:()=>({x:0,y:0,width:1024,height:640})}},
-    scale:{width:1024,height:640},
+test('DOM HUD visibility follows owner pause, wake, resize and destruction', async () => {
+  let active = true, destroyed = false;
+  const events = new Map<string, { callback: () => void; context: unknown }>();
+  const controlScene = {
+    add: { layer: () => ({ add() {}, destroy() { destroyed = true; } }) },
+    scene: { bringToTop() {} }, cameras: { main: { setSize() {} } }
   };
-  // 真实 Hud 在这里只需要两件事：登记可见性，以及重排时把登记值贴回对象。
-  const registered:Node[]=[],desired=new Map<Node,boolean>();
-  const hud={
-    scene,
-    add:(object:Node)=>{registered.push(object);desired.set(object,object.visible);return object;},
-    setVisible:(object:Node,visible:boolean)=>{desired.set(object,visible);object.setVisible(visible);},
-    refresh:()=>{for(const [object,visible] of desired)object.setVisible(visible);},
+  const owner = {
+    scene: { get: () => controlScene, manager: { keys: {} } },
+    sys: { isActive: () => active },
+    events: {
+      on(event: string, callback: () => void, context: unknown) { events.set(event, { callback, context }); },
+      off(event: string) { events.delete(event); }
+    }
   };
-  const previous=Object.getOwnPropertyDescriptors(globalThis);
-  Object.defineProperties(globalThis, {
-    document: { value: { getElementById: (id:string) => id === 'safe-area' ? {} : null }, configurable: true },
-    getComputedStyle: { value: () => ({ paddingLeft:'0',paddingRight:'0',paddingTop:'0',paddingBottom:'0' }), configurable: true },
-  });
-  const hook=registerHooks({resolve(specifier,context,next){
-    return specifier==='phaser'?{shortCircuit:true,url:`data:text/javascript,${encodeURIComponent(
-      'export default {BlendModes:{ADD:1},Geom:{Rectangle:class{static Contains(){return true;}}},Textures:{FilterMode:{LINEAR:1}}};'
-    )}`}:next(specifier,context);
-  }});
+  const hook = registerHooks({ resolve(specifier, context, next) {
+    return specifier === 'phaser' ? { shortCircuit: true, url: 'data:text/javascript,export default {}' } : next(specifier, context);
+  } });
   try {
-    const { StatusHud } = await import('../src/ui/phaser/status-hud.ts');
-    const player={level:1,health:100,maxHealth:100,mana:50,maxMana:100,experience:0,nextLevelExperience:100};
-    const party=()=>({active:['player','mercenary'],living:['player'],rosterSlots:[null],reserves:[],
-      controlled:'player',members:[{id:'mercenary',...player}]}) as unknown as PartySnapshot;
-    const status=new StatusHud(hud as unknown as Hud,skin,()=>player,()=>()=>{},party,undefined,
-      id=>id==='mercenary'?'assets/ui/status/mercenary-test.png':undefined);
-    // 前两个登记项是大面板与目标面板，其余都是队友面板。
-    const panels=registered.slice(2);
-    const fallenPortrait=panels[0]!.list.find(node=>node.tint===0x777777);
-    assert.ok(fallenPortrait,'阵亡佣兵仍显示自己的头像');
-    assert.equal(fallenPortrait.textureKey,'interface:assets/ui/status/mercenary-test.png','没有换成通用 down 头像');
-    assert.equal(fallenPortrait.tint,0x777777,'阵亡状态只压暗头像');
-    assert.equal(panels.length,skin.member.slots.length,'队友面板全部登记在 Hud 里');
-    // 只有第一块有队员，其余是空槽。
-    status.setTarget({id:'enemy',name:'狼',level:9,health:10,maxHealth:10,sceneLevel:false});
-    status.setTarget({id:'weak',name:'弱敌',level:-7,health:10,maxHealth:10,sceneLevel:false});
-    status.setVisible(true);
-    assert.equal(panels[0]!.visible,true,'有队员时队友面板显示');
-    hud.refresh();
-    assert.equal(panels[0]!.visible,true,'重排后仍然显示');
-    status.setVisible(false);
-    assert(panels.every(panel=>!panel.visible),'演出、对白和菜单期间队友面板隐藏');
-    hud.refresh();
-    assert(panels.every(panel=>!panel.visible),'重排后队友面板不会冒出来');
-  } finally {
-    hook.deregister();
-    Object.defineProperties(globalThis, {
-      document: { ...previous.document, configurable: true },
-      getComputedStyle: { ...previous.getComputedStyle, configurable: true },
-    });
-  }
+    const { Hud } = await import('../src/rendering/hud.ts');
+    const hud = new Hud(owner as unknown as Phaser.Scene);
+    const values: boolean[] = [];
+    const unsubscribe = hud.watchVisibility(value => values.push(value));
+    assert.deepEqual(values, [true], '登记时立即应用所属场景的状态');
+    active = false;
+    const pause = events.get('pause')!; pause.callback.call(pause.context);
+    assert.equal(values.at(-1), false, '暂停场景会同时隐藏 DOM 组件');
+    hud.layout(960, 640);
+    assert.equal(values.at(-1), false, '重排不会让暂停场景的组件重新出现');
+    active = true;
+    const wake = events.get('wake')!; wake.callback.call(wake.context);
+    assert.equal(values.at(-1), true);
+    unsubscribe();
+    const count = values.length;
+    active = false; pause.callback.call(pause.context);
+    assert.equal(values.length, count, '关闭组件后不再收到场景通知');
+    const remaining: boolean[] = [];
+    hud.watchVisibility(value => remaining.push(value));
+    hud.destroy();
+    assert.equal(remaining.at(-1), false);
+    assert.equal(events.size, 0); assert.equal(destroyed, true);
+  } finally { hook.deregister(); }
 });

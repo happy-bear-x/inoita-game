@@ -5,6 +5,11 @@ import { DomAssets } from '../src/ui/dom/assets.ts';
 import { ActionPressGate } from '../src/ui/action-press-gate.ts';
 import { DomActionControls } from '../src/ui/dom/action-controls.ts';
 import { CONTROL_PARTS, type ControlSkin } from '../src/domain/control-skin.ts';
+import fs from 'node:fs';
+import { DomStatusHud } from '../src/ui/dom/status-hud.ts';
+import type { StatusHudSkin } from '../src/domain/status-hud.ts';
+import type { StoryPlayerState } from '../src/domain/story-interface.ts';
+import type { PartyActiveSnapshot } from '../src/domain/party.ts';
 
 class Element extends EventTarget {
   style: Record<string, string> = {};
@@ -124,5 +129,47 @@ test('DOM wheel dispatches skills and items, respects cooldowns and cancels held
     wheel.destroy();
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(assets.size, 0); assert.deepEqual(errors, []);
+  } finally { h.restore(); }
+});
+
+test('DOM status panels switch the controlled portrait, retain dead member artwork and release subscriptions', async () => {
+  const h = harness();
+  try {
+    const skin = JSON.parse(fs.readFileSync(new URL('../public/content/status-hud.json', import.meta.url), 'utf8')) as StatusHudSkin;
+    const assets = new DomAssets({ image: async () => ({ width: 300, height: 300 }), atlas: async url => JSON.parse(fs.readFileSync(new URL(`../public/${url}`, import.meta.url), 'utf8')) });
+    const hero = { level: 5, health: 90, maxHealth: 100, mana: 50, maxMana: 100, experience: 20, nextLevelExperience: 50 } as StoryPlayerState;
+    const ally = { ...hero, id: 'ally', level: 7, health: 0 };
+    let controlled = 'player', refresh = () => {}, unsubscribed = 0, focused = 0;
+    const selected: string[] = [], errors: unknown[] = [];
+    const view = new DomStatusHud(h.parent, skin, {
+      readPlayer: () => controlled === 'player' ? hero : ally,
+      readHero: () => hero,
+      subscribe: callback => { refresh = callback; return () => { unsubscribed++; }; },
+      readParty: () => ({ controlled, active: ['player', 'ally'], living: ['player'], members: [ally] }) as unknown as PartyActiveSnapshot,
+      portraitFor: id => `${id}.png`, onSelect: id => selected.push(id), onFocus: () => { focused++; }
+    }, error => errors.push(error), assets);
+    view.layout({ width: 960, height: 640, insets: { top: 0, right: 0, bottom: 0, left: 0 } });
+    view.setVisible(true);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const roots = (view.element as unknown as Element).children;
+    const all = (node: Element): Element[] => [node, ...node.children.flatMap(all)];
+    const playerImages = all(roots[0]).filter(node => node.src.endsWith('player.png'));
+    const allyImages = all(roots[1]).filter(node => node.src.endsWith('ally.png'));
+    assert.equal(playerImages.length, 1); assert.equal(allyImages.length, 1);
+    const portraitBox = roots[1].children.find(node => node.children.includes(allyImages[0]))!;
+    assert.equal(portraitBox.style.filter, 'brightness(.47)');
+    pointer(roots[1] as unknown as HTMLElement, 'pointerdown', 1); pointer(roots[1] as unknown as HTMLElement, 'pointerup', 1);
+    pointer(roots[0] as unknown as HTMLElement, 'pointerdown', 2); pointer(roots[0] as unknown as HTMLElement, 'pointerup', 2);
+    assert.deepEqual(selected, ['ally']); assert.equal(focused, 1);
+    controlled = 'ally'; refresh();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(all(roots[0]).filter(node => node.src.endsWith('ally.png')).length, 1);
+    assert.equal(all(roots[1]).filter(node => node.src.endsWith('player.png')).length, 1);
+    view.setTarget({ id: 'boss', name: '敌人', health: 100, maxHealth: 200, level: 8, sceneLevel: false, specialRank: 1 });
+    const target = roots.at(-1)!;
+    assert.equal(target.hidden, false);
+    view.setVisible(false); assert.equal(target.hidden, true); assert.equal(roots[0].hidden, true);
+    view.destroy(); await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(unsubscribed, 1); assert.equal(assets.size, 0); assert.deepEqual(errors, []);
   } finally { h.restore(); }
 });

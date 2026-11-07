@@ -28,7 +28,7 @@ export class DomComponent {
     Object.assign(this.element.style, { left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.width}px`, height: `${rect.height}px` });
     return this;
   }
-  visible(shown: boolean): this { this.element.hidden = !shown; return this; }
+  visible(shown: boolean): this { if (this.element.hidden === shown) this.element.hidden = !shown; return this; }
   destroy(): void {
     if (this.signal.aborted) return;
     this.controller.abort();

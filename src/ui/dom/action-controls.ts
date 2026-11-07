@@ -5,7 +5,7 @@ import { SHORTCUT_SLOT_COUNT } from '../../domain/shortcut-bar.ts';
 import { CONTROL_SIZES, resolveControlLayout, type ControlViewport, type ControlLayoutOverrides, type ControlId } from '../control-layout.ts';
 import { SLOT_ICON_SIZE, ITEM_ICON_SIZE, type ShortcutSlot } from '../shortcut-view.ts';
 import { ActionPressGate } from '../action-press-gate.ts';
-import { DomAssets } from './assets.ts';
+import { domAssets, type DomAssets } from './assets.ts';
 import { DomButton, DomComponent, DomImage } from './components.ts';
 
 interface Control {
@@ -35,7 +35,7 @@ export class DomActionControls extends DomComponent {
   private readonly skin: ControlSkin;
   private readonly handlers: ActionControlsHandlers;
   private readonly failed: (error: unknown) => void;
-  constructor(parent: HTMLElement, skin: ControlSkin, handlers: ActionControlsHandlers, failed: (error: unknown) => void, assets = new DomAssets()) {
+  constructor(parent: HTMLElement, skin: ControlSkin, handlers: ActionControlsHandlers, failed: (error: unknown) => void, assets = domAssets) {
     super(parent); this.skin = skin; this.handlers = handlers; this.failed = failed; this.assets = assets;
     Object.assign(this.element.style, { inset: '0', width: '100%', height: '100%' });
     this.attack = this.control(CONTROL_SIZES.attack.width, [skin.button], skin['button-pressed'], () => handlers.attack(), CONTROL_SIZES.attack.height);
