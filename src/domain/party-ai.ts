@@ -74,6 +74,12 @@ const PARTY_CHASE_LEASH_PX = 200;
 const PARTY_TARGET_STICKY_MS = 2000;
 /** 追击这么久没有位移，就放弃当前目标。 */
 const PARTY_CHASE_STUCK_MS = 2000;
+/** 两名伙伴的中心距小于这个值就算叠在一起，需要按槽位让开。 */
+const PARTY_ALLY_CLEAR_PX = 12;
+/** 已经站到目标对应一侧这么远，才算让开到位。 */
+const PARTY_FLANK_SIDE_PX = 4;
+/** 侧翼锚点走不过去时，先按普通接敌打一阵，避免反复重算。 */
+const PARTY_FLANK_RETRY_MS = 2000;
 /** 近战/远程分界：攻击距离超过这个值的伙伴站后排。 */
 const PARTY_RANGED_RANGE_UNITS = 6;
 /** 技能尝试顺序：保命/辅助先于输出。频率和冷却仍然照旧。 */
@@ -103,6 +109,10 @@ export class PartyController {
   private path:Point[]=[];
   /** 跨帧推进的寻路搜索；每帧只领一段预算，不能在预算用完时丢掉重来。 */
   private search?:ReturnType<typeof createPathSearch>;
+  /** 当前搜索是否在找战斗侧翼锚点；找不到时退回普通的攻击范围目标。 */
+  private flanking=false;
+  /** 侧翼锚点不可达后的冷静期，期间只按普通攻击范围接敌。 */
+  private flankFailedUntil=0;
   /** 跟随队长时的最近一次真实位移，用来判断是不是一直站着。 */
   private followProgress?:Point;
   private followProgressAt=0;
@@ -136,7 +146,7 @@ export class PartyController {
     // 搜索持有的是旧场地的闭包，读档后必须重新开始。
     this.search=undefined;this.followProgress=undefined;this.followProgressAt=0;
     this.chaseProgress=undefined;this.chaseRecoveryUntil=0;this.targetId=undefined;this.targetSince=0;
-    this.nextRegroupAt=0;
+    this.nextRegroupAt=0;this.flankFailedUntil=0;
   }
   targetRemoved(targetId:string):void {
     this.combatController.targetRemoved(targetId);
@@ -145,7 +155,7 @@ export class PartyController {
     this.clearRoute();
   }
   cancel():void {this.combatController.cancel(true);this.clearRoute();this.targetId=undefined;this.chaseProgress=undefined;
-    this.chaseRecoveryUntil=0;this.nextRegroupAt=0;this.accumulator=0;this.followProgress=undefined;this.followProgressAt=0;}
+    this.chaseRecoveryUntil=0;this.nextRegroupAt=0;this.flankFailedUntil=0;this.accumulator=0;this.followProgress=undefined;this.followProgressAt=0;}
   disable():void {this.cancel();}
   reset():void {this.cancel();this.combatController.reset();}
   dispose():void {this.cancel();this.disposed=true;this.combatController.dispose();}
@@ -272,7 +282,7 @@ export class PartyController {
   }
   private chase(actor:Combatant,target:Combatant):void {
     const range=this.port.attackRange();
-    if(attackDistance(actor.position,actor.bounds,target.position,target.bounds)<=range){
+    if(attackDistance(actor.position,actor.bounds,target.position,target.bounds)<=range&&!this.needsFlank(actor,target)){
       this.chaseProgress=undefined;this.clearRoute();
       this.combatController.requestTarget(target.id);return;
     }
@@ -282,6 +292,50 @@ export class PartyController {
     }
     if(this.trackChaseProgress(actor,target.id))return;
     this.followToTarget(actor,target,range);
+  }
+  /**
+   * 追击已有目标时还没到自己的一侧；两名伙伴挤在同一点就按槽位绕开。
+   * 只有真的叠在一起才让位，单独一名佣兵不会为了站位绕圈。
+   */
+  private needsFlank(actor:Combatant,target:Combatant):boolean {
+    if(this.clock<this.flankFailedUntil)return false;
+    const leaderId=this.port.leader()?.id;
+    const crowded=this.port.candidates().some(other=>other.id!==actor.id&&other.id!==leaderId
+      &&other.team===actor.team&&targetDistance(other.position,actor.position)<PARTY_ALLY_CLEAR_PX);
+    if(!crowded)return false;
+    const anchor=this.combatAnchor(actor,target);
+    return !!anchor&&!this.onAssignedSide(actor,target,anchor);
+  }
+  /**
+   * 战斗侧翼锚点：以队长到目标的连线为轴，上阵槽位 0 站一侧、槽位 1 站另一侧。
+   * 同时包住目标和队员后，两名伙伴的落点会分开，不会在攻击距离边缘挤成一点。
+   */
+  private combatAnchor(actor:Combatant,target:Combatant):{point:Point;side:1|-1;normal:Point}|undefined {
+    const slot=this.port.followSlot?.();
+    if(slot===undefined)return undefined;
+    const origin=this.port.leader()??actor;
+    let dx=target.position.x-origin.position.x,dy=target.position.y-origin.position.y;
+    if(Math.hypot(dx,dy)<8){
+      dx=target.position.x-actor.position.x;dy=target.position.y-actor.position.y;
+    }
+    const length=Math.hypot(dx,dy);
+    if(length<.5)return undefined;
+    const normal={x:-dy/length,y:dx/length};
+    const side:1|-1=slot===1?1:-1;
+    // 锚点必须落在攻击距离内，否则走到锚点也打不到，会在目标外侧停住。
+    // 从偏外的位置往回收，取仍能攻击的最远点，两名伙伴的间距因此尽量大。
+    const range=this.port.attackRange();
+    const pointAt=(radius:number)=>({x:target.position.x+normal.x*radius*side,
+      y:target.position.y+normal.y*radius*side});
+    let radius=Math.max(24,range*8+8);
+    while(radius>16&&attackDistance(pointAt(radius),actor.bounds,target.position,target.bounds)>range)radius-=4;
+    if(attackDistance(pointAt(radius),actor.bounds,target.position,target.bounds)>range)return undefined;
+    return {side,normal,point:pointAt(radius)};
+  }
+  private onAssignedSide(actor:Combatant,target:Combatant,
+    anchor:{side:1|-1;normal:Point}):boolean {
+    const dx=actor.position.x-target.position.x,dy=actor.position.y-target.position.y;
+    return (dx*anchor.normal.x+dy*anchor.normal.y)*anchor.side>PARTY_FLANK_SIDE_PX;
   }
   /** 追击或自动接近时，连续一段时间没有真实位移就放弃当前目标。 */
   private trackChaseProgress(actor:Combatant,targetId:string):boolean {
@@ -392,14 +446,19 @@ export class PartyController {
     const next=this.nextWaypoint();
     if(next)this.port.followPath(this.nextWaypoint);else this.port.stop();
   }
-  private beginSearch(actor:Combatant,destination:Point,range:number,granted:number,target?:Combatant):void {
+  private beginSearch(actor:Combatant,destination:Point,range:number,granted:number,
+    target?:Combatant,flank=true):void {
     this.nextPathAt=this.clock+PARTY_REPATH_INTERVAL_MS;this.destination={...destination};
     const canStand=(point:Point)=>this.port.canStand(point);
+    const anchor=target&&flank?this.combatAnchor(actor,target):undefined;
+    this.flanking=!!anchor;
     const radius=target?Math.hypot(actor.bounds.width+target.bounds.width,actor.bounds.height+target.bounds.height)+range*8:8;
     this.search=createPathSearch(actor.position,{bounds:this.port.navigationBounds(),canStand,
-      isGoal:point=>canStand(point)&&(target
-        ?attackDistance(point,actor.bounds,target.position,target.bounds)<=range
-        :targetDistance(point,destination)<=PATH_GRID_SIZE),
+      isGoal:point=>canStand(point)&&(anchor
+        ?targetDistance(point,anchor.point)<=PATH_GRID_SIZE
+        :target
+          ?attackDistance(point,actor.bounds,target.position,target.bounds)<=range
+          :targetDistance(point,destination)<=PATH_GRID_SIZE),
       heuristic:point=>Math.max(0,targetDistance(point,destination)-radius)});
     this.stepSearch(actor,granted);
   }
@@ -412,7 +471,21 @@ export class PartyController {
     const result=search.step(granted);
     if(result.status==='pending')return;
     this.search=undefined;
-    if(result.status==='unreachable'){this.path=[];this.nextPathAt=this.clock+PARTY_FAILED_PATH_MS;return;}
+    if(result.status==='unreachable'){
+      this.path=[];
+      // 侧翼锚点可能落在墙里或目标背后过不去：退回普通攻击范围目标，不能因此站着不动。
+      const target=this.destinationTarget?this.port.actor(this.destinationTarget):undefined;
+      const destination=this.destination,range=this.destinationRange;
+      if(this.flanking&&target&&destination&&range!==undefined){
+        this.flanking=false;
+        this.flankFailedUntil=this.clock+PARTY_FLANK_RETRY_MS;
+        // 这一帧的预算已经花在失败的侧翼搜索上；普通退路从下一帧继续领预算。
+        this.beginSearch(actor,destination,range,0,target,false);
+        return;
+      }
+      this.flanking=false;
+      this.nextPathAt=this.clock+PARTY_FAILED_PATH_MS;return;
+    }
     // 搜索跨了几帧，角色可能被其他系统挪过；从离当前位置最近的点继续。
     let start=0,nearest=Infinity;
     for(let index=0;index<result.path.length;index++){
@@ -437,7 +510,7 @@ export class PartyController {
     const next=this.path[0];return next&&canTraverse(actor.position,next,point=>this.port.canStand(point))?next:undefined;
   };
   private clearRoute(stop=true):void {
-    this.path=[];this.search=undefined;this.destination=undefined;
+    this.path=[];this.search=undefined;this.flanking=false;this.destination=undefined;
     this.destinationTarget=undefined;this.destinationRange=undefined;this.nextPathAt=0;
     if(stop)this.port.stop();
   }

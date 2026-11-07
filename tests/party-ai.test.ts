@@ -5,7 +5,7 @@ import {readFileSync} from 'node:fs';
 import {PartyController,partySkillThreshold,
   type PartyPort,type PartySkillKind} from '../src/domain/party-ai.ts';
 import {CombatController,type ActionPlayback,type Combatant} from '../src/domain/combat.ts';
-import {resolveBasicAttack,targetDistance} from '../src/domain/basic-attack.ts';
+import {attackDistance,resolveBasicAttack,targetDistance} from '../src/domain/basic-attack.ts';
 import type {BattleCatalog,EnemyPlayableSkill} from '../src/domain/battle.ts';
 import type {Point} from '../src/domain/navigation.ts';
 import {followOffset} from '../src/domain/party-placement.ts';
@@ -98,6 +98,65 @@ test('follow slots keep two companions on opposite sides',()=>{
   const left=setup();left.setSlot(0);left.ai.update(60);
   const right=setup();right.setSlot(1);right.ai.update(60);
   assert.notDeepEqual(left.ai.captureState().destination,right.ai.captureState().destination);
+});
+
+test('two companions in different slots attack a shared target from opposite sides',()=>{
+  const approach=(slot:0|1)=>{
+    const run=setup();run.setSlot(slot);run.member.position={x:60,y:128};
+    run.enemy.position={x:240,y:128};run.focus('enemy');
+    for(let frame=0;frame<400;frame++)run.advance();
+    return run;
+  };
+  const left=approach(0),right=approach(1);
+  // 两名伙伴都进入攻击距离，但落点在目标两侧，不再挤到同一个点。
+  assert.ok(attackDistance(left.member.position,box,left.enemy.position,box)<=4,'左侧伙伴进入攻击范围');
+  assert.ok(attackDistance(right.member.position,box,right.enemy.position,box)<=4,'右侧伙伴进入攻击范围');
+  assert.ok(left.member.position.y<left.enemy.position.y,'槽位 0 落在目标一侧');
+  assert.ok(right.member.position.y>right.enemy.position.y,'槽位 1 落在目标另一侧');
+});
+
+test('two companions stacked on one target separate to their own sides',()=>{
+  const leader:Combatant={id:'player',team:'party',position:{x:128,y:128},bounds:box};
+  const enemy:Combatant={id:'enemy',team:'enemy',position:{x:240,y:128},bounds:box};
+  const members:Combatant[]=[0,1].map(index=>({id:`companion-${index}`,team:'party',
+    position:{x:80,y:124+index*8},bounds:box}));
+  const actors=new Map([leader,enemy,...members].map(actor=>[actor.id,actor]));
+  const paths=new Map<string,()=>Point|undefined>();
+  const ais=members.map((member,index)=>{
+    const port:PartyPort={cooldowns:new CombatCooldownStore(()=>0).forActor(member.id),
+      actor:id=>actors.get(id),candidates:()=>[...actors.values()],leader:()=>leader,
+      leaderFacing:()=> 'east',followSlot:()=>index as 0|1,focusTarget:()=>'enemy',inCombat:()=>true,
+      facing:()=> 'east',face:()=>{},navigationBounds:()=>({x:0,y:0,width:400,height:400}),
+      canStand:point=>point.x>=0&&point.x<=400&&point.y>=0&&point.y<=400,
+      followPath:next=>{paths.set(member.id,next);},moveToward:()=>assert.fail('party movement must use its navigable path'),
+      stop:()=>{paths.delete(member.id);},relocate:point=>{member.position={...point};},
+      skills:()=>[],skillKind:()=>undefined,vitals:id=>id==='player'?{health:100,maxHealth:100}:undefined,
+      attacking:()=>false,attackRange:()=>4,play:()=>()=>{},frame:()=>{},clearEffects:()=>{}};
+    return new PartyController(member.id,port,new CombatController(member.id,
+      resolveBasicAttack(catalog,catalog.classes[0]),port));
+  });
+  for(let frame=0;frame<400;frame++){
+    for(const [id,next] of paths){
+      const point=next();if(!point)continue;
+      const member=actors.get(id) as Combatant;member.position={...point};
+    }
+    for(const ai of ais)ai.update(60);
+  }
+  const [left,right]=members;
+  assert.ok(attackDistance(left.position,box,enemy.position,box)<=4&&attackDistance(right.position,box,enemy.position,box)<=4,
+    '两名伙伴都进入攻击范围');
+  assert.ok(targetDistance(left.position,right.position)>16,'两名伙伴不再叠在同一个点');
+  assert.ok(left.position.y<enemy.position.y&&right.position.y>enemy.position.y,'各自站在目标两侧');
+});
+
+test('an unreachable flank falls back to the normal attack approach',()=>{
+  const run=setup();run.setSlot(0);run.member.position={x:60,y:128};
+  run.enemy.position={x:240,y:128};run.focus('enemy');
+  // 目标北侧的侧翼锚点整片不可站；西侧的普通接敌路线仍然可走。
+  run.port.canStand=point=>point.x>=0&&point.x<=400&&point.y>=100&&point.y<=400;
+  for(let frame=0;frame<400;frame++)run.advance();
+  assert.ok(attackDistance(run.member.position,box,run.enemy.position,box)<=4,'退回普通追击后仍能接敌');
+  assert.equal(run.plays.at(-1)?.target?.id,'enemy');
 });
 
 test('companions follow to their stance point when no enemy is nearby',()=>{
