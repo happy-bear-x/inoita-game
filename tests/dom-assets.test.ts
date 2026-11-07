@@ -1,0 +1,69 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { DomAssets, type DomImageLoader } from '../src/ui/dom/assets.ts';
+
+test('shared image loading survives one owner cancelling and releases on the last owner', async () => {
+  let finish!: (size: { width: number; height: number }) => void;
+  let loads = 0;
+  let sharedSignal!: AbortSignal;
+  const loader: DomImageLoader = {
+    image: (_url, signal) => { loads++; sharedSignal = signal; return new Promise(resolve => { finish = resolve; }); },
+    atlas: async () => ({ frames: {} })
+  };
+  const assets = new DomAssets(loader), first = new AbortController(), second = new AbortController();
+  const a = assets.acquire('assets/example.png', first.signal);
+  const b = assets.acquire('/assets/example.png', second.signal);
+  const rejected = assert.rejects(a, { name: 'AbortError' });
+  first.abort();
+  await rejected;
+  assert.equal(loads, 1);
+  assert.equal(sharedSignal.aborted, false);
+  finish({ width: 100, height: 80 });
+  const lease = await b;
+  assert.deepEqual(lease.source.frame, { x: 0, y: 0, width: 100, height: 80 });
+  lease.release(); lease.release();
+  assert.equal(sharedSignal.aborted, true);
+  assert.equal(assets.size, 0);
+});
+
+test('different icon frames share the atlas image and metadata', async () => {
+  let images = 0, metadata = 0;
+  const assets = new DomAssets({
+    image: async () => { images++; return { width: 2048, height: 2048 }; },
+    atlas: async () => { metadata++; return { frames: {
+      'assets/skills/ambush.png': { frame: { x: 12, y: 22, w: 75, h: 75 } },
+      'assets/skills/aimed-shot.png': { frame: { x: 92, y: 22, w: 75, h: 75 } }
+    } }; }
+  });
+  const signal = new AbortController().signal;
+  const [a, b] = await Promise.all([assets.acquire('assets/skills/ambush.png', signal), assets.acquire('assets/skills/aimed-shot.png', signal)]);
+  assert.equal(images, 1); assert.equal(metadata, 1);
+  assert.equal(a.source.url, b.source.url);
+  assert.equal(a.source.frame.x, 12); assert.equal(b.source.frame.x, 92);
+  a.release(); assert.equal(assets.size, 1);
+  b.release(); assert.equal(assets.size, 0);
+});
+
+test('failed preload releases earlier images and permits retry', async () => {
+  let fail = true;
+  const assets = new DomAssets({
+    image: async url => { if (url.endsWith('bad.png') && fail) throw new Error('failed'); return { width: 5, height: 6 }; },
+    atlas: async () => ({ frames: {} })
+  });
+  const signal = new AbortController().signal;
+  await assert.rejects(assets.preloadFiles(['ok.png', 'bad.png'], signal, () => {}), /failed/);
+  assert.equal(assets.size, 0);
+  fail = false;
+  const progress: number[] = [];
+  const lease = await assets.preloadFiles(['ok.png', 'ok.png', 'bad.png'], signal, value => progress.push(value));
+  assert.deepEqual(progress, [.5, 1]); lease.release(); assert.equal(assets.size, 0);
+});
+
+test('cancellation rejects even while a shared image remains pending', async () => {
+  const assets = new DomAssets({ image: () => new Promise(() => {}), atlas: async () => ({ frames: {} }) });
+  const controller = new AbortController();
+  const pending = assets.acquire('pending.png', controller.signal);
+  const rejected = assert.rejects(pending, { name: 'AbortError' });
+  controller.abort(); await rejected;
+  assert.equal(assets.size, 0);
+});
