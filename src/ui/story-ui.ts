@@ -53,7 +53,7 @@ import { centerModal } from './phaser/modal-placement.ts';
 import { itemResultDetails } from './item-result-details.ts';
 import { itemDescriptionBody } from './item-detail-lines.ts';
 import { slotFrameImage } from './slot-frame.ts';
-import { bagLayout, BAG_DESCRIPTION_WIDTH, DESCRIPTION_PANEL, descriptionActionLayout, descriptionPanel, SIDE_FILTER_TEXT_SIZE } from './bag-layout.ts';
+import { bagLayout, BAG_DESCRIPTION_WIDTH, BAG_OUTER_FRAME, BAG_RAIL, DESCRIPTION_PANEL, descriptionActionLayout, descriptionPanel, SIDE_FILTER_TEXT_SIZE } from './bag-layout.ts';
 import { skillDescriptionParts, skillLearningParts, skillNextLevelPreview } from './skill-detail-lines.ts';
 import { layoutDescriptionText } from './description-text-layout.ts';
 import type { DescriptionTextPart } from '../domain/description-text.ts';
@@ -577,7 +577,10 @@ export class StoryUI {
     return memberArtwork(this.app.menuPanels,this.actor(),member.classId,source);
   }
   private configuration(){return this.selectedMemberId==='player'?this.session!.skills:(this.member() as CompanionMember).skills;}
-  private scroll(name:string,x:number,y:number,w:number,h:number,surface=this.body!,bleed=0):ScrollArea{const scroll=surface.scroll(x,y,w,h,bleed);this.scrollNames.set(name,scroll);return scroll;}
+  private scroll(name:string,x:number,y:number,w:number,h:number,surface=this.body!,bleed=0,
+    bar?:Parameters<UiSurface['scroll']>[5]):ScrollArea{
+    const scroll=surface.scroll(x,y,w,h,bleed,bar);this.scrollNames.set(name,scroll);return scroll;
+  }
   private finishScroll(name:string,scroll:ScrollArea,height:number):void{scroll.setHeight(height);scroll.scrollTop=this.scrollOffsets.get(`${this.page}:${name}`)??0;}
   /**
    * 会话每次通知都会走到这里；只有当前页真正依赖的数据变化时才整页重绘。
@@ -1379,7 +1382,14 @@ export class StoryUI {
     // （`GRPX_FillRectAlpha(..., 0xff000000, 0x3c)`），中间 (129,110,157,157) 那块留空放人物预览；
     // 右栏只有图框——`UIEquip_DrawInvenBackground @0x14aed0` 不铺底，格子直接浮在背景上。
     v.staticLayer('bag',()=>{
-      v.border(panels.assets,85,0,409,431,v.staticRoot);v.border(panels.assets,496,0,395,431,v.staticRoot);
+      v.border(panels.assets,85,0,409,431,v.staticRoot);
+      // 右区块用一个大圆角金框把格子和分类侧栏包在一起。
+      v.border(panels.assets,BAG_OUTER_FRAME.x,BAG_OUTER_FRAME.y,BAG_OUTER_FRAME.width,BAG_OUTER_FRAME.height,v.staticRoot);
+      v.rect(BAG_RAIL.dividerX,BAG_RAIL.y,1,BAG_RAIL.height,0x6b5a37,.8,v.staticRoot);
+      v.rect(BAG_RAIL.x,BAG_RAIL.y,BAG_RAIL.width,BAG_RAIL.height,0x000000,.35,v.staticRoot);
+      for(let index=0;index<6;index++)
+        v.rect(BAG_RAIL.x,BAG_RAIL.rowTop+index*BAG_RAIL.rowStep+BAG_RAIL.rowHeight-1,
+          BAG_RAIL.width,1,0x6b5a37,.5,v.staticRoot);
       for(const [x,y,width,height] of [[24,24,361,86],[24,110,105,157],[286,110,99,157],[24,267,361,140]])
         v.rect(85+x,y,width,height,0x000000,.6,v.staticRoot);
       // 黑底之后叠四块 41×41 的角色图角（组 15 索引 48／49／53／54），画在框外 2 像素处。
@@ -1419,7 +1429,10 @@ export class StoryUI {
     if(showingResult){this.renderItemResult();}
     else if(describing)this.renderItemDetail(this.selectedItem!);
     const layout=bagLayout(),cells=layout.grid;
-    const {slots,slotCount}=inventoryView({all:bag.allCells,...bag.pouchCells},this.filter),grid=this.scroll('inventory',cells.x,cells.y,cells.width,cells.height);
+    const {slots,slotCount}=inventoryView({all:bag.allCells,...bag.pouchCells},this.filter),
+      // 滚动条放到格子右侧的栏间空档，不压最后一列；上下各留 4 像素。
+      grid=this.scroll('inventory',cells.x,cells.y,cells.width,cells.height,this.body!,0,
+        {offset:10,insetY:4,width:4});
     grid.onScroll=()=>this.menuText?.refresh();
     const slotClip={top:cells.y,bottom:cells.y+cells.height};
     for(let index=0;index<slotCount;index++){const slot=slots[index]!,x=index%cells.columns*cells.stride,y=Math.floor(index/cells.columns)*cells.stride;
@@ -1453,30 +1466,28 @@ export class StoryUI {
         style:{size:20,color:layout.money.color,anchorX:0,anchorY:0}});
     });
     const organize=layout.organize;
-    v.button('',organize.x,organize.y,organize.width,organize.height,()=>this.action(()=>bag.organize())).setData('label','整理');
+    // 整理保持在框外原位，但外轮廓改成方角深底 + 金色直边，不再用圆角按钮皮肤。
+    v.rect(organize.x,organize.y,organize.width,organize.height,0x000000,.55)
+      .setStrokeStyle(2,0xe2c88d,.9);
+    v.button('',organize.x,organize.y,organize.width,organize.height,()=>this.action(()=>bag.organize()),{bare:true})
+      .setData('label','整理');
     this.bagTextSpecs.push({key:'bag-organize',text:'整理',x:organize.x+organize.width/2,y:organize.y+organize.height/2,
       style:{size:Math.min(22,organize.height*.42),anchorX:.5,anchorY:.5,width:organize.width-12,align:'center',wrap:'word'}});
-    // 侧边按钮列：位置与尺寸按原版的按钮列（6 个 57×57，起点 885,12），次序见 INVENTORY_SIDE_FILTERS。
-    // 每个按钮画法照 `UIEquip_DrawInvenBackground` + `UIEquip_DrawInvenBag`：常态外框是图组 15 索引 20、
-    // 选中态在同一个位置叠索引 19，两者都是 72×84、落在按钮矩形 −(5,12)。原版按钮里是袋子图标加页号，
-    // 本作这一列改成分类筛选，所以按钮里放分类名。
+    // 分类侧栏：不再使用灰色圆角按钮图，改成外框内的一组平铺行。
+    // 选中行用 2 像素金色竖条 + 略亮底色，文字仍走 DOM。
     const side=layout.sideButtons;
-    // 说明面板盖背包栏时右缘停在 880（BAG_DESCRIPTION_WIDTH），正是这一列外框的左缘，两者不重叠，
-    // 所以这一列始终照画、始终可点——装备详情盖过来时也不收起来。
     INVENTORY_SIDE_FILTERS.forEach((filter,index)=>{
-      const button=v.button('',side.x,side.y+side.offsets[index],side.width,side.height,()=>{this.cancelDrag();this.filter=filter;this.itemResult=undefined;this.selectedItem=undefined;this.itemNotice=undefined;this.scrollOffsets.delete('bag:inventory');this.render();},{bare:true});
-      v.image(panels.assets['page-button-frame'],-5,-12,undefined,undefined,button);
-      if(this.filter===filter)v.image(panels.assets['page-button-selected'],-5,-12,undefined,undefined,button);
+      const rowY=side.y+side.offsets[index];
+      if(this.filter===filter){
+        v.rect(side.x,rowY,side.width,side.height,0xe2c88d,.10);
+        v.rect(side.x,rowY,2,side.height,0xe2c88d,.9);
+      }
+      const button=v.button('',side.x,rowY,side.width,side.height,()=>{this.cancelDrag();this.filter=filter;this.itemResult=undefined;this.selectedItem=undefined;this.itemNotice=undefined;this.scrollOffsets.delete('bag:inventory');this.render();},{bare:true});
       this.bagTextSpecs.push({key:`bag-filter-${filter}`,text:INVENTORY_LABELS[filter],
-        x:side.x+side.width/2,y:side.y+side.offsets[index]+side.height/2,
+        x:side.x+side.width/2,y:rowY+side.height/2,
         style:{size:SIDE_FILTER_TEXT_SIZE,anchorX:.5,anchorY:.5,width:side.width-6,align:'center',wrap:'word'}});
       button.setData('label',INVENTORY_LABELS[filter]);
     });
-    // 原版在第一个／最后一个按钮被选中时，会在这一列的两端各补一块 21×34 的角件
-    // （`UIEquip_DrawInvenBag 0x14b3d8`／`0x14b420`、`UIStore_DrawInvenBagGroup 0x1675b4`／`0x1675fc`），
-    // 画在按钮矩形 (−19,−12) 与 (−19,+38) 上。
-    if(this.filter===INVENTORY_SIDE_FILTERS[0])v.image(panels.assets['column-cap-top'],side.x-19,side.y-12,21,34);
-    if(this.filter===INVENTORY_SIDE_FILTERS.at(-1))v.image(panels.assets['column-cap-bottom'],side.x-19,side.y+side.offsets.at(-1)!+38,21,34);
   }
   /** 说明面板停在点选来源的对面栏：物品在左栏、身上装备在右栏，见 bag-layout 的说明。 */
   private selectItem(id:string,side:'left'|'right'):void{

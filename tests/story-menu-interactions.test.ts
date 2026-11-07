@@ -568,11 +568,11 @@ test('system exposes load alongside save while settings keeps the working displa
   assert.equal(audio.settings.music,0);assert.equal(audio.settings.effects,.25);
 });
 
-test('organise sits above and centered on the all-items category without overlapping its frame', t => {
+test('organise keeps its position above the category rail without overlapping it', t => {
   const f=fixture();t.after(f.cleanup);f.menu.show('bag');
   const organize=f.scene.button('整理'),all=f.scene.button('全部');
-  const organizeArea=organize.input!.hitArea,allArea=all.input!.hitArea;
-  assert.equal(organize.x+organizeArea.width/2,all.x+allArea.width/2);
+  const organizeArea=organize.input!.hitArea;
+  assert.equal(organize.x+organizeArea.width/2,913.5,'整理保持原来的横向位置');
   assert(organize.y+organizeArea.height<=all.y-12,'整理底部让开分类外框上沿');
   assert.equal(organizeArea.width,84);assert.equal(organizeArea.height,44);
   assert(f.scene.canHit(organize));f.scene.click(organize);
@@ -582,14 +582,14 @@ test('organise sits above and centered on the all-items category without overlap
 test('custom menu buttons share native art and keep labels above their pressed layer', t => {
   const f=fixture();t.after(f.cleanup);
   Object.defineProperty(f.app,'audio',{value:{settings:{music:1,effects:1},setVolume(){}}});
-  for(const page of ['system','bag','status'] as const){
+  // 背包页的整理和分类已改用方角/平铺行，不再走共用按钮皮肤。
+  for(const page of ['system','status'] as const){
     f.menu.show(page);
     if(page==='status')f.scene.click(f.scene.button('查看属性加点'));
     const tabLabels=new Set(['人物','背包','技能','队伍','任务','系统','关闭菜单']);
-    const domLabels=page==='bag'||page==='system'||page==='status';
     const commonButton=(node:Display)=>(node.getData('face') as Display|undefined)?.list.length===3;
     const buttons=f.scene.nodes.filter(node=>node.shown&&node.getData('uiAction')&&
-      (domLabels?commonButton(node)&&node.getData('label')&&!tabLabels.has(node.getData('label')):node.getData('labelText')));
+      commonButton(node)&&node.getData('label')&&!tabLabels.has(node.getData('label')));
     assert(buttons.length>0,`${page}包含文字按钮`);
     for(const button of buttons){
       for(const [part,file] of [['face',COMMON_BUTTON.image],['highlight',COMMON_BUTTON.pressed]] as const){
@@ -597,8 +597,7 @@ test('custom menu buttons share native art and keep labels above their pressed l
         assert.equal(layer.list.length,3,'Canvas 按钮由原图左端、中段、右端组成');
         assert(layer.list.every(image=>image.texture.key===`interface:${file}`));
       }
-      if(domLabels)assert.equal(button.getData('labelText'),undefined,`${page}文字改由 DOM 绘制`);
-      else assert.equal(button.list.at(-1),button.getData('labelText'),'文字画在按下亮图上方');
+      assert.equal(button.getData('labelText'),undefined,`${page}文字改由 DOM 绘制`);
     }
     const enabled=buttons.find(button=>f.scene.canHit(button));
     if(enabled){

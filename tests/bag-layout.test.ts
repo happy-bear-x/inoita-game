@@ -35,13 +35,12 @@ test('bag slots draw at the native icon and selection offsets', () => {
   }
 });
 
-test('bag side buttons and money follow the native coordinates', () => {
+test('bag side rows and money follow the shared right frame', () => {
   const layout = bagLayout();
-  // 按钮组是右框子控件，组内 x=389；6 个按钮 57×57，组内 y 偏移读自 0x149d38 起的六次建表。
-  assert.deepEqual(layout.sideButtons, { x:layout.bagFrame.x + 389, y:layout.bagFrame.y + 12,
-    width:57, height:57, offsets:[0, 0x46, 0x8b, 0xd0, 0x115, 0x15b] });
+  // 分类列改为背包外框内部的平铺行：x=869，y=40 起，57×57，步长 59。
+  assert.deepEqual(layout.sideButtons, { x:869, y:40, width:57, height:57,
+    offsets:[0,59,118,177,236,295] });
   assert.equal(layout.sideButtons.offsets.length, 6);
-  assert.deepEqual(layout.sideButtons.offsets, [0, 70, 139, 208, 277, 347]);
   // 文字底板在右框内 (34,368) 宽 323，金额在同一列、上移 3 像素。
   assert.deepEqual(layout.money, { x:530, y:365, plate:{ x:530, y:368, width:323, height:34 },
     stride:103, coin:{ width:44, height:40 }, digit:{ x:44, y:6 }, color:'#ffffff' });
@@ -73,9 +72,9 @@ test('description panel keeps the native panel, scroll, close and menu rects', (
   assert.equal(description.height, leftFrame.height);
   assert.equal(description.y, 0);
   assert.deepEqual([leftFrame.x, bagFrame.x], [85, 496], '物品停在左栏，身上装备停在右栏');
-  // 面板自带底色：内缩 10 取原版（UIDesc_Draw 里 GRPX_FillRectAlpha 的参数 0x3c=60），
-  // 不透明度本作提到 85%——面板要压得住底下那一栏的格子与图标。
-  assert.deepEqual([description.inset, description.background, description.backgroundAlpha], [10, 0x000000, .85]);
+  // 面板自带半透明底色：内缩 10 取原版（UIDesc_Draw 里 GRPX_FillRectAlpha 的参数 0x3c=60），
+  // 压暗页面交给外层黑色遮罩，面板本身保持 35% 黑。
+  assert.deepEqual([description.inset, description.background, description.backgroundAlpha], [10, 0x000000, .35]);
   // 面板内部件都相对面板左上角：物品名、正文滚动区、右上角关闭按钮、底部菜单行。
   // 物品名不在滚动区里：UIDesc_Draw 把它画在 (20,22)，右边留 82 给关闭按钮。
   assert.deepEqual(description.title, { x:20, y:22, right:82, size:24 });

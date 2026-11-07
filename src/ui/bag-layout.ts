@@ -23,7 +23,7 @@
  * `work/bag-items/evidence/`；布局结论见 `work/findings/bag-layout-2026-10-09.md`，
  * 说明面板的矩形与底色见 `work/findings/desc-panel-2026-10-12.md`。
  */
-import { MONEY, SIDE_BUTTON_OFFSETS, SLOT, SLOT_STRIDE } from './item-layout.ts';
+import { MONEY, SLOT, SLOT_STRIDE } from './item-layout.ts';
 import { TEXT_COLORS } from './text-style.ts';
 
 /** 说明面板里正文与标题的颜色：原版说明面板的文字是白色。 */
@@ -44,9 +44,9 @@ interface BagLayout {
   bagFrame:BagRect;
   grid:{x:number; y:number; width:number; height:number; stride:number; columns:number};
   slot:typeof SLOT;
-  /** 右框右侧的按钮列：6 个 57×57，x 为绝对坐标（右框 496 + 组内 389）。 */
+  /** 分类侧栏：右区块外框内的 6 个 57×57 平铺行。 */
   sideButtons:{x:number; y:number; width:number; height:number; offsets:number[]};
-  /** 整理位于分类列正上方，与「全部」水平居中。 */
+  /** 整理保持在背包框上方外侧，使用方角面板。 */
   organize:BagRect;
   money:{x:number; y:number; plate:BagRect; stride:number; coin:{width:number; height:number}; digit:{x:number; y:number}; color:string};
   badge:{x:number; y:number; color:string};
@@ -151,14 +151,24 @@ export function descriptionActionLayout(panelWidth:number, count:number): Descri
 }
 
 /**
- * 说明面板盖住背包栏时的宽度：384 = 右侧分类列外框的左边缘（按钮矩形 389 再往左 5 像素）。
- * 面板到 384 就停，右边那一列 6 个分类按钮仍然看得见、点得到。
+ * 背包右区块：外框把格子与分类侧栏包在一起。
+ * 外框 496..952，内沿 520..928；分类侧栏 869..926，分隔线 867。
+ * 分类行从 y=40 开始，每行 57 高、步长 59；整理仍在框外原位。
+ */
+export const BAG_OUTER_FRAME = { x:496, y:0, width:456, height:431 } as const;
+export const BAG_RAIL = {
+  x:869, y:24, width:57, height:383, dividerX:867, rowTop:40, rowStep:59, rowHeight:57
+} as const;
+
+/**
+ * 说明面板盖住背包栏时的宽度：371 = 侧栏分隔线 867 − 背包左缘 496。
+ * 面板到分隔线就停，分类侧栏始终看得见、点得到。
  *
- * 原版面板固定 442 宽、比一整栏还宽，会把这一列整列压住；本作按需求让开，
+ * 原版面板固定 442 宽、比一整栏还宽，会把分类列压住；本作让开，
  * 商店里盖背包栏的那一份（买入时）用同一个宽度，两处看起来一致。
  * 见 `work/findings/desc-panel-2026-10-12.md`。
  */
-export const BAG_DESCRIPTION_WIDTH = 384;
+export const BAG_DESCRIPTION_WIDTH = 371;
 
 export function bagLayout():BagLayout {
   const bagFrame = { x:496, y:0, width:395, height:431 };
@@ -169,8 +179,8 @@ export function bagLayout():BagLayout {
     // 网格组在右框内 (34,27)，格子按格宽步长铺四列四行。
     grid:{ x:bagFrame.x+34, y:bagFrame.y+27, width:323, height:323, stride:SLOT_STRIDE, columns:4 },
     slot:SLOT,
-    sideButtons:{ x:bagFrame.x+389, y:bagFrame.y+12, width:57, height:57,
-      offsets:SIDE_BUTTON_OFFSETS },
+    sideButtons:{ x:BAG_RAIL.x, y:BAG_RAIL.rowTop, width:BAG_RAIL.width, height:BAG_RAIL.rowHeight,
+      offsets:Array.from({length:6},(_,index)=>index*BAG_RAIL.rowStep) },
     organize:{ x:bagFrame.x+389+(57-84)/2, y:bagFrame.y+12-68, width:84, height:44 },
     money:{ x:bagFrame.x+MONEY.offset.x, y:bagFrame.y+MONEY.offset.y,
       plate:{ x:bagFrame.x+MONEY.plateOffset.x, y:bagFrame.y+MONEY.plateOffset.y, width:MONEY.plateOffset.width, height:34 },

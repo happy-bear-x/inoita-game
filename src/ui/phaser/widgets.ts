@@ -277,7 +277,9 @@ export class UiSurface {
    * `bleed` 把裁剪矩形与命中区向四周放大这么多像素，内容原点不动。技能格的选中框画在格内
    * `(-14,-14)`，与原版一样要露出滚动区之外，第一列／第一行才不会被裁成缺边的圆环。
    */
-  scroll(x:number,y:number,width:number,height:number,bleed=0):ScrollArea {const scroll=new ScrollArea(this,x,y,width,height,bleed);this.scrolls.push(scroll);return scroll;}
+  scroll(x:number,y:number,width:number,height:number,bleed=0,bar?:ScrollBarOptions):ScrollArea {
+    const scroll=new ScrollArea(this,x,y,width,height,bleed,bar);this.scrolls.push(scroll);return scroll;
+  }
   /** 0–1 的音量滑动条；调用方自己决定标签和位置。 */
   slider(label:string,x:number,y:number,width:number,value:number,onChange:(value:number)=>void,parent=this.root):VolumeSlider {
     const slider=new VolumeSlider(this.scene,parent,label,x,y,width,value,onChange);
@@ -306,9 +308,19 @@ const scrollAreas = new WeakMap<Phaser.Scene, Set<ScrollArea>>();
 let scrollOrder = 0;
 
 /** 裁剪只影响绘制；命中区另行检查视口，滚动时不会点击被裁掉的行。 */
+/** 滚动条相对滚动区右缘的偏移与上下留白；背包网格用它把滚动条放进栏间空档。 */
+export interface ScrollBarOptions {
+  /** 正数向右移，单位是页面坐标。 */
+  offset?:number;
+  /** 轨道上下各留多少像素。 */
+  insetY?:number;
+  width?:number;
+}
+
 export class ScrollArea {
   readonly surface:UiSurface; readonly x:number; readonly y:number; readonly width:number; readonly height:number;
   readonly bleed:number;
+  private readonly bar?:ScrollBarOptions;
   readonly layer:Phaser.GameObjects.Layer;
   readonly content:Phaser.GameObjects.Container;
   private mask:Phaser.GameObjects.Rectangle;
@@ -328,8 +340,8 @@ export class ScrollArea {
   private press?:{id:number;y:number;offset:number};
   private readonly order=++scrollOrder;
   moved=false;
-  constructor(surface:UiSurface,x:number,y:number,width:number,height:number,bleed=0){
-    this.surface=surface;this.x=x;this.y=y;this.width=width;this.height=height;this.bleed=bleed;
+  constructor(surface:UiSurface,x:number,y:number,width:number,height:number,bleed=0,bar?:ScrollBarOptions){
+    this.surface=surface;this.x=x;this.y=y;this.width=width;this.height=height;this.bleed=bleed;this.bar=bar;
     const scene=surface.scene;this.layer=scene.add.layer().setDepth(surface.depth+1);this.content=scene.add.container(0,0);this.layer.add(this.content);
     // 滚动条按当前界面配色：半透明深色轨道 + 金色滑块。
     this.barLayer=scene.add.layer().setDepth(surface.depth+1.5);
@@ -419,8 +431,10 @@ export class ScrollArea {
     this.barLayer.setVisible(scrollable);
     if(!scrollable)return;
     const position=matrix.transformPoint(this.x,this.y);
-    const scale=matrix.scaleX,barWidth=Math.max(2,4*scale),inset=1*scale;
-    const x=position.x+this.width*scale-barWidth-inset,y=position.y,height=this.height*scale;
+    const scale=matrix.scaleX,barWidth=Math.max(2,(this.bar?.width??4)*scale),inset=1*scale;
+    const offset=(this.bar?.offset??0)*scale,insetY=(this.bar?.insetY??0)*scale;
+    const x=position.x+this.width*scale-barWidth-inset+offset;
+    const y=position.y+insetY,height=Math.max(0,this.height*scale-insetY*2);
     const thumb=Math.max(18*scale,height*this.height/Math.max(1,this.extent));
     const travel=Math.max(0,height-thumb);
     const ratio=travel?Phaser.Math.Clamp(this.offset/Math.max(1,this.extent-this.height),0,1):0;
