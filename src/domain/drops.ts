@@ -1,4 +1,4 @@
-import { reservedAcquisitionIds, type ItemCatalog, type ItemInstance } from './items.ts';
+import { blockedNormalAcquisitionIds, reservedAcquisitionIds, type ItemCatalog, type ItemInstance } from './items.ts';
 import type { ChestKind } from './content.ts';
 import type { CharacterStatsCatalog, EquipmentGradeSeed } from './character-stats.ts';
 import { rollGrade, staticGrade, type GradeProfile } from './equipment-grade.ts';
@@ -198,7 +198,7 @@ export function parseDrops(value:unknown,items:ItemCatalog,enemyIds:readonly str
         throw new Error(`宝箱稀有度无效：${owner}`);
   }
   if(catalog.reservedDrops)validateReservedDrops(catalog.reservedDrops,items);
-  return filterReservedDrops(catalog,reservedAcquisitionIds(items));
+  return filterReservedDrops(catalog,blockedNormalAcquisitionIds(items));
 }
 
 function validateReservedDrops(config:ReservedDropConfig,items:ItemCatalog):void {

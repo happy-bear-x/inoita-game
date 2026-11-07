@@ -1,6 +1,6 @@
 import {rollChaos,type ChaosTier,type ChaosRule} from './chaos-equipment.ts';
 import {DEFAULT_EQUIPMENT_GRADE,type CharacterStatsCatalog} from './character-stats.ts';
-import {reservedAcquisitionIds,type ItemCatalog,type ItemInstance,type ItemRecipe,type ItemReward} from './items.ts';
+import {blockedNormalAcquisitionIds,type ItemCatalog,type ItemInstance,type ItemRecipe,type ItemReward} from './items.ts';
 import type {Session} from './session.ts';
 
 interface CraftingOperationBase {name:string;materials:ItemReward[]}
@@ -49,15 +49,15 @@ export function validateCrafting(catalog:CraftingCatalog,items:ItemCatalog):void
 /** 先核对装备、材料和费用，确认时重新核对，再一次性提交给会话。 */
 export class EquipmentCrafting {
   readonly session:Session;readonly catalog:CraftingCatalog;
-  private readonly reserved:ReadonlySet<string>;
-  constructor(session:Session,catalog:CraftingCatalog){this.session=session;this.catalog=catalog;this.reserved=reservedAcquisitionIds(session.bag.catalog);}
+  private readonly blocked:ReadonlySet<string>;
+  constructor(session:Session,catalog:CraftingCatalog){this.session=session;this.catalog=catalog;this.blocked=blockedNormalAcquisitionIds(session.bag.catalog);}
   /**
-   * 配方书配方只有学会后可见、可合成；常备配方默认排除结果是保留道具的条目，
+   * 配方书配方只有学会后可见、可合成；常备配方默认排除结果是保留道具或剧情装备的条目，
    * 但原版常备配方可以显式标记 `allowReservedResult`，按原版允许用正常材料合成。
    * 配方书本身通过 `reservedDrops` 独立通道获得，学会后合成是它的正常用途。
    */
   private available(id:string,recipe:ItemRecipe,learned:readonly string[]=this.session.bag.learnedRecipes):boolean {
-    return recipe.book?learned.includes(id):recipe.allowReservedResult===true||!this.reserved.has(recipe.result);
+    return recipe.book?learned.includes(id):recipe.allowReservedResult===true||!this.blocked.has(recipe.result);
   }
   recipe(id:string):ItemRecipe|undefined {
     const recipe=this.session.bag.catalog.recipes[id];

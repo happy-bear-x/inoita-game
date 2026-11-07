@@ -1,5 +1,5 @@
 import { equipmentPower, rollEquipmentNumbers, type CharacterStatsCatalog } from './character-stats.ts';
-import { reservedAcquisitionIds, type ItemCatalog, type ItemInstance } from './items.ts';
+import { blockedNormalAcquisitionIds, type ItemCatalog, type ItemInstance } from './items.ts';
 import type { Session } from './session.ts';
 
 type StockRule =
@@ -70,17 +70,17 @@ export class Storefront {
   private readonly items: ItemCatalog;
   private readonly stats: CharacterStatsCatalog;
   private readonly random: () => number;
-  private readonly reserved: ReadonlySet<string>;
+  private readonly blocked: ReadonlySet<string>;
   constructor(catalog: ShopCatalog, items: ItemCatalog, stats: CharacterStatsCatalog, session: Session,
     shopId: string, mapId: string, random: () => number = Math.random) {
     const shop = catalog.shops[shopId];
     if (!shop) throw new Error('商店不存在');
     this.shop = shop; this.catalog = catalog; this.items = items; this.stats = stats; this.session = session; this.random = random;
-    this.reserved = reservedAcquisitionIds(items);
+    this.blocked = blockedNormalAcquisitionIds(items);
     session.shops.enterMap(mapId || session.shops.mapId || session.campaign.start.map);
     if (shop.categories.length) this.selectCategory(shop.categories[0]);
     else {
-      this.stock = shop.fixedStock.filter(id => items.items[id] && !items.items[id].pickup && !this.reserved.has(id)).map(id => this.createOffer(id, false));
+      this.stock = shop.fixedStock.filter(id => items.items[id] && !items.items[id].pickup && !this.blocked.has(id)).map(id => this.createOffer(id, false));
       const rules = shop.stockRules.filter(rule => rule.kind !== 'level-range');
       if (rules.length) this.stock.push(...session.shops.open(shopId, capacity => {
         const offers: ShopOffer[] = [];
@@ -106,7 +106,7 @@ export class Storefront {
     this.category = category; this.stock = [];
     for (const rule of this.shop.stockRules) if (rule.kind === 'level-range') {
       for (const [id, item] of Object.entries(this.items.items)) {
-        if (!this.reserved.has(id) && item.kind === category && item.storeListed && item.level >= rule.minimumLevel && item.level <= rule.maximumLevel)
+        if (!this.blocked.has(id) && item.kind === category && item.storeListed && item.level >= rule.minimumLevel && item.level <= rule.maximumLevel)
           this.stock.push(this.createOffer(id, false));
         if (this.stock.length >= 48) break;
       }
@@ -127,7 +127,7 @@ export class Storefront {
     return this.weighted(this.catalog.grades.map(grade => grade.rarity === rarity ? grade.weight : 0));
   }
   private createOffer(item: string, limited: boolean, grade?: number, concealed = false, withSockets = true): ShopOffer {
-    if (this.reserved.has(item)) throw new Error(`保留道具不进入商店：${item}`);
+    if (this.blocked.has(item)) throw new Error(`不可正常获取的物品不进入商店：${item}`);
     const id = this.session.shops.identity();
     const instance: ItemInstance = {id, item, quantity: 1, enhancement: 0, gems: []};
     const template = this.catalog.equipment[item];
@@ -151,13 +151,13 @@ export class Storefront {
     const draw = this.roll(0, 99), group = draw < 20 ? 'weapon' : draw < 70 ? 'armor' : 'accessory';
     const candidates = Object.keys(this.catalog.equipment).filter(id => {
       const item = this.catalog.equipment[id];
-      return !this.reserved.has(id) && item.randomListed && item.randomGroup === group && item.dropLevel >= minimum && item.dropLevel <= maximum;
+      return !this.blocked.has(id) && item.randomListed && item.randomGroup === group && item.dropLevel >= minimum && item.dropLevel <= maximum;
     }).slice(0, 64);
     if (!candidates.length) return;
     return this.createOffer(candidates[this.roll(0, candidates.length - 1)], true, grade, concealed);
   }
   private uniqueOffer(level: number, concealed = false): ShopOffer | undefined {
-    const candidates = Object.keys(this.catalog.equipment).filter(id => !this.reserved.has(id) && this.catalog.equipment[id].uniqueListed && this.items.items[id].level <= level);
+    const candidates = Object.keys(this.catalog.equipment).filter(id => !this.blocked.has(id) && this.catalog.equipment[id].uniqueListed && this.items.items[id].level <= level);
     if (!candidates.length) return;
     return this.createOffer(candidates[this.roll(0, candidates.length - 1)], true, 10, concealed, false);
   }
@@ -182,7 +182,7 @@ export class Storefront {
         else {
           const pool = profile.pools[category], choice = pool[this.weighted(pool.map(entry => entry.weight), 10000)];
           const id = choice?.tiers ? choice.tiers.find(tier => tier.level <= level)?.item : choice?.item;
-          if (id && this.items.items[id] && !this.items.items[id].pickup && !this.reserved.has(id)) return this.createOffer(id, true);
+          if (id && this.items.items[id] && !this.items.items[id].pickup && !this.blocked.has(id)) return this.createOffer(id, true);
         }
       }
     }
