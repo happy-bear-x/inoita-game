@@ -58,6 +58,7 @@ interface EnemyControllerState {
 const REPATH_INTERVAL_MS=180;
 /** 跨帧搜索每次推进的扩展上限；多个 AI 共享渲染帧预算。 */
 const SEARCH_SLICE=128;
+const REACHABLE_CELL_SIZE=64;
 /** 没有旧路线时的请求上限，仍由共享预算限制实际扩展数。 */
 const HOLD_SEARCH_CAP=1024;
 /** 闲逛路径很短，一次同步算完。 */
@@ -96,7 +97,7 @@ export class EnemyController {
   private wanderDestination?:Point;
   /** 正在跨帧推进的搜索；目标变化或恢复检查点时会丢弃。 */
   private search?:{task:PathSearch;target?:Combatant;targetId?:string;destination:Point;range:number;isGoal:(point:Point)=>boolean};
-  private heldSearch?:{task:PathSearch;origin:Point;destination:Point;targetId:string;range:number;found?:boolean;retryAt:number};
+  private heldSearch?:{task:PathSearch;origin:Point;targetId:string;range:number;reached:Map<string,Point[]>;witness?:Point;complete:boolean;retryAt:number};
   private readonly spentOnce=new Set<string>();
   private get mapWide():boolean{return this.behavior.engagement==='map-wide';}
 
@@ -379,19 +380,48 @@ export class EnemyController {
     let search=this.heldSearch;
     if(!search||search.targetId!==target.id||search.range!==range||
       search.origin.x!==actor.position.x||search.origin.y!==actor.position.y||
-      search.destination.x!==destination.x||search.destination.y!==destination.y||
-      (search.found!==undefined&&this.clock>=search.retryAt)){
-      const fixedTarget={...target,position:{...destination}};
-      search=this.heldSearch={task:createPathSearch(actor.position,this.searchQuery(actor,destination,fixedTarget,range)),
-        origin:{...actor.position},destination:{...destination},targetId:target.id,range,retryAt:0};
+      (search.retryAt>0&&this.clock>=search.retryAt)){
+      const fixedDestination={...destination},fixedTarget={...target,position:fixedDestination};
+      const query=this.searchQuery(actor,fixedDestination,fixedTarget,range),reached=new Map<string,Point[]>();
+      // 搜索只记录连通区域，目标移动不改变查询，也不丢弃尚未探索的前沿。
+      const task=createPathSearch(actor.position,{...query,isGoal:point=>{
+        if(query.canStand(point)){
+          const key=`${Math.floor(point.x/REACHABLE_CELL_SIZE)},${Math.floor(point.y/REACHABLE_CELL_SIZE)}`;
+          const cell=reached.get(key);if(cell)cell.push(point);else reached.set(key,[point]);
+        }
+        return false;
+      }});
+      search=this.heldSearch={task,reached,origin:{...actor.position},targetId:target.id,range,complete:false,retryAt:0};
     }
-    if(search.found!==undefined)return search.found;
+    if(this.heldReachablePosition(search,actor,target,range)){
+      if(!search.retryAt)search.retryAt=this.clock+REPATH_INTERVAL_MS;
+      return true;
+    }
+    search.retryAt=0;
+    if(search.complete)return false;
     const granted=this.port.pathBudget?.take(this.id,SEARCH_SLICE)??SEARCH_SLICE;
     if(granted<=0)return undefined;
     const result=search.task.step(granted);
-    if(result.status==='pending')return undefined;
-    search.found=result.status==='found';search.retryAt=this.clock+REPATH_INTERVAL_MS;
-    return search.found;
+    search.complete=result.status!=='pending';
+    if(this.heldReachablePosition(search,actor,target,range)){
+      search.retryAt=this.clock+REPATH_INTERVAL_MS;return true;
+    }
+    return search.complete?false:undefined;
+  }
+  private heldReachablePosition(search:NonNullable<EnemyController['heldSearch']>,actor:Combatant,target:Combatant,range:number):Point|undefined{
+    if(search.witness&&attackDistance(search.witness,actor.bounds,target.position,target.bounds)<=range)return search.witness;
+    search.witness=undefined;
+    // 攻击距离先截断坐标，再以 8 像素量化；额外 1 像素覆盖坐标截断误差。
+    const padding=Math.max(0,Math.floor(range)-1)*8+1;
+    const left=Math.floor((target.position.x+target.bounds.x-actor.bounds.x-actor.bounds.width-padding)/REACHABLE_CELL_SIZE);
+    const right=Math.floor((target.position.x+target.bounds.x+target.bounds.width-actor.bounds.x+padding)/REACHABLE_CELL_SIZE);
+    const top=Math.floor((target.position.y+target.bounds.y-actor.bounds.y-actor.bounds.height-padding)/REACHABLE_CELL_SIZE);
+    const bottom=Math.floor((target.position.y+target.bounds.y+target.bounds.height-actor.bounds.y+padding)/REACHABLE_CELL_SIZE);
+    for(let x=left;x<=right;x++)for(let y=top;y<=bottom;y++){
+      const cell=search.reached.get(`${x},${y}`);if(!cell)continue;
+      for(const point of cell)if(attackDistance(point,actor.bounds,target.position,target.bounds)<=range){search.witness=point;return point;}
+    }
+    return undefined;
   }
   /** 脚底直线能否走过去：路径还没算完时用它判断能不能先朝目标迈一步。 */
   private straightWalkable(from:Point,to:Point):boolean{

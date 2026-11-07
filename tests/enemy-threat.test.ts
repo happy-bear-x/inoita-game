@@ -38,6 +38,69 @@ test('immobile casting returns home only after an unreachable sliced search comp
   for(let frame=0;frame<100&&!run.clears();frame++)run.ai.update(60);
   assert.ok(calls>1);assert.equal(run.clears(),1);assert.equal(run.ai.snapshot().state,'returning');
 });
+
+test('an unreachable moving target cannot restart every slice of an immobile cast search',()=>{
+  for(const movement of [.1,8]){
+    const run=setup([skill],'active',{canMove:false});run.scores.set('first',10);
+    run.port.navigationBounds=()=>({x:0,y:0,width:128,height:64});
+    run.port.canStand=point=>point.x>=0&&point.y>=0&&point.x<48&&point.y<=64;
+    let snapshots=0;
+    run.port.navigationSnapshot=()=>{snapshots++;return {bounds:run.port.navigationBounds(),canStand:run.port.canStand};};
+    run.port.pathBudget={take:()=>1};
+    for(let frame=0;frame<100&&!run.clears();frame++){
+      run.first.position.x=96+(frame%2)*movement;run.ai.update(60);
+    }
+    assert.equal(run.clears(),1);assert.equal(run.ai.snapshot().state,'returning');
+    assert.equal(snapshots,1,'目标移动沿用同一份搜索前沿与地图快照');
+  }
+});
+
+test('a moving target can become reachable from positions explored by earlier slices',()=>{
+  const run=setup([skill],'active',{canMove:false});run.scores.set('first',10);
+  run.port.navigationBounds=()=>({x:0,y:0,width:128,height:64});
+  run.port.canStand=point=>point.x>=0&&point.y>=0&&point.x<48&&point.y<=64;
+  let snapshots=0;
+  run.port.navigationSnapshot=()=>{snapshots++;return {bounds:run.port.navigationBounds(),canStand:run.port.canStand};};
+  let grants=0;run.port.pathBudget={take:()=>{grants++;return grants<=40?1:0;}};
+  for(let frame=0;frame<40;frame++)run.ai.update(60);
+  run.first.position={x:63,y:32};run.ai.update(60);
+  assert.equal(run.clears(),0);assert.equal(run.ai.snapshot().targetId,'first');
+  assert.equal(snapshots,1,'新的可攻击位置来自已探索区域，不丢弃前沿');
+  run.first.position.x=64;run.port.pathBudget={take:()=>1};
+  for(let frame=0;frame<100&&!run.clears();frame++)run.ai.update(60);
+  assert.equal(run.clears(),1,'目标移出精确攻击范围后不会沿用旧的可达结论');
+});
+
+test('immobile cast searches release their frozen navigation on cancellation, restore and target loss',()=>{
+  for(const reset of ['cancel','restore','disable','target-loss'] as const){
+    const run=setup([skill],'active',{canMove:false});run.scores.set('first',10);
+    let blocked=false,snapshots=0;
+    run.port.navigationSnapshot=()=>{
+      snapshots++;const capturedBlocked=blocked;
+      return {bounds:run.port.navigationBounds(),canStand:point=>!capturedBlocked&&run.port.canStand(point)};
+    };
+    run.port.pathBudget={take:()=>1};run.ai.update(60);
+    assert.equal(snapshots,1);assert.equal(run.clears(),0);
+    const saved=run.ai.captureState();blocked=true;
+    if(reset==='restore')run.ai.restoreState(saved);
+    else if(reset==='target-loss')run.ai.targetRemoved('first');
+    else run.ai[reset]();
+    run.ai.update(60);
+    assert.equal(snapshots,2,reset);assert.equal(run.clears(),1,reset);
+  }
+});
+
+test('a reachable immobile cast refreshes its frozen navigation after the retry interval',()=>{
+  const run=setup([skill],'active',{canMove:false});run.scores.set('first',10);
+  let blocked=false,snapshots=0;
+  run.port.navigationSnapshot=()=>{
+    snapshots++;const capturedBlocked=blocked;
+    return {bounds:run.port.navigationBounds(),canStand:point=>!capturedBlocked&&run.port.canStand(point)};
+  };
+  run.ai.update(60);assert.equal(run.clears(),0);assert.equal(snapshots,1);
+  blocked=true;run.ai.update(120);assert.equal(snapshots,1);assert.equal(run.clears(),0);
+  run.ai.update(60);assert.equal(snapshots,2);assert.equal(run.clears(),1);
+});
 function setup(skills:EnemyPlayableSkill[]=[],aggression:EnemyBehavior['aggression']='active',overrides:Partial<EnemyBehavior>={}){
   const actor:Combatant={id:'enemy',team:'enemy',position:{x:16,y:32},bounds:{x:-8,y:-8,width:16,height:16}};
   const first:Combatant={...actor,id:'first',team:'party',position:{x:96,y:32}};
