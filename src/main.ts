@@ -638,7 +638,7 @@ function boot(): void {
       const resumeAudio = () => {
         if (sound.context && !sound.locked && sound.context.state !== 'running') void sound.context.resume();
       };
-      window.addEventListener('pointerdown', resumeAudio);
+      window.addEventListener('pointerdown', resumeAudio, { capture: true });
       window.addEventListener('focus', resumeAudio);
     }, 0);
     game.events.on(UI_EVENTS.select,()=>app.audio?.ui('select'));

@@ -7,19 +7,17 @@ import { SLOT_ICON_SIZE, ITEM_ICON_SIZE, type ShortcutSlot } from '../shortcut-v
 import { ActionPressGate } from '../action-press-gate.ts';
 import { domAssets, type DomAssets } from './assets.ts';
 import { DomButton, DomComponent, DomImage } from './components.ts';
+import { DomCooldown } from './cooldown.ts';
 
 interface Control {
   button: DomButton;
   icon: DomImage;
   badge: DomComponent;
   quantity: HTMLElement;
-  fan: SVGSVGElement;
-  fanPath: SVGPathElement;
-  line: SVGPathElement;
+  cooldown: DomCooldown;
   usable: boolean;
   size: number;
   iconKey?: string;
-  fanKey?: string;
   stateKey?: string;
 }
 
@@ -68,19 +66,14 @@ export class DomActionControls extends DomComponent {
     const face = new DomComponent(button).rect({ x: width / 2, y: height / 2, width: 0, height: 0 });
     for (const file of files) this.image(face, file, width, -width / 2, -height / 2, height);
     const icon = new DomImage(face);
-    const fan = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    fan.setAttribute('viewBox', '-40 -40 80 80');
-    Object.assign(fan.style, { position: 'absolute', left: '-40px', top: '-40px', width: '80px', height: '80px', pointerEvents: 'none' });
-    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path'); path.setAttribute('fill', 'rgba(0,0,0,.55)');
-    const line = document.createElementNS('http://www.w3.org/2000/svg', 'path'); line.setAttribute('fill', 'none'); line.setAttribute('stroke', '#ffe6a3'); line.setAttribute('stroke-width', '2');
-    fan.append(path, line); face.element.appendChild(fan);
+    const cooldown = new DomCooldown(face);
     this.image(face, pressed, width, -width / 2, -height / 2, height).element.classList.add('dom-control-pressed');
     const badge = new DomComponent(face).rect({ x: 32, y: 23, width: 0, height: 0 });
     this.image(badge, this.skin['quantity-badge'], 38, -19, -20, 40);
     const quantity = document.createElement('span');
     Object.assign(quantity.style, { position: 'absolute', transform: 'translate(-50%,-50%)', fontSize: '18px', color: '#fff', lineHeight: '1' });
     badge.element.appendChild(quantity); badge.visible(false);
-    control = { button, icon, badge, quantity, fan, fanPath: path, line, usable: true, size: SLOT_ICON_SIZE };
+    control = { button, icon, badge, quantity, cooldown, usable: true, size: SLOT_ICON_SIZE };
     return control;
   }
   private activate(index: number): void {
@@ -120,17 +113,7 @@ export class DomActionControls extends DomComponent {
     });
   }
   private paintFan(control: Control, cooldown: Cooldown | undefined): void {
-    const remaining = cooldown && cooldown.remainingMs > 0 ? Math.min(1, cooldown.durationMs > 0 ? cooldown.remainingMs / cooldown.durationMs : 1) : 0;
-    const key = `${remaining}|${control.size}`;
-    if (key === control.fanKey) return;
-    control.fanKey = key; control.fan.style.display = remaining ? '' : 'none';
-    if (!remaining) return;
-    const radius = control.size / 2, angle = -Math.PI / 2 + (1 - remaining) * Math.PI * 2;
-    const x = Math.cos(angle) * radius, y = Math.sin(angle) * radius;
-    control.fanPath.setAttribute('d', remaining === 1
-      ? `M 0 ${-radius} A ${radius} ${radius} 0 1 1 0 ${radius} A ${radius} ${radius} 0 1 1 0 ${-radius}`
-      : `M 0 0 L ${x} ${y} A ${radius} ${radius} 0 ${remaining > .5 ? 1 : 0} 1 0 ${-radius} Z`);
-    control.line.setAttribute('d', remaining < 1 ? `M 0 0 L ${x} ${y}` : '');
+    control.cooldown.update(cooldown, control.size / 2);
   }
   layout(viewport: ControlViewport, overrides?: ControlLayoutOverrides): void {
     const points = resolveControlLayout(viewport, overrides);

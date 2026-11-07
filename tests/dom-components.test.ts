@@ -13,11 +13,13 @@ import type { PartyActiveSnapshot } from '../src/domain/party.ts';
 import { DomMinimap } from '../src/ui/dom/minimap.ts';
 import type { WorldMap } from '../src/domain/content.ts';
 import { MINIMAP_ASSETS } from '../src/domain/story-interface.ts';
+import { DomComputerSkillHud } from '../src/ui/dom/computer-skill-hud.ts';
+import { DomCooldown } from '../src/ui/dom/cooldown.ts';
 
 class Element extends EventTarget {
   style: Record<string, string> = {};
   dataset: Record<string, string> = {};
-  hidden = false; removed = false; src = '';
+  hidden = false; removed = false; src = ''; textContent = '';
   children: Element[] = [];
   captures = new Set<number>();
   attributes = new Map<string, string>();
@@ -201,6 +203,42 @@ test('DOM minimap combines terrain, keeps native marker sizes and reuses or remo
     view.updateTasks([]); assert.equal(task.removed, true);
     assert.equal(view.extent().x, 16); assert.equal(view.extent().y, 14);
     view.destroy(); await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(assets.size, 0); assert.deepEqual(errors, []);
+  } finally { h.restore(); }
+});
+
+test('DOM cooldown handles a full circle, fractional seconds, empty and zero-duration cooldowns', () => {
+  const h = harness();
+  try {
+    const parent = new DomComponent(h.parent), view = new DomCooldown(parent);
+    const root = view.element as unknown as Element;
+    view.update({ remainingMs: 500, durationMs: 1000 }, 32, true);
+    assert.equal(root.hidden, false); assert.equal(root.children[1].textContent, '1');
+    assert.match(root.children[0].children[0].getAttribute('d')!, /A 32 32/);
+    view.update({ remainingMs: 10, durationMs: 0 }, 32, true);
+    assert.ok(!root.children[0].children[0].getAttribute('d')!.includes('NaN'));
+    view.update({ remainingMs: 0, durationMs: 1000 }, 32, true);
+    assert.equal(root.hidden, true); parent.destroy();
+  } finally { h.restore(); }
+});
+
+test('computer skill row updates native icons, item counts and cooldown seconds without rebuilding cells', async () => {
+  const h = harness();
+  try {
+    const assets = new DomAssets({ image: async () => ({ width: 80, height: 80 }), atlas: async () => ({ frames: {} }) });
+    const skin = Object.fromEntries(CONTROL_PARTS.map(part => [part, `${part}.png`])) as ControlSkin;
+    const errors: unknown[] = [];
+    const row = new DomComputerSkillHud(h.parent, skin, error => errors.push(error), assets);
+    row.setPage([{ entry: { kind: 'item', id: 'potion' }, icon: 'potion.png', quantity: 3, enabled: true }]);
+    row.layout({ width: 960, height: 640, insets: { left: 0, right: 0, top: 0, bottom: 0 } });
+    const root = row.element as unknown as Element, cell = root.children[0];
+    const count = root.children.length;
+    assert.equal(cell.children.at(-1)!.textContent, '3');
+    row.setPage([{ entry: { kind: 'item', id: 'potion' }, icon: 'potion.png', quantity: 2, enabled: true, cooldown: { remainingMs: 1500, durationMs: 2000 } }]);
+    assert.equal(root.children.length, count); assert.equal(cell.children.at(-1)!.textContent, '2');
+    assert.equal(cell.children[3].children[0].children[1].textContent, '2');
+    assert.equal(root.style.pointerEvents, 'auto', '技能行阻止点击穿透到游戏世界');
+    row.destroy(); await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(assets.size, 0); assert.deepEqual(errors, []);
   } finally { h.restore(); }
 });

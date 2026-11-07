@@ -1,209 +1,29 @@
-import Phaser from 'phaser';
+import type Phaser from 'phaser';
 import type { Hud } from '../../rendering/hud.ts';
 import type { ControlSkin } from '../../domain/control-skin.ts';
 import type { Cooldown } from '../../domain/combat.ts';
-import { SHORTCUT_SLOT_COUNT } from '../../domain/shortcut-bar.ts';
+import type { ShortcutSlot } from '../shortcut-view.ts';
+import type { DomUi } from '../dom/dom-ui.ts';
+import { DomComputerSkillHud } from '../dom/computer-skill-hud.ts';
 import { controlViewport } from './control-layout-viewport.ts';
-import { HUD_SIDE_BUTTON_SIZE } from '../control-layout.ts';
-import { uiUnitScale } from '../viewport.ts';
-import { uiImageFor } from './widgets.ts';
-import { cooldownFanState, cooldownSecondsLabel, drawCooldownFan, shortcutCooldown } from './cooldown-fan.ts';
-import type { ShortcutSlot } from './action-controls.ts';
-import type { DomLabel, DomUi } from '../dom/dom-ui.ts';
 
-const FRAME_SIZE = 80, ICON_SIZE = 64, GAP = 8;
-const ROW_WIDTH = SHORTCUT_SLOT_COUNT * FRAME_SIZE + (SHORTCUT_SLOT_COUNT - 1) * GAP;
-
-/** 一格里的 DOM 文字：记下在容器里的局部坐标和基准字号，位置随容器世界变换换算。 */
-interface DomText {
-  label: DomLabel;
-  localX: number;
-  localY: number;
-  baseSize: number;
-  key?: string;
-}
-
-interface Cell {
-  container: Phaser.GameObjects.Container;
-  icon?: Phaser.GameObjects.Image;
-  fan: Phaser.GameObjects.Graphics;
-  secondsDom?: DomText;
-  quantityDom?: DomText;
-  iconKey?: string;
-  fanState?: string;
-}
-
-/**
- * 电脑模式专用的只读技能状态行：只显示六个快捷位的图标和冷却。
- * 它不接收操作，只拦掉落在这一行上的鼠标点击，避免误触发地面普攻。
- */
+/** 电脑技能行的场景显隐接线。 */
 export class ComputerSkillHud {
-  private readonly scene: Phaser.Scene;
   private readonly hud: Hud;
-  private readonly root: Phaser.GameObjects.Container;
-  private readonly cells: Cell[] = [];
-  private slots: readonly ShortcutSlot[] = [];
-  private cooldowns: Readonly<Record<string, Cooldown>> = {};
-  private pageSignature?: string;
-  private cooldownSignature?: string;
-  /** 上一轮请求的显隐；DOM 文字不挂在 Phaser 容器下，需要自己跟随隐藏。 */
-  private visibleApplied = true;
-
+  private readonly view: DomComputerSkillHud;
+  private readonly unwatch: () => void;
+  private active = true;
+  private requested = false;
   constructor(_owner: Phaser.Scene, hud: Hud, skin: ControlSkin, domUi?: DomUi) {
-    this.hud = hud; this.scene = hud.scene;
-    this.root = hud.add(this.scene.add.container(0, 0));
-
-    for (let index = 0; index < SHORTCUT_SLOT_COUNT; index++) {
-      const container = this.scene.add.container(-ROW_WIDTH / 2 + FRAME_SIZE / 2 + index * (FRAME_SIZE + GAP), 0);
-      const shadow = this.scene.add.image(0, 0, skin['slot-shadow']).setDisplaySize(FRAME_SIZE, FRAME_SIZE);
-      const ring = this.scene.add.image(0, 0, skin['slot-ring']).setDisplaySize(FRAME_SIZE, FRAME_SIZE);
-      const fan = this.scene.add.graphics();
-      container.add([shadow, ring, fan]);
-      this.root.add(container);
-      // 冷却秒数和物品数量只画在 DOM 层；画布保留图标、扇形和整行命中区。
-      const secondsDom = domUi?.label('hud', 'dom-label dom-skill-seconds', { x: .5, y: .5 })
-        .setStyle({ fontSize: '24px', lineHeight: '1', color: '#ffffff' }).setVisible(false);
-      const quantityDom = domUi?.label('hud', 'dom-label dom-skill-quantity', { x: 1, y: 1 })
-        .setStyle({ fontSize: '18px', lineHeight: '1', color: '#ffffff' }).setVisible(false);
-      this.cells.push({
-        container, fan,
-        secondsDom: secondsDom ? { label: secondsDom, localX: 0, localY: 0, baseSize: 24 } : undefined,
-        quantityDom: quantityDom ? { label: quantityDom, localX: FRAME_SIZE / 2 - 10, localY: FRAME_SIZE / 2 - 8, baseSize: 18 } : undefined
-      });
-    }
-
-    // 整行拦点击：HUD 在 controls-ui 场景，交互对象会让这次点击停在这一层。
-    this.root.setSize(ROW_WIDTH + 24, 210)
-      .setInteractive(new Phaser.Geom.Rectangle(-ROW_WIDTH / 2 - 12, -96, ROW_WIDTH + 24, 210), Phaser.Geom.Rectangle.Contains)
-      .setData('uiAction', true);
-    this.root.on('pointerdown', (_pointer: Phaser.Input.Pointer, _x: number, _y: number,
-      event: Phaser.Types.Input.EventData) => event.stopPropagation());
-    this.setVisible(false);
+    const parent = domUi?.layer('hud');
+    if (!parent) throw new Error('技能状态界面尚未就绪');
+    this.hud = hud;
+    this.view = new DomComputerSkillHud(parent, skin, error => globalThis.storyDiagnostics?.record('ui-image-error', { error }));
+    this.unwatch = hud.watchVisibility(active => { this.active = active; this.view.visible(active && this.requested); });
   }
-
-  /** 世界场景每帧算好的当前一页；签名没变就不重建图标和数量。 */
-  setPage(slots: readonly ShortcutSlot[]): void {
-    const signature = slots.map(slot => slot.entry
-      ? `${slot.entry.kind}:${slot.entry.id}:${slot.icon ?? ''}:${slot.quantity}:${slot.enabled ? 1 : 0}:${slot.cooldown?.remainingMs ?? 0}/${slot.cooldown?.durationMs ?? 0}`
-      : '_').join('|');
-    if (signature === this.pageSignature) return;
-    this.pageSignature = signature;
-    this.slots = slots;
-    this.paint();
-  }
-
-  /** 技能冷却与操作按钮同源；读数没变就跳过整行重画。 */
-  setCooldowns(cooldowns: Readonly<Record<string, Cooldown>>): void {
-    if (cooldowns === this.cooldowns) return;
-    const signature = Object.keys(cooldowns).sort().map(id => `${id}:${cooldowns[id].remainingMs}`).join('|');
-    if (signature === this.cooldownSignature) return;
-    this.cooldownSignature = signature; this.cooldowns = cooldowns;
-    this.paint();
-  }
-
-  layout(width: number, height: number): void {
-    const viewport = controlViewport(this.scene, width, height);
-    const safeWidth = Math.max(1, width - viewport.insets.left - viewport.insets.right);
-    // 一格和侧边存档／菜单按钮同尺寸：按 56 个界面单位换算；最多占安全区七成宽，窄屏时给左右状态面板留出位置。
-    const desired = uiUnitScale(width, height) * HUD_SIDE_BUTTON_SIZE / FRAME_SIZE;
-    const fit = safeWidth * .7 / (ROW_WIDTH + 24);
-    const scale = Math.max(.5, Math.min(desired, fit));
-    this.root.setScale(scale)
-      .setPosition(viewport.insets.left + safeWidth / 2, height - viewport.insets.bottom - 94 * scale);
-    this.cells.forEach((cell, index) => {
-      const text = this.cellText(index);
-      this.placeDom(cell, cell.secondsDom, text.seconds, 1);
-      this.placeDom(cell, cell.quantityDom, text.quantity, text.alpha);
-    });
-  }
-
-  setVisible(visible: boolean): void {
-    this.hud.setVisible(this.root, visible);
-    if (this.visibleApplied === visible) return;
-    this.visibleApplied = visible;
-    if (visible) this.paint();
-    else this.cells.forEach(cell => {
-      for (const text of [cell.secondsDom, cell.quantityDom]) {
-        if (!text) continue;
-        text.key = 'hidden'; text.label.setVisible(false);
-      }
-    });
-  }
-
-  destroy(): void {
-    for (const cell of this.cells) {
-      cell.secondsDom?.label.remove();
-      cell.quantityDom?.label.remove();
-    }
-    this.root.destroy(true);
-  }
-
-  /** 一格要显示的文字和压暗程度；画布和 DOM 用同一份计算结果。 */
-  private cellText(index: number): { seconds: string; quantity: string; alpha: number } {
-    const slot = this.slots[index];
-    const cooldown = shortcutCooldown(slot, this.cooldowns);
-    const seconds = cooldownSecondsLabel(cooldown?.remainingMs ?? 0);
-    const isItem = slot?.entry?.kind === 'item';
-    const quantity = isItem && slot ? String(slot.quantity) : '';
-    const cooling = (cooldown?.remainingMs ?? 0) > 0;
-    const usable = !!slot?.entry && !cooling && (isItem ? (slot?.quantity ?? 0) > 0 : !!slot?.enabled);
-    const alpha = cooling ? .45 : usable ? 1 : .4;
-    return { seconds, quantity, alpha };
-  }
-
-  /**
-   * 把 DOM 文字放到容器里的局部坐标处；字号按容器的世界缩放换算。
-   * 内容由 DomLabel 自己判重，位置、字号、透明度不变时这里也不重复写样式。
-   */
-  private placeDom(cell: Cell, text: DomText | undefined, value: string, opacity: number): void {
-    if (!text) return;
-    text.label.setText(value);
-    if (!value || !this.visibleApplied) {
-      if (text.key !== 'hidden') { text.key = 'hidden'; text.label.setVisible(false); }
-      return;
-    }
-    const matrix = cell.container.getWorldTransformMatrix();
-    const point = matrix.transformPoint(text.localX, text.localY);
-    const size = Math.max(1, text.baseSize * Math.abs(matrix.scaleX || 1));
-    const key = `${point.x}|${point.y}|${size}|${opacity}`;
-    if (key === text.key) return;
-    text.key = key;
-    text.label.setStyle({ fontSize: `${size}px`, opacity: String(opacity) })
-      .setPosition(point.x, point.y).setVisible(true);
-  }
-
-  private paint(): void {
-    this.cells.forEach((cell, index) => {
-      const text = this.cellText(index);
-      const slot = this.slots[index];
-      this.paintIcon(cell, slot?.icon);
-      const cooldown = shortcutCooldown(slot, this.cooldowns);
-      const state = cooldownFanState(cooldown, ICON_SIZE / 2);
-      if (cell.fanState !== state) {
-        cell.fanState = state;
-        drawCooldownFan(cell.fan, ICON_SIZE / 2, cooldown);
-      }
-      this.placeDom(cell, cell.secondsDom, text.seconds, 1);
-      this.placeDom(cell, cell.quantityDom, text.quantity, text.alpha);
-      cell.icon?.setAlpha(text.alpha);
-    });
-  }
-
-  private paintIcon(cell: Cell, file: string | undefined): void {
-    if (!file) {
-      cell.icon?.setVisible(false);
-      cell.iconKey = undefined;
-      return;
-    }
-    const ref = uiImageFor(this.scene, file);
-    if (!this.scene.textures.exists(ref.key)) { cell.icon?.setVisible(false); cell.iconKey = undefined; return; }
-    if (!cell.icon) {
-      cell.icon = this.scene.add.image(0, 0, ref.key, ref.frame);
-      cell.container.addAt(cell.icon, 2);
-    } else if (cell.iconKey !== `${ref.key}:${ref.frame}`) {
-      cell.icon.setTexture(ref.key, ref.frame);
-    }
-    cell.iconKey = `${ref.key}:${ref.frame}`;
-    cell.icon.setDisplaySize(ICON_SIZE, ICON_SIZE).setVisible(true);
-  }
+  setPage(slots: readonly ShortcutSlot[]): void { this.view.setPage(slots); }
+  setCooldowns(cooldowns: Readonly<Record<string, Cooldown>>): void { this.view.setCooldowns(cooldowns); }
+  layout(width: number, height: number): void { this.view.layout(controlViewport(this.hud.scene, width, height)); }
+  setVisible(visible: boolean): void { this.requested = visible; this.view.visible(visible && this.active); }
+  destroy(): void { this.unwatch(); this.view.destroy(); }
 }
