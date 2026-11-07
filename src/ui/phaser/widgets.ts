@@ -2,6 +2,7 @@ import { UI_EVENTS } from '../../application/ui-events.ts';
 import { VolumeSlider } from './volume-slider.ts';
 import Phaser from 'phaser';
 import { readSafeArea } from '../viewport.ts';
+import { portraitFit } from '../portrait-fit.ts';
 import { loadSceneAssets, type PendingAsset } from '../../rendering/scene-assets.ts';
 import { onWebGLRestore } from '../../rendering/webgl-recovery.ts';
 import type { AssetLease } from '../../application/assets.ts';
@@ -123,6 +124,16 @@ export class UiSurface {
     const result=this.scene.add.image(x,y,ref.key,ref.frame).setOrigin(0);
     if(width!==undefined||height!==undefined){const ratio=result.width/result.height;result.setDisplaySize(width??height!*ratio,height??width!/ratio);}
     parent.add(result); return result;
+  }
+
+  /** 头像专用：等比缩放铺满框，裁掉多出来的边，避免不同来源的头像被拉变形。 */
+  imageCover(file:string,x:number,y:number,width:number,height:number,parent=this.root,anchorX=.5,anchorY=.5):Phaser.GameObjects.Image{
+    const ref=uiImageFor(this.scene,file);
+    const result=this.scene.add.image(x,y,ref.key,ref.frame).setOrigin(0);
+    const fit=portraitFit({width:result.width,height:result.height},{width,height},anchorX,anchorY);
+    if(fit.cropWidth<result.width||fit.cropHeight<result.height)result.setCrop(fit.cropX,fit.cropY,fit.cropWidth,fit.cropHeight);
+    result.setScale(fit.scale);
+    parent.add(result);return result;
   }
   text(value: string, x: number, y: number, width=0, size=22, color=GOLD, parent=this.root): Phaser.GameObjects.Text {
     const result:Phaser.GameObjects.Text=this.scene.add.text(x,y,'',{fontFamily:FONT,fontSize:size,color,resolution:Math.min(3,Math.max(1,window.devicePixelRatio||1)),lineSpacing:5}).setOrigin(0);

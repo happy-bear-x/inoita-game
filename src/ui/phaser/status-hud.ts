@@ -7,6 +7,7 @@ import { buffIconBlinking,buffIconPosition,gaugeFillWidth,memberColumnLayout,mem
 import type { HudGauge,StatusHudSkin,TargetStatus } from '../../domain/status-hud.ts';
 import type { PartyActiveSnapshot } from '../../domain/party.ts';
 import { readSafeArea, uiUnitScale } from '../viewport.ts';
+import { portraitFit } from '../portrait-fit.ts';
 import { resolveControlLayout } from '../control-layout.ts';
 import { controlViewport } from './control-layout-viewport.ts';
 import { uiImage } from './widgets.ts';
@@ -52,7 +53,8 @@ class MemberPanel {
     this.container=hud.add(scene.add.container(0,0));
     this.frame=scene.add.image(0,0,skin.assets['member-frame']).setOrigin(0).setDisplaySize(layout.width,layout.height);
     const p=layout.portrait;
-    this.portrait=scene.add.image(p.x,p.y,skin.assets['member-portrait']).setOrigin(0).setDisplaySize(p.width,p.height);
+    this.portrait=scene.add.image(p.x,p.y,skin.assets['member-portrait']).setOrigin(0);
+    fitPortrait(this.portrait,p.width,p.height);
     // 与大面板一致：框体压在头像之上，由框体盖住头像下缘；条和等级随后再加到最上层。
     this.container.add([this.portrait,this.frame]);
     this.domLevel=domUi?.label('hud','dom-status-member-level',{x:.5,y:.5})
@@ -85,7 +87,8 @@ class MemberPanel {
     // 阵亡仍保留该成员自己的头像，只压暗；不要换成通用的 down 头像。
     this.portrait.setTexture(portraitImage.key,portraitImage.frame).setTint(down?0x777777:0xffffff);
     const p=layout.portrait;
-    this.portrait.setPosition(p.x,p.y).setDisplaySize(p.width,p.height);
+    this.portrait.setPosition(p.x,p.y);
+    fitPortrait(this.portrait,p.width,p.height);
     this.domLevel?.setText(String(values.level));
     this.gauges.health.update(values.health,values.maxHealth);
     this.gauges.mana.update(values.mana,values.maxMana);
@@ -145,6 +148,13 @@ class MemberPanel {
 }
 
 interface PortraitRef{key:string;frame?:string}
+/** 把头像等比缩放裁进面板槽位；不同大小的来源图不会被拉变形。 */
+function fitPortrait(image:Phaser.GameObjects.Image,width:number,height:number):void{
+  const fit=portraitFit({width:image.width,height:image.height},{width,height},.5,.35);
+  if(fit.cropWidth<image.width||fit.cropHeight<image.height)image.setCrop(fit.cropX,fit.cropY,fit.cropWidth,fit.cropHeight);
+  else image.setCrop();
+  image.setScale(fit.scale);
+}
 const portraitRefKey=(ref:PortraitRef):string=>ref.frame?`${ref.key}\0${ref.frame}`:ref.key;
 /** 状态栏皮肤按文件路径直接做纹理键；菜单面板图片可能进了 UI 图集，两种都要认。 */
 function portraitRef(scene:Phaser.Scene,file:string|undefined):PortraitRef|undefined{
@@ -178,7 +188,9 @@ export class StatusHud {
     this.playerContainer=hud.add(scene.add.container(0,0));this.targetContainer=hud.add(scene.add.container(0,0));
     const image=(file:string,x:number,y:number,w:number,h:number)=>scene.add.image(x,y,file).setOrigin(0).setDisplaySize(w,h);
     this.playerContainer.add(image(skin.assets['player-shadow'],0,0,skin.player.width,skin.player.height));const p=skin.player.portrait;
-    this.portrait=image(skin.assets['player-portrait'],p.x,p.y,p.width,p.height);this.playerContainer.add([this.portrait,image(skin.assets['player-frame'],0,0,skin.player.width,skin.player.height)]);
+    this.portrait=scene.add.image(p.x,p.y,skin.assets['player-portrait']).setOrigin(0);
+    fitPortrait(this.portrait,p.width,p.height);
+    this.playerContainer.add([this.portrait,image(skin.assets['player-frame'],0,0,skin.player.width,skin.player.height)]);
     if(domUi){
       this.domLevel=domUi.label('hud','dom-status-level',{x:.5,y:.5})
         .setStyle({color:'#ffffff',lineHeight:'1',textShadow:'none'}).setVisible(false);
@@ -215,7 +227,7 @@ export class StatusHud {
         panel.set(id,values as MemberValues|undefined,snapshot?.living.includes(id)??true,portraitFor?.(id));});
       for(let slot=others.length;slot<this.panels.length;slot++)this.panels[slot].set(undefined,undefined,true);
       const file=portraitFor?.(controlled),ref=portraitRef(scene,file),portraitSignature=ref?portraitRefKey(ref):undefined;
-      if(ref&&portraitSignature!==this.portraitKey){this.portraitKey=portraitSignature;this.portrait.setTexture(ref.key,ref.frame).setDisplaySize(p.width,p.height);}
+      if(ref&&portraitSignature!==this.portraitKey){this.portraitKey=portraitSignature;this.portrait.setTexture(ref.key,ref.frame);fitPortrait(this.portrait,p.width,p.height);}
       this.paintPlayerIcons(readConditions?.(controlled)??[]);
       this.panels.forEach((panel,index)=>panel.paintIcons(index<others.length?(readConditions?.(others[index])??[]):[]));
       if(this.player){const value=this.player;

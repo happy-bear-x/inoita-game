@@ -567,7 +567,7 @@ export class StoryUI {
       const button=v.button('',8,top,104,113,()=>{if(id!==this.selectedMemberId)this.selectMember(id,this.page);},{bare:true}).setData('label',name);
       // 头像相对按钮格子 (9,9)，即内容坐标的 (17, top+9)：`button` 是它的父容器，
       // 传绝对坐标会被再加一次按钮偏移，头像就会掉到格子外面。
-      v.image(this.memberPartyIcon(id),9,9,86,96,button);
+      v.imageCover(this.memberPartyIcon(id),9,9,86,96,button,.5,.2);
     }
   }
   /** 某位成员在队员栏里的头像；佣兵用职业图，主角与剧情同伴用人物状态立绘的小图。 */
@@ -935,7 +935,7 @@ export class StoryUI {
     // @0x1e6b78` 把组 15 索引 48／49／53／54 画在 (83,−2)、(455,−2)、(83,392)、(455,392)，立绘在 (95,10)。
     v.border(panels.assets,85,0,409,431);
     for(const [corner,x,y]of [['nw',83,-2],['ne',455,-2],['sw',83,392],['se',455,392]] as const)v.image(panels.assets[`character-${corner}`],x,y,41,41);
-    v.image(art.image,95,10,252,271);
+    v.imageCover(art.image,95,10,252,271);
     // 队员栏：原版这个 104×340 的栏里放三个 104×113 的成员按钮（`Scene_Init_POPUP_SC_CHARACTER_INFO
     // @0x1e5478` 里 `SetRect(?, 0/0x71/0xe2, 104, 113)`），每个画成员头像 86×96 落在框内 +(9,9)，
     // 所以第一格的头像就在 (17,58)；点哪一格就切到那位成员身上。
@@ -1422,7 +1422,7 @@ export class StoryUI {
         const character=this.bagPortrait??(this.bagPortrait=new CharacterPreview(this.scene));
         character.show(v,appearance,preview);
       }
-      else v.image(this.selectedMemberId==='player'?panels.classes[member.classId].preview:art.partyIcon,preview.x,preview.y,preview.width,preview.height);
+      else v.imageCover(this.selectedMemberId==='player'?panels.classes[member.classId].preview:art.partyIcon,preview.x,preview.y,preview.width,preview.height);
       for(const slot of panels.equipmentSlots){const entry=equipment[slot.id as EquipmentSlot],instance=entry?bag.get(entry):undefined,item=instance?bag.catalog.items[instance.item]:undefined;const button=v.button('',85+slot.x,slot.y,74,74,()=>{if(!entry)return;this.selectItem(entry,'right');},{image:slotFrameImage(this.app,this.session!,instance)});v.image(item?.icon??slot.emptyIcon,item?5:13,item?5:13,item?64:48,item?64:48,button);button.setData('label',slot.name);this.drops.push({object:button,entry,slot:slot.id as EquipmentSlot});}
       // 等级／职业行：`UIEquip_DrawEquip` 在左框内 (46,368) 画 323 宽的文本底板，文字居中于它、
       // 颜色 #e2cb9e、纵向上沿在底板顶边下 7 像素（`GRPX_DrawStringWithFont(..., y+375, 居中)`）。

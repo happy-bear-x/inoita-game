@@ -129,7 +129,7 @@ export class PartyPanel {
       {image:assets[`party-page-${this.page+1}`]}).setData('label',`佣兵名册第 ${this.page+1} 页，切换页面`);
     story.forEach((id,index)=>{
       const button=v.button('',6,80+index*91,52,65,()=>this.select(id),{bare:true}).setData('label',this.name(id));
-      v.image(this.portrait(id),0,0,52,58,button).setAlpha(this.member(id)!.player.health>0?1:.45);
+      v.imageCover(this.portrait(id),0,0,52,58,button,.5,.2).setAlpha(this.member(id)!.player.health>0?1:.45);
       this.text(`story-role-${id}`,id==='player'?'主角':'伙伴',6+26,80+index*91+63,16,GOLD,.5,0);
       if(this.selected===id)v.rect(0,0,52,58,0xffda88,.12,button).setStrokeStyle(2,0xffda88);
     });
@@ -137,7 +137,7 @@ export class PartyPanel {
       const id=snapshot.rosterSlots[this.page*9+index],x=70+index%3*136,y=5+Math.floor(index/3)*123;
       const button=v.button('',x,y,127,114,()=>{if(id)this.select(id);},{bare:true}).setData('label',id?this.name(id):`空佣兵槽 ${this.page*9+index+1}`);
       v.image(assets['party-slot'],0,0,127,114,button);
-      const portrait=v.image(id?this.portrait(id):assets['party-empty'],0,0,127,114,button);
+      const portrait=v.imageCover(id?this.portrait(id):assets['party-empty'],0,0,127,114,button,.5,.2);
       if(id&&this.member(id)!.player.health<=0){
         portrait.setAlpha(.45);
         this.text(`roster-dead-${index}`,'阵亡',x+63,y+88,18,TEXT_COLORS.dangerSoft,.5,0);
@@ -204,7 +204,7 @@ export class PartyPanel {
       // 和背包页共用同一套合成立绘：按预览框缩放居中，换人时替换，翻页时摘下来保留缓存。
       const character=this.preview??(this.preview=new CharacterPreview(v.scene));
       character.show(v,appearance,preview);
-    }else v.image(this.portrait(id),preview.x,preview.y,preview.width,preview.height);
+    }else v.imageCover(this.portrait(id),preview.x,preview.y,preview.width,preview.height);
     for(const slot of panels.equipmentSlots){
       const entry=equipment[slot.id as EquipmentSlot],instance=entry?bag.get(entry):undefined,item=instance?bag.catalog.items[instance.item]:undefined;
       const button=v.button('',482+slot.x,slot.y,74,74,()=>this.inspect(id,'bag'),{image:slotFrameImage(this.app,this.session,instance)}).setData('label',`${slot.name}：${item?.name??'空'}`);
@@ -254,7 +254,7 @@ export class PartyPanel {
     this.placeModal?.(718,415);
     v.frame(panels.assets,0,0,718,415);
     if(modal.kind==='dismiss'){
-      v.image(this.portrait(modal.id),38,66,127,114);
+      v.imageCover(this.portrait(modal.id),38,66,127,114,v.root,.5,.2);
       this.modalEntry('dismiss-title',`确定放逐 ${this.name(modal.id)}？`,196,70,25,GOLD,0,0,{width:470,wrap:'word'});
       this.modalEntry('dismiss-body','放逐后，该佣兵和其穿戴的装备将一起离开。',196,132,23,GOLD,0,0,{width:465,wrap:'word'});
       if(modal.error)this.modalEntry('dismiss-error',modal.error,35,279,22,TEXT_COLORS.dangerSoft,0,0,{width:648,wrap:'word'});
