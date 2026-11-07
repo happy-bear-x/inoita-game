@@ -520,6 +520,25 @@ test('character titles stay clear of content-frame shadows and all attribute lab
   }
 });
 
+test('character resource labels and values align with their gauges below the portrait',t=>{
+  const f=fixture();t.after(f.cleanup);
+  f.menu.show('status');
+  const gauges=(f.internals.body.root.list as unknown as Display[])
+    .filter(node=>node.texture.key===`interface:${panels.assets['character-gauge']}`);
+  assert.equal(gauges.length,3);
+  for(const [index,name] of ['生命','魔法','经验'].entries()){
+    const gauge=gauges[index],label=domLabel(f,name)!;
+    const point=labelPagePoint(f,label);
+    assert.ok(gauge.y>=281,'三条槽位于人物立绘下缘之外');
+    assert.ok(gauge.y+gauge.height<=431,'最后一条槽完整位于面板内');
+    assert.ok(point.x>=85&&point.x+46<=gauge.x,'标签完整位于面板边框和槽位之间');
+    assert.ok(Math.abs(point.y-gauge.y-gauge.height/2)<1e-8,'标签与对应槽垂直居中');
+    const values=visibleDomLabels(f).filter(value=>value.text.includes(' / ')&&Math.abs(labelPagePoint(f,value).y-point.y)<.01);
+    assert.equal(values.length,1,'每个槽位各自显示一行数值');
+    assert.ok(labelPagePoint(f,values[0]).x>gauge.x&&labelPagePoint(f,values[0]).x<gauge.x+gauge.width);
+  }
+});
+
 test('system exposes load alongside save while settings keeps the working display and audio preferences',t=>{
   displaySettings.setCriticalDecorations(true);
   t.after(()=>displaySettings.setCriticalDecorations(true));

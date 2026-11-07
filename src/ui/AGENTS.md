@@ -14,6 +14,7 @@
 
 - 本目录承载布局、断行、状态和动作接口；屏幕组件的 DOM 绘制与输入在 `src/ui/dom/`。
 - **头像按比例裁进框。** HUD、人物页、队伍页和背包预览的头像用 `portraitFit` / `UiSurface.imageCover` 等比缩放后裁剪；同一张图换到不同槽位也不会被拉变形。
+- 人物页的生命、魔法、经验三行位于立绘下方；标签、数值和百分比按对应槽位的中心线对齐，最后一行完整落在面板内。
 - **画面铺满，安全区只给 UI 避让。** Android 壳用 edge-to-edge 铺满整屏；`readSafeArea()` 只用于 HUD、侧边按钮、小地图和文字的安全边，不参与画布尺寸。
 - `story-ui.ts` 只在 `attach` 时向 `app.inputRouter` 注册一个 `menu` 作用域，菜单打开时独占键盘；场景不再单独订阅 `keydown`。
 - **页面 controller 拥有这一页的状态和操作。** `save-page.ts` 是存档/读档页的样板：确认框、改名输入、读写请求和 Escape 分层都在 controller 里，`StoryUI` 只保留路由、生命周期、共享输入和整页重绘。后续拆 `party`、`quests`、`shop` 等页面时沿用同一方向，不重写面板绘制。

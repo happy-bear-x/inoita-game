@@ -946,12 +946,12 @@ export class StoryUI {
     this.addStatusText('level',`等级 ${member.level}`,458,95,20,AREA_TEXT,1,0,{width:200,align:'right'});
     this.addStatusText('class',character.name,458,120,20,AREA_TEXT,1,0,{width:200,align:'right'});
     this.addStatusText('name',actor.name,458,152,26,AREA_TEXT,1,0,{width:200,align:'right'});
-    (['health','mana','experience'] as const).forEach((kind,index)=>{const player=member.player,value=player[kind],max=kind==='experience'?player.nextLevelExperience:kind==='health'?player.maxHealth:player.maxMana,y=258+index*44,ratio=kind==='experience'&&max===0?1:max>0?Math.max(0,Math.min(1,value/max)):0;
-      v.image(panels.assets['character-gauge'],168,y+15,243,37);
-      this.addStatusText(`resource-${kind}-label`,panels.character.labels[kind],118,y+21,19,GOLD,1,0,{width:46,align:'right'});
-      this.addStatusText(`resource-${kind}-value`,max===0?'已满级':`${value} / ${max}`,290,y,17,GOLD,.5,0,{width:223,align:'center'});
-      this.addStatusText(`resource-${kind}-percent`,`${Math.floor(ratio*100)}%`,455,y+21,17,GOLD,1,0);
-      const width=223*ratio,fill=v.image(panels.assets[`character-${kind}-fill`],178,y+27,223,13);fill.setCrop(0,0,fill.width*ratio,fill.height).setVisible(width>0);if(width>0){v.image(panels.assets[`character-${kind}-start`],178,y+27,7,13);v.image(panels.assets[`character-${kind}-end`],178+Math.max(0,width-7),y+27,7,13);}
+    (['health','mana','experience'] as const).forEach((kind,index)=>{const player=member.player,value=player[kind],max=kind==='experience'?player.nextLevelExperience:kind==='health'?player.maxHealth:player.maxMana,y=290+index*44,ratio=kind==='experience'&&max===0?1:max>0?Math.max(0,Math.min(1,value/max)):0;
+      v.image(panels.assets['character-gauge'],168,y,243,37);
+      this.addStatusText(`resource-${kind}-label`,panels.character.labels[kind],118,y+18.5,19,GOLD,0,.5,{width:46,align:'right'});
+      this.addStatusText(`resource-${kind}-value`,max===0?'已满级':`${value} / ${max}`,290,y+18.5,17,GOLD,.5,.5,{width:223,align:'center'});
+      this.addStatusText(`resource-${kind}-percent`,`${Math.floor(ratio*100)}%`,455,y+18.5,17,GOLD,1,.5);
+      const width=223*ratio,fill=v.image(panels.assets[`character-${kind}-fill`],178,y+12,223,13);fill.setCrop(0,0,fill.width*ratio,fill.height).setVisible(width>0);if(width>0){v.image(panels.assets[`character-${kind}-start`],178,y+12,7,13);v.image(panels.assets[`character-${kind}-end`],178+Math.max(0,width-7),y+12,7,13);}
     });
     // 右侧两块同样只有图框：原版 `Scene_Draw_...` 只对它们调 `UI_DrawBorderRect`，
     // 加点时属性栏宽 409（画到 x=905），常态宽 224，战斗指标栏固定在 `+0xe2`(226) 处、224 宽。
