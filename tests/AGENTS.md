@@ -22,7 +22,6 @@
 - `story-stage-isolation.test.ts` 验证加载途中跳过、迟到画面清理、共享启动与真实坐标保留；`story-skip.test.ts` 验证流程阶段及解锁顺序。
 - `scene-assets.test.ts` 验证已齐全的资源不等待无关下载，以及缺帧修复仍按队列执行。
 - `wardrobe.test.ts` 验证跨场景合成外观复用、独立取消、换装、缓存上限、会话清理及图形上下文恢复。
-- `game-diagnostics.test.ts` 验证开发页采样开关、切换峰值、共享贴图归属、帧摘要落盘与跳过耗时汇总；`content-loader.test.ts` 验证资源缓存和进行中的请求计数。
 
 ```bash
 npm test -- tests/combat.test.ts

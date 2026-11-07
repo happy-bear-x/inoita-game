@@ -296,8 +296,6 @@ export class StoryUI {
     scene.events.once('shutdown',()=>{this.unregisterKeyboard?.();this.unregisterKeyboard=undefined;this.unsubscribe?.();this.unsubscribeFullscreen?.();this.discardAllocation();this.menuText?.destroy();this.menuText=undefined;this.shortcutPrompt?.remove();this.shortcutPrompt=undefined;scene.scale.off('resize',this.resize,this);scene.game.events.off(UI_EVENTS.minimapLayout,this.onMinimap,this);scene.game.events.off(UI_EVENTS.cancelInput,this.cancelDrag,this);this.cancelOperation();this.savePage.destroy();this.surface!.root.remove(this.body!.root);this.surface?.destroy();this.body?.destroy();this.modal?.destroy();this.hudButtons?.destroy();this.description?.destroy();this.shortcutScreen?.destroy();this.backTab?.destroy();this.backdrop?.destroy();this.popupMask?.destroy();this.popupMask=undefined;this.controlEditor?.destroy();this.controlEditor=undefined;this.keyBindingEditor?.destroy();this.keyBindingEditor=undefined;});
     this.sync();
   }
-  get hasBoundSession(): boolean { return !!this.session; }
-
   bind(session:Session,world:WorldIndex,content:StoryInterface):void{
     this.discardAllocation();
     this.loadReturnToDefeat=false;
@@ -425,12 +423,9 @@ export class StoryUI {
   }
   close():void{
     if(this.open&&this.requestAllocationExit(()=>this.close()))return;
-    if(!this.open)return;
-    const finishMemory = this.app.memorySampler?.compare('panel-close', this.page);
-    this.controlEditor?.close();this.app.ui.setControlLayoutEditing(false);
+    if(!this.open)return;this.controlEditor?.close();this.app.ui.setControlLayoutEditing(false);
     this.keyBindingEditor?.close();this.app.ui.setKeyBindingEditing(false);this.cancelOperation();this.modalActive=false;this.shortcutEdit=undefined;this.shortcutScreen?.clear();this.backTab?.clear();this.shopPanel=undefined;this.bagPortrait?.destroy();this.bagPortrait=undefined;this.partyPanel?.destroyPreview();this.app.releasePartyPreview?.();this.craftingPanel=undefined;this.craftingActor=undefined;this.forge=undefined;this.skillBook=undefined;this.open=false;this.scrollNames.forEach((scroll,name)=>this.scrollOffsets.set(`${this.page}:${name}`,scroll.scrollTop));this.scrollNames.clear();this.body?.clear();this.description?.clear();if(this.surface&&this.body){this.surface.root.remove(this.body.root);this.surface.clear();this.surface.root.add(this.body.root);}this.keyboardFocus=undefined;this.surface?.visible(false);this.body?.visible(false);this.description?.visible(false);this.modal?.visible(false);this.shortcutScreen?.visible(false);this.backTab?.visible(false);this.backdrop?.setVisible(false);this.app.ui.resetInput();this.app.ui.lock(false,'story-menu');
     if(this.loadReturnToDefeat){this.loadReturnToDefeat=false;if(this.app.ui.defeated)this.app.ui.revealDefeat();}
-    finishMemory?.();
   }
   private cancelOperation():void{this.cancelDrag();this.request.abort();this.request=new AbortController();this.busy=false;this.operation=undefined;this.itemNotice=undefined;this.skillReset=false;this.savePage?.cancelPending();this.partyPanel?.close();this.craftingPanel?.close();this.forge=undefined;this.skillBook=undefined;this.modal?.clear();this.modal?.visible(false);}
   /** 返回是否消费这次按键；菜单关闭时把未消费的按键让给剧情层和世界。 */

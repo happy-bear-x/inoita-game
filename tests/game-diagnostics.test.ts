@@ -7,15 +7,12 @@ import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { registerHooks } from 'node:module';
 import type Phaser from 'phaser';
-import { retainLoadedSceneAssets } from '../src/rendering/scene-assets.ts';
-import { MemorySampler } from '../src/application/memory-sampler.ts';
-import { FrameSampler } from '../src/application/frame-sampler.ts';
 
 const source = await readFile(new URL('../public/diagnostics.js', import.meta.url), 'utf8');
 const hooks = registerHooks({ resolve(specifier, context, next) {
-  return specifier === 'phaser' ? { shortCircuit: true, url: 'data:text/javascript,export default {Core:{Events:{PRE_STEP:"prestep",POST_STEP:"poststep",POST_RENDER:"postrender",PAUSE:"pause",RESUME:"resume",DESTROY:"destroy"}}}' } : next(specifier, context);
+  return specifier === 'phaser' ? { shortCircuit: true, url: 'data:text/javascript,export default {Core:{Events:{PRE_STEP:"prestep",POST_STEP:"poststep",POST_RENDER:"postrender",DESTROY:"destroy"}}}' } : next(specifier, context);
 } });
-const { installGameDiagnostics, installDevelopmentMemory, installStorySkipDiagnostics } = await import('../src/application/game-diagnostics.ts');
+const { installGameDiagnostics, installStorySkipDiagnostics } = await import('../src/application/game-diagnostics.ts');
 hooks.deregister();
 const middlewareUrl = new URL('../tools/diagnostic-collector.mjs', import.meta.url).href;
 type Middleware = (req: EventEmitter & { url: string; method: string }, res: {
@@ -26,7 +23,7 @@ const settle = () => new Promise<void>(resolve => setImmediate(resolve));
 
 interface Entry { id: string; kind: string; details: Record<string, unknown>; state: unknown; frame: { phase: string } }
 interface Collector {
-  record(kind: string, details: unknown, withSnapshot?: boolean): void; flush(): Promise<void>;
+  record(kind: string, details: unknown): void; flush(): Promise<void>;
   setSnapshot(provider: () => unknown): void; markFrame(phase: string): void; stopFrames(): void;
   export(): string;
 }
@@ -211,133 +208,6 @@ test('server acknowledges only stored records, rejects invalid payloads and pres
     assert.deepEqual(records.map(record => record.id), ['a', 'b']);
     assert(records.every(record => Number.isFinite(Date.parse(record.receivedAt))));
   } finally { await rm(root, { recursive: true, force: true }); }
-});
-
-test('dev frame summaries keep one frame’s work, reset across pauses and reach the log without a world snapshot', async t => {
-  const f = client(), events = new EventEmitter(), visibility = new EventTarget();
-  let now = 0, suspended = false, map = 'forest', snapshots = 0;
-  const page = Object.assign(visibility, { hidden: false });
-  const oldDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
-  Object.defineProperty(globalThis, 'document', {configurable:true, value:page});
-  globalThis.storyDiagnostics = f.collector;
-  t.after(() => {
-    globalThis.storyDiagnostics = undefined;
-    if (oldDocument) Object.defineProperty(globalThis, 'document', oldDocument);
-    else Reflect.deleteProperty(globalThis, 'document');
-  });
-  const memory = new MemorySampler(() => ({map}), () => {});
-  memory.addTexture('world', 4096);
-  const sampler = new FrameSampler(() => ({mode:'game', map, companions:2, enemies:12}),
-    details => f.collector.record('frame-sample', {...details, memory: memory.frame()}, false), () => now);
-  installGameDiagnostics({events} as unknown as Phaser.Game, () => { snapshots++; return {}; }, sampler, () => suspended);
-  const frame = (wait: number, update = 0, render = 0) => {
-    now += wait; events.emit('prestep');
-    now += update; events.emit('poststep');
-    now += render; events.emit('postrender');
-  };
-  const samples = () => f.entries().filter(entry => entry.kind === 'frame-sample');
-  frame(0);
-  frame(4000);
-  page.hidden = true; page.dispatchEvent(new Event('visibilitychange'));
-  frame(8000); page.hidden = false; page.dispatchEvent(new Event('visibilitychange'));
-  frame(1500); frame(4000);
-  events.emit('pause'); now += 30000; events.emit('resume'); memory.markResume();
-  frame(20); frame(4000);
-  suspended = true; frame(1000); suspended = false; frame(20);
-  assert.equal(samples().length, 0);
-
-  now += 7; events.emit('prestep');
-  sampler.combat.start(); now += 6;
-  sampler.partyPath.start(); now += 9; sampler.partyPath.end();
-  now += 7; sampler.combat.end();
-  for (const duration of [3, 2]) { sampler.worldText.start(); now += duration; sampler.worldText.end(); }
-  now += 13; events.emit('poststep'); now += 8; events.emit('postrender');
-  map = 'village';
-  frame(50); frame(33);
-  for (let i = 0; i < 243; i++) frame(15, 3, 2);
-  assert.equal(samples().length, 0);
-  await settle();
-  frame(15, 3, 2);
-  const [sample] = samples();
-  assert.equal(sample.state, null);
-  assert.equal(snapshots, 0);
-  assert.deepEqual(sample.details, {memory: {...memory.snapshot(), firstAfterResume:true}, windowMs:5018, frames:247, fps:49.22, over33Ms:2, over50Ms:1,
-    slowest:{mode:'game', map:'forest', companions:2, enemies:12, frameMs:55, waitMs:7, updateMs:40,
-      renderSubmitMs:8, combatMs:22, partyPathMs:9, worldTextMs:5}});
-  const root = await mkdtemp(path.join(tmpdir(), 'inotia-frames-'));
-  t.after(() => rm(root, {recursive:true, force:true}));
-  const middleware = createDiagnosticMiddleware(root);
-  assert.equal(await request(middleware, JSON.stringify(f.sent.at(-1))), 204);
-  const stored = JSON.parse(await readFile(path.join(root, '.diagnostics/client-errors.jsonl'), 'utf8'));
-  assert.equal(stored.id, sample.id); assert.deepEqual(stored.details, sample.details);
-  for (let i = 0; i < 250; i++) frame(20);
-  assert.equal(samples().length, 2); assert.equal(samples()[1].details.frames, 250);
-  assert.equal((samples()[1].details.memory as {firstAfterResume:boolean}).firstAfterResume, false);
-  events.emit('destroy');
-  assert.equal(events.listenerCount('pause'), 0); assert.equal(events.listenerCount('resume'), 0);
-});
-
-
-test('development memory counts shared Phaser caches and reports textures that were already released at completion', () => {
-  const events = new EventEmitter(), frames = new Map<string, {source: {width:number;height:number}[]}>();
-  const textures = Object.assign(new EventEmitter(), {
-    getTextureKeys: () => [...frames.keys()], get: (key: string) => frames.get(key), exists: (key: string) => frames.has(key),
-    removeKey(key: string) { frames.delete(key); return textures; },
-    remove(key: string) { textures.removeKey(key); textures.emit('removetexture', key); }
-  });
-  const originalRemoveKey = textures.removeKey;
-  const audio = { events: new EventEmitter(), getKeys: () => ['title'], get: () => ({length:100, numberOfChannels:2}) };
-  const game = { events, textures, cache: {audio} } as unknown as Phaser.Game;
-  const log = client();
-  const record = (kind: string, details: object) => log.collector.record(kind, details, false);
-  assert.equal(installDevelopmentMemory(game, false, '4003', () => ({}), record), undefined);
-  assert.equal(installDevelopmentMemory(game, true, '4002', () => ({}), record), undefined);
-  assert.deepEqual(textures.eventNames(), []);
-  const memory = installDevelopmentMemory(game, true, '4003', () => ({map:'camp'}), record)!;
-  assert.equal(memory.snapshot().heapBytes, null);
-  assert.equal(memory.snapshot().audioBytes, 800);
-  const scene = {textures, anims: {exists: () => false}, sys: {settings: {key:'world'}}} as unknown as Phaser.Scene;
-  const finish = memory.begin('map', 'forest');
-  const image = {source:[{width:10, height:20}, {width:5, height:10}]};
-  frames.set('atlas', image);
-  textures.emit('addtexture', 'atlas', image);
-  const first = retainLoadedSceneAssets(scene, ['atlas', 'atlas']);
-  const second = retainLoadedSceneAssets(scene, ['atlas'], 'story-stage');
-  assert.equal(memory.snapshot().textureCount, 1);
-  assert.equal(memory.snapshot().textureBytes, 1000);
-  audio.events.emit('add', audio, 'effect', {length:50, numberOfChannels:1});
-  // 音频先释放；图集在峰值时的两个持有者此后也都释放。
-  audio.events.emit('remove', audio, 'effect');
-  first.release(); first.release();
-  assert.equal(memory.snapshot().textureCount, 1);
-  second.release();
-  finish(); finish();
-  const end = log.entries().filter(row => row.kind === 'memory-step').at(-1)!;
-  assert.deepEqual(end.details.peak, {textureBytes:1000, audioBytes:1000});
-  assert.deepEqual(end.details.largest, [{key:'atlas', bytes:1000, owners:['world','story-stage']}]);
-  assert.deepEqual(end.details.largestAdded, end.details.largest);
-  assert.equal(end.state, null);
-  assert.equal(memory.snapshot().textureBytes, 0);
-  audio.events.emit('add', audio, 'ambient', {});
-  assert.equal(memory.snapshot().unknownAudio, 1);
-  audio.events.emit('remove', audio, 'ambient');
-  assert.equal(memory.snapshot().unknownAudio, 0);
-  const canvas = {width: 1, height: 1, isCanvas: true, texture: {key: 'text', manager: textures},
-    updateSize(width: number, height: number) { this.width = width; this.height = height; }};
-  const text = {source:[canvas]};
-  frames.set('text', text); textures.emit('addtexture', 'text', text);
-  canvas.updateSize(20, 10);
-  assert.equal(memory.snapshot().textureBytes, 800);
-  assert.equal(textures.removeKey('text'), textures);
-  assert.equal(memory.snapshot().textureCount, 0);
-  const cancelled = memory.begin('map', 'old'), current = memory.begin('map', 'new');
-  cancelled('cancelled'); cancelled(); current();
-  assert.deepEqual(log.entries().filter(row => row.kind === 'memory-step').slice(-4)
-    .map(row => [row.details.subject, row.details.phase]), [['old','before'],['new','before'],['old','cancelled'],['new','ready']]);
-  events.emit('destroy');
-  // scene-assets 自己的迟到贴图监听仍归它管理，仅检查诊断的回收。
-  assert.equal(textures.removeKey, originalRemoveKey);
-  assert.deepEqual(audio.events.eventNames(), []);
 });
 
 test('skip diagnostics report logical completion, world readiness and actual unlock once', () => {

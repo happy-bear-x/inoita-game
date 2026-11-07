@@ -1,4 +1,3 @@
-import { textureMemory } from '../application/memory-sampler.ts';
 import Phaser from 'phaser';
 import type { EffectClip } from '../domain/content.ts';
 import { EFFECT_ATLAS_BY_FILE, EFFECT_ATLAS_PAGES } from '../generated/effect-atlas.ts';
@@ -21,11 +20,6 @@ export { effectAssets } from './combat-asset-descriptors.ts';
 export function createEffect(scene: Phaser.Scene, clip: EffectClip, x: number, y: number, loop = false): Phaser.GameObjects.Container {
   const effect = scene.add.container(x, y).setDepth(y + 1);
   setEffectClip(scene, effect, clip, loop);
-  const memory = textureMemory.get(scene.textures);
-  if (memory) {
-    memory.effects++;
-    effect.once('destroy', () => memory.effects--);
-  }
   return effect;
 }
 

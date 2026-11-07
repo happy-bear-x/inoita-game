@@ -148,12 +148,9 @@ test('session cleanup drops map and pose content so the next request reloads the
   try {
     const loader = new ContentLoader();
     loader.trusted = true;
-    const counts = loader.memoryCounts = { maps: 0, poses: 0, pending: 0 };
     await loader.map('content/maps/town.json');
-    await loader.wardrobePoses(['pose-a', 'pose-a']);
-    assert.deepEqual(counts, {maps: 1, poses: 1, pending: 0});
+    await loader.wardrobePoses(['pose-a']);
     loader.clearSessionCaches();
-    assert.deepEqual(counts, {maps: 0, poses: 0, pending: 0});
     await loader.map('content/maps/town.json');
     await loader.wardrobePoses(['pose-a']);
     assert.deepEqual(calls, [
@@ -179,13 +176,10 @@ test('session cleanup keeps an in-flight map request and resolves its waiter', a
   try {
     const loader = new ContentLoader();
     loader.trusted = true;
-    const counts = loader.memoryCounts = { maps: 0, poses: 0, pending: 0 };
     const pending = loader.map('content/maps/town.json');
     loader.clearSessionCaches();
-    assert.deepEqual(counts, {maps: 0, poses: 0, pending: 1});
     finish();
     assert.equal(await pending, value);
-    assert.deepEqual(counts, {maps: 1, poses: 0, pending: 0});
     assert.equal(await loader.map('content/maps/town.json'), value);
     assert.equal(mapCalls, 1, '完成后仍留在缓存里，下一次调用不再请求');
   } finally { globalThis.fetch = original; }

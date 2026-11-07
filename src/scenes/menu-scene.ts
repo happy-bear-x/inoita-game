@@ -1,5 +1,3 @@
-import { GAME_VERSION } from '../application/asset-version.ts';
-import type { FinishMemorySample } from '../application/memory-sampler.ts';
 import { SCENE_KEYS } from '../application/scene-keys.ts';
 import { displaySettings } from '../application/display-settings.ts';
 import { notifyBootReady } from '../application/live-update.ts';
@@ -33,6 +31,8 @@ import { backupLocalSaves, restoreCloudSaves, type CloudSyncResult } from '../ap
 import type { CloudSavePort } from '../application/cloud-save.ts';
 
 const art=(name:string)=>`/assets/ui/title-menu/${name}.png`;
+/** 标题页右下角展示的版本号；等用户要求时再改。 */
+const GAME_VERSION='v0.0.8';
 /** 版本号下方一行；说明作品性质，并提醒支持官方版本。 */
 const FAN_WORK_NOTICE='同人作品 · 仅供个人学习研究 · 请支持官方正版';
 const CLOSE_IMAGE='/assets/ui/menus/close.png';
@@ -97,10 +97,9 @@ export class MenuScene extends Phaser.Scene {
   };
   private readonly hideCredentials=():void=>{this.credentials?.hide();};
   constructor(app:MenuContext){super(SCENE_KEYS.menu);this.app=app;}
-  create(options:{page?:'home'|'slots'; finishMemory?: FinishMemorySample}={}):void {
+  create(options:{page?:'home'|'slots'}={}):void {
     this.page='home';this.app.ui.setMode('menu');this.app.ui.loading('正在准备主菜单…');
     const controller=new AbortController();
-    if (options.finishMemory) controller.signal.addEventListener('abort', () => options.finishMemory?.('cancelled'), {once:true});
     this.events.once('shutdown',()=>{this.unregisterInput?.();this.unregisterInput=undefined;controller.abort();this.cancelCloudRequest();this.settleConfirm(false,false);this.slotRequest?.abort();this.prompt?.close();this.passwordPrompt?.close();this.credentials?.destroy();this.credentials=undefined;this.clearModalLabels();this.menuText?.destroy();this.menuText=undefined;this.domSpecs=[];this.slotsScroll=undefined;this.settingsList=undefined;this.cloudScroll=undefined;this.surface?.destroy();this.surface=undefined;this.modal?.destroy();this.modal=undefined;this.popupMask?.destroy();this.popupMask=undefined;this.slotPortraits?.release();this.slotPortraits=undefined;this.events.off(Phaser.Scenes.Events.RESUME,this.renderCloudOnResume);this.events.off(Phaser.Scenes.Events.PAUSE,this.hideCredentials);this.scale.off('resize',this.layout,this);});
     // 标题页整屏独占键盘；原始事件由正式界面场景那一处桥接进 router。
     this.unregisterInput?.();this.unregisterInput=this.app.inputRouter.register('menu',this.routeKey,{exclusive:()=>true});
@@ -130,8 +129,8 @@ export class MenuScene extends Phaser.Scene {
       });
       // 确认框打开时页面整块不响应，确认框自己也只在有确认时响应。
       this.modal.enabled=()=>this.app.ui.ready&&!this.app.ui.suspended&&this.sys.isActive()&&this.confirmAction!==undefined;
-      this.app.ui.menuLoaded();if(options.page==='slots')this.openSlots();else this.render();this.app.syncLifecycle?.();notifyBootReady();options.finishMemory?.();
-    },error=>{options.finishMemory?.(controller.signal.aborted ? 'cancelled' : 'error');if(!controller.signal.aborted)this.app.ui.error(String(error),()=>this.scene.restart());});
+      this.app.ui.menuLoaded();if(options.page==='slots')this.openSlots();else this.render();this.app.syncLifecycle?.();notifyBootReady();
+    },error=>{if(!controller.signal.aborted)this.app.ui.error(String(error),()=>this.scene.restart());});
   }
   /** 标题页键盘：输入框让路，确认框的 Escape 只关确认框，其余交给页面按钮。 */
   private routeKey=(event:KeyboardEvent):boolean=>{

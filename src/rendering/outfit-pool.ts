@@ -1,4 +1,3 @@
-import { textureMemory } from '../application/memory-sampler.ts';
 import type { AssetLease } from '../application/assets.ts';
 import type Phaser from 'phaser';
 import type { ActorDefinition, AnimationClip, ClipName } from '../domain/content.ts';
@@ -151,7 +150,7 @@ export class OutfitPool {
     const missing = [...new Set(poses.map(([, id]) => id).filter((id): id is string => !!id && !this.catalog.poses[id]))];
     if (missing.length) await Promise.all(missing.map(id => this.loadPose(id)));
     signal.throwIfAborted();
-    const sources = retainLoadedSceneAssets(this.host, this.catalog.textures.map(texture => ({ kind: 'image' as const, ...texture })), 'outfit-pool:sources');
+    const sources = retainLoadedSceneAssets(this.host, this.catalog.textures.map(texture => ({ kind: 'image' as const, ...texture })));
     try {
       for (const [key, piece] of Object.entries(this.catalog.sprites)) {
         const texture = this.host.textures.get(piece.texture);
@@ -190,7 +189,6 @@ export class OutfitPool {
         const columns=Math.min(pose.frames.length,Math.max(1,Math.floor(2048/width)));
         const key=`outfit-${++serial}`,texture=this.host.textures.addDynamicTexture(key,columns*width,Math.ceil(pose.frames.length/columns)*height);
         if(!texture)throw new Error('人物外观纹理创建失败');
-        textureMemory.get(this.host.textures)?.generatedBy(key, 'outfit-pool');
         textures.push(key);
         const stamps:{texture:string;frame:string;x:number;y:number;config:{originX:number;originY:number;scaleX:number;scaleY:number;angle:number;alpha:number}}[]=[];
         pose.frames.forEach((parts,index)=>{

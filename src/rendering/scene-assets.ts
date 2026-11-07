@@ -1,4 +1,3 @@
-import { textureMemory } from '../application/memory-sampler.ts';
 import type Phaser from 'phaser';
 import { AssetPool } from '../application/assets.ts';
 import type { AssetLease } from '../application/assets.ts';
@@ -75,7 +74,7 @@ function poolFor(scene: Phaser.Scene): AssetPool {
  * 因此这里失败说明资源契约被破坏，应在加载期暴露，而不是等到播放动画时。
  */
 export function retainLoadedSceneAssets(scene: Phaser.Scene,
-  assets: Iterable<PendingAsset | string>, owner?: string): AssetLease {
+  assets: Iterable<PendingAsset | string>): AssetLease {
   const keys: string[] = [];
   for (const asset of assets) {
     if (typeof asset === 'string') {
@@ -87,14 +86,7 @@ export function retainLoadedSceneAssets(scene: Phaser.Scene,
     if (gap) throw new Error(`常驻资源尚未就绪：${asset.key}（${gap === 'texture' ? '纹理未加载' : `缺少帧 ${gap.slice('frame:'.length)}`}）`);
     keys.push(asset.key);
   }
-  return acquireAssets(scene, keys, owner);
-}
-
-function acquireAssets(scene: Phaser.Scene, keys: string[], owner?: string): AssetLease {
-  const pool = poolFor(scene), memory = textureMemory.get(scene.textures);
-  if (!memory) return pool.acquire(keys);
-  const label = owner ?? scene.sys.settings.key;
-  return pool.acquire(keys, (owned, delta) => memory.changeOwner(owned, label, delta));
+  return poolFor(scene).acquire(keys);
 }
 
 async function inTextureQueue<T>(scene: Phaser.Scene, work: () => Promise<T>): Promise<T> {
@@ -143,7 +135,7 @@ function verifyAssets(scene: Phaser.Scene, assets: PendingAsset[]): void {
   if (failures.length) throw new Error('部分画面未能加载，请重试', { cause: new Error(failures.join('\n')) });
 }
 
-export async function loadSceneAssets(scene: Phaser.Scene, assets: PendingAsset[], progress: (value: number) => void, retain=false, owner?: string): Promise<AssetLease> {
+export async function loadSceneAssets(scene: Phaser.Scene, assets: PendingAsset[], progress: (value: number) => void, retain=false): Promise<AssetLease> {
   const pool = poolFor(scene);
   const byKey = new Map<string, PendingAsset>();
   for (const asset of assets) {
@@ -155,14 +147,14 @@ export async function loadSceneAssets(scene: Phaser.Scene, assets: PendingAsset[
   const keys = unique.map(asset=>asset.key);
   // 已齐全的纹理只需取得使用权；它们不会写纹理库，不必等其他地图的下载。
   if (unique.every(asset => assetGap(scene, asset) === undefined)) {
-    const ownership = acquireAssets(scene, keys, owner);
+    const ownership = pool.acquire(keys);
     const lease = { release: () => { scene.events.off('shutdown', lease.release); ownership.release(); } };
     if (!retain) scene.events.once('shutdown', lease.release);
     try { progress(1); return lease; }
     catch (error) { lease.release(); throw error; }
   }
   changeLoaders(scene, keys, 1);
-  const ownership = acquireAssets(scene, keys, owner);
+  const ownership = pool.acquire(keys);
   const lease = {release:()=>{scene.events.off('shutdown',lease.release);ownership.release();}};
   const controller = new AbortController();
   const shutdown = () => controller.abort(new DOMException('场景已关闭','AbortError'));

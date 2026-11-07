@@ -36,9 +36,7 @@ export interface StoryClassContext {
 
 type SceneUI = Pick<GameUI,'ready'|'locked'|'mode'|'loading'|'loaded'|'error'|'toast'|'showInstant'|'resetInput'|'setMode'|'showDefeat'|'closeDefeat'|'controlLayoutEditing'|'keyBindingEditing'|'preloadPortraits'|'setWorldRebuildCover'>;
 export interface StoryContext {
-  readonly memorySampler?: Pick<import('./memory-sampler.ts').MemorySampler, 'begin' | 'compare'>;
   readonly inputRouter: InputRouter;
-  readonly frameSampler?: Pick<import('./frame-sampler.ts').FrameSampler, 'combat' | 'partyPath' | 'worldText'>;
   readonly domUi?: DomUi;
   readonly controlLayout:ControlLayoutPreferences;
   readonly keyBindings:KeyBindingPreferences;
@@ -88,7 +86,6 @@ export interface StoryContext {
   autoSave?: () => void;
 }
 export interface StoryUIContext {
-  readonly memorySampler?: Pick<import('./memory-sampler.ts').MemorySampler, 'begin' | 'compare'>;
   readonly inputRouter: InputRouter;
   readonly domUi?: DomUi;
   /** 商店装备表按需加载（生产内容包与 shops.json 分开）。 */

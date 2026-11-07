@@ -44,8 +44,6 @@ export class InputRouter {
   private readonly registrations: Registration[] = [];
   private readonly textInputFocused: () => boolean;
 
-  get listenerCount(): number { return this.registrations.length; }
-
   constructor(options: InputRouterOptions = {}) {
     this.textInputFocused = options.textInputFocused ?? editingText;
   }

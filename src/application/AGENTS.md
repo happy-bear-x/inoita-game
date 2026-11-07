@@ -18,9 +18,7 @@
 - 键盘输入只从场景桥接一次进 `input-router.ts`。作用域从高到低是 `text-input > modal > menu > dialogue > world`；处理器返回 `boolean` 表示是否消费。文本输入框有焦点、弹层或菜单打开时用 `exclusive` 独占，按键不会再落到世界层。按钮点击、滚动和拖拽继续走 Phaser 输入，router 不接指针。场景 `shutdown` 时注销自己注册的作用域。
 - 新能力先在 `ports.ts` 定义接口，由 `src/app.ts` 在启动阶段注入实现。
 - 场景通过 ports 取素材、音频和浏览器能力，加载与 API 调用留在本目录。
-- `memory-sampler.ts` 保存开发网页的资源计数与切换峰值。贴图/音频按引擎增删事件计账，回收后只保留还原切换峰值所需的大小和名称。
 - 4003 开发页把 `StoryDirector.onSkipProgress` 接到 `installStorySkipDiagnostics`，每次跳过只写一条 `story-skip-summary`，记录逻辑完成、世界就绪与实际解锁的耗时；选择和任务确认单独标明终点。
-- 开发服务的 `frame-sampler.ts` 按两次完成绘制之间的真实时间计帧，每五秒通过 `game-diagnostics.ts` 的收集器发送轻量摘要。后台和暂停后重新起算。
 - 云存档是旁路能力：客户端构造不联网，只有打开云页/点击上传下载才请求；网络、token 或存储失败都结果化返回，不能抛到菜单或游戏循环。
 - 云存档和诊断的服务地址只从 `endpoints.ts` 解析。环境根地址在 `config/endpoints.json`：网页固定同源（空值）；Android 调试指向 `adb reverse` 的 `127.0.0.1:4003`，发布和网页生产共用 `https://catgo.online:4002`。Android/热更新在页面脚本前注入 `__inoitaEndpoints`；页面里不再另写域名或读取别的地址变量。
 - 只有 `game-audio.ts`、`game-timing.ts`、`game-diagnostics.ts` import Phaser，其余文件保持纯 TypeScript。
