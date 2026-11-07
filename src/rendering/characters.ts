@@ -4,6 +4,7 @@ import { STORY_POSE_NAMES } from '../domain/content.ts';
 import { idlePoseFrame } from '../domain/basic-attack.ts';
 import { blendModeOf } from './blend-modes.ts';
 import { applyCharacterVisibility } from './character-visibility.ts';
+import { rememberEffectAnimation } from './effect-animations.ts';
 
 export const PLAYER_MOVE_SPEED = 8 * 1000 / 60;
 
@@ -107,16 +108,20 @@ export function setCharacterClip(scene: Phaser.Scene, character: CharacterVisual
     const single = name.startsWith('attack-') || name.startsWith('skill-') || name.startsWith('die-')
       || STORY_POSE_NAMES.some(pose => name.startsWith(`${pose}-`));
     clip.layers.forEach((layer, index) => {
-      if (typeof scene.anims?.get === 'function' && scene.anims.exists(layer.key) && !(scene.anims.get(layer.key)?.frames?.length)) {
-        scene.anims.remove(layer.key);
+      const animationKey = `${layer.key}#clip:${clip.frames}:${clip.frameRate}:${single ? 0 : -1}`;
+      if (typeof scene.anims?.get === 'function' && scene.anims.exists(animationKey) && !(scene.anims.get(animationKey)?.frames?.length)) {
+        scene.anims.remove(animationKey);
       }
-      if (!scene.anims.exists(layer.key)) {
+      if (!scene.anims.exists(animationKey)) {
         const frames = scene.anims.generateFrameNumbers(layer.key, { start: 0, end: clip.frames - 1 });
-        if (!scene.textures || frames?.length) scene.anims.create({ key: layer.key, frames, frameRate: clip.frameRate, repeat: single ? 0 : -1 });
+        if (!scene.textures || frames?.length) {
+          scene.anims.create({ key: animationKey, frames, frameRate: clip.frameRate, repeat: single ? 0 : -1 });
+          rememberEffectAnimation(scene, animationKey, [layer.key]);
+        }
       }
       const sprite = character.layers[index];
-      if (scene.textures && !scene.anims.exists(layer.key)) return;
-      sprite.play({ key: layer.key, startFrame: Math.max(0, Math.min(startFrame, clip.frames - 1)) });
+      if (scene.textures && !scene.anims.exists(animationKey)) return;
+      sprite.play({ key: animationKey, startFrame: Math.max(0, Math.min(startFrame, clip.frames - 1)) });
       sprite.anims.timeScale=1;
       sprite.anims.accumulator = elapsed;
     });

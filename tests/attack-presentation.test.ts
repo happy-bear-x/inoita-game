@@ -35,6 +35,7 @@ class State {
  * 旧的收尾实现直接调用起手时抓到的 Sprite，销毁之后就是在这里抛 `undefined is not an object`。
  */
 class Display extends EventEmitter {
+  scene: object | undefined = {};
   active=true;visible=true;alpha=1;key:string;frame:number|undefined;
   anims:State|undefined=new State();
   constructor(key:string){super();this.key=key;}
@@ -43,7 +44,7 @@ class Display extends EventEmitter {
   setAlpha(value:number){this.alpha=value;return this;}
   setTexture(key:string,frame?:number){this.key=key;this.frame=frame;return this;}
   play():this{this.anims!.isPlaying=true;this.anims!.currentFrame={index:1};return this;}
-  destroy():void{if(!this.active)return;this.active=false;this.emit('destroy');this.removeAllListeners();this.anims=undefined;}
+  destroy():void{if(!this.active)return;this.active=false;this.emit('destroy');this.removeAllListeners();this.anims=undefined;this.scene=undefined;}
 }
 class Container extends Display {
   children:Display[]=[];

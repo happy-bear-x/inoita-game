@@ -35,9 +35,32 @@ test('story poses play once so the completion event can settle them', () => {
   // 剧情姿态和其它动作类动画一样播一次（`repeat: 0`），这样播完才会来 `animationcomplete`——
   // 呈现端按演出动作的 `hold` 决定那时停在末帧还是回待机。待机与行走继续循环。
   assert.deepEqual(created, [
-    { key: 'cry-south', repeat: 0 }, { key: 'look-around-south', repeat: 0 },
-    { key: 'idle-south', repeat: -1 }, { key: 'walk-south', repeat: -1 },
+    { key: 'cry-south#clip:3:10:0', repeat: 0 }, { key: 'look-around-south#clip:3:10:0', repeat: 0 },
+    { key: 'idle-south#clip:3:10:-1', repeat: -1 }, { key: 'walk-south#clip:3:10:-1', repeat: -1 },
   ]);
+});
+
+test('identical idle and attack textures retain independent speeds, repeats and cleanup', async () => {
+  const { releaseEffectAnimations } = await import('../src/rendering/effect-animations.ts');
+  const definitions = new Map<string, { key: string; frames: unknown[]; frameRate: number; repeat: number }>();
+  const played: string[] = [];
+  const scene = {
+    anims: {
+      exists: (key: string) => definitions.has(key), get: (key: string) => definitions.get(key),
+      remove: (key: string) => definitions.delete(key),
+      create: (definition: typeof definitions extends Map<string, infer T> ? T : never) => { definitions.set(definition.key, definition); },
+      generateFrameNumbers: () => [{ key: 'shared', frame: 0 }]
+    },
+    add: { sprite: () => ({ anims: { timeScale: 1 }, setOrigin() { return this; }, setBlendMode() { return this; },
+      setScale() { return this; }, play(value: { key: string }) { played.push(value.key); }, destroy() {} }) }
+  } as unknown as Phaser.Scene;
+  const visual = { entity: { actor: 'hero' }, actor: { clips: {
+    'idle-south': { ...clip('shared'), frameRate: 3 }, 'attack-south': clip('shared')
+  } }, container: { addAt() {} }, layers: [], clipName: null } as unknown as CharacterVisual;
+  setCharacterClip(scene, visual, 'idle-south'); setCharacterClip(scene, visual, 'attack-south');
+  assert.notEqual(played[0], played[1]);
+  assert.deepEqual([...definitions.values()].map(value => [value.frameRate, value.repeat]), [[3, -1], [10, 0]]);
+  releaseEffectAnimations(scene.anims, 'shared'); assert.equal(definitions.size, 0);
 });
 
 test('a map placement marked flip does not reverse the direction of walk clips', () => {

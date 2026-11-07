@@ -3,6 +3,7 @@ import test from 'node:test';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { PNG } from 'pngjs';
 import { buildContent } from '../tools/content-build.ts';
 
 test('buildContent minifies JSON without changing parsed content', async () => {
@@ -56,15 +57,16 @@ test('buildContent merges identical clip layers into one texture key', async () 
   try {
     await fs.mkdir(source, { recursive: true });
     await fs.mkdir(path.join(root, 'assets', 'characters'), { recursive: true });
-    await fs.writeFile(path.join(root, 'assets', 'characters', 'a.png'), 'same-bytes');
-    await fs.writeFile(path.join(root, 'assets', 'characters', 'b.png'), 'same-bytes');
+    const pixels = new PNG({ width: 4, height: 2 }); pixels.data.fill(255);
+    await fs.writeFile(path.join(root, 'assets', 'characters', 'a.png'), PNG.sync.write(pixels, { deflateLevel: 0 }));
+    await fs.writeFile(path.join(root, 'assets', 'characters', 'b.png'), PNG.sync.write(pixels, { deflateLevel: 9 }));
     const clip = (key: string, file: string, frames = 2) => ({ frameWidth: 2, frameHeight: 2, frames,
       frameRate: 10, mirrorX: false, originX: 0.5, originY: 0.5,
       layers: [{ key, file, blend: 'normal' }] });
     await fs.writeFile(path.join(source, 'battle.json'), JSON.stringify({
       classes: [{ actor: { clips: {
         'attack-east': clip('attack-east-key', 'assets/characters/b.png'),
-        'attack-west': clip('attack-west-key', 'assets/characters/a.png')
+        'idle-west': { ...clip('idle-west-key', 'assets/characters/a.png'), frameRate: 3 }
       } } }]
     }));
     const output = path.join(root, 'out');
@@ -74,10 +76,12 @@ test('buildContent merges identical clip layers into one texture key', async () 
     assert.equal(stats.clipKeysAfter, 1);
     const battle = JSON.parse(await fs.readFile(path.join(output, 'battle.json'), 'utf8'));
     const east = battle.classes[0].actor.clips['attack-east'].layers[0];
-    const west = battle.classes[0].actor.clips['attack-west'].layers[0];
+    const west = battle.classes[0].actor.clips['idle-west'].layers[0];
     assert.deepEqual(east, west);
     assert.equal(east.file, 'assets/characters/a.png');
-    assert.equal(east.key, 'attack-west-key');
+    assert.equal(east.key, 'idle-west-key');
+    assert.equal(battle.classes[0].actor.clips['attack-east'].frameRate, 10);
+    assert.equal(battle.classes[0].actor.clips['idle-west'].frameRate, 3);
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }

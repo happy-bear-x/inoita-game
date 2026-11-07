@@ -19,6 +19,7 @@
 - 生成物 `dist/`、`public/content/debug/start.json`、`src/generated/*` 由脚本产出，内容变化后重跑对应生成命令。
 - 构建在 `dist/content-manifest.json` 写生产内容哨兵：记录编译后内容的 `contentVersion` 和 `campaign.json`/`battle.json` 的必需顶层键。清单放在 `content/` 外，不参与 `hashTree(content)`；运行时只读清单，不重算 34MB 内容哈希。
 - 用 `npm run test:content-build` 跑真实内容的编译烟雾测试（一次最小战斗和一个剧情节点）；它不进入每次单元测试。
+- `content-build.ts` 按解码后的像素、图片尺寸和切帧合并角色图片，帧率、镜像与循环由各自的动画保留。真实内容构建验收逐一检查六职业的技能、召唤物图片与图集帧，并核对黑暗空间对白省去的陨石动作大小。
 - 新增脚本在根目录 `package.json` 挂成命令，沿用现有命令命名。
 - 云存档数据目录：生产 `.cloud-save/`，开发 `.cloud-save-dev/`；两者都不进 Git。云服务初始化失败只能让 `/__cloud` 返回 503，不能让 4004 的静态服务起不来。
 - 改 `serve-built.ts` 或云存档服务后需要重启 4004；只改客户端/内容时普通构建即可。

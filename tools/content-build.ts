@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { STORY_POSE_NAMES } from '../src/domain/content.ts';
+import { PNG } from 'pngjs';
 import { contentDigest } from '../src/application/content-hash.ts';
 import { compileSkillDisplay } from '../src/domain/skill-display.ts';
 import { compileSkillAction } from '../src/domain/skill-action-compiler.ts';
@@ -63,12 +63,6 @@ interface ClipDedupe {
   clipKeysAfter: number;
 }
 
-/** 和 `setCharacterClip` 的 `single` 判定保持一致；特效动画本身不注册 repeat。 */
-function singleClip(name: string): boolean {
-  return name.startsWith('attack-') || name.startsWith('skill-') || name.startsWith('die-')
-    || STORY_POSE_NAMES.some(pose => name.startsWith(`${pose}-`));
-}
-
 export function walkClips(value: unknown, visit: (clip: ClipLike, name: string) => void): void {
   if (!value || typeof value !== 'object') return;
   if (Array.isArray(value)) { for (const item of value) walkClips(item, visit); return; }
@@ -82,9 +76,9 @@ export function walkClips(value: unknown, visit: (clip: ClipLike, name: string) 
 }
 
 /**
- * 动画图层的贴图按内容寻址合并：文件字节、帧尺寸、帧数、帧率和循环类型都一样时，
+ * 动画图层的贴图按内容寻址合并：解码像素、图片尺寸、帧尺寸与帧数都一样时，
  * 多个方向/多个角色共用同一个纹理键。运行时 Phaser 只解码、上传一份；`mirrorX`
- * 仍留在各自的 clip 上，翻转逻辑不变。
+ * 与帧率、循环类型仍留在各自的 clip 上，动画与图片分别共享。
  *
  * 只处理 battle.json / world.json 的 `clips`，因为地图 JSON 用 prop 键、不在 debug
  * 来源哈希里；这两份文件不在调试现场表的来源哈希中，合并不会让现场表过期。
@@ -109,7 +103,8 @@ async function dedupeClipLayers(sourceDir: string, files: SourceFile[]): Promise
     if (!file.startsWith('assets/')) return undefined;
     try {
       const bytes = await fs.readFile(path.join(assetRoot, file));
-      const hash = createHash('sha256').update(bytes).digest('hex');
+      const decoded = PNG.sync.read(bytes);
+      const hash = createHash('sha256').update(`${decoded.width}x${decoded.height}:`).update(decoded.data).digest('hex');
       hashes.set(file, hash);
       return hash;
     } catch {
@@ -122,8 +117,7 @@ async function dedupeClipLayers(sourceDir: string, files: SourceFile[]): Promise
     const hash = await hashFile(record.layer.file);
     if (!hash) continue;
     const kind = record.layer.file.split('/')[1] ?? '';
-    const group = [hash, record.clip.frameWidth, record.clip.frameHeight, record.clip.frames,
-      record.clip.frameRate, singleClip(record.name) ? 'single' : 'loop', kind].join('|');
+    const group = [hash, record.clip.frameWidth, record.clip.frameHeight, record.clip.frames, kind].join('|');
     const entries = groups.get(group);
     if (entries) entries.push(record.layer); else groups.set(group, [record.layer]);
   }
@@ -145,8 +139,7 @@ async function dedupeClipLayers(sourceDir: string, files: SourceFile[]): Promise
     const hash = hashes.get(record.layer.file);
     if (!hash) { after.add(record.layer.key); continue; }
     const kind = record.layer.file.split('/')[1] ?? '';
-    const group = [hash, record.clip.frameWidth, record.clip.frameHeight, record.clip.frames,
-      record.clip.frameRate, singleClip(record.name) ? 'single' : 'loop', kind].join('|');
+    const group = [hash, record.clip.frameWidth, record.clip.frameHeight, record.clip.frames, kind].join('|');
     const chosen = canonical.get(group);
     if (!chosen) { after.add(record.layer.key); continue; }
     if (record.layer.key !== chosen.key || record.layer.file !== chosen.file) dedupedLayers++;
