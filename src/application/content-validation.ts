@@ -437,7 +437,7 @@ export function validateStoryPortraits(world:WorldIndex, content:StoryInterface)
 const menuPanels=shape<MenuPanels>({itemMessages:record(text),assets:record(file),equipmentSlots:array(object({id:text,name:text,x:number,y:number,emptyIcon:file})),
   skillPositions:array(object({column:integer,row:integer})),skillColumns:array(object({label:text,image:file})),
   classes:record(object({preview:file})),
-  character:object({portraits:record(object({image:file,partyIcon:file})),combatLabels:strings,
+  character:object({portraits:record(object({image:file,partyIcon:file})),classPortraits:record(file),combatLabels:strings,
     labels:object({statPoints:text,skillPoints:text,health:text,mana:text,experience:text})}),
   skillPanel:object({labels:object({initialSkillPoints:text,resetButton:text})})});
 export function parseMenuPanels(value:unknown):MenuPanels {
@@ -462,7 +462,10 @@ export function parseMenuPanels(value:unknown):MenuPanels {
 }
 export function validateMenuClasses(menu:MenuPanels,catalog:BattleCatalog):void {
   requireValue(Object.keys(menu.classes).length===catalog.classes.length,'menuPanels.classes','职业数量不匹配');
-  for(const c of catalog.classes)requireValue(menu.classes[c.id]&&c.skills.length===menu.skillPositions.length,c.id,'缺少职业菜单资料或技能排列不匹配');
+  for(const c of catalog.classes){
+    requireValue(menu.classes[c.id]&&c.skills.length===menu.skillPositions.length,c.id,'缺少职业菜单资料或技能排列不匹配');
+    requireValue(menu.character.classPortraits[c.id],'menuPanels.character.classPortraits',`缺少职业立绘 ${c.id}`);
+  }
 }
 const box={x:number,y:number,width:positive,height:positive};
 const clip=shape<AnimationClip>({frameWidth:positive,frameHeight:positive,frames:positive,originX:number,originY:number,frameRate:positive,mirrorX:boolean,layers:array(object({key:text,file,blend:oneOf('normal','screen','add','multiply','color-dodge')}))});

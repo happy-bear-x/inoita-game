@@ -320,6 +320,14 @@
         "partyIcon": "assets/ui/menus/character-party-olaf.png"
       }
     },
+    "classPortraits": {
+      "dark-knight": "assets/ui/menus/class-dark-knight.png",
+      "assassin": "assets/ui/menus/class-assassin.png",
+      "warlock": "assets/ui/menus/class-warlock.png",
+      "priest": "assets/ui/menus/class-priest.png",
+      "ranger": "assets/ui/menus/class-ranger.png",
+      "warrior": "assets/ui/menus/class-warrior.png"
+    },
     "combatLabels": [
       "物理攻击",
       "魔法攻击",

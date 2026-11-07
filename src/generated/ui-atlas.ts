@@ -6,8 +6,8 @@ export const UI_ATLAS_PAGES: readonly UiAtlasPage[] = [
     "file": "assets/ui/menu-ui-0.png",
     "data": "assets/ui/menu-ui-0.json",
     "frame": "assets/ui/shop/category-divider.png",
-    "width": 2046,
-    "height": 1203
+    "width": 2048,
+    "height": 1700
   }
 ];
 export const UI_ATLAS_FRAMES: Readonly<Record<string, { key: string; frame: string; page: number }>> = {
@@ -184,6 +184,36 @@ export const UI_ATLAS_FRAMES: Readonly<Record<string, { key: string; frame: stri
   "assets/ui/menus/character-sw.png": {
     "key": "interface:assets/ui/menu-ui-0.png",
     "frame": "assets/ui/menus/character-sw.png",
+    "page": 0
+  },
+  "assets/ui/menus/class-assassin.png": {
+    "key": "interface:assets/ui/menu-ui-0.png",
+    "frame": "assets/ui/menus/class-assassin.png",
+    "page": 0
+  },
+  "assets/ui/menus/class-dark-knight.png": {
+    "key": "interface:assets/ui/menu-ui-0.png",
+    "frame": "assets/ui/menus/class-dark-knight.png",
+    "page": 0
+  },
+  "assets/ui/menus/class-priest.png": {
+    "key": "interface:assets/ui/menu-ui-0.png",
+    "frame": "assets/ui/menus/class-priest.png",
+    "page": 0
+  },
+  "assets/ui/menus/class-ranger.png": {
+    "key": "interface:assets/ui/menu-ui-0.png",
+    "frame": "assets/ui/menus/class-ranger.png",
+    "page": 0
+  },
+  "assets/ui/menus/class-warlock.png": {
+    "key": "interface:assets/ui/menu-ui-0.png",
+    "frame": "assets/ui/menus/class-warlock.png",
+    "page": 0
+  },
+  "assets/ui/menus/class-warrior.png": {
+    "key": "interface:assets/ui/menu-ui-0.png",
+    "frame": "assets/ui/menus/class-warrior.png",
     "page": 0
   },
   "assets/ui/menus/close-pressed.png": {
@@ -1187,4 +1217,4 @@ export const UI_ATLAS_FRAMES: Readonly<Record<string, { key: string; frame: stri
     "page": 0
   }
 };
-export const UI_ATLAS_SOURCE_DIGEST = "a36fe737c5a98f9c44f4dd3d7ae91bd4625accc3dc2944091e1aeff425bcc6f5";
+export const UI_ATLAS_SOURCE_DIGEST = "8e37053aeea741941117df74155e6f3965d2738399fa09879370bc08f766439f";

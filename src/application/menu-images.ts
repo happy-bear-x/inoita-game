@@ -30,6 +30,7 @@ export function gameMenuImageGroups(panels: MenuPanels, items: ItemCatalog, batt
     ...panels.equipmentSlots.map(slot => slot.emptyIcon),
     ...Object.values(panels.classes).map(character => character.preview),
     ...Object.values(panels.character.portraits).flatMap(character => [character.image, character.partyIcon]),
+    ...Object.values(panels.character.classPortraits),
     ...Object.values(story.assets), ...Object.values(shops.assets)
   ];
   const coreSet = new Set(core);

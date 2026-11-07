@@ -41,6 +41,8 @@ test('native menu content checks positions, equipment slots, images and class co
   assert.throws(()=>parseMenuPanels(image),/内部资源路径/);
   const classes=structuredClone(panels);delete classes.classes['dark-knight'];
   assert.throws(()=>validateMenuClasses(classes,catalog),/职业数量/);
+  const portraits=structuredClone(panels);delete portraits.character.classPortraits.warrior;
+  assert.throws(()=>validateMenuClasses(portraits,catalog),/缺少职业立绘/);
 });
 
 test('skill page requires native skins and three distinct local column headings',()=>{
@@ -73,8 +75,9 @@ test('story members without dedicated portraits fall back to their class art, no
   assert.deepEqual(memberArt(panels,{portrait:null},'warrior','story'),{image:classArt,partyIcon:classArt});
   assert.deepEqual(memberArt(panels,{portrait:'missing'},'warrior','story'),{image:classArt,partyIcon:classArt});
   assert.deepEqual(memberArt(panels,{portrait:'kiyan'},'warrior','story'),panels.character.portraits.kiyan);
-  // 佣兵即使角色定义带立绘，也只用职业默认图。
-  assert.deepEqual(memberArt(panels,{portrait:'kiyan'},'warrior','mercenary'),{image:classArt,partyIcon:classArt});
+  // 佣兵即使角色定义带立绘，也只换成职业大立绘；小头像仍用职业图。
+  assert.deepEqual(memberArt(panels,{portrait:'kiyan'},'warrior','mercenary'),
+    {image:panels.character.classPortraits.warrior,partyIcon:classArt});
 });
 
 test('character page requires status portraits, complete native skin and eleven distinct combat labels',()=>{

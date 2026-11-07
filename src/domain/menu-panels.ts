@@ -8,6 +8,8 @@ export interface MenuPanels {
   classes: Record<string, { preview: string }>;
   character: {
     portraits: Record<string, { image: string; partyIcon: string }>;
+    /** 佣兵没有专属身份时，人物页大立绘使用的职业状态图（252×271）。 */
+    classPortraits: Record<string, string>;
     combatLabels: string[];
     labels: { statPoints: string; skillPoints: string; health: string; mana: string; experience: string };
   };
@@ -38,8 +40,8 @@ export const PARTY_ASSETS = ['party-slot', 'party-empty', 'party-frame', 'party-
 interface MemberArt { image: string; partyIcon: string }
 
 /**
- * 队员在菜单里的形象。佣兵只显示职业默认图；主角和剧情同伴优先用专属立绘，
- * 角色没有专属立绘时同样回到职业默认图，和原版队员栏 `PORTRAITCLASSBASE` 的兜底一致。
+ * 队员在菜单里的形象。大立绘优先用专属状态图；佣兵用职业状态图，小头像用职业图。
+ * 角色没有专属立绘时回到职业图，和原版队员栏 `PORTRAITCLASSBASE` 的兜底一致。
  */
 export function memberArt(
   panels: MenuPanels,
@@ -48,9 +50,10 @@ export function memberArt(
   source?: 'mercenary' | 'story',
 ): MemberArt {
   const classImage = panels.assets[`party-class-${classId}`];
-  const portrait = source === 'mercenary' || !actor?.portrait
-    ? undefined
-    : panels.character.portraits[actor.portrait];
+  if (source === 'mercenary') {
+    return { image: panels.character.classPortraits[classId] ?? classImage, partyIcon: classImage };
+  }
+  const portrait = actor?.portrait ? panels.character.portraits[actor.portrait] : undefined;
   return portrait ?? { image: classImage, partyIcon: classImage };
 }
 
