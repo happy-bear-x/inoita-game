@@ -181,6 +181,7 @@ export class CombatController {
   setBasicReadyAt(frame:number):void {if(this.clock)this.basicReadyAt=frame;}
   private basicLocked():boolean {return !!this.clock&&this.clock()<this.basicReadyAt;}
   setBasicAttack(basic:ResolvedBasicAttack):void {this.cancel();this.basic=basic;}
+  get basicAttackRange():number {return this.basic?.approachDistanceUnits??0;}
   snapshot(): CombatSnapshot {
     return { ...(this.selectedId?{targetId:this.selectedId}:{}), state: this.state, cooldowns: this.port.cooldowns.snapshot() };
   }

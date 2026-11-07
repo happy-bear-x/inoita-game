@@ -601,3 +601,10 @@ test('checkpoint restore keeps summon state for the instance it is about to rebu
   combatMethod('clearEnemies').call(host,true,true);
   assert.equal(session.enemyVitals('enemy-1').health,40);
 });
+
+test('basic attack distance reads the resolved controller profile and updates with equipment',()=>{
+  const run=setup(),basic=resolveBasicAttack(catalog,catalog.classes[0]);
+  assert.equal(run.combat.basicAttackRange,basic.approachDistanceUnits);
+  run.combat.setBasicAttack({...basic,approachDistanceUnits:187});
+  for(let index=0;index<100;index++)assert.equal(run.combat.basicAttackRange,187);
+});
