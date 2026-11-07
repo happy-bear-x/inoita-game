@@ -50911,8 +50911,8 @@
             {
               "type": "stage",
               "map": "east-kamuran-b52d2b0e",
-              "x": 488,
-              "y": 136,
+              "x": 520,
+              "y": 296,
               "facing": "south",
               "playerVisible": true,
               "cast": [
@@ -50941,8 +50941,8 @@
               "type": "appear",
               "target": "player",
               "mode": "reuse",
-              "x": 488,
-              "y": 136,
+              "x": 520,
+              "y": 296,
               "facing": "south"
             },
             {
