@@ -31,8 +31,8 @@ export interface DescriptionDomTarget {
  * 证据见 `work/findings/desc-panel-2026-10-12.md`。
  */
 export function drawDescriptionPanel(v: UiSurface, assets: Record<string, string>, x: number, y: number, width: number,
-  height = DESCRIPTION_PANEL.height): void {
-  const { inset, background, backgroundAlpha } = DESCRIPTION_PANEL;
+  height = DESCRIPTION_PANEL.height, backgroundAlpha = DESCRIPTION_PANEL.backgroundAlpha): void {
+  const { inset, background } = DESCRIPTION_PANEL;
   v.rect(x + inset, y + inset, width - inset * 2, height - inset * 2, background, backgroundAlpha);
   v.border(assets, x, y, width, height);
 }

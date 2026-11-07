@@ -78,9 +78,9 @@ class Surface {
    */
   get descriptionBorders(){return this.calls.filter((call,index)=>{
     const before=this.calls[index-1];
-    return call.kind==='border'&&!!before&&before.kind==='rect'&&before.color===0&&before.alpha===DESCRIPTION_PANEL.backgroundAlpha;});}
+    return call.kind==='border'&&!!before&&before.kind==='rect'&&before.color===0;});}
   /** 说明面板的内缩黑底：`GRPX_FillRectAlpha(...,0xff000000,60)` 的矩形。 */
-  get descriptionFills(){return this.calls.filter(call=>call.kind==='rect'&&call.color===0&&call.alpha===DESCRIPTION_PANEL.backgroundAlpha);}
+  get descriptionFills(){return this.calls.filter(call=>call.kind==='rect'&&call.color===0);}
   /** 面板上不画字的按钮（关闭钮）用 `setData('label')` 标身份，所以两种标签都要认。 */
   get buttons(){return this.calls.filter(call=>call.kind==='button'&&(call.label!==''||call.node?.label));}
 }

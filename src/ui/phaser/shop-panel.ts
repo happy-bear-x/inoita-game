@@ -7,7 +7,7 @@ import { INVENTORY_LABELS, INVENTORY_SIDE_FILTERS, matchesFilter, type Inventory
 
 import { shopLayout, tradeLayout, tradeMessageLayout, type ShopLayout } from '../shop-layout.ts';
 import { TEXT_COLORS } from '../text-style.ts';
-import { BAG_DESCRIPTION_WIDTH, descriptionPanel, SIDE_FILTER_TEXT_SIZE } from '../bag-layout.ts';
+import { BAG_DESCRIPTION_WIDTH, DESCRIPTION_PANEL, descriptionPanel, SIDE_FILTER_TEXT_SIZE } from '../bag-layout.ts';
 import type { PlaceModal } from './modal-placement.ts';
 import { drawDescriptionClose, drawDescriptionPanel, drawDescriptionRows, drawDescriptionTitle } from './description-panel.ts';
 import { drawPopupPanel } from './popup-panel.ts';
@@ -326,7 +326,8 @@ export class ShopPanel {
     // 盖背包栏时右边缘让开右侧那一列分类按钮（BAG_DESCRIPTION_WIDTH），与背包页同一套规则。
     const covered=selection.kind==='buy'?this.layout.bagFrame:this.layout.leftFrame,
       panel=descriptionPanel(selection.kind==='buy'?BAG_DESCRIPTION_WIDTH:covered.width),left=covered.x,top=panel.y;
-    drawDescriptionPanel(v,this.frames,left,top,panel.width);
+    // 商店说明是侧栏、没有全屏遮罩，保持原来的可读底色。
+    drawDescriptionPanel(v,this.frames,left,top,panel.width,DESCRIPTION_PANEL.height,.85);
     const member=this.viewedMember();
     const body=itemDescriptionBody({item,entry,numbers:this.store.characterStats.equipment[entry.item],catalog:this.store.characterStats,
       grades:this.catalog.grades,member,classNames:this.classNames,gemNames:entry.gems.map(id=>this.session.bag.catalog.items[id]?.name),skill:entry.skill?this.session.bag.catalog.skillDescriptions?.[entry.skill]:undefined,concealed:offer?.concealed});
