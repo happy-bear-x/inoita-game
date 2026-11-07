@@ -335,7 +335,7 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     const block=()=>{v.rect(0,0,960,640,0,0).setInteractive().on('pointerdown',(pointer:UiPointer)=>ui.pressDialogue(pointer.id)).on('pointerup',(pointer:UiPointer)=>ui.releaseDialogue(pointer.id)).on('pointerupoutside',()=>ui.resetInput());};
     if(portrait){v.rect(0,0,960,640,0x101d24,1);block();}
     else if(ui.loadingState){
-      const file='/assets/ui/loading-background.webp';this.cover=new UiImage(this,uiMount(this,'overlay'),file).setDisplaySize(this.scale.width,this.scale.height).fitting().setDepth(998.5).setTint(0xaaaaaa);
+      const file='/assets/ui/loading-background.webp';this.cover=new UiImage(this,uiMount(this,'overlay'),file).setDisplaySize(this.scale.width,this.scale.height).fitting().setDepth(998).setTint(0xaaaaaa);
       block();v.rect(200,531,560,5,0xeee2cc,.3);this.progressBar=v.rect(200,531,560*progress,5,0xe2c88d,1);
       if(ui.loadingState.retry){v.button('',380,552,200,48,ui.loadingState.retry);if(ui.canReturn)v.button('',26,20,180,48,()=>ui.onMenu?.());}
     }else if(defeat){
