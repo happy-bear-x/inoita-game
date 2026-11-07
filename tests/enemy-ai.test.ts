@@ -177,6 +177,26 @@ test('unreachable targets back off 180 ms while chasing, then resume after an ob
   run.ai.dispose();run.advance(3);assert.equal(run.plays(),0);
 });
 
+test('a pending search caches its straight-line check in the navigation snapshot until an endpoint changes',()=>{
+  const run=setup();let snapshots=0,snapshotChecks=0,liveChecks=0;
+  run.port.pathBudget={take:()=>0};
+  run.port.canStand=()=>{liveChecks++;return false;};
+  run.port.navigationSnapshot=()=>{
+    snapshots++;
+    return {bounds:run.port.navigationBounds(),canStand:()=>{snapshotChecks++;return true;}};
+  };
+  run.ai.update(60);
+  assert.deepEqual(run.waypoint(),run.player.position,'候选直线读取这次搜索的占位快照');
+  const checks=snapshotChecks;assert.ok(checks>0);assert.equal(liveChecks,0);
+  for(let frame=0;frame<10;frame++)run.ai.update(60);
+  assert.equal(snapshotChecks,checks,'端点未变时不重复扫描直线');assert.equal(snapshots,1);
+  run.player.position.x+=1;run.ai.update(60);assert.ok(snapshotChecks>checks);
+  const changedTargetChecks=snapshotChecks;
+  run.actor.position.x+=1;run.ai.update(60);assert.ok(snapshotChecks>changedTargetChecks);
+  run.ai.cancel();run.ai.update(60);assert.equal(snapshots,2,'新搜索丢弃旧直线结果');
+  assert.equal(liveChecks,0,'实际移动碰撞由物理层处理，候选直线不扫描实时占位');
+});
+
 test('a cross-frame search spends the shared budget and waits for a path when the straight line is blocked',()=>{
   // 移动速度放到接近 0：只看搜索期间是否原地等、完成后是否换用路径点。
   const run=setup({moveSpeedPxPerSecond:1});let grants=0;

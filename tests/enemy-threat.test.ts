@@ -28,6 +28,27 @@ test('immobile casting waits for its shared path budget and preserves an unfinis
   assert.equal(run.spends(),0);assert.equal(run.plays.length,0);
 });
 
+test('immobile casting claims small budget slices and stops when it finds a reachable attack position',()=>{
+  const run=setup([skill],'active',{canMove:false});run.scores.set('first',10);
+  run.first.position.x=40;run.port.canStand=()=>true;
+  const requests:number[]=[];
+  run.port.pathBudget={take:(_owner,limit)=>{requests.push(limit);return limit;}};
+  run.ai.update(60);
+  assert.deepEqual(requests,[8],'近处找到攻击落点后不再领取剩余120个节点');
+  assert.equal(run.clears(),0);assert.equal(run.ai.snapshot().targetId,'first');
+  run.ai.update(60);assert.deepEqual(requests,[8],'可达缓存期间不领取新预算');
+});
+
+test('immobile casting keeps the per-decision expansion cap when every small slice is granted',()=>{
+  const run=setup([skill],'active',{canMove:false});run.scores.set('first',10);
+  run.first.position.x=400;run.port.canStand=point=>point.x<48;
+  const requests:number[]=[];
+  run.port.pathBudget={take:(_owner,limit)=>{requests.push(limit);return limit;}};
+  run.ai.update(60);
+  assert.ok(requests.length>1);assert.ok(requests.every(limit=>limit===8));
+  assert.ok(requests.reduce((sum,limit)=>sum+limit,0)<=128);
+});
+
 test('immobile casting returns home only after an unreachable sliced search completes',()=>{
   const run=setup([skill],'active',{canMove:false});
   run.scores.set('first',10);

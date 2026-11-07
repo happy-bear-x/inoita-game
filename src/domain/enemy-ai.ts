@@ -58,6 +58,7 @@ interface EnemyControllerState {
 const REPATH_INTERVAL_MS=180;
 /** 跨帧搜索每次推进的扩展上限；多个 AI 共享渲染帧预算。 */
 const SEARCH_SLICE=128;
+const REACHABILITY_SLICE=8;
 const REACHABLE_CELL_SIZE=64;
 /** 没有旧路线时的请求上限，仍由共享预算限制实际扩展数。 */
 const HOLD_SEARCH_CAP=1024;
@@ -96,7 +97,8 @@ export class EnemyController {
   private idleElapsed=0;
   private wanderDestination?:Point;
   /** 正在跨帧推进的搜索；目标变化或恢复检查点时会丢弃。 */
-  private search?:{task:PathSearch;target?:Combatant;targetId?:string;destination:Point;range:number;isGoal:(point:Point)=>boolean};
+  private search?:{task:PathSearch;target?:Combatant;targetId?:string;destination:Point;range:number;isGoal:(point:Point)=>boolean;
+    canStand:(point:Point)=>boolean;straight?:{fromX:number;fromY:number;toX:number;toY:number;walkable:boolean}};
   private heldSearch?:{task:PathSearch;origin:Point;targetId:string;range:number;reached:Map<string,Point[]>;witness?:Point;complete:boolean;retryAt:number};
   private readonly spentOnce=new Set<string>();
   private get mapWide():boolean{return this.behavior.engagement==='map-wide';}
@@ -399,14 +401,21 @@ export class EnemyController {
     }
     search.retryAt=0;
     if(search.complete)return false;
-    const granted=this.port.pathBudget?.take(this.id,SEARCH_SLICE)??SEARCH_SLICE;
-    if(granted<=0)return undefined;
-    const result=search.task.step(granted);
-    search.complete=result.status!=='pending';
-    if(this.heldReachablePosition(search,actor,target,range)){
-      search.retryAt=this.clock+REPATH_INTERVAL_MS;return true;
+    let remaining=SEARCH_SLICE;
+    while(remaining>0){
+      const requested=Math.min(REACHABILITY_SLICE,remaining);
+      const granted=this.port.pathBudget?.take(this.id,requested)??requested;
+      if(granted<=0)return undefined;
+      remaining-=granted;
+      const result=search.task.step(granted);
+      search.complete=result.status!=='pending';
+      if(this.heldReachablePosition(search,actor,target,range)){
+        search.retryAt=this.clock+REPATH_INTERVAL_MS;return true;
+      }
+      if(search.complete)return false;
+      if(granted<requested)return undefined;
     }
-    return search.complete?false:undefined;
+    return undefined;
   }
   private heldReachablePosition(search:NonNullable<EnemyController['heldSearch']>,actor:Combatant,target:Combatant,range:number):Point|undefined{
     if(search.witness&&attackDistance(search.witness,actor.bounds,target.position,target.bounds)<=range)return search.witness;
@@ -425,13 +434,19 @@ export class EnemyController {
   }
   /** 脚底直线能否走过去：路径还没算完时用它判断能不能先朝目标迈一步。 */
   private straightWalkable(from:Point,to:Point):boolean{
+    const search=this.search;if(!search)return false;
+    const cached=search.straight;
+    if(cached&&cached.fromX===from.x&&cached.fromY===from.y&&cached.toX===to.x&&cached.toY===to.y)return cached.walkable;
+    const result={fromX:from.x,fromY:from.y,toX:to.x,toY:to.y,walkable:true};
     const length=Math.hypot(to.x-from.x,to.y-from.y);
     const steps=Math.max(1,Math.ceil(length/PATH_GRID_SIZE));
     for(let index=1;index<=steps;index++){
       const ratio=index/steps;
-      if(!this.port.canStand({x:from.x+(to.x-from.x)*ratio,y:from.y+(to.y-from.y)*ratio}))return false;
+      if(!search.canStand({x:from.x+(to.x-from.x)*ratio,y:from.y+(to.y-from.y)*ratio})){
+        result.walkable=false;break;
+      }
     }
-    return true;
+    search.straight=result;return result.walkable;
   }
   private searchQuery(actor:Combatant,destination:Point,target:Combatant|undefined,range:number){
     const snapshot=this.port.navigationSnapshot?.();
@@ -448,7 +463,7 @@ export class EnemyController {
     this.nextPathAt=this.clock+REPATH_INTERVAL_MS;this.destination={...destination};this.destinationRange=range;
     if(stalled)this.lastProgressAt=this.clock;
     const query=this.searchQuery(actor,destination,target,range);
-    this.search={task:createPathSearch(actor.position,query),target,targetId:target?.id,destination:{...destination},range,isGoal:query.isGoal};
+    this.search={task:createPathSearch(actor.position,query),target,targetId:target?.id,destination:{...destination},range,isGoal:query.isGoal,canStand:query.canStand};
     this.advanceSearch(actor);
   }
   private advanceSearch(actor:Combatant):void{
