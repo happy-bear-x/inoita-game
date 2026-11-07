@@ -90,17 +90,17 @@ test('native standing recipes craft reserved potions; book recipes still gate on
   }
 });
 
-test('quest rewards can grant recipe books but not other reserved items or their containers', () => {
+test('quest rewards can grant recipe books but not other blocked items or their containers', () => {
   validateStoryItems(campaign, items);
   const book = structuredClone(campaign);
   book.quests.find(quest => quest.id === 'grafton-mission')!.rewards!.items.push({ item: 'lvl-d-weapon-combo-unit', quantity: 1 });
   validateStoryItems(book, items);
   const direct = structuredClone(campaign);
   direct.quests.find(quest => quest.id === 'grafton-mission')!.rewards!.items.push({ item: 'supreme-elixir', quantity: 1 });
-  assert.throws(() => validateStoryItems(direct, items), /保留道具/);
+  assert.throws(() => validateStoryItems(direct, items), /不可正常获取/);
   const container = structuredClone(campaign);
   container.quests.find(quest => quest.id === 'grafton-mission')!.rewards!.items.push({ item: 'sealed-weapon-chest', quantity: 1 });
-  assert.throws(() => validateStoryItems(container, items), /保留道具/);
+  assert.throws(() => validateStoryItems(container, items), /不可正常获取/);
 });
 
 test('fusion machine quests grant their original recipe books', () => {

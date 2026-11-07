@@ -11,6 +11,7 @@ import type { BattleCatalog } from '../src/domain/battle.ts';
 
 const read = <T>(name: string): T => JSON.parse(readFileSync(new URL(`../public/content/${name}.json`, import.meta.url), 'utf8')) as T;
 const items = read<ItemCatalog>('items');
+const storyEquipment = new Set(items.storyEquipment ?? []);
 const stats = read<CharacterStatsCatalog>('character-stats');
 const battle = read<BattleCatalog>('battle');
 const drops = read<DropCatalog>('drops');
@@ -41,13 +42,14 @@ test('epic pool contains every level 59+ rarity-4 equipment and nothing below 59
   const target = Object.entries(stats.equipment)
     .filter(([id, entry]) => {
       const item = items.items[id];
-      return !!item && item.category === 'equipment' && (item.level ?? 0) >= 59
+      return !!item && item.category === 'equipment' && (item.level ?? 0) >= 59 && !storyEquipment.has(id)
         && entry.defaultGrade !== undefined && rarity.get(entry.defaultGrade) === 4;
     })
     .map(([id]) => id);
   const pool = drops.equipment.epic.map(entry => entry.item);
-  assert.equal(pool.length, 166);
-  assert.equal(new Set(pool).size, 166);
+  assert.equal(pool.length, 162);
+  assert.equal(new Set(pool).size, 162);
+  assert.ok([...storyEquipment].every(id => !pool.includes(id)), '剧情人物装备不进入史诗池');
   assert.deepEqual([...pool].sort(), [...target].sort());
   assert.ok(drops.equipment.epic.every(entry => entry.dropLevel >= 59));
   assert.equal(target.filter(id => id.startsWith('merciless-')).length, 6, '品级 14 的紫装也在池内');

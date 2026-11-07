@@ -19,7 +19,7 @@ import { performanceTargets } from '../domain/story-performance.ts';
 import type { PerformanceAction, StoryCastMember } from '../domain/story-performance.ts';
 import { ITEM_CATEGORIES, MINIMAP_ASSETS, type StoryInterface } from '../domain/story-interface.ts';
 import type { StoryClassCatalog } from '../domain/story-class.ts';
-import { EQUIPMENT_SLOTS, EQUIPMENT_SLOT_ORDER, ITEM_USES, reservedAcquisitionIds, type ItemCatalog } from '../domain/items.ts';
+import { EQUIPMENT_SLOTS, EQUIPMENT_SLOT_ORDER, ITEM_USES, blockedNormalAcquisitionIds, reservedAcquisitionIds, type ItemCatalog } from '../domain/items.ts';
 import type { WardrobeCatalog } from '../domain/wardrobe.ts';
 import type { ShopCatalog, WeightedItem } from '../domain/shop.ts';
 import { PRIMARY_STATS, type CharacterStatsCatalog, type EnhancementRule, type ModifierRange } from '../domain/character-stats.ts';
@@ -174,28 +174,30 @@ export function parseStoryInterface(value:unknown):StoryInterface {
   return result;
 }
 export function validateStoryItems(campaign:Campaign, content:ItemCatalog):void {
-  const reserved=reservedAcquisitionIds(content);
+  const reserved=reservedAcquisitionIds(content),blockedNormal=blockedNormalAcquisitionIds(content);
   for(const quest of campaign.quests){
     for(const goal of quest.goals)if(goal.kind==='item'||goal.kind==='recruit')requireValue(content.items[goal.target],quest.id,'任务目标物品不存在');
     for(const item of [...quest.onAcceptItems??[],...quest.handoverItems??[]])requireValue(content.items[item.item],quest.id,'任务收付物品不存在');
     for(const reward of quest.rewards?.items??[]){
       const definition=content.items[reward.item];
       requireValue(!!definition,quest.id,`奖励物品不存在 ${reward.item}`);
-      // 配方书是解锁融合器配方的正常任务奖励；配方结果和其他保留道具仍然拒绝。
-      requireValue(!reserved.has(reward.item)||definition?.use?.kind==='recipe',quest.id,`任务奖励不能是保留道具 ${reward.item}`);
+      // 配方书是解锁融合器配方的正常任务奖励；配方结果、保留道具和剧情装备仍然拒绝。
+      requireValue(!blockedNormal.has(reward.item)||definition?.use?.kind==='recipe',quest.id,`任务奖励不能是不可正常获取的物品 ${reward.item}`);
       for(const classId of reward.classIds??[])requireValue(!!content.classSkills[classId],quest.id,`奖励职业不存在 ${classId}`);
     }
   }
   for(const enemy of campaign.enemyPlacements??[]){
     requireValue(!!content.items[enemy.rewardItem],enemy.id,'任务敌人的奖励物品不存在');
-    requireValue(!reserved.has(enemy.rewardItem),enemy.id,`任务敌人的奖励不能是保留道具 ${enemy.rewardItem}`);
+    requireValue(!blockedNormal.has(enemy.rewardItem),enemy.id,`任务敌人的奖励不能是不可正常获取的物品 ${enemy.rewardItem}`);
   }
   for(const script of Object.values(campaign.scripts))for(const node of script.nodes)for(const command of node.commands){
     if(command.type==='item-give'||command.type==='item-take'||command.type==='item-drop'||command.type==='equip'||command.type==='unequip-destroy'){
       requireValue(content.items[command.item],node.id,'剧情命令物品不存在');
       if(command.type==='equip')requireValue(content.items[command.item].equipment,node.id,'剧情穿戴物品需要是装备');
-      if(command.type==='item-give'||command.type==='item-drop')
+      if(command.type==='item-give')
         requireValue(!reserved.has(command.item),node.id,`剧情不能发放保留道具 ${command.item}`);
+      if(command.type==='item-drop')
+        requireValue(!blockedNormal.has(command.item),node.id,`剧情不能掉落保留道具或剧情装备 ${command.item}`);
     }
   }
 }
@@ -215,7 +217,7 @@ const itemCatalog=shape<ItemCatalog>({items:record(object({name:text,description
   use:optional(object({kind:oneOf(...ITEM_USES),recovery:optional(variant('mode',{amount:object({mode:oneOf('amount'),minHealth:count,maxHealth:count,restoresMana:boolean,cooldownMs:count}),rate:object({mode:oneOf('rate'),ratePercent:count,restoresMana:boolean,cooldownMs:count})})),regenerate:optional(object({durationMs:count,healthRecoveryPerPulse:count,manaRecoveryPerPulse:count})),rewards:optional(array(object({item:text,quantity:count}))),classId:optional(text),elite:optional(boolean),recipes:optional(strings),
     target:optional(oneOf('weapon','armor')),maxLevel:optional(integer),requiresEnhanced:optional(boolean)}))})),
   startingEquipment:record(record(text)),startingInventory:array(object({item:text,quantity:count})),startingShortcut:text,
-  dualWieldClasses:strings,merchantItems:strings,reservedItems:optional(strings),classSkills:record(strings),skillDescriptions:optional(record(object({name:text,className:text}))),recipes:record(object({name:text,result:text,materials:array(object({item:text,quantity:count})),cost:count,book:boolean,allowReservedResult:optional(boolean)}))});
+  dualWieldClasses:strings,merchantItems:strings,reservedItems:optional(strings),storyEquipment:optional(strings),classSkills:record(strings),skillDescriptions:optional(record(object({name:text,className:text}))),recipes:record(object({name:text,result:text,materials:array(object({item:text,quantity:count})),cost:count,book:boolean,allowReservedResult:optional(boolean)}))});
 export function parseItemCatalog(value:unknown):ItemCatalog {
   itemCatalog(value,'items');const result=value as ItemCatalog;
   const classes=Object.keys(result.startingEquipment);
@@ -268,13 +270,25 @@ export function parseItemCatalog(value:unknown):ItemCatalog {
   for(const id of reserved)requireValue(result.items[id],'items.reservedItems',`保留道具不存在 ${id}`);
   for(const [id,recipe] of Object.entries(result.recipes))
     if(recipe.allowReservedResult)requireValue(!recipe.book&&reserved.includes(recipe.result),id,'允许合成保留产物的标记只用于原版常备配方');
-  const blocked=reservedAcquisitionIds(result);
+  const storyEquipment=result.storyEquipment??[];
+  requireValue(new Set(storyEquipment).size===storyEquipment.length,'items.storyEquipment','剧情装备重复');
+  for(const id of storyEquipment){
+    const item=result.items[id];
+    requireValue(item,'items.storyEquipment',`剧情装备不存在 ${id}`);
+    requireValue(item.equipment?.locked===true,'items.storyEquipment',`剧情装备必须是锁定装备 ${id}`);
+    requireValue(item.priceKind==='weapon'||item.priceKind==='armor'||item.priceKind==='accessory','items.storyEquipment',`剧情装备类型无效 ${id}`);
+  }
+  const lockedEquipment=Object.entries(result.items).filter(([,item])=>item.equipment?.locked===true).map(([id])=>id);
+  requireValue(storyEquipment.length===lockedEquipment.length&&lockedEquipment.every(id=>storyEquipment.includes(id)),
+    'items.storyEquipment','剧情装备清单必须覆盖全部锁定装备');
+  requireValue(!storyEquipment.some(id=>reserved.includes(id)),'items.storyEquipment','剧情装备不能同时是保留道具');
+  const blocked=blockedNormalAcquisitionIds(result);
   for(const entry of result.startingInventory)
-    requireValue(!blocked.has(entry.item),'items.startingInventory',`初始物品不能是保留道具 ${entry.item}`);
+    requireValue(!blocked.has(entry.item),'items.startingInventory',`初始物品不能是不可正常获取的物品 ${entry.item}`);
   for(const slots of Object.values(result.startingEquipment))for(const id of Object.values(slots))
-    requireValue(!blocked.has(id!),'items.startingEquipment',`初始装备不能是保留道具 ${id}`);
+    requireValue(!blocked.has(id!),'items.startingEquipment',`初始装备不能是不可正常获取的物品 ${id}`);
   for(const id of result.merchantItems)
-    requireValue(!blocked.has(id),'items.merchantItems',`商人物品不能是保留道具 ${id}`);
+    requireValue(!blocked.has(id),'items.merchantItems',`商人物品不能是不可正常获取的物品 ${id}`);
   for(const id of result.dualWieldClasses)requireValue(classes.includes(id),id,'双持职业不存在');
   for(const id of result.merchantItems)requireValue(result.items[id],id,'商人物品不存在');
   return result;
