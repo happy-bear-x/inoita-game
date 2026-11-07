@@ -614,3 +614,102 @@ test('completeCurrentQuest, setNoclip, and setDoubleSpeed operate correctly thro
   }
   director.dispose();
 });
+
+class MarkStore {
+  data = new Map<string, import('../src/debug/debug-marks.ts').DebugMark>();
+  fail = false;
+  async put(mark: import('../src/debug/debug-marks.ts').DebugMark) {
+    if (this.fail) throw new Error('QuotaExceededError');
+    this.data.set(mark.summary.name, structuredClone(mark));
+  }
+  async get(name: string) { return structuredClone(this.data.get(name)); }
+  async list(offset = 0, limit = 20) { return [...this.data.values()].sort((a,b)=>b.summary.savedAt-a.summary.savedAt).slice(offset,offset+limit).map(mark=>structuredClone(mark.summary)); }
+  async delete(name: string) { this.data.delete(name); }
+}
+
+test('persistent marks survive a new action instance; failed overwrite preserves body and summaries', async () => {
+  const { session, director } = harness(), store = new MarkStore();
+  const first = createGmActions({ session, campaign, director, markStore: store });
+  assert.equal((await first.saveMark('before')).ok, true);
+  const original = structuredClone(store.data.get('before'));
+  session.gainMoney(100);
+  store.fail = true;
+  assert.equal((await first.saveMark('before')).ok, false);
+  assert.deepEqual(store.data.get('before'), original);
+  store.fail = false;
+  assert.equal((await first.saveMark()).ok, true);
+  assert.equal((await first.listMarks(1, 1)).marks!.length, 1);
+  first.dispose();
+  const second = createGmActions({ session, campaign, director, markStore: store });
+  assert.equal((await second.listMarks()).marks!.length, 2);
+  assert.equal((await second.deleteMark('before')).ok, true);
+  assert.equal(store.data.has('before'), false);
+  director.dispose();
+});
+
+test('recalling a persistent mark restores world and pauses saving until returning to the original position', async () => {
+  const { session, director } = harness(), store = new MarkStore();
+  let worldState = { x: 8, y: 9 }, paused = false;
+  const gm = createGmActions({ session, campaign, director, markStore: store,
+    persistence: { suspend: () => { paused = true; }, resume: () => { paused = false; }, resumeAfterRollback: () => { paused = false; } },
+    debugWorld: { capture: () => ({ ...worldState }), restore: async snapshot => { worldState = snapshot as typeof worldState; return { ok: true }; } },
+  });
+  const marked = session.money;
+  assert.equal((await gm.saveMark('place')).ok, true);
+  session.gainMoney(57); worldState = { x: 20, y: 30 };
+  assert.equal((await gm.restoreMark('place')).ok, true);
+  assert.equal(session.money, marked);
+  assert.deepEqual(worldState, { x: 8, y: 9 });
+  assert.equal(paused, true);
+  assert.equal(gm.storyDebug().autoSavePaused, true);
+  assert.equal((await gm.endStoryDebug()).ok, true);
+  assert.equal(session.money, marked + 57);
+  assert.deepEqual(worldState, { x: 20, y: 30 });
+  assert.equal(paused, false);
+  assert.ok(store.data.has('place'));
+  director.dispose();
+});
+
+test('corrupt, cancelled and failed mark restoration retain the current session and stored mark', async () => {
+  const { session, director } = harness(), store = new MarkStore();
+  let paused = false, failNext = false;
+  const gm = createGmActions({ session, campaign, director, markStore: store,
+    persistence: { suspend: () => { paused = true; }, resume: () => { paused = false; }, resumeAfterRollback: () => { paused = false; } },
+    debugWorld: { capture: () => ({ x: 1 }), restore: async () => { if (failNext) { failNext = false; return { ok: false, reason: 'map unavailable' }; } return { ok: true }; } },
+  });
+  await gm.saveMark('valid'); session.gainMoney(25);
+  const before = session.captureState();
+  failNext = true;
+  assert.equal((await gm.restoreMark('valid')).ok, false);
+  assert.deepEqual(session.captureState(), before);
+  assert.equal(paused, false);
+  assert.equal((await gm.restoreMark('valid', AbortSignal.abort())).ok, false);
+  assert.deepEqual(session.captureState(), before);
+  store.data.get('valid')!.session.money = -1;
+  assert.equal((await gm.restoreMark('valid')).ok, false);
+  assert.deepEqual(session.captureState(), before);
+  assert.equal(paused, false);
+  assert.equal(store.data.size, 1);
+  director.dispose();
+});
+
+test('persistent task marks retain the task return point while preserving the current formal progress', async () => {
+  const debugCampaign = startTableCampaign();
+  const session = newStorySession(debugCampaign, world.actors[debugCampaign.start.actor]!, classes.classes[0]!, items, stats, battle, companions);
+  session.bag.add(DEBUG_START_ITEM, 3);
+  const director = new StoryDirector(debugCampaign, session, ui, () => {}, presentation), store = new MarkStore();
+  const gm = createGmActions({ session, campaign: debugCampaign, director, markStore: store });
+  const original = session.money;
+  assert.equal((await gm.jumpStory({ quest: DEBUG_START_QUEST })).ok, true);
+  assert.equal((await gm.saveMark('task')).ok, true);
+  assert.ok(store.data.get('task')!.taskReturn);
+  assert.equal((await gm.endStoryDebug()).ok, true);
+  session.gainMoney(37);
+  assert.equal((await gm.restoreMark('task')).ok, true);
+  assert.equal((await gm.endStoryDebug()).ok, true);
+  assert.equal(session.money, original);
+  assert.equal(gm.storyDebug().autoSavePaused, true);
+  assert.equal((await gm.endStoryDebug()).ok, true);
+  assert.equal(session.money, original + 37);
+  director.dispose();
+});

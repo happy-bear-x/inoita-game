@@ -1,3 +1,5 @@
+import { toPlaybackCheckpoint } from '../domain/playback-checkpoint.ts';
+import type { DebugMark, DebugMarkStore, DebugMarkSummary } from './debug-marks.ts';
 import { prepareTaskStart, storyTaskPreview, type StoryDebugPreview } from './story-jump.ts';
 import { debugGapFor, debugTask, type StoryDebugGap, type StoryDebugPlay, type StoryDebugTarget } from '../domain/story-debug.ts';
 /**
@@ -40,7 +42,8 @@ interface GmDebugState { focus?: string; autoSavePaused: boolean }
 /** 进入调试前的世界视图；动作层不依赖 Phaser，场景快照保持不透明。 */
 interface GmDebugWorldPort {
   capture(): unknown | undefined;
-  restore(snapshot: unknown): Promise<GmResult>;
+  capturePersistent?(): unknown | undefined;
+  restore(snapshot: unknown, signal?: AbortSignal): Promise<GmResult>;
 }
 /** 脱困结果带前后位置，面板与 agent 都能确认搬到了哪里。 */
 interface GmRescueResult extends GmResult { from?: unknown; to?: unknown; moved?: boolean }
@@ -114,6 +117,7 @@ interface GmPersistencePort {
 }
 
 interface GmPorts {
+  markStore?: DebugMarkStore;
   session: Session;
   campaign: Campaign;
   director?: StoryDirector;
@@ -187,6 +191,11 @@ export interface GmActions {
   mark(name: string): GmResult;
   recall(name: string): GmResult;
   marks(): string[];
+  saveMark(name?: string): Promise<GmResult>;
+  restoreMark(name?: string, signal?: AbortSignal): Promise<GmResult>;
+  listMarks(offset?: number, limit?: number): Promise<GmResult & { marks?: DebugMarkSummary[] }>;
+  deleteMark(name: string): Promise<GmResult>;
+  dispose(): void;
   /** 立刻完成指定或当前追踪/进行中的任务。 */
   completeCurrentQuest(questId?: string): GmResult;
   /** 穿墙（无视地形与单位碰撞）。 */
@@ -206,6 +215,14 @@ export function createGmActions(ports: GmPorts): GmActions {
   const log: GmActionLogEntry[] = [];
   const marks = new Map<string, SessionState>();
   let jumping = false;
+  let disposed = false;
+  const lifetime = new AbortController();
+  let markRun: { origin: SessionState; world?: unknown } | undefined;
+  const markStore = (): DebugMarkStore => {
+    if (disposed) throw new Error('当前调试会话已经关闭');
+    if (!ports.markStore) throw new Error('当前环境没有装配本机调试标记');
+    return ports.markStore;
+  };
 
   const record = (call: string, args: readonly unknown[], result: GmResult): void => {
     log.push({ at: new Date().toISOString(), call, args, ok: result.ok, ...(result.reason ? { reason: result.reason } : {}) });
@@ -275,7 +292,7 @@ export function createGmActions(ports: GmPorts): GmActions {
       if (result.ok) {
         debugRun = undefined;
         try {
-          ports.persistence?.resume();
+          if (!markRun) ports.persistence?.resume();
           if (openStory) ports.onDebugStory?.();
         } catch (error) {
           return { ok: false, reason: `调试已恢复，但自动存档恢复失败：${error instanceof Error ? error.message : String(error)}` };
@@ -311,7 +328,7 @@ export function createGmActions(ports: GmPorts): GmActions {
     run.unsubscribe?.(); run.unsubscribe = undefined;
     if (run.timer) { clearTimeout(run.timer); run.timer = undefined; }
     debugRun = undefined;
-    try { ports.persistence?.resumeAfterRollback(); }
+    try { if (!markRun) ports.persistence?.resumeAfterRollback(); }
     catch (error) { record('abandonDebugRun', [], { ok: false, reason: error instanceof Error ? error.message : String(error) }); }
   };
 
@@ -464,7 +481,7 @@ export function createGmActions(ports: GmPorts): GmActions {
     jumpStory: target => runAsync('jumpStory', [target], async (): Promise<GmStoryJumpResult> => {
       if (!director) return {ok:false,reason:'当前会话还没有装配剧情导演'};
       if (jumping) return {ok:false,reason:'正在准备剧情，请稍候'};
-      if (debugRun) return {ok:false,reason:'当前已有调试现场，请先结束本次调试'};
+      if (debugRun || markRun) return {ok:false,reason:'当前已有调试现场，请先结束本次调试'};
       jumping = true;
       const gaps = () => { const gap = debugGapFor(campaign, target.quest); return gap ? { gap } : {}; };
       let origin: SessionState | undefined;
@@ -542,6 +559,33 @@ export function createGmActions(ports: GmPorts): GmActions {
     }),
     endStoryDebug: () => runAsync('endStoryDebug', [], async (): Promise<GmEndDebugResult> => {
       if (debugRun) return finishDebugRun(debugRun, true);
+      if (markRun) {
+        const run = markRun, before = session.captureState(), world = ports.debugWorld?.capture();
+        try {
+          const restore = async (): Promise<GmResult> => {
+            session.restoreState(run.origin);
+            if (run.world !== undefined && ports.debugWorld) {
+              const result = await ports.debugWorld.restore(run.world, lifetime.signal);
+              if (!result.ok) throw new Error(result.reason ?? '恢复原现场失败');
+            }
+            lifetime.signal.throwIfAborted();
+            return { ok: true };
+          };
+          const result = director ? await director.debugJump(restore) : await restore();
+          if (!result.ok) return result;
+          markRun = undefined;
+          ports.persistence?.resume();
+          return { ok: true };
+        } catch (error) {
+          if (!disposed) {
+            markRun = run;
+            ports.persistence?.suspend();
+            session.restoreState(before);
+            if (world !== undefined) await ports.debugWorld?.restore(world);
+          }
+          return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+        }
+      }
       const focus = session.debugFocusQuest;
       if (!focus) return {ok:false, reason:'当前没有调试现场'};
       // 兼容没有进入前快照的旧调试状态：至少退出调试焦点并恢复自动存档。
@@ -550,7 +594,7 @@ export function createGmActions(ports: GmPorts): GmActions {
       catch (error) { return {ok:false, reason:`恢复存档失败：${error instanceof Error ? error.message : String(error)}`}; }
       return {ok:true, focus};
     }),
-    storyDebug: () => ({ focus: session.debugFocusQuest, autoSavePaused: !!session.debugFocusQuest }),
+    storyDebug: () => ({ focus: session.debugFocusQuest, autoSavePaused: jumping || !!markRun || !!session.debugFocusQuest }),
     digest,
     rescue: () => {
       let result: GmRescueResult;
@@ -667,6 +711,84 @@ export function createGmActions(ports: GmPorts): GmActions {
       session.restoreState(state);
       return { ok: true };
     }),
+    saveMark: name => runAsync('mark', [name], async () => {
+      const store = markStore();
+      const label = name?.trim() || `标记-${new Date().toISOString()}-${globalThis.crypto.randomUUID()}`;
+      if (jumping || director?.busy) return { ok: false, reason: '正在切换或播放剧情，请在现场稳定后记录' };
+      const state = session.captureState();
+      state.runtime = toPlaybackCheckpoint(state.runtime);
+      const mark: DebugMark = { version: 1,
+        summary: { name: label, savedAt: Date.now(), classId: state.classId, map: state.storyWorld.location?.map },
+        session: state, world: ports.debugWorld?.capturePersistent?.() ?? ports.debugWorld?.capture(),
+        ...(debugRun ? { taskReturn: { quest: debugRun.quest, session: { ...debugRun.origin, runtime: toPlaybackCheckpoint(debugRun.origin.runtime) }, world: debugRun.world } } : {}),
+      };
+      await store.put(mark);
+      return { ok: true, reason: label };
+    }),
+    listMarks: (offset, limit) => runAsync('marks', [offset, limit], async () => ({ ok: true, marks: await markStore().list(offset, limit) })),
+    deleteMark: name => runAsync('deleteMark', [name], async () => {
+      await markStore().delete(name);
+      return { ok: true };
+    }),
+    restoreMark: (name, signal) => runAsync('recall', [name], async () => {
+      const store = markStore();
+      if (jumping || debugRun || markRun) return { ok: false, reason: '请先结束当前调试现场或等待切换完成' };
+      jumping = true;
+      const abort = signal ? AbortSignal.any([signal, lifetime.signal]) : lifetime.signal;
+      let origin: SessionState | undefined, originWorld: unknown, installed = false;
+      try {
+        abort.throwIfAborted();
+        const label = name ?? (await store.list(0, 1))[0]?.name;
+        if (!label) return { ok: false, reason: '没有可恢复的调试标记' };
+        const mark = await store.get(label);
+        abort.throwIfAborted();
+        if (!mark || mark.version !== 1 || mark.summary.name !== label) return { ok: false, reason: `调试标记缺失或损坏：${label}` };
+        const restore = async (): Promise<GmResult> => {
+          abort.throwIfAborted();
+          origin = session.captureState(); originWorld = ports.debugWorld?.capture();
+          ports.persistence?.suspend(); installed = true;
+          if (mark.taskReturn) {
+            if (!campaign.quests.some(quest => quest.id === mark.taskReturn!.quest)) throw new Error('标记的任务返回点无效');
+            session.restoreState(mark.taskReturn.session);
+          }
+          session.restoreState(mark.session);
+          if (mark.world !== undefined && ports.debugWorld) {
+            const restored = await ports.debugWorld.restore(mark.world, abort);
+            if (!restored.ok) throw new Error(restored.reason ?? '恢复调试地图失败');
+          }
+          abort.throwIfAborted();
+          markRun = { origin, world: originWorld };
+          if (mark.taskReturn) {
+            const progress = session.quests.get(mark.taskReturn.quest);
+            debugRun = { quest: mark.taskReturn.quest, origin: mark.taskReturn.session, world: mark.taskReturn.world,
+              baseline: { status: progress?.status ?? 'locked', cycle: progress?.cycle ?? 0, completedCycles: progress?.completedCycles ?? 0 },
+              started: true, pending: false };
+            watchDebugRun(debugRun);
+          }
+          return { ok: true };
+        };
+        return director ? await director.debugJump(restore) : await restore();
+      } catch (error) {
+        if (installed && origin && !disposed) {
+          try {
+            session.restoreState(origin);
+            const result = originWorld === undefined ? { ok: true } : await ports.debugWorld?.restore(originWorld);
+            if (result?.ok === false) throw new Error(result.reason ?? '原地图恢复失败');
+            ports.persistence?.resumeAfterRollback();
+          } catch (rollbackError) {
+            markRun = { origin, world: originWorld };
+            return { ok: false, reason: `标记恢复失败，原地图恢复待重试：${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}` };
+          }
+        }
+        return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+      } finally { jumping = false; }
+    }),
+    dispose: () => {
+      disposed = true; lifetime.abort();
+      debugRun?.unsubscribe?.();
+      if (debugRun?.timer) clearTimeout(debugRun.timer);
+      debugRun = undefined; markRun = undefined; marks.clear(); log.length = 0;
+    },
     completeCurrentQuest: (questId?: string) => run('completeCurrentQuest', [questId], () => {
       const activeList = questDigest().active;
       const targetId = questId ?? session.currentQuest()?.id ?? activeList[0]?.id;
@@ -719,4 +841,15 @@ export function createGmActions(ports: GmPorts): GmActions {
       return result;
     },
   };
+}
+
+
+export type ConsoleGmActions = Omit<GmActions, 'mark' | 'recall' | 'marks'> & {
+  mark: GmActions['saveMark'];
+  recall: GmActions['restoreMark'];
+  marks: GmActions['listMarks'];
+};
+/** 控制台使用持久标记；屏幕面板保留当前同步交互。 */
+export function consoleGmActions(actions: GmActions): ConsoleGmActions {
+  return { ...actions, mark: actions.saveMark, recall: actions.restoreMark, marks: actions.listMarks };
 }

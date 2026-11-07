@@ -5,6 +5,7 @@
 ## 文件
 
 - `gm-actions.ts`：GM 动作的唯一实现，面板、`globalThis.gm` 和无头回放都调它。
+- `debug-marks.ts`：持久标记的摘要、现场正文与数据库能力接口。
 - `gm-mode.ts`：GM 模式开关的本地持久化，默认关闭。
 - `headless-story.ts`：无渲染剧情回放，按内容与命令推进剧情。
 - `story-jump.ts`：剧情跳转，定位任务与事件现场。
@@ -24,3 +25,7 @@
 npm run debug-start:check
 npm test -- tests/gm-scene.test.ts tests/story-debug-start.test.ts
 ```
+
+- 控制台通过 `consoleGmActions` 使用异步持久标记；正文只在恢复时读取，分页只读摘要。保存事务完成后返回成功，写入失败保留旧标记。
+- 恢复持久标记先保留正式会话与世界现场，暂停正式保存；任务标记还保留任务返回点。退出先返回任务原点，再退出标记现场恢复正式进度。失败保持原局或保留可重试返回点。
+- 会话关闭时调用 `GmActions.dispose()`，中止在途恢复并释放订阅、计时器和本局标记引用。

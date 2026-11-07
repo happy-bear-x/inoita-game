@@ -29,3 +29,5 @@
 ## 验证
 
 - `npm run typecheck` 覆盖整个 `src`；按改动另跑 `npm test -- tests/session.test.ts`。
+
+- 控制台 GM 标记通过 `consoleGmActions` 异步持久化，屏幕面板保持本局同步标记。持久标记调试期间，自动存档、手动存档捕获与检查点都拒绝写入；退出后恢复正式现场。

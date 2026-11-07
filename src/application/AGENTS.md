@@ -38,3 +38,7 @@
 - `npm test -- tests/cloud-save-client.test.ts tests/cloud-save-sync.test.ts tests/cloud-save-offline.test.ts`：云客户端、同步与离线降级。
 - `npm test -- tests/endpoints.test.ts`：环境根地址、运行时注入与非法地址降级。
 - `npm test -- tests/content-loader.test.ts`：内容加载与校验。
+
+- `debug-mark-store.ts` 用独立 IndexedDB 数据库保存调试摘要与正文；写入、覆盖和删除共用同一事务，分页只读摘要，每次操作结束关闭连接。
+
+- `debug-world.ts` 在恢复持久现场前校验地图、位置、角色和战斗，队伍外观按当前装备重建；运行时剧情检查点仍走原有恢复路径。

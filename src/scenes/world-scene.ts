@@ -1601,7 +1601,7 @@ export class WorldScene extends Phaser.Scene {
   }
   private captureCheckpoint():boolean {
     // 调试现场不是玩家进度：不覆盖检查点，否则死亡/重开会把 GM 现场带回正常流程。
-    if(this.app.session.debugFocusQuest)return false;
+    if(this.app.session.debugFocusQuest||this.app.gm?.storyDebug().autoSavePaused)return false;
     // 遭遇正在等待战斗结果时，已有检查点就保留：死亡回滚才不会直接落回同一场战斗。
     // 没有检查点时必须记一次兜底：读档会清空内存检查点，而读档可能正落在等待战斗的现场，
     // 这时再拒绝就会让整场战斗没有可回退的检查点。
@@ -1664,7 +1664,7 @@ captureStoryScene():SceneSnapshot {
    */
   captureSaveWorld(): SaveWorldResult {
     // 调试现场禁手动存档：存档摘要会读到这里，返回失败由界面报「调试现场不能存档」。
-    if(this.app.session.debugFocusQuest)return {ok:false,reason:'debug'};
+    if(this.app.session.debugFocusQuest||this.app.gm?.storyDebug().autoSavePaused)return {ok:false,reason:'debug'};
     if(!this.map||!this.player||!this.movement)return {ok:false,reason:'not-ready'};
     if(this.loadingWorld)return {ok:false,reason:'loading'};
     if(!this.app.session.hasLivingMember){

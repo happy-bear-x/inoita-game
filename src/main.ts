@@ -38,7 +38,9 @@ import { MINIMAP_ASSETS } from './domain/story-interface.ts';
 import { GAME_FRAME_TIMING, installFrameLimitClock } from './application/game-timing.ts';
 import { installGameDiagnostics, installStorySkipDiagnostics } from './application/game-diagnostics.ts';
 import { storyDevMode } from './domain/dev-mode.ts';
-import { createGmActions, type GmActions } from './debug/gm-actions.ts';
+import { createGmActions, consoleGmActions, type ConsoleGmActions } from './debug/gm-actions.ts';
+import { IndexedDbDebugMarkStore } from './application/debug-mark-store.ts';
+import { persistentDebugWorld, prepareDebugWorld } from './application/debug-world.ts';
 import { DomUi } from './ui/dom/dom-ui.ts';
 
 declare global {
@@ -46,7 +48,7 @@ declare global {
   var storyApp: StoryApp | undefined;
   var render_game_to_text: (() => string) | undefined;
   /** GM 打开时才挂上的调试动作层，agent 经 CDP 驱动它（与游戏内面板同一份实现）。 */
-  var gm: GmActions | undefined;
+  var gm: ConsoleGmActions | undefined;
 }
 
 /** 场景实例，浏览器测试和流程代码都按 `world` 这个键取它。 */
@@ -135,7 +137,7 @@ function startAutoSave(session:Session):void {
   stopAutoSave();
   const saver=new AutoSaver<StoryWorldViewSnapshot>({
     // 调试现场不写玩家存档：focus 存在时自动存档整个停掉，结束调试后由 GM 动作恢复。
-    enabled:()=>app.mode==='game'&&!app.suspended&&!!app.session&&!app.session.debugFocusQuest,
+    enabled:()=>app.mode==='game'&&!app.suspended&&!!app.session&&!app.session.debugFocusQuest&&!app.gm?.storyDebug().autoSavePaused,
     // 演出与菜单锁着时不抢写：等解锁后再写，免得存到一半的状态。
     locked:()=>app.locked||!!app.director?.busy,
     capture:()=>{const captured=app.storyUI.captureSaveRecord();return captured.ok?captured.record:undefined;},
@@ -361,7 +363,7 @@ async function resumeSlot(slot:SaveSlotRef,signal?:AbortSignal):Promise<void> {
         request.throwIfAborted();return candidate;
       },
       stopCurrent:async()=>{
-        modeRequest.abort();app.director?.dispose();app.clearMapPrefetch();app.clearStoryPrefetch();ui.resetInput();
+        app.gm?.dispose();modeRequest.abort();app.director?.dispose();app.clearMapPrefetch();app.clearStoryPrefetch();ui.resetInput();
         const stopped=new Promise<void>(resolve=>sourceScene.events.once(Phaser.Scenes.Events.SHUTDOWN,()=>resolve()));
         game.scene.stop(sourceScene.sys.settings.key);await stopped;
         app.releaseResidentCombat();
@@ -382,6 +384,7 @@ async function resumeSlot(slot:SaveSlotRef,signal?:AbortSignal):Promise<void> {
 
 /** 新开与读档共用的会话装配：世界场景、菜单、剧情播放器与界面都接到这份会话上。 */
 function installSession(session: Session): void {
+  app.gm?.dispose();
   // 会话可能换了职业；旧常驻包、历史地图纹理和会话级内容解析结果都不再复用。
   app.releaseResidentCombat();
   app.clearMapHistory();
@@ -448,7 +451,7 @@ function installSession(session: Session): void {
   // GM 动作层在会话装配好之后才建（它要 session 与 director）；开关关闭时**不建也不挂**，
   // 这样「默认关闭」是结构上的保证，而不是靠调用方自觉。
   app.gm = gmOn() ? createGmActions({
-    session, campaign, director,
+    session, campaign, director, markStore: new IndexedDbDebugMarkStore(),
     status: () => runtimeDiagnostics(),
     onStoryPreparation: preparing => { if(preparing)app.ui.loading('正在准备剧情…');else app.ui.loaded(); },
     rescue: () => {
@@ -491,11 +494,12 @@ function installSession(session: Session): void {
         try { return worldScene()?.captureStoryWorld(); }
         catch { return undefined; }
       },
-      restore: async snapshot => {
+      capturePersistent: () => { const scene = worldScene(); return scene ? persistentDebugWorld(scene.captureStoryWorld()) : undefined; },
+      restore: async (snapshot, signal = modeRequest.signal) => {
         const scene = worldScene();
         if (!scene) return { ok: false, reason: '不在游戏场景里' };
         try {
-          await scene.restoreStoryWorld(snapshot as StoryWorldViewSnapshot, new AbortController().signal);
+          await scene.restoreStoryWorld(prepareDebugWorld(snapshot, app), signal);
           return { ok: true };
         } catch (error) {
           return { ok: false, reason: error instanceof Error ? error.message : String(error) };
@@ -522,7 +526,7 @@ function installSession(session: Session): void {
       },
     },
   }) : undefined;
-  if (app.gm) globalThis.gm = app.gm; else delete globalThis.gm;
+  if (app.gm) globalThis.gm = consoleGmActions(app.gm); else delete globalThis.gm;
   app.audio?.enterStory();
   // 会话装好之后再开自动存档：它要绑定这一份会话的任务状态。
   startAutoSave(session);
@@ -532,7 +536,7 @@ function returnToMenu(): void {
   if (!ui.canReturn) return;
   if (app.mode === 'game' && worldScene()?.loadingWorld && !ui.failed) return;
   const returnPage=app.mode==='class-select'?'slots':'home';
-  savedGameLoader.cancel();stopAutoSave();modeRequest.abort();modeRequest=new AbortController();clearMenuPreparations(); app.director?.dispose(); app.clearMapPrefetch(); app.clearStoryPrefetch(); ui.resetInput();
+  savedGameLoader.cancel();stopAutoSave();app.gm?.dispose();modeRequest.abort();modeRequest=new AbortController();clearMenuPreparations(); app.director?.dispose(); app.clearMapPrefetch(); app.clearStoryPrefetch(); ui.resetInput();
   // 会话已经销毁：把动作层一起摘掉，免得 agent 拿到一个指向已 dispose 导演的句柄。
   app.gm = undefined; delete globalThis.gm;
   const scene = currentScene();
@@ -586,7 +590,7 @@ function boot(): void {
   document.fonts?.ready.then(() => domUi.layout()).catch(() => {});
   app.enterGame = enterGame; app.returnToMenu = returnToMenu; app.startStory = startStory;
   app.resumeSlot = resumeSlot;
-  app.captureSaveWorld = () => worldScene()?.captureSaveWorld() ?? {ok:false,reason:'not-ready'};
+  app.captureSaveWorld = () => app.gm?.storyDebug().autoSavePaused ? {ok:false,reason:'debug'} : worldScene()?.captureSaveWorld() ?? {ok:false,reason:'not-ready'};
   app.autoSave = () => autoSaver?.request();
   app.captureControlPreview = () => worldScene()?.getControlLayoutPreview()??[];
   app.prefetchStory = () => afterFirstPaint(() => {

@@ -37,3 +37,7 @@ npm run test:standalone
 - `session-cooldowns-party.test.ts` 验证放逐与预备队的冷却、掉落保底清理，以及旧档中已放逐成员记录的回收。
 
 - `world-skill-cache.test.ts` 验证共享技能贴图在原使用者离队后仍由后学会的主角持有，最后释放时回收。
+
+- `debug-mark-store.test.ts` 验证摘要分页不读取正文、跨实例读取及配额失败的原子覆盖；`gm-actions.test.ts` 验证持久标记的取消、损坏、现场回退与任务返回点。
+
+- `world-effects.test.ts` 验证飞弹转向和持续效果独立保留贴图到结束；`buff-loop-renderer.test.ts` 验证首次缺图后恢复。

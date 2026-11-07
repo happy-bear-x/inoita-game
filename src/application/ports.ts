@@ -36,6 +36,7 @@ export interface StoryClassContext {
 
 type SceneUI = Pick<GameUI,'ready'|'locked'|'mode'|'loading'|'loaded'|'error'|'toast'|'showInstant'|'resetInput'|'setMode'|'showDefeat'|'closeDefeat'|'controlLayoutEditing'|'keyBindingEditing'|'preloadPortraits'|'setWorldRebuildCover'>;
 export interface StoryContext {
+  readonly gm?: Pick<import('../debug/gm-actions.ts').GmActions, 'storyDebug'>;
   readonly inputRouter: InputRouter;
   readonly domUi?: DomUi;
   readonly controlLayout:ControlLayoutPreferences;
