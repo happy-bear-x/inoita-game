@@ -21,6 +21,7 @@
 
 - `dom-assets.test.ts` 覆盖共享图集、独立取消与失败重试；`dom-components.test.ts` 覆盖裁剪、父子清理、轮盘技能/物品、多指互斥及隐藏后释放按键。
 - DOM 状态栏在 `dom-components.test.ts` 验证切控、阵亡头像、目标与资源释放；`status-hud.test.ts` 验证场景暂停、唤醒和销毁时的 DOM 可见性通知。
+- `dom-components.test.ts` 同时覆盖 DOM 小地图、电脑技能行、SVG 冷却、四向移动、触摸取消和改键；`control-settings.test.ts` 覆盖操作模式的持久化与通知。
 
 - `story-stage-isolation.test.ts` 验证加载途中跳过、迟到画面清理、共享启动与真实坐标保留；`story-skip.test.ts` 验证流程阶段及解锁顺序。
 - `scene-assets.test.ts` 验证已齐全的资源不等待无关下载，以及缺帧修复仍按队列执行。

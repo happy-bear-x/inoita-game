@@ -430,7 +430,7 @@ export class WorldScene extends Phaser.Scene {
         const actor=this.app.world.actors[member.definition.actor];
         return memberArt(this.app.menuPanels,actor,member.classId,member.source).partyIcon;
       },()=>{if(this.canControl)this.combat?.focusSelected();},id=>this.combat?.activeConditions(id)??[],()=>this.app.session.player,this.app.domUi);
-    this.stick = new MoveStick(this, this.hud!, this.app.controlSkin, this.app.controlLayout, this.app.keyBindings, this.app.inputRouter);
+    this.stick = new MoveStick(this, this.hud!, this.app.controlSkin, this.app.controlLayout, this.app.keyBindings, this.app.inputRouter, this.app.domUi);
     this.controls = new ActionControls(this, this.hud!, {
       attack: () => this.attackKey(), skill: key => {if(this.canControl)this.combat?.attack(key);},
       item: itemId => this.useShortcutItem(itemId), swap: () => this.cycleShortcutPage()

@@ -100,6 +100,7 @@ export class DomImage extends DomComponent {
 
 export interface DomPressOptions {
   enabled(): boolean;
+  circleRadius?: number;
   hitTest?(event: PointerEvent): boolean;
   press?(pointer: number): boolean;
   release?(pointer: number): void;
@@ -117,7 +118,11 @@ export class DomButton extends DomComponent {
   constructor(parent: HTMLElement | DomComponent, options: DomPressOptions) {
     super(parent, 'button'); this.options = options;
     (this.element as HTMLButtonElement).type = 'button';
-    Object.assign(this.element.style, { pointerEvents: 'auto', touchAction: 'none', padding: '0', border: '0', background: 'none' });
+    Object.assign(this.element.style, { pointerEvents: 'none', touchAction: 'none', padding: '0', border: '0', background: 'none' });
+    const hit = document.createElement('span');
+    Object.assign(hit.style, { position: 'absolute', inset: '0', pointerEvents: 'auto', touchAction: 'none' });
+    if (options.circleRadius !== undefined) hit.style.clipPath = `circle(${options.circleRadius}px at 50% 50%)`;
+    this.element.appendChild(hit);
     const listen = (name: string, action: EventListener) => {
       this.element.addEventListener(name, action);
       this.own(() => this.element.removeEventListener(name, action));

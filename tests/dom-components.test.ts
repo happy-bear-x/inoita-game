@@ -15,6 +15,9 @@ import type { WorldMap } from '../src/domain/content.ts';
 import { MINIMAP_ASSETS } from '../src/domain/story-interface.ts';
 import { DomComputerSkillHud } from '../src/ui/dom/computer-skill-hud.ts';
 import { DomCooldown } from '../src/ui/dom/cooldown.ts';
+import { DomMoveStick } from '../src/ui/dom/move-stick.ts';
+import { ControlSettings } from '../src/application/control-settings.ts';
+import { KeyBindingPreferences } from '../src/application/key-bindings.ts';
 
 class Element extends EventTarget {
   style: Record<string, string> = {};
@@ -40,9 +43,9 @@ function harness() {
   const restore = () => { if (previous) Object.defineProperty(globalThis, 'document', previous); else Reflect.deleteProperty(globalThis, 'document'); };
   return { parent: new Element() as unknown as HTMLElement, restore };
 }
-function pointer(target: HTMLElement, name: string, id: number, x = 20) {
+function pointer(target: HTMLElement, name: string, id: number, x = 20, y = 20, buttons = 1) {
   const event = new Event(name, { cancelable: true });
-  Object.assign(event, { pointerId: id, button: 0, clientX: x, clientY: 20 });
+  Object.assign(event, { pointerId: id, button: 0, clientX: x, clientY: y, buttons });
   target.dispatchEvent(event);
 }
 
@@ -240,5 +243,61 @@ test('computer skill row updates native icons, item counts and cooldown seconds 
     assert.equal(root.style.pointerEvents, 'auto', '技能行阻止点击穿透到游戏世界');
     row.destroy(); await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(assets.size, 0); assert.deepEqual(errors, []);
+  } finally { h.restore(); }
+});
+
+test('DOM movement switches styles, tracks four directions and recovers from lost or superseded pointers', async () => {
+  const h = harness();
+  try {
+    const settings = new ControlSettings(null);
+    const assets = new DomAssets({ image: async () => ({ width: 70, height: 70 }), atlas: async () => ({ frames: {} }) });
+    const skin = Object.fromEntries(CONTROL_PARTS.map(part => [part, `${part}.png`])) as ControlSkin;
+    const errors: unknown[] = [];
+    const stick = new DomMoveStick(h.parent, skin, error => errors.push(error), settings, assets);
+    stick.layout({ width: 1000, height: 720, insets: { left: 0, right: 0, top: 0, bottom: 0 } });
+    const x = stick.element.style.left;
+    settings.setMode('dpad');
+    assert.equal(stick.element.style.width, '274px');
+    assert.notEqual(stick.element.style.left, x, '较大的圆盘立即重新排布');
+    pointer(stick.element, 'pointerdown', 1, 50, 20); assert.deepEqual(stick.axis, { x: 0, y: -1 });
+    pointer(stick.element, 'pointermove', 1, 80, 50); assert.deepEqual(stick.axis, { x: 1, y: 0 });
+    pointer(stick.element, 'pointermove', 1, 50, 80); assert.deepEqual(stick.axis, { x: 0, y: 1 });
+    pointer(stick.element, 'pointermove', 1, 20, 50); assert.deepEqual(stick.axis, { x: -1, y: 0 });
+    pointer(stick.element, 'pointerup', 1); assert.deepEqual(stick.axis, { x: 0, y: 0 });
+    pointer(stick.element, 'pointerdown', 2, 50, 20);
+    pointer(stick.element, 'pointerdown', 3, 80, 50);
+    pointer(stick.element, 'pointercancel', 2);
+    assert.deepEqual(stick.axis, { x: 1, y: 0 }, '旧指针的取消不影响新指针');
+    pointer(stick.element, 'pointermove', 3, 80, 50, 0); assert.deepEqual(stick.axis, { x: 0, y: 0 });
+    settings.setMode('stick');
+    pointer(stick.element, 'pointerdown', 4, 50, 80); assert.deepEqual(stick.axis, { x: 0, y: 1 });
+    stick.setVisible(false); assert.deepEqual(stick.axis, { x: 0, y: 0 });
+    stick.destroy(); await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(assets.size, 0); assert.deepEqual(errors, []);
+  } finally { h.restore(); }
+});
+
+test('DOM movement honours rebindings, physical key release and keyboard mode while its artwork is hidden', async () => {
+  const h = harness();
+  try {
+    const settings = new ControlSettings(null), bindings = new KeyBindingPreferences(null);
+    const assets = new DomAssets({ image: async () => ({ width: 70, height: 70 }), atlas: async () => ({ frames: {} }) });
+    const skin = Object.fromEntries(CONTROL_PARTS.map(part => [part, `${part}.png`])) as ControlSkin;
+    const stick = new DomMoveStick(h.parent, skin, () => {}, settings, assets);
+    const event = (code: string, shiftKey = false) => ({ code, key: code, shiftKey, ctrlKey: false, altKey: false, metaKey: false, isComposing: false, preventDefault() {} }) as KeyboardEvent;
+    stick.keyDown(event('KeyW'), bindings); assert.deepEqual(stick.axis, { x: 0, y: -1 });
+    stick.keyUp(event('KeyW')); assert.deepEqual(stick.axis, { x: 0, y: 0 });
+    bindings.set('move.up', { code: 'ArrowUp', shift: false, ctrl: false, alt: false, meta: false });
+    stick.keyDown(event('KeyW'), bindings); assert.deepEqual(stick.axis, { x: 0, y: 0 });
+    stick.keyDown(event('ArrowUp'), bindings); assert.deepEqual(stick.axis, { x: 0, y: -1 });
+    stick.keyUp(event('ArrowUp'));
+    bindings.set('move.up', { code: 'KeyW', shift: true, ctrl: false, alt: false, meta: false });
+    stick.keyDown(event('KeyW', true), bindings); stick.keyUp(event('KeyW', false));
+    assert.deepEqual(stick.axis, { x: 0, y: 0 }, '先松修饰键也按物理键码清理');
+    settings.setMode('keyboard'); assert.equal(stick.element.hidden, true);
+    stick.keyDown(event('KeyW', true), bindings); assert.deepEqual(stick.axis, { x: 0, y: -1 });
+    stick.keyUp(event('KeyW', true)); settings.setMode('stick'); assert.equal(stick.element.hidden, false);
+    stick.setVisible(false); stick.keyDown(event('KeyW', true), bindings); assert.deepEqual(stick.axis, { x: 0, y: 0 });
+    stick.destroy(); await new Promise(resolve => setTimeout(resolve, 0)); assert.equal(assets.size, 0);
   } finally { h.restore(); }
 });

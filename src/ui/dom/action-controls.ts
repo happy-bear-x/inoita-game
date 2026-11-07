@@ -53,6 +53,7 @@ export class DomActionControls extends DomComponent {
     let control!: Control;
     const hitRadius = width === CONTROL_SIZES.slot.width ? 40 : width / 2;
     const button: DomButton = new DomButton(this, { enabled: () => !this.element.hidden && control.usable,
+      circleRadius: hitRadius,
       hitTest: event => {
         const bounds = button.element.getBoundingClientRect();
         const dx = ((event.clientX - bounds.left) / bounds.width - .5) * width;
