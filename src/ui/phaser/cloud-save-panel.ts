@@ -1,4 +1,4 @@
-import type Phaser from 'phaser';
+import type { UiNode } from '../dom/node.ts';
 import { TEXT_COLORS } from '../text-style.ts';
 import {
   CLOUD_PAGE,
@@ -22,7 +22,7 @@ function drawStatus(
   left: number,
   y: number,
   width: number,
-  parent: Phaser.GameObjects.Container,
+  parent: UiNode,
 ): void {
   const text = cloudStatusText(state);
   if (!text) return;

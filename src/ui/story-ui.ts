@@ -1,3 +1,4 @@
+import { UiNode, UiImage, uiPointer, type UiPointer, type UiText } from './dom/node.ts';
 import { UI_EVENTS } from '../application/ui-events.ts';
 import { displaySettings } from '../application/display-settings.ts';
 import { fullscreenActive, fullscreenStatus, onFullscreenChange, setFullscreen } from '../application/fullscreen.ts';
@@ -35,7 +36,7 @@ import { ControlLayoutEditor } from './phaser/control-layout-editor.ts';
 import { KeyBindingEditor } from './phaser/key-binding-editor.ts';
 import { CONTROL_SIZES, HUD_SIDE_BUTTON_SIZE, PENDING_OFFSET, resolveControlLayout, type ControlId } from './control-layout.ts';
 import { controlViewport } from './phaser/control-layout-viewport.ts';
-import { GOLD, UiSurface, uiImageFor, type ScrollArea } from './phaser/widgets.ts';
+import { GOLD, UiSurface, type ScrollArea } from './phaser/widgets.ts';
 import { MenuTextLayer, type MenuTextSpec, type MenuTextWriter } from './dom/menu-text.ts';
 import type { DomLabel } from './dom/dom-ui.ts';
 import { setSaveBoardTextSink, type SaveBoardTextSpec } from './phaser/save-board.ts';
@@ -112,7 +113,7 @@ export class StoryUI {
   private gmDetailTextSpecs:MenuTextSpec[]=[];
   private gmDetailOpen=false;
   /** 弹层/说明下方的黑色遮罩；画在菜单之上、说明层之下。 */
-  private popupMask?:Phaser.GameObjects.Rectangle;
+  private popupMask?:UiNode;
   /** 技能初始化确认框的文字规格；仍是弹层本地坐标，输出时统一换算。 */
   private skillResetTextSpecs:MenuTextSpec[]=[];
   /** 登记快捷键那一屏单独一层：它盖在遮罩上，菜单本体整块藏起来。 */
@@ -124,7 +125,7 @@ export class StoryUI {
   /** 左上角圆形关闭钮单独一层：不随 960 内容区居中，靠安全区左上角摆放。 */
   private backTab?:UiSurface;
   private shortcutEdit?:{kind:ShortcutEntry['kind'];id:string;page:number};
-  private backdrop?:Phaser.GameObjects.Rectangle;
+  private backdrop?:UiNode;
   private session?:Session;private world?:WorldIndex;private content?:StoryInterface;private unsubscribe?:()=>void;private unsubscribeFullscreen?:()=>void;
   /** 菜单作用域的注销函数；重新 attach 或场景 shutdown 时先摘掉旧的。 */
   private unregisterKeyboard?:()=>void;
@@ -147,15 +148,15 @@ export class StoryUI {
   private allocationHold?:Phaser.Time.TimerEvent;
   private craftingPanel?:CraftingPanel;private craftingActor?:string;private forge?:ForgePanel;private skillBook?:SkillBookPanel;
   private shopPanel?:ShopPanel;private partyPanel?:PartyPanel;private notice='';
-  private keyboardFocus?:Phaser.GameObjects.Container;
+  private keyboardFocus?:UiNode;
   /**
    * 背包页那颗合成立绘。它按当前角色和身上装备拼出来，换人、换装备才重做；
    * 翻物品、点格子引起的重画直接搬回来用——每次重建一批精灵正是背包卡顿的一大来源。
    */
   private bagPortrait?:CharacterPreview;
   private scrollOffsets=new Map<string,number>();private scrollNames=new Map<string,ScrollArea>();
-  private drag?:{entry:string;pointer:number;x:number;y:number;timer:Phaser.Time.TimerEvent;active:boolean;ghost?:Phaser.GameObjects.Image};private suppressClick=false;
-  private drops:{object:Phaser.GameObjects.Container|Phaser.GameObjects.Image;entry?:string;slot?:EquipmentSlot;view?:InventoryView;cell?:number;craft?:boolean}[]=[];
+  private drag?:{entry:string;pointer:number;x:number;y:number;timer:Phaser.Time.TimerEvent;active:boolean;ghost?:UiImage};private suppressClick=false;
+  private drops:{object:UiNode|UiImage;entry?:string;slot?:EquipmentSlot;view?:InventoryView;cell?:number;craft?:boolean}[]=[];
   constructor(app:StoryUIContext){this.app=app;}
   /** 菜单图标后台补载完成后重画，已经打开的页面不会一直停在缺图占位。 */
   refreshMenuAssets():void { if(this.open)this.render(); }
@@ -194,7 +195,7 @@ export class StoryUI {
     this.description=new UiSurface(scene,960,431,300);
     // 登记快捷键那一屏按原版的 960×640 全屏坐标摆控件，深度压在遮罩之上、菜单之下。
     this.shortcutScreen=new UiSurface(scene,960,640,150);this.backTab=new UiSurface(scene,960,640,160);
-    // 菜单文字以 DOM 为唯一出口：图框、按钮、滑条热区和滚动仍留在 Phaser。
+    // 菜单图片、文字和交互共用 DOM 层。
     // 页面按名字登记文字产出函数，后续迁移新页面只需再 register 一次。
     if(this.app.domUi){
       this.menuText=new MenuTextLayer(this.app.domUi,
@@ -259,7 +260,7 @@ export class StoryUI {
         if(panel.confirming)panel.renderModalText({add:spec=>writer.add(this.modalTextSpec(spec))});
         else panel.renderText(writer);
       });
-      // GM 调试页的文字由面板自己收集；图框、按钮和滚动仍由 Phaser 画。
+      // GM 调试页的文字由面板自己收集。
       this.menuText.register('debug',writer=>{
         this.renderTabsText(writer);
         // 物品详情只盖住左侧一块：矩形外的调试页文字继续显示。
@@ -276,9 +277,9 @@ export class StoryUI {
     }
     this.shortcutScreen.enabled=()=>this.open&&!this.app.ui.suspended&&!this.busy&&!!this.shortcutEdit;
     this.backTab.enabled=()=>this.shortcutScreen!.enabled();
-    this.hudButtons=new UiSurface(scene,960,640,50);this.backdrop=scene.add.rectangle(0,0,1,1,0x000000,.65).setOrigin(0).setDepth(99).setInteractive();
+    this.hudButtons=new UiSurface(scene,960,640,50);this.backdrop=new UiNode(scene).setSize(1,1).setFillStyle(0,.65).setDepth(99).setInteractive();
     // 说明/弹层用：压暗菜单页但不盖住说明层（300）和弹层（400）。
-    this.popupMask=scene.add.rectangle(0,0,1,1,0x000000,.5).setOrigin(0).setDepth(250).setVisible(false);
+    this.popupMask=new UiNode(scene).setSize(1,1).setFillStyle(0,.5).setDepth(250).setVisible(false);
     this.surface.enabled=()=>this.open&&!this.app.ui.suspended&&!this.busy&&!this.app.ui.controlLayoutEditing&&!this.app.ui.keyBindingEditing&&!this.shortcutEdit&&!this.operation&&!this.itemNotice&&!this.allocationExit&&!this.skillReset&&!this.savePage.blocksPage&&!this.craftingPanel?.modalOpen&&!this.shopPanel?.modalOpen&&!this.partyPanel?.modalOpen&&!this.forge?.confirming;
     this.body.enabled=()=>this.surface!.enabled();this.description.enabled=()=>this.body!.enabled();
     this.modal.enabled=()=>this.open&&!this.app.ui.suspended&&!this.busy&&(!!this.operation||!!this.itemNotice||!!this.allocationExit||this.skillReset||this.savePage.modalOpen||!!this.craftingPanel?.modalOpen||!!this.shopPanel?.modalOpen||!!this.partyPanel?.modalOpen||!!this.forge?.confirming);
@@ -291,7 +292,12 @@ export class StoryUI {
     // 浏览器自身的退出（Esc、手势）不会走设置页的按钮，靠事件把开关状态同步回来。
     this.unsubscribeFullscreen?.();
     this.unsubscribeFullscreen=onFullscreenChange(()=>{if(this.open&&this.page==='settings')this.render();});
-    scene.input.on('pointermove',this.moveDrag,this);scene.input.on('pointerup',this.endDrag,this);scene.input.on('pointerupoutside',this.cancelDrag,this);
+    const nativeInput=new AbortController();
+    window.addEventListener('pointermove',event=>this.moveDrag(uiPointer(scene,event)),{signal:nativeInput.signal,capture:true});
+    window.addEventListener('pointerup',event=>{this.stopAllocationHold();this.endDrag(uiPointer(scene,event));},{signal:nativeInput.signal,capture:true});
+    window.addEventListener('pointercancel',event=>{uiPointer(scene,event);this.stopAllocationHold();this.cancelDrag();},{signal:nativeInput.signal,capture:true});
+    window.addEventListener('blur',()=>{this.stopAllocationHold();this.cancelDrag();},{signal:nativeInput.signal});
+    scene.events.once('shutdown',()=>nativeInput.abort());
     scene.game.events.on(UI_EVENTS.minimapLayout,this.onMinimap,this);scene.game.events.on(UI_EVENTS.cancelInput,this.cancelDrag,this);
     scene.events.once('shutdown',()=>{this.unregisterKeyboard?.();this.unregisterKeyboard=undefined;this.unsubscribe?.();this.unsubscribeFullscreen?.();this.discardAllocation();this.menuText?.destroy();this.menuText=undefined;this.shortcutPrompt?.remove();this.shortcutPrompt=undefined;scene.scale.off('resize',this.resize,this);scene.game.events.off(UI_EVENTS.minimapLayout,this.onMinimap,this);scene.game.events.off(UI_EVENTS.cancelInput,this.cancelDrag,this);this.cancelOperation();this.savePage.destroy();this.surface!.root.remove(this.body!.root);this.surface?.destroy();this.body?.destroy();this.modal?.destroy();this.hudButtons?.destroy();this.description?.destroy();this.shortcutScreen?.destroy();this.backTab?.destroy();this.backdrop?.destroy();this.popupMask?.destroy();this.popupMask=undefined;this.controlEditor?.destroy();this.controlEditor=undefined;this.keyBindingEditor?.destroy();this.keyBindingEditor=undefined;});
     this.sync();
@@ -476,7 +482,7 @@ export class StoryUI {
       const {scale}=controlPlacement(this.scene,this.scene.scale.width,this.scene.scale.height),bounds=this.scene.game.canvas.getBoundingClientRect(),safe=readSafeArea(),unit=this.scene.scale.width/Math.max(1,bounds.width);
       this.shortcutScreen.root.setPosition(0,0).setScale(scale);this.backTab.root.setPosition(safe.left*unit,safe.top*unit).setScale(scale);
     }
-    this.body?.scrolls.forEach(scroll=>scroll.layout());this.description?.scrolls.forEach(scroll=>scroll.layout());this.modal?.scrolls.forEach(scroll=>scroll.layout());if(this.hudButtons&&this.scene){const bounds=this.scene.game.canvas.getBoundingClientRect(),safe=readSafeArea(),unit=this.scene.scale.width/Math.max(1,bounds.width),scale=uiUnitScale(this.scene.scale.width,this.scene.scale.height);this.hudButtons.root.setScale(scale).setPosition((safe.left+12)*unit,(safe.top+12)*unit);this.hudButtons.root.list.forEach((button,index)=>(button as Phaser.GameObjects.Container).setPosition(0,this.minimapHeight+12+index*(HUD_SIDE_BUTTON_SIZE+8)));}
+    this.body?.scrolls.forEach(scroll=>scroll.layout());this.description?.scrolls.forEach(scroll=>scroll.layout());this.modal?.scrolls.forEach(scroll=>scroll.layout());if(this.hudButtons&&this.scene){const bounds=this.scene.game.canvas.getBoundingClientRect(),safe=readSafeArea(),unit=this.scene.scale.width/Math.max(1,bounds.width),scale=uiUnitScale(this.scene.scale.width,this.scene.scale.height);this.hudButtons.root.setScale(scale).setPosition((safe.left+12)*unit,(safe.top+12)*unit);this.hudButtons.root.list.forEach((button,index)=>(button as UiNode).setPosition(0,this.minimapHeight+12+index*(HUD_SIDE_BUTTON_SIZE+8)));}
     this.backdrop?.setSize(this.scene!.scale.width,this.scene!.scale.height);
     this.popupMask?.setSize(this.scene!.scale.width,this.scene!.scale.height);
     // 画布缩放变化后，DOM 文字的 CSS 坐标和字号要跟着重算。
@@ -846,7 +852,7 @@ export class StoryUI {
     this.renderNoticeText(writer);
   }
   /** 滑条的数值文字已交给 DOM；隐藏 VolumeSlider 自己那枚 Phaser Text。 */
-  private hideSliderValueText(slider:{root:Phaser.GameObjects.Container}):void{
+  private hideSliderValueText(slider:{root:UiNode}):void{
     for(const child of slider.root.list){
       if((child as {type?:string}).type==='Text')(child as unknown as {setVisible(value:boolean):void}).setVisible(false);
     }
@@ -910,7 +916,7 @@ export class StoryUI {
         width:spec.width,wrap:spec.width?'word':undefined}};
   }
   /** 一段只用于收集的文字：controller 的 `setOrigin/Align/Position` 改的是 DOM 规格。 */
-  private captureText(spec:MenuTextSpec):Phaser.GameObjects.Text{
+  private captureText(spec:MenuTextSpec):UiText{
     const label={
       height:spec.style.size+5,originX:spec.style.anchorX??0,originY:spec.style.anchorY??0,
       setOrigin(anchorX=0,anchorY=0){spec.style.anchorX=anchorX;spec.style.anchorY=anchorY;label.originX=anchorX;label.originY=anchorY;return label;},
@@ -919,7 +925,7 @@ export class StoryUI {
       setVisible(){return label;},
       destroy(){}
     };
-    return label as unknown as Phaser.GameObjects.Text;
+    return label as unknown as UiText;
   }
   /** 摘要与快照的唯一捕获口：手动保存与自动存档共用。 */
   captureSaveRecord():{ok:true;record:SaveGame<StoryWorldViewSnapshot>}|{ok:false;reason:SaveWorldReason}{
@@ -983,8 +989,8 @@ export class StoryUI {
           const button=v.button('',x,index*64+70,51,58,()=>this.action(()=>this.allocation!.change(stat,delta)),{
             image:panels.assets['character-step'],pressed:panels.assets['character-step-pressed'],native:true,pressedAdd:true,disabled,
           }).setData('label',`${label}${attribute.name}`);
-          button.on('pointerdown',(pointer:Phaser.Input.Pointer)=>this.startAllocationHold(pointer,stat,delta));
-          if(delta===1)for(const part of ['face','highlight']) (button.getData(part) as Phaser.GameObjects.Image).setFlipX(true);
+          button.on('pointerdown',(pointer:UiPointer)=>this.startAllocationHold(pointer,stat,delta));
+          if(delta===1)for(const part of ['face','highlight']) (button.getData(part) as UiImage).setFlipX(true);
         }
       }
     });
@@ -1035,11 +1041,11 @@ export class StoryUI {
     this.allocation?.cancel();this.allocation=undefined;this.allocationExit=undefined;this.allocationError='';this.adjusting=false;
   }
   /** 长按加点：按住 400ms 后开始，每 90ms 加／减一点；松开或到达上下限就停。 */
-  private startAllocationHold(pointer:Phaser.Input.Pointer,stat:PrimaryStat,delta:1|-1):void{
+  private startAllocationHold(pointer:UiPointer,stat:PrimaryStat,delta:1|-1):void{
     this.stopAllocationHold();
     this.allocationHold=this.scene!.time.delayedCall(400,()=>this.stepAllocationHold(pointer,stat,delta));
   }
-  private stepAllocationHold(pointer:Phaser.Input.Pointer,stat:PrimaryStat,delta:1|-1):void{
+  private stepAllocationHold(pointer:UiPointer,stat:PrimaryStat,delta:1|-1):void{
     const allocation=this.allocation;
     // 每一步都会重画并换掉按钮，所以继续的条件只看指针、分配视图和余额，不看按下时的那个按钮。
     if(!pointer.isDown||!this.adjusting||!allocation||!this.surface?.root.visible
@@ -1456,7 +1462,7 @@ export class StoryUI {
         if(entry.gems.length)this.bagTextSpecs.push({key:`${slotKey}-gems`,text:'◆'.repeat(entry.gems.length),
           x:cells.x+x+2,y:cells.y+y+52,style:{size:16,anchorX:0,anchorY:0},scroll:'inventory',clip:slotClip});
       }
-      if(!panelCoversBag)button.on('pointerdown',(pointer:Phaser.Input.Pointer)=>this.startDrag(pointer,entry.id,grid));
+      if(!panelCoversBag)button.on('pointerdown',(pointer:UiPointer)=>this.startDrag(pointer,entry.id,grid));
     }
     this.finishScroll('inventory',grid,Math.ceil(slotCount/cells.columns)*cells.stride);
     // 原版金额先画币再画数字：金 530 / 银 633 / 铜 736，数字在币右侧 44、下移 6、白色。
@@ -1790,19 +1796,19 @@ export class StoryUI {
     }
     catch(error){op.error=(error as Error).message;op.confirmed=false;}finally{this.busy=false;}this.render();
   }
-  private startDrag(pointer:Phaser.Input.Pointer,entry:string,scroll:ScrollArea):void{
+  private startDrag(pointer:UiPointer,entry:string,scroll:ScrollArea):void{
     if(this.busy||this.operation||this.itemNotice||!scroll.contains(pointer))return;this.cancelDrag();this.suppressClick=false;
     const timer=this.scene!.time.delayedCall(350,()=>{
       if(!this.drag||this.app.ui.suspended)return;
       this.suppressClick=true;this.drag.active=true;scroll.cancelGesture();
       this.selectedItem=undefined;this.itemResult=undefined;this.render();
       const item=this.session!.bag.catalog.items[this.session!.bag.get(entry)!.item];
-      const icon=uiImageFor(this.scene!,item.icon);this.drag.ghost=this.scene!.add.image(pointer.x,pointer.y,icon.key,icon.frame).setDisplaySize(72*this.surface!.root.scaleX,72*this.surface!.root.scaleY).setAlpha(.8).setDepth(800);
+      this.drag.ghost=new UiImage(this.scene!,undefined,item.icon).setPosition(pointer.x,pointer.y).setDisplaySize(72*this.surface!.root.scaleX,72*this.surface!.root.scaleY).setAlpha(.8).setDepth(800);
     });
     this.drag={entry,pointer:pointer.id,x:pointer.x,y:pointer.y,timer,active:false};
   }
-  private moveDrag(pointer:Phaser.Input.Pointer):void{const drag=this.drag;if(!drag||drag.pointer!==pointer.id)return;if(!drag.active&&Math.hypot(pointer.x-drag.x,pointer.y-drag.y)>8*this.surface!.root.scaleX)this.cancelDrag();else if(drag.active)drag.ghost?.setPosition(pointer.x,pointer.y);}
-  private endDrag(pointer:Phaser.Input.Pointer):void{
+  private moveDrag(pointer:UiPointer):void{const drag=this.drag;if(!drag||drag.pointer!==pointer.id)return;if(!drag.active&&Math.hypot(pointer.x-drag.x,pointer.y-drag.y)>8*this.surface!.root.scaleX)this.cancelDrag();else if(drag.active)drag.ghost?.setPosition(pointer.x,pointer.y);}
+  private endDrag(pointer:UiPointer):void{
     const drag=this.drag;if(!drag||drag.pointer!==pointer.id)return;
     if(!drag.active){this.cancelDrag();return;}
     const target=this.drops.find(drop=>drop.object.getBounds().contains(pointer.x,pointer.y)&&drop.entry!==drag.entry&&(drop.slot||drop.craft||this.body!.scrolls.some(scroll=>scroll.contains(pointer))));

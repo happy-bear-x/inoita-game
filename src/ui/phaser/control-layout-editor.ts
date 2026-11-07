@@ -1,3 +1,6 @@
+import { DomCooldown } from '../dom/cooldown.ts';
+import type { UiPointer } from '../dom/node.ts';
+import { UiNode } from '../dom/node.ts';
 import Phaser from 'phaser';
 import { UI_EVENTS } from '../../application/ui-events.ts';
 import type { ControlSkin } from '../../domain/control-skin.ts';
@@ -19,7 +22,7 @@ const TOOLBAR_RESET_WIDTH = 220, TOOLBAR_MODE_WIDTH = 120, TOOLBAR_HEIGHT = 66, 
 type EditMode = 'move' | 'scale';
 
 interface ScaleDrag {
-  pointer: Phaser.Input.Pointer;
+  pointer: UiPointer;
   id: ControlId;
   /** 缩放只改倍率，中心位置沿用拖动前的归一化坐标。 */
   point: ControlPoint;
@@ -34,17 +37,17 @@ interface ScaleDrag {
 export class ControlLayoutEditor {
   private readonly canvas: UiSurface;
   private readonly toolbar: UiSurface;
-  private readonly controls = new Map<ControlId, Phaser.GameObjects.Container>();
-  private readonly drags = new Map<ControlId, {pointer: Phaser.Input.Pointer; point?: ControlPoint}>();
-  private readonly handles: Phaser.GameObjects.Rectangle[] = [];
-  private selectionFrame?: Phaser.GameObjects.Graphics;
+  private readonly controls = new Map<ControlId, UiNode>();
+  private readonly drags = new Map<ControlId, {pointer: UiPointer; point?: ControlPoint}>();
+  private readonly handles: UiNode[] = [];
+  private selectionFrame?: UiNode;
   private selected?: ControlId;
   private placements?: Record<ControlId, ControlPlacement>;
   private scaleDrag?: ScaleDrag;
   private preview?: {id: ControlId; point: ControlPoint; scale: number};
-  private resetButton?: Phaser.GameObjects.Container;
-  private moveButton?: Phaser.GameObjects.Container;
-  private scaleButton?: Phaser.GameObjects.Container;
+  private resetButton?: UiNode;
+  private moveButton?: UiNode;
+  private scaleButton?: UiNode;
   private mode: EditMode = 'move';
   private slots: readonly ShortcutSlot[] = [];
   private active = false;
@@ -71,8 +74,8 @@ export class ControlLayoutEditor {
 
     this.unsubscribe = preferences.subscribe(() => this.layout());
     scene.game.events.on(UI_EVENTS.cancelInput,this.cancel,this);
-    scene.input.on('pointerupoutside',this.cancel,this);
-    scene.input.on('gameout',this.cancel,this);
+    window.addEventListener('blur',this.cancelNative);
+    window.addEventListener('pointercancel',this.cancelNative);
     this.visible(false);
   }
 
@@ -128,7 +131,7 @@ export class ControlLayoutEditor {
   destroy(): void {
     this.close();this.unsubscribe();
     this.scene.game.events.off(UI_EVENTS.cancelInput,this.cancel,this);
-    this.scene.input.off('pointerupoutside',this.cancel,this);this.scene.input.off('gameout',this.cancel,this);
+    window.removeEventListener('blur',this.cancelNative);window.removeEventListener('pointercancel',this.cancelNative);
     this.canvas.destroy();this.toolbar.destroy();this.controls.clear();
     for(const label of this.toolbarLabels.values())label.remove();
     this.toolbarLabels.clear();
@@ -156,7 +159,7 @@ export class ControlLayoutEditor {
   /** 工具栏按钮文字投影到画框；按钮底图和命中区仍留在 Phaser。 */
   private placeToolbarText(): void {
     const dom=this.dom,shown=this.toolbar.root.visible,font=Math.min(22,TOOLBAR_HEIGHT*.42),seen=new Set<string>();
-    const entries:[string,string,Phaser.GameObjects.Container|undefined,number][] = [
+    const entries:[string,string,UiNode|undefined,number][] = [
       ['reset','恢复默认',this.resetButton,TOOLBAR_RESET_WIDTH],
       ['move','移动',this.moveButton,TOOLBAR_MODE_WIDTH],
       ['scale','缩放',this.scaleButton,TOOLBAR_MODE_WIDTH]
@@ -205,23 +208,23 @@ export class ControlLayoutEditor {
     this.canvas.clear();this.controls.clear();this.quantities=[];
     this.selectionFrame=undefined;this.handles.length=0;this.placements=undefined;
     // 点击空白处取消选中；这层透明底板垫在控件下面，不会抢控件的点击。
-    const background=this.scene.add.rectangle(-4000,-4000,8000,8000,0,0).setOrigin(0).setInteractive();
+    const background=this.canvas.rect(-4000,-4000,8000,8000,0,0).setInteractive();
     background.on('pointerdown',()=>this.select(undefined));
     this.canvas.root.addAt(background,0);
     for (const id of CONTROL_IDS) {
-      const object=this.scene.add.container(0,0).setData('uiAction',true).setData('controlId',id);
+      const object=this.canvas.container().setData('uiAction',true).setData('controlId',id);
       this.canvas.root.add(object);this.controls.set(id,object);
       let width:number=CONTROL_SIZES.slot.width,height:number=CONTROL_SIZES.slot.height;
       const image=(file:string,w:number,h:number=w,x=-w/2,y=-h/2)=>this.canvas.image(file,x,y,w,h,object);
       if(id==='move') {
         if (controlSettings.moveStyle === 'dpad') {
           width = height = DPAD_BASE_RADIUS * 2;
-          const ring = this.scene.add.image(0, 0, this.skin['stick-base'])
+          const ring = this.canvas.image(this.skin['stick-base'],-DPAD_BASE_RADIUS,-DPAD_BASE_RADIUS,DPAD_BASE_RADIUS*2,DPAD_BASE_RADIUS*2,object)
             .setDisplaySize(DPAD_BASE_RADIUS * 2, DPAD_BASE_RADIUS * 2).setAlpha(DPAD_RUNE_ALPHA);
-          const up = this.scene.add.image(0, -DPAD_ARROW_OFFSET, this.skin['arrow-up']).setScale(DPAD_ARROW_SCALE_NORM);
-          const down = this.scene.add.image(0, DPAD_ARROW_OFFSET, this.skin['arrow-down']).setScale(DPAD_ARROW_SCALE_NORM);
-          const left = this.scene.add.image(-DPAD_ARROW_OFFSET, 0, this.skin['arrow-left']).setScale(DPAD_ARROW_SCALE_NORM);
-          const right = this.scene.add.image(DPAD_ARROW_OFFSET, 0, this.skin['arrow-right']).setScale(DPAD_ARROW_SCALE_NORM);
+          const up = this.canvas.image(this.skin['arrow-up'],0,-DPAD_ARROW_OFFSET,undefined,undefined,object).setOrigin(.5).setScale(DPAD_ARROW_SCALE_NORM);
+          const down = this.canvas.image(this.skin['arrow-down'],0,DPAD_ARROW_OFFSET,undefined,undefined,object).setOrigin(.5).setScale(DPAD_ARROW_SCALE_NORM);
+          const left = this.canvas.image(this.skin['arrow-left'],-DPAD_ARROW_OFFSET,0,undefined,undefined,object).setOrigin(.5).setScale(DPAD_ARROW_SCALE_NORM);
+          const right = this.canvas.image(this.skin['arrow-right'],DPAD_ARROW_OFFSET,0,undefined,undefined,object).setOrigin(.5).setScale(DPAD_ARROW_SCALE_NORM);
           object.add([ring, up, down, left, right]);
         } else {
           width = CONTROL_SIZES.move.width; height = CONTROL_SIZES.move.height;
@@ -236,9 +239,7 @@ export class ControlLayoutEditor {
         if(slot?.entry&&slot.icon)image(slot.icon,size);
         const cooldown=slot?.cooldown;
         if(cooldown&&cooldown.durationMs>0&&cooldown.remainingMs>0) {
-          const progress=Phaser.Math.Clamp(1-cooldown.remainingMs/cooldown.durationMs,0,1);
-          const fan=this.scene.add.graphics();object.add(fan);
-          fan.fillStyle(0x000000,.45).slice(0,0,size/2,-Math.PI/2+progress*Math.PI*2,Math.PI*1.5,false).fillPath();
+          const fan=new DomCooldown(object.element);fan.rect({x:-size/2,y:-size/2,width:size,height:size});fan.update(cooldown,size/2);object.once('destroy',()=>fan.destroy());
         }
         if(isItem) {
           image(this.skin['quantity-badge'],38,40,13,3);
@@ -251,11 +252,11 @@ export class ControlLayoutEditor {
         }
       }
       // Container 的输入坐标会补上半宽、半高，命中区以图片左上角为原点。
-      object.setSize(width,height).setInteractive(new Phaser.Geom.Rectangle(0,0,width,height),
-        (area:Phaser.Geom.Rectangle,x:number,y:number)=>this.active&&this.canvas.root.visible&&Phaser.Geom.Rectangle.Contains(area,x,y));
-      this.scene.input.setDraggable(object);
+      object.setSize(width,height).setInteractive({x:-width/2,y:-height/2,width,height},
+        (area:{x:number;y:number;width:number;height:number},x:number,y:number)=>this.active&&this.canvas.root.visible&&x>=area.x&&x<=area.x+area.width&&y>=area.y&&y<=area.y+area.height);
+      object.draggable();
       object.on('pointerdown',()=>this.select(id));
-      object.on('dragstart',(pointer:Phaser.Input.Pointer)=>{
+      object.on('dragstart',(pointer:UiPointer)=>{
         if(!this.active||!this.canvas.root.visible)return;
         // 整次拖动做什么由工具栏当前模式决定，拖动中不会切换。
         if(this.mode==='scale'){
@@ -265,7 +266,7 @@ export class ControlLayoutEditor {
         }
         if(!this.drags.has(id))this.drags.set(id,{pointer});
       });
-      object.on('drag',(pointer:Phaser.Input.Pointer,x:number,y:number)=>{
+      object.on('drag',(pointer:UiPointer,x:number,y:number)=>{
         if(this.scaleDrag?.id===id){this.updateScale(pointer);return;}
         const drag=this.drags.get(id);if(!drag||drag.pointer.id!==pointer.id)return;
         const viewport=controlViewport(this.scene),positions=this.preferences.snapshot(),moveSize=this.moveSize();
@@ -275,7 +276,7 @@ export class ControlLayoutEditor {
         this.placeQuantityText();
         if(this.selected===id)this.drawSelection(position);
       });
-      object.on('dragend',(pointer:Phaser.Input.Pointer)=>{
+      object.on('dragend',(pointer:UiPointer)=>{
         if(this.scaleDrag?.id===id){this.endScale(pointer);return;}
         const drag=this.drags.get(id);if(!drag||drag.pointer.id!==pointer.id)return;
         this.drags.delete(id);
@@ -288,10 +289,10 @@ export class ControlLayoutEditor {
 
   /** 白色空心框和四个角把手；把手只做视觉提示，拖动统一由控件本体按落点分派。 */
   private createSelectionLayer(): void {
-    this.selectionFrame=this.scene.add.graphics().setVisible(false);
+    this.selectionFrame=this.canvas.rect(0,0,1,1,0,0).setVisible(false);
     this.canvas.root.add(this.selectionFrame);
     for(let index=0;index<4;index++) {
-      const handle=this.scene.add.rectangle(0,0,HANDLE_SIZE,HANDLE_SIZE,0xffffff).setVisible(false).setData('uiAction',true);
+      const handle=this.canvas.rect(0,0,HANDLE_SIZE,HANDLE_SIZE,0xffffff,1).setOrigin(.5).setVisible(false).setData('uiAction',true);
       this.canvas.root.add(handle);
       this.handles.push(handle);
     }
@@ -320,13 +321,13 @@ export class ControlLayoutEditor {
     const halfWidth=placement.width/2+SELECTION_BLEED,halfHeight=placement.height/2+SELECTION_BLEED;
     const left=placement.x-halfWidth,top=placement.y-halfHeight,right=left+halfWidth*2,bottom=top+halfHeight*2;
     // 缩放模式下线加粗，明确告诉玩家现在拖动改的是大小。
-    frame.clear().lineStyle(this.mode==='scale'?3:2,0xffffff,1).strokeRect(left,top,halfWidth*2,halfHeight*2).setVisible(true);
+    frame.setPosition(left,top).setSize(halfWidth*2,halfHeight*2).setStrokeStyle(3,0xffffff,1).setVisible(true);
     const corners=[[left,top],[right,top],[left,bottom],[right,bottom]];
     corners.forEach(([x,y],index)=>this.handles[index]?.setPosition(x,y).setVisible(true));
   }
 
   /** 记住当前中心和“1 倍时的中心到角距离”，拖动中只换算倍率。 */
-  private beginScale(pointer: Phaser.Input.Pointer, id: ControlId, placement: ControlPlacement): void {
+  private beginScale(pointer: UiPointer, id: ControlId, placement: ControlPlacement): void {
     const viewport=controlViewport(this.scene),overrides=this.preferences.snapshot(),moveSize=this.moveSize();
     const point=normalizeControlPosition(viewport,id,{x:placement.x,y:placement.y},overrides,moveSize);
     const baseWidth=placement.width/placement.userScale,baseHeight=placement.height/placement.userScale;
@@ -336,7 +337,7 @@ export class ControlLayoutEditor {
     this.paintSelection();
   }
 
-  private updateScale(pointer: Phaser.Input.Pointer): void {
+  private updateScale(pointer: UiPointer): void {
     const drag=this.scaleDrag;
     if(!drag||drag.pointer.id!==pointer.id)return;
     const distance=Math.hypot(pointer.x-drag.center.x,pointer.y-drag.center.y);
@@ -345,7 +346,7 @@ export class ControlLayoutEditor {
     this.layout();
   }
 
-  private endScale(pointer: Phaser.Input.Pointer): void {
+  private endScale(pointer: UiPointer): void {
     const drag=this.scaleDrag;
     if(!drag||drag.pointer.id!==pointer.id)return;
     const scale=this.preview?.scale??1;
@@ -355,18 +356,17 @@ export class ControlLayoutEditor {
   }
 
   private cancelDrags(): void {
-    for(const [id,drag] of this.drags) {
+    for(const [id] of this.drags) {
       // disableInteractive 清掉 Phaser 的对象拖动状态和指针拖动列表，再恢复原命中区。
       const object=this.controls.get(id);object?.disableInteractive();object?.setInteractive();
-      this.scene.input.setDragState(drag.pointer,0);
     }
     this.drags.clear();
     const scale=this.scaleDrag;
     if(scale) {
       const object=this.controls.get(scale.id);object?.disableInteractive();object?.setInteractive();
-      this.scene.input.setDragState(scale.pointer,0);
     }
     this.scaleDrag=undefined;this.preview=undefined;
   }
+  private cancelNative=():void=>this.cancel();
   private cancel(): void {this.cancelDrags();this.layout();}
 }

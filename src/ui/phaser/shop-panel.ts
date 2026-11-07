@@ -1,3 +1,4 @@
+import type { UiNode } from '../dom/node.ts';
 import type { Session } from '../../domain/session.ts';
 import type { ItemInstance } from '../../domain/items.ts';
 import type { ShopCatalog, Storefront } from '../../domain/shop.ts';
@@ -43,7 +44,7 @@ export class ShopPanel {
    * 数量框里会变的三个东西：中间的数字、下面那行金额的每一位、左右两枚箭头。
    * 加减只改它们三个，不触发整页重画——玩家明确要求过数量变化不能重刷界面。
    */
-  private quantityButtons?:{minus:Phaser.GameObjects.Container;plus:Phaser.GameObjects.Container};
+  private quantityButtons?:{minus:UiNode;plus:UiNode};
   /** 这一轮绘制收集的文字；弹层打开时只输出后者。 */
   private pageText:MenuTextSpec[]=[];
   private modalText:MenuTextSpec[]=[];
@@ -413,7 +414,7 @@ export class ShopPanel {
     this.enableButton(buttons.plus,quantity<maximum);
   }
   /** 按钮自己带着开关回调（见 widgets 的 `button`），这里只负责取出来按一下。 */
-  private enableButton(button:Phaser.GameObjects.Container,enabled:boolean):void{
+  private enableButton(button:UiNode,enabled:boolean):void{
     (button.getData('setEnabled') as ((value:boolean)=>void)|undefined)?.(enabled);
   }
   /**

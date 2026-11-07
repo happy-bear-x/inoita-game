@@ -1,3 +1,4 @@
+import { UiNode } from '../dom/node.ts';
 import { UI_EVENTS } from '../../application/ui-events.ts';
 import type Phaser from 'phaser';
 import type { GameUI } from '../game-ui.ts';
@@ -41,7 +42,7 @@ function measureQuestText(value: string, width: number, size: number): QuestText
 /** 任务窗保留自己的原版坐标，正式对白与操作栏继续使用各自的参考尺寸。 */
 export class QuestPopup {
   readonly surface: UiSurface;
-  private readonly shade: Phaser.GameObjects.Rectangle;
+  private readonly shade: UiNode;
   private readonly domUi?: DomUi;
   private quest?: QuestPopupState;
   private viewport = '';
@@ -59,7 +60,7 @@ export class QuestPopup {
     this.surface = new UiSurface(scene, 800, 480, 1000);
     this.surface.enabled = enabled;
     this.domUi = domUi;
-    this.shade = scene.add.rectangle(0, 0, 1, 1, 0x000000, .65).setOrigin(0).setDepth(998.5).setVisible(false);
+    this.shade = new UiNode(scene).setSize(1,1).setFillStyle(0,.65).setDepth(998.5).setVisible(false);
     this.surface.visible(false);
   }
 

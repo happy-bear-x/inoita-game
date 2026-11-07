@@ -1,3 +1,4 @@
+import type { UiNode } from '../dom/node.ts';
 import { GOLD, type UiSurface } from './widgets.ts';
 import { AUTO_SAVE_SLOT, MANUAL_SAVE_SLOT_COUNT, saveSlotLabel, type SaveSlotRef, type SlotSummaryReading } from '../../domain/save-game.ts';
 
@@ -110,7 +111,7 @@ function formatSavedAt(savedAt?:number):string {
  */
 export function drawSaveBoardRow(
   view:UiSurface, assets:SaveBoardAssets, origin:{x:number; y:number}, top:number,
-  row:SaveBoardRow, parent?:Phaser.GameObjects.Container
+  row:SaveBoardRow, parent?:UiNode
 ):void {
   view.image(assets.frame,origin.x,top,SAVE_BOARD.frameWidth,SAVE_BOARD.frameHeight,parent);
   const left=origin.x+SAVE_BOARD.rowInset, bottom=top+SAVE_BOARD.rowInset;

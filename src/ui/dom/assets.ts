@@ -19,6 +19,7 @@ interface ImageEntry {
   users: number;
   controller: AbortController;
   ready: Promise<DomImageSource>;
+  sources:Map<string,DomImageSource>;
 }
 
 /** 图片与数据请求按资源共享，调用者取消只释放自己的持有权。 */
@@ -27,6 +28,7 @@ export class DomAssets {
   private readonly loader: DomImageLoader;
   constructor(loader: DomImageLoader = browserImageLoader) { this.loader = loader; }
   get size(): number { return this.entries.size; }
+  peek(file:string):DomImageSource|undefined{const name=file.replace(/^\//,''),ui=UI_ATLAS_FRAMES[name],key=(UI_ICON_FRAMES[name]?UI_ICON_ATLAS_FILE:ui?UI_ATLAS_PAGES[ui.page]!.file:file).replace(/^\//,'');return this.entries.get(key)?.sources.get(name);}
 
   async acquire(file: string, signal: AbortSignal): Promise<AssetLease & { source: DomImageSource }> {
     signal.throwIfAborted();
@@ -44,7 +46,7 @@ export class DomAssets {
       const ready = this.loader.image(versionedAsset(imageFile), controller.signal).then(size => ({
         url: versionedAsset(imageFile), ...size, frame: { x: 0, y: 0, ...size }
       }));
-      entry = { users: 0, controller, ready };
+      entry = { users: 0, controller, ready, sources:new Map() };
       this.entries.set(key, entry);
     }
     entry.users++;
@@ -70,6 +72,7 @@ export class DomAssets {
         result = { ...source, frame: { x: rect.x, y: rect.y, width: rect.w, height: rect.h } };
       }
       signal.throwIfAborted();
+      current.sources.set(name,result);
       return { source: result, release };
     } catch (error) { release(); throw error; }
   }

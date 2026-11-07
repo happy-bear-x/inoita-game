@@ -9,7 +9,7 @@ export class DomCooldown extends DomComponent {
   private readonly ring: SVGCircleElement;
   private readonly label: HTMLElement;
   private key = '';
-  constructor(parent: DomComponent) {
+  constructor(parent: DomComponent | HTMLElement) {
     super(parent);
     this.svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     Object.assign(this.svg.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', overflow: 'visible' });

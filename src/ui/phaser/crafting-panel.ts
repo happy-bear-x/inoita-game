@@ -1,9 +1,10 @@
+import type { UiPointer } from '../dom/node.ts';
+import type { UiNode, UiImage } from '../dom/node.ts';
 import {equipmentPower} from '../../domain/character-stats.ts';
 import {equipmentLevel} from '../../domain/chaos-equipment.ts';
 import {itemDescriptionBody} from '../item-detail-lines.ts';
 import {equipmentSlotFrame} from '../item-name-color.ts';
 import type {ShopCatalog} from '../../domain/shop.ts';
-import type Phaser from 'phaser';
 import {EquipmentCrafting,CraftingError,type CraftingQuote,type RecipeQuote,type SocketQuote} from '../../domain/crafting.ts';
 import type {ChaosTier} from '../../domain/chaos-equipment.ts';
 import type {MenuPanels} from '../../domain/menu-panels.ts';
@@ -22,7 +23,7 @@ interface CraftingTextTarget {
   refresh():void;
 }
 
-interface CraftingDrop {object:Phaser.GameObjects.Container|Phaser.GameObjects.Image;entry?:string;view?:InventoryView;cell?:number;craft?:boolean}
+interface CraftingDrop {object:UiNode|UiImage;entry?:string;view?:InventoryView;cell?:number;craft?:boolean}
 type Confirmation={kind:'chaos';quote:CraftingQuote}|{kind:'recipe';quote:RecipeQuote}|{kind:'socket';quote:SocketQuote};
 
 /** 原版融合器：配方列表和装备混沌合成共用左侧加工区，右侧背包，消息沿用 UIPopupMsg。 */
@@ -101,7 +102,7 @@ export class CraftingPanel {
   }
   renderText(writer:MenuTextWriter):void {for(const spec of this.pageText)writer.add(spec);}
   renderModalText(writer:MenuTextWriter):void {for(const spec of this.modalText)writer.add(spec);}
-  render(v:UiSurface,modal:UiSurface,placeModal:(width:number,height:number)=>void,startDrag:(pointer:Phaser.Input.Pointer,entry:string,scroll:ScrollArea)=>void,text?:CraftingTextTarget):void {
+  render(v:UiSurface,modal:UiSurface,placeModal:(width:number,height:number)=>void,startDrag:(pointer:UiPointer,entry:string,scroll:ScrollArea)=>void,text?:CraftingTextTarget):void {
     this.pageText=[];this.modalText=[];this.text=text;this.surface=v;
     const assets=this.panels.assets;
     this.drops=[];
@@ -232,7 +233,7 @@ export class CraftingPanel {
     v.button('',139,338,205,62,()=>this.begin()).setData('label','组合');
     this.buttonText('craft-socket-confirm','组合',139,338,205,62);
   }
-  private renderBag(v:UiSurface,startDrag:(pointer:Phaser.Input.Pointer,entry:string,scroll:ScrollArea)=>void):void {
+  private renderBag(v:UiSurface,startDrag:(pointer:UiPointer,entry:string,scroll:ScrollArea)=>void):void {
     const {session}=this.crafting,bag=session.bag,assets=this.panels.assets;
     const layout=bagLayout(),cells=layout.grid,view=inventoryView({all:bag.allCells,...bag.pouchCells},this.filter),
       scroll=this.scrollAt('craft-bag',cells.x,cells.y,cells.width,cells.height);
@@ -250,7 +251,7 @@ export class CraftingPanel {
       if(entry.enhancement)this.addText(`craft-bag-enhancement-${index}`,`+${entry.enhancement}`,
         cells.x+x+2,cells.y+y+2,17,GOLD,0,0,{},{scroll:'craft-bag',clip});
       this.drops.push({object:button,entry:entry.id,view:cell.view,cell:cell.cell});
-      button.on('pointerdown',(pointer:Phaser.Input.Pointer)=>startDrag(pointer,entry.id,scroll));
+      button.on('pointerdown',(pointer:UiPointer)=>startDrag(pointer,entry.id,scroll));
     }
     scroll.setHeight(Math.ceil(view.slotCount/4)*cells.stride);scroll.scrollTop=this.offset;
     scroll.onScroll=()=>{this.offset=scroll.scrollTop;this.text?.refresh();};

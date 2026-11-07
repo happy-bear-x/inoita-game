@@ -1,3 +1,4 @@
+import { UiNode, UiImage, type UiText } from '../ui/dom/node.ts';
 import { SCENE_KEYS } from '../application/scene-keys.ts';
 import { displaySettings } from '../application/display-settings.ts';
 import { notifyBootReady } from '../application/live-update.ts';
@@ -58,9 +59,9 @@ export class MenuScene extends Phaser.Scene {
   private surface?:UiSurface;
   /** 确认框画在它上面；底下的页面在确认期间不接受输入。 */
   private modal?:UiSurface;
-  private backdrop?:Phaser.GameObjects.Image;
+  private backdrop?:UiImage;
   /** 确认框后面的黑色遮罩：弹层本身保持半透明。 */
-  private popupMask?:Phaser.GameObjects.Rectangle;
+  private popupMask?:UiNode;
   private page:'home'|'slots'|'settings'|'cloud'='home';
   /** 存档槽立绘的租约：每次进存档页按槽里的路径取，离开页面或关场景时释放。 */
   private slotPortraits?:AssetLease;
@@ -113,8 +114,8 @@ export class MenuScene extends Phaser.Scene {
     void loadUiImages(this,titleMenuImages).then(lease=>{
       if(controller.signal.aborted){lease.release();return;}
       this.events.once('shutdown',()=>lease.release());
-      this.backdrop=this.add.image(0,0,uiTexture(art('background'))).setOrigin(.5);
-      this.popupMask=this.add.rectangle(0,0,1,1,0x000000,.5).setOrigin(0).setDepth(150).setVisible(false);
+      this.backdrop=new UiImage(this,undefined,art('background')).setOrigin(.5);
+      this.popupMask=new UiNode(this).setSize(1,1).setFillStyle(0,.5).setDepth(150).setVisible(false);
       this.surface=new UiSurface(this,1200,640);this.modal=new UiSurface(this,1024,640,200);this.prompt=new TextPrompt();this.passwordPrompt=new PasswordChangePrompt();
       const domUi=this.domUi;
       if(domUi){
@@ -157,7 +158,7 @@ export class MenuScene extends Phaser.Scene {
     texts.push({key:'notice',text:FAN_WORK_NOTICE,x:1180,y:632,style:{size:14,color:'#b8ab92',anchorX:1,anchorY:1}});
     const gm=this.app.gmMode;if(!gm||!this.menuText)return;
     // DOM 文字不接收指针：版本号仍用贴在画布上的透明命中区切换 GM。
-    const zone=view.scene.add.zone(1055,565,125,50).setOrigin(0).setInteractive({useHandCursor:true});
+    const zone=view.rect(1055,565,125,50,0,0).setInteractive();
     view.root.add(zone);
     zone.on('pointerdown',()=>{
       if(!this.app.ui.ready||this.app.ui.suspended||!this.sys.isActive())return;
@@ -205,7 +206,7 @@ export class MenuScene extends Phaser.Scene {
    * 图框、按钮和滚动区仍照常画；面板没有文字接收器，所以只在菜单场景这一层适配。
    */
   private drawCloudPage(view:UiSurface):MenuTextSpec[] {
-    const made:{spec:MenuTextSpec;parent:Phaser.GameObjects.Container}[]=[];
+    const made:{spec:MenuTextSpec;parent:UiNode}[]=[];
     const target=view as unknown as {text:UiSurface['text']};
     const original=target.text;
     target.text=((value:string,x:number,y:number,width=0,size=22,color=GOLD,parent=view.root)=>{
@@ -225,7 +226,7 @@ export class MenuScene extends Phaser.Scene {
         setVisible(){return fake;},
       };
       made.push({spec,parent});
-      return fake as unknown as Phaser.GameObjects.Text;
+      return fake as unknown as UiText;
     }) as UiSurface['text'];
     try{
       drawCloudSavePage(view,this.cloudState(),this.cloudActions(),{frame:art('slot'),close:CLOSE_IMAGE,closePressed:CLOSE_PRESSED});
@@ -793,7 +794,7 @@ export class MenuScene extends Phaser.Scene {
     this.passwordPrompt?.close();
   }
   private layout():void {
-    if(this.backdrop){const source=this.backdrop.texture.getSourceImage(),factor=Math.max(this.scale.width/source.width,this.scale.height/source.height);this.backdrop.setPosition(this.scale.width/2,this.scale.height/2).setScale(factor);}
+    if(this.backdrop){this.backdrop.setPosition(0,0).setOrigin(0).setScale(1).setDisplaySize(this.scale.width,this.scale.height).fitting();}
     this.popupMask?.setSize(this.scale.width,this.scale.height);
     this.surface?.layout();
     if(this.surface&&this.modal&&this.confirmAction!==undefined)centerModal(this.modal,this.surface,1024,640);

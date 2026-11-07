@@ -1,0 +1,191 @@
+import type Phaser from 'phaser';
+import { domAssets, type DomImageSource } from './assets.ts';
+import type { AssetLease } from '../../application/assets.ts';
+import { FONT } from '../text-style.ts';
+import { wrapText } from '../text-layout.ts';
+
+export interface UiPointer { id:number; x:number; y:number; isDown:boolean; event:PointerEvent }
+type Listener = (...args:any[])=>void;
+export interface UiMatrix { tx:number; ty:number; scaleX:number; scaleY:number; transformPoint(x:number,y:number):{x:number;y:number} }
+export interface UiBounds { x:number;y:number;width:number;height:number;contains(x:number,y:number):boolean }
+export interface UiHitArea {x:number;y:number;width:number;height:number;setSize(width:number,height:number):void}
+const mounts=new WeakMap<Phaser.Scene,Map<string,HTMLElement>>();
+const pointers=new WeakMap<Phaser.Scene,Map<number,UiPointer>>();
+
+/** 屏幕节点的逻辑坐标与场景一致，浏览器按实际 CSS 尺寸缩放原图。 */
+export function uiMount(scene:Phaser.Scene,layer='screen'):HTMLElement {
+  let layers=mounts.get(scene);if(!layers){layers=new Map();mounts.set(scene,layers);}
+  const old=layers.get(layer);if(old)return old;
+  const parent=document.getElementById(`ui-${layer}`);if(!parent)throw new Error(`DOM UI layer missing: ${layer}`);
+  const element=document.createElement('div');
+  Object.assign(element.style,{position:'absolute',pointerEvents:'none',transformOrigin:'0 0'});
+  parent.appendChild(element);layers.set(layer,element);
+  const layout=()=>{
+    const bounds=scene.game.canvas.getBoundingClientRect(),frame=document.getElementById('game-frame')!.getBoundingClientRect();
+    Object.assign(element.style,{left:`${bounds.left-frame.left}px`,top:`${bounds.top-frame.top}px`,width:`${scene.scale.width}px`,height:`${scene.scale.height}px`,transform:`scale(${bounds.width/scene.scale.width},${bounds.height/scene.scale.height})`});
+  };
+  layout();scene.scale.on('resize',layout);
+  const hide=()=>{element.hidden=true;},show=()=>{element.hidden=false;};
+  scene.events.on('pause',hide);scene.events.on('sleep',hide);scene.events.on('resume',show);scene.events.on('wake',show);
+  scene.events.once('shutdown',()=>{scene.scale.off('resize',layout);for(const name of ['pause','sleep'])scene.events.off(name,hide);for(const name of ['resume','wake'])scene.events.off(name,show);element.remove();layers!.delete(layer);});
+  return element;
+}
+
+export function uiPointer(scene:Phaser.Scene,event:PointerEvent):UiPointer {
+  const bounds=scene.game.canvas.getBoundingClientRect();
+  let table=pointers.get(scene);if(!table){table=new Map();pointers.set(scene,table);}
+  let pointer=table.get(event.pointerId);if(!pointer){pointer={id:event.pointerId,x:0,y:0,isDown:false,event};table.set(event.pointerId,pointer);}
+  Object.assign(pointer,{x:(event.clientX-bounds.left)*scene.scale.width/bounds.width,y:(event.clientY-bounds.top)*scene.scale.height/bounds.height,isDown:event.type!=='pointercancel'&&event.type!=='pointerup'&&event.buttons!==0,event});
+  if(!pointer.isDown)table.delete(event.pointerId);
+  return pointer;
+}
+
+/** 布局树只管理 DOM：局部坐标、显隐、资源和原生指针的成对清理。 */
+export class UiNode {
+  readonly element:HTMLElement;
+  readonly scene:Phaser.Scene;
+  readonly list:UiNode[]=[];
+  parentContainer?:UiNode;
+  x=0;y=0;width=0;height=0;scaleX=1;scaleY=1;depth=0;alpha=1;active=true;visible=true;
+  originX=0;originY=0;flipX=false;flipY=false;
+  input?:{enabled:boolean;hitArea:UiHitArea;draggable?:boolean};
+  private data=new Map<string,any>();
+  private listeners=new Map<string,Set<Listener>>();
+  readonly controller=new AbortController();
+  private press?:{id:number;x:number;y:number;startX:number;startY:number};
+  private hit?:HTMLElement;
+  private autoHit=false;
+  constructor(scene:Phaser.Scene,parent:UiNode|HTMLElement=uiMount(scene),tag='div') {
+    this.scene=scene;this.element=document.createElement(tag);
+    Object.assign(this.element.style,{position:'absolute',pointerEvents:'none',transformOrigin:'0 0',touchAction:'none'});
+    if(parent instanceof UiNode)parent.add(this);else parent.appendChild(this.element);
+    const signal=this.controller.signal;
+    this.element.addEventListener('pointerdown',event=>{
+      if(!this.input?.enabled||!this.shown)return;
+      const p=uiPointer(scene,event),m=this.getWorldTransformMatrix(),lx=(p.x-m.tx)/m.scaleX,ly=(p.y-m.ty)/m.scaleY;
+      this.press={id:p.id,x:p.x,y:p.y,startX:this.x,startY:this.y};
+      this.element.setPointerCapture(event.pointerId);
+      this.emit('pointerdown',p,lx,ly,event);
+      if(this.input.draggable)this.emit('dragstart',p);
+      event.stopPropagation();event.preventDefault();
+    },{signal});
+    this.element.addEventListener('pointermove',event=>{
+      const p=uiPointer(scene,event),press=this.press;if(press?.id!==p.id)return;
+      if(!p.isDown){this.cancelPress();return;}
+      const m=this.parentContainer?.getWorldTransformMatrix();
+      if(this.input?.draggable)this.emit('drag',p,press.startX+(p.x-press.x)/(m?.scaleX??1),press.startY+(p.y-press.y)/(m?.scaleY??1));
+      this.emit('pointermove',p);event.stopPropagation();
+    },{signal});
+    this.element.addEventListener('pointerup',event=>{
+      const p=uiPointer(scene,event);if(this.press?.id!==p.id)return;
+      this.press=undefined;
+      if(this.input?.draggable)this.emit('dragend',p);
+      const b=this.getBounds();this.emit(b.contains(p.x,p.y)?'pointerup':'pointerupoutside',p,0,0,event);
+      if(this.element.hasPointerCapture(p.id))this.element.releasePointerCapture(p.id);
+      event.stopPropagation();event.preventDefault();
+    },{signal});
+    for(const name of ['pointercancel','lostpointercapture'])this.element.addEventListener(name,event=>{
+      if(this.press?.id===(event as PointerEvent).pointerId)this.cancelPress();
+    },{signal});
+    this.element.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();},{signal});
+    this.paint();
+  }
+  private cancelPress():void{this.press=undefined;this.emit('pointerupoutside');this.getData('cancelPress')?.();}
+  get shown():boolean{return this.active&&this.visible&&(!this.parentContainer||this.parentContainer.shown);}
+  add(child:UiNode|UiNode[]):this {for(const node of Array.isArray(child)?child:[child]){node.parentContainer?.remove(node);node.parentContainer=this;this.list.push(node);this.element.appendChild(node.element);}return this;}
+  addAt(child:UiNode,index:number):this{this.add(child);this.list.splice(this.list.indexOf(child),1);this.list.splice(index,0,child);this.element.insertBefore(child.element,this.element.children[index]??null);return this;}
+  remove(child:UiNode,destroy=false):this{const index=this.list.indexOf(child);if(index>=0)this.list.splice(index,1);child.parentContainer=undefined;child.element.remove();if(destroy)child.destroy();return this;}
+  removeAll(destroy=false):this{for(const node of [...this.list])this.remove(node,destroy);return this;}
+  sendToBack(child:UiNode):this{return this.addAt(child,0);}
+  get length():number{return this.list.length;}
+  setPosition(x:number,y:number):this{this.x=x;this.y=y;this.paint();return this;}
+  setX(x:number):this{return this.setPosition(x,this.y);}
+  setY(y:number):this{return this.setPosition(this.x,y);}
+  setScale(x:number,y=x):this{this.scaleX=x;this.scaleY=y;this.paint();return this;}
+  setSize(width:number,height:number):this{this.width=width;this.height=height;this.paint();return this;}
+  setDisplaySize(width:number,height:number):this{return this.setSize(width,height);}
+  setOrigin(x:number,y=x):this{this.originX=x;this.originY=y;this.paint();return this;}
+  setDepth(value:number):this{this.depth=value;this.element.style.zIndex=String(value);return this;}
+  setAlpha(value:number):this{this.alpha=value;this.element.style.opacity=String(value);return this;}
+  setVisible(value:boolean):this{this.visible=value;this.element.hidden=!value;if(!value)this.cancelPress();return this;}
+  setFlipX(value:boolean):this{this.flipX=value;this.paint();return this;}
+  setFlipY(value:boolean):this{this.flipY=value;this.paint();return this;}
+  setBlendMode(value:number|string):this{this.element.style.mixBlendMode=value===1||value==='add'?'plus-lighter':value==='multiply'||value==='screen'||value==='color-dodge'?value:'normal';return this;}
+  setTint(value:number):this{this.element.style.filter=`brightness(${Math.max(value>>16&255,value>>8&255,value&255)/255})`;return this;}
+  clearTint():this{this.element.style.filter='';return this;}
+  setFillStyle(color:number,alpha=1):this{this.element.style.background=`rgba(${color>>16&255},${color>>8&255},${color&255},${alpha})`;return this;}
+  setStrokeStyle(width:number,color:number,alpha=1):this{this.element.style.outline=`${width}px solid rgba(${color>>16&255},${color>>8&255},${color&255},${alpha})`;return this;}
+  setData(key:string,value:any):this{this.data.set(key,value);return this;}
+  getData(key:string):any{return this.data.get(key);}
+  on(name:string,listener:Listener):this{let set=this.listeners.get(name);if(!set)this.listeners.set(name,set=new Set());set.add(listener);return this;}
+  once(name:string,listener:Listener):this{const run:Listener=(...args)=>{this.off(name,run);listener(...args);};return this.on(name,run);}
+  off(name:string,listener:Listener):this{this.listeners.get(name)?.delete(listener);return this;}
+  emit(name:string,...args:any[]):this{for(const listener of this.listeners.get(name)??[])listener(...args);return this;}
+  setInteractive(area?:{x?:number;y?:number;width:number;height:number}|object,_test?:unknown):this{
+    const box=area&&'width'in area?area:undefined;
+    if(!this.input)this.autoHit=!box;
+    this.input??={enabled:true,hitArea:{x:box&&'x'in box?box.x??0:0,y:box&&'y'in box?box.y??0:0,width:box?.width??this.width,height:box?.height??this.height,setSize(w,h){this.width=w;this.height=h;}}};
+    this.input.enabled=true;
+    if(!this.hit){this.hit=document.createElement('span');Object.assign(this.hit.style,{position:'absolute',pointerEvents:'auto',touchAction:'none'});this.element.insertBefore(this.hit,this.element.firstChild);}
+    this.hit.hidden=false;this.paintHit();return this;
+  }
+  disableInteractive():this{if(this.input)this.input.enabled=false;if(this.hit)this.hit.hidden=true;this.cancelPress();return this;}
+  draggable():this{this.setInteractive();this.input!.draggable=true;return this;}
+  getWorldTransformMatrix():UiMatrix{
+    const parent=this.parentContainer?.getWorldTransformMatrix(),sx=(parent?.scaleX??1)*this.scaleX,sy=(parent?.scaleY??1)*this.scaleY;
+    const tx=(parent?.tx??0)+this.x*(parent?.scaleX??1),ty=(parent?.ty??0)+this.y*(parent?.scaleY??1);
+    return{tx,ty,scaleX:sx,scaleY:sy,transformPoint:(x,y)=>({x:tx+x*sx,y:ty+y*sy})};
+  }
+  getBounds():UiBounds{
+    const m=this.getWorldTransformMatrix(),area=this.input?.hitArea;
+    let x=m.tx+((area?.x??0)-this.originX*this.width)*m.scaleX,y=m.ty+((area?.y??0)-this.originY*this.height)*m.scaleY;
+    let width=(area?.width??this.width)*m.scaleX,height=(area?.height??this.height)*m.scaleY;
+    if(!width&&!height&&this.list.length){const boxes=this.list.map(node=>node.getBounds());x=Math.min(...boxes.map(b=>b.x));y=Math.min(...boxes.map(b=>b.y));width=Math.max(...boxes.map(b=>b.x+b.width))-x;height=Math.max(...boxes.map(b=>b.y+b.height))-y;}
+    return{x,y,width,height,contains:(px,py)=>px>=x&&px<=x+width&&py>=y&&py<=y+height};
+  }
+  protected paint():void{
+    Object.assign(this.element.style,{left:`${this.x}px`,top:`${this.y}px`,width:`${this.width}px`,height:`${this.height}px`,transform:`scale(${this.scaleX},${this.scaleY}) translate(${-this.originX*100}%,${-this.originY*100}%)`});
+    this.paintHit();
+  }
+  private paintHit():void{if(!this.hit||!this.input)return;const area=this.input.hitArea;if(this.autoHit){area.width=this.width;area.height=this.height;}Object.assign(this.hit.style,{left:`${area.x}px`,top:`${area.y}px`,width:`${area.width}px`,height:`${area.height}px`});}
+  destroy(_children=true):void{if(!this.active)return;this.cancelPress();this.emit('destroy');this.active=false;this.controller.abort();this.removeAll(true);this.parentContainer?.remove(this);this.element.remove();this.listeners.clear();this.data.clear();}
+}
+
+export class UiImage extends UiNode {
+  private picture:HTMLImageElement;
+  private lease?:AssetLease;
+  private request?:AbortController;
+  private source?:DomImageSource;
+  private requestedWidth?:number;private requestedHeight?:number;
+  private cover?:{x:number;y:number};
+  constructor(scene:Phaser.Scene,parent:UiNode|HTMLElement=uiMount(scene),file?:string){
+    super(scene,parent);this.element.style.overflow='hidden';this.picture=document.createElement('img');this.picture.draggable=false;this.picture.alt='';
+    Object.assign(this.picture.style,{position:'absolute',maxWidth:'none',pointerEvents:'none'});this.element.appendChild(this.picture);
+    if(file)this.load(file);
+  }
+  load(file:string):this{this.setData('file',file);const cached=domAssets.peek(file);if(cached)this.applySource(cached);this.request?.abort();const request=this.request=new AbortController();void domAssets.acquire(file,request.signal).then(lease=>{if(!this.active||request!==this.request){lease.release();return;}this.lease?.release();this.lease=lease;this.applySource(lease.source);}).catch(error=>{if(!request.signal.aborted)console.error(error);});return this;}
+  applySource(source:DomImageSource):this{this.source=source;this.picture.src=source.url;const ratio=source.frame.width/source.frame.height;super.setSize(this.requestedWidth??(this.requestedHeight!==undefined?this.requestedHeight*ratio:source.frame.width),this.requestedHeight??(this.requestedWidth!==undefined?this.requestedWidth/ratio:source.frame.height));this.draw();this.emit('loaded');return this;}
+  override setDisplaySize(width:number,height:number):this{this.requestedWidth=width;this.requestedHeight=height;super.setSize(width,height);this.draw();return this;}
+  resize(width?:number,height?:number):this{this.requestedWidth=width;this.requestedHeight=height;if(this.source)this.applySource(this.source);return this;}
+  fitting(x=.5,y=.5):this{this.cover={x,y};this.draw();return this;}
+  override setFlipX(value:boolean):this{super.setFlipX(value);this.draw();return this;}
+  override setFlipY(value:boolean):this{super.setFlipY(value);this.draw();return this;}
+  setCrop(x:number,y:number,width:number,height:number):this{if(this.source)this.applySource({...this.source,frame:{x:this.source.frame.x+x,y:this.source.frame.y+y,width,height}});return this;}
+  private draw():void{if(!this.source)return;const source=this.source,frame=source.frame;let sx=this.width/frame.width,sy=this.height/frame.height,left=0,top=0;if(this.cover){sx=sy=Math.max(sx,sy);left=(this.width-frame.width*sx)*this.cover.x;top=(this.height-frame.height*sy)*this.cover.y;}Object.assign(this.picture.style,{width:`${source.width*sx}px`,height:`${source.height*sy}px`,left:`${left-frame.x*sx}px`,top:`${top-frame.y*sy}px`});this.element.style.scale=`${this.flipX?-1:1} ${this.flipY?-1:1}`;this.element.style.transformOrigin=`${this.flipX?'50%':'0'} ${this.flipY?'50%':'0'}`;}
+  override destroy():void{this.request?.abort();this.lease?.release();this.lease=undefined;super.destroy();}
+}
+
+let measureCanvas:HTMLCanvasElement|undefined;
+export class UiText extends UiNode {
+  readonly context:CanvasRenderingContext2D;
+  private value='';private size:number;private wrapWidth:number;private align='left';
+  constructor(scene:Phaser.Scene,parent:UiNode,value:string,x:number,y:number,width:number,size:number,color:string){
+    super(scene,parent);this.size=size;this.wrapWidth=width;
+    measureCanvas??=document.createElement('canvas');this.context=measureCanvas.getContext('2d')!;
+    Object.assign(this.element.style,{fontFamily:FONT,fontSize:`${size}px`,color,whiteSpace:'pre',lineHeight:`${size+5}px`});this.setPosition(x,y);this.setText(value);
+  }
+  setText(value:string):this{this.value=value;this.context.font=`${this.size}px ${FONT}`;const lines=this.wrapWidth?wrapText(value,this.wrapWidth,text=>this.context.measureText(text).width):value.split('\n');this.element.textContent=lines.join('\n');const width=Math.max(0,...lines.map(line=>this.context.measureText(line).width));super.setSize(width,Math.max(1,lines.length)*(this.size+5)-5);this.element.style.textAlign=this.align;return this;}
+  get text():string{return this.value;}
+  setAlign(value:string):this{this.align=value;this.element.style.textAlign=value;return this;}
+  setColor(value:string):this{this.element.style.color=value;return this;}
+}

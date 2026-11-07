@@ -1,3 +1,5 @@
+import { uiMount, type UiPointer } from '../ui/dom/node.ts';
+import { UiNode, UiImage } from '../ui/dom/node.ts';
 import { SCENE_KEYS } from '../application/scene-keys.ts';
 import { UI_EVENTS } from '../application/ui-events.ts';
 import Phaser from 'phaser';
@@ -38,13 +40,13 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
   /** 对白正文按色段拆成多个 Text：原版控制码不显示，字色随 `$X` 变化。 */
 
   private dialogueLayout?:DialogueTextLayout;
-  private progressBar?:Phaser.GameObjects.Rectangle;
+  private progressBar?:UiNode;
   private baseLease?:AssetLease;
   /** 菜单图片与立绘的租约账，`prepareMenuCore` 通过 `app.uiAssets` 找到它。 */
   private readonly uiAssets=new SceneUiAssets(this);
-  private background!:Phaser.GameObjects.Rectangle;
-  private cover?:Phaser.GameObjects.Image;
-  private blocker!:Phaser.GameObjects.Zone;
+  private background!:UiNode;
+  private cover?:UiImage;
+  private blocker!:UiNode;
   /** 原版 `INSTANTMSG` 的屏幕提示；不进 surface，因为它要逐帧淡出而 surface 每次 sync 整体重建。 */
   private domInstant?:DomLabel;
   private domToast?:DomLabel;
@@ -75,8 +77,8 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
   private unregisterInput?:()=>void;
   constructor(app:StoryApp){super(SCENE_KEYS.formalUi);this.app=app;}
   create():void{
-    this.background=this.add.rectangle(0,0,1,1,0x000000,1).setOrigin(0).setDepth(998);this.blocker=this.add.zone(0,0,1,1).setOrigin(0).setDepth(999).setInteractive();
-    this.surface=new UiSurface(this,960,640,1000);this.app.ui.view=this;this.app.uiAssets=this.uiAssets;
+    this.background=new UiNode(this,uiMount(this,'overlay')).setSize(1,1).setFillStyle(0,1).setDepth(998);this.blocker=new UiNode(this,uiMount(this,'overlay')).setSize(1,1).setDepth(999).setInteractive();
+    this.surface=new UiSurface(this,960,640,1000,'overlay');this.app.ui.view=this;this.app.uiAssets=this.uiAssets;
     const domUi=this.app.domUi;
     if(domUi){
       this.domInstant=domUi.label('screen','dom-instant',{x:.5,y:0});
@@ -102,26 +104,15 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     this.surface.enabled=()=>!this.app.ui.suspended;
     this.scale.on('resize',()=>{this.signature='';this.layoutDomText();this.sync(this.app.ui);this.app.ui.reflowDialogue();});
     // 场景里只保留这一份键盘监听：它只把原始事件交给 router，由作用域决定消费者。
-    this.input.keyboard?.on('keydown',this.bridgeKey);
+    window.addEventListener('keydown',this.bridgeKey);
     this.unregisterInput=this.app.inputRouter.register('modal',this.routeKey,{
       active:()=>this.app.ui.mode==='game',
       // 弹层、加载、选项和挂起时独占键盘，菜单和世界不再重复消费。
       exclusive:()=>this.app.ui.suspended||this.app.ui.worldRebuildCover||this.app.ui.defeated
         ||!!this.app.ui.quest||!!this.app.ui.loadingState||!!this.app.ui.choices
     });
-    this.input.on('pointerdown',(pointer:Phaser.Input.Pointer,objects:Phaser.GameObjects.GameObject[])=>{
-      if(this.app.ui.defeated||this.app.ui.worldRebuildCover)return;
-      // 点界面控件时把同一次点击拦在这里，世界场景不再收到；键位捕获中也不推进对白。
-      if(objects.some(object=>object.getData('uiAction'))){this.input.stopPropagation();return;}
-      if(this.app.ui.keyBindingEditing)return;
-      this.app.ui.pressDialogue(pointer.id);
-    });
-    this.input.on('pointerup',(pointer:Phaser.Input.Pointer)=>{
-      if(!this.app.ui.defeated&&!this.app.ui.worldRebuildCover)this.app.ui.releaseDialogue(pointer.id);
-    });
-    this.input.on('pointerupoutside',(pointer:Phaser.Input.Pointer)=>this.app.ui.cancelPress(pointer.id));
     this.game.canvas.addEventListener('pointercancel',this.cancelInput);this.game.events.once('destroy',()=>this.game.canvas.removeEventListener('pointercancel',this.cancelInput));
-    this.events.once('shutdown',()=>{this.unregisterInput?.();this.unregisterInput=undefined;this.input.keyboard?.off('keydown',this.bridgeKey);this.uiAssets.releaseContent();this.surface.destroy();this.questPopup.destroy();this.baseLease?.release();this.domInstant?.remove();this.domInstant=undefined;this.domToast?.remove();this.domToast=undefined;this.domSpeaker?.remove();this.domSpeaker=undefined;for(const label of [this.domLoadingTitle,this.domLoading,this.domLoadingAction,this.domLoadingMenu,this.domPortraitIcon,this.domPortraitTitle,this.domPortraitHint,this.domDefeatTitle,this.domDefeatMessage,this.domDefeatCancel,this.domDefeatConfirm,this.domDefeatCheckpoint,this.domDefeatLoad])label?.remove();this.domLoadingTitle=undefined;this.domLoading=undefined;this.domLoadingAction=undefined;this.domLoadingMenu=undefined;this.domPortraitIcon=undefined;this.domPortraitTitle=undefined;this.domPortraitHint=undefined;this.domDefeatTitle=undefined;this.domDefeatMessage=undefined;this.domDefeatCancel=undefined;this.domDefeatConfirm=undefined;this.domDefeatCheckpoint=undefined;this.domDefeatLoad=undefined;for(const run of this.dialogueDomRuns)run.remove();this.dialogueDomRuns.length=0;this.removeChoiceDom();});
+    this.events.once('shutdown',()=>{this.unregisterInput?.();this.unregisterInput=undefined;window.removeEventListener('keydown',this.bridgeKey);this.uiAssets.releaseContent();this.surface.destroy();this.questPopup.destroy();this.baseLease?.release();this.domInstant?.remove();this.domInstant=undefined;this.domToast?.remove();this.domToast=undefined;this.domSpeaker?.remove();this.domSpeaker=undefined;for(const label of [this.domLoadingTitle,this.domLoading,this.domLoadingAction,this.domLoadingMenu,this.domPortraitIcon,this.domPortraitTitle,this.domPortraitHint,this.domDefeatTitle,this.domDefeatMessage,this.domDefeatCancel,this.domDefeatConfirm,this.domDefeatCheckpoint,this.domDefeatLoad])label?.remove();this.domLoadingTitle=undefined;this.domLoading=undefined;this.domLoadingAction=undefined;this.domLoadingMenu=undefined;this.domPortraitIcon=undefined;this.domPortraitTitle=undefined;this.domPortraitHint=undefined;this.domDefeatTitle=undefined;this.domDefeatMessage=undefined;this.domDefeatCancel=undefined;this.domDefeatConfirm=undefined;this.domDefeatCheckpoint=undefined;this.domDefeatLoad=undefined;for(const run of this.dialogueDomRuns)run.remove();this.dialogueDomRuns.length=0;this.removeChoiceDom();});
     void loadUiImages(this,['/assets/ui/loading-background.webp']).then(lease=>{this.baseLease=lease;this.signature='';this.sync(this.app.ui);}).catch(console.error);
     this.app.storyUI.attach(this);this.sync(this.app.ui);
   }
@@ -340,10 +331,10 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     this.background.setVisible(modal).setSize(this.scale.width,this.scale.height).setFillStyle(0x000000,!!defeat&&!portrait&&!ui.loadingState&&!cover ? .65:1);
     this.blocker.setVisible((modal||!!ui.quest||!!ui.dialogueLine||!!ui.choices)).setSize(this.scale.width,this.scale.height);if(this.blocker.input)this.blocker.input.hitArea.setSize(this.scale.width,this.scale.height);
     this.cover?.destroy();this.cover=undefined;
-    const block=()=>{const zone=this.add.zone(0,0,960,640).setOrigin(0).setInteractive();v.root.add(zone);};
+    const block=()=>{v.rect(0,0,960,640,0,0).setInteractive().on('pointerdown',(pointer:UiPointer)=>ui.pressDialogue(pointer.id)).on('pointerup',(pointer:UiPointer)=>ui.releaseDialogue(pointer.id)).on('pointerupoutside',()=>ui.resetInput());};
     if(portrait){v.rect(0,0,960,640,0x101d24,1);block();}
     else if(ui.loadingState){
-      const file='/assets/ui/loading-background.webp';if(this.textures.exists(uiTexture(file))){this.cover=this.add.image(this.scale.width/2,this.scale.height/2,uiTexture(file)).setDepth(998.5);const factor=Math.max(this.scale.width/this.cover.width,this.scale.height/this.cover.height);this.cover.setScale(factor).setTint(0xaaaaaa);}
+      const file='/assets/ui/loading-background.webp';this.cover=new UiImage(this,uiMount(this,'overlay'),file).setDisplaySize(this.scale.width,this.scale.height).fitting().setDepth(998.5).setTint(0xaaaaaa);
       block();v.rect(200,531,560,5,0xeee2cc,.3);this.progressBar=v.rect(200,531,560*progress,5,0xe2c88d,1);
       if(ui.loadingState.retry){v.button('',380,552,200,48,ui.loadingState.retry);if(ui.canReturn)v.button('',26,20,180,48,()=>ui.onMenu?.());}
     }else if(defeat){

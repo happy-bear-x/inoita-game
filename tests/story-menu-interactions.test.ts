@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 import test from 'node:test';
-import type Phaser from 'phaser';
+import type { UiNode } from '../src/ui/dom/node.ts';
 import type { StoryUIContext } from '../src/application/ports.ts';
 import type { BattleCatalog } from '../src/domain/battle.ts';
 import { BattleCharacter, type CharacterStatsCatalog } from '../src/domain/character-stats.ts';
@@ -1277,7 +1277,7 @@ function openControls(f: ReturnType<typeof fixture>) {
   controlSettings.setMode('stick');
   f.menu.show('settings');
   const control=f.scene.button('拖动调整');
-  f.internals.body.scrolls.at(-1)?.reveal(control as unknown as Phaser.GameObjects.Container);
+  f.internals.body.scrolls.at(-1)?.reveal(control as unknown as UiNode);
   f.scene.click(control);
 }
 
@@ -1372,7 +1372,7 @@ test('settings cycles operation modes in place and shows the matching editor ent
   controlSettings.setMode('stick');
   f.menu.show('settings');
   // 这些行在滚动区末尾，先滚到可见再点，和玩家实际操作的路径一致。
-  const clickRow=(label:string)=>{const row=f.scene.button(label);f.internals.body.scrolls.at(-1)?.reveal(row as unknown as Phaser.GameObjects.Container);f.scene.click(row);};
+  const clickRow=(label:string)=>{const row=f.scene.button(label);f.internals.body.scrolls.at(-1)?.reveal(row as unknown as UiNode);f.scene.click(row);};
   const touchObjects=()=>f.scene.nodes.filter(node=>node.shown&&node.getData('controlId')).length;
   assert.equal(f.scene.buttons('操作方式：虚拟摇杆').length,1);
   assert.equal(f.scene.buttons('拖动调整').length,1,'触屏模式提供控件位置入口');

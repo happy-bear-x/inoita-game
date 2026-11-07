@@ -1,4 +1,4 @@
-import type Phaser from 'phaser';
+import type { UiNode } from '../dom/node.ts';
 import type { UiSurface } from './widgets.ts';
 import { DESCRIPTION_PANEL, DESCRIPTION_TEXT } from '../bag-layout.ts';
 import type { ItemDescriptionRow } from '../item-detail-lines.ts';
@@ -54,7 +54,7 @@ export function drawDescriptionTitle(name: string, x: number, y: number, width: 
  * 正文与属性块之间那条浅蓝点线：`UI_DrawHDotLine @0x143e78` 以 8 像素为步长画 5 像素一段，
  * 颜色 `#8caace`（`UIDesc_DrawTextScroll @0x145d30` 传的 `0xff8caece`）。
  */
-export function drawDescriptionSeparator(v: UiSurface, x: number, y: number, width: number, parent?: Phaser.GameObjects.Container): void {
+export function drawDescriptionSeparator(v: UiSurface, x: number, y: number, width: number, parent?: UiNode): void {
   for (let offset = 0; offset < width; offset += 8) {
     v.rect(x + offset, y, Math.min(5, width - offset), 1, 0x8caace, 1, parent);
   }

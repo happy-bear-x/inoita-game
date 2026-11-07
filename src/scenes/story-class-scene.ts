@@ -2,8 +2,8 @@ import { SCENE_KEYS } from '../application/scene-keys.ts';
 import Phaser from 'phaser';
 import type { StoryClassContext } from '../application/ports.ts';
 import type { StoryClass } from '../domain/story-class.ts';
-import { characterAssets, createCharacter } from '../rendering/characters.ts';
-import type { CharacterVisual } from '../rendering/characters.ts';
+import { characterAssets } from '../rendering/characters.ts';
+import { CharacterPreview } from '../ui/dom/character-preview.ts';
 import { loadSceneAssets } from '../rendering/scene-assets.ts';
 import { UiSurface, loadUiImages } from '../ui/phaser/widgets.ts';
 import type { ScrollArea } from '../ui/phaser/widgets.ts';
@@ -28,7 +28,7 @@ const GOLD = '#f3deb0';
 export class StoryClassScene extends Phaser.Scene {
   private readonly app:StoryClassApp;
   private surface?:UiSurface;
-  private preview?:CharacterVisual;
+  private preview?:CharacterPreview;
   private selected?:StoryClass;
   private request=new AbortController();
   /** DOM 是这一页唯一的文字路径：没有 DOM 文字层时宁可不显示文字，也不回退 Phaser 文字。 */
@@ -102,7 +102,7 @@ export class StoryClassScene extends Phaser.Scene {
     view.rect(767,464,151,174,0x000000,.4);
     view.image(catalog.assets.attributesTop,796,455);
     view.image(catalog.assets.panelLeft,757,454);view.image(catalog.assets.panelRight,888,454);
-    this.preview=createCharacter(this,entry.previewActor,{id:'class-preview',actor:entry.previewActor.id,x:480,y:290});view.root.add(this.preview.container);this.preview.container.setScale(3);
+    this.preview=new CharacterPreview(this);const clip=entry.previewActor.clips['idle-south']!;this.preview.show(view,entry.previewActor,{x:480-clip.frameWidth*1.5,y:290-clip.originY*clip.frameHeight*3,width:clip.frameWidth*3,height:clip.frameHeight*3});
     this.renderDomText(entry);this.layout();
   }
   private layout():void{
