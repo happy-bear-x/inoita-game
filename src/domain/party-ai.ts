@@ -52,8 +52,9 @@ const PARTY_FOLLOW_DISTANCE_UNITS = 4;
 const PARTY_REPATH_DISTANCE_PX = PATH_GRID_SIZE * 3;
 /** 两次重算之间的最短间隔。 */
 const PARTY_REPATH_INTERVAL_MS = 180;
-/** 单次寻路搜索上限；预算不足时下一帧再试。 */
-const PARTY_SEARCH_CAP = 384;
+/** 场景中的每名队友每次只推进一小段搜索，独立运行时沿用原有的单次上限。 */
+const PARTY_SEARCH_SLICE = 48;
+const STANDALONE_SEARCH_CAP = 384;
 /** 不可达后的重试间隔。 */
 const PARTY_FAILED_PATH_MS = 600;
 /** 跟随这么久没有任何位移，就当作被地形或人群卡住。 */
@@ -86,6 +87,20 @@ const PARTY_RANGED_RANGE_UNITS = 6;
 const PARTY_SKILL_PRIORITY:Record<PartySkillKind,number>={
   'emergency-heal':0,heal:1,'ally-combat':2,'combat-chance':3,chance:4
 };
+
+/** 搜索只能停在起点或地图网格上。侧翼附近没有合法终点时，直接走普通接敌路线。 */
+function hasFlankLanding(goal: Point, start: Point, bounds: GameRectangle, canStand: (point: Point) => boolean): boolean {
+  if (targetDistance(start, goal) <= PATH_GRID_SIZE && canStand(start)) return true;
+  const column = Math.floor((goal.x - bounds.x) / PATH_GRID_SIZE);
+  const row = Math.floor((goal.y - bounds.y) / PATH_GRID_SIZE);
+  for (let y = row - 1; y <= row + 2; y++) {
+    for (let x = column - 1; x <= column + 2; x++) {
+      const point = { x: bounds.x + x * PATH_GRID_SIZE, y: bounds.y + y * PATH_GRID_SIZE };
+      if (targetDistance(point, goal) <= PATH_GRID_SIZE && canStand(point)) return true;
+    }
+  }
+  return false;
+}
 
 /** 自动施法抽取 1 至 99 的整数，严格小于阈值时通过。 */
 export function partySkillThreshold(kind:PartySkillKind,frequency:number,following:boolean):number {
@@ -424,7 +439,7 @@ export class PartyController {
     else if(this.clock>=this.nextPathAt&&(!this.destination
       ||targetDistance(this.destination,destination)>=PARTY_REPATH_DISTANCE_PX
       ||!this.path.length||!this.nextWaypoint())){
-      const granted=this.port.pathBudget?.take(this.id,PARTY_SEARCH_CAP)??PARTY_SEARCH_CAP;
+      const granted=this.port.pathBudget?.take(this.id,PARTY_SEARCH_SLICE)??STANDALONE_SEARCH_CAP;
       if(granted>0)this.beginSearch(actor,destination,range,granted,target);
       else this.nextPathAt=this.clock+LOGIC_FRAME_MS;
     }
@@ -437,20 +452,26 @@ export class PartyController {
     this.nextPathAt=this.clock+PARTY_REPATH_INTERVAL_MS;this.destination={...destination};
     const snapshot=this.port.navigationSnapshot?.();
     const canStand=snapshot?(point:Point)=>snapshot.canStand(point):(point:Point)=>this.port.canStand(point);
-    const anchor=target&&flank?this.combatAnchor(actor,target):undefined;
+    const bounds=snapshot?.bounds??this.port.navigationBounds();
+    let anchor=target&&flank&&this.clock>=this.flankFailedUntil?this.combatAnchor(actor,target):undefined;
+    if(anchor&&!hasFlankLanding(anchor.point,actor.position,bounds,canStand)){
+      this.flankFailedUntil=this.clock+PARTY_FLANK_RETRY_MS;
+      anchor=undefined;
+    }
     this.flanking=!!anchor;
-    const radius=target?Math.hypot(actor.bounds.width+target.bounds.width,actor.bounds.height+target.bounds.height)+range*8:8;
-    this.search=createPathSearch(actor.position,{bounds:snapshot?.bounds??this.port.navigationBounds(),canStand,
-      isGoal:point=>canStand(point)&&(anchor
-        ?targetDistance(point,anchor.point)<=PATH_GRID_SIZE
-        :target
-          ?attackDistance(point,actor.bounds,target.position,target.bounds)<=range
-          :targetDistance(point,destination)<=PATH_GRID_SIZE),
-      heuristic:point=>Math.max(0,targetDistance(point,destination)-radius)});
+    // 绕侧时搜索的是具体站位。朝敌人中心搜索并减去整个攻击半径，会白查身体另一侧的格子。
+    const goal=anchor?.point??destination;
+    const inRange=target&&!anchor;
+    const radius=inRange?Math.hypot(actor.bounds.width+target.bounds.width,actor.bounds.height+target.bounds.height)+range*8
+      :PATH_GRID_SIZE;
+    this.search=createPathSearch(actor.position,{bounds,canStand,
+      isGoal:point=>(inRange?attackDistance(point,actor.bounds,target.position,target.bounds)<=range
+        :targetDistance(point,goal)<=PATH_GRID_SIZE)&&canStand(point),
+      heuristic:point=>Math.max(0,targetDistance(point,goal)-radius)});
     this.stepSearch(actor,granted);
   }
   private advanceSearch(actor:Combatant):void {
-    const granted=this.port.pathBudget?.take(this.id,PARTY_SEARCH_CAP)??PARTY_SEARCH_CAP;
+    const granted=this.port.pathBudget?.take(this.id,PARTY_SEARCH_SLICE)??STANDALONE_SEARCH_CAP;
     if(granted>0)this.stepSearch(actor,granted);
   }
   private stepSearch(actor:Combatant,granted:number):void {

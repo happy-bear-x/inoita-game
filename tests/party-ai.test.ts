@@ -156,7 +156,9 @@ test('an unreachable flank falls back to the normal attack approach',()=>{
   run.enemy.position={x:240,y:128};run.focus('enemy');
   // 目标北侧的侧翼锚点整片不可站；西侧的普通接敌路线仍然可走。
   run.port.canStand=point=>point.x>=0&&point.x<=400&&point.y>=100&&point.y<=400;
-  for(let frame=0;frame<400;frame++)run.advance();
+  run.port.pathBudget={take:(_owner,limit)=>Math.min(limit,32)};
+  // 有路的西侧只隔 180px；堵死的绕侧点不能让队友先花几十帧搜遍整张地图。
+  for(let frame=0;frame<40&&!run.plays.length;frame++)run.advance();
   assert.ok(attackDistance(run.member.position,box,run.enemy.position,box)<=4,'退回普通追击后仍能接敌');
   assert.equal(run.plays.at(-1)?.target?.id,'enemy');
 });
