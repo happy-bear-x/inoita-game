@@ -1500,7 +1500,9 @@ export class WorldScene extends Phaser.Scene {
     const collectorId=this.combat?.controlledId??'player';
     const visual=this.combat?.controlledVisual??this.player;
     const session=this.app.session,store=groundLootFor(session);
-    const picked=store.collectNearby(this.map.id,position.x,position.y,reward=>this.receiveGroundReward(reward));
+    // 宝石只要求存在存活接收者；满蓝也会收取。任务需求、背包和读档变化再重试原地掉落。
+    const availability=`${session.bag.revision}|${session.questBook.version}|${session.storyWorld.revision}|${session.restorationVersion}|${session.debugFocusQuest??''}|${!!this.combat}|${session.hasLivingMember}`;
+    const picked=store.collectNearby(this.map.id,position.x,position.y,reward=>this.receiveGroundReward(reward),availability);
     if(!picked.length)return;
     session.questItemGenerators.collected(picked.map(drop=>drop.id),session.combatTick);
     // 原版在批量拾取结束时播放音效 6，与捡到的是物品还是钱无关；魔法宝石另外在恢复时播音效 5。

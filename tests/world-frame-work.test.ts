@@ -11,6 +11,7 @@ import {SkillConfiguration} from '../src/domain/skill-configuration.ts';
 import {NavigationWorld} from '../src/domain/navigation-world.ts';
 import {CompanionSkillProgression} from '../src/domain/companion-progression.ts';
 import {SCENE_KEYS} from '../src/application/scene-keys.ts';
+import {groundLootFor} from '../src/domain/ground-loot.ts';
 import type {ShortcutSlot} from '../src/ui/phaser/action-controls.ts';
 
 const hook=registerHooks({resolve(specifier,context,next){return specifier==='phaser'
@@ -18,6 +19,23 @@ const hook=registerHooks({resolve(specifier,context,next){return specifier==='ph
   :next(specifier,context);}});
 const {WorldScene}=await import('../src/scenes/world-scene.ts');hook.deregister();
 const invoke=(host:object,name:string,...args:unknown[])=>Reflect.get(WorldScene.prototype,name).call(host,...args);
+
+test('stationary loot retries when bag, quests, recipients or restored progress change',()=>{
+  let attempts=0,accept=false;
+  const session={bag:{revision:0},questBook:{version:0},storyWorld:{revision:0},restorationVersion:0,
+    hasLivingMember:false,questItemGenerators:{collected(){}},combatTick:0};
+  const store=groundLootFor(session as unknown as Session);store.add('map',0,0,[{kind:'money',amount:1}]);
+  const host=Object.assign(Object.create(WorldScene.prototype),{map:{id:'map'},app:{session},
+    receiveGroundReward:()=>{attempts++;return accept;}});
+  for(let frame=0;frame<60;frame++)invoke(host,'collectGroundLoot',{x:0,y:0});
+  assert.equal(attempts,1,'unchanged frames do not retry refused drops');
+  session.bag.revision++;invoke(host,'collectGroundLoot',{x:0,y:0});assert.equal(attempts,2);
+  session.questBook.version++;invoke(host,'collectGroundLoot',{x:0,y:0});assert.equal(attempts,3);
+  Object.assign(session,{hasLivingMember:true});invoke(host,'collectGroundLoot',{x:0,y:0});assert.equal(attempts,4);
+  host.combat={};invoke(host,'collectGroundLoot',{x:0,y:0});assert.equal(attempts,5);
+  Object.assign(session,{restorationVersion:1});invoke(host,'collectGroundLoot',{x:0,y:0});assert.equal(attempts,6);
+  accept=true;invoke(host,'collectGroundLoot',{x:1,y:0});assert.equal(store.forMap('map').length,0);
+});
 
 test('stationary interaction reuses candidates until scene positions or visibility change',()=>{
   let inspected=0;
