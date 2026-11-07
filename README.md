@@ -44,7 +44,7 @@ src/                游戏源码
   domain/           战斗、剧情、任务、背包、存档等纯规则
   rendering/        Phaser 世界、战斗、特效与角色表现
   scenes/           地图、剧情舞台、菜单与调试场景
-  ui/               菜单、HUD、对话与 Phaser 面板
+  ui/               菜单、HUD、对话、DOM 组件与界面逻辑
   debug/            GM 调试动作层
 public/             随游戏发布的静态资源
   content/          剧情、任务、地图、战斗、物品等内容 JSON

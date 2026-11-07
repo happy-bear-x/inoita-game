@@ -20,13 +20,13 @@ Phaser 4.2.1 + TypeScript 的剧情与任务体验版。源码、内容、素材
 - 「常驻包」「IR」这类词，第一次出现必须紧跟一句人话解释。
 - 代码、测试和提交信息可以用准确的技术词；对话和给用户看的文档要先让人看懂。
 
-## 1. 实现功能先走 Phaser 内置能力，再走技能，最后查文档
+## 1. 按画面职责选择实现层
 
-界面用 Phaser 4.2.1 的内置 API；内置 API 不够时查 `.agents/skills/`；技能没覆盖时查 4.2.1 官方文档。Phaser 4 和 3 差异很大，不要凭记忆写 v3 写法。分层、import 方向和具体取舍见 `src/AGENTS.md`。
+屏幕界面的文字、图片、按钮、滚动、拖拽和布局编辑由 DOM、CSS 与必要的 SVG 承担。地图、角色、镜头、物理、角色头顶血条、伤害数字和战斗特效由 Phaser 承担。游戏世界实现优先用 Phaser 4.2.1 内置 API，再查技能和对应版本文档。场景只编排生命周期，游戏规则保持在领域层。分层与 import 方向见 `src/AGENTS.md`。
 
 引擎版本以 `package.json` 为准；升级 Phaser 时同步更新 `README.md` 和本规则。
 
-## 2. 先定义游戏语义，再写 Phaser 代码
+## 2. 先定义游戏语义，再写实现代码
 
 游戏代码里只出现有语义的名字，不出现解析过程的中间产物；命名示例和分层说明见 `src/AGENTS.md`。
 
@@ -91,7 +91,7 @@ src/                   游戏源码（规则见 src/AGENTS.md）
   scenes/              地图、剧情舞台、菜单与调试场景（AGENTS.md）
   domain/              内容类型、会话状态、剧情调度、通行、战斗规则（AGENTS.md）
   rendering/           角色、世界、战斗与特效表现（AGENTS.md）
-  ui/                  菜单、HUD、对话与 Phaser 面板（AGENTS.md；ui/phaser 另有）
+  ui/                  菜单、HUD、对话、DOM 组件与界面逻辑（AGENTS.md）
   debug/               GM 动作层与剧情跳转（AGENTS.md）
   generated/           图集常量，生成物（AGENTS.md）
 public/                原样复制进构建产物的静态资源和内容
