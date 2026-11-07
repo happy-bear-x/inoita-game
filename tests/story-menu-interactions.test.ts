@@ -579,6 +579,27 @@ test('organise keeps its position above the category rail without overlapping it
   f.scene.resize(700,480);assert(f.scene.canHit(f.scene.button('整理')),'重排后仍能点击');
 });
 
+test('item description only hides the column it covers', t => {
+  const f=fixture();t.after(f.cleanup);const jewel=f.add('novice-jewel');
+  f.menu.show('bag');const name=f.session.bag.catalog.items[jewel.item].name;
+  f.scene.click(f.scene.button(name));
+  assert(visibleDomLabels(f).some(label=>label.text===name),'说明标题可见');
+  assert(visibleDomLabels(f).some(label=>label.text==='全部'),'没被面板盖住的分类文字仍然可见');
+  assert(visibleDomLabels(f).some(label=>label.text==='人物'),'顶部标签仍然可见');
+});
+
+test('equipment description keeps the character column and restores on close', t => {
+  const f=fixture();t.after(f.cleanup);f.menu.show('bag');
+  const weapon=f.hero.bag.get(f.hero.bag.equipment['main-hand']!)!,name=f.session.bag.catalog.items[weapon.item].name;
+  f.scene.click(f.scene.button('主手'));
+  assert(visibleDomLabels(f).some(label=>label.text===name),'装备说明标题可见');
+  assert(visibleDomLabels(f).some(label=>label.text.startsWith('Lv. ')),'没被面板盖住的等级文字仍然可见');
+  assert(visibleDomLabels(f).some(label=>label.text==='全部'),'分类侧栏在面板外，仍然可见');
+  f.scene.click(f.scene.button('主手'));
+  assert(!visibleDomLabels(f).some(label=>label.text===name),'关闭说明后说明文字撤掉');
+  assert(visibleDomLabels(f).some(label=>label.text.startsWith('Lv. ')),'关闭后等级文字保持可见');
+});
+
 test('custom menu buttons share native art and keep labels above their pressed layer', t => {
   const f=fixture();t.after(f.cleanup);
   Object.defineProperty(f.app,'audio',{value:{settings:{music:1,effects:1},setVolume(){}}});

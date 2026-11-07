@@ -72,9 +72,9 @@ test('description panel keeps the native panel, scroll, close and menu rects', (
   assert.equal(description.height, leftFrame.height);
   assert.equal(description.y, 0);
   assert.deepEqual([leftFrame.x, bagFrame.x], [85, 496], '物品停在左栏，身上装备停在右栏');
-  // 面板自带半透明底色：内缩 10 取原版（UIDesc_Draw 里 GRPX_FillRectAlpha 的参数 0x3c=60），
-  // 压暗页面交给外层黑色遮罩，面板本身保持 35% 黑。
-  assert.deepEqual([description.inset, description.background, description.backgroundAlpha], [10, 0x000000, .35]);
+  // 面板自带底色：内缩 10 取原版（UIDesc_Draw 里 GRPX_FillRectAlpha 的参数 0x3c=60），
+  // 不透明度按观感提到 85%，靠面板自己压住下面的格子与图标。
+  assert.deepEqual([description.inset, description.background, description.backgroundAlpha], [10, 0x000000, .85]);
   // 面板内部件都相对面板左上角：物品名、正文滚动区、右上角关闭按钮、底部菜单行。
   // 物品名不在滚动区里：UIDesc_Draw 把它画在 (20,22)，右边留 82 给关闭按钮。
   assert.deepEqual(description.title, { x:20, y:22, right:82, size:24 });

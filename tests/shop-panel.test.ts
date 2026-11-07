@@ -173,11 +173,11 @@ test('shop layout keeps the native panel geometry',()=>{
   assert.equal(descriptionPanel(462).scroll.width,378,'变宽时滚动区右侧留边不变');
   assert.equal(descriptionPanel(462).menu.width,377+20,'变宽时菜单行右侧留边不变');
   assert.equal(DESCRIPTION_PANEL.height,431);
-  // 面板自带半透明底色：内缩 10 取原版（UIDesc_Draw 的 GRPX_FillRectAlpha 参数 0x3c=60），
-  // 页面的压暗交给外层黑色遮罩，面板本身不再铺接近纯黑。
+  // 面板自带底色：内缩 10 取原版（UIDesc_Draw 的 GRPX_FillRectAlpha 参数 0x3c=60），
+  // 不透明度按观感提到 85%，靠面板自己压住下面的格子与图标。
   assert.equal(DESCRIPTION_PANEL.inset,10);
   assert.equal(DESCRIPTION_PANEL.background,0x000000);
-  assert.equal(DESCRIPTION_PANEL.backgroundAlpha,.35);
+  assert.equal(DESCRIPTION_PANEL.backgroundAlpha,.85);
   // 物品名在面板顶上，不在滚动区里：落点 (20,22)、右边留 82 给关闭按钮。
   assert.deepEqual(DESCRIPTION_PANEL.title,{x:20,y:22,right:82,size:24});
   assert.deepEqual(DESCRIPTION_PANEL.scroll,{x:20,y:60,width:358,height:258});

@@ -1,5 +1,4 @@
 import { UI_EVENTS } from '../application/ui-events.ts';
-import { SCENE_KEYS } from '../application/scene-keys.ts';
 import { displaySettings } from '../application/display-settings.ts';
 import { fullscreenActive, fullscreenStatus, onFullscreenChange, setFullscreen } from '../application/fullscreen.ts';
 import { controlSettings, nextControlMode, type ControlMode } from '../application/control-settings.ts';
@@ -227,10 +226,10 @@ export class StoryUI {
         this.renderNoticeText(writer);
       });
       this.menuText.register('bag',writer=>{
-        // 说明层打开时上方有黑色遮罩，只输出说明文字，页面文字整层让位。
-        if(this.bagDetailOpen){for(const spec of this.bagDetailTextSpecs)writer.add(spec);return;}
         this.renderTabsText(writer);
-        for(const spec of this.bagTextSpecs)writer.add(spec);
+        // 说明面板只盖住一栏：让出落在这块矩形里的页面文字，标签和另一栏继续显示。
+        for(const spec of this.bagTextSpecs)if(!this.bagDetailOpen||!this.bagDescriptionCovers(spec))writer.add(spec);
+        if(this.bagDetailOpen)for(const spec of this.bagDetailTextSpecs)writer.add(spec);
         this.renderNoticeText(writer);
       });
       // 技能书页顶部标题画在菜单画布坐标里，换算到内容块坐标后和面板文字一起输出。
@@ -262,9 +261,11 @@ export class StoryUI {
       });
       // GM 调试页的文字由面板自己收集；图框、按钮和滚动仍由 Phaser 画。
       this.menuText.register('debug',writer=>{
-        // 物品详情打开时上方有黑色遮罩，只输出详情文字。
-        if(this.gmDetailOpen){for(const spec of this.gmDetailTextSpecs)writer.add(spec);return;}
-        this.renderTabsText(writer);for(const spec of this.gmTextSpecs)writer.add(spec);this.renderNoticeText(writer);
+        this.renderTabsText(writer);
+        // 物品详情只盖住左侧一块：矩形外的调试页文字继续显示。
+        for(const spec of this.gmTextSpecs)if(!this.gmDetailOpen||!this.gmDescriptionCovers(spec))writer.add(spec);
+        if(this.gmDetailOpen)for(const spec of this.gmDetailTextSpecs)writer.add(spec);
+        this.renderNoticeText(writer);
       });
       // 通用原生提示盖在任何页面之上：页面文字让位，只输出这一份。
       this.menuText.register('native-notice',writer=>{for(const spec of this.noticeTextSpecs)writer.add(spec);});
@@ -322,8 +323,6 @@ export class StoryUI {
     if(active&&this.hudButtons&&this.hudButtons.root.length===0){const v=this.hudButtons;v.button('',0,0,HUD_SIDE_BUTTON_SIZE,HUD_SIDE_BUTTON_SIZE,()=>this.show('save'),{image:this.content!.assets.save}).setData('label','存档');v.button('',0,HUD_SIDE_BUTTON_SIZE+8,HUD_SIDE_BUTTON_SIZE,HUD_SIDE_BUTTON_SIZE,()=>this.show('bag'),{image:this.content!.assets.menu}).setData('label','菜单');}
     // 登记快捷键时菜单本体整块让位，只留背后的遮罩与这一屏自己，画面里那层游戏背景就露出来了。
     const menu=this.open&&this.app.ui.ready&&!this.app.ui.suspended&&!this.shortcutEdit&&!this.app.ui.controlLayoutEditing&&!this.app.ui.keyBindingEditing;
-    // 菜单期间世界场景不再渲染，省掉整张地图的绘制开销；关闭菜单立即恢复。
-    this.setWorldRendered(!menu);
     this.surface?.visible(menu);this.body?.visible(menu);this.description?.visible(menu&&!this.forge);
     const modal=menu&&(!!this.operation||!!this.itemNotice||!!this.allocationExit||this.skillReset||this.savePage?.modalOpen||!!this.craftingPanel?.modalOpen||!!this.shopPanel?.modalOpen||!!this.partyPanel?.modalOpen||!!this.forge?.confirming);
     if(modal&&!this.modalActive)this.app.ui.resetInput();
@@ -338,7 +337,7 @@ export class StoryUI {
     this.shortcutScreen?.visible(this.open&&!this.app.ui.suspended&&!!this.shortcutEdit);this.backTab?.visible(this.open&&!this.app.ui.suspended&&!!this.shortcutEdit);
     this.shortcutPrompt?.setVisible(this.open&&!this.app.ui.suspended&&!!this.shortcutEdit);
     this.backdrop?.setVisible(this.open&&!this.app.ui.suspended);
-    this.popupMask?.setVisible(menu&&(modal||this.bagDetailOpen||this.gmDetailOpen));
+    this.popupMask?.setVisible(menu&&modal);
     this.controlEditor?.visible(this.open&&this.app.ui.controlLayoutEditing&&!this.app.ui.suspended);
     this.keyBindingEditor?.visible(this.open&&this.app.ui.keyBindingEditing&&!this.app.ui.suspended);this.layout();
   }
@@ -361,12 +360,6 @@ export class StoryUI {
     }
     // render() 末尾已经 sync 过；这里再调一次会把整层再排版一遍。
     this.page=page;this.render();
-  }
-  /** 菜单打开时让世界场景停止渲染；世界场景不存在（标题/调试模式）时什么都不做。 */
-  private setWorldRendered(rendered:boolean):void{
-    const scene=this.scene;
-    if(!scene?.scene?.manager?.keys?.[SCENE_KEYS.world])return;
-    scene.scene.setVisible(rendered,SCENE_KEYS.world);
   }
   /** 调试收尾后回到设置里的调试剧情页，保留面板原来的筛选与选中任务。 */
   openDebugStory():void{
@@ -516,6 +509,22 @@ export class StoryUI {
     tabs.forEach(([,label],index)=>writer.add({key:`tab-${index}`,text:label,
       x:35+index*149+51-CONTENT_ORIGIN.x,y:25+85-CONTENT_ORIGIN.y,
       style:{size:20,color:GOLD,anchorX:.5,anchorY:0,width:90,align:'center'}}));
+  }
+
+  /** 页面文字是否落在说明面板盖住的矩形里。 */
+  private descriptionCovers(spec:MenuTextSpec,rect:{x:number;y:number;width:number;height:number}):boolean {
+    return spec.x>=rect.x&&spec.x<=rect.x+rect.width&&spec.y>=rect.y&&spec.y<=rect.y+rect.height;
+  }
+  /** 背包页说明面板盖住的那一栏：左栏或右栏；只让出这一块文字。 */
+  private bagDescriptionCovers(spec:MenuTextSpec):boolean {
+    const layout=bagLayout(),covered=this.descSide==='left'?layout.leftFrame:layout.bagFrame,
+      panel=descriptionPanel(this.descSide==='left'?covered.width:BAG_DESCRIPTION_WIDTH);
+    return this.descriptionCovers(spec,{x:covered.x,y:panel.y,width:panel.width,height:panel.height});
+  }
+  /** GM 调试页的物品详情固定在左侧，高 392；只让出这块矩形里的文字。 */
+  private gmDescriptionCovers(spec:MenuTextSpec):boolean {
+    const panel=descriptionPanel(BAG_DESCRIPTION_WIDTH);
+    return this.descriptionCovers(spec,{x:60,y:panel.y,width:panel.width,height:392});
   }
   /** 底部提示行；设置等页用内容块坐标，系统/存档页用整页菜单坐标。 */
   private renderNoticeText(writer:MenuTextWriter,fullPage=false):void{
