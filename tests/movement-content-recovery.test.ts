@@ -100,3 +100,22 @@ test('only content actors participate in content recovery', () => {
   navigation.register(hero); navigation.register(unit);
   assert.equal(navigation.blockedByContent(hero.shape(), point, hero), false, '普通单位不算内容机关');
 });
+
+test('content checks skip ordinary actors and track registration changes and live obstacle positions', () => {
+  const navigation = new NavigationWorld(map), point = { x: 568, y: 136 };
+  let ordinaryChecks = 0, content = false;
+  const obstacle = { shape: () => ({ collision: flameCollision }), position: () => point, enabled: () => true,
+    content: () => content };
+  for (let index = 0; index < 1000; index++) navigation.register({ shape: () => ({}), position: () => point,
+    enabled: () => true, content: () => { ordinaryChecks++; return false; } });
+  const unregister = navigation.register(obstacle); ordinaryChecks = 0;
+  const shape = { collision: heroCollision };
+  for (let index = 0; index < 100; index++) assert.equal(navigation.blockedByContent(shape, point), false);
+  assert.equal(ordinaryChecks, 0, '反复查询不再访问 1000 个普通角色');
+  content = true; navigation.refreshActor(obstacle);
+  assert.equal(navigation.blockedByContent(shape, point), true);
+  assert.equal(navigation.blockedByContent(shape, { x: 400, y: 300 }), false);
+  point.x = 400; point.y = 300;
+  assert.equal(navigation.blockedByContent(shape, point), true, '机关被剧情移动后仍读实时位置');
+  unregister(); assert.equal(navigation.blockedByContent(shape, point), false);
+});

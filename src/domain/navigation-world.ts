@@ -109,6 +109,7 @@ export class NavigationWorld {
   private readonly terrain?: CollisionMap;
   private readonly water?: Uint8Array;
   private readonly actors = new Set<NavigationActor>();
+  private readonly contentActors = new Set<NavigationActor>();
   private terrainComponents?: { cols: number; rows: number; labels: Int32Array };
   constructor(terrain: CollisionMap | { name: string; bounds: GameRectangle }) {
     this.name = terrain.name;
@@ -122,7 +123,15 @@ export class NavigationWorld {
       for (const cell of this.terrain.water) this.water[cell] = 1;
     }
   }
-  register(actor: NavigationActor): () => void { this.actors.add(actor); return () => this.actors.delete(actor); }
+  register(actor: NavigationActor): () => void {
+    this.actors.add(actor); this.refreshActor(actor);
+    return () => { this.actors.delete(actor); this.contentActors.delete(actor); };
+  }
+  /** 注册用途发生变化时更新机关名单；坐标、形状和显隐继续在查询时实时读取。 */
+  refreshActor(actor: NavigationActor): void {
+    if (this.actors.has(actor) && actor.content?.()) this.contentActors.add(actor);
+    else this.contentActors.delete(actor);
+  }
   /**
    * 地图加载完调用：把 8 px 地形连通块的建表成本移出第一次召唤/落点查询。
    * 不调用也能工作，`terrainRoute` 会在首次查询时惰性建表。
@@ -213,7 +222,7 @@ export class NavigationWorld {
   blockedByContent(shape: NavigationShape, point: Point, ignore?: NavigationActor): boolean {
     const box = collisionAt(shape, point);
     if (!box) return false;
-    for (const actor of this.actors) {
+    for (const actor of this.contentActors) {
       if (actor === ignore || !actor.content?.() || !actor.enabled()) continue;
       if (ignore?.ghost?.() || actor.ghost?.()) continue;
       if (ignore && !blocksActor(ignore, actor)) continue;

@@ -6,6 +6,7 @@ interface MotionSample {
   enabled(): boolean;
   previous: Point;
   current: Point;
+  saved: Point;
 }
 
 /** 保存已完成碰撞的两次位置，只在绘制期间借用人物容器的坐标。 */
@@ -14,10 +15,11 @@ export class MovementInterpolation {
   private stepMs = 1000 / 60;
   private readonly samples = new Map<MovingVisual, MotionSample>();
   private readonly restoredPositions = new Map<MovingVisual, Point>();
+  private readonly moving = new Set<MovingVisual>();
 
   register(visual: MovingVisual, position: () => Point, enabled: () => boolean): void {
     const current = position();
-    this.samples.set(visual, { position, enabled, previous: current, current });
+    this.samples.set(visual, { position, enabled, previous: { ...current }, current: { ...current }, saved: { ...current } });
   }
 
   beginFrame(deltaMs: number): void {
@@ -29,10 +31,13 @@ export class MovementInterpolation {
   completeStep(durationMs: number): void {
     this.stepMs = durationMs;
     this.remainingMs -= durationMs;
-    for (const sample of this.samples.values()) {
-      sample.previous = sample.current;
-      sample.current = sample.position();
-      if (!sample.enabled()) sample.previous = sample.current;
+    for (const [visual, sample] of this.samples) {
+      const current = sample.position();
+      sample.previous.x = sample.current.x; sample.previous.y = sample.current.y;
+      sample.current.x = current.x; sample.current.y = current.y;
+      if (!sample.enabled()) { sample.previous.x = current.x; sample.previous.y = current.y; }
+      if (sample.previous.x !== current.x || sample.previous.y !== current.y) this.moving.add(visual);
+      else this.moving.delete(visual);
     }
   }
 
@@ -49,10 +54,16 @@ export class MovementInterpolation {
 
   apply(): void {
     this.restore();
-    for (const [visual, sample] of this.samples) {
+    const fraction = Math.max(0, Math.min(1, this.remainingMs / this.stepMs));
+    for (const visual of this.moving) {
+      const sample = this.samples.get(visual)!;
       if (!visual.active || !sample.enabled()) continue;
-      this.restoredPositions.set(visual, { x: visual.x, y: visual.y });
-      Object.assign(visual, this.position(visual));
+      const x = sample.previous.x + (sample.current.x - sample.previous.x) * fraction;
+      const y = sample.previous.y + (sample.current.y - sample.previous.y) * fraction;
+      if (visual.x === x && visual.y === y) continue;
+      sample.saved.x = visual.x; sample.saved.y = visual.y;
+      this.restoredPositions.set(visual, sample.saved);
+      visual.x = x; visual.y = y;
     }
   }
 
@@ -68,10 +79,15 @@ export class MovementInterpolation {
     const saved = this.restoredPositions.get(visual);
     if (saved && visual.active) Object.assign(visual, saved);
     this.restoredPositions.delete(visual);
+    this.moving.delete(visual);
     const sample = this.samples.get(visual);
-    if (sample) sample.previous = sample.current = sample.position();
+    if (sample) {
+      const current = sample.position();
+      sample.previous.x = sample.current.x = current.x;
+      sample.previous.y = sample.current.y = current.y;
+    }
   }
 
   remove(visual: MovingVisual): void { this.reset(visual); this.samples.delete(visual); }
-  destroy(): void { this.restore(); this.samples.clear(); }
+  destroy(): void { this.restore(); this.samples.clear(); this.moving.clear(); }
 }

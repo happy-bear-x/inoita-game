@@ -52,7 +52,8 @@ export class MovementWorld {
     const current = this.registrations.get(visual);
     if (current) {
       current.actor.faction = faction ? () => faction : undefined;
-      current.body.setMovable(movable, terrainRecovery); current.body.setImmovable(!movable); return current.body;
+      current.body.setMovable(movable, terrainRecovery); current.body.setImmovable(!movable);
+      this.navigation.refreshActor(current.actor); return current.body;
     }
     const body = new Body(this.scene.physics.world, visual.container);
     visual.container.body = body;

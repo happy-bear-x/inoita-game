@@ -84,6 +84,25 @@ function fixture(terrain: CollisionMap | { name: string; bounds: { x: number; y:
 }
 const empty = { name: 'arena', bounds: { x: 0, y: 0, width: 192, height: 192 } };
 
+test('stationary visuals incur no interpolation writes and moving samples tolerate a reused position object', () => {
+  const interpolation = new MovementInterpolation();
+  const position = { x: 10, y: 20 };
+  let x = 10, y = 20, writes = 0;
+  const visual = { active: true, get x() { return x; }, set x(value: number) { x = value; writes++; },
+    get y() { return y; }, set y(value: number) { y = value; writes++; } };
+  interpolation.register(visual, () => position, () => true);
+  for (let frame = 0; frame < 100; frame++) {
+    interpolation.beginFrame(16); interpolation.completeStep(16); interpolation.apply(); interpolation.restore();
+  }
+  assert.equal(writes, 0);
+  position.x = x = 26;
+  interpolation.beginFrame(24); interpolation.completeStep(16); interpolation.apply();
+  assert.equal(visual.x, 18, '前一位置不跟着复用的对象一起改变');
+  interpolation.restore(); assert.equal(visual.x, 26);
+  interpolation.reset(visual);
+  writes = 0; interpolation.apply(); interpolation.restore(); assert.equal(writes, 0);
+});
+
 test('a fixed content body skips terrain constraints until it gets a movement intention', () => {
   const f = fixture(empty);
   const fixed = f.add({ x: 40, y: 40 }, square, false);
