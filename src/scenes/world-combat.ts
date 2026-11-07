@@ -261,7 +261,7 @@ export class WorldCombat {
   }
   private createConditions():CombatConditions {
     return new CombatConditions({
-      captureResourceCapacities:id=>({maxHealth:this.readResourceCapacity(id,'maxHealth'),maxMana:this.readResourceCapacity(id,'maxMana')}),
+      captureResourceCapacities:id=>this.readResourceCapacities(id),
       onApply:(id,effect,entry)=>this.applyBuffResources(id,effect,entry),
     },{
       // `conditions` 是字段初始化器，此刻构造函数还没给 `this.app` 赋值；这里只捕获 this，
@@ -1826,13 +1826,18 @@ captureStoryActors():SceneActorState[] {
     }
     return {base,passives};
   }
-  private readResourceCapacity(id:string,key:ResourceCapacityKey):number {
-    const inputs=this.resourceCapacityInputs(id);if(!inputs)return 0;
+  private readResourceCapacity(id:string,key:ResourceCapacityKey,inputs=this.resourceCapacityInputs(id)):number {
+    if(!inputs)return 0;
     return this.conditions.readResourceCapacity(id,key,()=>{
       const capacity=Math.max(0,this.conditions.attribute(id,key,inputs.base[key],inputs.passives));
       this.memberOf(id)?.setCombatResourceCapacity(key,capacity);
       return capacity;
     });
+  }
+  private readResourceCapacities(id:string):{maxHealth:number;maxMana:number}{
+    const inputs=this.resourceCapacityInputs(id);
+    if(!inputs)return {maxHealth:0,maxMana:0};
+    return {maxHealth:this.readResourceCapacity(id,'maxHealth',inputs),maxMana:this.readResourceCapacity(id,'maxMana',inputs)};
   }
   private syncCombatResourceLimits(id:string):void {
     const member=this.memberOf(id);if(!member)return;
@@ -2969,8 +2974,7 @@ captureStoryActors():SceneActorState[] {
     for(const id of this.activeParty.slice(0,ACTIVE_PARTY_SLOT_COUNT)){
       const visual=this.visualOf(id);
       if(!visual?.container.active||!visual.container.visible||this.fallen.has(id))continue;
-      this.readResourceCapacity(id,'maxHealth');
-      this.readResourceCapacity(id,'maxMana');
+      this.readResourceCapacities(id);
     }
   }
   afterMovement():void{

@@ -25,7 +25,7 @@ function fixture(){
   const hitResolution=new CombatHitResolution();
   const host=Object.setPrototypeOf({hero:member,app:{battleCatalog:catalog,session:{party:{activeIds:['player']},isInvincible:()=>false}},
     conditions:undefined as unknown as CombatConditions,hitResolution,arena:[],fallen:new Set<string>(),pendingDefeats:new Set<string>(),
-    memberOf:(id:string)=>id==='player'?member:undefined,partyPassives:()=>[],applyStateConsequences:()=>{},
+    memberOf:(id:string)=>id==='player'?member:undefined,partyPassives:()=>[],combatProcs:()=>({zealotRate:0}),applyStateConsequences:()=>{},
     showBuffApplication:()=>assert.fail('enrage has no independent Buff application effect'),
   },WorldCombat.prototype);
   const call=(name:string,...args:unknown[])=>method(name).call(host,...args);
@@ -102,8 +102,10 @@ test('visible party gauges read HP then MP in the presentation phase and hidden 
   const visible=fixture(),reads:string[]=[];
   visible.host.visualOf=()=>({container:{active:true,visible:true}});
   const read=visible.host.readResourceCapacity.bind(visible.host);
-  visible.host.readResourceCapacity=(id:string,key:string)=>{reads.push(key);return read(id,key);};
-  visible.call('readVisiblePartyResources');assert.deepEqual(reads,['maxHealth','maxMana']);
+  let inputReads=0;const inputs=visible.host.resourceCapacityInputs.bind(visible.host);
+  visible.host.resourceCapacityInputs=(id:string)=>{inputReads++;return inputs(id);};
+  visible.host.readResourceCapacity=(id:string,key:string,prepared:unknown)=>{reads.push(key);return read(id,key,prepared);};
+  visible.call('readVisiblePartyResources');assert.deepEqual(reads,['maxHealth','maxMana']);assert.equal(inputReads,1,'血蓝共用一次输入准备');
   visible.cast();assert.equal(visible.player.health,260);
   for(const mode of ['hidden','performance','inactive']){
     const hidden=fixture();hidden.host.visualOf=()=>({container:{active:mode!=='inactive',visible:mode!=='hidden'}});
