@@ -106,3 +106,16 @@ test('learning guardian while a companion owns its textures survives companion d
   invoke('releaseSkillLeases','player');
   assert.equal(textures.size,0,'最后一名使用者释放后回收贴图');
 });
+
+
+test('pending new skills cannot start while previously prepared skills remain available',()=>{
+  const {host,invoke}=fixture();
+  host.preparedSkillIds=new Map([['player',new Set(['dark-strike'])]]);
+  const action=host.app.battleCatalog.skills['dark-strike'].action!;
+  const mana=host.hero.player.mana;
+  assert.equal(invoke('canSelectSkill','player',{id:'guardian-of-darkness',action}),false);
+  assert.equal(invoke('canSelectSkill','player',{id:'dark-strike',action}),true);
+  assert.equal(host.hero.player.mana,mana);
+  host.preparedSkillIds.get('player').add('guardian-of-darkness');
+  assert.equal(invoke('canSelectSkill','player',{id:'guardian-of-darkness',action}),true);
+});

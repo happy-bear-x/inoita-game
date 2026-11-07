@@ -53,3 +53,5 @@ Phaser 场景层：驱动生命周期、转发输入，把 domain、rendering、
 npm run typecheck
 npm test -- tests/scene-assets.test.ts
 ```
+
+- 新学技能在完整素材清单准备成功后才允许手动或自动起手；准备中保留已有技能，技能检查先于扣蓝和冷却。伙伴准备记录发起时的技能签名，迟到结果不能冒充最新配置。
