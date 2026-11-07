@@ -38,7 +38,7 @@ export class DomActionControls extends DomComponent {
   constructor(parent: HTMLElement, skin: ControlSkin, handlers: ActionControlsHandlers, failed: (error: unknown) => void, assets = new DomAssets()) {
     super(parent); this.skin = skin; this.handlers = handlers; this.failed = failed; this.assets = assets;
     Object.assign(this.element.style, { inset: '0', width: '100%', height: '100%' });
-    this.attack = this.control(CONTROL_SIZES.attack.width, [skin.button], skin['button-pressed'], () => handlers.attack());
+    this.attack = this.control(CONTROL_SIZES.attack.width, [skin.button], skin['button-pressed'], () => handlers.attack(), CONTROL_SIZES.attack.height);
     for (let index = 0; index < SHORTCUT_SLOT_COUNT; index++) {
       this.slots.push(this.control(CONTROL_SIZES.slot.width, [skin['slot-shadow'], skin['slot-ring']], skin['slot-pressed'], () => this.activate(index)));
     }
@@ -51,22 +51,22 @@ export class DomActionControls extends DomComponent {
     void image.load(this.assets, file).catch(error => { if (!image.signal.aborted && (error as Error)?.name !== 'AbortError') this.failed(error); });
     return image;
   }
-  private control(width: number, files: string[], pressed: string, action: () => void): Control {
+  private control(width: number, files: string[], pressed: string, action: () => void, height = width): Control {
     let control!: Control;
     const hitRadius = width === CONTROL_SIZES.slot.width ? 40 : width / 2;
     const button: DomButton = new DomButton(this, { enabled: () => !this.element.hidden && control.usable,
       hitTest: event => {
         const bounds = button.element.getBoundingClientRect();
-        const dx = (event.clientX - bounds.left) / bounds.width - .5;
-        const dy = (event.clientY - bounds.top) / bounds.height - .5;
-        return dx * dx + dy * dy <= (hitRadius / width) ** 2;
+        const dx = ((event.clientX - bounds.left) / bounds.width - .5) * width;
+        const dy = ((event.clientY - bounds.top) / bounds.height - .5) * height;
+        return dx * dx + dy * dy <= hitRadius ** 2;
       },
       press: id => this.gate.press(id), release: id => this.gate.release(id), trigger: 'down', action });
-    button.rect({ x: 0, y: 0, width, height: width });
+    button.rect({ x: 0, y: 0, width, height });
     button.element.style.borderRadius = '50%';
     // 图片以按钮中心为原点，按钮自身的命中区域保持原来的圆形范围。
-    const face = new DomComponent(button).rect({ x: width / 2, y: width / 2, width: 0, height: 0 });
-    for (const file of files) this.image(face, file, width);
+    const face = new DomComponent(button).rect({ x: width / 2, y: height / 2, width: 0, height: 0 });
+    for (const file of files) this.image(face, file, width, -width / 2, -height / 2, height);
     const icon = new DomImage(face);
     const fan = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     fan.setAttribute('viewBox', '-40 -40 80 80');
@@ -74,7 +74,7 @@ export class DomActionControls extends DomComponent {
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path'); path.setAttribute('fill', 'rgba(0,0,0,.55)');
     const line = document.createElementNS('http://www.w3.org/2000/svg', 'path'); line.setAttribute('fill', 'none'); line.setAttribute('stroke', '#ffe6a3'); line.setAttribute('stroke-width', '2');
     fan.append(path, line); face.element.appendChild(fan);
-    this.image(face, pressed, width).element.classList.add('dom-control-pressed');
+    this.image(face, pressed, width, -width / 2, -height / 2, height).element.classList.add('dom-control-pressed');
     const badge = new DomComponent(face).rect({ x: 32, y: 23, width: 0, height: 0 });
     this.image(badge, this.skin['quantity-badge'], 38, -19, -20, 40);
     const quantity = document.createElement('span');
