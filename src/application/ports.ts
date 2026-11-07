@@ -57,6 +57,7 @@ export interface StoryContext {
   /** 阵亡界面打开读档页；返回 false 表示当前打不开，阵亡面板留在原地。 */
   openDefeatLoad?:()=>boolean;
   readonly wardrobe: WardrobeCatalog;
+  readonly outfits?: import('../rendering/outfit-pool.ts').OutfitPool;
   readonly battleCatalog: BattleCatalog;
   readonly statusHud:StatusHudSkin;
   readonly menuPanels:MenuPanels;

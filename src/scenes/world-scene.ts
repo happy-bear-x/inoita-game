@@ -427,7 +427,7 @@ export class WorldScene extends Phaser.Scene {
     this.app.releaseStoryPrefetch(map.id);
     for(const id of plan.current.visuals.actorIds)this.projectedActorIds.add(id);
     this.app.clearMapPrefetch();
-    this.wardrobe=new Wardrobe(this,this.app.wardrobe,this.app.items,(ids,signal)=>this.app.content.wardrobePoses(ids,signal));
+    this.wardrobe=new Wardrobe(this,this.app.wardrobe,this.app.items,(ids,signal)=>this.app.content.wardrobePoses(ids,signal),this.app.outfits);
     const outfit=await this.wardrobe.prepare(this.app.session.character!.appearance,this.app.session.bag.equipmentItems(),this.app.session.character!.classId);
     signal.throwIfAborted();this.wardrobe.activate(outfit);this.equippedActor=outfit.actor;
     globalThis.storyDiagnostics?.record('start-phase',{phase:'wardrobe-ready',map:map.id});
@@ -770,7 +770,7 @@ export class WorldScene extends Phaser.Scene {
   }
   private companionWardrobe(id:string):Wardrobe {
     return acquireCompanionWardrobe(this.companionWardrobes,id,
-      ()=>new Wardrobe(this,this.app.wardrobe,this.app.items,(ids,signal)=>this.app.content.wardrobePoses(ids,signal)),
+      ()=>new Wardrobe(this,this.app.wardrobe,this.app.items,(ids,signal)=>this.app.content.wardrobePoses(ids,signal),this.app.outfits),
       {keep:candidate=>this.companionWardrobeInUse(candidate),
         limit:this.activeCompanionCount()+1,
         onEvict:candidate=>this.forgetCompanionWardrobe(candidate)});

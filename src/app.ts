@@ -27,6 +27,7 @@ import type { GameAudio } from './application/game-audio.ts';
 import type { ShopCatalog } from './domain/shop.ts';
 import type { CompanionCatalog } from './domain/party.ts';
 import type { DomUi } from './ui/dom/dom-ui.ts';
+import type { OutfitPool } from './rendering/outfit-pool.ts';
 
 import type { GameMode } from './application/control-state.ts';
 import { ContentLoader } from './application/content-loader.ts';
@@ -99,6 +100,8 @@ export class StoryApp {
     this.residentCombatReady = false;
   }
   wardrobe!: WardrobeCatalog;
+  /** 同一局游戏的合成外观，换地图和剧情舞台共用。 */
+  outfits?: OutfitPool;
   changeEquipment?: (entry: string | undefined, slot: EquipmentSlot, signal?: AbortSignal, memberId?:string) => Promise<string>;
   equipmentAppearance?:(memberId:string)=>import('./domain/content.ts').ActorDefinition|undefined;
   menuPanels!: MenuPanels;

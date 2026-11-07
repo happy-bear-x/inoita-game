@@ -18,6 +18,7 @@ import type { Session } from './domain/session.ts';
 import { newStorySession } from './domain/story-class.ts';
 import { StoryClassScene } from './scenes/story-class-scene.ts';
 import { StoryPresenter } from './rendering/story-presenter.ts';
+import { OutfitPool } from './rendering/outfit-pool.ts';
 import { StoryStageScene } from './scenes/story-stage-scene.ts';
 import type { StoryWorldViewSnapshot } from './scenes/world-scene.ts';
 import { StoryDirector } from './domain/story-director.ts';
@@ -388,6 +389,9 @@ function installSession(session: Session): void {
   app.releaseResidentCombat();
   app.clearMapHistory();
   app.content.clearSessionCaches();
+  app.outfits?.destroy();
+  app.outfits = new OutfitPool({ textures: app.game!.textures, anims: app.game!.anims, game: app.game! },
+    app.wardrobe, app.items, (ids, signal) => app.content.wardrobePoses(ids, signal));
   const campaign = app.campaign, presentation = app.storyInterface;
   app.session = session;
   app.memorySampler?.trackSession(session);
@@ -539,6 +543,7 @@ function returnToMenu(): void {
     app.releaseResidentCombat();
     app.clearMapHistory();
     app.content.clearSessionCaches();
+    app.outfits?.destroy(); app.outfits = undefined;
   };
   const changingScene = scene && (scene.sys.isActive() || scene.sys.isPaused());
   if (changingScene) {
