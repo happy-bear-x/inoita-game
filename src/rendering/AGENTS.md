@@ -22,6 +22,7 @@
 - 沿用现有纹理、depth、filter 的组织方式；Phaser 4 写法以 `.agents/skills/` 和 4.2.1 文档为准。
 - **飞行物方向不变时只更新位置。** `renderFlight` 在 heading 未变时不要 `removeAll` 重画特效层；只有换向才切 clip。
 - **技能补载只加载缺失项。** 用 `missingSceneAssets` 过滤增量；战斗特效自持租约到销毁，补载租约按 owner 持有并在离队/关图时释放。
+- **特效图集动画按全局 AnimationManager 记账。** Phaser 的 `anims`/`textures` 是全游戏共用；纹理最后一个租约释放时，必须按全局动画表删掉所有引用其 Frame 的特效动画。播放前发现帧已失效要删掉重建（`effects.ts`），不能直接播旧动画。
 - 性能敏感的改动先用 `?perf` 在 4002/APK 上量基线，再决定是否新增对象或逐帧逻辑。
 - **特殊怪只在原版的位置标记。** 小地图按全图已生成的 `specialRank` 非零怪物画星标，精英和 Boss 共用 `minimap-special`；选中特殊目标时顶部面板在血条下方画三星。地图角色头顶不加常驻 Boss 图标。
 

@@ -12,12 +12,13 @@ import {CombatCooldownStore} from '../src/domain/combat-cooldowns.ts';
 import {CombatConditions} from '../src/domain/combat-conditions.ts';
 import type {CharacterVisual} from '../src/rendering/characters.ts';
 import {loadSceneAssets,type PendingAsset} from '../src/rendering/scene-assets.ts';
+import {EFFECT_ATLAS_BY_FILE} from '../src/generated/effect-atlas.ts';
 const hook=registerHooks({resolve(specifier,context,next){return specifier==='phaser'
   ?{url:'data:text/javascript,export default {BlendModes:{NORMAL:0,SCREEN:1,ADD:2,MULTIPLY:3},Scene:class{},Physics:{Arcade:{Body:class{}}}}',shortCircuit:true}:next(specifier,context);}});
 const {CombatPresenter}=await import('../src/rendering/combat-presenter.ts');
 const {CombatEffects}=await import('../src/rendering/combat-effects.ts');
 const {WorldCombat}=await import('../src/scenes/world-combat.ts');
-const {effectAssets}=await import('../src/rendering/effects.ts');hook.deregister();
+const {createEffect,effectAssets}=await import('../src/rendering/effects.ts');hook.deregister();
 const catalog=JSON.parse(readFileSync(new URL('../public/content/battle.json',import.meta.url),'utf8')) as BattleCatalog;
 
 interface Animation {key:string;frames:unknown[];frameRate:number;repeat?:number}
@@ -49,11 +50,13 @@ function setup(){
   const load=Object.assign(new EventEmitter(),{
     spritesheet:(key:string,file:string,config:Phaser.Types.Loader.FileTypes.ImageFrameConfig)=>queued.push({kind:'spritesheet',key,file,config}),
     image:(key:string,file:string)=>queued.push({kind:'image',key,file}),
-    start:()=>queueMicrotask(()=>{for(const asset of queued.splice(0))textures.set(asset.key,new Set(Array.from({length:asset.kind==='spritesheet'?Number(asset.config.endFrame)+1:1},(_,i)=>i)));load.emit('complete');}),
+    atlas:(key:string,file:string,atlas:string)=>queued.push({kind:'atlas',key,file,atlas}),
+    start:()=>queueMicrotask(()=>{for(const asset of queued.splice(0))textures.set(asset.key,asset.kind==='atlas'?new Set():new Set(Array.from({length:asset.kind==='spritesheet'?Number(asset.config.endFrame)+1:1},(_,i)=>i)));load.emit('complete');}),
   });
   const scene={events:new EventEmitter(),load,
-    textures:{exists:(key:string)=>textures.has(key),get:(key:string)=>({has:(frame:string)=>textures.get(key)!.has(Number(frame))}),remove:(key:string)=>{removed.push(key);textures.delete(key);}},
-    anims:{exists:(key:string)=>animations.has(key),create:(value:Animation)=>{animations.set(value.key,value);return value;},
+    textures:{exists:(key:string)=>textures.has(key),get:(key:string)=>({has:(frame:string)=>typeof frame==='string'&&!/^\d+$/.test(frame)?true:textures.get(key)!.has(Number(frame))}),remove:(key:string)=>{removed.push(key);textures.delete(key);}},
+    anims:{exists:(key:string)=>animations.has(key),get:(key:string)=>animations.get(key),
+      create:(value:Animation)=>{animations.set(value.key,value);return value;},
       generateFrameNumbers:(_key:string,{start,end}:{start:number;end:number})=>Array.from({length:end-start+1},(_,i)=>i+start),
       remove:(key:string)=>animations.delete(key)},
     add:{container:make,layer:()=>make(),sprite:()=>Object.assign(make(),{
@@ -138,4 +141,39 @@ test('world effects retain actual scene asset leases until their own animation f
   for(const key of ringKeys)assert.equal(f.textures.has(key),true,key);
   world.clear();for(const key of ringKeys){assert.equal(f.textures.has(key),false,key);assert.equal(f.animations.has(key),false,key);}
   assert.equal(new Set(f.removed).size,f.removed.length,'leases release each texture exactly once');
+});
+
+test('图集页释放后，另一个场景创建的特效动画会被清理并在重载后重建',async()=>{
+  const f=setup();
+  const effect=catalog.attackEffects['rampage-burst']!;
+  const clip=effect.clips.default!;
+  const assets=effectAssets({'rampage-burst':effect});
+  const lease=await loadSceneAssets(f.scene,assets,()=>{});
+  // 加载贴图的场景和创建特效的场景不同，但 Phaser 的 anims/textures 是全游戏共用的。
+  const otherScene={...f.scene} as unknown as Phaser.Scene;
+  const first=createEffect(otherScene,clip,0,0,true);
+  const keys=clip.layers.filter(layer=>EFFECT_ATLAS_BY_FILE[layer.file]).map(layer=>`${layer.key}@atlas`);
+  assert.ok(keys.length,'用例需要至少一层图集特效');
+  for(const key of keys)assert.ok(f.animations.has(key),key);
+  const before=new Map(keys.map(key=>[key,f.animations.get(key)]));
+  lease.release();
+  for(const key of keys)assert.equal(f.animations.has(key),false,`页释放后应删除动画：${key}`);
+  const reloaded=await loadSceneAssets(f.scene,assets,()=>{});
+  const second=createEffect(otherScene,clip,0,0,true);
+  for(const key of keys)assert.notEqual(f.animations.get(key),before.get(key),`重载后应重建动画：${key}`);
+  first.destroy();second.destroy();reloaded.release();
+});
+
+test('帧已经失效的特效动画在播放前会被重建',async()=>{
+  const f=setup();
+  const effect=catalog.attackEffects['rampage-burst']!;
+  const clip=effect.clips.default!;
+  const layer=clip.layers.find(value=>EFFECT_ATLAS_BY_FILE[value.file])!;
+  const key=`${layer.key}@atlas`;
+  const lease=await loadSceneAssets(f.scene,effectAssets({'rampage-burst':effect}),()=>{});
+  const stale={key,frames:[{frame:{texture:null}}],frameRate:1} as unknown as Animation;
+  f.animations.set(key,stale);
+  const container=createEffect(f.scene,clip,0,0,true);
+  assert.notEqual(f.animations.get(key),stale,'失效动画应在播放前被替换');
+  container.destroy();lease.release();
 });

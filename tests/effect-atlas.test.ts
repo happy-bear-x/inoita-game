@@ -150,7 +150,7 @@ test('图集页释放时会清掉引用该页的特效动画', () => {
   const animations = new Set(['anim@atlas']);
   const scene = { anims: { exists: (key: string) => animations.has(key), remove: (key: string) => animations.delete(key) } } as unknown as Phaser.Scene;
   rememberEffectAnimation(scene, 'anim@atlas', ['effects-atlas:0', 'effects-atlas:1']);
-  releaseEffectAnimations(scene, 'effects-atlas:1');
+  releaseEffectAnimations(scene.anims, 'effects-atlas:1');
   assert.equal(animations.has('anim@atlas'), false, '页释放后动画不再指向缺失纹理');
-  releaseEffectAnimations(scene, 'effects-atlas:0');
+  releaseEffectAnimations(scene.anims, 'effects-atlas:0');
 });

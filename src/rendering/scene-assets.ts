@@ -35,7 +35,10 @@ function changeLoaders(scene: Phaser.Scene, keys: Iterable<string>, delta: 1 | -
 function poolFor(scene: Phaser.Scene): AssetPool {
   let pool = pools.get(scene.textures);
   if (!pool) {
-    pool = new AssetPool(key => removeTexture(scene, key));
+    // 纹理和动画都属于全游戏共用的管理器；这里不能捕获某个具体 Scene，
+    // 否则清理时会去错误的场景账本里找特效动画。
+    const anims = scene.anims, textures = scene.textures;
+    pool = new AssetPool(key => removeTexture(anims, textures, key));
     pools.set(scene.textures, pool);
   }
   return pool;
@@ -93,10 +96,10 @@ export function missingSceneAssets(scene: Phaser.Scene, assets: readonly Pending
   return assets.filter(asset => assetGap(scene, asset) !== undefined);
 }
 
-function removeTexture(scene: Phaser.Scene, key: string): void {
-  releaseEffectAnimations(scene, key);
-  if (scene.anims.exists(key)) scene.anims.remove(key);
-  if (scene.textures.exists(key)) scene.textures.remove(key);
+function removeTexture(anims: Phaser.Animations.AnimationManager, textures: Phaser.Textures.TextureManager, key: string): void {
+  releaseEffectAnimations(anims, key);
+  if (anims.exists(key)) anims.remove(key);
+  if (textures.exists(key)) textures.remove(key);
 }
 
 function verifyAssets(scene: Phaser.Scene, assets: PendingAsset[]): void {
@@ -138,7 +141,7 @@ export async function loadSceneAssets(scene: Phaser.Scene, assets: PendingAsset[
         // 真正持有纹理的租约（地图/舞台/常驻包）仍然不能删。
         if (holders !== 1 && holders !== loading)
           throw new Error(`贴图 ${asset.key} 仍被其他租约持有，无法补齐缺失帧`);
-        removeTexture(scene, asset.key);
+        removeTexture(scene.anims, scene.textures, asset.key);
       }
       if (!needed.length) { progress(1); return; }
       await new Promise<void>((resolve,reject)=>{

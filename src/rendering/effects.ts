@@ -50,7 +50,15 @@ export function setEffectClip(scene: Phaser.Scene, effect: Phaser.GameObjects.Co
     const sprite = scene.add.sprite(0, 0, textureKey, frameRefs?.[0]?.frame).setOrigin(clip.originX, clip.originY)
       .setScale(clip.mirrorX ? -1 : 1, 1);
     const animationKey = frameRefs?.length ? `${layer.key}@atlas` : layer.key;
-    if (typeof scene.anims?.get === 'function' && scene.anims.exists(animationKey) && !(scene.anims.get(animationKey)?.frames?.length)) {
+    // 页纹理可能在上一次地图关闭时被释放，而动画还留在全局表里；帧已失效就重建，不能直接播放。
+    const existing = typeof scene.anims?.get === 'function' && scene.anims.exists(animationKey)
+      ? scene.anims.get(animationKey) : undefined;
+    const stale = !!existing?.frames.some(frame => {
+      const textureFrame = (frame as unknown as { frame?: { texture?: unknown } }).frame;
+      return !!textureFrame && typeof textureFrame === 'object' && !textureFrame.texture;
+    });
+    if (existing && (!existing.frames.length || stale)) {
+      globalThis.storyDiagnostics?.record('stale-effect-animation', { key: animationKey, texture: textureKey });
       scene.anims.remove(animationKey);
     }
     if (!scene.anims.exists(animationKey)) {
