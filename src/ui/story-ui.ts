@@ -402,22 +402,19 @@ export class StoryUI {
     if(Object.keys(this.app.shops.equipment).length)return;
     this.app.shops.equipment=await this.app.content.shopEquipment();
   }
-  /**
-   * 面板调试入口，只给 `?ui-debug` 的调试场景调用：直接把面板摆到目标状态，跳过点击链路。
-   * `entry` 是会话背包里的物品实例 id。商品说明与交易步骤由 `debugShop` 交给 `ShopPanel`。
-   */
+  /** 测试入口：直接把面板摆到目标状态，跳过点击链路。`entry` 是会话背包里的物品实例 id。 */
   debugDescribe(entry:string,side:'left'|'right'='left'):void{
     if(!this.session?.bag.get(entry))return;
     // `selectItem` 对同一条是「再点一次就收起」，调试条连点两下会把面板关掉，所以先清空再选。
     this.selectedItem=undefined;this.forge=undefined;
     this.show('bag');this.selectItem(entry,side);
   }
-  /** 调试入口：直接打开某件物品的使用弹层。`kind='discard'` 打开丢弃框。 */
+  /** 测试入口：直接打开某件物品的使用弹层。`kind='discard'` 打开丢弃框。 */
   debugUse(entry:string,kind:'use'|'discard'='use'):void{
     if(!this.session?.bag.get(entry))return;
     this.forge=undefined;this.show('bag');this.beginOperation(entry,kind);
   }
-  /** 调试入口：打开商店并停在该店的某个交易步骤；`shopId` 必须是 shops.json 里存在的键。 */
+  /** 测试入口：打开商店并停在该店的某个交易步骤；`shopId` 必须是 shops.json 里存在的键。 */
   debugShop(shopId:string,step:'browse'|'description'|'quantity'|'confirm'|'notice'='browse',kind:'buy'|'sell'='buy',mapId=''):void|Promise<void>{
     const opened=this.openShop(shopId,mapId);
     const apply=()=>{if(step!=='browse')this.shopPanel?.debugTrade(step,kind);};

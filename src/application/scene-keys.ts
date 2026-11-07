@@ -2,9 +2,8 @@
  * 场景键的唯一名字。
  *
  * 注册（各场景的 `super(...)`）、查找（`getScene`／`get`）与启动（`scene.start`／`launch`）
- * 原先各写一份裸字符串，编译器从不参与校验。而这个工程确实会条件注册——`?animation-debug`
- * 与 `?ui-debug` 是按 URL 参数两选一，其余场景在调试模式下根本不装。名字失配的表现是
- * 「某个面板不出现」或某处静默没有反应，而不是报错。
+ * 原先各写一份裸字符串，编译器从不参与校验。名字失配的表现是「某个面板不出现」或某处
+ * 静默没有反应，而不是报错。
  *
  * 放在 `application/` 是因为它要同时被 `scenes/`、`rendering/` 与 `ui/` 引用，
  * 而这三层都允许依赖 `application/`；反向从 `scenes/` 取名字会把 Phaser 与整棵场景树
@@ -18,6 +17,4 @@ export const SCENE_KEYS = {
   formalUi: 'formal-ui',
   controlsUi: 'controls-ui',
   audio: 'audio',
-  uiDebug: 'ui-debug',
-  animationDebug: 'animation-debug',
 } as const;

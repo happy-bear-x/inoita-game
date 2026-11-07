@@ -127,7 +127,7 @@ export class ContentLoader {
         if (!response.ok) throw new Error(`资源暂时无法加载：${file}`);
         const value = await response.json();
         controller.signal.throwIfAborted();
-        // 生产信任路径只核对内容哨兵；dev/test/GM/?validate 仍完整校验。
+        // 生产信任路径只核对内容哨兵；dev/test/GM 仍完整校验。
         if(this.trusted){
           await this.verifyTrusted(file,value,controller.signal);
           return value as T;

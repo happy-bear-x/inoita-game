@@ -22,8 +22,6 @@ import { StoryStageScene } from './scenes/story-stage-scene.ts';
 import type { StoryWorldViewSnapshot } from './scenes/world-scene.ts';
 import { StoryDirector } from './domain/story-director.ts';
 import { FormalUiScene } from './scenes/formal-ui-scene.ts';
-import { UiDebugScene } from './scenes/ui-debug-scene.ts';
-import { AnimationDebugScene } from './scenes/animation-debug-scene.ts';
 import { MenuScene } from './scenes/menu-scene.ts';
 import { AudioScene } from './scenes/audio-scene.ts';
 
@@ -41,7 +39,7 @@ import { createGmActions, type GmActions } from './debug/gm-actions.ts';
 import { DomUi } from './ui/dom/dom-ui.ts';
 
 declare global {
-  /** 地址里带 `?inspect` 时暴露出来的运行实例，浏览器测试用它检查状态。 */
+  /** GM 入口暴露出来的运行实例，浏览器测试用它检查状态。 */
   var storyApp: StoryApp | undefined;
   var render_game_to_text: (() => string) | undefined;
   /** GM 打开时才挂上的调试动作层，agent 经 CDP 驱动它（与游戏内面板同一份实现）。 */
@@ -101,20 +99,17 @@ const domUi = new DomUi();
 ui.onQuestPopup = kind => app.audio?.ui(kind === 'start' ? 'questStart' : 'questComplete');
 
 const addressParams = new URLSearchParams(location.search);
-/** inspect 暴露运行实例；两个 debug 入口直接启动对应的独立检查场景。 */
 /**
  * GM（调试）开关：持久值来自本地存储（标题页点击右下角版本号切换）。
  * `?gm` 只在**本次会话**打开，不写存储——否则谁试一次地址参数，就悄悄改了用户的机器。
- * 它同时意味着 `inspect`：agent 用 `?gm` 一个参数就能拿到面板与控制台钩子。
+ * GM 入口会暴露运行实例与控制台钩子：agent 用 `?gm` 一个参数就能读状态。
  */
 const gmFromAddress = addressParams.has('gm');
 const gmOn = (): boolean => gmFromAddress || app.gmMode.on;
-// 生产构建信任构建期校验；?gm、持久 GM 或 ?validate 强制走完整校验。
+// 生产构建信任构建期校验；?gm 或持久 GM 强制走完整校验。
 app.content.trusted = trustedContentNow() && !gmOn();
 
-const inspect = gmFromAddress || addressParams.has('inspect') || addressParams.has('ui-debug') || addressParams.has('animation-debug');
-const uiDebug = addressParams.has('ui-debug');
-const animationDebug = addressParams.has('animation-debug');
+const inspect = gmFromAddress;
 
 let modeRequest = new AbortController();
 /** 启动阶段上报：卡住时诊断日志里的最后一条就是现场。 */
@@ -162,7 +157,7 @@ let menuPreparation: MenuPreparation | undefined;
 /** 当前模式对应的场景键。写成 `Record<GameMode, …>`：新增模式时必须在这里表态。 */
 const MODE_SCENES:Record<GameMode,string>={menu:SCENE_KEYS.menu,'class-select':SCENE_KEYS.classSelect,game:SCENE_KEYS.world};
 function currentScene(): Phaser.Scene | undefined {
-  return app.game?.scene.getScene(animationDebug ? SCENE_KEYS.animationDebug : MODE_SCENES[app.mode]);
+  return app.game?.scene.getScene(MODE_SCENES[app.mode]);
 }
 
 function afterFirstPaint(work: () => void): void {
@@ -250,7 +245,7 @@ function prepareStory(signal: AbortSignal): Promise<void> {
     signal.throwIfAborted();
     recordStartPhase('story-debug-ready');
     // 生产构建信任构建期校验：不重复跑语义校验，也不为校验 fetch 281 张剧情地图。
-    // dev/测试/?gm/?validate 仍走完整路径。
+    // dev/测试/?gm 仍走完整路径。
     if (!app.content.trusted) {
       validateMenuClasses(panels, battle);
       validateWardrobe(wardrobe, items, battle);
@@ -608,10 +603,7 @@ function boot(): void {
   app.openShop=(shopId,mapId)=>app.storyUI.openShop(shopId,mapId);
   ui.onStateChange = () => { if(app.game)configureCanvas(app.game); app.storyUI.sync(); worldScene()?.syncHud(); domUi.setOccluded(uiOcclusion(ui)); };
   ui.onMenu = returnToMenu;
-  ui.onResetInput = () => {
-    if (animationDebug) (currentScene() as AnimationDebugScene | undefined)?.resetInput();
-    else worldScene()?.resetInput();
-  };
+  ui.onResetInput = () => { worldScene()?.resetInput(); };
   const game = new Phaser.Game({
     type: Phaser.AUTO, parent: 'game', backgroundColor: '#101d24',
     pixelArt: true, roundPixels: true,
@@ -648,23 +640,16 @@ function boot(): void {
     game.events.on(UI_EVENTS.select,()=>app.audio?.ui('select'));
     game.scene.add(SCENE_KEYS.audio, new AudioScene(app), true);
     game.scene.add(SCENE_KEYS.controlsUi, new ControlsScene(), true);
-    // `?ui-debug` 直接进面板调试场景：不装标题菜单、职业选择和世界场景，
-    // 因此地图、人物移动、剧情演出都不会启动。
-    if (animationDebug) game.scene.add(SCENE_KEYS.animationDebug, new AnimationDebugScene(app), true);
-    else if (uiDebug) game.scene.add(SCENE_KEYS.uiDebug, new UiDebugScene(app), true);
-    else {
-      game.scene.add(SCENE_KEYS.world, new WorldScene(app), false);
-      game.scene.add(SCENE_KEYS.storyStage, new StoryStageScene(app), false);
-      game.scene.add(SCENE_KEYS.classSelect, new StoryClassScene(app), false);
-      game.scene.add(SCENE_KEYS.menu, new MenuScene(app), true);
-      game.scene.add(SCENE_KEYS.formalUi,new FormalUiScene(app),true);
-    }
+    game.scene.add(SCENE_KEYS.world, new WorldScene(app), false);
+    game.scene.add(SCENE_KEYS.storyStage, new StoryStageScene(app), false);
+    game.scene.add(SCENE_KEYS.classSelect, new StoryClassScene(app), false);
+    game.scene.add(SCENE_KEYS.menu, new MenuScene(app), true);
+    game.scene.add(SCENE_KEYS.formalUi,new FormalUiScene(app),true);
     lifecycle();
   });
   if (inspect) {
     globalThis.storyApp = app;
     globalThis.render_game_to_text = () => {
-      if (animationDebug) return JSON.stringify((currentScene() as AnimationDebugScene | undefined)?.snapshot() ?? { ready: false });
       // GM 打开时返回与面板、上报同一份摘要：agent 读到的就是人看到的。
       if (app.gm) return JSON.stringify({ ...app.gm.digest(), coordinates: 'map pixels; x right, y down; player position is foot anchor' });
       const scene = app.mode === 'game' ? worldScene() : undefined;

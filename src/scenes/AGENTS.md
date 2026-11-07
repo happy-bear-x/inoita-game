@@ -12,8 +12,6 @@ Phaser 场景层：驱动生命周期、转发输入，把 domain、rendering、
 - `formal-ui-scene.ts`：正式 UI 场景，承载 HUD、背包装备、商店等菜单面板。
 - `audio-scene.ts`：音频设置页；跨场景常驻，切换场景不打断播放。
 - `controls-scene.ts`：操作设置页，键位与控件布局。
-- `animation-debug-scene.ts`：`?animation-debug` 进入的动画调试场景。
-- `ui-debug-scene.ts`：`?ui-debug` 进入的面板调试场景。
 
 ## 规则
 
@@ -33,8 +31,8 @@ Phaser 场景层：驱动生命周期、转发输入，把 domain、rendering、
 - 喝泉水的回血回蓝和技能点结算调用 `domain/springs.ts` 的 `applySpringRecovery`、`grantSpringSkillPoint`；正面状态按存活上阵队员逐个施加，负面或攻防混合状态只给当前操控者。
 - **任务目标完成提示走 `showInstant`。** 只在任务簿版本变化时对比状态，只提示 `completion: 'all'` 的可见任务进入待交付；对话/剧情任务已有任务窗，不重复提示。
 - 场景键从 `SCENE_KEYS`（`src/application/scene-keys.ts`）取，构造、查找、启动都用它，不写裸字符串。
-- 新增场景在 `src/main.ts` 注册，并接上对应模式与 URL 参数的启动分支。
-- **调试场景的文字也走 DOM。** `UiDebugScene`、`AnimationDebugScene` 和游戏内 GM 面板用 `MenuTextLayer` 或 `MenuTextWriter` 输出文字；按钮只留共用皮肤和命中区，角色头顶的调试标签用 `worldToScreen` 跟随相机。
+- 新增场景在 `src/main.ts` 注册，并接上对应的模式。
+- **GM 面板的文字也走 DOM。** 游戏内 GM 面板用 `MenuTextLayer` 或 `MenuTextWriter` 输出文字；按钮只留共用皮肤和命中区，角色头顶的调试标签用 `worldToScreen` 跟随相机。
 - 跨场景状态通过 `src/application/ports.ts` 的能力接口传递，不挂全局变量或模块级可变状态。
 - 云存档页从存档槽页右上角进入，返回和 Escape 都回存档槽页；忙碌时只禁用云操作，返回始终可用，离开页面 abort 请求。账号/密码框直接盖在面板对应行上，输入框有焦点时场景键盘处理器让路；确认框、改名和修改密码表单打开时隐藏输入覆盖层。
 - 云存档续期只在打开云页时检查：token 剩余不足 7 天才发 `/__cloud/refresh`，不在游戏循环或后台定时。

@@ -53,10 +53,8 @@ import { InputRouter } from './application/input-router.ts';
  *    `changeEquipment`、`equipmentAppearance`、`preparePartyMember`、`releasePartyPreview`、
  *    `revivePartyMember`、`openCrafting`、`openShop`。
  * 5. **由场景填、不由 main.ts 填**：`audio` 由音效场景启动时写入；`uiAssets` 由正式界面场景
- *    或 UI 调试场景各登记一份；`useRecoveryItem` 由 `WorldCombat` 进入战斗时写入，
+ *    登记；`useRecoveryItem` 由 `WorldCombat` 进入战斗时写入，
  *    **战斗结束时清回 `undefined`**——有值与否不是单调的。
- * 6. `?ui-debug` 走另一条装配路径（`ui-debug-scene.ts`），自己写 `storyClasses`、`session`、
- *    `changeEquipment`、`useRecoveryItem`、`uiAssets`、`returnToMenu`，不经过第 2~4 组。
  */
 export class StoryApp {
   /** 全局键盘路由。场景只在启动时桥接一次原始事件，按键按作用域只交给一层。 */

@@ -84,8 +84,7 @@ export class ShopPanel {
   }
   /**
    * 面板调试入口：直接摆到某个交易步骤，跳过「点货架格买、点背包格卖」的点击链路。
-   * 只给 `?ui-debug` 的调试场景用。可用堆叠商品的 `quantity` 步骤会自动挑一件能买多件的商品；
-   * `notice` 则挑第一件不可出售的物品。
+   * 可用堆叠商品的 `quantity` 步骤会自动挑一件能买多件的商品；`notice` 则挑第一件不可出售的物品。
    */
   debugTrade(step:'description'|'quantity'|'confirm'|'notice',kind:'buy'|'sell'='buy'):void{
     if(kind==='buy'){

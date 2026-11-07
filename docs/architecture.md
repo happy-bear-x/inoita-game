@@ -107,7 +107,7 @@
 
 `ContentLoader` 使用 `content-validation.ts` 校验已加载的目录。`tools/validate-content.mjs` 额外检查完整目录、图片、音频及跨文件关系；同一入口也接在 Vite 开发服务（4003）的启动和内容变化上。剧情引用与每条分支的演员、音频、路线、并行冲突由专用校验器检查。`tools/build.mjs` 先校验 `public/`，构建到临时目录，对构建前后的 `public/assets` 与 `public/content` 做内容哈希并比对，再把 `.build-meta.json` 写进产物、校验构建结果并替换 `dist/`。输出使用相对 base 与 `bundles/`，部署在站点根路径；公共资源 URL 在加载边界追加内容版本，供静态服务长缓存。
 
-内容运行时：`tools/content-build.ts` 在构建期把 `public/content` 转成运行时内容目录——全部 JSON minify；`battle.json` 的 90 个技能把 `details` 编译成 `display` 模板 + 每级 `displayValues`，全部 236 个技能/敌人动作预计算 `requiresTarget/effectNames/soundNames/summonNames/eventFrames`；`shops.equipment` 拆到 `shops-equipment.json`，并省略与 `character-stats.gradeVariants` 重复的 `variants`；`wardrobe.poses` 按动作 ID 拆成 `content/wardrobe/poses/*.json`，运行时 `Wardrobe.prepare()` 只取当前武器/职业实际用到的十几条，`pose-index.json` 供 dev/GM 完整校验。`tools/build.mjs` 用它替换 `dist/content` 并计算 `contentVersion`，同时在 `dist/content-manifest.json` 写生产内容哨兵（内容版本与 `campaign.json`/`battle.json` 的必需顶层键，放在 `content/` 外，不参与内容哈希）。生产构建注入 `__STORY_TRUST_CONTENT__` 和页面内容版本；`ContentLoader` 的信任路径只读这份清单，核对版本和本次文件的必需顶层键，不重算整份内容哈希，不匹配就明确失败并提示刷新/更新；开发服务、Node 测试、`?gm` 与 `?validate` 仍执行完整 `parseX` 和跨文件校验。构建期 `validateContent` 是唯一权威校验入口，运行时不再重复。
+内容运行时：`tools/content-build.ts` 在构建期把 `public/content` 转成运行时内容目录——全部 JSON minify；`battle.json` 的 90 个技能把 `details` 编译成 `display` 模板 + 每级 `displayValues`，全部 236 个技能/敌人动作预计算 `requiresTarget/effectNames/soundNames/summonNames/eventFrames`；`shops.equipment` 拆到 `shops-equipment.json`，并省略与 `character-stats.gradeVariants` 重复的 `variants`；`wardrobe.poses` 按动作 ID 拆成 `content/wardrobe/poses/*.json`，运行时 `Wardrobe.prepare()` 只取当前武器/职业实际用到的十几条，`pose-index.json` 供 dev/GM 完整校验。`tools/build.mjs` 用它替换 `dist/content` 并计算 `contentVersion`，同时在 `dist/content-manifest.json` 写生产内容哨兵（内容版本与 `campaign.json`/`battle.json` 的必需顶层键，放在 `content/` 外，不参与内容哈希）。生产构建注入 `__STORY_TRUST_CONTENT__` 和页面内容版本；`ContentLoader` 的信任路径只读这份清单，核对版本和本次文件的必需顶层键，不重算整份内容哈希，不匹配就明确失败并提示刷新/更新；开发服务、Node 测试与 `?gm` 仍执行完整 `parseX` 和跨文件校验。构建期 `validateContent` 是唯一权威校验入口，运行时不再重复。
 
 菜单图片同样分两批：`gameMenuImageGroups()` 把菜单框架、职业预览和立绘放在 `core`，323 个物品图标与 90 个技能图标放进 `extra`。开局前只等 `core`，`extra` 在世界加载期间后台补；补完后 `StoryUI.refreshMenuAssets()` 重画已打开的菜单。素材校验把 `core` 与 `extra` 合起来作为完整清单。
 
@@ -131,7 +131,7 @@
 
 ## 调试与验证边界
 
-`?animation-debug` 直接进入独立动画场景，不创建剧情会话；它复用人物、换装、摇杆和移动世界。`?ui-debug` 进入界面检查场景。`render_game_to_text()` 提供当前场景的文本状态，用于诊断；入口与输出以 `main.ts` 和对应调试场景为准。
+`?gm` 打开的 GM 入口会暴露运行实例与 `render_game_to_text()`，提供当前场景的文本状态用于诊断；输出以 `main.ts` 和 `gm-actions.ts` 为准。
 
 单元测试验证规则及轻量表现替身，内容校验验证文件和契约。二者都不能证明真机画面、动作观感、实际音频和长时间资源占用。按根 `AGENTS.md` 选择相关用例；界面与真机验收使用 [4002 游戏入口](https://catgo.online:4002/)，用户明确要求后才运行浏览器自动化。
 
