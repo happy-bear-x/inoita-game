@@ -132,7 +132,8 @@ export class UiSurface {
     const result=this.scene.add.image(x,y,ref.key,ref.frame).setOrigin(0);
     const fit=portraitFit({width:result.width,height:result.height},{width,height},anchorX,anchorY);
     if(fit.cropWidth<result.width||fit.cropHeight<result.height)result.setCrop(fit.cropX,fit.cropY,fit.cropWidth,fit.cropHeight);
-    result.setScale(fit.scale);
+    // setCrop 保留被裁区域在原图中的位置，要把裁剪区的左上角对回框的左上角。
+    result.setPosition(x-fit.cropX*fit.scale,y-fit.cropY*fit.scale).setScale(fit.scale);
     parent.add(result);return result;
   }
   text(value: string, x: number, y: number, width=0, size=22, color=GOLD, parent=this.root): Phaser.GameObjects.Text {
