@@ -20,7 +20,7 @@ const {CombatPresenter}=await import('../src/rendering/combat-presenter.ts');hoo
 const catalog=JSON.parse(readFileSync(new URL('../public/content/battle.json',import.meta.url),'utf8')) as BattleCatalog;
 
 class Sprite extends FakeSprite {
-  anims={accumulator:0,create:()=>{},stop:()=>{}};repeat=0;
+  anims={accumulator:0,create:()=>({destroy(){}}),stop:()=>{}};repeat=0;
   override play(config:{repeat:number}){this.repeat=config.repeat;return this;}
 }
 class Effect extends EventEmitter {

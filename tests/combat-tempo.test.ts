@@ -22,9 +22,10 @@ const knight=catalog.classes.find(character=>character.id==='dark-knight')!;
 const caster:Combatant={id:'knight',team:'party',position:{x:0,y:0},bounds:{x:0,y:0,width:16,height:16}};
 
 class Sprite extends FakeSprite {
+  scene={};
   stopped=false;
   definitions:{frames:{frame:number}[];frameRate:number}[]=[];
-  anims={create:(definition:{frames:{frame:number}[];frameRate:number})=>this.definitions.push(definition),
+  anims={create:(definition:{frames:{frame:number}[];frameRate:number})=>{this.definitions.push(definition);return {...definition,destroy(){}};},
     stop:()=>{this.stopped=true;},timeScale:1,accumulator:0};
 }
 

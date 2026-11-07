@@ -48,6 +48,7 @@ class Sprite extends FakeSprite {
     currentAnim: { frames: [] as Frame[] }, currentFrame: { index: 1, frame: 0 },
     create: (definition: { frames: { frame: number }[] }) => {
       this.anims.currentAnim = { frames: definition.frames.map((frame, index) => ({ ...frame, index: index + 1 })) };
+      return {...this.anims.currentAnim,destroy(){}};
     },
     setCurrentFrame: (frame: Frame) => {
       this.anims.currentFrame = frame;

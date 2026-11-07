@@ -44,13 +44,14 @@ class Sprite extends FakeSprite {
   stopped=false;
   visible=true;
   definitions:{frames:{frame:number}[];frameRate:number}[]=[];
-  anims={create:(definition:{frames:{frame:number}[];frameRate:number})=>this.definitions.push(definition),
+  anims={create:(definition:{frames:{frame:number}[];frameRate:number})=>{this.definitions.push(definition);return {...definition,destroy(){}};},
     stop:()=>{this.stopped=true;},timeScale:1,accumulator:0};
   override setVisible(value:boolean){this.visible=value;return this;}
+  setPosition(){return this;}
 }
 function rendering(actor=profile().actor){
   const character={actor,entity:{id:'source',actor:actor.id},layers:[],clipName:null,
-    container:{active:true,x:0,y:0,addAt:()=>{}}} as unknown as CharacterVisual;
+    container:{active:true,x:0,y:0,addAt:()=>{},getIndex:()=>0,moveTo:()=>{}}} as unknown as CharacterVisual;
   const timers:{delay:number;callback:()=>void;removed:boolean;remove:()=>void}[]=[];
   const scene={events:new EventEmitter(),add:{sprite:()=>new Sprite()},anims:{exists:()=>false,create:()=>{},generateFrameNumbers:()=>[]},
     time:{delayedCall:(delay:number,callback:()=>void)=>{
@@ -126,10 +127,11 @@ test('selection happens once after normal approach and area dispatch survives th
 test('cancelled area callbacks cannot run in the next attack and cancelling playback removes its timer',()=>{
   const run=controllerRun();run.controller.requestTarget(enemy.id);
   const previous=run.plays[0],callback=run.areaCallbacks[0],sprite=run.sprite(),timer=run.timers[0];
+  const oldCompletion=sprite.listeners('animationcomplete'),oldUpdates=sprite.listeners('animationupdate');
   run.controller.cancel();run.controller.requestTarget(enemy.id);
-  callback();previous.frame(4);previous.finish();sprite.emit('animationcomplete');timer.callback();
+  callback();previous.frame(4);previous.finish();for(const finish of oldCompletion)finish();timer.callback();
   assert.equal(run.areas.length,0);assert.equal(run.controller.snapshot().state,'attacking');
-  assert.equal(timer.removed,true);assert.equal(sprite.listenerCount('animationupdate'),0);
+  assert.equal(timer.removed,true);assert.ok(oldUpdates.every(update=>!sprite.listeners('animationupdate').includes(update)));
   run.advance(4);assert.equal(run.areas.length,1);
 });
 

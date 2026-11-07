@@ -27,7 +27,10 @@ const animations=new Map<string,Definition>();
 /** 动画状态替身：记录 `stop` 次数，收尾有没有动过这批图层由它判定。 */
 class State {
   isPlaying=false;accumulator=0;timeScale=1;currentFrame:{index:number}={index:1};stops=0;
-  create(definition:Definition):Definition{animations.set(definition.key,definition);return definition;}
+  create(definition:Definition):Definition & {destroy():void}{
+    const animation={...definition,destroy(){animations.delete(definition.key);}};
+    animations.set(definition.key,animation);return animation;
+  }
   stop():void{this.isPlaying=false;this.stops++;}
 }
 /**
@@ -39,7 +42,7 @@ class Display extends EventEmitter {
   active=true;visible=true;alpha=1;key:string;frame:number|undefined;
   anims:State|undefined=new State();
   constructor(key:string){super();this.key=key;}
-  setDepth(){return this;}setOrigin(){return this;}setBlendMode(){return this;}setScale(){return this;}
+  setDepth(){return this;}setOrigin(){return this;}setBlendMode(){return this;}setScale(){return this;}setPosition(){return this;}
   setVisible(value:boolean){this.visible=value;return this;}
   setAlpha(value:number){this.alpha=value;return this;}
   setTexture(key:string,frame?:number){this.key=key;this.frame=frame;return this;}
@@ -49,6 +52,8 @@ class Display extends EventEmitter {
 class Container extends Display {
   children:Display[]=[];
   addAt(child:Display,index:number):this{this.children.splice(index,0,child);return this;}
+  getIndex(child:Display){return this.children.indexOf(child);}
+  moveTo(child:Display,index:number){this.children.splice(this.children.indexOf(child),1);this.children.splice(index,0,child);return this;}
 }
 function setup(){
   const scene={events:new EventEmitter(),
@@ -68,11 +73,12 @@ test('动作收尾时画面已被换过就放手，不碰接手者的图层',()=
   assert.equal(character.clipName,'attack-south');
   assert.ok(started.length>0&&started.every(layer=>layer.anims!.isPlaying));
 
-  // 剧情投影、换装或另一个动作重建图层：起手那批 Sprite 被销毁，画面归接手者。
+  // 新动作取得新的图层批次，即使 Sprite 复用，旧动作也不能停掉接手者。
   setCharacterClip(scene,character,'idle-south');
   const takenOver=asDisplay(character.layers);
-  assert.notDeepEqual(takenOver,started);
-  assert.ok(started.every(layer=>!layer.active));
+  assert.notEqual(takenOver,started);
+  assert.equal(takenOver[0],started[0]);
+  assert.ok(started.every(layer=>layer.active));
   const stopsBefore=takenOver.map(layer=>layer.anims!.stops);
 
   cleanup();
@@ -85,8 +91,9 @@ test('画面没有被换过时，动作收尾照旧停掉自己起的动画',()=
   const {character,presenter}=setup();
   const cleanup=presenter.play({caster,facing:'south',basicAttack:attack()});
   const layers=asDisplay(character.layers);
+  const stops=layers.map(layer=>layer.anims!.stops);
   cleanup();
-  assert.ok(layers.every(layer=>layer.anims!.stops===1&&!layer.anims!.isPlaying),'动作结束后画面不再自走');
+  assert.ok(layers.every((layer,index)=>layer.anims!.stops===stops[index]+1&&!layer.anims!.isPlaying),'动作结束后画面不再自走');
   assert.equal(character.clipName,'attack-south','收尾只停动画，切回待机仍由 afterMovement 负责');
 });
 
@@ -97,19 +104,20 @@ test('素材播完后画面交给待机，动作动画不再写回攻击素材',
   const idleFrames=character.actor.clips['idle-south']!.frames;
   setCharacterClip(scene,character,'attack-south',true);
   const layers=asDisplay(character.layers);
+  const stops=layers.map(layer=>layer.anims!.stops);
   assert.ok(layers.every(layer=>layer.anims!.isPlaying));
 
   // 计数还在素材内：画面照常由动作动画画，待机不介入。
   showIdlePose(character,'south',sourceFrames-1,sourceFrames);
-  assert.ok(layers.every(layer=>layer.anims!.isPlaying&&layer.anims!.stops===0));
+  assert.ok(layers.every((layer,index)=>layer.anims!.isPlaying&&layer.anims!.stops===stops[index]));
 
   // 计数达到素材帧数：画面交给待机，动作动画必须停下，否则它会按自己的节奏写回攻击末帧。
   showIdlePose(character,'south',sourceFrames,sourceFrames);
-  assert.ok(layers.every(layer=>!layer.anims!.isPlaying&&layer.anims!.stops===1));
+  assert.ok(layers.every((layer,index)=>!layer.anims!.isPlaying&&layer.anims!.stops===stops[index]+1));
   assert.ok(layers.every(layer=>layer.key==='enemy-berkel-soldier-1-idle-south-normal'&&layer.frame===sourceFrames%idleFrames));
 
   // 后续逻辑帧继续换待机画面，不再重复停播。
   showIdlePose(character,'south',sourceFrames+1,sourceFrames);
-  assert.ok(layers.every(layer=>layer.anims!.stops===1&&layer.frame===(sourceFrames+1)%idleFrames));
+  assert.ok(layers.every((layer,index)=>layer.anims!.stops===stops[index]+1&&layer.frame===(sourceFrames+1)%idleFrames));
   assert.ok(cycleFrames>sourceFrames,'这条用例依赖末帧补位把周期撑得比素材长');
 });

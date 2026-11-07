@@ -8,7 +8,7 @@ import {skillClipName,skillRepeatSkippedFrames,skillSequence} from '../domain/sk
 import {attackSequence} from '../domain/basic-attack.ts';
 import {attackCycleFrames} from '../domain/combat-tempo.ts';
 import type {Point} from '../domain/navigation.ts';
-import {clipMirrored,isCurrentLayers,playCharacterSequence,setCharacterClip,showIdlePose,type CharacterVisual} from './characters.ts';
+import {clipMirrored,isCurrentLayers,playCharacterLayerSequence,playCharacterSequence,setCharacterClip,showIdlePose,type CharacterVisual} from './characters.ts';
 import {createEffect,setEffectClip} from './effects.ts';
 import {effectLayerTextureKeys} from './combat-asset-descriptors.ts';
 import {CombatEffects} from './combat-effects.ts';
@@ -50,8 +50,7 @@ export class CombatPresenter {
     const layers=character.layers;
     return ()=>{
       this.clearPose();this.screenTint?.setVisible(false);
-      // 动作还没收尾，画面就被换掉过（剧情投影、换装、别的动作接手）：起手时那批 Sprite 已销毁，
-      // 收尾只能放手——放它们会读到 undefined 的 anims 并把异常抛进主循环，停新图层的动画则会打断接手者。
+      // 数组身份代表起手的动作批次；Sprite 已由新动作接手时，旧收尾放手。
       if(!isCurrentLayers(character,layers))return;
       for(const {layer,visible} of hidden)layer.setVisible(visible);
       for(const layer of layers)layer.anims.stop();
@@ -114,13 +113,10 @@ export class CombatPresenter {
     const flipped=clipMirrored(clip,character.actor,character.entity);
     for(const [index,sprite]of character.layers.entries()){
       const source=clip.layers[index];if(!source)continue;
-      const key=`${source.key}#${name}#action`;
-      if(!sprite.anims.exists(key))sprite.anims.create({key,frames:sequence.map(frame=>({key:source.key,frame})),
-        frameRate:1000/frameDurationMs,repeat:0});
-      // 各图层由 Phaser 依次更新，保留各自进度，避免后更新的武器层多走一帧。
+      // 各图层由 Phaser 依次更新；替换局部动画前先保存各自进度。
       const startFrame=Math.max(0,(sprite.anims.currentFrame?.index??1)-1);
       const elapsed=sprite.anims.accumulator,nextTick=sprite.anims.nextTick;
-      sprite.play({key,startFrame});
+      playCharacterLayerSequence(this.scene,character,sprite,source,sequence,frameDurationMs,startFrame);
       sprite.anims.accumulator=elapsed;sprite.anims.nextTick=nextTick;
       sprite.setOrigin(clip.originX,clip.originY).setScale(flipped?-1:1,1);
     }

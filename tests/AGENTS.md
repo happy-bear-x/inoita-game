@@ -47,3 +47,5 @@ npm run test:standalone
 - 持久标记预校验失败不通知或修改原会话；会话销毁后迟到结果不安装，退出恢复原位置后才恢复保存，并拒绝并发退出。
 
 - 状态表现优化由 `combat-conditions.test.ts`、`world-skill-cache.test.ts` 和 `buff-loop-renderer.test.ts` 验证名单失效、暂停颜色、显隐、倒下/复活、恢复与纹理迟到；`enrage-runtime.test.ts` 验证血蓝共用输入且保留读取时序；`combat.test.ts` 验证已解析普攻距离随换装更新。
+
+- 战斗性能回归以实际调用次数和生命周期为依据：连续攻击复用显示对象和动画，技能及增益反应描述在输入变化后刷新，寻路预判遵守快照与预算。调用次数减少与 Node 耗时不能替代同设备、同存档的帧率验收。

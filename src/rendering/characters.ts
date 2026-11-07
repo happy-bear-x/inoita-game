@@ -6,6 +6,8 @@ import { blendModeOf } from './blend-modes.ts';
 import { applyCharacterVisibility } from './character-visibility.ts';
 import { rememberEffectAnimation } from './effect-animations.ts';
 
+import type { AssetLease } from '../application/assets.ts';
+import { retainLoadedSceneAssets } from './scene-assets.ts';
 export const PLAYER_MOVE_SPEED = 8 * 1000 / 60;
 
 export interface CharacterVisual {
@@ -17,6 +19,58 @@ export interface CharacterVisual {
   /** 当前动画对应的朝向；动画名统一以 -<朝向> 结尾。 */
   facing: Facing | null;
   flipped?: boolean;
+}
+
+interface CharacterSequence {
+  actor: ActorDefinition;
+  texture: Phaser.Textures.Texture | undefined;
+  textureKey: string;
+  frames: readonly number[];
+  frameDurationMs: number;
+  animation: Phaser.Animations.Animation;
+  lease?: AssetLease;
+}
+
+const characterSequences = new WeakMap<Phaser.GameObjects.Sprite, CharacterSequence>();
+const sequenceCleanupInstalled = new WeakSet<Phaser.GameObjects.Sprite>();
+const CHARACTER_SEQUENCE_KEY = 'character-action';
+
+function releaseCharacterSequence(sprite: Phaser.GameObjects.Sprite): void {
+  const cached = characterSequences.get(sprite);
+  if (!cached) return;
+  characterSequences.delete(sprite);
+  cached.animation.destroy();
+  cached.lease?.release();
+}
+
+/** 每个 Sprite 只保留最近一套动作序列；待机期间保留，换外观或销毁时释放。 */
+export function playCharacterLayerSequence(scene: Phaser.Scene, character: CharacterVisual,
+  sprite: Phaser.GameObjects.Sprite, layer: AnimationClip['layers'][number], sequence: readonly number[],
+  frameDurationMs: number, startFrame = 0): void {
+  const texture = scene.textures?.get(layer.key);
+  let cached = characterSequences.get(sprite);
+  const same = cached?.actor === character.actor && cached.texture === texture && cached.textureKey === layer.key
+    && cached.frameDurationMs === frameDurationMs && cached.frames.length === sequence.length
+    && sequence.every((frame, index) => cached!.frames[index] === frame);
+  if (!same) {
+    // 合成外观由 OutfitPool 持有；普通源纹理由 AssetPool 保留到局部动画释放。
+    const lease = layer.file && scene.textures ? retainLoadedSceneAssets(scene, [layer.key]) : undefined;
+    try {
+      releaseCharacterSequence(sprite);
+      const animation = sprite.anims.create({ key: CHARACTER_SEQUENCE_KEY,
+        frames: sequence.map(frame => ({ key: layer.key, frame })), frameRate: 1000 / frameDurationMs, repeat: 0 });
+      if (!animation) throw new Error(`角色动作序列创建失败：${layer.key}`);
+      cached = { actor: character.actor, texture, textureKey: layer.key, frames: [...sequence], frameDurationMs, animation, lease };
+      characterSequences.set(sprite, cached);
+    } catch (error) { lease?.release(); throw error; }
+    if (!sequenceCleanupInstalled.has(sprite)) {
+      sequenceCleanupInstalled.add(sprite);
+      // Sprite 的 preDestroy 会先清 AnimationState；这里通过缓存里的动画对象收尾。
+      sprite.once('destroy', () => releaseCharacterSequence(sprite));
+    }
+  }
+  sprite.play({ key: CHARACTER_SEQUENCE_KEY, startFrame });
+  sprite.anims.timeScale = 1;
 }
 
 const FACING_SUFFIX = /-(north|south|east|west)$/;
@@ -60,7 +114,7 @@ export function createCharacter(scene: Phaser.Scene, actor: ActorDefinition, ent
 }
 
 /**
- * 换一套图层：销毁旧贴图，按新动作的镜像关系建出各图层，返回该动作的定义。
+ * 按新动作更新图层：复用仍存在的 Sprite，数量变化时才增删，返回该动作的定义。
  * 每次都换一个新的 `character.layers` 数组：数组身份就是这批图层的身份，动作表现收尾时
  * 用它判断画面是否还是自己起手的那一批（见 `isCurrentLayers`），不要改成原地复用数组。
  */
@@ -71,13 +125,29 @@ function replaceLayers(scene: Phaser.Scene, character: CharacterVisual, name: Cl
   character.clipName = name;
   character.facing = (FACING_SUFFIX.exec(name)?.[1] as Facing | undefined) ?? null;
   character.flipped = flipped;
-  for (const sprite of character.layers) sprite.destroy(); character.layers = [];
-  for (const layer of clip.layers) {
-    // 按共同的脚底锚点镜像，而不是贴图中心。
-    const sprite = scene.add.sprite(0, 0, layer.key).setOrigin(clip.originX, clip.originY)
-      .setBlendMode(blendModeOf(layer.blend)).setScale(flipped ? -1 : 1, 1);
-    character.container.addAt(sprite, character.layers.length); character.layers.push(sprite);
+  const previous = character.layers, layers: Phaser.GameObjects.Sprite[] = [];
+  for (let index = 0; index < clip.layers.length; index++) {
+    const layer = clip.layers[index];
+    let sprite = previous[index];
+    if (sprite?.scene && sprite.anims) {
+      if (characterSequences.get(sprite)?.actor !== character.actor) releaseCharacterSequence(sprite);
+      sprite.removeAllListeners('animationcomplete');
+      sprite.anims.stop();
+      sprite.setTexture(layer.key, 0).setPosition(0, 0).setVisible(true);
+      if (character.container.getIndex(sprite) !== index) character.container.moveTo(sprite, index);
+    } else {
+      sprite?.destroy();
+      sprite = scene.add.sprite(0, 0, layer.key);
+      character.container.addAt(sprite, index);
+    }
+    // 按共同的脚底锚点镜像，而不是贴图中心；透明度由潜行状态继续维护。
+    sprite.setOrigin(clip.originX, clip.originY).setBlendMode(blendModeOf(layer.blend)).setScale(flipped ? -1 : 1, 1);
+    sprite.anims.timeScale = 1;
+    layers.push(sprite);
   }
+  for (let index = clip.layers.length; index < previous.length; index++) previous[index].destroy();
+  // 数组身份代表本次动作批次，Sprite 本身可以复用。
+  character.layers = layers;
   applyCharacterVisibility(character);
   return clip;
 }
@@ -85,10 +155,8 @@ function replaceLayers(scene: Phaser.Scene, character: CharacterVisual, name: Cl
 /**
  * 播放角色的一个动作。默认在当前动作与目标动作相同时直接返回，保留已经播到的进度。
  *
- * `restart` 为真时跳过这个优化，强制重建贴图并从第 0 帧重新播放。战斗动作必须用它：
- * `CombatPresenter.play` 把「动作结束」挂在动画完成事件上，而那个事件只有在贴图真的
- * 重新播放之后才会到来；若这里因为同名而提前返回，播的是已经播完的旧动画，事件永远
- * 不会到来，战斗状态就停在「攻击中」，此后普攻和技能都失去响应。
+ * `restart` 为真时重新开始播放，并取得新的图层批次身份，连续同名动作也能重新起手。
+ * 普通行走换向沿用上一方向的帧号和帧内时间。
  */
 export function setCharacterClip(scene: Phaser.Scene, character: CharacterVisual, name: ClipName, restart = false): void {
     const clip = character.actor.clips[name];
@@ -135,17 +203,13 @@ export function setCharacterClip(scene: Phaser.Scene, character: CharacterVisual
  */
 export function playCharacterSequence(scene: Phaser.Scene, character: CharacterVisual, name: ClipName, sequence: number[], frameDurationMs: number): void {
   const clip = replaceLayers(scene, character, name);
-  clip.layers.forEach((layer, index) => {
-    const key = `${layer.key}#${name}#action`;
-    const sprite = character.layers[index];
-    sprite.anims.create({ key, frames: sequence.map(frame => ({ key: layer.key, frame })), frameRate: 1000 / frameDurationMs, repeat: 0 });
-    sprite.play({ key });
-  });
+  clip.layers.forEach((layer, index) =>
+    playCharacterLayerSequence(scene, character, character.layers[index], layer, sequence, frameDurationMs));
 }
 
 /**
  * 这批图层是否仍是角色当前画面。剧情投影、换装或另一个动作换过图层后，画面归接手者，
- * 起手的那次表现只能放手：旧 Sprite 已经销毁，新图层的动画也不是它起的。
+ * 起手的那次表现只能放手：新批次中的 Sprite 已经由别的动作接手。
  */
 export function isCurrentLayers(character: CharacterVisual, layers: readonly Phaser.GameObjects.Sprite[]): boolean {
   // 场景关闭会销毁整批 Sprite，但 `character.layers` 仍指着同一个数组；只看数组身份
