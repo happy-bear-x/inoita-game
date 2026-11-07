@@ -36,7 +36,6 @@ import { GAME_HEIGHT, GAME_WIDTH, fitViewport, configureCanvas } from './ui/view
 import { gameMenuImageGroups } from './application/menu-images.ts';
 import { UI_ICON_ATLAS_FILE } from './generated/icon-atlas.ts';
 import { GAME_FRAME_TIMING, installFrameLimitClock } from './application/game-timing.ts';
-import { pixelRenderOptions } from './application/render-options.ts';
 import { installGameDiagnostics } from './application/game-diagnostics.ts';
 import { createGmActions, type GmActions } from './debug/gm-actions.ts';
 import { DomUi } from './ui/dom/dom-ui.ts';
@@ -613,18 +612,17 @@ function boot(): void {
     if (animationDebug) (currentScene() as AnimationDebugScene | undefined)?.resetInput();
     else worldScene()?.resetInput();
   };
-  const pixelRender = pixelRenderOptions(location.search);
   const game = new Phaser.Game({
     type: Phaser.AUTO, parent: 'game', backgroundColor: '#101d24',
-    pixelArt: pixelRender.pixelArt, smoothPixelArt: pixelRender.smoothPixelArt, roundPixels: pixelRender.roundPixels,
+    // 世界镜头是非整数倍缩放：平滑像素渲染保留像素块，同时去掉移动时的锯齿闪烁。
+    smoothPixelArt: true, roundPixels: false,
     fps: GAME_FRAME_TIMING,
     callbacks: { postBoot: game => {
       const restoreClock = installFrameLimitClock(game.loop);
       game.events.once(Phaser.Core.Events.DESTROY, restoreClock);
     } },
     scale: { mode: Phaser.Scale.NONE, autoCenter: Phaser.Scale.CENTER_BOTH, width: GAME_WIDTH, height: GAME_HEIGHT },
-    render: { powerPreference: 'high-performance', batchSize: pixelRender.batchSize,
-      autoMobileTextures: pixelRender.autoMobileTextures },
+    render: { powerPreference: 'high-performance', batchSize: 16384, autoMobileTextures: false },
     input: { activePointers: 3, keyboard: true }, loader: { maxParallelDownloads: 6, timeout: 15000, maxRetries: 1 },
     scene: [], banner: false, audio: { disableWebAudio: false }
   });
