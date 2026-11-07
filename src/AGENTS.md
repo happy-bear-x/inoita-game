@@ -6,7 +6,7 @@
 
 - `app.ts`：启动装配；按阶段接 ports、UI 和状态，场景与界面通过 `application/ports.ts` 的能力接口取依赖。
 - `main.ts`：Phaser 游戏配置与场景注册；新会话创建共用外观池，回标题或换会话释放；4003 开发页接入跳过耗时摘要。
-- `game.css`：页面与画布的样式。
+- `game.css`：页面、画布、DOM 图片容器及其上方文字层的样式。
 - `scenes/`：地图、剧情舞台、菜单和调试场景，编排生命周期；`debug/`：GM 动作与剧情跳转；`generated/`：构建生成的图集描述。
 - `domain/`：内容类型、会话状态、剧情调度、通行与战斗规则。
 - `application/`：内容加载、存档、设置和浏览器能力适配。
@@ -20,7 +20,7 @@
 - iOS 弹出键盘会让窗口短暂失焦。`main.ts` 在启动后接管 `window.onblur/onfocus` 并关闭 Phaser 的 `pauseOnBlur`：输入框聚焦期间的失焦不能暂停游戏循环或音频，真正的页面切走由 `visibilitychange` 驱动。
 - 玩法规则只在 `domain` 写一份，`application` 负责把它接到 Phaser 和浏览器。
 - 游戏世界实现顺序：Phaser 4 内置 API → 技能 → Phaser 4.2.1 官方文档。屏幕界面采用 DOM、CSS 和 SVG，复用现有布局与状态接口。
-- 进入游戏前同步等待 DOM 状态栏、轮盘、小地图和图集预载；回菜单统一释放界面持有的图片资源。
+- 进入游戏前通过同一个预载入口同步等待菜单、DOM 状态栏、轮盘、小地图和图集图片；回菜单统一释放界面持有的图片资源。
 - 音频恢复监听使用窗口指针捕获阶段，DOM 控件消费触摸后仍能恢复音频上下文。
 - 内置优先：移动和碰撞用 Arcade Physics（`this.physics`），镜头跟随用 `this.cameras.main.startFollow()`，逐帧动画用 `this.anims`；不要自己写循环。
 - Phaser 4 的渲染管线是 render node，FX/mask 用 filter，tint 和纹理坐标与 v3 不同；不要套 v3 写法。

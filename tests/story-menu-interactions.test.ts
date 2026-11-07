@@ -1,11 +1,14 @@
+import { installMenuDom, domEvent, domWindow } from './support/menu-dom.ts';
+import { domAssets } from '../src/ui/dom/assets.ts';
+import { UI_ATLAS_FRAMES } from '../src/generated/ui-atlas.ts';
+import { UI_ICON_FRAMES } from '../src/generated/icon-atlas.ts';
 import { UI_EVENTS } from '../src/application/ui-events.ts';
 import { displaySettings } from '../src/application/display-settings.ts';
 import {parseCrafting} from '../src/domain/crafting.ts';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { registerHooks } from 'node:module';
-import test from 'node:test';
-import type { UiNode } from '../src/ui/dom/node.ts';
+import test, {after} from 'node:test';
+import { UiNode } from '../src/ui/dom/node.ts';
 import type { StoryUIContext } from '../src/application/ports.ts';
 import type { BattleCatalog } from '../src/domain/battle.ts';
 import { BattleCharacter, type CharacterStatsCatalog } from '../src/domain/character-stats.ts';
@@ -27,13 +30,12 @@ import { controlSettings } from '../src/application/control-settings.ts';
 import { controlViewport } from '../src/ui/phaser/control-layout-viewport.ts';
 import { GameUI } from '../src/ui/game-ui.ts';
 import type { ScrollArea, UiSurface } from '../src/ui/phaser/widgets.ts';
-import { COMMON_BUTTON } from '../src/ui/common-button.ts';
+import { COMMON_BUTTON, COMMON_BUTTON_IMAGES } from '../src/ui/common-button.ts';
 import { createGmActions } from '../src/debug/gm-actions.ts';
 import type { ForgePanel } from '../src/ui/phaser/forge-panel.ts';
 import { InputRouter } from '../src/application/input-router.ts';
 
-// Only Phaser's drawing boundary is replaced. StoryUI, UiSurface, ScrollArea,
-// button events, GameUI locks and every domain transaction run their real code.
+// DOM 节点、原生事件、菜单、输入锁和交易运行真实代码；只替换浏览器环境。
 class Events {
   private listeners = new Map<string, { callback: (...args: any[]) => void; context?: unknown; once: boolean }[]>();
   on(event: string, callback: (...args: any[]) => void, context?: unknown) {
@@ -64,84 +66,18 @@ class Rect {
   static Contains(area: Rect, x: number, y: number) { return area.contains(x, y); }
 }
 
-class Display extends Events {
-  active = true; visible = true; alpha = 1; depth = 0;
-  flipX = false; flipY = false; blendMode = 0;
-  x = 0; y = 0; width = 74; height = 74; scaleX = 1; scaleY = 1;
-  text = ''; color = ''; texture = { key: '' }; list: Display[] = []; parentContainer?: Display;
-  input?: { enabled: boolean; hitArea: Rect; hitAreaCallback?: (area: Rect, x: number, y: number) => boolean };
-  private data = new Map<string, any>();
-  private wrap?: (value: string) => string;
-  private fontSize = 22;
-  context = { measureText: (value: string) => ({ width: value.length * this.fontSize * .55 }) };
-  filters = { external: { addMask: () => ({ autoUpdate: true, needsUpdate: false }) } };
-  constructor(x = 0, y = 0, width = 74, height = 74) { super(); this.x = x; this.y = y; this.width = width; this.height = height; }
-  enableFilters() { return this; }
-  get length() { return this.list.length; }
-  setDepth(value: number) { this.depth = value; return this; }
-  setPosition(x: number, y: number) { this.x = x; this.y = y; return this; }
-  setScale(x: number, y = x) { this.scaleX = x; this.scaleY = y; return this; }
-  setSize(width: number, height: number) { this.width = width; this.height = height; return this; }
-  setDisplaySize(width: number, height: number) { return this.setSize(width, height); }
-  setVisible(value: boolean) { this.visible = value; return this; }
-  setAlpha(value: number) { this.alpha = value; return this; }
-  setAlign() { return this; }
-  bringToTop(value: Display) { this.remove(value); this.add(value); return this; }
-  setOrigin() { return this; } setStrokeStyle() { return this; }
-  setBlendMode(value: number) { this.blendMode = value; return this; }
-  fillStyle() { return this; } slice() { return this; } fillPath() { return this; }
-  setFlipX(value = true) { this.flipX = value; return this; }
-  setFlipY(value = true) { this.flipY = value; return this; }
-  setCrop() { return this; } setMask() { return this; }
-  createGeometryMask() { return {}; }
-  setData(key: string, value: any) { this.data.set(key, value); return this; }
-  getData(key: string): any { return this.data.get(key); }
-  setInteractive(area?: Rect, callback?: (area: Rect, x: number, y: number) => boolean) {
-    if(!area&&this.input){this.input.enabled=true;return this;}
-    this.input = { enabled: true, hitArea: area??new Rect(0,0,this.width,this.height), hitAreaCallback: callback }; return this;
-  }
-  disableInteractive() { if (this.input) this.input.enabled = false; return this; }
-  setWordWrapCallback(callback: (value: string) => string) { this.wrap = callback; return this; }
-  setFontSize(value: number) { this.fontSize = value; return this; }
-  setText(value: string) {
-    this.text = this.wrap?.(value) ?? value;
-    this.width = Math.max(...this.text.split('\n').map(row => this.context.measureText(row).width), 0);
-    this.height = this.text.split('\n').length * (this.fontSize + 5); return this;
-  }
-  add(value: Display | Display[]) { for (const child of Array.isArray(value) ? value : [value]) { child.parentContainer?.remove(child); this.list.push(child); child.parentContainer = this; } return this; }
-  addAt(value: Display, index: number) { this.add(value); this.list.splice(this.list.indexOf(value), 1); this.list.splice(index, 0, value); return this; }
-  remove(value: Display) { this.list = this.list.filter(child => child !== value); if (value.parentContainer === this) value.parentContainer = undefined; return this; }
-  removeAll(destroy = false) { for (const child of [...this.list]) { this.remove(child); if (destroy) child.destroy(); } return this; }
-  destroy() { if (!this.active) return; this.active = false; this.parentContainer?.remove(this); this.removeAll(true); this.removeAllListeners(); }
-  getWorldTransformMatrix(): { scaleX: number; scaleY: number; transformPoint: (x: number, y: number) => { x: number; y: number } } {
-    const parent = this.parentContainer?.getWorldTransformMatrix(), scaleX = (parent?.scaleX ?? 1) * this.scaleX, scaleY = (parent?.scaleY ?? 1) * this.scaleY;
-    const position = parent?.transformPoint(this.x, this.y) ?? { x: this.x, y: this.y };
-    return { scaleX, scaleY, transformPoint: (x, y) => ({ x: position.x + x * scaleX, y: position.y + y * scaleY }) };
-  }
-  getBounds() { const matrix = this.getWorldTransformMatrix(), position = matrix.transformPoint(0, 0); return new Rect(position.x, position.y, this.width * matrix.scaleX, this.height * matrix.scaleY); }
-  get shown(): boolean { return this.active && this.visible && (this.parentContainer?.shown ?? true); }
-}
-
-class MaskRectangle extends Display {
-  constructor(_scene: unknown, x: number, y: number, width: number, height: number) { super(x, y, width, height); }
-}
-const boundaryKey = Symbol.for('inotia.story-menu-test.phaser');
-Object.defineProperty(globalThis, boundaryKey, { value: { Rect, MaskRectangle }, configurable: true });
-const hook = registerHooks({ resolve(specifier, context, next) {
-  return specifier === 'phaser' ? { shortCircuit: true, url: `data:text/javascript,${encodeURIComponent(`
-    const boundary=globalThis[Symbol.for('inotia.story-menu-test.phaser')];
-    export default {WEBGL:2,Geom:{Rectangle:boundary.Rect},GameObjects:{Rectangle:boundary.MaskRectangle},
-      Input:{Events:{POINTER_UP:'pointerup',POINTER_UP_OUTSIDE:'pointerupoutside'}},
-      Math:{Clamp:(value,min,max)=>Math.max(min,Math.min(max,value))},BlendModes:{NORMAL:0,ADD:1,SCREEN:2,MULTIPLY:3}};
-  `)}` } : next(specifier, context);
-} });
+type Display = UiNode & { readonly text?: string };
 const { StoryUI } = await import('../src/ui/story-ui.ts');
-hook.deregister();
-Object.defineProperties(globalThis, {
-  window: { value: { devicePixelRatio: 1 }, configurable: true },
-  document: { value: { documentElement: {}, getElementById: (id: string) => id === 'safe-area' ? {} : null, addEventListener() {}, removeEventListener() {} }, configurable: true },
-  getComputedStyle: { value: () => ({ paddingLeft: '0', paddingRight: '0', paddingTop: '0', paddingBottom: '0' }), configurable: true }
-});
+after(installMenuDom());
+const preloaded = await domAssets.preloadFiles([...Object.keys(UI_ATLAS_FRAMES), ...Object.keys(UI_ICON_FRAMES), ...COMMON_BUTTON_IMAGES], new AbortController().signal, ()=>{});
+const positionNode=UiNode.prototype.setPosition;
+UiNode.prototype.setPosition=function(x:number,y:number){
+  const scene=this.scene as unknown as MenuScene;
+  if(scene.nodes&&!scene.nodes.includes(this as unknown as Display))scene.nodes.push(this as unknown as Display);
+  return positionNode.call(this,x,y);
+};
+const depthNode=UiNode.prototype.setDepth;UiNode.prototype.setDepth=function(depth:number){positionNode.call(this,this.x,this.y);const scene=this.scene as unknown as MenuScene;if(scene.nodes&&!scene.nodes.includes(this as unknown as Display))scene.nodes.push(this as unknown as Display);return depthNode.call(this,depth);};
+after(()=>{preloaded.release();UiNode.prototype.setPosition=positionNode;UiNode.prototype.setDepth=depthNode;});
 
 // Drawn objects remain inspectable, but only live, visible objects are returned.
 // click() executes the production UiSurface hit callback and pointer handlers.
@@ -151,53 +87,22 @@ class MenuScene {
   readonly nodes: Display[] = [];
   readonly events = new Events();
   readonly scale = Object.assign(new Events(), { width: 1024, height: 640 });
-  readonly input = Object.assign(new Events(), { keyboard: new Events(), activePointer: { id: 1, x: 0, y: 0, isDown: false }, setDraggable: (object:Display) => object.setData('draggable',true), setDragState: () => {} });
-  readonly game = { events: new Events(), renderer: { type: 1 }, canvas: { getBoundingClientRect: () => ({ x: 0, y: 0, width: 1024, height: 640 }) } };
+  readonly input = Object.assign(new Events(), { keyboard: new Events(), activePointer: { id: 1, x: 0, y: 0, isDown: false }, setDragState: () => {} });
+  readonly game = { events: new Events(), renderer: { type: 1 }, canvas: { getBoundingClientRect: () => ({ x: 0, y: 0, left:0, top:0, width: 1024, height: 640 }) } };
   readonly cameras = { main: {} };
-  private readonly imageTextures = new Map<string, Map<string, { width: number; height: number }>>();
-  readonly textures = { exists: () => false, get: (key: string) => {
-    let frames = this.imageTextures.get(key);
-    if (!frames) {
-      const bytes = readFileSync(new URL(`../public/${key.replace(/^interface:/, '')}`, import.meta.url));
-      frames = new Map([['__BASE', { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) }]]);
-      this.imageTextures.set(key, frames);
-    }
-    const source = frames;
-    return { get: (frame = '__BASE') => source.get(frame)!, has: (frame: string) => source.has(frame),
-      add: (frame: string, _source: number, _x: number, _y: number, width: number, height: number) => {
-        const value = { width, height }; source.set(frame, value); return value;
-      } };
-  } };
+  readonly textures = { exists: () => false };
   private timers: { callback: () => void; active: boolean }[] = [];
   readonly time = { delayedCall: (_delay: number, callback: () => void) => {
     const timer = { callback, active: true }; this.timers.push(timer);
     return { remove() { timer.active = false; } };
   } };
   hold() { for (const timer of this.timers.splice(0)) if (timer.active) timer.callback(); }
-  private make(x = 0, y = 0, width = 74, height = 74) { const value = new Display(x, y, width, height); this.nodes.push(value); return value; }
-  readonly add = {
-    graphics: () => this.make(),
-    container: (x = 0, y = 0) => this.make(x, y), layer: () => this.make(),
-    rectangle: (x: number, y: number, width: number, height: number) => this.make(x, y, width, height),
-    zone: (x: number, y: number, width: number, height: number) => this.make(x, y, width, height),
-    image: (x: number, y: number, key: string, frame?: string) => {
-      const size = this.textures.get(key).get(frame), value = this.make(x, y, size.width, size.height);
-      value.texture.key = key; return value;
-    },
-    nineslice: (x: number, y: number, key: string, frame: string | undefined, width: number, height: number,
-      left: number, right: number, top: number, bottom: number) => {
-      const source=this.textures.get(key).get(frame),threeSlice=top===0&&bottom===0;
-      const value=this.make(x,y,Math.max(width,left+right),threeSlice?source.height:Math.max(height,top+bottom));
-      value.texture.key=key;
-      return value.setData('nineSlice',{sourceWidth:source.width,sourceHeight:source.height,left,right,top,bottom});
-    },
-    text: (x: number, y: number, value: string, style: { fontSize: number; color?: string }) => {
-      const node = this.make(x, y).setFontSize(style.fontSize).setText(value); node.color = style.color ?? ''; return node;
-    }
-  };
   buttons(label: string) { return this.nodes.filter(node => node.shown && node.getData('uiAction') && node.getData('label') === label); }
   button(label: string) { const buttons = this.buttons(label); assert.equal(buttons.length, 1, `唯一按钮：${label}`); return buttons[0]!; }
-  texts() { return this.nodes.filter(node => node.shown && node.text).map(node => node.text); }
+  texts() { return this.nodes.filter(node => node.shown && node.text).map(node => node.text!); }
+  native(target:HTMLElement|typeof domWindow,name:string,pointer:typeof this.input.activePointer,deltaY=0) {
+    return domEvent(target,name,{...pointer,x:pointer.x*1024/this.scale.width,y:pointer.y*640/this.scale.height},deltaY);
+  }
   pointAt(button: Display) {
     const area = button.input?.hitArea ?? new Rect(0, 0, button.width, button.height), matrix = button.getWorldTransformMatrix();
     Object.assign(this.input.activePointer, matrix.transformPoint(area.width / 2, area.height / 2));
@@ -207,16 +112,19 @@ class MenuScene {
     const area = this.pointAt(button);
     return button.shown && !!button.input?.enabled && (button.input.hitAreaCallback?.(area, area.width / 2, area.height / 2) ?? true);
   }
-  press(button: Display) {
-    assert(this.canHit(button), `按钮允许按下：${button.getData('label')}`);
-    const area = button.input!.hitArea, pointer = this.input.activePointer; pointer.isDown = true;
-    this.input.emit('pointerdown', pointer); button.emit('pointerdown', pointer, area.width / 2, area.height / 2, { stopPropagation() {} });
+  press(button: Display,strict=true) {
+    this.pointAt(button);const pointer = this.input.activePointer;pointer.isDown=true;
+    const node=button as unknown as UiNode;let accepted=false;
+    const check=()=>{accepted=this.canHit(button);};node.element.addEventListener('pointerdown',check,{capture:true,once:true});
+    this.native(node.element,'pointerdown',pointer);
+    if(strict)assert(accepted,`按钮允许按下：${button.getData('label')}`);
+    return accepted;
   }
   release(button: Display) {
     const pointer = this.input.activePointer;
-    pointer.isDown = false; button.emit('pointerup', pointer); this.input.emit('pointerup', pointer);
+    pointer.isDown = false; this.native((button as unknown as UiNode).element,'pointerup',pointer);
   }
-  tryClick(button: Display) { if (!this.canHit(button)) return false; this.press(button); this.release(button); return true; }
+  tryClick(button: Display) {const accepted=this.press(button,false);this.release(button);return accepted;}
   click(button: Display) { assert(this.tryClick(button), `按钮可点击：${button.getData('label')}`); }
   key(key: string, shiftKey = false) {
     let prevented = false;
@@ -305,7 +213,18 @@ function fixture(classId = 'dark-knight') {
   Object.defineProperty(app, 'domUi', { value: { label: () => {
     const label = new FakeDomLabel(); domLabels.push(label); return label;
   } } });
-  const scene = new MenuScene(), menu = new StoryUI(app); scene.router = inputRouter; menu.attach(scene as unknown as Phaser.Scene); menu.bind(session, world, content);  controls.view = {
+  const scene = new MenuScene(), menu = new StoryUI(app);
+  const emit=scene.input.emit.bind(scene.input);
+  scene.input.emit=(name:string,...args:any[])=>{
+    const pointer=args[0]??scene.input.activePointer;
+    if(name==='wheel'||name==='pointerdown'){
+      const surfaces=[internals.modal,internals.description,internals.body,internals.surface];
+      const scroll=surfaces.flatMap(v=>v?.scrolls??[]).find(scroll=>scroll.contains(pointer));
+      if(scroll)scene.native(scroll.layer.element,name,pointer,args[3]??0);
+    }else if(name==='gameout')domWindow.dispatchEvent(new Event('blur'));
+    else scene.native(domWindow,name,pointer);
+    return emit(name,...args);
+  }; scene.router = inputRouter; menu.attach(scene as unknown as Phaser.Scene); menu.bind(session, world, content);  controls.view = {
     sync: () => menu.sync(), resetInput: () => scene.game.events.emit(UI_EVENTS.cancelInput),
     renderText() {}, paginate: (_ui, text) => [{ text, end: text.length }], async portrait() {}
   };
@@ -358,11 +277,11 @@ test('character allocation uses native arrow art and keeps points in the allocat
   assert.equal(plus.list.length,2,'按钮只画原版箭头与按下图，不叠矩形或加减文字');
   for(const [button,flip] of [[minus,false],[plus,true]] as const){
     const face=button.getData('face') as Display,highlight=button.getData('highlight') as Display;
-    assert.equal(face.texture.key,`interface:${panels.assets['character-step']}`);
-    assert.equal(highlight.texture.key,`interface:${panels.assets['character-step-pressed']}`);
+    assert.equal(`interface:${face.getData('file')}`,`interface:${panels.assets['character-step']}`);
+    assert.equal(`interface:${highlight.getData('file')}`,`interface:${panels.assets['character-step-pressed']}`);
     assert.deepEqual([face.width,face.height,face.x,face.y],[51,58,0,0]);
     assert.equal(face.flipX,flip);assert.equal(highlight.flipX,flip);
-    assert.equal(highlight.blendMode,1,'按下图沿用原版叠加混合');
+    assert.equal((highlight as unknown as UiNode).element.style.mixBlendMode,'plus-lighter','按下图沿用原版叠加混合');
     assert.equal(button.getData('labelText'),undefined);
   }
   assert(!f.scene.canHit(minus),'未投入点数时不能减点');
@@ -375,7 +294,7 @@ test('character allocation uses native arrow art and keeps points in the allocat
   f.scene.click(f.scene.button('减少力量'));
   assert(f.scene.canHit(f.scene.button('增加敏捷')),'撤销本轮投入后恢复余额');
   const close=f.scene.button('确认属性加点');
-  assert.equal(close.getData('face').texture.key,`interface:${panels.assets.confirm}`);
+  assert.equal(`interface:${close.getData('face').getData('file')}`,`interface:${panels.assets.confirm}`);
   f.scene.click(close);assert(!f.scene.canHit(f.scene.button('增加力量')),'确认框阻止底层加点');
   f.scene.click(f.scene.button('取消'));
   assert.deepEqual(f.hero.panel.attributes,before);assert.equal(f.hero.statPoints,points);
@@ -479,11 +398,11 @@ test('party skill cells hide the zero badge and show the locked overlay instead'
   const unlearned=character.skills.find(id=>!(draft.levels[id]>0))!;
   const learned=character.skills.find(id=>(draft.levels[id]??0)>0)!;
   const zero=f.scene.button(`${battle.skills[unlearned].name} 0 级`);
-  assert(!zero.list.some(node=>node.text==='0'),'0 级格不画数字');
-  assert(!zero.list.some(node=>node.texture.key===`interface:${panels.assets['skill-rank']}`),'0 级格不画等级底图');
-  assert(zero.list.some(node=>node.texture.key===`interface:${panels.assets['skill-locked']}`),'0 级格画未掌握遮罩');
+  assert(!zero.list.some(node=>node.element.textContent==='0'),'0 级格不画数字');
+  assert(!zero.list.some(node=>`interface:${node.getData('file')}`===`interface:${panels.assets['skill-rank']}`),'0 级格不画等级底图');
+  assert(zero.list.some(node=>`interface:${node.getData('file')}`===`interface:${panels.assets['skill-locked']}`),'0 级格画未掌握遮罩');
   const rank=f.scene.button(`${battle.skills[learned].name} ${draft.levels[learned]} 级`);
-  assert(rank.list.some(node=>node.texture.key===`interface:${panels.assets['skill-rank']}`),'已学会格保留等级角标');
+  assert(rank.list.some(node=>`interface:${node.getData('file')}`===`interface:${panels.assets['skill-rank']}`),'已学会格保留等级角标');
 });
 
 test('status page shows party group magic resistance and drops it when the member leaves',t=>{
@@ -511,7 +430,7 @@ test('character titles stay clear of content-frame shadows and all attribute lab
   for(const adjusting of [false,true]){
     if(adjusting)f.scene.click(f.scene.button('查看属性加点'));
     const title=domLabelsStarting(f,panels.character.labels.statPoints)[0]!;
-    const corners=(f.internals.body.root.list as unknown as Display[]).filter(node=>node.texture.key===`interface:${panels.assets['corner-nw']}`&&node.x===496);
+    const corners=(f.internals.body.root.list as unknown as Display[]).filter(node=>`interface:${node.getData('file')}`===`interface:${panels.assets['corner-nw']}`&&node.x===496);
     assert.equal(corners.length,1);assert.equal(corners[0].y,49,'属性内容框从标题下方开始');
     const point=labelPagePoint(f,title),scale=f.internals.body.root.getWorldTransformMatrix().scaleX;
     assert.ok(point.y+labelScreenHeight(title,scale)<=corners[0].y,'标题文字位于内容边框上方');
@@ -524,7 +443,7 @@ test('character resource labels and values align with their gauges below the por
   const f=fixture();t.after(f.cleanup);
   f.menu.show('status');
   const gauges=(f.internals.body.root.list as unknown as Display[])
-    .filter(node=>node.texture.key===`interface:${panels.assets['character-gauge']}`);
+    .filter(node=>`interface:${node.getData('file')}`===`interface:${panels.assets['character-gauge']}`);
   assert.equal(gauges.length,3);
   for(const [index,name] of ['生命','魔法','经验'].entries()){
     const gauge=gauges[index],label=domLabel(f,name)!;
@@ -553,7 +472,7 @@ test('system exposes load alongside save while settings keeps the working displa
   f.scene.click(f.scene.button('设置'));
   assert.equal(f.scene.buttons('读取存档').length,0);assert.equal(f.scene.buttons('读档').length,0);
   assert(!f.scene.texts().some(text=>text.includes('语言')||text.includes('简体中文')));
-  // 设置页的文字由 DOM 层绘制，Phaser 只留图框、按钮和滑条。
+  // 设置页的文字、图框、按钮和滑条共用 DOM 层。
   const domTexts=()=>f.domLabels.filter(label=>label.visible&&!label.removed).map(label=>label.text);
   assert(domTexts().includes('音乐'));assert(domTexts().includes('音效'));
   // 音乐、音效改成滑动条；帧率显示和暴击光效仍是开关。
@@ -627,15 +546,15 @@ test('custom menu buttons share native art and keep labels above their pressed l
     f.menu.show(page);
     if(page==='status')f.scene.click(f.scene.button('查看属性加点'));
     const tabLabels=new Set(['人物','背包','技能','队伍','任务','系统','关闭菜单']);
-    const commonButton=(node:Display)=>(node.getData('face') as Display|undefined)?.list.length===3;
+    const commonButton=(node:Display)=>(node.getData('face') as UiNode|undefined)?.list.length===3;
     const buttons=f.scene.nodes.filter(node=>node.shown&&node.getData('uiAction')&&
       commonButton(node)&&node.getData('label')&&!tabLabels.has(node.getData('label')));
     assert(buttons.length>0,`${page}包含文字按钮`);
     for(const button of buttons){
       for(const [part,file] of [['face',COMMON_BUTTON.image],['highlight',COMMON_BUTTON.pressed]] as const){
         const layer=button.getData(part) as Display;
-        assert.equal(layer.list.length,3,'Canvas 按钮由原图左端、中段、右端组成');
-        assert(layer.list.every(image=>image.texture.key===`interface:${file}`));
+        assert.equal(layer.list.length,3,'DOM 按钮由原图左端、中段、右端组成');
+        assert(layer.list.every(image=>`interface:${image.getData('file')}`===`interface:${file}`));
       }
       assert.equal(button.getData('labelText'),undefined,`${page}文字改由 DOM 绘制`);
     }
@@ -652,7 +571,7 @@ test('custom menu buttons share native art and keep labels above their pressed l
   assert.equal(f.scene.nodes.filter(node=>node.shown&&node.getData('uiAction')&&node.getData('labelText')).length,0,'设置页文字改由 DOM 绘制');
 });
 
-test('WebGL common button slices stay inside hit areas and preserve selected feedback on input cancellation', t => {
+test('DOM common button slices stay inside hit areas and preserve selected feedback on input cancellation', t => {
   const f=fixture();t.after(f.cleanup);f.scene.game.renderer.type=2;f.menu.show('system');
   // 窄按钮和方按钮覆盖两种宽高比，后者触及 NineSlice 的最小宽度。
   const narrow=f.internals.surface.button('窄按钮',0,0,84,44,()=>{}, {selected:true}) as unknown as Display;
@@ -664,15 +583,12 @@ test('WebGL common button slices stay inside hit areas and preserve selected fee
     const area=button.input!.hitArea;
     for(const [part,file] of [['face',COMMON_BUTTON.image],['highlight',COMMON_BUTTON.pressed]] as const){
       const group=button.getData(part) as Display;
-      assert.equal(group.list.length,1,'WebGL 用单个 Phaser NineSlice');
-      const slice=group.list[0]!,layout=slice.getData('nineSlice');
-      assert.equal(slice.texture.key,`interface:${file}`);
-      assert.deepEqual([layout.left,layout.right,layout.top,layout.bottom],[COMMON_BUTTON.cap,COMMON_BUTTON.cap,0,0]);
-      assert.equal(slice.height,layout.sourceHeight,'ThreeSlice 高度来自原始纹理');
-      assert.equal(group.scaleX,group.scaleY,'两端统一等比缩放');
-      assert(Math.abs(group.x+slice.width*group.scaleX-area.width)<1e-8,'延展后的宽度与命中区一致');
-      assert(group.y>=-1e-8&&group.y+slice.height*group.scaleY<=area.height+1e-8,'原图上下边保持在命中区内');
-      assert(layout.left*group.scaleX+layout.right*group.scaleX<=area.width+1e-8,'两端不会反向挤压中段');
+      assert.equal(group.list.length,3,'DOM 保留原图左端、中段、右端');
+      for(const slice of group.list){
+        assert.equal(slice.getData('file'),file);
+        assert(slice.x>=-1e-8&&slice.x+slice.width<=area.width+1e-8,'切片横向落在按钮内');
+        assert(slice.y>=-1e-8&&slice.y+slice.height<=area.height+1e-8,'切片纵向落在按钮内');
+      }
     }
   }
   assert(narrow.getData('highlight').visible);
@@ -871,7 +787,7 @@ test('item description actions use text buttons instead of baked images', t => {
     const button=f.scene.button(label);
     assert.equal(button.getData('labelText'),undefined,`${label} 的文字改由 DOM 绘制`);
     assert.ok(visibleDomLabels(f).some(value=>value.text===label),`${label} 有 DOM 文字`);
-    assert.ok(!String(button.getData('face')?.texture?.key??'').includes('item-'),`${label} 不使用动作图`);
+    assert.ok(!String(button.getData('face')?.getData('file')??'').includes('item-'),`${label} 不使用动作图`);
   }
 });
 
@@ -983,7 +899,7 @@ test('skill description colors, unchanged comparisons and learning button share 
   f.session.skills.learn('dark-strike');f.session.skills.learn('dark-strike');f.menu.sync();
   assert.equal(condition().style.color,'#ffffff');assert.equal(learn().input!.enabled,true);
   f.scene.click(learn());
-  const arrows=()=>f.scene.nodes.filter(node=>node.shown&&node.texture.key===`interface:${panels.assets['skill-compare-arrow']}`);
+  const arrows=()=>f.scene.nodes.filter(node=>node.shown&&`interface:${node.getData('file')}`===`interface:${panels.assets['skill-compare-arrow']}`);
   assert.equal(arrows().length,4,'魔耗和三个效果都比较，固定持续时间也显示');
   while(f.session.skills.level(skill.id)<skill.normalMaxLevel)f.session.skills.learn(skill.id);
   f.menu.sync();assert.equal(arrows().length,0,'普通学习上限收起整段预览');
@@ -1015,7 +931,7 @@ test('learning immediately redraws skill lock, rank, description and shortcut av
   const id = battle.classes.find(value => value.id === f.hero.classId)!.skills[1], skill = battle.skills[id];
   f.menu.show('skills'); f.scene.click(f.scene.button(skill.name));
   const icon = () => f.scene.button(skill.name);
-  const hasImage = (key: string) => icon().list.some(value => value.texture.key === `interface:${panels.assets[key]}`);
+  const hasImage = (key: string) => icon().list.some(value => `interface:${value.getData('file')}` === `interface:${panels.assets[key]}`);
   assert(hasImage('skill-locked')); assert.equal(f.scene.button('快捷键').input!.enabled, false);
   const learn = () => { const button = f.scene.nodes.find(value => value.shown && value.input?.enabled && String(value.getData('label')).startsWith('学习')); assert(button); f.scene.click(button); };
   learn(); assert.equal(f.session.skills.level(id), 1); assert(!hasImage('skill-locked')); assert(hasImage('skill-rank-1'));
@@ -1174,8 +1090,8 @@ test('scrolling a worn item description never scrolls the bag grid underneath', 
   f.menu.debugDescribe(worn.id, 'right');
   const bag = f.internals.body.scrolls[0]!, detail = f.internals.description.scrolls[0]!;
   bag.setHeight(2000); detail.setHeight(2000);
-  const a = (bag as unknown as { mask: Display }).mask.getBounds();
-  const b = (detail as unknown as { mask: Display }).mask.getBounds();
+  const a = bag.layer.getBounds();
+  const b = detail.layer.getBounds();
   const left = Math.max(a.x, b.x), right = Math.min(a.x + a.width, b.x + b.width);
   const top = Math.max(a.y, b.y), bottom = Math.min(a.y + a.height, b.y + b.height);
   assert.ok(right > left && bottom > top, '说明面板必须与背包网格重叠');
@@ -1193,8 +1109,8 @@ test('scrolling a shop description never scrolls the bag column underneath', t =
   f.menu.debugShop(f.app.shops.lampShop, 'description', 'buy');
   const bag = f.internals.shopPanel!.bagScroll!, detail = f.internals.description.scrolls.at(-1)!;
   bag.setHeight(2000); detail.setHeight(2000);
-  const a = (bag as unknown as { mask: Display }).mask.getBounds();
-  const b = (detail as unknown as { mask: Display }).mask.getBounds();
+  const a = bag.layer.getBounds();
+  const b = detail.layer.getBounds();
   const left = Math.max(a.x, b.x), right = Math.min(a.x + a.width, b.x + b.width);
   const top = Math.max(a.y, b.y), bottom = Math.min(a.y + a.height, b.y + b.height);
   assert.ok(right > left && bottom > top, '商店说明面板必须与背包栏重叠');
@@ -1295,11 +1211,11 @@ test('control editor hides the menu, keeps the shade and HUD buttons, previews t
   assert(f.scene.nodes.some(node=>node.shown&&node.depth===99),'菜单遮罩保留');
   for(const id of CONTROL_IDS) {
     const object=editingControl(f,id),input=object.input!;
-    assert(object.getData('draggable'));
-    assert(input.hitAreaCallback!(input.hitArea,object.width*.9,object.height*.9),'控件右下部分也能开始拖动');
+    assert(object.input?.draggable);
+    assert(input.hitAreaCallback!(input.hitArea,input.hitArea.x+object.width*.9,input.hitArea.y+object.height*.9),'控件右下部分也能开始拖动');
     assert.equal(input.hitAreaCallback!(input.hitArea,object.width+1,object.height/2),false);
   }
-  assert(editingControl(f,'slot-0').list.some(node=>node.texture.key===`interface:${icon}`),'读取实际操控者当前组的图标');
+  assert(editingControl(f,'slot-0').list.some(node=>`interface:${node.getData('file')}`===`interface:${icon}`),'读取实际操控者当前组的图标');
   assert(visibleDomLabels(f).some(label=>label.text==='7'),'物品格数量文字走 DOM');
   const reset=f.scene.button('恢复默认'),close=f.scene.button('关闭控件位置');
   assert(reset.parentContainer!.depth>editingControl(f,'move').parentContainer!.depth,'工具栏在拖动控件上方');
@@ -1627,10 +1543,10 @@ test('fusion menu selects or drags equipment, confirms once and blocks underlyin
   assert.equal(f.scene.canHit(f.scene.button('深渊混沌合成')),false);
   const no=f.scene.button('否');f.scene.click(no);assert.deepEqual(bag.captureState(),before);assert.equal(f.session.money,money);
   f.scene.click(f.scene.button('组合'));
-  const yes=f.scene.button('是');f.scene.click(yes);
+  const yes=f.scene.button('是'),confirm=yes.getData('action');f.scene.click(yes);
   assert.equal(bag.get(target)!.numbers!.chaos!.tier,'chaos');assert.equal(f.session.money,money-item.level*700);
   assert.deepEqual(bag.captureState().allCells,before.allCells);
-  yes.getData('action')();assert.equal(f.session.money,money-item.level*700,'同一个确认按钮不会再次扣费');
+  confirm();assert.equal(f.session.money,money-item.level*700,'同一个确认按钮不会再次扣费');
   f.scene.click(f.scene.button('深渊混沌合成'));f.scene.click(f.scene.button(item.name));f.scene.click(f.scene.button('组合'));f.scene.click(f.scene.button('是'));
   assert.equal(bag.get(target)!.numbers!.chaos!.tier,'epic-chaos');assert.equal(f.session.money,money-item.level*1600);
   f.menu.close();assert.equal(f.controls.locked,false);
@@ -1706,7 +1622,7 @@ test('save page writes the loaded world into the chosen slot and asks before ove
   assert(domTexts(f).includes('这个存档槽里已经有存档，确定覆盖？'));
   // 确认层铺满整屏：花纹从屏幕左缘平铺，最后一格覆盖到右缘之外由画布裁掉。
   const edgeKey=`interface:${f.app.menuPanels.assets['message-edge']}`;
-  const edges=f.scene.nodes.filter(node=>node.shown&&node.texture.key===edgeKey);
+  const edges=f.scene.nodes.filter(node=>node.shown&&`interface:${node.getData('file')}`===edgeKey);
   assert.ok(edges.length>0);
   const left=Math.min(...edges.map(edge=>edge.getWorldTransformMatrix().transformPoint(0,0).x));
   const right=Math.max(...edges.map(edge=>edge.getWorldTransformMatrix().transformPoint(edge.width,0).x));
@@ -2055,7 +1971,7 @@ test('the GM item page scrolls addable items, shows details and gives a chosen q
   const id = String(first.getData('label')).replace(/^道具 /, '');
   const before = f.session.bag.count(id);
   f.scene.click(first);
-  assert.ok(f.scene.nodes.some(node => node.shown && node.texture.key === 'interface:assets/ui/menus/inventory-selected.png'),
+  assert.ok(f.scene.nodes.some(node => node.shown && `interface:${node.getData('file')}` === 'interface:assets/ui/menus/inventory-selected.png'),
     '选中后叠背包选中框');
   // 点物品打开与背包同一套说明面板；标题是物品名，关闭按钮独立于菜单关闭。
   assert.ok(visibleDomLabels(f).some(label => label.text.includes(items.items[id]!.name)),

@@ -19,7 +19,7 @@
 | 任务、剧情与永久世界 | `campaign.ts`、`quest-book.ts`、`story-runtime.ts`、`story-world.ts`、`story-director.ts` | `campaign.json`、`rendering/story-presenter.ts`、`scenes/story-stage-scene.ts` | `session-quest-core`、`story-runtime`、`story-director-core`、`story-stage-isolation` |
 | 背包、穿戴、人物成长 | `bag.ts`、`items.ts`、`character-stats.ts`、`attribute-allocation.ts`、`story-skills.ts` | `ui/story-ui.ts`、`rendering/wardrobe.ts`、`rendering/wardrobe-cache.ts`、`items.json`、`character-stats.json`、`wardrobe.json` | `bag`、`character-stats`、`wardrobe`、`story-skills` |
 | 掉落、宝箱、泉水、商店、融合 | `drops.ts`、`ground-loot.ts`、`chests.ts`、`springs.ts`、`shop.ts`、`crafting.ts` | `world-scene.ts`、`ui/phaser/shop-panel.ts`、`crafting-panel.ts`、对应内容目录 | `drops`、`chests`、`springs`、`shop`、`crafting` |
-| 快捷栏、状态栏、菜单和触控 | `shortcut-bar.ts`、`skill-configuration.ts`、`status-hud.ts`、`control-skin.ts` | `ui/phaser/`、`ui/story-ui.ts`、`rendering/hud.ts`、`ui/viewport.ts` | `shortcut-bar`、`status-hud`、`story-menu-interactions`、`viewport` |
+| 快捷栏、状态栏、菜单和触控 | `shortcut-bar.ts`、`skill-configuration.ts`、`status-hud.ts`、`control-skin.ts` | `ui/dom/`、`ui/phaser/`、`ui/story-ui.ts`、`rendering/hud.ts`、`ui/viewport.ts` | `shortcut-bar`、`status-hud`、`story-menu-interactions`、`viewport` |
 | 剧情调试导航与跳转 | `domain/story-debug.ts`、`debug/story-jump.ts`、`debug/gm-actions.ts` | `content/debug/start.json`（运行时挂到 `Campaign.debugStory`）、`ui/phaser/gm-panel.ts`；[调试说明](debugging.md) | `story-debug`、`story-debug-start`、`gm-actions`、`story-menu-interactions` |
 | 内容字段、引用与资源 | `domain/content.ts`、各内容类型 | `application/content-validation.ts`、`content-relations.ts`、`story-reference-validation.ts`、`story-performance-validation.ts` | `content`、对应目录测试；运行 `npm run validate:content` |
 | 音效和背景音乐 | `application/game-audio.ts` | `scenes/audio-scene.ts`、`content/audio.json` | `game-audio` |
@@ -142,3 +142,7 @@
 ## Boss 全图参战
 
 当前两种地图战斗 Boss 使用显式的 `engagement: map-wide` 配置，加载和演出结束后发现整张地图中的队伍，继续使用原仇恨、技能和碰撞。普通怪物保持原有规则。字段写在 `battle.json` 的敌人定义里，行为与验证以 `domain/enemy-engagement.ts`、`tests/boss-engagement.test.ts` 为准。
+
+菜单公共表面位于 `ui/dom/surface.ts`，图片、文本和原生指针的节点位于 `ui/dom/node.ts`。`ui/phaser/` 中的面板沿用原有页面动作与布局，绘制调用统一进入 DOM 表面。图片裁边只隐藏超出范围的像素，保持素材倍率；静态页签与图框在正文重绘时复用。独立文字与页面图片共用场景坐标，窗口原点和倍率任一变化都更新文字位置，文字位于同层图片之上。
+
+菜单、状态栏、技能图标和小地图图片通过同一个 DOM 预载入口准备，加载请求沿用调用方的取消信号；准备状态查询 DOM 缓存。角色菜单预览读取衣柜已经合成的原始图片首帧，世界角色的纹理及动画继续由衣柜管理。原生窗口事件接续正文重绘前开始的长按与背包拖动，隐藏、取消和失焦时统一结束输入。

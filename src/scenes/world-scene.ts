@@ -1,3 +1,4 @@
+import { domAssets } from '../ui/dom/assets.ts';
 import {prepareCombatRestore} from '../domain/combat-snapshot.ts';
 import type {SceneActorState,SceneSnapshot} from '../domain/scene-snapshot.ts';
 import {generateMapEntities} from '../domain/scene-visit.ts';
@@ -44,7 +45,6 @@ import { storyReachableScripts } from '../domain/story-entry.ts';
 import { buildEntryPlan, entryPlanAssets } from '../application/entry-plan.ts';
 import { loadEntryPlan } from '../application/entry-loading.ts';
 import { potentialMapEnemyIds, storyPresentationAssets, type WorldAssetInputs } from '../rendering/map-assets.ts';
-import { uiTexture } from '../ui/phaser/widgets.ts';
 import { storyExitId } from '../domain/story-world.ts';
 import { hasLivingParty } from '../domain/session-checkpoint.ts';
 import { freezeSnapshot, storyDevMode } from '../domain/dev-mode.ts';
@@ -628,7 +628,7 @@ export class WorldScene extends Phaser.Scene {
     signal.throwIfAborted();
     const reachable = storyReachableScripts(this.app.campaign, scripts);
     const presentation = storyPresentationAssets(this.app.campaign, reachable, this.assetInputs());
-    const portraits = presentation.portraits.filter(file => !this.textures.exists(uiTexture(file)));
+    const portraits = presentation.portraits.filter(file => !domAssets.peek(file));
     if (portraits.length) await this.app.ui.preloadPortraits(portraits, signal, () => {});
     if (presentation.sounds.length) await this.app.audio?.prepareStoryEffects(presentation.sounds);
     signal.throwIfAborted();
@@ -673,7 +673,7 @@ export class WorldScene extends Phaser.Scene {
       if (signal.aborted || this.destroyed) { lease.release(); signal.throwIfAborted(); throw new Error('正式地图已经关闭'); }
       this.app.retainStoryPrefetch(mapId, lease);
     }
-    const portraits = plan.portraits.filter(file => !this.textures.exists(uiTexture(file)));
+    const portraits = plan.portraits.filter(file => !domAssets.peek(file));
     if (portraits.length) await this.app.ui.preloadPortraits(portraits, signal, () => {});
     if (plan.sounds.length) await this.app.audio?.prepareStoryEffects(plan.sounds);
     signal.throwIfAborted();

@@ -1,3 +1,4 @@
+import { domAssets } from '../ui/dom/assets.ts';
 import { uiMount, type UiPointer } from '../ui/dom/node.ts';
 import { UiNode, UiImage } from '../ui/dom/node.ts';
 import { SCENE_KEYS } from '../application/scene-keys.ts';
@@ -5,7 +6,7 @@ import { UI_EVENTS } from '../application/ui-events.ts';
 import Phaser from 'phaser';
 import type { StoryApp } from '../app.ts';
 import { uiOcclusion, type GameUI, type GameUiView } from '../ui/game-ui.ts';
-import { UiSurface,loadUiImages,uiTexture,GOLD,type ScrollArea } from '../ui/phaser/widgets.ts';
+import { UiSurface,loadUiImages,GOLD,type ScrollArea } from '../ui/phaser/widgets.ts';
 import { FONT, TEXT_COLORS } from '../ui/text-style.ts';
 import { dialoguePages, layoutDialogueText, layoutMarkupText, revealedRuns, type DialoguePage, type DialogueTextLayout } from '../ui/dialogue-text.ts';
 import { instantMessagePoint } from '../ui/instant-message.ts';
@@ -154,12 +155,12 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
       padding:`${14*scale}px ${20*scale}px 0`,background:'rgba(16,29,36,.95)',color:'#f5f0df',textAlign:'center',whiteSpace:'pre-wrap'});
   }
   async preloadPortraits(files:string[],signal:AbortSignal,progress:(value:number)=>void):Promise<void>{
-    const missing=[...new Set(files)].filter(file=>!this.textures.exists(uiTexture(file)));
+    const missing=[...new Set(files)].filter(file=>!domAssets.peek(file));
     if(!missing.length){progress(1);return;}
     await this.uiAssets.preloadFiles(missing,signal,progress);
   }
   async portrait(file:string,signal?:AbortSignal):Promise<void>{
-    signal?.throwIfAborted();if(this.textures.exists(uiTexture(file)))return;const lease=await loadUiImages(this,[file]);if(signal?.aborted){lease.release();signal.throwIfAborted();}this.uiAssets.retain(lease);
+    signal?.throwIfAborted();if(domAssets.peek(file))return;const lease=await loadUiImages(this,[file],undefined,signal);if(signal?.aborted){lease.release();signal.throwIfAborted();}this.uiAssets.retain(lease);
   }
   /**
    * 对白按物理屏幕满幅绘制，坐标以 `-offset`（物理左缘）为基准；姓名、正文与立绘

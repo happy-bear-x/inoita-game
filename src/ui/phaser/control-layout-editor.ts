@@ -1,7 +1,7 @@
 import { DomCooldown } from '../dom/cooldown.ts';
 import type { UiPointer } from '../dom/node.ts';
 import { UiNode } from '../dom/node.ts';
-import Phaser from 'phaser';
+import type Phaser from 'phaser';
 import { UI_EVENTS } from '../../application/ui-events.ts';
 import type { ControlSkin } from '../../domain/control-skin.ts';
 import { CONTROL_IDS, CONTROL_SCALE_MIN, CONTROL_SIZES, maxControlScale, normalizeControlPosition,
@@ -251,7 +251,7 @@ export class ControlLayoutEditor {
           this.quantities.push({id,text,fit});
         }
       }
-      // Container 的输入坐标会补上半宽、半高，命中区以图片左上角为原点。
+      // 控件以中心定位，热区覆盖中心两侧的完整图片。
       object.setSize(width,height).setInteractive({x:-width/2,y:-height/2,width,height},
         (area:{x:number;y:number;width:number;height:number},x:number,y:number)=>this.active&&this.canvas.root.visible&&x>=area.x&&x<=area.x+area.width&&y>=area.y&&y<=area.y+area.height);
       object.draggable();
@@ -341,7 +341,7 @@ export class ControlLayoutEditor {
     const drag=this.scaleDrag;
     if(!drag||drag.pointer.id!==pointer.id)return;
     const distance=Math.hypot(pointer.x-drag.center.x,pointer.y-drag.center.y);
-    const scale=Phaser.Math.Clamp(distance/Math.max(1,drag.radius),CONTROL_SCALE_MIN,drag.max);
+    const scale=Math.max(CONTROL_SCALE_MIN,Math.min(drag.max,distance/Math.max(1,drag.radius)));
     this.preview={id:drag.id,point:drag.point,scale};
     this.layout();
   }
@@ -357,7 +357,7 @@ export class ControlLayoutEditor {
 
   private cancelDrags(): void {
     for(const [id] of this.drags) {
-      // disableInteractive 清掉 Phaser 的对象拖动状态和指针拖动列表，再恢复原命中区。
+      // 先释放原生指针捕获，再恢复控件的命中区。
       const object=this.controls.get(id);object?.disableInteractive();object?.setInteractive();
     }
     this.drags.clear();

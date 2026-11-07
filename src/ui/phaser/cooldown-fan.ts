@@ -1,4 +1,3 @@
-import type Phaser from 'phaser';
 import type { Cooldown } from '../../domain/combat.ts';
 
 /** 只依赖快捷位里与冷却有关的字段，方便操作按钮和电脑模式技能行共用。 */
@@ -29,26 +28,6 @@ function progressOf(cooldown: Cooldown | undefined): number | undefined {
 export function cooldownFanState(cooldown: Cooldown | undefined, radius: number): string {
   const progress = progressOf(cooldown);
   return progress === undefined ? '' : `${progress}:${radius}`;
-}
-
-/** 深色扇形表示剩余时间，亮色前沿和圆环让移动端小图标也能看清比例。 */
-export function drawCooldownFan(graphics: Phaser.GameObjects.Graphics, radius: number, cooldown: Cooldown | undefined): void {
-  graphics.clear();
-  const progress = progressOf(cooldown);
-  if (progress === undefined) return;
-  const start = -Math.PI / 2 + progress * Math.PI * 2;
-  graphics.fillStyle(0x000000, .55);
-  if (progress <= 0) graphics.fillCircle(0, 0, radius);
-  else graphics.slice(0, 0, radius, start, Math.PI * 1.5, false).fillPath();
-  if (progress > 0 && progress < 1) {
-    graphics.lineStyle(2, 0xffe6a3, .9);
-    graphics.beginPath();
-    graphics.moveTo(0, 0);
-    graphics.lineTo(Math.cos(start) * radius, Math.sin(start) * radius);
-    graphics.strokePath();
-  }
-  graphics.lineStyle(1, 0xffe6a3, .45);
-  graphics.strokeCircle(0, 0, radius - 1);
 }
 
 /** 冷却图标上显示的整秒数；不足一秒显示 1，避免看起来像已经好了。 */

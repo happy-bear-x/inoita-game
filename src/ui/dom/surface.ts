@@ -13,7 +13,7 @@ export class UiSurface {
   readonly scrolls:ScrollArea[]=[];readonly sliders:VolumeSlider[]=[];
   private buttons:UiNode[]=[];private focusIndex=-1;private staticKey?:string;
   enabled=()=>true;
-  private cancelInput=()=>{for(const button of this.buttons)if(button.active)button.getData('cancelPress')?.();for(const scroll of this.scrolls)scroll.cancelGesture();};
+  private cancelInput=()=>{for(const button of this.buttons)if(button.active)button.cancelPress();for(const scroll of this.scrolls)scroll.cancelGesture();};
   constructor(scene:Phaser.Scene,width:number,height:number,depth=100,layer='screen'){
     this.scene=scene;this.width=width;this.height=height;this.depth=depth;
     this.root=new UiNode(scene,uiMount(scene,layer)).setDepth(depth);this.staticRoot=new UiNode(scene,this.root);
@@ -26,7 +26,7 @@ export class UiSurface {
     this.root.setScale(factor).setPosition(left+(this.scene.scale.width-left-right-this.width*factor)/2,top+(this.scene.scale.height-top-bottom-this.height*factor)/2);
     this.scrolls.forEach(scroll=>scroll.layout());
   }
-  clear():void{this.sliders.splice(0).forEach(slider=>slider.destroy());this.scrolls.splice(0).forEach(scroll=>scroll.destroy());this.buttons=[];this.focusIndex=-1;for(const child of [...this.root.list])if(child!==this.staticRoot)child.destroy();}
+  clear():void{this.sliders.splice(0).forEach(slider=>slider.destroy());this.scrolls.splice(0).forEach(scroll=>scroll.destroy());this.focusIndex=-1;for(const child of [...this.root.list])if(child!==this.staticRoot)child.destroy();this.buttons=this.buttons.filter(button=>button.active);}
   clearStatic():void{this.staticKey=undefined;this.staticRoot.removeAll(true);}
   staticLayer(key:string,draw:()=>void):void{if(this.staticKey===key)return;this.clearStatic();this.staticKey=key;draw();}
   destroy():void{this.scene.game.events.off(UI_EVENTS.cancelInput,this.cancelInput);this.clear();this.clearStatic();this.root.destroy();}
@@ -38,7 +38,7 @@ export class UiSurface {
   container(x=0,y=0,parent=this.root):UiNode{return new UiNode(this.scene,parent).setPosition(x,y);}
   button(label:string,x:number,y:number,width:number,height:number,action:()=>void,options:{image?:string;pressed?:string;fontSize?:number;disabled?:boolean;selected?:boolean;bare?:boolean;native?:boolean;pressedRect?:{x:number;y:number;width:number;height:number};pressedAdd?:boolean;parent?:UiNode;guard?:()=>boolean;hold?:{delayMs?:number;intervalMs?:number}}={}):UiNode{
     const parent=options.parent??this.root,result=this.container(x,y,parent).setSize(width,height),common=!options.image&&!options.bare;
-    const draw=(file:string):UiImage=>{const image=this.image(file,0,0,options.native?undefined:width,options.native?undefined:height,result);if(options.native){image.on('loaded',()=>image.setPosition((width-image.width)/2,(height-image.height)/2));}return image;};
+    const draw=(file:string):UiImage=>{const image=this.image(file,0,0,options.native?undefined:width,options.native?undefined:height,result);if(options.native){const center=()=>image.setPosition((width-image.width)/2,(height-image.height)/2);center();image.on('loaded',center);}return image;};
     const face=options.image?draw(options.image):common?this.sliced(COMMON_BUTTON.image,0,0,width,height,COMMON_BUTTON.cap,0,result):undefined;
     const highlight=options.pressed?draw(options.pressed):common?this.sliced(COMMON_BUTTON.pressed,0,0,width,height,COMMON_BUTTON.cap,0,result):undefined;
     if(common||options.pressedAdd)highlight?.setBlendMode('add');
@@ -51,6 +51,7 @@ export class UiSurface {
     const cancel=()=>{press=undefined;held=false;stop();highlight?.setVisible(selected);};
     const permitted=()=>this.enabled()&&this.root.shown&&result.input?.enabled&&parent.shown;
     const allowed=()=>permitted()&&(!options.guard||options.guard())&&this.scrolls.filter(scroll=>scroll.content===parent).every(scroll=>!scroll.moved);
+    result.setInteractive(undefined,()=>!!allowed());
     result.setData('cancelPress',cancel).setData('setEnabled',(value:boolean)=>{if(value)result.setInteractive().setAlpha(1);else{cancel();result.disableInteractive().setAlpha(.4);}});
     const repeat=()=>{if(press===undefined||!allowed()){cancel();return;}held=true;action();if(result.active&&press!==undefined&&allowed())timer=setTimeout(repeat,options.hold?.intervalMs??80);};
     result.on('pointerdown',(pointer:UiPointer)=>{if(!permitted())return;cancel();press=pointer.id;highlight?.setVisible(true);if(options.hold)timer=setTimeout(repeat,options.hold.delayMs??350);});
@@ -81,7 +82,7 @@ export class UiSurface {
   border(assets:Record<string,string>,x:number,y:number,width:number,height:number,parent=this.root):void{if(!assets['corner-nw'])return;this.image(assets['edge-horizontal']!,x+24,y,width-48,24,parent);this.image(assets['edge-horizontal']!,x+24,y+height-24,width-48,24,parent).setFlipY(true);this.image(assets['edge-vertical']!,x,y+24,24,height-48,parent);this.image(assets['edge-vertical']!,x+width-24,y+24,24,height-48,parent).setFlipX(true);for(const[part,dx,dy]of [['nw',0,0],['ne',width-24,0],['sw',0,height-24],['se',width-24,height-24]]as const)this.image(assets[`corner-${part}`]!,x+dx,y+dy,24,24,parent);}
   frame(assets:Record<string,string>,x:number,y:number,width:number,height:number):void{this.rect(x,y,width,height,0x15100b,.96);this.border(assets,x,y,width,height);}
   scroll(x:number,y:number,width:number,height:number,bleed=0,bar?:ScrollBarOptions):ScrollArea{const scroll=new ScrollArea(this,x,y,width,height,bleed,bar);this.scrolls.push(scroll);return scroll;}
-  slider(label:string,x:number,y:number,width:number,value:number,onChange:(value:number)=>void,parent=this.root):VolumeSlider{const slider=new VolumeSlider(this.scene,parent,label,x,y,width,value,onChange);this.sliders.push(slider);return slider;}
+  slider(label:string,x:number,y:number,width:number,value:number,onChange:(value:number)=>void,parent=this.root):VolumeSlider{const slider=new VolumeSlider(this.scene,parent,label,x,y,width,value,onChange,()=>this.enabled()&&this.root.shown&&parent.shown);this.sliders.push(slider);return slider;}
 }
 
 /** 裁剪与滚动条均由浏览器绘制；内容只移动，面板无需重建。 */
@@ -102,9 +103,10 @@ export class ScrollArea {
     this.thumb=new UiNode(surface.scene,surface.root.element.parentElement!).setDepth(surface.depth+3).setFillStyle(0xe2c88d,.8);
     const signal=this.controller.signal,scene=surface.scene;
     this.layer.element.addEventListener('pointerdown',event=>{if(!surface.enabled()||!surface.root.shown)return;const p=uiPointer(scene,event);this.press={id:p.id,y:p.y,offset:this.offset};this.moved=false;},{signal,capture:true});
-    window.addEventListener('pointermove',event=>{const p=uiPointer(scene,event),press=this.press;if(press?.id!==p.id)return;if(!p.isDown||!surface.enabled()||!surface.root.shown){this.cancelGesture();return;}const distance=(p.y-press.y)/surface.root.getWorldTransformMatrix().scaleY;if(Math.abs(distance)>8)this.moved=true;if(this.moved){for(const child of this.content.list)child.getData('cancelPress')?.();this.scrollTop=press.offset-distance;this.scrolled();event.preventDefault();}},{signal,capture:true,passive:false});
+    window.addEventListener('pointermove',event=>{const p=uiPointer(scene,event),press=this.press;if(press?.id!==p.id)return;if(!p.isDown||!surface.enabled()||!surface.root.shown){this.cancelGesture();return;}const distance=(p.y-press.y)/surface.root.getWorldTransformMatrix().scaleY;if(Math.abs(distance)>8)this.moved=true;if(this.moved){const cancel=(node:UiNode)=>{node.cancelPress();for(const child of node.list)cancel(child);};for(const child of this.content.list)cancel(child);this.scrollTop=press.offset-distance;this.scrolled();event.preventDefault();}},{signal,capture:true,passive:false});
     for(const name of ['pointerup','pointercancel'])window.addEventListener(name,event=>{if(this.press?.id===(event as PointerEvent).pointerId)this.press=undefined;},{signal,capture:true});
-    this.layer.element.addEventListener('wheel',event=>{if(!surface.enabled())return;this.scrollTop+=event.deltaY/surface.root.getWorldTransformMatrix().scaleY;this.scrolled();event.preventDefault();event.stopPropagation();},{signal,passive:false});
+    this.layer.element.addEventListener('wheel',event=>{if(!this.guardVisible()){event.preventDefault();event.stopPropagation();return;}this.scrollTop+=event.deltaY/surface.root.getWorldTransformMatrix().scaleY;this.scrolled();event.preventDefault();event.stopPropagation();},{signal,passive:false});
+    window.addEventListener('blur',()=>this.cancelGesture(),{signal});
     this.bar=bar;this.layout();
   }
   private readonly bar?:ScrollBarOptions;

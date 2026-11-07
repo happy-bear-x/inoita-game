@@ -8,8 +8,7 @@ export type PlaceModal = (width:number, height:number) => void;
  * 自己画的框给出——锚点因此不再依赖写死的坐标，改某个对话框的尺寸也不会让别的对话框跑偏。
  * 对话框都从框左上角开始画，所以移动画布就等于移动那个左上角。
  *
- * 单独一个模块是为了只做类型导入：`widgets.ts` 顶层会加载 Phaser，而面板的单测不该为此
- * 需要一个浏览器环境。
+ * 此模块只计算坐标，通过类型导入避免布局计算依赖 DOM 环境。
  */
 export function centerModal(modal: UiSurface, parent: UiSurface, width: number, height: number): void {
   const matrix = parent.root.getWorldTransformMatrix();

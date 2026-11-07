@@ -10,7 +10,7 @@ const BUTTON_SIZE=20;
  * UIPopupMsg 的普通提示：居中的黑色横带、上下原版花纹与两个小号中文按钮。
  * 横带横向铺满整屏，纵向仍是文字高度加留白。
  *
- * 正文与按钮文字都交给 `writer` 输出 DOM；Phaser 文字只用来量横带高度，量完就销毁。
+ * 正文与按钮文字都交给 `writer` 输出；临时 DOM 文字只量横带高度，量完就销毁。
  * 按钮不再是带字烘焙图，改成共用按钮皮肤加 DOM 文字。`writer` 接收弹层本地坐标，
  * 宿主按自己的页面坐标换算。
  */
@@ -25,7 +25,7 @@ export function drawNativeMessage(v:UiSurface,assets:Record<string,string>,messa
   text.destroy();
   // 横带保持半透明，页面压暗交给菜单的全局黑色遮罩。
   v.rect(screen.left,top,screen.width,bandHeight,0x000000,.55);
-  // 花纹素材是 240 宽；超出屏幕的部分由画布裁掉。
+  // 花纹素材是 240 宽；超出屏幕的部分由 DOM 层裁掉。
   for(let x=screen.left;x<screen.left+screen.width;x+=240){
     v.image(assets['message-edge'],x,top-29,240,38);
     v.image(assets['message-edge'],x,top+bandHeight+28,240,38).setOrigin(0,1).setFlipY(true);

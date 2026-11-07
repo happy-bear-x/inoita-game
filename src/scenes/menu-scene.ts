@@ -1,3 +1,4 @@
+import { domAssets } from '../ui/dom/assets.ts';
 import { UiNode, UiImage, type UiText } from '../ui/dom/node.ts';
 import { SCENE_KEYS } from '../application/scene-keys.ts';
 import { displaySettings } from '../application/display-settings.ts';
@@ -6,7 +7,7 @@ import { fullscreenActive, fullscreenStatus, onFullscreenChange, setFullscreen }
 import Phaser from 'phaser';
 import type { MenuContext } from '../application/ports.ts';
 import { TITLE_MESSAGE_ASSETS, titleMenuImages } from '../application/menu-images.ts';
-import { GOLD, UiSurface, loadUiImages, uiTexture, type ScrollArea } from '../ui/phaser/widgets.ts';
+import { GOLD, UiSurface, loadUiImages, type ScrollArea } from '../ui/phaser/widgets.ts';
 import { SAVE_BOARD, SAVE_BOARD_LAYOUT, drawSaveBoardRow, newestFirstSlots, saveBoardOrigin, saveRowTitle, setSaveBoardTextSink, type SaveBoardControl, type SaveBoardTextSpec } from '../ui/phaser/save-board.ts';
 import { MenuTextLayer, type MenuTextClip, type MenuTextPoint, type MenuTextSpec, type MenuTextWriter } from '../ui/dom/menu-text.ts';
 import type { DomLabel, DomUi } from '../ui/dom/dom-ui.ts';
@@ -157,7 +158,7 @@ export class MenuScene extends Phaser.Scene {
     texts.push({key:'version',text:GAME_VERSION,x:1180,y:612,style:{size:36,anchorX:1,anchorY:1}});
     texts.push({key:'notice',text:FAN_WORK_NOTICE,x:1180,y:632,style:{size:14,color:'#b8ab92',anchorX:1,anchorY:1}});
     const gm=this.app.gmMode;if(!gm||!this.menuText)return;
-    // DOM 文字不接收指针：版本号仍用贴在画布上的透明命中区切换 GM。
+    // DOM 文字不接收指针：版本号使用同层 DOM 透明热区切换 GM。
     const zone=view.rect(1055,565,125,50,0,0).setInteractive();
     view.root.add(zone);
     zone.on('pointerdown',()=>{
@@ -763,9 +764,9 @@ export class MenuScene extends Phaser.Scene {
     const portraits=[...new Set(refs.map(ref=>{
       const reading=this.app.saves.peek(ref);
       return reading.kind==='ok'?reading.summary.portrait:undefined;
-    }).filter((file):file is string=>!!file&&!this.textures.exists(uiTexture(file))))];
+    }).filter((file):file is string=>!!file&&!domAssets.peek(file)))];
     if(!portraits.length)return;
-    void loadUiImages(this,portraits).then(lease=>{
+    void loadUiImages(this,portraits,undefined,request.signal).then(lease=>{
       if(request.signal.aborted||this.slotRequest!==request||!this.sys.isActive()){lease.release();return;}
       this.slotPortraits?.release();this.slotPortraits=lease;
       if(this.page==='slots')this.render();

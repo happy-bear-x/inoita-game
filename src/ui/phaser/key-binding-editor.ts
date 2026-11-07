@@ -45,7 +45,8 @@ export class KeyBindingEditor {
     this.scene = scene; this.preferences = preferences; this.assets = assets; this.onClose = onClose; this.dom = dom;
     this.canvas = new UiSurface(scene, 960, 640, 350);
     scene.game.events.on(UI_EVENTS.cancelInput, this.cancelCapture, this);
-    scene.input.on('gameout', this.cancelCapture, this);
+    window.addEventListener('blur', this.cancelCapture);
+    window.addEventListener('pointercancel', this.cancelCapture);
     this.visible(false);
   }
 
@@ -88,7 +89,8 @@ export class KeyBindingEditor {
 
   destroy(): void {
     this.scene.game.events.off(UI_EVENTS.cancelInput, this.cancelCapture, this);
-    this.scene.input.off('gameout', this.cancelCapture, this);
+    window.removeEventListener('blur', this.cancelCapture);
+    window.removeEventListener('pointercancel', this.cancelCapture);
     this.canvas.destroy();
     for (const label of this.domLabels.values()) label.remove();
     this.domLabels.clear();

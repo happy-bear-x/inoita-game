@@ -14,7 +14,7 @@ const hook=registerHooks({resolve(specifier,context,next){return specifier==='ph
 const {MenuScene}=await import('../src/scenes/menu-scene.ts');
 const {UiSurface}=await import('../src/ui/phaser/widgets.ts');hook.deregister();
 class Button {
-  readonly active=true;readonly visible=true;readonly input:{enabled:boolean};
+  readonly active=true;readonly visible=true;readonly shown=true;readonly input:{enabled:boolean};
   x=0;y=0;width=0;height=0;
   private readonly data=new Map<string,unknown>();
   constructor(label:string,action:()=>void,disabled=false){this.input={enabled:!disabled};this.data.set('label',label);this.data.set('action',action);}
@@ -48,7 +48,7 @@ function fakeView(width:number,height:number){
   const zones:{handlers:Map<string,()=>void>}[]=[];
   return {
     width,height,
-    root:{visible:true,bringToTop:()=>{},setPosition:function(){return this;},setScale:function(){return this;},add:()=>{},getWorldTransformMatrix:()=>({scaleX:1,scaleY:1,transformPoint:(x:number,y:number)=>({x,y})})},
+    root:{visible:true,shown:true,bringToTop:()=>{},setPosition:function(){return this;},setScale:function(){return this;},add:()=>{},getWorldTransformMatrix:()=>({scaleX:1,scaleY:1,transformPoint:(x:number,y:number)=>({x,y})})},
     buttons:[] as Button[],texts:[] as string[],textNodes:[] as TextNode[],scrolls:[] as FakeScroll[],zones,
     sliders:[] as {label:string;value:number;setValue:(value:number)=>void}[],enabled:()=>true,focusIndex:-1,
     scene:{game:{events:{emit:()=>{}}},scale:{width,height},add:{zone:()=>{const handlers=new Map<string,()=>void>();const zone={handlers,setOrigin(){return zone;},setInteractive(){return zone;},on(event:string,handler:()=>void){handlers.set(event,handler);return zone;}};zones.push(zone);return zone;}}},focus:()=>{},layout:()=>{},image:stub,
@@ -60,7 +60,7 @@ function fakeView(width:number,height:number){
         setAlign:()=>label,destroy:()=>{},
         setInteractive:()=>label,on:(event:string,handler:()=>void)=>{node.handlers.set(event,handler);return label;}};
       return label;
-    },rect:()=>{},
+    },rect(){const handlers=new Map<string,()=>void>();const zone={handlers,setInteractive(){return zone;},on(event:string,handler:()=>void){handlers.set(event,handler);return zone;}};zones.push(zone);return zone;},
     clear(){this.buttons=[];this.texts=[];this.scrolls=[];this.sliders=[];this.focusIndex=-1;},
     slider(label:string,_x:number,_y:number,_width:number,value:number,onChange:(value:number)=>void){
       const slider={label,value,setValue:(next:number)=>{slider.value=next;onChange(next);}};

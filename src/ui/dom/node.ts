@@ -11,6 +11,7 @@ export interface UiBounds { x:number;y:number;width:number;height:number;contain
 export interface UiHitArea {x:number;y:number;width:number;height:number;setSize(width:number,height:number):void}
 const mounts=new WeakMap<Phaser.Scene,Map<string,HTMLElement>>();
 const pointers=new WeakMap<Phaser.Scene,Map<number,UiPointer>>();
+const interactiveNodes=new WeakMap<Phaser.Scene,Set<UiNode>>();
 
 /** 屏幕节点的逻辑坐标与场景一致，浏览器按实际 CSS 尺寸缩放原图。 */
 export function uiMount(scene:Phaser.Scene,layer='screen'):HTMLElement {
@@ -25,9 +26,12 @@ export function uiMount(scene:Phaser.Scene,layer='screen'):HTMLElement {
     Object.assign(element.style,{left:`${bounds.left-frame.left}px`,top:`${bounds.top-frame.top}px`,width:`${scene.scale.width}px`,height:`${scene.scale.height}px`,transform:`scale(${bounds.width/scene.scale.width},${bounds.height/scene.scale.height})`});
   };
   layout();scene.scale.on('resize',layout);
-  const hide=()=>{element.hidden=true;},show=()=>{element.hidden=false;};
+  const hide=()=>{element.hidden=true;for(const pointer of pointers.get(scene)?.values()??[])pointer.isDown=false;for(const node of interactiveNodes.get(scene)??[])node.cancelPress();},show=()=>{element.hidden=false;};
   scene.events.on('pause',hide);scene.events.on('sleep',hide);scene.events.on('resume',show);scene.events.on('wake',show);
-  scene.events.once('shutdown',()=>{scene.scale.off('resize',layout);for(const name of ['pause','sleep'])scene.events.off(name,hide);for(const name of ['resume','wake'])scene.events.off(name,show);element.remove();layers!.delete(layer);});
+  const input=new AbortController();
+  for(const name of ['pointermove','pointerup','pointercancel'])window.addEventListener(name,event=>uiPointer(scene,event as PointerEvent),{capture:true,signal:input.signal});
+  window.addEventListener('blur',()=>{for(const pointer of pointers.get(scene)?.values()??[])pointer.isDown=false;pointers.get(scene)?.clear();},{signal:input.signal});
+  scene.events.once('shutdown',()=>{input.abort();pointers.delete(scene);scene.scale.off('resize',layout);for(const name of ['pause','sleep'])scene.events.off(name,hide);for(const name of ['resume','wake'])scene.events.off(name,show);element.remove();layers!.delete(layer);});
   return element;
 }
 
@@ -48,7 +52,7 @@ export class UiNode {
   parentContainer?:UiNode;
   x=0;y=0;width=0;height=0;scaleX=1;scaleY=1;depth=0;alpha=1;active=true;visible=true;
   originX=0;originY=0;flipX=false;flipY=false;
-  input?:{enabled:boolean;hitArea:UiHitArea;draggable?:boolean};
+  input?:{enabled:boolean;hitArea:UiHitArea;draggable?:boolean;hitAreaCallback?:(area:UiHitArea,x:number,y:number)=>boolean};
   private data=new Map<string,any>();
   private listeners=new Map<string,Set<Listener>>();
   readonly controller=new AbortController();
@@ -61,8 +65,10 @@ export class UiNode {
     if(parent instanceof UiNode)parent.add(this);else parent.appendChild(this.element);
     const signal=this.controller.signal;
     this.element.addEventListener('pointerdown',event=>{
-      if(!this.input?.enabled||!this.shown)return;
-      const p=uiPointer(scene,event),m=this.getWorldTransformMatrix(),lx=(p.x-m.tx)/m.scaleX,ly=(p.y-m.ty)/m.scaleY;
+      if(!this.input?.enabled||!this.shown||event.button!==0)return;
+      const p=uiPointer(scene,event),m=this.getWorldTransformMatrix(),lx=(p.x-m.tx)/m.scaleX+this.originX*this.width,ly=(p.y-m.ty)/m.scaleY+this.originY*this.height;
+      if(!this.accepts(lx,ly))return;
+      this.cancelPress();
       this.press={id:p.id,x:p.x,y:p.y,startX:this.x,startY:this.y};
       this.element.setPointerCapture(event.pointerId);
       this.emit('pointerdown',p,lx,ly,event);
@@ -71,7 +77,7 @@ export class UiNode {
     },{signal});
     this.element.addEventListener('pointermove',event=>{
       const p=uiPointer(scene,event),press=this.press;if(press?.id!==p.id)return;
-      if(!p.isDown){this.cancelPress();return;}
+      if(!p.isDown||!this.shown||!this.input?.enabled){this.cancelPress();return;}
       const m=this.parentContainer?.getWorldTransformMatrix();
       if(this.input?.draggable)this.emit('drag',p,press.startX+(p.x-press.x)/(m?.scaleX??1),press.startY+(p.y-press.y)/(m?.scaleY??1));
       this.emit('pointermove',p);event.stopPropagation();
@@ -80,7 +86,7 @@ export class UiNode {
       const p=uiPointer(scene,event);if(this.press?.id!==p.id)return;
       this.press=undefined;
       if(this.input?.draggable)this.emit('dragend',p);
-      const b=this.getBounds();this.emit(b.contains(p.x,p.y)?'pointerup':'pointerupoutside',p,0,0,event);
+      const m=this.getWorldTransformMatrix(),lx=(p.x-m.tx)/m.scaleX+this.originX*this.width,ly=(p.y-m.ty)/m.scaleY+this.originY*this.height;this.emit(this.shown&&this.input?.enabled&&this.accepts(lx,ly)?'pointerup':'pointerupoutside',p,lx,ly,event);
       if(this.element.hasPointerCapture(p.id))this.element.releasePointerCapture(p.id);
       event.stopPropagation();event.preventDefault();
     },{signal});
@@ -88,9 +94,11 @@ export class UiNode {
       if(this.press?.id===(event as PointerEvent).pointerId)this.cancelPress();
     },{signal});
     this.element.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();},{signal});
+    window.addEventListener('blur',()=>this.cancelPress(),{signal});
     this.paint();
   }
-  private cancelPress():void{this.press=undefined;this.emit('pointerupoutside');this.getData('cancelPress')?.();}
+  cancelPress():void{const id=this.press?.id;this.press=undefined;if(id!==undefined&&this.element.hasPointerCapture(id))this.element.releasePointerCapture(id);this.emit('pointerupoutside');this.getData('cancelPress')?.();}
+  private accepts(x:number,y:number):boolean{const input=this.input;if(!input)return false;const area=input.hitArea;return x>=area.x&&x<=area.x+area.width&&y>=area.y&&y<=area.y+area.height&&(!input.hitAreaCallback||input.hitAreaCallback(area,x,y));}
   get shown():boolean{return this.active&&this.visible&&(!this.parentContainer||this.parentContainer.shown);}
   add(child:UiNode|UiNode[]):this {for(const node of Array.isArray(child)?child:[child]){node.parentContainer?.remove(node);node.parentContainer=this;this.list.push(node);this.element.appendChild(node.element);}return this;}
   addAt(child:UiNode,index:number):this{this.add(child);this.list.splice(this.list.indexOf(child),1);this.list.splice(index,0,child);this.element.insertBefore(child.element,this.element.children[index]??null);return this;}
@@ -107,7 +115,8 @@ export class UiNode {
   setOrigin(x:number,y=x):this{this.originX=x;this.originY=y;this.paint();return this;}
   setDepth(value:number):this{this.depth=value;this.element.style.zIndex=String(value);return this;}
   setAlpha(value:number):this{this.alpha=value;this.element.style.opacity=String(value);return this;}
-  setVisible(value:boolean):this{this.visible=value;this.element.hidden=!value;if(!value)this.cancelPress();return this;}
+  setVisible(value:boolean):this{this.visible=value;this.element.hidden=!value;if(!value){this.cancelPress();this.cancelDescendants();}return this;}
+  private cancelDescendants():void{for(const child of this.list){child.cancelPress();child.cancelDescendants();}}
   setFlipX(value:boolean):this{this.flipX=value;this.paint();return this;}
   setFlipY(value:boolean):this{this.flipY=value;this.paint();return this;}
   setBlendMode(value:number|string):this{this.element.style.mixBlendMode=value===1||value==='add'?'plus-lighter':value==='multiply'||value==='screen'||value==='color-dodge'?value:'normal';return this;}
@@ -121,11 +130,12 @@ export class UiNode {
   once(name:string,listener:Listener):this{const run:Listener=(...args)=>{this.off(name,run);listener(...args);};return this.on(name,run);}
   off(name:string,listener:Listener):this{this.listeners.get(name)?.delete(listener);return this;}
   emit(name:string,...args:any[]):this{for(const listener of this.listeners.get(name)??[])listener(...args);return this;}
-  setInteractive(area?:{x?:number;y?:number;width:number;height:number}|object,_test?:unknown):this{
+  setInteractive(area?:{x?:number;y?:number;width:number;height:number}|object,test?:(area:UiHitArea,x:number,y:number)=>boolean):this{
+    let nodes=interactiveNodes.get(this.scene);if(!nodes){nodes=new Set();interactiveNodes.set(this.scene,nodes);}nodes.add(this);
     const box=area&&'width'in area?area:undefined;
     if(!this.input)this.autoHit=!box;
     this.input??={enabled:true,hitArea:{x:box&&'x'in box?box.x??0:0,y:box&&'y'in box?box.y??0:0,width:box?.width??this.width,height:box?.height??this.height,setSize(w,h){this.width=w;this.height=h;}}};
-    this.input.enabled=true;
+    this.input.enabled=true;if(test)this.input.hitAreaCallback=test;
     if(!this.hit){this.hit=document.createElement('span');Object.assign(this.hit.style,{position:'absolute',pointerEvents:'auto',touchAction:'none'});this.element.insertBefore(this.hit,this.element.firstChild);}
     this.hit.hidden=false;this.paintHit();return this;
   }
@@ -148,7 +158,7 @@ export class UiNode {
     this.paintHit();
   }
   private paintHit():void{if(!this.hit||!this.input)return;const area=this.input.hitArea;if(this.autoHit){area.width=this.width;area.height=this.height;}Object.assign(this.hit.style,{left:`${area.x}px`,top:`${area.y}px`,width:`${area.width}px`,height:`${area.height}px`});}
-  destroy(_children=true):void{if(!this.active)return;this.cancelPress();this.emit('destroy');this.active=false;this.controller.abort();this.removeAll(true);this.parentContainer?.remove(this);this.element.remove();this.listeners.clear();this.data.clear();}
+  destroy(_children=true):void{if(!this.active)return;this.cancelPress();this.emit('destroy');this.active=false;interactiveNodes.get(this.scene)?.delete(this);this.controller.abort();this.removeAll(true);this.parentContainer?.remove(this);this.element.remove();this.listeners.clear();this.data.clear();}
 }
 
 export class UiImage extends UiNode {
@@ -166,12 +176,12 @@ export class UiImage extends UiNode {
   load(file:string):this{this.setData('file',file);const cached=domAssets.peek(file);if(cached)this.applySource(cached);this.request?.abort();const request=this.request=new AbortController();void domAssets.acquire(file,request.signal).then(lease=>{if(!this.active||request!==this.request){lease.release();return;}this.lease?.release();this.lease=lease;this.applySource(lease.source);}).catch(error=>{if(!request.signal.aborted)console.error(error);});return this;}
   applySource(source:DomImageSource):this{this.source=source;this.picture.src=source.url;const ratio=source.frame.width/source.frame.height;super.setSize(this.requestedWidth??(this.requestedHeight!==undefined?this.requestedHeight*ratio:source.frame.width),this.requestedHeight??(this.requestedWidth!==undefined?this.requestedWidth/ratio:source.frame.height));this.draw();this.emit('loaded');return this;}
   override setDisplaySize(width:number,height:number):this{this.requestedWidth=width;this.requestedHeight=height;super.setSize(width,height);this.draw();return this;}
-  resize(width?:number,height?:number):this{this.requestedWidth=width;this.requestedHeight=height;if(this.source)this.applySource(this.source);return this;}
+  resize(width?:number,height?:number):this{this.requestedWidth=width;this.requestedHeight=height;if(this.source)this.applySource(this.source);else super.setSize(width??this.width,height??this.height);return this;}
   fitting(x=.5,y=.5):this{this.cover={x,y};this.draw();return this;}
   override setFlipX(value:boolean):this{super.setFlipX(value);this.draw();return this;}
   override setFlipY(value:boolean):this{super.setFlipY(value);this.draw();return this;}
-  setCrop(x:number,y:number,width:number,height:number):this{if(this.source)this.applySource({...this.source,frame:{x:this.source.frame.x+x,y:this.source.frame.y+y,width,height}});return this;}
-  private draw():void{if(!this.source)return;const source=this.source,frame=source.frame;let sx=this.width/frame.width,sy=this.height/frame.height,left=0,top=0;if(this.cover){sx=sy=Math.max(sx,sy);left=(this.width-frame.width*sx)*this.cover.x;top=(this.height-frame.height*sy)*this.cover.y;}Object.assign(this.picture.style,{width:`${source.width*sx}px`,height:`${source.height*sy}px`,left:`${left-frame.x*sx}px`,top:`${top-frame.y*sy}px`});this.element.style.scale=`${this.flipX?-1:1} ${this.flipY?-1:1}`;this.element.style.transformOrigin=`${this.flipX?'50%':'0'} ${this.flipY?'50%':'0'}`;}
+  setCrop(x:number,y:number,width:number,height:number):this{this.element.style.clipPath=`inset(${y}px ${Math.max(0,this.width-x-width)}px ${Math.max(0,this.height-y-height)}px ${x}px)`;return this;}
+  private draw():void{if(!this.source)return;const source=this.source,frame=source.frame;let sx=this.width/frame.width,sy=this.height/frame.height,left=0,top=0;if(this.cover){sx=sy=Math.max(sx,sy);left=(this.width-frame.width*sx)*this.cover.x;top=(this.height-frame.height*sy)*this.cover.y;}Object.assign(this.picture.style,{width:`${source.width*sx}px`,height:`${source.height*sy}px`,left:`${left-frame.x*sx}px`,top:`${top-frame.y*sy}px`});this.picture.style.transform=`scale(${this.flipX?-1:1},${this.flipY?-1:1})`;this.picture.style.transformOrigin=`${this.width/2-left+frame.x*sx}px ${this.height/2-top+frame.y*sy}px`;}
   override destroy():void{this.request?.abort();this.lease?.release();this.lease=undefined;super.destroy();}
 }
 

@@ -2,11 +2,11 @@
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}html,body{margin:0;width:100%;height:100%;overflow:hidden;overscroll-behavior:none;background:#080d12;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;color:#f5f0df;touch-action:none;-webkit-user-select:none;user-select:none}button{font:inherit;color:inherit;cursor:pointer;touch-action:none}button:focus-visible{outline:2px solid var(--gold);outline-offset:4px}[hidden]{display:none!important}
 #safe-area{position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}#game-frame{position:fixed;overflow:hidden;background:var(--ink)}#game{position:absolute;inset:0}#game canvas{display:block}
 
-/* DOM 文字层：画布继续 1 倍渲染世界，界面文字由浏览器按物理像素绘制。 */
+/* 屏幕图片与控件按场景分层；独立文字位于同层图片之上。 */
 #ui-root{position:absolute;inset:0;z-index:4;pointer-events:none;contain:layout style paint;isolation:isolate;overflow:hidden;font-family:var(--font-game);-webkit-text-size-adjust:100%;text-size-adjust:100%}
 .dom-ui-layer{position:absolute;inset:0;overflow:hidden;pointer-events:none}
 #ui-world{z-index:1}#ui-hud{z-index:2}#ui-screen{z-index:3}#ui-overlay{z-index:4}
-.dom-label{position:absolute;left:0;top:0;white-space:nowrap;pointer-events:none;line-height:1.2;color:#f5f0df}
+.dom-label{position:absolute;z-index:1;left:0;top:0;white-space:nowrap;pointer-events:none;line-height:1.2;color:#f5f0df}
 /* 只有压在游戏画面上的文字需要阴影；菜单文字站在面板底色上，描边会把笔画糊粗。 */
 #ui-world .dom-label,#ui-hud .dom-label{text-shadow:0 1px 2px rgba(0,0,0,.6)}
 .dom-menu-clip{position:absolute;left:0;top:0;overflow:hidden;pointer-events:none}

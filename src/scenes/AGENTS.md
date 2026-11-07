@@ -18,6 +18,7 @@ Phaser 场景层：驱动生命周期、转发输入，把 domain、rendering、
 - `WorldCombat` 把地图的 `captureStandability` 接给敌人和佣兵的寻路器。一次搜索共用一份占位，走动时再由 `movement.canStand` 检查下一步。
 
 - 场景只驱动生命周期、转发输入、调度下层模块；判定和数值规则写进 `src/domain/`，世界绘制交给 `src/rendering/`，屏幕界面绘制与输入交给 `src/ui/dom/`。
+- 标题、职业选择、对白、选项、加载与阵亡界面使用 DOM 菜单表面；透明热区与显示节点使用相同的场景坐标换算。立绘预载状态查 DOM 图片缓存，预载请求沿用页面取消信号。
 - 世界小地图由 `StoryMinimap` 连接 DOM 组件和场景显隐；地图关闭时释放组件，地形与图标通过 DOM 资源预载准备。
 - 击杀奖励结算、召唤生命周期和交互决策在 `src/domain/`：场景只收集输入、播放表现、决定落点并执行 domain 返回的动作/奖励清单。
 - `WorldScene.interact()` 把附近目标、任务槽和商店状态交给 `domain/interaction.ts` 的 `resolveInteraction`；选目标的 `updateInteractionTarget` 只按距离挑最近的一个，交互前场景把角色转向目标，朝向不参与能否交互的判定。

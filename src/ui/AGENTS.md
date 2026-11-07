@@ -7,6 +7,7 @@
 - 布局：`bag-layout.ts`（背包格位）、`skill-book-layout.ts`（技能书页的图标格与右栏）、`choice-layout.ts`（选项竖排）、`control-layout.ts`（控件键位）、`item-layout.ts`（物品格与货币）、`shop-layout.ts`（商店两栏）、`quest-popup-layout.ts`（任务窗）、`description-text-layout.ts`（说明断行）、`text-layout.ts`（通用换行）、`cloud-save-layout.ts`（云存档页状态、颜色与几何）、`portrait-fit.ts`（头像等比裁剪）、`viewport.ts`（画布缩放、安全区与参考分辨率）。
 - 文本与样式：`text-style.ts`（共用字体）、`text-prompt.ts`（系统键盘输入，用于存档改名）、`cloud-credentials-input.ts`（云存档页内嵌的账号/密码输入框）、`password-change-prompt.ts`（修改密码的当前/新/确认三项表单）、`dialogue-text.ts`（对白分页、断行与逐字显示）、`item-detail-lines.ts`（物品说明行）、`skill-detail-lines.ts`（技能说明行）、`item-result-details.ts`（操作结果说明）、`enhancement-odds-lines.ts`（强化结果句与混沌结果表）、`item-name-color.ts`（品质颜色与装备格边框）、`character-values.ts`（角色数值）。
 - 接口与交互：`game-ui.ts`（UI 能力与视图接口）、`story-ui.ts`（剧情与菜单 UI 的接口、页面枚举和提示文案）、`story-ui-signature.ts`（菜单页面 viewModel 与显式签名）、`save-page.ts`（存档/读档页 controller）、`action-press-gate.ts`（动作按钮互斥）、`common-button.ts`（通用按钮素材）、`instant-message.ts`（屏幕提示）、`slot-frame.ts`（格子底图）。
+- DOM 组件：`dom/node.ts`、`dom/surface.ts` 提供菜单图片、文本、按钮、裁剪、滚动与原生指针；`dom/volume-slider.ts` 提供音量条，`dom/character-preview.ts` 提供角色静态预览。
 - DOM 文字：`dom/dom-ui.ts`（标签创建、层与坐标换算）、`dom/menu-text.ts`（菜单页、滚动与裁剪）。
 
 ## 规则
@@ -16,6 +17,7 @@
 - **头像按比例裁进框。** HUD、人物页、队伍页和背包预览的头像用 `portraitFit` / `UiSurface.imageCover` 等比缩放后裁剪；同一张图换到不同槽位也不会被拉变形。
 - 人物页的生命、魔法、经验三行位于立绘下方；标签、数值和百分比按对应槽位的中心线对齐，最后一行完整落在面板内。
 - **画面铺满，安全区只给 UI 避让。** Android 壳用 edge-to-edge 铺满整屏；`readSafeArea()` 只用于 HUD、侧边按钮、小地图和文字的安全边，不参与画布尺寸。
+- `story-ui.ts` 的长按加点与背包拖放接收窗口原生移动、松手、取消和失焦事件；正文重绘后仍能结束手势。侧边按钮按实际内容节点判断是否已创建。
 - `story-ui.ts` 只在 `attach` 时向 `app.inputRouter` 注册一个 `menu` 作用域，菜单打开时独占键盘；场景不再单独订阅 `keydown`。
 - **页面 controller 拥有这一页的状态和操作。** `save-page.ts` 是存档/读档页的样板：确认框、改名输入、读写请求和 Escape 分层都在 controller 里，`StoryUI` 只保留路由、生命周期、共享输入和整页重绘。后续拆 `party`、`quests`、`shop` 等页面时沿用同一方向，不重写面板绘制。
 - **每个菜单页面都有显式签名。** 页面 viewModel 与签名集中在 `story-ui-signature.ts`：用 `page`、`selectedMemberId`、`bag.revision`、`questBook.version`、`party` 形状、技能版本、存档槽摘要、设置值和面板自己的 `viewModel()` 拼出来，不做对象深度哈希。新增 `Page` 必须同时在 `STORY_MENU_PAGES` 和签名分支里补上；会话通知只在该页签名变化时重绘，数据没变不重绘。
