@@ -17,6 +17,17 @@ const textureQueues = new WeakMap<Phaser.Textures.TextureManager, Promise<void>>
  * 前者还没开始用这张纹理，可以一起等重建；后者不能删。
  */
 const activeLoaders = new WeakMap<Phaser.Textures.TextureManager, Map<string, number>>();
+/**
+ * 取消的加载批次里，Phaser 仍可能在租约释放后才把图片写进全局纹理库。
+ * 这里按纹理库记下这些键；晚到的纹理如果没有新租约接管，就立刻删除。
+ */
+const abandonedTextures = new WeakMap<Phaser.Textures.TextureManager, Set<string>>();
+
+function markAbandonedTextures(textures: Phaser.Textures.TextureManager, keys: Iterable<string>): void {
+  let abandoned = abandonedTextures.get(textures);
+  if (!abandoned) { abandoned = new Set(); abandonedTextures.set(textures, abandoned); }
+  for (const key of keys) abandoned.add(key);
+}
 
 function loaderCounts(scene: Phaser.Scene): Map<string, number> {
   let counts = activeLoaders.get(scene.textures);
@@ -38,8 +49,20 @@ function poolFor(scene: Phaser.Scene): AssetPool {
     // 纹理和动画都属于全游戏共用的管理器；这里不能捕获某个具体 Scene，
     // 否则清理时会去错误的场景账本里找特效动画。
     const anims = scene.anims, textures = scene.textures;
-    pool = new AssetPool(key => removeTexture(anims, textures, key));
-    pools.set(scene.textures, pool);
+    const created = new AssetPool(key => removeTexture(anims, textures, key));
+    pool = created;
+    pools.set(textures, created);
+    // Phaser 的 Loader 不保证在场景关闭时中止在途文件。晚到的纹理如果没有租约接管，
+    // 就在这里立刻删掉，避免它变成没人释放的无主纹理。
+    if (typeof textures.on === 'function') {
+      textures.on('addtexture', (key: string) => {
+        const abandoned = abandonedTextures.get(textures);
+        if (!abandoned?.has(key)) return;
+        abandoned.delete(key);
+        if (created.holders(key)) return;
+        removeTexture(anims, textures, key);
+      });
+    }
   }
   return pool;
 }
@@ -164,7 +187,10 @@ export async function loadSceneAssets(scene: Phaser.Scene, assets: PendingAsset[
     if(!retain)scene.events.once('shutdown',lease.release);
     return lease;
   }catch(error){
-    if(!controller.signal.aborted)globalThis.storyDiagnostics?.record('asset-load-error',
+    // 中止只结束 JS 这边的等待；Phaser 的在途文件仍可能晚到并写进纹理库。
+    // 先记账再释放：晚到的纹理如果没有新租约接管，就在 addtexture 时删掉。
+    if(controller.signal.aborted)markAbandonedTextures(scene.textures,keys);
+    else globalThis.storyDiagnostics?.record('asset-load-error',
       {error,files:unique.map(asset=>({key:asset.key,file:asset.file}))});
     scene.events.off('shutdown',shutdown);lease.release();throw error;
   }finally{

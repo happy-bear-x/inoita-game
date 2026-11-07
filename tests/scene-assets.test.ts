@@ -10,6 +10,7 @@ const diagnostic = (pattern: RegExp) => (error: unknown) => error instanceof Err
 
 function setup() {
   const events = new EventEmitter();
+  const textureEvents = new EventEmitter();
   const frames = new Map<string, Set<string | number>>();
   const removed: string[] = [];
   const queued: PendingAsset[] = [];
@@ -39,6 +40,7 @@ function setup() {
   const scene = {
     events, load,
     textures: {
+      on: textureEvents.on.bind(textureEvents),
       exists: (key: string) => frames.has(key),
       get: (key: string) => ({ has: (frame: string) => {
         const values = frames.get(key)!;
@@ -48,7 +50,8 @@ function setup() {
     },
     anims: { exists: () => false, remove: () => {} }
   } as unknown as Phaser.Scene;
-  return { scene, events, load, frames, removed, queued, starts: () => starts, outcome: (next: typeof outcome) => { outcome = next; } };
+  return { scene, events, load, frames, removed, queued, starts: () => starts, outcome: (next: typeof outcome) => { outcome = next; },
+    addTexture: (key: string) => { frames.set(key, new Set([0, 1, 2])); textureEvents.emit('addtexture', key); } };
 }
 
 test('decode failure rejects with the asset key and path, then retry can acquire and release it', async () => {
@@ -147,6 +150,29 @@ test('network failure and shutdown clean up loading listeners and ownership', as
   await assert.rejects(pending, { name: 'AbortError' });
   assert.deepEqual(cancelled.load.eventNames(), []);
   assert.equal(cancelled.events.listenerCount('shutdown'), 0);
+});
+
+test('cancelled loading removes a texture that arrives after the lease is released', async () => {
+  const run = setup(); run.outcome('pending');
+  const pending = loadSceneAssets(run.scene, [asset], () => {});
+  run.events.emit('shutdown');
+  await assert.rejects(pending, { name: 'AbortError' });
+  run.addTexture(asset.key);
+  assert.equal(run.frames.has(asset.key), false, '迟到纹理没有新租约时应立即删除');
+  assert.ok(run.removed.includes(asset.key));
+});
+
+test('a late texture stays when a new lease already owns the key', async () => {
+  const run = setup(); run.outcome('pending');
+  const pending = loadSceneAssets(run.scene, [asset], () => {});
+  run.events.emit('shutdown');
+  await assert.rejects(pending, { name: 'AbortError' });
+  run.outcome('success');
+  const lease = await loadSceneAssets(run.scene, [asset], () => {});
+  run.addTexture(asset.key);
+  assert.equal(run.frames.has(asset.key), true, '新租约接管后不能删除迟到纹理');
+  lease.release();
+  assert.equal(run.frames.has(asset.key), false);
 });
 
 test('atlas assets load with string frames and verify their sentinel frame', async () => {
