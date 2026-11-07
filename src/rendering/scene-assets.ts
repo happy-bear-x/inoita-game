@@ -153,6 +153,14 @@ export async function loadSceneAssets(scene: Phaser.Scene, assets: PendingAsset[
   }
   const unique = [...byKey.values()];
   const keys = unique.map(asset=>asset.key);
+  // 已齐全的纹理只需取得使用权；它们不会写纹理库，不必等其他地图的下载。
+  if (unique.every(asset => assetGap(scene, asset) === undefined)) {
+    const ownership = acquireAssets(scene, keys, owner);
+    const lease = { release: () => { scene.events.off('shutdown', lease.release); ownership.release(); } };
+    if (!retain) scene.events.once('shutdown', lease.release);
+    try { progress(1); return lease; }
+    catch (error) { lease.release(); throw error; }
+  }
   changeLoaders(scene, keys, 1);
   const ownership = acquireAssets(scene, keys, owner);
   const lease = {release:()=>{scene.events.off('shutdown',lease.release);ownership.release();}};

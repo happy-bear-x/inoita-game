@@ -213,3 +213,38 @@ test('retaining assets verifies textures and frames before taking a lease', () =
   lease.release();
   assert.deepEqual(run.removed, [asset.key]);
 });
+
+test('ready and empty asset requests finish while an unrelated download is still pending', async () => {
+  const run = setup(); run.outcome('pending');
+  const unrelated = { kind: 'image' as const, key: 'far-map', file: 'far-map.png' };
+  const downloading = loadSceneAssets(run.scene, [unrelated], () => {}, true);
+  await new Promise(resolve => setImmediate(resolve));
+  run.frames.set(asset.key, new Set([0, 1, 2]));
+  const otherScene = { ...run.scene, events: new EventEmitter() } as unknown as Phaser.Scene;
+  let ready = false, empty = false;
+  const cached = loadSceneAssets(otherScene, [asset], () => {}, true).then(lease => { ready = true; return lease; });
+  const noAssets = loadSceneAssets(otherScene, [], () => {}).then(lease => { empty = true; return lease; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(ready, true, '已经齐全的贴图不等远图下载'); assert.equal(empty, true);
+  assert.equal(run.starts(), 1);
+  run.frames.set(unrelated.key, new Set([0])); run.load.emit('complete');
+  const leases = await Promise.all([downloading, cached, noAssets]);
+  for (const lease of leases) lease.release();
+  assert.equal(run.frames.size, 0);
+});
+
+test('missing frames still wait for the writer queue before repairing the texture', async () => {
+  const run = setup(); run.outcome('pending');
+  const unrelated = { kind: 'image' as const, key: 'far-map', file: 'far-map.png' };
+  const downloading = loadSceneAssets(run.scene, [unrelated], () => {}, true);
+  await new Promise(resolve => setImmediate(resolve));
+  run.frames.set(asset.key, new Set([0, 2]));
+  let repaired = false;
+  const repairing = loadSceneAssets(run.scene, [asset], () => {}, true).then(lease => { repaired = true; return lease; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(repaired, false); assert.equal(run.starts(), 1); assert.deepEqual([...run.frames.get(asset.key)!], [0, 2]);
+  run.frames.set(unrelated.key, new Set([0])); run.outcome('success'); run.load.emit('complete');
+  const leases = await Promise.all([downloading, repairing]);
+  assert.equal(repaired, true); assert.equal(run.starts(), 2);
+  for (const lease of leases) lease.release();
+});
