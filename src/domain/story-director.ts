@@ -33,6 +33,7 @@ export interface StoryWorldPort {
   /** 一次剧情播放正常交还操作权后的收尾；取消/报错不调用。 */
   settle?(): void | Promise<void>;
 }
+export type StorySkipPhase = 'requested' | 'logic-complete' | 'world-ready' | 'released' | 'choice' | 'quest-popup' | 'cancelled';
 interface PlaybackBaseline { world?: unknown; stage?: StoryStageSnapshot }
 
 /** 节点先完成表现，再一次提交状态；场景重建失败可以从已提交节点继续。 */
@@ -96,6 +97,8 @@ export class StoryDirector {
   onError?: (error: unknown, retry: () => Promise<boolean>) => void;
   /** 本次播出的第一段画面已经画出；进图加载界面据此收起，避免先露一帧地图。 */
   onPresentationStarted?: () => void;
+  /** 只报告流程位置，计时与诊断由应用层装配。 */
+  onSkipProgress?: (phase: StorySkipPhase) => void;
   /**
    * 一个剧情事件播完（不是每个节点）。世界投影已经结束才会回调，所以这时候
    * 会话和世界是同一份状态，自动存档可以安全地抓快照。
@@ -119,8 +122,11 @@ export class StoryDirector {
       apply: commit => this.apply(commit),
       commit: commit => this.commit(commit),
       afterCommit: async (commit, context) => {
-        await this.project(context.signal);
         const run = commit.checkpoint.runs.find(candidate => candidate.id === commit.runId);
+        const handingBack = run?.status !== 'running';
+        if (handingBack) this.onSkipProgress?.('logic-complete');
+        await this.project(context.signal);
+        if (handingBack) this.onSkipProgress?.('world-ready');
         if (commit.eventId && run?.status === 'completed') this.onEventCompleted?.(commit.eventId);
       },
       recover: context => this.recover(context.signal),
@@ -239,7 +245,11 @@ export class StoryDirector {
   }
   get busy(): boolean { return this.manualBusy || this.runtime.busy || this.locked; }
   get canSkip(): boolean { return this.busy && !this.choosing && !this.confirming && !(this.context?.signal ?? this.manual.signal).aborted; }
-  skip(): void { if (this.canSkip) { this.skipping = true; this.skipRequest.abort(); this.ui.skipDialogue(); } }
+  skip(): void {
+    if (!this.canSkip) return;
+    if (!this.skipping) this.onSkipProgress?.('requested');
+    this.skipping = true; this.skipRequest.abort(); this.ui.skipDialogue();
+  }
   private resetPlayback(): void { this.skipping = false; this.skipRequest = new AbortController(); }
   private setLocked(value: boolean): void { if (this.locked !== value) { this.locked = value; this.onLock(value); } }
   private release(): void {
@@ -252,7 +262,7 @@ export class StoryDirector {
           this.presenting = false; this.presentationRun = undefined;
           if (!this.runtime.busy && !this.manualBusy && !this.debugJumpPending) {
             this.context = undefined; this.choosing = false; this.confirming = false;
-            this.ui.closeDialogue(); this.setLocked(false);
+            this.ui.closeDialogue(); this.setLocked(false); this.onSkipProgress?.('released');
           }
         }
       }
@@ -279,6 +289,7 @@ export class StoryDirector {
   }
 
   cancel(): void {
+    this.onSkipProgress?.('cancelled');
     this.manual.abort(); this.runtime.cancel(); this.ui.closeDialogue();
     if (!this.runtime.busy && !this.manualBusy) this.release();
   }
@@ -347,7 +358,9 @@ export class StoryDirector {
     signal.throwIfAborted(); this.skipping = false; this.skipRequest = new AbortController(); this.choosing = true;
     try {
       // 跳过到这里必须停下来让玩家选；先把逻辑舞台画出来，选择框背后的地图和人物才对。
+      this.onSkipProgress?.('logic-complete');
       await this.presentation?.flushStage?.(signal);
+      this.onSkipProgress?.('world-ready'); this.onSkipProgress?.('choice');
       const option = await this.ui.choice(prompt, options, description, signal); signal.throwIfAborted(); return option;
     }
     finally { this.choosing = false; }
@@ -403,7 +416,9 @@ export class StoryDirector {
         this.confirming = true;
         try {
           // 任务窗要盖在剧情画面上；跳过期间先把当前逻辑舞台补画出来。
+          this.onSkipProgress?.('logic-complete');
           await this.presentation?.flushStage?.(context.signal);
+          this.onSkipProgress?.('world-ready'); this.onSkipProgress?.('quest-popup');
           await this.ui.questPopup(action.kind, quest, receipt, context.signal);
         }
         finally { this.confirming = false; }

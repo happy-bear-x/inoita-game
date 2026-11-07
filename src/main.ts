@@ -36,7 +36,7 @@ import { gameMenuImageGroups } from './application/menu-images.ts';
 import { UI_ICON_ATLAS_FILE } from './generated/icon-atlas.ts';
 import { GAME_FRAME_TIMING, installFrameLimitClock } from './application/game-timing.ts';
 import { GAME_VERSION } from './application/asset-version.ts';
-import { installDevelopmentMemory, installGameDiagnostics, sceneMemoryCounts } from './application/game-diagnostics.ts';
+import { installDevelopmentMemory, installGameDiagnostics, installStorySkipDiagnostics, sceneMemoryCounts } from './application/game-diagnostics.ts';
 import { FrameSampler } from './application/frame-sampler.ts';
 import { storyDevMode } from './domain/dev-mode.ts';
 import { createGmActions, type GmActions } from './debug/gm-actions.ts';
@@ -434,6 +434,8 @@ function installSession(session: Session): void {
     prefetch: async (scripts, signal) => { await worldScene()?.ensureStoryAssets(scripts, signal); },
   });
   app.director = director;
+  if (app.memorySampler) installStorySkipDiagnostics(director,
+    (kind, details) => globalThis.storyDiagnostics?.record(kind, details, false));
   // 事件播完（世界投影已经结束）写入自动存档；节点中途不写。
   director.onEventCompleted = () => autoSaver?.request();
   director.onError = (error, retry) => {

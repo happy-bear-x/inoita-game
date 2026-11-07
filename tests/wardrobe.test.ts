@@ -208,3 +208,13 @@ test('cached outfits keep their source parts alive until the session pool is cle
   map.release(); wardrobe.destroy(); assert.ok(run.textures.has(source.key), '缓存仍能从部件重绘');
   run.pool.destroy(); assert.equal(run.textures.size, 0);
 });
+
+test('skipping the sole outfit requester cancels composition and discards a late preview', async t => {
+  const run = sharedSetup(t), wardrobe = run.create(), skip = new AbortController();
+  const pending = wardrobe.prepare(run.actor, {}, 'hero', { signal: skip.signal });
+  const rejected = assert.rejects(pending, { name: 'AbortError' }); skip.abort(); await rejected;
+  assert.equal(run.textures.size, 0); run.finish(0);
+  const replacement = wardrobe.prepare(run.actor, {}, 'hero');
+  assert.equal(run.snapshots.length, 2); run.finish(1); await replacement;
+  assert.equal(run.textures.size, 1); wardrobe.destroy();
+});

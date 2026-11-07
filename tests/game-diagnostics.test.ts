@@ -15,7 +15,7 @@ const source = await readFile(new URL('../public/diagnostics.js', import.meta.ur
 const hooks = registerHooks({ resolve(specifier, context, next) {
   return specifier === 'phaser' ? { shortCircuit: true, url: 'data:text/javascript,export default {Core:{Events:{PRE_STEP:"prestep",POST_STEP:"poststep",POST_RENDER:"postrender",PAUSE:"pause",RESUME:"resume",DESTROY:"destroy"}}}' } : next(specifier, context);
 } });
-const { installGameDiagnostics, installDevelopmentMemory } = await import('../src/application/game-diagnostics.ts');
+const { installGameDiagnostics, installDevelopmentMemory, installStorySkipDiagnostics } = await import('../src/application/game-diagnostics.ts');
 hooks.deregister();
 const middlewareUrl = new URL('../tools/diagnostic-collector.mjs', import.meta.url).href;
 type Middleware = (req: EventEmitter & { url: string; method: string }, res: {
@@ -338,4 +338,20 @@ test('development memory counts shared Phaser caches and reports textures that w
   // scene-assets 自己的迟到贴图监听仍归它管理，仅检查诊断的回收。
   assert.equal(textures.removeKey, originalRemoveKey);
   assert.deepEqual(audio.events.eventNames(), []);
+});
+
+test('skip diagnostics report logical completion, world readiness and actual unlock once', () => {
+  const director: Pick<import('../src/domain/story-director.ts').StoryDirector, 'onSkipProgress'> = {};
+  const records: { kind: string; details: object }[] = []; let now = 100;
+  installStorySkipDiagnostics(director, (kind, details) => records.push({ kind, details }), () => now);
+  director.onSkipProgress!('requested'); now = 110; director.onSkipProgress!('requested');
+  now = 120; director.onSkipProgress!('logic-complete'); now = 150; director.onSkipProgress!('world-ready');
+  assert.equal(records.length, 0); now = 160; director.onSkipProgress!('released'); director.onSkipProgress!('released');
+  assert.deepEqual(records, [{ kind: 'story-skip-summary', details: { outcome: 'released', logicMs: 20, worldReadyMs: 50, unlockedMs: 60, elapsedMs: 60 } }]);
+  now = 200; director.onSkipProgress!('requested'); now = 210; director.onSkipProgress!('logic-complete');
+  now = 230; director.onSkipProgress!('world-ready'); director.onSkipProgress!('choice');
+  now = 900; director.onSkipProgress!('released');
+  assert.equal(records.length, 2); assert.deepEqual(records[1].details, { outcome: 'choice', logicMs: 10, worldReadyMs: 30, unlockedMs: null, elapsedMs: 30 });
+  director.onSkipProgress!('requested'); director.onSkipProgress!('cancelled'); now = 905; director.onSkipProgress!('released');
+  assert.deepEqual(records[2].details, { outcome: 'cancelled', logicMs: null, worldReadyMs: null, unlockedMs: 5, elapsedMs: 5 });
 });

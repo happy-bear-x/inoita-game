@@ -83,7 +83,7 @@ export interface PerformancePlayback {
 
 export interface StoryPresentationPort {
   /** `deferFirstStage`：首幕舞台动作由随后的 `execute` 画出，避免同一张舞台图建两次。
-   *  `skipSignal` 已中止时只解析逻辑舞台，不创建或重绘画面。 */
+   *  `skipSignal` 在准备画面期间中止时结束该次等待；已中止时只解析逻辑舞台，不创建或重绘画面。 */
   begin(signal?: AbortSignal, stage?: StoryStage | StoryStageSnapshot, initialCurtain?: StoryCurtain, deferFirstStage?: boolean, skipSignal?: AbortSignal): void | Promise<void>;
   /** 跳过期间选择或任务弹窗要出现在正确画面上时，按当前逻辑快照补画一次。 */
   flushStage?(signal: AbortSignal): Promise<void>;

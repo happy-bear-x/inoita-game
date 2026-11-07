@@ -711,3 +711,81 @@ test('restoring a scene on map B retains prepared map A objects and positions fo
   const objects=(scene:typeof returned)=>scene.actors.filter(actor=>actor.id!=='player').map(actor=>[actor.id,actor.worldEntityId,actor.x,actor.y,actor.visible]);
   assert.deepEqual(objects(returned),objects(sceneA));
 });
+
+test('skipping an in-flight stage load continues logically and ignores the late picture', async () => {
+  const run = harness(), signal = new AbortController().signal, skip = new AbortController();
+  await run.presenter.begin(signal);
+  const show = run.stage.showStage.bind(run.stage), painted = run.rendered();
+  let release!: () => void, visualSignal: AbortSignal | undefined, done = false;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  run.stage.showStage = async (stage, loading, appearance) => {
+    visualSignal = loading; await held; await show(stage, loading, appearance);
+  };
+  const running = run.presenter.execute({ type: 'stage', map: 'hall', x: 30, y: 40, facing: 'east', playerVisible: true,
+    cast: [{ id: 'guard', actor: 'guard', worldEntityId: 'persistent-guard', x: 60, y: 70, facing: 'south', visible: true }] },
+    { signal, skipSignal: skip.signal }).then(() => { done = true; });
+  await new Promise(resolve => setImmediate(resolve)); assert.ok(visualSignal);
+  skip.abort(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(done, true, '旧画面还没有加载完，逻辑已继续'); assert.equal(visualSignal!.aborted, true); await running;
+  assert.equal(run.rendered(), painted); assert.equal(run.presenter.captureStage()!.map, 'hall');
+  await run.presenter.execute({ type: 'walk', target: 'guard', x: 90, y: 100, speedPxPerSecond: 100 }, { signal, skipSignal: skip.signal });
+  run.stage.showStage = show; await run.presenter.flushStage(signal);
+  const frame = run.rendered(); release(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(run.rendered(), frame, '迟到的旧加载不能覆盖补画');
+  const actor = run.presenter.captureStage()!.scene.actors.find(actor => actor.worldEntityId === 'persistent-guard')!;
+  assert.deepEqual([actor.x, actor.y], [90, 100]);
+});
+
+test('skipping stage startup returns before CREATE and a choice reuses the pending launch', async () => {
+  const run = harness(), signal = new AbortController().signal, skip = new AbortController();
+  let active = false, launches = 0, created!: () => void, done = false;
+  run.stage.sys.isActive = () => active;
+  run.world.scene.launch = (_key, options: { onReady: () => void }) => { launches++; created = options.onReady; return run.world.scene; };
+  run.world.scene.moveAbove = () => run.world.scene;
+  const starting = run.presenter.begin(signal, { type: 'stage', map: 'hall', x: 30, y: 40, facing: 'east', playerVisible: true, cast: [] },
+    undefined, false, skip.signal).then(() => { done = true; });
+  await new Promise(resolve => setImmediate(resolve)); assert.equal(launches, 1);
+  skip.abort(); await new Promise(resolve => setImmediate(resolve)); assert.equal(done, true); await starting;
+  assert.equal(run.rendered(), 0); assert.equal(run.presenter.captureStage()!.map, 'hall');
+  const choice = run.presenter.flushStage(signal); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(launches, 1, '选项补画复用正在启动的舞台'); active = true; created(); await choice;
+  assert.equal(run.rendered(), 1); await run.presenter.release();
+});
+
+test('skipping on-demand actor preparation still commits its logical placement', async () => {
+  const run = harness(), signal = new AbortController().signal, skip = new AbortController();
+  await run.presenter.begin(signal);
+  const painted = run.rendered(); let visualSignal: AbortSignal | undefined, done = false, release!: () => void;
+  run.stage.prepareActorAssets = async (_actor, loading) => { visualSignal = loading; await new Promise<void>(resolve => { release = resolve; }); loading.throwIfAborted(); };
+  const action = { type: 'world-object' as const, command: { kind: 'place' as const,
+    entity: { id: 'new-guard', map: 'home', actor: 'guard', x: 80, y: 90, facing: 'north' as const, visible: true } } };
+  const running = run.presenter.execute(action, { signal, skipSignal: skip.signal }).then(() => { done = true; });
+  await new Promise(resolve => setImmediate(resolve)); skip.abort(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(done, true); assert.equal(visualSignal!.aborted, true); await running;
+  assert.equal(run.rendered(), painted);
+  assert.ok(run.presenter.getWorldChanges().some(actor => actor.id === 'new-guard' && actor.x === 80 && actor.y === 90));
+  release(); await new Promise(resolve => setImmediate(resolve));
+  await run.presenter.flushStage(signal); assert.equal(run.rendered(), painted + 1);
+});
+
+test('cancelling the story while a stage loads still rejects instead of taking the skip path', async () => {
+  const run = harness(), story = new AbortController(), skip = new AbortController();
+  await run.presenter.begin(story.signal);
+  let release!: () => void;
+  run.stage.showStage = async (_stage, loading) => { await new Promise<void>(resolve => { release = resolve; }); loading.throwIfAborted(); };
+  const running = run.presenter.execute({ type: 'stage', map: 'hall', x: 30, y: 40, facing: 'east', playerVisible: true, cast: [] },
+    { signal: story.signal, skipSignal: skip.signal });
+  const rejected = assert.rejects(running, { name: 'AbortError' });
+  await new Promise(resolve => setImmediate(resolve)); story.abort(); skip.abort(); await rejected; release();
+  await new Promise(resolve => setImmediate(resolve));
+});
+
+test('entering skip mode captures the actual current actor position and camera before logical actions', async () => {
+  const run = harness(), signal = new AbortController().signal, skip = new AbortController();
+  await run.presenter.begin(signal);
+  run.stage.player!.container.x = 77; run.stage.cameras.main.scrollX = 123;
+  skip.abort(); await run.presenter.execute({ type: 'wait', durationMs: 1000 }, { signal, skipSignal: skip.signal });
+  const snapshot = run.presenter.captureStage()!;
+  assert.equal(snapshot.scene.actors.find(actor => actor.id === 'player')!.x, 77);
+  assert.equal(snapshot.camera!.x, 123 + run.stage.cameras.main.width / 2);
+});

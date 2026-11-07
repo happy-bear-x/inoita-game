@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { StoryDirector, type StoryUI } from '../src/domain/story-director.ts';
+import { StoryDirector, type StoryUI, type StorySkipPhase } from '../src/domain/story-director.ts';
 import { Session } from '../src/domain/session.ts';
 import { compileScript } from './support/story-fixtures.ts';
 import type { Campaign } from '../src/domain/campaign.ts';
@@ -62,4 +62,19 @@ test('shared control skin rejects missing or external images', () => {
   const skin = JSON.parse(fs.readFileSync(new URL('../public/content/control-skin.json', import.meta.url), 'utf8'));
   parseControlSkin(skin); delete skin['skip-pressed']; assert.throws(() => parseControlSkin(skin), /skip-pressed/);
   skin['skip-pressed'] = 'https://example.com/icon.png'; assert.throws(() => parseControlSkin(skin), /内部资源/);
+});
+
+test('skip progress marks the final commit and actual input unlock in order', async () => {
+  const h = harness({ ...campaign, scripts: { ...campaign.scripts, demo: compileScript('demo', [
+    { type: 'dialogue', speaker: '', actor: null, text: '先等玩家点击跳过' }
+  ]) } });
+  const phases: StorySkipPhase[] = [];
+  h.director.onSkipProgress = phase => {
+    phases.push(phase);
+    if (phase === 'released') assert.equal(h.director.busy, false);
+  };
+  const playing = h.director.trigger({ id: 'fixture-skip-timing', script: 'demo' });
+  await tick(); h.director.skip(); h.director.skip(); await playing;
+  assert.equal(phases.filter(phase => phase === 'requested').length, 1);
+  assert.deepEqual(phases.slice(-3), ['logic-complete', 'world-ready', 'released']);
 });

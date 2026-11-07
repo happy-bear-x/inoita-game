@@ -40,6 +40,7 @@ export class StoryPresenter implements StoryPresentationPort {
   private committedScenes = new Map<string, SceneSnapshot>();
   private epoch = 0;
   private closing?: Promise<void>;
+  private opening?: Promise<void>;
   private curtain?: Phaser.GameObjects.Rectangle;
   private opacity = 0;
   private color = 0;
@@ -58,12 +59,12 @@ export class StoryPresenter implements StoryPresentationPort {
     const world = this.world(), player = world.player;
     if (!player || !world.map) throw new Error('正式地图尚未准备好');
     this.appearance = player.actor;
-    this.skipping = !!skipSignal?.aborted;
     const source = world.captureStoryScene();
     const current = this.captureStage() ?? resolveStoryScene({
       type: 'stage', map: source.map, x: player.container.x, y: player.container.y,
       facing: world.facing, playerVisible: source.actors.find(actor => actor.id === 'player')!.visible, retainPlayerPosition: true, cast: []
     }, source);
+    this.skipping = !!skipSignal?.aborted;
     const stage = restored ?? current;
     this.baseline = structuredClone(current); this.finalStage = undefined;
     this.rememberScene(current.scene);
@@ -75,26 +76,63 @@ export class StoryPresenter implements StoryPresentationPort {
       this.applyLogicalStage(logical);
       return;
     }
-    await this.ready(signal, curtain);
+    const ready = await this.prepareVisual(signal, skipSignal, visualSignal => this.ready(visualSignal, curtain));
+    if (!ready) {
+      const logical = deferFirstStage ? current
+        : 'scene' in stage ? structuredClone(stage as StoryStageSnapshot) : await this.resolveStage(stage, signal, undefined, true);
+      this.applyLogicalStage(logical); return;
+    }
     if (deferFirstStage) return;
-    await this.stage(stage, signal);
+    await this.stage(stage, signal, undefined, skipSignal);
+    if (this.skipping) return;
     const camera = this.scene().cameras.main;
     if (!restored && !stage.camera && stage.map === world.map.id) camera.setScroll(world.cameras.main.scrollX, world.cameras.main.scrollY);
     this.baseline = this.captureStage();
   }
+  /** 等待者可取消；迟到结果只由原工作自己的信号和版本检查决定是否应用。 */
+  private waitPreparation<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+    return new Promise((resolve, reject) => {
+      const abort = () => { signal.removeEventListener('abort', abort); reject(signal.reason); };
+      signal.addEventListener('abort', abort, { once: true });
+      if (signal.aborted) abort();
+      work.then(value => { signal.removeEventListener('abort', abort); resolve(value); },
+        error => { signal.removeEventListener('abort', abort); reject(error); });
+    });
+  }
+  private async prepareVisual(signal: AbortSignal, skipSignal: AbortSignal | undefined,
+    work: (visualSignal: AbortSignal) => Promise<void>): Promise<boolean> {
+    signal.throwIfAborted();
+    if (skipSignal?.aborted) return false;
+    const controller = new AbortController();
+    const abort = () => controller.abort(signal.aborted ? signal.reason : skipSignal?.reason);
+    signal.addEventListener('abort', abort, { once: true }); skipSignal?.addEventListener('abort', abort, { once: true });
+    try {
+      await this.waitPreparation(work(controller.signal), controller.signal);
+      signal.throwIfAborted(); return !skipSignal?.aborted;
+    } catch (error) {
+      signal.throwIfAborted();
+      if (!skipSignal?.aborted) throw error;
+      return false;
+    } finally { signal.removeEventListener('abort', abort); skipSignal?.removeEventListener('abort', abort); }
+  }
   private async ready(signal: AbortSignal, initialCurtain?: StoryCurtain): Promise<void> {
-    if (this.closing) await this.closing;
+    if (this.closing) await this.waitPreparation(this.closing, signal);
+    signal.throwIfAborted();
+    if (this.opening) await this.waitPreparation(this.opening, signal);
     signal.throwIfAborted();
     const stage = this.scene();
     if (stage.sys.isActive()) { if (initialCurtain) stage.showInitialCurtain?.(initialCurtain); return; }
-    return new Promise((resolve, reject) => {
-      const clean = () => { signal.removeEventListener('abort', abort); };
-      const abort = () => { clean(); reject(signal.reason); };
-      const created = () => { clean(); if (signal.aborted) reject(signal.reason); else resolve(); };
-      signal.addEventListener('abort', abort, { once: true });
-      this.world().scene.launch(SCENE_KEYS.storyStage, { signal, onReady: created, initialCurtain });
-      this.world().scene.moveAbove('world', 'story-stage');
+    // 实际 CREATE 只登记一次；跳过取消等待后，补画与收尾仍能等待同一个启动结果。
+    const opening = new Promise<void>((resolve, reject) => {
+      try {
+        this.world().scene.launch(SCENE_KEYS.storyStage, { signal, onReady: resolve, initialCurtain });
+        this.world().scene.moveAbove('world', 'story-stage');
+      } catch (error) { reject(error); }
     });
+    this.opening = opening;
+    const clear = () => { if (this.opening === opening) this.opening = undefined; };
+    void opening.then(clear, clear);
+    await this.waitPreparation(opening, signal);
   }
   captureStage(): StoryStageSnapshot | undefined {
     if (this.skipping) return this.captureLogicalStage();
@@ -249,14 +287,14 @@ export class StoryPresenter implements StoryPresentationPort {
   }
   private async stage(declaration: StoryStage | StoryStageSnapshot, signal: AbortSignal, pendingEntrances?: readonly string[], skipSignal?: AbortSignal): Promise<void> {
     const epoch = ++this.epoch;
-    const skipping = !!skipSignal?.aborted;
-    const snapshot = await this.resolveStage(declaration, signal, pendingEntrances, skipping);
-    if (skipping) {
+    const snapshot = await this.resolveStage(declaration, signal, pendingEntrances, !!skipSignal?.aborted);
+    signal.throwIfAborted();
+    if (epoch !== this.epoch) throw new DOMException('演出实例已更新', 'AbortError');
+    const rendered = await this.prepareVisual(signal, skipSignal, visualSignal => this.renderStage(snapshot, visualSignal, epoch));
+    if (!rendered) {
       if (epoch !== this.epoch) throw new DOMException('演出实例已更新', 'AbortError');
       this.applyLogicalStage(snapshot);
-      return;
     }
-    await this.renderStage(snapshot, signal, epoch);
   }
   private async resolveStage(declaration: StoryStage | StoryStageSnapshot, signal: AbortSignal, pendingEntrances?: readonly string[], skipPrefetch = false): Promise<StoryStageSnapshot> {
     const current = this.captureStage() ?? this.baseline;
@@ -476,7 +514,10 @@ export class StoryPresenter implements StoryPresentationPort {
   private async executeAction(action: VisualAction, playback: PerformancePlayback, batch = false,
     pendingEntrances?: readonly string[]): Promise<void> {
     playback.signal.throwIfAborted();
-    this.skipping = playback.skipSignal.aborted;
+    if (playback.skipSignal.aborted && !this.skipping) {
+      const current = this.captureStage();
+      if (current) this.applyLogicalStage(current); else this.skipping = true;
+    } else if (!playback.skipSignal.aborted) this.skipping = false;
     if (this.skipping) {
       // 跳过只推进逻辑舞台：舞台切换解析快照但不重建地图，演员动作只改坐标和显隐。
       // 选择或任务弹窗之前会调用 flushStage 按这份逻辑快照补画一次。
@@ -500,15 +541,23 @@ export class StoryPresenter implements StoryPresentationPort {
         if(stage){
           const changed = new Set((this.app.session.storyWorld.captureState().appearances ?? []).map(([actor]) => actor));
           for(const actor of stage.scene.actors) if (actor.id === 'player' || actor.memberId || changed.has(actor.actor)) delete actor.appearance;
-          await this.stage(stage,playback.signal);
+          await this.stage(stage,playback.signal,undefined,playback.skipSignal);
         }
         return;
       }
-      case 'stage': await this.stage(action, playback.signal, pendingEntrances); return;
-      case 'world-object':
-        if (action.command.kind === 'place') await scene.prepareActorAssets(action.command.entity.actor, playback.signal);
-        playback.signal.throwIfAborted();
-        this.applySceneAction(action); return;
+      case 'stage': await this.stage(action, playback.signal, pendingEntrances, playback.skipSignal); return;
+      case 'world-object': {
+        if (action.command.kind === 'place') {
+          const actor = action.command.entity.actor;
+          const prepared = await this.prepareVisual(playback.signal, playback.skipSignal,
+            visualSignal => scene.prepareActorAssets(actor, visualSignal));
+          if (!prepared) {
+            const logical = this.captureStage(); if (logical) this.applyLogicalStage(logical);
+            this.applyLogicalAction(action); return;
+          }
+        }
+        playback.signal.throwIfAborted(); this.applySceneAction(action); return;
+      }
       case 'appear': {
         this.applySceneAction(action); return;
       }
@@ -641,6 +690,8 @@ export class StoryPresenter implements StoryPresentationPort {
     }
   }
   async release(): Promise<void> {
+    if (this.closing) return this.closing;
+    if (this.opening) await this.opening.catch(() => {});
     if (this.closing) return this.closing;
     this.skipping = false;
     this.epoch++;

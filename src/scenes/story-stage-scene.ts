@@ -70,7 +70,7 @@ export class StoryStageScene extends Phaser.Scene {
       this.wardrobes.clear();
     });
     this.events.once(Phaser.Scenes.Events.CREATE, () => {
-      if (!options?.signal?.aborted) options?.onReady?.();
+      options?.onReady?.();
     });
   }
   showInitialCurtain(curtain: StoryCurtain): void {
@@ -172,7 +172,7 @@ export class StoryStageScene extends Phaser.Scene {
         }
         const bag = this.app.session.bag;
         const equipment = member ? bag.equipmentItems(bag.equipmentFor(memberId)) : bag.equipmentItems();
-        const outfit = await cancellable(wardrobe.prepare(base, equipment, character?.classId ?? member?.classId), signal);
+        const outfit = await wardrobe.prepare(base, equipment, character?.classId ?? member?.classId, { signal });
         guard(); appearances.set(actor.id, outfit.actor); outfits.push({ wardrobe, outfit });
       }
       nextLayers = drawStoryMap(this, map);
