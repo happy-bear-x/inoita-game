@@ -969,12 +969,22 @@ export class WorldScene extends Phaser.Scene {
   }
   /** 键位编辑读取实际操控者当前组六格，不另选角色或快捷页。 */
   getControlLayoutPreview():readonly ShortcutSlot[]{return this.controls?.snapshot()??[];}
-  /** 点消耗品格：恢复药水走整队恢复，其它物品走普通的「使用」。 */
+  /** 点消耗品格：恢复药水走整队恢复，复活卷轴按上阵顺序复活，其它物品走普通的「使用」。 */
   private useShortcutItem(itemId:string):void {
     if(!this.canControl)return;
     const bag=this.app.session.bag,entry=bag.entries.find(value=>value.item===itemId);
     if(!entry)return;
-    if(['recover-health','regenerate'].includes(this.app.items.items[entry.item].use?.kind??''))this.combat?.useRecoveryItem(entry.id);
+    const kind=this.app.items.items[entry.item].use?.kind;
+    if(kind==='revive'){
+      const party=this.app.session.party;
+      if(!party)return;
+      if(!party.livingIds.length){this.app.ui.showInstant('全队阵亡时无法使用复活卷轴，请返回检查点或读取存档。');return;}
+      const target=party.activeIds.find(id=>!party.alive(id));
+      if(!target){this.app.ui.showInstant('当前没有阵亡的出战队员');return;}
+      try{this.revivePartyMember(target,entry.id);}catch(error){this.app.ui.showInstant((error as Error).message);}
+      return;
+    }
+    if(['recover-health','regenerate'].includes(kind??''))this.combat?.useRecoveryItem(entry.id);
     else try{bag.use(entry.id);}catch(error){this.app.ui.showInstant((error as Error).message);}
   }
   /** 剧情摆放的宝箱是一次性奖励：开启后跨地图访问都保持已开启。 */

@@ -190,3 +190,46 @@ test('a successful ancient sword pull grants a weapon and plays the sword sound'
     assert.ok(current.bag.entries.length>before);
   } finally { Math.random=original; }
 });
+
+function revivalShortcut(fallenIds:string[]) {
+  const revived:string[]=[],messages:string[]=[],entries=[
+    {id:'scroll-1',item:'resurrection-scroll'},{id:'scroll-2',item:'resurrection-scroll'}];
+  const fallen=new Set(fallenIds);
+  const party={
+    activeIds:['player','companion-1','companion-2'],
+    livingIds:['player','companion-1','companion-2'].filter(id=>!fallen.has(id)),
+    alive:(id:string)=>!fallen.has(id),
+    revive:(id:string,item:string)=>{
+      revived.push(`${id}:${item}`);fallen.delete(id);
+      party.livingIds=party.activeIds.filter(id=>!fallen.has(id));
+      const index=entries.findIndex(entry=>entry.id===item);if(index>=0)entries.splice(index,1);
+    },
+  };
+  const state={
+    sys:{isActive:()=>true},loadingWorld:false,
+    app:{session:{bag:{entries},party},items:{items:{'resurrection-scroll':{name:'复活卷轴',use:{kind:'revive'}}}},
+      ui:{ready:true,showInstant:(message:string)=>messages.push(message)},locked:false,suspended:false,director:{busy:false}},
+    combat:{revive:(id:string,item:string)=>{party.revive(id,item);return {kind:'revive'};}},
+  };
+  const scene=Object.setPrototypeOf(state,WorldScene.prototype) as unknown as {useShortcutItem(id:string):void};
+  return {scene,revived,messages,entries};
+}
+
+test('a revival scroll on the shortcut bar revives fallen members in party order',()=>{
+  const {scene,revived,messages,entries}=revivalShortcut(['companion-1','companion-2']);
+  scene.useShortcutItem('resurrection-scroll');
+  scene.useShortcutItem('resurrection-scroll');
+  assert.deepEqual(revived,['companion-1:scroll-1','companion-2:scroll-2'],'按上阵顺序复活，每次消耗一张卷轴');
+  assert.deepEqual(messages,[]);
+  assert.equal(entries.length,0);
+  scene.useShortcutItem('resurrection-scroll');
+  assert.equal(revived.length,2,'没有卷轴时什么都不做');
+});
+
+test('a revival scroll with nobody fallen shows a message and keeps the scroll',()=>{
+  const {scene,revived,messages,entries}=revivalShortcut([]);
+  scene.useShortcutItem('resurrection-scroll');
+  assert.deepEqual(revived,[]);
+  assert.deepEqual(messages,['当前没有阵亡的出战队员']);
+  assert.equal(entries.length,2,'没人倒下时不消耗卷轴');
+});
