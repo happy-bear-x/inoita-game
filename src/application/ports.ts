@@ -37,6 +37,7 @@ export interface StoryClassContext {
 type SceneUI = Pick<GameUI,'ready'|'locked'|'mode'|'loading'|'loaded'|'error'|'toast'|'showInstant'|'resetInput'|'setMode'|'showDefeat'|'closeDefeat'|'controlLayoutEditing'|'keyBindingEditing'|'preloadPortraits'|'setWorldRebuildCover'>;
 export interface StoryContext {
   readonly inputRouter: InputRouter;
+  readonly frameSampler?: Pick<import('./frame-sampler.ts').FrameSampler, 'combat' | 'partyPath' | 'worldText'>;
   readonly domUi?: DomUi;
   readonly controlLayout:ControlLayoutPreferences;
   readonly keyBindings:KeyBindingPreferences;

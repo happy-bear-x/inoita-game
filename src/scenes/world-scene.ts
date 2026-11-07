@@ -455,7 +455,7 @@ export class WorldScene extends Phaser.Scene {
       const character=this.pickupRecipients.get(id);
       if(!character?.container.active)return undefined;
       return {...this.movement!.displayPosition(character),headAnchor:character.actor.headAnchor??{x:0,y:0}};
-    },domUi:this.app.domUi,visible:()=>this.canCombatControl&&!this.performing&&!this.stageOccluded
+    },domUi:this.app.domUi,positionTimer:this.app.frameSampler?.worldText,visible:()=>this.canCombatControl&&!this.performing&&!this.stageOccluded
       &&!this.app.ui.loadingState});
     const mapNavigation = new NavigationWorld(map);
     mapNavigation.prepareTerrainRouting();
@@ -867,6 +867,8 @@ export class WorldScene extends Phaser.Scene {
   }
   private updateQuestMarkers():void{
     const domUi=this.app.domUi;if(!domUi)return;
+    const timer=this.app.frameSampler?.worldText;
+    timer?.start();
     const camera=this.cameras.main,zoom=camera.zoom,frame=domUi.frameSize();
     if(zoom!==this.questMarkerZoom){
       this.questMarkerZoom=zoom;
@@ -881,6 +883,7 @@ export class WorldScene extends Phaser.Scene {
       marker.dom.setVisible(onScreen);if(!onScreen)continue;
       marker.dom.setPosition(point.x,point.y);
     }
+    timer?.end();
   }
   setClip(character: Character, name: ClipName): void {
     setCharacterClip(this, character, name);
@@ -1405,6 +1408,7 @@ export class WorldScene extends Phaser.Scene {
   }
   /** 属性页判断成员当前是否潜行。 */
   combatStealthed(id:string):boolean { return this.combat?.stealthed(id)??false; }
+  frameActorCounts() { return this.combat?.frameActorCounts(); }
   diagnosticSnapshot() {
     const player = this.player, movement = this.movement;
     let placement: Record<string, unknown> | null = null;
@@ -1964,7 +1968,10 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     this.pickupMessages?.setPaused(!this.canCombatControl);
     this.combat?.setPerformanceActive(this.performing);
     if(this.checkpointPending&&this.canControl&&!this.performing&&!this.app.director.busy&&this.combat?.canCheckpoint)this.captureCheckpoint();
+    const combatTimer=this.app.frameSampler?.combat;
+    combatTimer?.start();
     this.combat?.update(stepDelta,this.canCombatControl);
+    combatTimer?.end();
     if(this.canCombatControl&&!this.app.director.busy)for(const encounter of this.combat?.completedStoryEncounters??[]){
       if(this.encounterResults.has(encounter.id))continue;
       this.encounterResults.add(encounter.id);

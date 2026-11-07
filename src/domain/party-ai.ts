@@ -24,6 +24,7 @@ export interface PartyPort extends CombatPort {
   inCombat(): boolean;
   navigationBounds(): GameRectangle;
   navigationSnapshot?(): Pick<PathQuery, 'bounds' | 'canStand'>;
+  pathTimer?: {start(): void; end(): void};
   /** 每渲染帧共享的寻路扩展预算；缺省时按单次上限同步搜索（测试与无场景调用）。 */
   pathBudget?:{take(owner:string,limit:number):number};
   followPath(next: () => Point | undefined): void;
@@ -417,6 +418,8 @@ export class PartyController {
     this.followDestination(actor,target.position,range,target);
   }
   private followDestination(actor:Combatant,destination:Point,range:number,target?:Combatant):void {
+    const timer=this.port.pathTimer;
+    timer?.start();
     if(this.search)this.advanceSearch(actor);
     else if(this.clock>=this.nextPathAt&&(!this.destination
       ||targetDistance(this.destination,destination)>=PARTY_REPATH_DISTANCE_PX
@@ -427,6 +430,7 @@ export class PartyController {
     }
     const next=this.nextWaypoint();
     if(next)this.port.followPath(this.nextWaypoint);else this.port.stop();
+    timer?.end();
   }
   private beginSearch(actor:Combatant,destination:Point,range:number,granted:number,
     target?:Combatant,flank=true):void {

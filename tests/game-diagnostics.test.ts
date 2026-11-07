@@ -7,10 +7,11 @@ import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { registerHooks } from 'node:module';
 import type Phaser from 'phaser';
+import { FrameSampler } from '../src/application/frame-sampler.ts';
 
 const source = await readFile(new URL('../public/diagnostics.js', import.meta.url), 'utf8');
 const hooks = registerHooks({ resolve(specifier, context, next) {
-  return specifier === 'phaser' ? { shortCircuit: true, url: 'data:text/javascript,export default {Core:{Events:{PRE_STEP:"prestep",POST_STEP:"poststep",POST_RENDER:"postrender",DESTROY:"destroy"}}}' } : next(specifier, context);
+  return specifier === 'phaser' ? { shortCircuit: true, url: 'data:text/javascript,export default {Core:{Events:{PRE_STEP:"prestep",POST_STEP:"poststep",POST_RENDER:"postrender",PAUSE:"pause",RESUME:"resume",DESTROY:"destroy"}}}' } : next(specifier, context);
 } });
 const { installGameDiagnostics } = await import('../src/application/game-diagnostics.ts');
 hooks.deregister();
@@ -23,7 +24,7 @@ const settle = () => new Promise<void>(resolve => setImmediate(resolve));
 
 interface Entry { id: string; kind: string; details: Record<string, unknown>; state: unknown; frame: { phase: string } }
 interface Collector {
-  record(kind: string, details: unknown): void; flush(): Promise<void>;
+  record(kind: string, details: unknown, withSnapshot?: boolean): void; flush(): Promise<void>;
   setSnapshot(provider: () => unknown): void; markFrame(phase: string): void; stopFrames(): void;
   export(): string;
 }
@@ -208,4 +209,65 @@ test('server acknowledges only stored records, rejects invalid payloads and pres
     assert.deepEqual(records.map(record => record.id), ['a', 'b']);
     assert(records.every(record => Number.isFinite(Date.parse(record.receivedAt))));
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('dev frame summaries keep one frame’s work, reset across pauses and reach the log without a world snapshot', async t => {
+  const f = client(), events = new EventEmitter(), visibility = new EventTarget();
+  let now = 0, suspended = false, map = 'forest', snapshots = 0;
+  const page = Object.assign(visibility, { hidden: false });
+  const oldDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  Object.defineProperty(globalThis, 'document', {configurable:true, value:page});
+  globalThis.storyDiagnostics = f.collector;
+  t.after(() => {
+    globalThis.storyDiagnostics = undefined;
+    if (oldDocument) Object.defineProperty(globalThis, 'document', oldDocument);
+    else Reflect.deleteProperty(globalThis, 'document');
+  });
+  const sampler = new FrameSampler(() => ({mode:'game', map, companions:2, enemies:12}),
+    details => f.collector.record('frame-sample', details, false), () => now);
+  installGameDiagnostics({events} as unknown as Phaser.Game, () => { snapshots++; return {}; }, sampler, () => suspended);
+  const frame = (wait: number, update = 0, render = 0) => {
+    now += wait; events.emit('prestep');
+    now += update; events.emit('poststep');
+    now += render; events.emit('postrender');
+  };
+  const samples = () => f.entries().filter(entry => entry.kind === 'frame-sample');
+  frame(0);
+  frame(4000);
+  page.hidden = true; page.dispatchEvent(new Event('visibilitychange'));
+  frame(8000); page.hidden = false; page.dispatchEvent(new Event('visibilitychange'));
+  frame(1500); frame(4000);
+  events.emit('pause'); now += 30000; events.emit('resume');
+  frame(20); frame(4000);
+  suspended = true; frame(1000); suspended = false; frame(20);
+  assert.equal(samples().length, 0);
+
+  now += 7; events.emit('prestep');
+  sampler.combat.start(); now += 6;
+  sampler.partyPath.start(); now += 9; sampler.partyPath.end();
+  now += 7; sampler.combat.end();
+  for (const duration of [3, 2]) { sampler.worldText.start(); now += duration; sampler.worldText.end(); }
+  now += 13; events.emit('poststep'); now += 8; events.emit('postrender');
+  map = 'village';
+  frame(50); frame(33);
+  for (let i = 0; i < 243; i++) frame(15, 3, 2);
+  assert.equal(samples().length, 0);
+  await settle();
+  frame(15, 3, 2);
+  const [sample] = samples();
+  assert.equal(sample.state, null);
+  assert.equal(snapshots, 0);
+  assert.deepEqual(sample.details, {windowMs:5018, frames:247, fps:49.22, over33Ms:2, over50Ms:1,
+    slowest:{mode:'game', map:'forest', companions:2, enemies:12, frameMs:55, waitMs:7, updateMs:40,
+      renderSubmitMs:8, combatMs:22, partyPathMs:9, worldTextMs:5}});
+  const root = await mkdtemp(path.join(tmpdir(), 'inotia-frames-'));
+  t.after(() => rm(root, {recursive:true, force:true}));
+  const middleware = createDiagnosticMiddleware(root);
+  assert.equal(await request(middleware, JSON.stringify(f.sent.at(-1))), 204);
+  const stored = JSON.parse(await readFile(path.join(root, '.diagnostics/client-errors.jsonl'), 'utf8'));
+  assert.equal(stored.id, sample.id); assert.deepEqual(stored.details, sample.details);
+  for (let i = 0; i < 250; i++) frame(20);
+  assert.equal(samples().length, 2); assert.equal(samples()[1].details.frames, 250);
+  events.emit('destroy');
+  assert.equal(events.listenerCount('pause'), 0); assert.equal(events.listenerCount('resume'), 0);
 });

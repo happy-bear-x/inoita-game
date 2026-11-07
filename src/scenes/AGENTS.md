@@ -16,6 +16,7 @@ Phaser 场景层：驱动生命周期、转发输入，把 domain、rendering、
 ## 规则
 
 - `WorldCombat` 把地图的 `captureStandability` 接给敌人和佣兵的寻路器。一次搜索共用一份占位，走动时再由 `movement.canStand` 检查下一步。
+- 开发慢帧摘要取当前地图和已加载的队友、敌人数量；战斗更新包含佣兵寻路耗时。任务标记与拾取提示的定位耗时合计。
 
 - 场景只驱动生命周期、转发输入、调度下层模块；判定和数值规则写进 `src/domain/`，具体绘制交给 `src/rendering/` 与 `src/ui/phaser/`。
 - 击杀奖励结算、召唤生命周期和交互决策在 `src/domain/`：场景只收集输入、播放表现、决定落点并执行 domain 返回的动作/奖励清单。

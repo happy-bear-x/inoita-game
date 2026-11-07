@@ -35,6 +35,8 @@ import { gameMenuImageGroups } from './application/menu-images.ts';
 import { UI_ICON_ATLAS_FILE } from './generated/icon-atlas.ts';
 import { GAME_FRAME_TIMING, installFrameLimitClock } from './application/game-timing.ts';
 import { installGameDiagnostics } from './application/game-diagnostics.ts';
+import { FrameSampler } from './application/frame-sampler.ts';
+import { storyDevMode } from './domain/dev-mode.ts';
 import { createGmActions, type GmActions } from './debug/gm-actions.ts';
 import { DomUi } from './ui/dom/dom-ui.ts';
 
@@ -606,7 +608,16 @@ function boot(): void {
     scene: [], banner: false, audio: { disableWebAudio: false }
   });
   app.game = game;
-  installGameDiagnostics(game, runtimeDiagnostics);
+  const collector = globalThis.storyDiagnostics;
+  if (storyDevMode() && collector) {
+    app.frameSampler = new FrameSampler(() => {
+      const world = app.mode === 'game' ? worldScene() : undefined;
+      const counts = world?.frameActorCounts();
+      return { mode: app.mode, map: world?.map?.id ?? null,
+        companions: counts?.companions ?? 0, enemies: counts?.enemies ?? 0 };
+    }, details => collector.record('frame-sample', details, false));
+  }
+  installGameDiagnostics(game, runtimeDiagnostics, app.frameSampler, () => app.suspended);
   game.events.once('ready', () => {
     configureCanvas(game);
     // iOS 弹出系统键盘会让窗口短暂失焦。Phaser 把这次失焦当成页面切走：暂停游戏
@@ -650,6 +661,7 @@ function boot(): void {
 function lifecycle(): void {
   const portrait = window.matchMedia('(orientation: portrait)');
   const setSuspended = (suspended: boolean): void => {
+    if (suspended !== app.suspended) app.frameSampler?.reset();
     ui.suspend(suspended);
     const scene = currentScene();
     // 同一帧内的 pagehide/pageshow 也按事件顺序排队，避免漏掉恢复。

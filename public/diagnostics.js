@@ -93,12 +93,14 @@
     } catch { /* 发送失败保留待发记录，避免诊断错误递归。 */ }
     finally { sending = false; }
   }
-  function record(kind, details) {
+  function record(kind, details, withSnapshot = true) {
     if (capturing) return;
     capturing = true;
     try {
-      let state;
-      try { state = safe(snapshot()); } catch (error) { state = { snapshotError: safe(error) }; }
+      let state = null;
+      if (withSnapshot) {
+        try { state = safe(snapshot()); } catch (error) { state = { snapshotError: safe(error) }; }
+      }
       const entry = { id: session + ':' + (++sequence), session, time: new Date().toISOString(), kind,
         page: location.pathname, userAgent: navigator.userAgent, visibility: document.visibilityState,
         viewport: { width: innerWidth, height: innerHeight, pixelRatio: devicePixelRatio },

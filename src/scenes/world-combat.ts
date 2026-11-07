@@ -343,6 +343,11 @@ export class WorldCombat {
   get castingSkill():boolean{return !!this.combat?.activeAction()?.skill;}
   get targetId(){return this.combat?.selectedTargetId();}
   get cooldowns(){return this.combat?.snapshot().cooldowns??{};}
+  frameActorCounts() {
+    let enemies=0;
+    for(const enemy of this.arena)if(!enemy.summonedBy||!this.memberOf(enemy.summonedBy))enemies++;
+    return {companions:this.allies.length,enemies};
+  }
   /**
    * 卡住排查的最小快照：谁被冻住、在放什么动作、身上挂着哪些状态、移动体是否还在推进。
    * 「不能移动」可能来自任何一层（流程锁、战斗暂停、buff、移动体固定），这里一次给全。
@@ -2001,6 +2006,7 @@ captureStoryActors():SceneActorState[] {
       attacking:key=>this.partyControllers.get(key)?.actionState()==='attacking',
       attackRange:()=>this.equipmentAttack(visual.actor,id).approachDistanceUnits+this.actorAttribute(id,'attackRangeBonusUnits'),
       navigationBounds:()=>this.movement.navigation.bounds,pathBudget:this.pathBudget,
+      pathTimer:this.app.frameSampler?.partyPath,
       navigationSnapshot:()=>this.movement.navigation.captureStandability(this.movement.actor(visual)),
       moveToward:position=>{if(!this.conditions.canAutoApproach(id)){this.movement.stop(visual);return;}setFacing(faceTarget(this.movement.position(visual),position));this.movement.toward(visual,position,this.movementSpeed(id,PLAYER_MOVE_SPEED));},
       followPath:nextWaypoint=>this.movement.followPath(visual,()=>{

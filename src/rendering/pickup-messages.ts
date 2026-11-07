@@ -4,6 +4,7 @@ import type { ItemCatalog } from '../domain/items.ts';
 import { splitMoney } from '../domain/money.ts';
 import { itemNameColor } from '../ui/item-name-color.ts';
 import type { DomUi } from '../ui/dom/dom-ui.ts';
+import type { FrameWorkTimer } from '../application/frame-sampler.ts';
 import type { PendingAsset } from './scene-assets.ts';
 
 const MESSAGE_LIMIT=32;
@@ -36,6 +37,7 @@ export class PickupMessages {
   private readonly items:ItemCatalog;
   private readonly anchor:(recipientId:string)=>PickupAnchor|undefined;
   private readonly domUi?:DomUi;
+  private readonly positionTimer?:FrameWorkTimer;
   private readonly visible:()=>boolean;
   private readonly active=new Set<ActiveMessage>();
   private readonly pending:PendingMessage[]=[];
@@ -43,7 +45,8 @@ export class PickupMessages {
   private paused=false;
   private destroyed=false;
 
-  constructor(scene:Phaser.Scene,items:ItemCatalog,options:{anchor:(recipientId:string)=>PickupAnchor|undefined;domUi?:DomUi;visible?:()=>boolean}) {
+  constructor(scene:Phaser.Scene,items:ItemCatalog,options:{anchor:(recipientId:string)=>PickupAnchor|undefined;domUi?:DomUi;visible?:()=>boolean;positionTimer?:FrameWorkTimer}) {
+    this.positionTimer=options.positionTimer;
     this.scene=scene;this.items=items;this.anchor=options.anchor;this.domUi=options.domUi;this.visible=options.visible??(()=>true);
     scene.events.on('postupdate',this.update,this);
   }
@@ -110,6 +113,7 @@ export class PickupMessages {
     const anchor=this.anchor(entry.recipientId);
     if(!anchor){this.remove(entry);return;}
     if(!this.domUi)return;
+    this.positionTimer?.start();
     const camera=this.scene.cameras.main,point=this.domUi.worldToScreen(camera,anchor.x,anchor.y+anchor.headAnchor.y);
     const zoom=camera.zoom,unit=this.domUi.storyUnit(),width=entry.width||entry.dom.getBoundingClientRect().width;
     if(!entry.width)entry.width=width;
@@ -118,6 +122,7 @@ export class PickupMessages {
     const y=point.y+(entry.row*MESSAGE_ROW_STEP-37-entry.lift)*unit;
     entry.dom.style.transform=`translate3d(${x}px, ${y}px, 0)`;
     entry.dom.style.display=this.visible()?'flex':'none';
+    this.positionTimer?.end();
   }
   private update():void {for(const entry of this.active)this.position(entry);}
   private remove(entry:ActiveMessage):void {
