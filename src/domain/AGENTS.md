@@ -43,6 +43,7 @@
 - 云存档的账号/密码/槽位校验和锁定时长只在 `cloud-save.ts` 写一份，服务端复用同一份规则；云端保存不改 `SAVE_FORMAT`。
 - 缓存失效用只读修订号：`PartyRoster.groupModifierVersion`、`CombatConditions.revision`、`Session.choiceWriteRevision`/`receiptRevision`/`enemyRevision`、`StoryWorld.encounterRevision`、`LegendaryWeapons.revision`。新增 mutation 入口时同步推进对应修订号；这些字段不写入存档。
 - 自动存档的持久快照按子系统版本复用深拷贝（`captureStateWith(..., true)`）；读档/回滚时清空缓存。`captureState()` 的检查点路径保持每次新克隆。
+- 任务奖励收据（结算时写下的一次奖励记录）每个任务只保留周期最新的一张；写入和读档恢复都按任务取最新周期，旧存档里同一任务的旧轮次在恢复时丢弃。防重复结算看周期有没有前进。
 - 可破坏物生成记录按完整 id 覆盖；旧档读入时去重，并清理已永久死亡且不会再生成的 `breakable:` 记录，`chest:`/`spring:` 的永久死亡记录保留。
 - 仇恨账本以 owner→source 索引为准，记录数组只用于快照与容量淘汰；增删必须同时维护两边。
 - 剧情世界的进行中遭遇以 `StoryWorldState` 的 active 索引为准，`encounters` 表只用于历史、快照和完整状态查询；新增、结算和整份恢复必须同时维护索引，每帧读取只走索引。

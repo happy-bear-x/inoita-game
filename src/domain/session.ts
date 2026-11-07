@@ -99,6 +99,7 @@ interface StoryCommandBaseline {
   choiceWrites?:[string,number][];
   loot?:GroundLootState;
   coins?:number;
+  /** 任务 id → 捕获时的最新一张收据。 */
   receipts?:[string,QuestSettlement][];
   lootPity?:LootPityState;
   playerState?:Readonly<StoryPlayerState>;
@@ -218,6 +219,7 @@ export class Session {
   readonly storyWorld = new StoryWorldState();
   private runtimeSnapshot:StoryRuntimeSnapshot = {version:2,sequence:0,runs:[],completedEvents:[],handledOccurrences:[],encounterResults:[],pendingOccurrences:[],occurrenceSequences:[]};
   private runtimeValidator?:StoryRuntime;
+  /** 任务 id → 最新一张奖励收据；可重复任务跨周期只保留当前轮。 */
   private readonly receipts = new Map<string,QuestSettlement>();
   private readonly factSequences = new Map<string,number>();
   /**
@@ -546,7 +548,7 @@ export class Session {
     this.choiceWrites.clear();this.choiceWriteRevisionValue++;
     // 外部恢复已在 `prepareRuntime` 校验过；回滚拿到的是本项目刚产出的不可变快照。
     this.runtimeSnapshot=restored.runtime;
-    this.receipts.clear();for(const receipt of restored.receipts)this.receipts.set(JSON.stringify([receipt.quest,receipt.cycle]),structuredClone(receipt));this.receiptRevisionValue++;
+    this.restoreReceipts(restored.receipts);
     this.factSequences.clear();for(const [source,sequence]of restored.factSequences)this.factSequences.set(source,sequence);
     this.enemyStates.clear();for(const [id,enemy] of restored.enemies)this.enemyStates.set(id,enemy);this.enemyRevisionValue++;
     this.trackedQuest=restored.trackedQuest;this.debugFocusQuestValue=restored.debugFocusQuest;this.playerState=restored.player?Object.freeze({...restored.player}):undefined;
@@ -562,6 +564,18 @@ export class Session {
     this.lootPity.restoreState(restored.lootPity??{version:2,members:[],chests:[],bossDefeats:[]});
     this.restoreReservedDrops(restored.reservedDrops);
     this.partyItemChance=restored.partyItemChance??0;
+  }
+  /**
+   * 收据表按任务只保留周期最新的一张：正式消费者只读某任务的最新奖励，
+   * 旧存档里同一任务的多个历史轮次在恢复时丢弃。
+   */
+  private restoreReceipts(receipts:Iterable<QuestSettlement>):void {
+    this.receipts.clear();
+    for(const receipt of receipts){
+      const kept=this.receipts.get(receipt.quest);
+      if(!kept||receipt.cycle>kept.cycle)this.receipts.set(receipt.quest,structuredClone(receipt));
+    }
+    this.receiptRevisionValue++;
   }
   /**
    * 背包自身的不变量交给 `verifyBagState`；这里只补它判不了的两条——装备与快捷栏的拥有者
@@ -831,8 +845,9 @@ export class Session {
   definition(id:string):CampaignQuest|undefined{return this.campaign.quests.find(quest=>quest.id===id);}
   status(id:string):QuestStatus{return this.questBook?.status(id)??'locked';}
   rewardReceiptFor(id:string,cycle?:number):QuestRewardReceipt|undefined {
-    const receipt=cycle===undefined?[...this.receipts.values()].filter(value=>value.quest===id).at(-1):this.receipts.get(JSON.stringify([id,cycle]));
-    return receipt?structuredClone(receipt.reward):undefined;
+    const receipt=this.receipts.get(id);
+    if(!receipt||cycle!==undefined&&receipt.cycle!==cycle)return undefined;
+    return structuredClone(receipt.reward);
   }
   accept(id:string):boolean {
     this.refresh();if(this.status(id)!=='available')return false;
@@ -1129,10 +1144,7 @@ export class Session {
     }
     if(touched.has('groundLoot'))groundLootFor(this).restoreState(baseline.loot!);
     if(touched.has('coins'))this.coins=baseline.coins!;
-    if(touched.has('receipts')){
-      this.receipts.clear();for(const[key,receipt]of baseline.receipts!)this.receipts.set(key,structuredClone(receipt));
-      this.receiptRevisionValue++;
-    }
+    if(touched.has('receipts'))this.restoreReceipts(baseline.receipts!.map(([,receipt])=>receipt));
     if(touched.has('lootPity'))this.lootPity.restoreState(baseline.lootPity!);
     if(touched.has('playerState'))this.playerState=baseline.playerState;
     if(touched.has('runtimeSnapshot'))this.runtimeSnapshot=baseline.runtime!;
@@ -1151,10 +1163,12 @@ export class Session {
     for(const item of plan.itemRemovals)if(!this.bag.remove(item.item,item.quantity))throw new Error('剧情物品不足');
     for(const item of plan.itemGrants)this.bag.add(item.item,item.quantity);
     for(const receipt of plan.rewards){
-      const key=JSON.stringify([receipt.quest,receipt.cycle]);if(this.receipts.has(key))throw new Error('任务奖励已结算');
+      // 收据按任务只留最新一轮；周期没有前进，说明这一轮已经结算过。
+      const existing=this.receipts.get(receipt.quest);
+      if(existing&&receipt.cycle<=existing.cycle)throw new Error('任务奖励已结算');
       if(receipt.reward.experience)this.hero?.addExperience(receipt.reward.experience);
       if(receipt.reward.money)this.gainMoney(receipt.reward.money);
-      this.receipts.set(key,structuredClone(receipt));this.receiptRevisionValue++;
+      this.receipts.set(receipt.quest,structuredClone(receipt));this.receiptRevisionValue++;
     }
     this.questBook.commit(plan);
     // `fact` 也走任务命令；会话级事实序号是提交侧的镜像。

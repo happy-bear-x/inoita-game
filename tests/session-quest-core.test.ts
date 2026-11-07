@@ -27,8 +27,42 @@ test('explicit re-admission starts a fresh settlement cycle while duplicate comp
     session.applyStoryCommands([{type:'quest',command:{type:'script-complete',quest:'again'}}]);
   }
   assert.equal(session.money,moneyGain(15),'三轮各发 5 金币，按获取倍率放大');
-  assert.deepEqual(session.captureState().receipts.map(r=>r.cycle),[0,1,2]);
+  const receipts=session.captureState().receipts;
+  assert.deepEqual(receipts.map(r=>r.cycle),[2],'只保留最新一轮收据');
+  assert.deepEqual(session.rewardReceiptFor('again'),{experience:0,money:moneyGain(5),items:[]});
   assert.equal(session.quests.get('again')!.completedCycles,3);
+});
+
+test('a repeat quest keeps one bounded receipt for its current cycle',()=>{
+  const session=new Session(campaign([quest('again',{repeat:true,rewards:{experience:0,money:5,items:[]}})]));
+  for(let round=0;round<5;round++){
+    session.applyStoryCommands([{type:'quest',command:{type:'accept',quest:'again',source:'script'}}]);
+    session.applyStoryCommands([{type:'quest',command:{type:'script-complete',quest:'again'}}]);
+  }
+  assert.deepEqual(session.captureState().receipts.map(r=>[r.quest,r.cycle]),[['again',4]],'五轮后只保留当前轮');
+  assert.deepEqual(session.rewardReceiptFor('again'),{experience:0,money:moneyGain(5),items:[]});
+  assert.equal(session.money,moneyGain(25),'每一轮都发过奖励');
+});
+
+test('repeat settlement rollback and checkpoint restore keep the current cycle receipt',()=>{
+  const session=new Session(campaign([quest('again',{repeat:true,rewards:{experience:0,money:5,items:[]}})]));
+  const settle=()=>{
+    session.applyStoryCommands([{type:'quest',command:{type:'accept',quest:'again',source:'script'}}]);
+    session.applyStoryCommands([{type:'quest',command:{type:'script-complete',quest:'again'}}]);
+  };
+  settle();
+  assert.deepEqual(session.captureState().receipts.map(r=>r.cycle),[0]);
+  const pending=session.applyStoryCommands([{type:'quest',command:{type:'accept',quest:'again',source:'script'}},
+    {type:'quest',command:{type:'script-complete',quest:'again'}}],undefined,{deferFinalize:true});
+  assert.deepEqual(session.captureState().receipts.map(r=>r.cycle),[1]);
+  pending.rollback();
+  assert.deepEqual(session.captureState().receipts.map(r=>r.cycle),[0],'回滚恢复上一轮收据');
+  const checkpoint=session.captureState();
+  settle();
+  assert.deepEqual(session.captureState().receipts.map(r=>r.cycle),[1]);
+  session.restoreState(checkpoint);
+  assert.deepEqual(session.captureState().receipts.map(r=>r.cycle),[0],'检查点恢复保留检查点那一轮');
+  assert.deepEqual(session.rewardReceiptFor('again'),{experience:0,money:moneyGain(5),items:[]});
 });
 function campaign(quests:CampaignQuest[]):Campaign {
   return {version:2,contentVersion:1,start:{map:'camp',actor:'player',x:16,y:16,facing:'south',script:'opening'},quests,placements:[],questGroups:[],events:[],

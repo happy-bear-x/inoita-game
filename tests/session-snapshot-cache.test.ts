@@ -35,6 +35,16 @@ test('persistent snapshots reuse unchanged subsystem clones',()=>{
   assert.equal(third.storyWorld,first.storyWorld,'没变的世界继续复用');
 });
 
+test('a settled reward invalidates the cached receipt snapshot',()=>{
+  const {session}=fixture();
+  const before=session.capturePersistentState();
+  assert.equal(session.accept('quest-61'),true);
+  assert.equal(session.complete('quest-61'),true);
+  const after=session.capturePersistentState();
+  assert.notEqual(after.receipts,before.receipts,'结算后重新克隆收据');
+  assert.deepEqual(after.receipts.map(receipt=>receipt.quest),['quest-61']);
+});
+
 test('restoring a snapshot clears the cache so the next capture is fresh',()=>{
   const {session}=fixture();
   const before=session.capturePersistentState();

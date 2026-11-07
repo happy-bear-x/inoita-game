@@ -57,6 +57,28 @@ test('a save slot round-trips the whole session and the world view into a fresh 
   assert.equal(again.kind==='ok'&&again.game.session.money,before.money);
 });
 
+test('an old save with repeat-quest receipt history loads only the latest receipt per quest',()=>{
+  const session=createSession();
+  const settle=()=>{
+    assert.equal(session.accept('quest-353'),true);
+    session.bag.add('paillette',5);
+    assert.equal(session.complete('quest-353'),true);
+  };
+  settle();settle();
+  const saved=record(session);
+  const latest=saved.session.receipts.find(receipt=>receipt.quest==='quest-353');
+  assert.ok(latest);
+  assert.equal(latest.cycle,1,'当前轮收据已写入存档');
+  saved.session.receipts.unshift({...structuredClone(latest),cycle:0});
+  assert.equal(saved.session.receipts.filter(receipt=>receipt.quest==='quest-353').length,2,'模拟旧档保留多轮历史');
+
+  const loaded=createSession();
+  restoreSaveGame(loaded,saved);
+  const receipts=loaded.captureState().receipts.filter(receipt=>receipt.quest==='quest-353');
+  assert.deepEqual(receipts.map(receipt=>receipt.cycle),[1],'读档时丢掉旧周期');
+  assert.deepEqual(loaded.rewardReceiptFor('quest-353'),latest.reward);
+});
+
 test('damaged slots stay unreadable while an older development format displays EMPTY',()=>{
   const storage=memory({'inotia4.story.v1.slot0':'{not json','inotia4.story.v1.slot1':JSON.stringify({ format:2, summary:{ classId:'dark-knight', mapId:'m', level:1 }, session:{}, world:{} }) });
   const slots=new SaveSlots<World>(storage);
