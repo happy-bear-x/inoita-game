@@ -19,9 +19,10 @@ const method=(name:string)=>Reflect.get(WorldCombat.prototype,name);
 test('host keeps physical block, attacker success and defender receipt in native order',()=>{
   const phases:string[]=[];
   const host={reactToBuff:()=>{},react:(event:SkillReactionEvent)=>phases.push(`${event.kind}:${event.ownerId}`),partySide:()=>false,summonOwnerReactions:()=>{},disturbanceReaction:()=>{},
+    physicalSuccessEquipmentProcs:()=>{},instantRecoveryOnMiss:()=>{},
     holySacrificeTransfer:method('holySacrificeTransfer'),lightningOfHellReaction:method('lightningOfHellReaction'),
     app:{},memberOf:()=>undefined,
-    actorAttribute:()=>0,attackProc:()=>phases.push('attribute-effects'),equipmentRecovery:()=>({lifeDrainPerThousand:0}),conditions:{buffReactions:()=>[],hasBuff:()=>false,removeState:()=>phases.push('wake')}};
+    actorAttribute:()=>0,attackProc:()=>phases.push('attribute-effects'),equipmentRecovery:()=>({lifeDrainPerThousand:0}),conditions:{activeBuffReactions:()=>[],hasBuff:()=>false,removeState:()=>phases.push('wake')}};
   for(const outcome of ['weapon-block','shield-block'] as const){
     phases.length=0;
     method('resolveHitReactions').call(host,{casterId:'ally',targetId:'enemy'},{kind:outcome,damage:12},'physical','basic-attack',{});
@@ -43,7 +44,7 @@ test('soul sword reuses dark strike strength and reads the casting companion loa
     buffFromLearnedSkill:'dark-strike',physicalEffects:['soul-sword'],magicEffects:['soul-sword-magic','soul-sword']}]);
   let rank=1;
   const classId=data.classes.find(character=>character.skills.includes('soul-sword'))!.id;
-  const companion={classId,skills:{draft:()=>({levels:{'soul-sword':1,'dark-strike':rank}})}};
+  const companion={classId,skills:{get version(){return rank;},draft:()=>({levels:{'soul-sword':1,'dark-strike':rank}})}};
   const host=Object.setPrototypeOf({app:{battleCatalog:data},conditions,arena:[],memberOf:(id:string)=>id==='ally'?companion:undefined,
     presenterFor:()=>({showEffects:(_id:string,list:{effect:string}[])=>effects.push(...list.map(entry=>entry.effect))}),
     syncCombatResourceLimits:()=>{},interruptDisabled:()=>{},applyStateConsequences:()=>{}},WorldCombat.prototype);
@@ -81,6 +82,7 @@ test('blood sword combines the caster equipment rate and learned rank before hea
   const hero={classId,panel:{maxHealth:100,maxMana:0},player:{health:20,maxHealth:100,maxMana:0},setCombatResourceCapacity(key:'maxHealth'|'maxMana',value:number){this.player[key]=value;},setHealth(value:number){this.player.health=Math.min(value,100);},
     bag:{equipmentFor:()=>({'main-hand':'sword'}),get:()=>({numbers:{modifiers:[{stat:'lifeSteal',value:50}],gemModifiers:[]}})}};
   const host=Object.setPrototypeOf({app:{battleCatalog:data,session:{skills:{draft:()=>({levels:{'blood-sword':1}})}}},
+    equipmentRecoveryCache:new Map(),physicalSuccessEquipmentProcs:()=>{},
     memberOf:(id:string)=>id==='player'?hero:undefined,partyPassives:()=>[],conditions,hero,arena:[],
     presenterFor:()=>({showEffects:(_id:string,list:{effect:string}[])=>effects.push(...list.map(entry=>entry.effect))}),
     actorAttribute:()=>0,attackProc:()=>{},pendingDefeats:new Set()},WorldCombat.prototype);
@@ -142,8 +144,9 @@ test('灵魂之刃的回蓝排在防守方黑暗之怒之后、属性攻击之�
     react:(event:{kind:string;ownerId:string})=>{
       if(event.kind==='physical-hit-received')order.push(`wrath:${event.ownerId}`);},
     summonOwnerReactions:()=>{},partySide:()=>false,disturbanceReaction:()=>{},holySacrificeTransfer:()=>{},
+    physicalSuccessEquipmentProcs:()=>{},
     lightningOfHellReaction:()=>{},actorAttribute:()=>0,attackProc:()=>order.push('attribute-effects'),
-    equipmentRecovery:()=>({lifeDrainPerThousand:0}),conditions:{buffReactions:()=>[manaReaction],hasBuff:()=>false,removeState:()=>{}},
+    equipmentRecovery:()=>({lifeDrainPerThousand:0}),conditions:{activeBuffReactions:()=>[manaReaction],hasBuff:()=>false,removeState:()=>{}},
     app:{}};
   method('resolveHitReactions').call(host,{casterId:'attacker',targetId:'defender'},{kind:'hit',damage:12},'physical','basic-attack',{});
   assert.deepEqual(order,['wrath:defender','mana:attacker','attribute-effects'],

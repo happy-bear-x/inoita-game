@@ -32,6 +32,39 @@ test('current buff reactions are isolated snapshots and disappear when their sou
   assert.equal(copy.length,1);
 });
 
+test('internal buff reactions reuse definitions without changing them during application or timing',()=>{
+  const conditions=new CombatConditions(),effect=parent(),before=structuredClone(effect);
+  conditions.applyBuff('defender','demon-s-shield',1,effect,'caster');
+  const reactions=conditions.activeBuffReactions('defender');
+  assert.equal(conditions.activeBuffReactions('defender'),reactions);
+  for(const command of resolveBuffReactions(reactions,avoided))
+    conditions.applyBuff(command.targetId,command.buff.key,command.buff.rankPriority,command.buff.effect,command.sourceId);
+  const withChild=conditions.activeBuffReactions('defender');
+  conditions.update(60);
+  assert.equal(conditions.activeBuffReactions('defender'),withChild,'计时推进不重建反应描述');
+  assert.deepEqual(effect,before,'子增益和年龄保存在各自状态中，原反应定义保持不变');
+  const copy=conditions.buffReactions('defender');assert.ok('buff' in copy[0]);
+  copy[0].buff.effect.modifiers.length=0;
+  assert.deepEqual(conditions.activeBuffReactions('defender'),withChild);
+  assert.deepEqual(effect,before,'对外快照继续隔离修改');
+});
+
+test('internal buff reaction views expire on replacement, removal, restore and clear',()=>{
+  const conditions=new CombatConditions();
+  const empty=conditions.activeBuffReactions('defender');
+  conditions.applyBuff('defender','demon-s-shield',1,parent(1));
+  const first=conditions.activeBuffReactions('defender');
+  conditions.applyBuff('defender','demon-s-shield',2,parent(2));
+  const second=conditions.activeBuffReactions('defender');
+  assert.notEqual(second,first);assert.ok('buff' in second[0]);assert.equal(second[0].buff.rankPriority,2);
+  const saved=conditions.captureState();conditions.removeBuff('defender','demon-s-shield');
+  assert.equal(conditions.activeBuffReactions('defender'),empty);
+  conditions.restoreState(saved);assert.deepEqual(conditions.activeBuffReactions('defender'),second);
+  conditions.update(14000);assert.equal(conditions.activeBuffReactions('defender'),empty);
+  conditions.restoreState(saved);conditions.remove('defender');assert.equal(conditions.activeBuffReactions('defender'),empty);
+  conditions.restoreState(saved);conditions.clear();assert.equal(conditions.activeBuffReactions('defender'),empty);
+});
+
 test('only physical avoidance results grant a child buff to the defender without extra actions',()=>{
   const effect=parent(),before=structuredClone(effect);
   for(const damageKind of ['physical','magic'] as const)for(const outcome of ['miss','hit','critical','weapon-block','shield-block'] as const){

@@ -13,6 +13,7 @@ export interface ActiveCondition {
 type BuffEffect=BattleBuffEffect;
 const NO_BUFF_LOOPS:readonly BuffLoopFrame[]=[];
 const NO_STATES:readonly BattleStateKey[]=[];
+const NO_BUFF_REACTIONS:readonly BuffReaction[]=[];
 export interface ConditionAppearance {states:readonly BattleStateKey[];colors:Readonly<BuffEffect['appearanceColors']>;loops:boolean}
 export interface BuffLoopFrame {buff:BattleBuffKey;effect:string;frameAge:number}
 export interface PeriodicTick { sourceId:string;targetId:string;buffId:BattleBuffKey;stackCount:number;effect:BuffEffect['periodic'][number] }
@@ -64,15 +65,16 @@ export class CombatConditions {
   private simulationFrameRemainderMs=0;
   private revisionValue=0;
   private readonly stateLists=new Map<string,readonly BattleStateKey[]>();
+  private readonly reactionLists=new Map<string,readonly BuffReaction[]>();
   private readonly appearanceChanges=new Set<string>();
   private readonly appearances=new Map<string,ConditionAppearance>();
   private clockRevision=0;
   private readonly loopFrames=new Map<string,{clock:number;frames:readonly BuffLoopFrame[]}>();
   private changed(actorId:string):void {
-    this.revisionValue++;this.stateLists.delete(actorId);this.loopFrames.delete(actorId);this.appearanceChanges.add(actorId);
+    this.revisionValue++;this.stateLists.delete(actorId);this.reactionLists.delete(actorId);this.loopFrames.delete(actorId);this.appearanceChanges.add(actorId);
   }
   private resetAppearances():void {
-    this.revisionValue++;this.stateLists.clear();this.loopFrames.clear();this.appearances.clear();this.appearanceChanges.clear();
+    this.revisionValue++;this.stateLists.clear();this.reactionLists.clear();this.loopFrames.clear();this.appearances.clear();this.appearanceChanges.clear();
     for(const id of this.states.keys())this.appearanceChanges.add(id);
     for(const id of this.buffs.keys())this.appearanceChanges.add(id);
   }
@@ -332,7 +334,7 @@ export class CombatConditions {
   }
   clear():void {
     if(this.buffs.size||this.states.size)this.revisionValue++;
-    this.stateLists.clear();this.loopFrames.clear();this.appearances.clear();this.appearanceChanges.clear();
+    this.stateLists.clear();this.reactionLists.clear();this.loopFrames.clear();this.appearances.clear();this.appearanceChanges.clear();
     this.buffs.clear();this.states.clear();this.stateCount=0;this.temporary.clear();this.resourceCapacities.clear();this.resourceCapacityInputs.clear();
   }
   hasState(actorId:string,id:BattleStateKey):boolean{return this.states.get(actorId)?.has(id)??false;}
@@ -343,9 +345,19 @@ export class CombatConditions {
     return states;
   }
   hasBuff(actorId:string,id:BattleBuffKey):boolean{return this.buffs.get(actorId)?.has(id)??false;}
+  /** 结算内部复用只读定义；计时和叠层保存在 StoredBuff，不修改反应描述。 */
+  activeBuffReactions(actorId:string):readonly BuffReaction[] {
+    const buffs=this.buffs.get(actorId);
+    if(!buffs?.size)return NO_BUFF_REACTIONS;
+    const cached=this.reactionLists.get(actorId);if(cached)return cached;
+    const reactions=[...buffs.values()].reverse().flatMap(buff=>buff.effect.reactions??[]);
+    this.reactionLists.set(actorId,reactions);
+    return reactions;
+  }
+
   /** 只读取当前生效的来源，副本与内部 Buff 的属性及寿命互不影响。 */
   buffReactions(actorId:string):readonly BuffReaction[] {
-    return structuredClone([...this.buffs.get(actorId)?.values()??[]].reverse().flatMap(buff=>buff.effect.reactions??[]));
+    return structuredClone(this.activeBuffReactions(actorId));
   }
   buffLoopFrames(actorId:string):readonly BuffLoopFrame[] {
     // 绝大多数角色没有持续特效；别为每帧的每个角色分配临时数组。

@@ -68,4 +68,5 @@
 - 放逐成功时同步删除该成员的掉落保底计数；移入预备队保持计数。恢复存档后按名册保留主角和仍拥有成员的计数。
 
 - `CombatConditions.activeAppearances()` 只列潜行、头顶标记、身体颜色和循环特效的角色；状态变动使对应角色的表现与状态数组失效。无状态读取共用空数组，暂停期间复用循环帧描述；恢复和清空同时清理派生缓存。
+- `CombatConditions.activeBuffReactions()` 为结算提供按角色复用的只读反应定义；状态与增益变化、恢复和清空使缓存失效。计时和叠层写入独立的运行状态，寿命换算创建新定义；对外 `buffReactions()` 继续返回隔离副本。
 - `CombatController.basicAttackRange` 读取已解析普攻的接近距离；换装备通过 `setBasicAttack` 更新，决策查询只叠加实时射程加成。

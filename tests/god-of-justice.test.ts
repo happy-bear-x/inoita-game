@@ -119,10 +119,11 @@ test('a departed target keeps the caster units on the caster only',()=>{
 test('only a critical from Divine Strike or Hammer of Wrath reaches the roll',()=>{
   const seen:string[]=[];
   const host={godOfJusticeReaction:(caster:string,target:string)=>seen.push(`${caster}:${target}`),
+    physicalSuccessEquipmentProcs:()=>{},
     lightningOfHellReaction:()=>{},holySacrificeTransfer:()=>{},reactToBuff:()=>{},react:()=>{},partySide:()=>false,
     summonOwnerReactions:()=>{},disturbanceReaction:()=>{},actorAttribute:()=>0,equipmentRecovery:()=>({lifeDrainPerThousand:0}),attackProc:()=>{},
     fallen:new Set<string>(),pendingDefeats:new Set<string>(),arena:[],
-    conditions:{buffReactions:()=>[],removeState:()=>{},snapshot:()=>[]}};
+    conditions:{activeBuffReactions:()=>[],removeState:()=>{},snapshot:()=>[]}};
   const cases=[['divine-strike','critical',1],['hammer-of-wrath','critical',1],['divine-strike','hit',0],
     ['firestorm','critical',0],['basic-attack','critical',0]] as const;
   for(const [actionId,kind,expected] of cases){

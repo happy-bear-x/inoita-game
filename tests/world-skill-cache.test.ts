@@ -8,6 +8,7 @@ import {playerCombatAssets} from '../src/rendering/combat-assets.ts';
 import {loadSceneAssets,missingSceneAssets} from '../src/rendering/scene-assets.ts';
 import {Session} from '../src/domain/session.ts';
 import {CombatConditions} from '../src/domain/combat-conditions.ts';
+import {resolveHitReactionPipeline,type HitReactionPort} from '../src/domain/combat-reaction-pipeline.ts';
 import {BattleCharacter,type CharacterStatsCatalog} from '../src/domain/character-stats.ts';
 import type {BattleCatalog} from '../src/domain/battle.ts';
 import type {Campaign} from '../src/domain/campaign.ts';
@@ -54,6 +55,75 @@ test('party passives are reused until a real input changes',()=>{
   host.conditions.hasState=()=>true;
   invoke('partyPassives','player');
   assert.equal(session.skills.draftCalls,afterFirst+1,'潜行状态变化会失效一次');
+});
+
+test('ordinary hit reactions reuse one skill description without cloning buff snapshots',t=>{
+  const {session,host,invoke}=fixture(),conditions=new CombatConditions();
+  host.conditions=conditions;
+  t.mock.method(conditions,'buffReactions',()=>assert.fail('命中结算只读内部视图，不生成隔离副本'));
+  let draws=0;t.mock.method(Math,'random',()=>{draws++;return 0.999;});
+  const no=()=>{};
+  const port:HitReactionPort={conditions,actorAttribute:()=>0,react:event=>invoke('react',event),
+    reactToBuff:event=>invoke('reactToBuff',event),lightningOfHellReaction:no,godOfJusticeReaction:no,
+    summonOwnerReactions:no,disturbanceReaction:no,partySide:()=>false,activePartySlots:()=>['player'],
+    partyRevengeReactions:no,equipmentRecovery:()=>({lifeDrainPerThousand:0}),physicalSuccessEquipmentProcs:no,
+    instantRecoveryOnMiss:no,isTwoHanded:()=>false,moltenReflection:no,holySacrificeTransfer:no,attackProc:no};
+  const before=session.skills.draftCalls;
+  const hit=()=>resolveHitReactionPipeline({casterId:'player',targetId:'enemy'},{kind:'hit',damage:12},'physical','basic-attack',port);
+  hit();assert.equal(session.skills.draftCalls,before+1,'一击的三个技能反应阶段共用一份配置');
+  for(let index=0;index<10;index++)hit();
+  assert.equal(session.skills.draftCalls,before+1,'后续命中没有配置变化时继续复用');
+  assert.equal(draws,11,'未学残影的每次物理命中仍按原顺序消耗一次随机数');
+});
+
+test('reaction skill descriptions follow configuration and asset readiness rather than health or stealth',()=>{
+  const {session,host,invoke}=fixture(),catalog=host.app.battleCatalog as BattleCatalog;
+  const initial=session.skills.draft(catalog,'dark-knight');
+  host.preparedSkillIds=new Map([['player',new Set(Object.keys(initial.levels))]]);
+  const first=invoke('reactionSkills','player'),before=session.skills.draftCalls;
+  host.hero.setHealth(Math.max(1,host.hero.player.health-1));host.conditions.hasState=()=>true;
+  assert.equal(invoke('reactionSkills','player'),first);
+  assert.equal(session.skills.draftCalls,before,'生命和潜行不会重建静态反应定义');
+
+  const learned={levels:{...initial.levels,'soul-sword':1,'dark-strike':1}};
+  host.preparedSkillIds.set('player',new Set(['guardian-of-darkness']));
+  session.skills.restoreState({loadouts:[['dark-knight',learned]],pages:[]});
+  const waiting=invoke('reactionSkills','player');
+  assert.equal(waiting.loadout.levels['soul-sword'],0);
+  assert.equal(waiting.reactions.some((reaction:{kind:string})=>reaction.kind==='soul-sword'),false);
+  host.preparedSkillIds.set('player',new Set(Object.keys(learned.levels)));
+  const ready=invoke('reactionSkills','player');
+  assert.equal(ready.loadout.levels['soul-sword'],1);
+  assert.ok(ready.reactions.some((reaction:{kind:string})=>reaction.kind==='soul-sword'));
+  assert.equal(session.skills.draft(catalog,'dark-knight').levels['soul-sword'],1,'素材过滤没有改写真实技能进度');
+  assert.equal(invoke('reactionSkills','player'),ready);
+
+  session.skills.reset();
+  assert.equal(invoke('reactionSkills','player').loadout.levels['soul-sword'],0);
+  session.skills.restoreState({loadouts:[['dark-knight',learned]],pages:[]});
+  assert.equal(invoke('reactionSkills','player').loadout.levels['soul-sword'],1);
+  const old=invoke('reactionSkills','player');
+  invoke('forgetMemberCaches','player');
+  assert.notEqual(invoke('reactionSkills','player'),old,'成员离场清掉持有的定义');
+});
+
+test('cached reactions read a child buff rank after the probability draw',t=>{
+  const {session,host,invoke}=fixture(),catalog=host.app.battleCatalog as BattleCatalog;
+  const initial=session.skills.draft(catalog,'dark-knight');
+  const levels={...initial.levels,'soul-sword':1,'dark-strike':1};
+  session.skills.restoreState({loadouts:[['dark-knight',{levels}]],pages:[]});
+  host.preparedSkillIds=new Map([['player',new Set(Object.keys(levels))]]);
+  const applied:unknown[]=[];
+  host.applyActorBuff=(_target:string,_key:string,priority:number,effect:unknown)=>{applied.push({priority,effect});return true;};
+  host.presenterFor=()=>undefined;
+  t.mock.method(Math,'random',()=>{
+    session.skills.restoreState({loadouts:[['dark-knight',{levels:{...levels,'dark-strike':8}}]],pages:[]});
+    return 0;
+  });
+  invoke('react',{kind:'attack-success',ownerId:'player',opponentId:'enemy',damageKind:'physical',outcome:'hit',hitDamage:10,otherLifeDrainPerThousand:0});
+  const unit=catalog.skills['dark-strike'].action!.combatUnits!.find(unit=>unit.effect==='buff');
+  assert.ok(unit?.effect==='buff');
+  assert.deepEqual(applied,[{priority:unit.ranks[7].strength,effect:unit.ranks[7].effect}]);
 });
 
 test('skill asset refresh uses cheap gates and ignores health changes',async()=>{

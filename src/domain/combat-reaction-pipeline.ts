@@ -80,7 +80,7 @@ export function resolveHitReactionPipeline(event:AttackContact,hit:PhysicalHit,d
       const bloodThirstChance=port.actorAttribute(event.casterId,'bloodThirstChance');
       if(bloodThirstChance>=200)port.react({kind:'blood-thirst',ownerId:event.casterId,opponentId:event.targetId,damageKind,
         outcome:hit.kind,hitDamage:hit.damage,chanceThreshold:bloodThirstChance});
-      if(port.conditions.buffReactions(event.casterId).some(reaction=>reaction.kind==='physical-success-party'))
+      if(port.conditions.activeBuffReactions(event.casterId).some(reaction=>reaction.kind==='physical-success-party'))
         port.reactToBuff({kind:'physical-success-party',ownerId:event.casterId,damageKind,outcome:hit.kind,
           partyIds:port.activePartySlots()});
       const revengeChance=port.actorAttribute(event.targetId,'revengeChance');

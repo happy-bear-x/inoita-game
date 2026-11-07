@@ -26,7 +26,7 @@ import {groundLootFor} from '../domain/ground-loot.ts';
 import {calculateEffectiveDefense} from '../domain/physical-hit.ts';
 import type { RecoveryResult } from '../domain/recovery-items.ts';
 import Phaser from 'phaser';
-import { LOGIC_FRAME_MS, enemySkills, skillManaCost, skillForMember, memberSkillGrowth, type ResolvedBasicAttack, type BattleBuffEffect, type SkillFeedbackEvent, type ActionDispatchDefinition, type EnemyDefinition, type EnemyPlayableSkill, type PlacedEnemy, type SkillAction, type CombatUnit } from '../domain/battle.ts';
+import { LOGIC_FRAME_MS, enemySkills, skillManaCost, skillForMember, memberSkillGrowth, type ResolvedBasicAttack, type BattleBuffEffect, type SkillFeedbackEvent, type ActionDispatchDefinition, type EnemyDefinition, type EnemyPlayableSkill, type PlacedEnemy, type SkillAction, type CombatUnit, type SkillLoadout } from '../domain/battle.ts';
 import { CombatController,canTargetCombatant,resolveCueTargets, type Combatant, type ActionPlayback, type AttackContact, type BasicAreaContact, type BasicAttackSelection, type SkillUnitHit, type SkillUnitStart } from '../domain/combat.ts';
 import type { PartyBuffSlot } from '../domain/party-buff-targets.ts';
 import { EnemyController, type EnemyPort } from '../domain/enemy-ai.ts';
@@ -186,6 +186,11 @@ export class WorldCombat {
    */
   private readonly passivesCache=new Map<string,{key:string;value:PassiveModifier[]}>();
   private readonly skillTableCache=new Map<string,{key:string;value:EnemyPlayableSkill[]}>();
+  private reactionSkillCache?:Map<string,{
+    configuration:StorySkillProgression|CompanionSkillProgression;version:number;catalog:StoryContext['battleCatalog'];
+    classId:string;growth:ReturnType<typeof memberSkillGrowth>;prepared:ReadonlySet<string>|undefined;requiresAssets:boolean;
+    loadout:SkillLoadout;reactions:readonly SkillReaction[];
+  }>;
   private readonly equipmentRecoveryCache=new Map<string,{revision:number;value:ReturnType<typeof equipmentRecoveryModifiers>}>();
   private readonly combatProcsCache=new Map<string,{revision:number;value:ReturnType<typeof equipmentCombatProcs>}>();
   private readonly pendingAllies=new Set<string>();
@@ -1268,11 +1273,27 @@ captureStoryActors():SceneActorState[] {
     if(controller)controller.resetSkillCooldowns();
     else this.app.session.cooldowns.resetActor(id);
   }
+  /** 技能定义只在配置或资源准备范围变化时重建；事件与随机结果仍在各次命中时结算。 */
+  private reactionSkills(id:string){
+    const member=this.memberOf(id);if(!member)return;
+    const configuration=this.skillConfiguration(id,member);if(!configuration)return;
+    const catalog=this.app.battleCatalog,classId=member.classId,growth=memberSkillGrowth(id);
+    const prepared=this.preparedSkillIds?.get(id),requiresAssets=this.preparedSkillIds!==undefined;
+    const cached=this.reactionSkillCache?.get(id);
+    if(cached&&cached.configuration===configuration&&cached.version===configuration.version&&cached.catalog===catalog&&
+      cached.classId===classId&&cached.growth===growth&&cached.prepared===prepared&&cached.requiresAssets===requiresAssets)return cached;
+    const loadout=configuration.draft(catalog,classId);
+    if(requiresAssets)for(const skillId of Object.keys(loadout.levels))if(!prepared?.has(skillId))loadout.levels[skillId]=0;
+    const value={configuration,version:configuration.version,catalog,classId,growth,prepared,requiresAssets,loadout,
+      reactions:learnedSkillReactions(catalog,classId,loadout,growth)};
+    (this.reactionSkillCache??=new Map()).set(id,value);
+    return value;
+  }
+
   private learnedReactionBuff(id:string,skillId:LearnedReactionSkill):SkillReactionBuff|undefined {
     if(this.preparedSkillIds&&!this.preparedSkillIds.get(id)?.has(skillId))return;
     const member=this.memberOf(id);if(!member)return;
-    const configuration=this.skillConfiguration(id,member);
-    const level=configuration.draft(this.app.battleCatalog,member.classId).levels[skillId];
+    const level=this.reactionSkills(id)?.loadout.levels[skillId];
     if(!level||level<1)return;
     if(skillId==='whist'){
       const unit=skillForMember(this.app.battleCatalog,id,'whist')?.action?.combatUnits?.find(value=>value.effect==='buff');
@@ -1310,20 +1331,16 @@ captureStoryActors():SceneActorState[] {
         manaRecovery:()=>this.actorAttribute(event.ownerId,'bloodThirstManaRecovery'),apply});
       return;
     }
-    let reactions:SkillReaction[]=[];
+    let reactions:readonly SkillReaction[]=[];
     if(event.kind!=='physical-attack-effects'&&event.kind!=='physical-revenge'&&event.kind!=='physical-instinct'&&event.kind!=='physical-defense-instinct'){
-      const member=this.memberOf(event.ownerId);if(!member)return;
-      const configuration=this.skillConfiguration(event.ownerId,member);
-      const draft=configuration.draft(this.app.battleCatalog,member.classId);
-      if(this.preparedSkillIds)for(const id of Object.keys(draft.levels))
-        if(!this.preparedSkillIds.get(event.ownerId)?.has(id))draft.levels[id]=0;
-      reactions=learnedSkillReactions(this.app.battleCatalog,member.classId,draft,memberSkillGrowth(event.ownerId));
+      const skills=this.reactionSkills(event.ownerId);if(!skills)return;
+      reactions=skills.reactions;
     }
     const commands=resolveSkillReactions(reactions,event,{random:Math.random,learnedBuff:(id,skill)=>this.learnedReactionBuff(id,skill)});
     for(const command of commands)apply(command);
   }
   private reactToBuff(event:BuffReactionEvent):void {
-    const commands=resolveBuffReactions(this.conditions.buffReactions(event.ownerId),event);
+    const commands=resolveBuffReactions(this.conditions.activeBuffReactions(event.ownerId),event);
     for(const command of commands){
       if(command.kind==='apply-buff')this.applyActorBuff(command.targetId,command.buff.key,command.buff.rankPriority,command.buff.effect,command.sourceId);
       else if(command.kind==='restore-mana')this.restoreMana(command.targetId,command.amount);
@@ -1348,13 +1365,8 @@ captureStoryActors():SceneActorState[] {
     const view=()=>this.presenterFor(casterId);
     return {catalog:this.app.battleCatalog,runtime:this.runtime,random:()=>Math.random(),active:()=>!this.closed&&!this.defeated,
       actor:id=>this.combatant(id),loadout:id=>{
-        const member=this.memberOf(id);if(!member)return;
-        const configuration=this.skillConfiguration(id,member);
-        if(!configuration)return;
-        const skills=configuration.draft(this.app.battleCatalog,member.classId);
-        if(this.preparedSkillIds)for(const skillId of Object.keys(skills.levels))
-          if(!this.preparedSkillIds.get(id)?.has(skillId))skills.levels[skillId]=0;
-        return {classId:member.classId,skills};
+        const current=this.reactionSkills(id);
+        return current?{classId:current.classId,skills:current.loadout}:undefined;
       },casterStrikes:(id,strikes)=>{const presenter=view();if(presenter)this.dispatcherFor(presenter).casterStrikes(id,strikes);},
       flight:{actor:id=>this.combatant(id),emit:event=>view()?.renderFlight(event),effect:(name,position)=>view()?.renderEffect(name,'default',position)},
       execute:(owner,target,skillId,level,action,origin)=>this.runSkillUnitSequence({casterId:owner,skillId,level,action,origin,selectedTargetId:target,presenter:view()})};
@@ -1693,6 +1705,7 @@ captureStoryActors():SceneActorState[] {
   }
   private forgetMemberCaches(id:string):void{
     this.passivesCache.delete(id);this.skillTableCache.delete(id);
+    this.reactionSkillCache?.delete(id);
     this.equipmentRecoveryCache.delete(id);this.combatProcsCache.delete(id);
   }
   private enemyFighter(key:string,definition:EnemyDefinition,playerLevel:number):PhysicalFighter|undefined {
@@ -3014,6 +3027,7 @@ captureStoryActors():SceneActorState[] {
     for(const ally of [...this.allies]){ally.ai.dispose();ally.overhead.destroy();this.movement.remove(ally.visual);ally.visual.container.destroy();ally.assets?.release();}
     this.allies=[];this.partyControllers.clear();this.partySkills.clear();
     this.passivesCache.clear();this.skillTableCache.clear();this.equipmentRecoveryCache.clear();this.combatProcsCache.clear();this.combatantsCache=undefined;
+    this.reactionSkillCache?.clear();
     this.combat=undefined;
     this.presenter?.clear();this.presenter=undefined;
     this.combatEffects.clear();

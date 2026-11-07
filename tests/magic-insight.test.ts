@@ -49,6 +49,7 @@ function fixture(){
     conditions,arena:[{key:'enemy',definition:{}}],activeParty:['player'],fallen:new Set(),pendingDefeats:new Set(),
     memberOf:(id:string)=>id==='player'?{classId:'priest',skills:{draft:()=>({levels:{'magic-insight':8}})}}:undefined,
     partyPassives:()=>[],actorAttribute:()=>0,attackProc:()=>{},equipmentRecovery:()=>({lifeDrainPerThousand:0}),
+    physicalSuccessEquipmentProcs:()=>{},instantRecoveryOnMiss:()=>{},
     syncCombatResourceLimits:()=>{},applyStateConsequences:()=>{},showBuffApplication:()=>{},
     threat:{state:()=>{},heal:()=>{}},
     react:(function(this:unknown,...args:unknown[]){

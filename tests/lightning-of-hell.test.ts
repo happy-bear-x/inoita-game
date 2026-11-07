@@ -119,10 +119,11 @@ test('a caster outside the party never rolls',()=>{
 test('only a magic critical reaches the roll inside the success chain',()=>{
   const seen:string[]=[];
   const host={lightningOfHellReaction:(caster:string,target:string)=>seen.push(`${caster}:${target}`),
+    physicalSuccessEquipmentProcs:()=>{},
     holySacrificeTransfer:()=>{},reactToBuff:()=>{},react:()=>{},partySide:()=>false,summonOwnerReactions:()=>{},disturbanceReaction:()=>{},
     actorAttribute:()=>0,equipmentRecovery:()=>({lifeDrainPerThousand:0}),attackProc:()=>{},
     fallen:new Set<string>(),pendingDefeats:new Set<string>(),arena:[],
-    conditions:{buffReactions:()=>[],removeState:()=>{},snapshot:()=>[]}};
+    conditions:{activeBuffReactions:()=>[],removeState:()=>{},snapshot:()=>[]}};
   for(const [kind,damageKind,expected] of [['critical','magic',1],['hit','magic',0],['critical','physical',0]] as const){
     seen.length=0;
     method('resolveHitReactions').call(host,{casterId:'hero',targetId:'enemy'},{kind,damage:10},damageKind,'probe',{});
