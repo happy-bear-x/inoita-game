@@ -232,10 +232,18 @@ test('a follow search yields when the shared budget is exhausted and retries lat
 test('a follow search resumes across frames instead of restarting',()=>{
   const run=setup();
   run.port.pathBudget={take:(_owner,limit)=>Math.min(2,limit)};
+  let snapshots=0, blocked:Point|undefined;
+  const free=run.port.canStand;
+  run.port.navigationSnapshot=()=>{
+    snapshots++;
+    return {bounds:run.port.navigationBounds(),canStand:free};
+  };
+  run.port.canStand=point=>free(point)&&!(blocked&&point.x===blocked.x&&point.y===blocked.y);
   run.ai.update(60);
   assert.equal(run.boundsCalls(),1);assert.equal(run.waypoint(),undefined);
   for(let frame=0;frame<300&&!run.waypoint();frame++)run.ai.update(60);
-  assert.ok(run.waypoint());assert.equal(run.boundsCalls(),1);
+  blocked=run.waypoint();assert.ok(blocked);assert.equal(snapshots,1);
+  assert.equal(run.waypoint(),undefined,'路线算好之后，新挡住的下一步仍然不能走');
 });
 
 test('a stuck follower is placed beside the leader once and then waits for the cooldown',()=>{

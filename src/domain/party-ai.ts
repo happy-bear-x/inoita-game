@@ -5,7 +5,7 @@ import { combatStateCapabilities } from './combat-state.ts';
 import { needsTarget } from './skill-action.ts';
 import type { Facing } from './content.ts';
 import { followOffset, type CompanionStance } from './party-placement.ts';
-import { canTraverse, createPathSearch, PATH_GRID_SIZE } from './pathfinding.ts';
+import { canTraverse, createPathSearch, PATH_GRID_SIZE, type PathQuery } from './pathfinding.ts';
 import type { GameRectangle, Point } from './navigation.ts';
 
 export type PartySkillKind = 'chance' | 'combat-chance' | 'heal' | 'ally-combat' | 'emergency-heal';
@@ -23,6 +23,7 @@ export interface PartyPort extends CombatPort {
   /** 整个队伍是否已进入战斗：有指派目标，或最近和敌人真实交战过。 */
   inCombat(): boolean;
   navigationBounds(): GameRectangle;
+  navigationSnapshot?(): Pick<PathQuery, 'bounds' | 'canStand'>;
   /** 每渲染帧共享的寻路扩展预算；缺省时按单次上限同步搜索（测试与无场景调用）。 */
   pathBudget?:{take(owner:string,limit:number):number};
   followPath(next: () => Point | undefined): void;
@@ -430,11 +431,12 @@ export class PartyController {
   private beginSearch(actor:Combatant,destination:Point,range:number,granted:number,
     target?:Combatant,flank=true):void {
     this.nextPathAt=this.clock+PARTY_REPATH_INTERVAL_MS;this.destination={...destination};
-    const canStand=(point:Point)=>this.port.canStand(point);
+    const snapshot=this.port.navigationSnapshot?.();
+    const canStand=snapshot?(point:Point)=>snapshot.canStand(point):(point:Point)=>this.port.canStand(point);
     const anchor=target&&flank?this.combatAnchor(actor,target):undefined;
     this.flanking=!!anchor;
     const radius=target?Math.hypot(actor.bounds.width+target.bounds.width,actor.bounds.height+target.bounds.height)+range*8:8;
-    this.search=createPathSearch(actor.position,{bounds:this.port.navigationBounds(),canStand,
+    this.search=createPathSearch(actor.position,{bounds:snapshot?.bounds??this.port.navigationBounds(),canStand,
       isGoal:point=>canStand(point)&&(anchor
         ?targetDistance(point,anchor.point)<=PATH_GRID_SIZE
         :target

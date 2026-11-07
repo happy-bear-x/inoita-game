@@ -2001,6 +2001,7 @@ captureStoryActors():SceneActorState[] {
       attacking:key=>this.partyControllers.get(key)?.actionState()==='attacking',
       attackRange:()=>this.equipmentAttack(visual.actor,id).approachDistanceUnits+this.actorAttribute(id,'attackRangeBonusUnits'),
       navigationBounds:()=>this.movement.navigation.bounds,pathBudget:this.pathBudget,
+      navigationSnapshot:()=>this.movement.navigation.captureStandability(this.movement.actor(visual)),
       moveToward:position=>{if(!this.conditions.canAutoApproach(id)){this.movement.stop(visual);return;}setFacing(faceTarget(this.movement.position(visual),position));this.movement.toward(visual,position,this.movementSpeed(id,PLAYER_MOVE_SPEED));},
       followPath:nextWaypoint=>this.movement.followPath(visual,()=>{
         if(!this.conditions.canMove(id))return undefined;
