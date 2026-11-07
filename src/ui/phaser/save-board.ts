@@ -76,7 +76,7 @@ export interface SaveBoardTextSpec {
   anchorX?:number; anchorY?:number; align?:'left'|'center'|'right';
   scroll?:string; clip?:{ top:number; bottom:number };
 }
-export interface SaveBoardTextSink { add(spec:SaveBoardTextSpec):void }
+interface SaveBoardTextSink { add(spec:SaveBoardTextSpec):void }
 // 菜单页把文字交给 DOM 层时挂一个接收器；标题页没有接收器，继续用 Phaser 文字。
 const textSinks=new WeakMap<UiSurface,SaveBoardTextSink>();
 

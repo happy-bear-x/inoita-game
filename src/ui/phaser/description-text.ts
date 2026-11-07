@@ -5,7 +5,7 @@ import type { MenuTextClip, MenuTextWriter } from '../dom/menu-text.ts';
 import type { UiSurface } from './widgets.ts';
 
 /** 一段说明的断行结果；行高和总高都由同一份 Phaser 测量结果算出。 */
-export interface DescriptionTextLayout {
+interface DescriptionTextLayout {
   lines: { runs: { text: string; color?: string; x: number }[] }[];
   lineHeight: number;
   /** 与 `UiSurface.text` 的正文高度同口径：最后一行下面不留行距。 */

@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 /** 生产内容哨兵：构建时写一份很小的清单，运行时只核对版本和必需顶层键。 */
-export interface ContentManifest {
+interface ContentManifest {
   schema: 1;
   contentVersion: string;
   required: Record<string, string[]>;

@@ -51,14 +51,9 @@ export function fitViewport(options?: { keepSize?: boolean }): void {
   if (options?.keepSize) return;
   // 只有视口重建时安全区才可能变；布局每帧读取时直接复用这次测量。
   safeAreaRevision++;
-  const { left, right, top, bottom } = readSafeArea();
   const width = Math.max(1, viewport?.width ?? innerWidth);
   const height = Math.max(1, viewport?.height ?? innerHeight);
   Object.assign(frame.style, { width: `${width}px`, height: `${height}px` });
-  frame.style.setProperty('--story-unit', `${Math.min(width / UI_UNIT_WIDTH, height / UI_UNIT_HEIGHT)}px`);
-  for (const [side, inset] of Object.entries({left, right, top, bottom})) {
-    frame.style.setProperty(`--safe-${side}`, `${inset + 12}px`);
-  }
 }
 
 /** 画布按 CSS 尺寸渲染，不按设备像素比放大；地图镜头同步换算，视野仍按参考尺寸展开。 */

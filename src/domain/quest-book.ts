@@ -290,8 +290,6 @@ export class QuestBook {
   private readonly conditionUsers: ReadonlyMap<string, ReadonlySet<string>>;
   /** 任务 → 条件里引用它的任务；状态变化时用它做解锁级联。 */
   private readonly questDependents: ReadonlyMap<string, ReadonlySet<string>>;
-  /** 定义来源数组；`fork` 要用同一份身份去复用 `definitionCache`。 */
-  private readonly definitionSource: readonly QuestRules[];
   /** 条目不可变（见 `frozenProgress`）；写入一律换对象，所以未改动的条目可以安全共享。 */
   private states: Map<string, QuestProgress>;
   private runningIds: string[] = [];
@@ -309,7 +307,6 @@ export class QuestBook {
     options?: { state?: QuestBookState; shareFrom?: QuestBook }) {
     this.context = context;
     this.sideQuests = sideQuests;
-    this.definitionSource = definitions;
     const prepared = preparedDefinitions(definitions);
     this.definitions = prepared.definitions;
     this.conditionUsers = prepared.conditionUsers;
@@ -672,15 +669,7 @@ export class QuestBook {
    * 两边都可以照常 `plan`/`commit`——写入是换条目而不是改条目，所以沙盒的预演不会碰到
    * 来源簿的状态。提交侧用 `adopt` 把沙盒的结果拿回去。
    */
-  fork(context: () => QuestContext): QuestBook {
-    return new QuestBook(this.definitionSource, context, this.sideQuests, { shareFrom: this });
-  }
   /** 接管另一个（同一份任务定义）任务簿的状态根；对方此后的提交与本次接管互不影响。 */
-  adopt(other: QuestBook): void {
-    if (other.definitions !== this.definitions) throw new Error('任务定义不同，不能接管状态');
-    this.states = other.states; this.runningIds = [...other.runningIds];
-    this.factSequences = new Map(other.factSequences); this.debugPins = new Set(other.debugPins); this.revision++;
-  }
   prepareRestore(input: QuestBookState): QuestRestorePlan {
     const next = structuredClone(input);
     if (next.version !== QUEST_BOOK_STATE_VERSION) throw new Error('任务快照版本不支持');

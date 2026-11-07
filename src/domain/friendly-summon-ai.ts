@@ -233,7 +233,6 @@ export class FriendlySummonController {
     this.farElapsed=0;this.stuckElapsed=0;this.progressOrigin=undefined;this.followDestination=undefined;this.followUnreachable=false;
     this.accumulator=0;this.nextDecisionAt=this.clock;this.nextSearchAt=this.clock;this.nextRecallAt=this.clock;this.nextFollowSearchAt=this.clock;this.port.stop();
   }
-  reset():void {this.cancel();this.combatController.reset();}
   dispose():void {this.cancel();this.disposed=true;this.combatController.dispose();}
 
   private validTarget(actor:Combatant,owner:Combatant,id:string):Combatant|undefined {

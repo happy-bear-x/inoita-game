@@ -48,7 +48,7 @@ import { InputRouter } from './application/input-router.ts';
  *    `statusHud`、`controlSkin`、`shops`、`companions`、`crafting`。
  *    `storyClasses` 早一步，在 `enterGame()` 里选职业之前单独加载。
  * 3. `boot()`（Phaser 就绪）里接线：`game`、`enterGame`、`returnToMenu`、`startStory`、
- *    `prepareStory`、`prepareMenu`、`prefetchStory`、`storyUI`、`syncLifecycle`。
+ *    `prefetchStory`、`storyUI`、`syncLifecycle`。
  * 4. `finishStoryStart()`（选定职业、进入世界）里接线：`session`、`storySignal`、`director`、
  *    `changeEquipment`、`equipmentAppearance`、`preparePartyMember`、`releasePartyPreview`、
  *    `revivePartyMember`、`openCrafting`、`openShop`。
@@ -103,12 +103,8 @@ export class StoryApp {
   equipmentAppearance?:(memberId:string)=>import('./domain/content.ts').ActorDefinition|undefined;
   menuPanels!: MenuPanels;
   storyClasses!: StoryClassCatalog;
-  /** 当前界面场景持有的菜单图片租约账；正式 UI 场景与 UI 调试场景各登记一份。 */
+  /** 当前界面场景持有的菜单图片租约账。 */
   uiAssets?: import('./ui/phaser/ui-asset-host.ts').UiAssetHost;
-  /** 载入并校验全部正式内容；正常流程由职业选择触发，UI 调试场景直接调用。 */
-  prepareStory?: (signal: AbortSignal) => Promise<void>;
-  /** 预载菜单图片；调试场景与正式界面共用同一份清单。 */
-  prepareMenu?: (signal: AbortSignal, onProgress?: (value: number) => void) => Promise<void>;
   startStory?: (classId: string) => void;
   prefetchStory?: () => void;
   /**

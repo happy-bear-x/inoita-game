@@ -156,7 +156,6 @@ export interface SpringVisitsState { map?: string; used: string[] }
 export class SpringVisits {
   private map?: string;
   private readonly used = new Set<string>();
-  get mapId(): string | undefined { return this.map; }
   captureState(): SpringVisitsState { return { map: this.map, used: [...this.used] }; }
   restoreState(state: SpringVisitsState): void { this.map = state.map; this.used.clear(); for (const id of state.used) this.used.add(id); }
   enterMap(map: string): void { if (map === this.map) return; this.map = map; this.used.clear(); }

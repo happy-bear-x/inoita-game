@@ -2,7 +2,7 @@ import { SCENE_KEYS } from '../application/scene-keys.ts';
 import Phaser from 'phaser';
 import type { StoryContext } from '../application/ports.ts';
 import type { AssetLease } from '../application/assets.ts';
-import type { ActorDefinition, Facing, WorldMap } from '../domain/content.ts';
+import type { ActorDefinition, WorldMap } from '../domain/content.ts';
 import type { SceneActorState } from '../domain/scene-snapshot.ts';
 import { validateStoryStageSnapshot, type StoryCurtain, type StoryStageSnapshot } from '../domain/story-performance.ts';
 import { assertScenePlan,planScene } from '../domain/scene-plan.ts';
@@ -43,7 +43,6 @@ export class StoryStageScene extends Phaser.Scene {
   map?: WorldMap;
   player?: CharacterVisual;
   readonly characters = new Map<string, CharacterVisual>();
-  facing: Facing = 'south';
   movement?: MovementWorld;
   private lease?: AssetLease;
   private readonly actorLeases = new Set<AssetLease>();
@@ -190,7 +189,7 @@ export class StoryStageScene extends Phaser.Scene {
     this.releaseStage(true);
     this.lease = lease; this.map = map; this.clearMap = nextLayers; this.movement = nextMovement;
     for (const [id, visual] of nextCharacters) this.characters.set(id, visual);
-    this.player = this.characters.get('player'); this.facing = stage.facing;
+    this.player = this.characters.get('player');
     for (const [id, wardrobe] of createdWardrobes) this.wardrobes.set(id, wardrobe);
     for (const { wardrobe, outfit } of outfits) wardrobe.activate(outfit);
     this.resizeView(); this.cameras.main.centerOn(stage.x, stage.y);

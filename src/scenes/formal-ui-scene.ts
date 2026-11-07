@@ -40,7 +40,7 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
   private dialogueLayout?:DialogueTextLayout;
   private progressBar?:Phaser.GameObjects.Rectangle;
   private baseLease?:AssetLease;
-  /** 菜单图片与立绘的租约账，`prepareMenu` 通过 `app.uiAssets` 找到它。 */
+  /** 菜单图片与立绘的租约账，`prepareMenuCore` 通过 `app.uiAssets` 找到它。 */
   private readonly uiAssets=new SceneUiAssets(this);
   private background!:Phaser.GameObjects.Rectangle;
   private cover?:Phaser.GameObjects.Image;

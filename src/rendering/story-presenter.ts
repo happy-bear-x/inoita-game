@@ -326,7 +326,6 @@ export class StoryPresenter implements StoryPresentationPort {
   private face(actor: Performer, facing: Facing): void {
     actor.facing = facing;
     setCharacterClip(this.scene(), actor.visual, `idle-${facing}`);
-    if (actor.visual === this.scene().player) this.scene().facing = facing;
   }
   private drawCurtain(): void {
     const scene = this.scene();

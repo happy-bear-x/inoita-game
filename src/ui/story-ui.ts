@@ -415,7 +415,7 @@ export class StoryUI {
     this.forge=undefined;this.show('bag');this.beginOperation(entry,kind);
   }
   /** 测试入口：打开商店并停在该店的某个交易步骤；`shopId` 必须是 shops.json 里存在的键。 */
-  debugShop(shopId:string,step:'browse'|'description'|'quantity'|'confirm'|'notice'='browse',kind:'buy'|'sell'='buy',mapId=''):void|Promise<void>{
+  debugShop(shopId:string,step:'browse'|'description'|'quantity'='browse',kind:'buy'|'sell'='buy',mapId=''):void|Promise<void>{
     const opened=this.openShop(shopId,mapId);
     const apply=()=>{if(step!=='browse')this.shopPanel?.debugTrade(step,kind);};
     if(opened)return opened.then(apply);
@@ -1620,7 +1620,7 @@ export class StoryUI {
     const tab:ForgeTab=equipment.enchantable?'enchant':sockets>0?'socket':target.numbers?.chaos?'purify':'enchant';
     const member=this.member();
     const preview=(id:string,modifiers:Modifier[])=>member?.previewGemChange(id,modifiers);
-    this.forge=new ForgePanel(bag,this.app.menuPanels,this.app.characterStats,this.selectedMemberId,
+    this.forge=new ForgePanel(bag,this.app.menuPanels,this.app.characterStats,
       ()=>this.render(),()=>this.app.audio?.ui('enchant'),(message)=>this.app.ui.showInstant(message),preview);
     this.forge.open(targetId,tab);this.page='forge';this.render();
   }

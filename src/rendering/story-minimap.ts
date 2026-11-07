@@ -10,7 +10,7 @@ import { UI_UNIT_HEIGHT, UI_UNIT_WIDTH, readSafeArea } from '../ui/viewport.ts';
 
 export interface MinimapTask extends Point { id: string; status: 'available' | 'active' | 'ready' }
 /** 原版小地图的特殊怪标记：精英和 Boss 共用同一个图标。 */
-export interface MinimapEnemy extends Point { id: string }
+interface MinimapEnemy extends Point { id: string }
 
 export function minimapAssets(content: StoryInterface): PendingAsset[] {
   return MINIMAP_ASSETS.map(key => ({kind: 'image', key, file: content.assets[key]}));

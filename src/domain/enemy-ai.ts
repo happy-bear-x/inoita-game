@@ -30,7 +30,7 @@ export interface EnemyPort extends CombatPort {
     clear():void;
   };
 }
-export interface EnemySnapshot {
+interface EnemySnapshot {
   state: 'idle' | 'wandering' | 'chasing' | 'attacking' | 'returning';
   targetId?: string;
   cooldowns: Readonly<Record<string, Cooldown>>;
@@ -191,7 +191,6 @@ export class EnemyController {
     this.combat?.cancel(true);this.state='idle';this.targetId=undefined;this.pendingReturn=false;this.threatCombatActive=false;
     this.path=[];this.destination=undefined;this.search=undefined;this.progressPosition=undefined;this.accumulator=0;this.wanderDestination=undefined;this.idleElapsed=0;this.port.stop();
   }
-  reset():void{this.cancel();this.combat?.reset();this.spentOnce.clear();}
   dispose():void{this.cancel();this.disposed=true;this.combat?.dispose();}
 
   private inAwareness(actor:Combatant,target:Combatant):boolean{

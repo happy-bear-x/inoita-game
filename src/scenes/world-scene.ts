@@ -1514,7 +1514,6 @@ export class WorldScene extends Phaser.Scene {
     if(picked.length)this.groundLootView?.sync(store.forMap(mapId));
   }
   refreshCombatTarget():void{this.statusHud?.setTarget(this.combat?.targetStatus());}
-  focusSelected():void{this.combat?.focusSelected();}
   revivePartyMember(id:string,item:string):import('../domain/items.ts').ItemResult{
     if(!this.combat)throw new Error('请等待地图加载');return this.combat.revive(id,item);
   }
@@ -1571,12 +1570,10 @@ export class WorldScene extends Phaser.Scene {
     this.applyNoclip(this.combat?.controlledVisual ?? this.player);
     return { ok: true };
   }
-  isNoclip(): boolean { return this.app.gmNoclip ?? false; }
   setSpeedMultiplier(multiplier: number): { ok: boolean } {
     this.app.gmSpeedMultiplier = multiplier;
     return { ok: true };
   }
-  getSpeedMultiplier(): number { return this.app.gmSpeedMultiplier ?? 1; }
   /** GM 无敌开关：写到会话级集合，换图重建战斗后仍然有效。 */
   setInvincible(actorId:string,enabled:boolean):{ok:boolean;reason?:string}{
     if(!this.app.session.hero)return {ok:false,reason:'当前会话没有角色系统'};

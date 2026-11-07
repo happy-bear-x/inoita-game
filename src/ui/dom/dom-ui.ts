@@ -1,8 +1,8 @@
 import type Phaser from 'phaser';
 import { FONT } from '../text-style.ts';
-import { readSafeArea, UI_UNIT_HEIGHT, UI_UNIT_WIDTH } from '../viewport.ts';
+import { UI_UNIT_HEIGHT, UI_UNIT_WIDTH } from '../viewport.ts';
 
-export type DomLayerName = 'world' | 'hud' | 'screen' | 'overlay';
+type DomLayerName = 'world' | 'hud' | 'screen' | 'overlay';
 
 /** 一个 DOM 文字节点；只改内容、位置和显隐，不参与 Phaser 渲染。 */
 export interface DomLabel {
@@ -16,7 +16,7 @@ export interface DomLabel {
   remove(): void;
 }
 
-export interface DomPoint { x: number; y: number }
+interface DomPoint { x: number; y: number }
 
 /**
  * 画布上方的 DOM 文字层。
@@ -32,11 +32,10 @@ export class DomUi {
   private readonly visible = new Map<DomLayerName, boolean>();
   /** 全屏遮罩出现时统一收起普通文字层；overlay 层不受影响。 */
   private occluded = false;
-  private destroyed = false;
 
   /** 幂等：重复调用不会创建第二个根节点。 */
   attach(): void {
-    if (this.destroyed || typeof document === 'undefined') return;
+    if (typeof document === 'undefined') return;
     if (this.root?.isConnected) return;
     const frame = document.getElementById('game-frame');
     if (!frame) return;
@@ -144,25 +143,12 @@ export class DomUi {
     layer.hidden = this.visible.get(name) === false || (this.occluded && name !== 'overlay');
   }
 
-  isLayerVisible(name: DomLayerName): boolean {
-    return this.visible.get(name) !== false;
-  }
-
   /** 重新读取画框与安全区；只在视口变化和字体就绪后调用。 */
   layout(): void {
     if (typeof document === 'undefined') return;
     const frame = this.frame ?? document.getElementById('game-frame');
     if (!frame) return;
     this.frame = frame;
-    const rect = frame.getBoundingClientRect();
-    const safe = readSafeArea();
-    frame.style.setProperty('--story-unit', `${Math.min(rect.width / UI_UNIT_WIDTH, rect.height / UI_UNIT_HEIGHT)}px`);
-    frame.style.setProperty('--safe-inset-left', `${safe.left}px`);
-    frame.style.setProperty('--safe-inset-right', `${safe.right}px`);
-    frame.style.setProperty('--safe-inset-top', `${safe.top}px`);
-    frame.style.setProperty('--safe-inset-bottom', `${safe.bottom}px`);
-    this.root?.style.setProperty('--ui-width', `${rect.width}px`);
-    this.root?.style.setProperty('--ui-height', `${rect.height}px`);
   }
 
   /** 当前画框的 CSS 尺寸；DOM 文字用它换算字号和位置。 */
@@ -198,28 +184,4 @@ export class DomUi {
     };
   }
 
-  destroy(): void {
-    this.destroyed = true;
-    this.root?.remove();
-    this.root = undefined;
-    this.frame = undefined;
-    this.layers.clear();
-    this.visible.clear();
-  }
-}
-
-/** 纯函数版本：不依赖 DomUi 实例，供测试和小模块复用。 */
-export function worldToScreen(
-  frame: Pick<DOMRect, 'left' | 'top'>,
-  canvas: Pick<DOMRect, 'left' | 'top' | 'width' | 'height'>,
-  scale: { width: number; height: number },
-  camera: Pick<Phaser.Cameras.Scene2D.Camera, 'worldView' | 'zoom'>,
-  x: number, y: number
-): DomPoint {
-  const scaleX = canvas.width / Math.max(1, scale.width);
-  const scaleY = canvas.height / Math.max(1, scale.height);
-  return {
-    x: canvas.left - frame.left + (x - camera.worldView.x) * camera.zoom * scaleX,
-    y: canvas.top - frame.top + (y - camera.worldView.y) * camera.zoom * scaleY
-  };
 }

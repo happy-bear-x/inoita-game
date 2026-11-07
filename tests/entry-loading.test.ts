@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { continueProgress, loadEntryPlan, type EntryLoadingPorts } from '../src/application/entry-loading.ts';
+import { loadEntryPlan, type EntryLoadingPorts } from '../src/application/entry-loading.ts';
 import type { EntryPlan } from '../src/application/entry-plan.ts';
 
 function plan(overrides: Partial<EntryPlan> = {}): EntryPlan {
@@ -82,19 +82,4 @@ test('the caller can map the whole load into a progress window', async () => {
   const values = reports(log);
   assert.ok(values.every(value => value >= 0.5 && value <= 1));
   assert.ok(Math.abs(values.at(-1)! - 0.97) < 0.001);
-});
-
-test('story preparation continues the entry bar instead of restarting it', () => {
-  // 地图加载停在 0.9，剧情预取在同一条进度条上从 0.9 走到 1，看不出第二根进度条。
-  assert.equal(continueProgress(0.9, 0), 0.9);
-  assert.equal(continueProgress(0.9, 1), 1);
-  let previous = -1;
-  for (const value of [0, 0.25, 0.5, 0.75, 1]) {
-    const result = continueProgress(0.9, value);
-    assert.ok(result >= 0.9 && result <= 1);
-    assert.ok(result > previous);
-    previous = result;
-  }
-  assert.equal(continueProgress(0.5, 0.5), 0.75);
-  assert.equal(continueProgress(0, 0.5), 0.5);
 });

@@ -22,7 +22,6 @@ test('viewport offsets and safe insets affect the frame and controls separately,
   globals.innerWidth=932;globals.innerHeight=430;
   fitViewport();
   assert.deepEqual([style.width,style.height,style.left,style.top],['844px','390px','3px','27px']);
-  assert.deepEqual([style['--safe-left'],style['--safe-right'],style['--safe-top'],style['--safe-bottom']],['59px','59px','12px','33px']);
   (globals.window as FakeWindow).visualViewport=undefined;fitViewport();
   assert.deepEqual([style.width,style.height,style.left,style.top],['932px','430px','0px','0px']);
  } finally {
@@ -49,7 +48,6 @@ test('keepSize follows the visual viewport offset without resizing the frame',()
   globals.innerWidth=844;globals.innerHeight=250;
   fitViewport({keepSize:true});
   assert.deepEqual([style.width,style.height,style.left,style.top],['844px','390px','0px','140px']);
-  assert.equal(style['--story-unit'],`${Math.min(844/800,390/480)}px`,'界面单位保持原尺寸');
  } finally {
   for(const [name,descriptor] of original) {
    if(descriptor)Object.defineProperty(globalThis,name,descriptor);else delete globals[name];
@@ -67,11 +65,12 @@ test('safe area is measured once until the viewport changes',()=>{
   globals.document={getElementById:(id:string)=>id==='game-frame'?{style}:{}};
   globals.getComputedStyle=()=>{reads++;return {paddingLeft:'47px',paddingRight:'47px',paddingTop:'0px',paddingBottom:'21px'};};
   fitViewport();
-  const measured=reads;
   assert.deepEqual(readSafeArea(),{left:47,right:47,top:0,bottom:21});
+  const measured=reads;
   readSafeArea();
   assert.equal(reads,measured,'视口没变时不再读计算样式');
   fitViewport();
+  readSafeArea();
   assert.equal(reads,measured+1,'视口重建后重新测量');
  }finally{
   for(const[name,descriptor]of original){if(descriptor)Object.defineProperty(globalThis,name,descriptor);else delete globals[name];}

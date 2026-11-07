@@ -14,7 +14,7 @@ import { GOLD } from './widgets.ts';
 import type { MenuTextSpec, MenuTextWriter } from '../dom/menu-text.ts';
 
 /** 强化台文字落点：滚动区由宿主登记，刷新只重算 DOM 位置。 */
-export interface ForgeTextTarget {
+interface ForgeTextTarget {
   scroll(name:string,x:number,y:number,width:number,height:number,surface?:UiSurface):ScrollArea;
   refresh():void;
 }
@@ -29,7 +29,7 @@ const OUTCOME_COLORS:Record<EnhancementOutcomeTone,string>={loss:TEXT_COLORS.dan
  * 领域方法。页面本身不铺黑色遮罩，确认框才借用 `modal` 画一条原版提示横带。
  */
 export class ForgePanel {
-  readonly bag:Bag;readonly panels:MenuPanels;readonly stats:CharacterStatsCatalog;readonly memberId:string;
+  readonly bag:Bag;readonly panels:MenuPanels;readonly stats:CharacterStatsCatalog;
   private readonly changed:()=>void;private readonly sound:()=>void;private readonly notify:(message:string)=>void;
   private readonly preview:(targetId:string,gemModifiers:Modifier[])=>CharacterPanel|undefined;
   targetId?:string;tab:ForgeTab='enchant';
@@ -40,10 +40,10 @@ export class ForgePanel {
   private text?:ForgeTextTarget;
   /** 左框可滚动区从 (0,0) 开始，正文坐标就是内容坐标。 */
   private static readonly LEFT_CLIP={top:0,bottom:431};
-  constructor(bag:Bag,panels:MenuPanels,stats:CharacterStatsCatalog,memberId:string,
+  constructor(bag:Bag,panels:MenuPanels,stats:CharacterStatsCatalog,
     changed:()=>void,sound:()=>void,notify:(message:string)=>void,
     preview:(targetId:string,gemModifiers:Modifier[])=>CharacterPanel|undefined){
-    this.bag=bag;this.panels=panels;this.stats=stats;this.memberId=memberId;
+    this.bag=bag;this.panels=panels;this.stats=stats;
     this.changed=changed;this.sound=sound;this.notify=notify;this.preview=preview;
   }
   get confirming():boolean{return !!this.confirmation;}

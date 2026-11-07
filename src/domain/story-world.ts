@@ -34,7 +34,7 @@ export interface StoryEncounter {
  * 还没观察过的结果。`StoryRuntime` 自己的 `encounterResults` 也只记最近 64 条，
  * 这里取同一个窗口，超出的一次性遭遇及其怪物死亡记录都不会再被任何代码读到。
  */
-export const COMPLETED_ENCOUNTER_HISTORY_LIMIT=64;
+const COMPLETED_ENCOUNTER_HISTORY_LIMIT=64;
 const isCompletedEncounter=(encounter:Readonly<StoryEncounter>):boolean=>
   encounter.status==='won'||encounter.status==='lost';
 export interface StoryWorldSnapshot {

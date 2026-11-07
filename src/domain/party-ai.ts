@@ -128,7 +128,6 @@ export class PartyController {
   constructor(id:string,port:PartyPort,combat:CombatController,random= Math.random){
     this.id=id;this.port=port;this.combatController=combat;this.random=random;
   }
-  snapshot(){return this.combatController.snapshot();}
   /** 只读动作阶段；不需要冷却快照时用这个。 */
   actionState(){return this.combatController.actionState();}
   selectedTargetId(){return this.combatController.selectedTargetId();}

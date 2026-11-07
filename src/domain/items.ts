@@ -16,7 +16,7 @@ export const EQUIPMENT_SLOT_ORDER: readonly EquipmentSlot[] =
   ['head','neck','ring','accessory','body','back','main-hand','off-hand','hands','feet'];
 export const ITEM_USES = ['recover-health', 'consume', 'enchant', 'socket', 'purify', 'pack', 'box', 'unseal', 'learn', 'regenerate',
   'reset-skills', 'recruit', 'merchant', 'revive', 'recipe', 'dungeon'] as const;
-export type ItemUseKind = typeof ITEM_USES[number];
+type ItemUseKind = typeof ITEM_USES[number];
 export interface ItemReward { item: string; quantity: number }
 export interface GroundItemSprite {
   file: string;

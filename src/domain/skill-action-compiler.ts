@@ -20,7 +20,7 @@ export function compileSkillAction(action: SkillAction): SkillAction {
 }
 
 /** 非 repeat 动作的帧索引；spawn 事件按 [frame, until) 展开，和 skillEvents 语义一致。 */
-export function eventFrames(events: readonly SkillEvent[]): Record<string, number[]> {
+function eventFrames(events: readonly SkillEvent[]): Record<string, number[]> {
   const frames = new Map<number, number[]>();
   events.forEach((event, index) => {
     if (event.kind === 'spawn') {

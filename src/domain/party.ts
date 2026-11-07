@@ -37,7 +37,7 @@ export interface PartySnapshot {
   members: readonly CompanionSnapshot[];
 }
 /** HUD 只读上阵队员的轻量快照；不包含名册、技能和成长等菜单字段。 */
-export interface PartyActiveMember {
+interface PartyActiveMember {
   id: string;
   level: number;
   health: number;
@@ -175,10 +175,6 @@ export class CompanionMember {
     if(this.currentLevel===this.stats.maxLevel)this.currentExperience=0;
     if(levels){this.skills.updateLevel(this.currentLevel);this.onLevelUp?.();if(this.alive)this.recover();else this.changed();}else this.changed();return levels;
   }
-  setAiFrequency(skillId:string,frequency:number):void{
-    if(!Number.isInteger(frequency)||frequency<0||frequency>2)throw new Error('技能频率需要是 0–2');
-    this.aiFrequency.set(skillId,frequency);this.changed();
-  }
   snapshot(rosterSlot:number|null=null):CompanionSnapshot{const player=this.player;return {id:this.id,definitionId:this.definition.id,rosterSlot,
     skillLevels:this.skills.skillLevels(),skillCaps:{...this.generated.skillCaps},groupSkills:[...this.generated.groupSkills],quality:this.definition.quality??0,
     name:this.definition.name,classId:this.definition.classId,source:this.source,elite:this.definition.elite,...player};}
@@ -222,18 +218,7 @@ export class PartyRoster {
   private selected='player';
   private serial=0;
   private rosterSlots:(string|null)[]=Array.from({length:MERCENARY_SLOT_COUNT},()=>null);
-  private revisionValue=0;
   private groupModifierVersionValue=0;
-  private heroLevel:number;
-  /**
-   * 队伍展示与战斗输入的修订号：队伍结构、操控者、成员等级和成员装备变化时推进。
-   *
-   * 直接推进的入口：成员加入（`create`）、成员离队（`remove`）、上阵/候补换位（`deploy`、`reserve`）、
-   * 切换操控者（`switchControl`）、阵亡后换人（`onDefeat`）、成员或主角升级、读档（`restoreState`）。
-   * 成员装备变化经 `bag.revision` 带入；背包是成员装备的唯一写入口，因此这里读它而不是再记一份。
-   * 血量、法力、临时战斗上限和经验数值本身不推进，避免每次受击都让缓存失效。
-   */
-  get revision():number{return this.revisionValue+this.bag.revision;}
   /**
    * 队伍光环/组队被动的输入版本：只在成员加入、离队、成员升级和读档时推进。
    * 换位、切人、掉血/回蓝都不改变 `groupModifiers()` 的结果。
@@ -242,16 +227,10 @@ export class PartyRoster {
   constructor(hero:BattleCharacter,stats:CharacterStatsCatalog,items:ItemCatalog,catalog:CompanionCatalog,changed:()=>void,onMemberRemoved?:(id:string)=>void,
     onRecruited?:(sourceItem:string,memberId:string)=>void,atomic?:<T>(operation:()=>T)=>T){
     this.hero=hero;this.bag=hero.bag;this.stats=stats;this.items=items;this.catalog=catalog;this.changed=changed;this.onMemberRemoved=onMemberRemoved;
-    this.onRecruited=onRecruited;this.atomic=atomic;this.heroLevel=hero.level;
-    // 主角升级也可能来自任务奖励等不走 `PartyRoster.addExperience` 的入口；订阅时只比较等级，
-    // 掉血/回蓝触发的通知不会推进修订号。
-    hero.subscribe(()=>{
-      if(this.hero.level===this.heroLevel)return;
-      this.heroLevel=this.hero.level;this.revisionValue++;
-    });
+    this.onRecruited=onRecruited;this.atomic=atomic;
   }
-  /** 成员集合或成员等级变化：展示修订号和组队被动版本一起推进。 */
-  private bumpGroupModifiers():void{this.revisionValue++;this.groupModifierVersionValue++;}
+  /** 成员集合或成员等级变化：组队被动版本推进。 */
+  private bumpGroupModifiers():void{this.groupModifierVersionValue++;}
   get controlledId():string{return this.selected;}
   get activeIds():string[]{return ['player',...this.slots.filter((id):id is string=>!!id)];}
   /** 已拥有伙伴的外观定义 id（不含主角）；返回只读拷贝，供素材规划使用。 */
@@ -383,7 +362,7 @@ export class PartyRoster {
     if(current>=0)this.slots[current]=previous;
     this.slots[index]=id;
     if(previous&&current<0&&this.selected===previous)this.selected=this.livingIds[0]??'player';
-    this.revisionValue++;this.changed();
+    this.changed();
   }
   deployFirstAvailable(id:string):void{
     if(this.activeIds.includes(id))return;
@@ -396,18 +375,18 @@ export class PartyRoster {
     if(!this.alive(id))throw new Error('阵亡队员无法移出队伍');
     this.slots=this.slots.map(value=>value===id?undefined:value);
     if(this.selected===id)this.selected=this.livingIds[0]??'player';
-    this.revisionValue++;this.changed();
+    this.changed();
   }
   switchControl(id:string):boolean{
     if(!this.activeIds.includes(id)||!this.alive(id))return false;
-    if(this.selected===id)return true;this.selected=id;this.revisionValue++;this.changed();return true;
+    if(this.selected===id)return true;this.selected=id;this.changed();return true;
   }
   onDefeat(id:string):boolean{
     if(this.selected===id){const order=['player',...this.slots],start=order.indexOf(id);
-      for(let offset=1;offset<=order.length;offset++){const next=order[(start+offset)%order.length];if(next&&this.alive(next)){this.selected=next;break;}}this.revisionValue++;this.changed();}
+      for(let offset=1;offset<=order.length;offset++){const next=order[(start+offset)%order.length];if(next&&this.alive(next)){this.selected=next;break;}}this.changed();}
     return this.livingIds.length===0;
   }
-  recover():void{const switched=this.selected!=='player';this.hero.recover();for(const id of this.activeIds.slice(1))this.owned.get(id)?.recover();this.selected='player';if(switched)this.revisionValue++;this.changed();}
+  recover():void{this.hero.recover();for(const id of this.activeIds.slice(1))this.owned.get(id)?.recover();this.selected='player';this.changed();}
   addExperience(amount:number):void{
     if(!Number.isSafeInteger(amount)||amount<0)throw new Error('经验奖励无效');
     const heroLevel=this.hero.level,reward=Math.floor(amount*(1000+(this.groupModifiers().experience??0))/1000);

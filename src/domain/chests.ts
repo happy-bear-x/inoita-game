@@ -116,7 +116,7 @@ export function rollPlacement(entity: EntityPlacement, random: () => number): En
  * 原版挑「身边的可交互对象」用的距离（`PLAYER_DoCheckNearNPC` 0x1be0b0）：
  * 两个脚底坐标的曼哈顿距离不超过 24 px 才算身边；已经在手上的目标放宽到 25 px。
  */
-export const NEAR_OBJECT_DISTANCE = 24;
+const NEAR_OBJECT_DISTANCE = 24;
 
 /** 原版 `PLAYER_DoCheckNearNPC` 的距离判定。 */
 export function nearInteractable(from: {x:number;y:number}, target: {x:number;y:number}): boolean {

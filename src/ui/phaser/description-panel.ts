@@ -9,7 +9,7 @@ import { layoutDescriptionTextForSurface, writeDescriptionText } from './descrip
 type CloseRect = { close:{x:number; y:number; size:number} };
 
 /** 说明面板改用 DOM 文字时，正文相对内容块的落点和裁剪范围。 */
-export interface DescriptionDomTarget {
+interface DescriptionDomTarget {
   writer: MenuTextWriter;
   /** 同一页内唯一；页内多份说明用不同前缀。 */
   keyPrefix: string;

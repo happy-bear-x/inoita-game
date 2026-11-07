@@ -17,16 +17,6 @@ interface EntryLoadingResult {
 }
 
 /**
- * 在同一张加载页上接着已完成的进度走完剩余区间；`value` 是这一段自己的 0–1。
- * 用于地图加载之后的剧情预取：进度条只向前，不回到 0 重来。
- */
-export function continueProgress(completed: number, value: number): number {
-  const start = Math.min(1, Math.max(0, completed));
-  const part = Math.min(1, Math.max(0, value));
-  return start + (1 - start) * part;
-}
-
-/**
  * 加载入口计划：当前图 0–0.88，立绘 0.88–0.91，音效，0.94 留给场景对象构建。
  * 失败时释放已经拿到的租约，避免残留引用。
  */

@@ -192,17 +192,6 @@ function menuPreparationFor(signal: AbortSignal): MenuPreparation | undefined {
   }
   return state;
 }
-function prepareMenu(signal: AbortSignal, onProgress?: (value: number) => void): Promise<void> {
-  const state = menuPreparationFor(signal);
-  if (!state) return Promise.reject(new Error('界面场景尚未就绪'));
-  if (onProgress) {
-    state.listeners.add(onProgress);
-    onProgress(state.progress);
-    const current = state;
-    void current.all.finally(() => current.listeners.delete(onProgress)).catch(() => {});
-  }
-  return state.all;
-}
 function prepareMenuCore(signal: AbortSignal, onProgress?: (value: number) => void): Promise<void> {
   const state = menuPreparationFor(signal);
   if (!state) return Promise.reject(new Error('界面场景尚未就绪'));
@@ -584,7 +573,6 @@ function boot(): void {
   domUi.setOccluded(uiOcclusion(ui));
   document.fonts?.ready.then(() => domUi.layout()).catch(() => {});
   app.enterGame = enterGame; app.returnToMenu = returnToMenu; app.startStory = startStory;
-  app.prepareStory = prepareStory; app.prepareMenu = prepareMenu;
   app.resumeSlot = resumeSlot;
   app.captureSaveWorld = () => worldScene()?.captureSaveWorld() ?? {ok:false,reason:'not-ready'};
   app.autoSave = () => autoSaver?.request();

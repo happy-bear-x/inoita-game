@@ -3,8 +3,7 @@ import type { AssetLease } from '../../application/assets.ts';
 import { loadUiImages } from './widgets.ts';
 
 /**
- * 菜单图片的预载与释放。正式 UI 场景与 UI 调试场景各持一份，`prepareMenu` 只认这个接口，
- * 所以调试场景不再依赖 `formal-ui` 是否存在。
+ * 菜单图片的预载与释放。正式 UI 场景持有租约账，菜单预载通过 `app.uiAssets` 读取。
  */
 export interface UiAssetHost {
   preloadFiles(files: string[], signal: AbortSignal, progress: (value: number) => void): Promise<void>;

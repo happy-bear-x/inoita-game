@@ -1,12 +1,11 @@
 import {canonicalJson, contentDigest} from '../../src/application/content-hash.ts';
 import type {Campaign, CampaignQuest} from '../../src/domain/campaign.ts';
-import type {EntityPlacement, TravelDestination, WorldIndex, WorldMap} from '../../src/domain/content.ts';
-import type {ItemCatalog} from '../../src/domain/items.ts';
+import type {EntityPlacement} from '../../src/domain/content.ts';
 import type {StoryCondition} from '../../src/domain/story-condition.ts';
 import type {StoryEvent, StoryNodeRef, StoryScript} from '../../src/domain/story-graph.ts';
 import type {SessionState} from '../../src/domain/session.ts';
 import type {
-  StoryDebugCatalog, StoryDebugGap, StoryDebugPlay, StoryDebugStartTable, StoryDebugTask,
+  StoryDebugGap, StoryDebugPlay, StoryDebugStartTable, StoryDebugTask,
 } from '../../src/domain/story-debug.ts';
 import type {HeadlessContent} from '../../src/debug/headless-story.ts';
 import {createHeadlessStory, type BattleDecision, type ChoiceDecision, type HeadlessStory} from '../../src/debug/headless-story.ts';

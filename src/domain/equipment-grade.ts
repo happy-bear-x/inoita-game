@@ -40,7 +40,7 @@ function pickWeighted(weights: readonly number[], random: () => number): number 
 }
 
 /** 稀有度权重经过章节缩放、品质下限和幸运修正后的结果。 */
-export function rarityWeights(profile: GradeProfile): number[] {
+function rarityWeights(profile: GradeProfile): number[] {
   const scale = profile.rarityScale ?? [];
   const weights = profile.weights.map((value, tier) => Math.floor(value * (scale[tier] ?? 1000) / 1000));
   if (profile.minRarity !== undefined) {

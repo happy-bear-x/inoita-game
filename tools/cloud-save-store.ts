@@ -80,7 +80,7 @@ interface CloudSessionRecord {
   absoluteExpiresAt: number;
 }
 
-export interface CloudSaveEntry {
+interface CloudSaveEntry {
   slot: SaveSlotRef;
   format: number;
   bytes: number;

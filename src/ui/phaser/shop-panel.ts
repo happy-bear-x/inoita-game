@@ -15,7 +15,7 @@ import type { MenuTextSpec, MenuTextWriter } from '../dom/menu-text.ts';
 import type { UiSurface, ScrollArea } from './widgets.ts';
 
 /** 商店页文字落点：页面文字与弹层文字分开收集，弹层坐标由 `StoryUI` 换算。 */
-export interface ShopTextTarget {
+interface ShopTextTarget {
   scroll(name:string,x:number,y:number,width:number,height:number,surface?:UiSurface):ScrollArea;
   setText(key:string,text:string):void;
   refresh():void;
@@ -86,7 +86,7 @@ export class ShopPanel {
    * 面板调试入口：直接摆到某个交易步骤，跳过「点货架格买、点背包格卖」的点击链路。
    * 可用堆叠商品的 `quantity` 步骤会自动挑一件能买多件的商品；`notice` 则挑第一件不可出售的物品。
    */
-  debugTrade(step:'description'|'quantity'|'confirm'|'notice',kind:'buy'|'sell'='buy'):void{
+  debugTrade(step:'description'|'quantity',kind:'buy'|'sell'='buy'):void{
     if(kind==='buy'){
       const offers=this.store.offers.filter(offer=>!offer.sold);
       const stackable=offers.find(offer=>{
@@ -97,16 +97,13 @@ export class ShopPanel {
       if(!offer)return;
       this.select('buy',offer.id);
     }else{
-      const entries=this.session.bag.entries;
-      const entry=step==='notice'
-        ?entries.find(value=>this.store.sellPrice(value)===0)
-        :entries.find(value=>this.store.sellPrice(value)>0);
+      const entry=this.session.bag.entries.find(value=>this.store.sellPrice(value)>0);
       if(!entry)return;
       this.select('sell',entry.id);
     }
-    if(this.selection&&(step==='quantity'||step==='confirm')){
+    if(this.selection&&step==='quantity'){
       this.selection.step=step;
-      if(step==='quantity')this.selection.quantity=Math.min(2,Math.max(1,this.maximum(this.selection.kind)));
+      this.selection.quantity=Math.min(2,Math.max(1,this.maximum(this.selection.kind)));
     }
     this.changed();
   }

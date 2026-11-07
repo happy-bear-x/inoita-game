@@ -33,7 +33,7 @@ interface Registration {
 }
 
 /** 当前焦点是否在可输入文本的 DOM 元素上。 */
-export function editingText(): boolean {
+function editingText(): boolean {
   const element = globalThis.document?.activeElement as HTMLElement | null | undefined;
   if (!element) return false;
   return element.tagName === 'INPUT' || element.tagName === 'TEXTAREA'

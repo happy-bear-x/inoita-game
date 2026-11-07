@@ -233,8 +233,6 @@ export class UiSurface {
     }
     return group;
   }
-  /** 滚动区重建可视行后，清掉已销毁按钮的键盘焦点引用。 */
-  pruneButtons():void{this.buttons=this.buttons.filter(button=>button.active);}
   focusables():Phaser.GameObjects.Container[]{return this.enabled()&&this.root.visible?this.buttons.filter(button=>button.active&&button.input?.enabled&&button.visible):[];}
   focus(button:Phaser.GameObjects.Container):void{this.buttons.forEach(candidate=>candidate.getData('highlight')?.setVisible(candidate===button||candidate.getData('selected')));this.scrolls.find(scroll=>scroll.content===button.parentContainer)?.reveal(button);}
   /** 返回是否消费了这次按键；输入路由靠它决定要不要交给更低的作用域。 */
@@ -287,29 +285,12 @@ export class UiSurface {
   }
 }
 
-/**
- * 按钮内部的具名部件。
- *
- * 调用方按名字取，**不要按下标读 `list`**：`button` 里加一个部件或调整组装顺序，
- * 下标就指向别的对象，表现为按钮错位或变色，而且不报错。`face` 是专用底图或共用按钮容器
- * （`bare` 且没有 `image` 时为 undefined），`highlight` 只在传了 `pressed` 或走共用按钮时存在，
- * `text` 只在传了 label 时存在。
- */
-export function buttonParts(button:Phaser.GameObjects.Container):{
-  face?:Phaser.GameObjects.Image|Phaser.GameObjects.Rectangle|Phaser.GameObjects.Container;
-  highlight?:Phaser.GameObjects.Image|Phaser.GameObjects.Rectangle|Phaser.GameObjects.Container;
-  text?:Phaser.GameObjects.Text;
-} {
-  return {face:button.getData('face'),highlight:button.getData('highlight'),text:button.getData('labelText')};
-}
-
-
 const scrollAreas = new WeakMap<Phaser.Scene, Set<ScrollArea>>();
 let scrollOrder = 0;
 
 /** 裁剪只影响绘制；命中区另行检查视口，滚动时不会点击被裁掉的行。 */
 /** 滚动条相对滚动区右缘的偏移与上下留白；背包网格用它把滚动条放进栏间空档。 */
-export interface ScrollBarOptions {
+interface ScrollBarOptions {
   /** 正数向右移，单位是页面坐标。 */
   offset?:number;
   /** 轨道上下各留多少像素。 */
@@ -335,7 +316,6 @@ export class ScrollArea {
   private offset=0;
   private extent=0;
   private shown=true;
-  private virtual?:{count:number;rowHeight:number;render:(first:number,last:number)=>void;range?:[number,number]};
   onScroll?:()=>void;
   /**
    * 额外的滚动监听。面板用 `onScroll` 记自己的偏移和状态；菜单 DOM 文字由 `StoryUI`
@@ -383,26 +363,6 @@ export class ScrollArea {
   get scrollTop():number{return this.offset;}
   set scrollTop(value:number){this.offset=Phaser.Math.Clamp(value,0,Math.max(0,this.extent-this.height));this.layout();}
   setHeight(height:number):void{this.extent=height;this.scrollTop=this.offset;}
-  /**
-   * 长列表按可视窗口渲染：只画当前滚动位置附近的行，滚动时重建。
-   * 全量渲染几千行会在移动端一次重画里创建几千张带纹理的对象，Safari 报
-   * `Framebuffer Unsupported` 后直接丢失 WebGL 上下文。
-   */
-  setVirtual(count:number,rowHeight:number,render:(first:number,last:number)=>void):void{
-    if(!(count>0)||!(rowHeight>0))return;
-    this.virtual={count,rowHeight,render};
-    this.renderVirtual();
-  }
-  private renderVirtual():void{
-    const virtual=this.virtual;
-    if(!virtual)return;
-    const first=Math.max(0,Math.floor(this.offset/virtual.rowHeight)-2);
-    const last=Math.min(virtual.count,Math.ceil((this.offset+this.height)/virtual.rowHeight)+2);
-    if(virtual.range&&virtual.range[0]===first&&virtual.range[1]===last)return;
-    virtual.range=[first,last];
-    this.content.removeAll(true);this.surface.pruneButtons();
-    virtual.render(first,last);
-  }
   contains(pointer:Phaser.Input.Pointer):boolean{return this.surface.enabled()&&this.surface.root.visible&&this.layer.visible&&this.mask.getBounds().contains(pointer.x,pointer.y);}
   /** 多个滚动区叠在一起时，只让最上层接手拖动和滚轮；否则说明面板滑动会带着底下背包一起走。 */
   private onTop(pointer:Phaser.Input.Pointer):boolean{
@@ -430,7 +390,6 @@ export class ScrollArea {
     if(maskChanged&&this.maskFilter)this.maskFilter.needsUpdate=true;
     this.zone.setPosition(this.mask.x,this.mask.y).setSize(this.mask.width,this.mask.height);
     if(this.zone.input)this.zone.input.hitArea.setSize(this.zone.width,this.zone.height);
-    this.renderVirtual();
     this.updateBar(matrix);
   }
   /** 只画可见时存在的滚动条：短内容、隐藏面板都不占绘制对象。 */

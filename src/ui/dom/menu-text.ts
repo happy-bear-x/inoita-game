@@ -4,7 +4,7 @@ import type { DomLabel, DomUi } from './dom-ui.ts';
 export interface MenuTextPoint { x: number; y: number; scale: number }
 
 /** 一段菜单文字；字号和 Phaser `UiSurface.text` 的 size 同一口径。 */
-export interface MenuTextStyle {
+interface MenuTextStyle {
   size: number;
   color?: string;
   /** 对应 Phaser 的 `setOrigin`：0 是左/上，.5 是中，1 是右/下。 */
@@ -19,7 +19,7 @@ export interface MenuTextStyle {
   wrap?: MenuTextWrap;
 }
 
-export type MenuTextWrap = 'none' | 'word' | 'anywhere';
+type MenuTextWrap = 'none' | 'word' | 'anywhere';
 
 /** 滚动视口在页面坐标里的上下边界；越界的行不显示。 */
 export interface MenuTextClip { top: number; bottom: number }
@@ -39,7 +39,7 @@ export interface MenuTextSpec {
 export interface MenuTextWriter { add(spec: MenuTextSpec): void }
 
 /** 一个页面的文字产出函数；新增页面时在这里登记，不重写 `MenuTextLayer`。 */
-export type MenuTextPageRenderer = (writer: MenuTextWriter) => void;
+type MenuTextPageRenderer = (writer: MenuTextWriter) => void;
 
 interface MenuTextEntry {
   label: DomLabel;

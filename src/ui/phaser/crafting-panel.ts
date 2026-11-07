@@ -17,7 +17,7 @@ import {GOLD} from './widgets.ts';
 import type {MenuTextSpec,MenuTextWriter} from '../dom/menu-text.ts';
 
 /** 合成台文字落点：滚动区由宿主登记，刷新只重算 DOM 位置。 */
-export interface CraftingTextTarget {
+interface CraftingTextTarget {
   scroll(name:string,x:number,y:number,width:number,height:number,surface?:UiSurface):ScrollArea;
   refresh():void;
 }

@@ -1,5 +1,5 @@
 import {LOGIC_FRAME_MS,type SkillTransition} from './battle.ts';
-import {CombatController,type ActionPlayback,type Combatant,type CombatSnapshot} from './combat.ts';
+import {CombatController,type ActionPlayback,type Combatant} from './combat.ts';
 import type {Point} from './navigation.ts';
 import {skillSequence,skillRepeatSkippedFrames} from './skill-action.ts';
 import {attackCycleFrames} from './combat-tempo.ts';
@@ -8,7 +8,6 @@ import {positionTransitionStep} from './skill-geometry.ts';
 
 interface ScheduledWork {id:number;ownerId:string;dueFrame:number;work():void}
 type CombatRequestResult={kind:'started'|'approaching'}|{kind:'rejected';reason:Exclude<ReturnType<CombatController['request']>,'started'>};
-interface CombatRuntimeState {actors:[string,CombatSnapshot][]}
 interface ActionTiming {sourceFrames:number;frameDurationMs:number}
 interface RunningAction {
   id:number;ownerId:string;startedFrame:number;action:ActionPlayback;timing:ActionTiming;
@@ -67,12 +66,6 @@ export class CombatRuntime {
     const result=command.skill&&command.mode==='manual'?actor.requestManualSkill(command.skill,command.targetId):
       command.skill&&command.mode==='triggered'?actor.requestTriggeredAction(command.skill,command.targetId):actor.request(command.skill,command.targetId);
     return result==='started'?{kind:actor.actionState()==='approaching'?'approaching':'started'}:{kind:'rejected',reason:result};
-  }
-  captureState():CombatRuntimeState{return {actors:[...this.controllers].map(([id,controller])=>[id,controller.snapshot()])};}
-  restoreState(state:CombatRuntimeState):void {
-    const copy=structuredClone(state);
-    if(!Array.isArray(copy.actors)||new Set(copy.actors.map(([id])=>id)).size!==copy.actors.length||copy.actors.some(([id])=>!this.controllers.has(id)))throw new Error('战斗角色快照无效');
-    this.reset();for(const [id,snapshot] of copy.actors)this.controllers.get(id)!.restoreState(snapshot);
   }
   schedule(ownerId:string,delayFrames:number,work:()=>void):()=>void {
     if(!Number.isSafeInteger(delayFrames)||delayFrames<0)throw new Error('战斗延迟帧无效');
