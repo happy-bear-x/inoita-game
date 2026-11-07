@@ -24,11 +24,13 @@ export class GroundLootStore {
   private readonly drops=new Map<string,GroundDrop>();
   /** 每张地图的掉落 id；拾取、推进和视图重建只扫当前图。 */
   private readonly byMap=new Map<string,Set<string>>();
+  private readonly flyingByMap=new Map<string,Set<GroundDrop>>();
+  private pickupCheck?:{map:string;x:number;y:number;revision:number;availability:number|string};
   /** 掉落内容/飞行状态的版本号；界面只在它变化时重建，避免每帧克隆整张表。 */
   revision=0;
   captureState():GroundLootState { return structuredClone({nextId:this.nextId,drops:[...this.drops.values()]}); }
   restoreState(state:GroundLootState):void {
-    const restored=structuredClone(state);this.nextId=restored.nextId;this.drops.clear();this.byMap.clear();
+    const restored=structuredClone(state);this.nextId=restored.nextId;this.drops.clear();this.byMap.clear();this.flyingByMap.clear();this.pickupCheck=undefined;
     for(const drop of restored.drops){this.drops.set(drop.id,drop);this.track(drop);}
     this.revision++;
   }
@@ -55,8 +57,19 @@ export class GroundLootStore {
     let ids=this.byMap.get(drop.map);
     if(!ids){ids=new Set();this.byMap.set(drop.map,ids);}
     ids.add(drop.id);
+    if(drop.flight)this.trackFlight(drop);
+  }
+  private trackFlight(drop:GroundDrop):void {
+    let flying=this.flyingByMap.get(drop.map);
+    if(!flying)this.flyingByMap.set(drop.map,flying=new Set());
+    flying.add(drop);
+  }
+  private untrackFlight(drop:GroundDrop):void {
+    const flying=this.flyingByMap.get(drop.map);
+    flying?.delete(drop);if(!flying?.size)this.flyingByMap.delete(drop.map);
   }
   private untrack(drop:GroundDrop):void {
+    this.untrackFlight(drop);
     const ids=this.byMap.get(drop.map);if(!ids)return;
     ids.delete(drop.id);if(!ids.size)this.byMap.delete(drop.map);
   }
@@ -70,13 +83,16 @@ export class GroundLootStore {
   }
   addFlying(map:string,origin:{x:number;y:number},landing:{x:number;y:number;direction:number},item:string,durationMs:number):void {
     const [drop]=this.add(map,landing.x,landing.y,[{kind:'item',item,quantity:1}]);
-    this.drops.get(drop.id)!.flight={...origin,direction:landing.direction,remainingMs:durationMs,durationMs};
+    const flying=this.drops.get(drop.id)!;
+    flying.flight={...origin,direction:landing.direction,remainingMs:durationMs,durationMs};
+    this.trackFlight(flying);
   }
   advance(map:string,deltaMs:number):void {
     if(!Number.isFinite(deltaMs)||deltaMs<=0)return;
-    for(const drop of this.onMap(map))if(drop.flight){
+    const flying=this.flyingByMap.get(map);if(!flying)return;
+    for(const drop of flying)if(drop.flight){
       drop.flight.remainingMs-=deltaMs;
-      if(drop.flight.remainingMs<=0){delete drop.flight;this.revision++;}
+      if(drop.flight.remainingMs<=0){delete drop.flight;this.untrackFlight(drop);this.revision++;}
     }
   }
   forMap(map:string):GroundDrop[] {return this.onMap(map).map(drop=>structuredClone(drop));}
@@ -110,15 +126,24 @@ export class GroundLootStore {
     return counts;
   }
   /** 附近 12px 内的落地掉落：只有一张共享背包，谁走过来都能拾取。 */
-  collectNearby(map:string,x:number,y:number,collect:(reward:DropReward)=>unknown):GroundDrop[] {
-    const nearby=this.onMap(map).filter(drop=>!drop.flight
-      &&Math.abs(drop.x-x)<=GROUND_PICKUP_RADIUS_PX&&Math.abs(drop.y-y)<=GROUND_PICKUP_RADIUS_PX);
+  collectNearby(map:string,x:number,y:number,collect:(reward:DropReward)=>unknown,availabilityRevision?:number|string):GroundDrop[] {
+    const previous=this.pickupCheck;
+    if(availabilityRevision!==undefined&&previous?.map===map&&previous.x===x&&previous.y===y&&
+      previous.revision===this.revision&&previous.availability===availabilityRevision)return [];
+    const checkedRevision=this.revision;
+    const nearby:GroundDrop[]=[];
+    for(const id of this.byMap.get(map)??[]){
+      const drop=this.drops.get(id)!;
+      if(!drop.flight&&Math.abs(drop.x-x)<=GROUND_PICKUP_RADIUS_PX&&Math.abs(drop.y-y)<=GROUND_PICKUP_RADIUS_PX)nearby.push(drop);
+    }
     const taken:GroundDrop[]=[];
     for(const drop of nearby){
       if(collect(structuredClone(drop.reward))===false)continue;
       this.discard(drop);taken.push(structuredClone(drop));
     }
     if(taken.length)this.revision++;
+    this.pickupCheck=availabilityRevision===undefined||this.revision!==checkedRevision+(taken.length?1:0)
+      ?undefined:{map,x,y,revision:this.revision,availability:availabilityRevision};
     return taken;
   }
   /**
