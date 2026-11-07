@@ -118,6 +118,7 @@ interface GmPersistencePort {
 
 interface GmPorts {
   markStore?: DebugMarkStore;
+  prepareMark?: (mark: DebugMark, signal: AbortSignal) => Promise<DebugMark>;
   session: Session;
   campaign: Campaign;
   director?: StoryDirector;
@@ -558,8 +559,11 @@ export function createGmActions(ports: GmPorts): GmActions {
       } finally { jumping = false; }
     }),
     endStoryDebug: () => runAsync('endStoryDebug', [], async (): Promise<GmEndDebugResult> => {
+      if (disposed) return { ok: false, reason: '当前调试会话已经关闭' };
+      if (jumping) return { ok: false, reason: '正在恢复调试现场，请稍候' };
       if (debugRun) return finishDebugRun(debugRun, true);
       if (markRun) {
+        jumping = true;
         const run = markRun, before = session.captureState(), world = ports.debugWorld?.capture();
         try {
           const restore = async (): Promise<GmResult> => {
@@ -574,6 +578,7 @@ export function createGmActions(ports: GmPorts): GmActions {
           const result = director ? await director.debugJump(restore) : await restore();
           if (!result.ok) return result;
           markRun = undefined;
+          jumping = false;
           ports.persistence?.resume();
           return { ok: true };
         } catch (error) {
@@ -584,7 +589,7 @@ export function createGmActions(ports: GmPorts): GmActions {
             if (world !== undefined) await ports.debugWorld?.restore(world);
           }
           return { ok: false, reason: error instanceof Error ? error.message : String(error) };
-        }
+        } finally { jumping = false; }
       }
       const focus = session.debugFocusQuest;
       if (!focus) return {ok:false, reason:'当前没有调试现场'};
@@ -740,27 +745,31 @@ export function createGmActions(ports: GmPorts): GmActions {
         abort.throwIfAborted();
         const label = name ?? (await store.list(0, 1))[0]?.name;
         if (!label) return { ok: false, reason: '没有可恢复的调试标记' };
-        const mark = await store.get(label);
+        let mark = await store.get(label);
         abort.throwIfAborted();
-        if (!mark || mark.version !== 1 || mark.summary.name !== label) return { ok: false, reason: `调试标记缺失或损坏：${label}` };
+        if (!mark || mark.version !== 1 || mark.summary?.name !== label) return { ok: false, reason: `调试标记缺失或损坏：${label}` };
+        if (mark.session?.classId !== (session.hero?.classId ?? session.character?.classId)) return { ok: false, reason: '请先进入与标记相同职业的游戏，再恢复现场' };
+        if (ports.prepareMark) mark = await ports.prepareMark(mark, abort);
+        abort.throwIfAborted();
+        const prepared = mark;
         const restore = async (): Promise<GmResult> => {
           abort.throwIfAborted();
           origin = session.captureState(); originWorld = ports.debugWorld?.capture();
           ports.persistence?.suspend(); installed = true;
-          if (mark.taskReturn) {
-            if (!campaign.quests.some(quest => quest.id === mark.taskReturn!.quest)) throw new Error('标记的任务返回点无效');
-            session.restoreState(mark.taskReturn.session);
+          if (prepared.taskReturn) {
+            if (!campaign.quests.some(quest => quest.id === prepared.taskReturn!.quest)) throw new Error('标记的任务返回点无效');
+            session.restoreState(prepared.taskReturn.session);
           }
-          session.restoreState(mark.session);
-          if (mark.world !== undefined && ports.debugWorld) {
-            const restored = await ports.debugWorld.restore(mark.world, abort);
+          session.restoreState(prepared.session);
+          if (prepared.world !== undefined && ports.debugWorld) {
+            const restored = await ports.debugWorld.restore(prepared.world, abort);
             if (!restored.ok) throw new Error(restored.reason ?? '恢复调试地图失败');
           }
           abort.throwIfAborted();
           markRun = { origin, world: originWorld };
-          if (mark.taskReturn) {
-            const progress = session.quests.get(mark.taskReturn.quest);
-            debugRun = { quest: mark.taskReturn.quest, origin: mark.taskReturn.session, world: mark.taskReturn.world,
+          if (prepared.taskReturn) {
+            const progress = session.quests.get(prepared.taskReturn.quest);
+            debugRun = { quest: prepared.taskReturn.quest, origin: prepared.taskReturn.session, world: prepared.taskReturn.world,
               baseline: { status: progress?.status ?? 'locked', cycle: progress?.cycle ?? 0, completedCycles: progress?.completedCycles ?? 0 },
               started: true, pending: false };
             watchDebugRun(debugRun);

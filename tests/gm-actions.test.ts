@@ -10,6 +10,7 @@ import type { StoryClassCatalog } from '../src/domain/story-class.ts';
 import { newStorySession } from '../src/domain/story-class.ts';
 import { StoryDirector, type StoryUI } from '../src/domain/story-director.ts';
 import { createGmActions, type GmCombatPort } from '../src/debug/gm-actions.ts';
+import { prepareDebugMark } from '../src/application/debug-mark-preparation.ts';
 import { prepareTaskStart } from '../src/debug/story-jump.ts';
 import { questJournal } from '../src/domain/quest-journal.ts';
 import { organizedDebugInventory } from '../src/domain/inventory.ts';
@@ -712,4 +713,81 @@ test('persistent task marks retain the task return point while preserving the cu
   assert.equal((await gm.endStoryDebug()).ok, true);
   assert.equal(session.money, original + 37);
   director.dispose();
+});
+
+test('persistent preflight failure never touches the current session, director or save suspension', async () => {
+  const { session, director } = harness(), store = new MarkStore();
+  let worldRestores = 0, suspended = 0, directorCalls = 0;
+  const jump = director.debugJump.bind(director);
+  director.debugJump = async work => { directorCalls++; return jump(work); };
+  const gm = createGmActions({ session, campaign, director, markStore: store,
+    prepareMark: async () => { throw new Error('broken world'); },
+    persistence: { suspend: () => { suspended++; }, resume() {}, resumeAfterRollback() {} },
+    debugWorld: { capture: () => ({}), restore: async () => { worldRestores++; return { ok: true }; } },
+  });
+  await gm.saveMark('bad');
+  let notified = 0;
+  const unsubscribe = session.subscribe(() => { notified++; });
+  assert.equal((await gm.restoreMark('bad')).ok, false);
+  assert.deepEqual([worldRestores, suspended, directorCalls, notified], [0, 0, 0, 0]);
+  unsubscribe(); director.dispose();
+});
+
+test('closing the session while mark preflight waits discards its late result', async () => {
+  const { session, director } = harness(), store = new MarkStore();
+  let resolve!: () => void, suspended = 0;
+  const pending = new Promise<void>(done => { resolve = done; });
+  const gm = createGmActions({ session, campaign, director, markStore: store,
+    prepareMark: async mark => { await pending; return mark; },
+    persistence: { suspend: () => { suspended++; }, resume() {}, resumeAfterRollback() {} },
+  });
+  await gm.saveMark('late');
+  const restoring = gm.restoreMark('late');
+  await new Promise(resolve => setImmediate(resolve));
+  gm.dispose(); resolve();
+  assert.equal((await restoring).ok, false);
+  assert.equal(suspended, 0);
+  assert.equal((await gm.endStoryDebug()).ok, false);
+  director.dispose();
+});
+
+test('mark exit restores the formal position before resuming and rejects concurrent exit', async () => {
+  const { session, director } = harness(), store = new MarkStore();
+  let x = 1, delay = false, release!: () => void;
+  const order: string[] = [];
+  const gm = createGmActions({ session, campaign, director, markStore: store,
+    persistence: { suspend() {}, resume() { assert.equal(x, 9); assert.equal(gm.storyDebug().autoSavePaused, false); order.push('resume'); }, resumeAfterRollback() {} },
+    debugWorld: { capture: () => ({ x }), restore: async value => {
+      if (delay) await new Promise<void>(resolve => { release = resolve; });
+      x = (value as { x: number }).x; order.push(`world:${x}`); return { ok: true };
+    } },
+  });
+  await gm.saveMark('marked'); x = 9;
+  assert.equal((await gm.restoreMark('marked')).ok, true);
+  delay = true;
+  const ending = gm.endStoryDebug();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal((await gm.endStoryDebug()).ok, false);
+  release();
+  assert.equal((await ending).ok, true);
+  assert.deepEqual(order, ['world:1', 'world:9', 'resume']);
+  director.dispose();
+});
+
+
+test('actual mark preflight restores into an independent session and rejects corrupt state before notifications', () => {
+  const { session, director } = harness();
+  const content = { campaign, world: read<import('../src/domain/content.ts').WorldIndex>('world'), storyClasses: classes, items, characterStats: stats, battleCatalog: battle, companions };
+  const mark = { version: 1 as const, summary: { name: 'real', savedAt: 1, classId: session.hero!.classId }, session: session.captureState() };
+  let notified = 0;
+  const unsubscribe = session.subscribe(() => { notified++; });
+  const before = session.captureState();
+  const prepared = prepareDebugMark(mark, content);
+  assert.equal(prepared.session.money, before.money);
+  assert.notEqual(prepared.session, mark.session);
+  mark.session.money = -1;
+  assert.throws(() => prepareDebugMark(mark, content), /金币/);
+  assert.equal(notified, 0);
+  assert.deepEqual(session.captureState(), before);
+  unsubscribe(); director.dispose();
 });

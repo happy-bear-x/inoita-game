@@ -40,6 +40,7 @@ import { installGameDiagnostics, installStorySkipDiagnostics } from './applicati
 import { storyDevMode } from './domain/dev-mode.ts';
 import { createGmActions, consoleGmActions, type ConsoleGmActions } from './debug/gm-actions.ts';
 import { IndexedDbDebugMarkStore } from './application/debug-mark-store.ts';
+import { prepareDebugMark } from './application/debug-mark-preparation.ts';
 import { persistentDebugWorld, prepareDebugWorld } from './application/debug-world.ts';
 import { DomUi } from './ui/dom/dom-ui.ts';
 
@@ -452,6 +453,7 @@ function installSession(session: Session): void {
   // 这样「默认关闭」是结构上的保证，而不是靠调用方自觉。
   app.gm = gmOn() ? createGmActions({
     session, campaign, director, markStore: new IndexedDbDebugMarkStore(),
+    prepareMark: async (mark, signal) => { signal.throwIfAborted(); const prepared = prepareDebugMark(mark, app); signal.throwIfAborted(); return prepared; },
     status: () => runtimeDiagnostics(),
     onStoryPreparation: preparing => { if(preparing)app.ui.loading('正在准备剧情…');else app.ui.loaded(); },
     rescue: () => {
