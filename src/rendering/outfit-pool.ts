@@ -46,7 +46,7 @@ export class OutfitPool {
     items: ItemCatalog, poseLoader?: WardrobePoseLoader) {
     this.host = { textures: host.textures, anims: host.anims, game: host.game,
       sys: { settings: { key: 'outfit-pool' } } } as Phaser.Scene;
-    this.catalog = catalog; this.items = items; this.poseLoader = poseLoader;
+    this.catalog = { ...catalog, poses: { ...catalog.poses } }; this.items = items; this.poseLoader = poseLoader;
     this.offRestore = onWebGLRestore(this.host, () => this.redrawCached());
   }
   key(base: ActorDefinition, equipment: Partial<Record<EquipmentSlot, string>>, classId?: string,
@@ -96,6 +96,7 @@ export class OutfitPool {
   clear(): void {
     this.lifetime.abort(new DOMException('人物外观生成已取消', 'AbortError'));
     this.lifetime = new AbortController(); this.poseLoads.clear();
+    if (this.poseLoader) this.catalog.poses = {};
     for (const entry of this.entries.values()) {
       entry.retired = true; entry.controller.abort(new DOMException('人物外观池已清理', 'AbortError'));
       if (!entry.users && entry.outfit) this.dispose(entry.outfit);

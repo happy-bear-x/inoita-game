@@ -15,6 +15,27 @@ class PreviewImage {
   decode():Promise<void>{return Promise.resolve();}
 }
 
+test('lazy poses belong to one outfit pool and reload after its session is cleared', async t => {
+  const run = setup(t);
+  const pose = run.catalog.poses.idle!;
+  run.catalog.poses = {};
+  let loads = 0;
+  const pool = new OutfitPool(run.scene, run.catalog, { items: {} } as ItemCatalog, async () => {
+    loads++; return { idle: pose };
+  });
+  const prepare = async (index: number) => {
+    const pending = pool.acquire(run.actor, {}, 'hero', undefined, new AbortController().signal);
+    await new Promise(resolve => setImmediate(resolve));
+    run.finish(index); return pending;
+  };
+  const first = await prepare(0);
+  assert.equal(loads, 1); assert.deepEqual(run.catalog.poses, {});
+  first.release(); pool.clear();
+  const second = await prepare(1);
+  assert.equal(loads, 2); assert.deepEqual(run.catalog.poses, {});
+  second.release(); pool.destroy(); run.wardrobe.destroy();
+});
+
 function setup(t:test.TestContext,extraPoses=false){
   const original=Object.getOwnPropertyDescriptor(globalThis,'HTMLImageElement');
   Object.defineProperty(globalThis,'HTMLImageElement',{value:PreviewImage,configurable:true});

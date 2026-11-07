@@ -17,7 +17,7 @@ interface ContentManifest {
 }
 
 /** 核心内容表跨会话常驻；会话级内容只服务当前地图/外观，可在回菜单或新会话时丢弃。 */
-type ContentScope = 'core' | 'session';
+type ContentScope = 'core' | 'map' | 'pose';
 
 interface ContentRequest<T> {
   promise: Promise<T>;
@@ -40,6 +40,7 @@ export class ContentLoader {
   contentVersion = contentVersionNow();
   private manifestRequest?: Promise<ContentManifest>;
   private readonly requests = new Map<string, ContentRequest<unknown>>();
+  private splitWardrobe = true;
   statusHud(signal?:AbortSignal){return this.read('content/status-hud.json',parseStatusHud,signal);}
   characterStats(signal?:AbortSignal){return this.read('content/character-stats.json',parseCharacterStats,signal);}
   items(signal?:AbortSignal){return this.read('content/items.json',parseItemCatalog,signal);}
@@ -62,14 +63,29 @@ export class ContentLoader {
    */
   async wardrobe(signal?:AbortSignal):Promise<WardrobeCatalog>{
     const core=await this.read<WardrobeCatalog>('content/wardrobe.json',value=>value as WardrobeCatalog,signal);
+    this.splitWardrobe = !Object.keys(core.poses).length;
     if(this.trusted)return core;
     if(Object.keys(core.poses).length)return parseWardrobe(core);
     const ids=await this.read<string[]>('content/wardrobe/pose-index.json',value=>value as string[],signal);
     return parseWardrobe({...core,poses:await this.wardrobePoses(ids,signal)});
   }
   async wardrobePoses(ids:readonly string[],signal?:AbortSignal):Promise<Record<string,CostumePose>>{
-    const entries=await Promise.all(ids.map(async id=>[id,await this.read<CostumePose>(wardrobePoseFile(id),value=>value as CostumePose,signal,'session')]as const));
+    if (!this.splitWardrobe) {
+      const catalog = await this.read('content/wardrobe.json', parseWardrobe, signal, 'pose');
+      return Object.fromEntries(ids.map(id => {
+        const pose = catalog.poses[id];
+        if (!pose) throw new Error(`人物动作缺失：${id}`);
+        return [id, pose];
+      }));
+    }
+    const entries=await Promise.all(ids.map(async id=>[id,await this.read<CostumePose>(wardrobePoseFile(id),value=>value as CostumePose,signal,'pose')]as const));
     return Object.fromEntries(entries);
+  }
+  /** 全量校验完成后仅保留衣柜目录；动作由会话中的外观池按需持有。 */
+  releaseValidationCaches(wardrobe: WardrobeCatalog): void {
+    wardrobe.poses = {};
+    if (!this.splitWardrobe) this.requests.delete('content/wardrobe.json');
+    this.clearSessionCaches();
   }
   /**
    * 会话边界清理：丢弃已经完成的会话级内容（地图与人物动作），核心内容表继续常驻。
@@ -77,8 +93,17 @@ export class ContentLoader {
    */
   clearSessionCaches(): void {
     for (const [file, request] of this.requests) {
-      if (request.scope === 'session' && request.finished && this.requests.get(file) === request)
+      if (request.scope !== 'core' && request.finished && this.requests.get(file) === request)
         this.requests.delete(file);
+    }
+  }
+  private trimMaps(): void {
+    const completed = [...this.requests].filter(([, request]) => request.scope === 'map' && request.finished);
+    let excess = completed.length - 2;
+    for (const [file, request] of completed) {
+      if (excess <= 0) break;
+      if (request.waiters) continue;
+      this.requests.delete(file); excess--;
     }
   }
   /**
@@ -138,13 +163,18 @@ export class ContentLoader {
       this.requests.set(file, request);
       const current = request;
       void promise.then(
-        () => { current.finished = true; },
+        () => {
+          current.finished = true;
+          if (current.scope === 'pose' && this.requests.get(file) === current) this.requests.delete(file);
+        },
         error => {
           if(!controller.signal.aborted)globalThis.storyDiagnostics?.record('content-load-error',{file,error});
           current.finished = true;
           if (this.requests.get(file) === current) this.requests.delete(file);
         }
       );
+    } else if (request.scope === 'map') {
+      this.requests.delete(file); this.requests.set(file, request);
     }
     return new Promise<T>((resolve, reject) => {
       let waiting = true;
@@ -154,6 +184,7 @@ export class ContentLoader {
         waiting = false;
         signal?.removeEventListener('abort', abort);
         request.waiters--;
+        if (request.scope === 'map' && request.finished) this.trimMaps();
         if (!request.waiters && !request.finished) {
           if (this.requests.get(file) === request) this.requests.delete(file);
           request.controller.abort();
@@ -178,5 +209,5 @@ export class ContentLoader {
   storyInterface(signal?:AbortSignal):Promise<StoryInterface>{return this.read('content/story-interface.json',parseStoryInterface,signal);}
   storyClasses(signal?:AbortSignal){return this.read('content/story-classes.json',parseStoryClasses,signal);}
   battle(signal?:AbortSignal):Promise<BattleCatalog>{return this.read('content/battle.json',parseBattle,signal);}
-  map(file:string,signal?:AbortSignal):Promise<WorldMap>{return this.read(file,parseMap,signal,'session');}
+  map(file:string,signal?:AbortSignal):Promise<WorldMap>{return this.read(file,parseMap,signal,'map');}
 }

@@ -98,7 +98,70 @@ test('trusted wardrobe returns the core file and fetches only requested poses', 
     await loader.wardrobePoses(['pose-a']);
     assert.deepEqual(calls, ['content/wardrobe.json', 'content-manifest.json', 'content/wardrobe/poses/pose-a.json']);
     await loader.wardrobePoses(['pose-a']);
-    assert.deepEqual(calls, ['content/wardrobe.json', 'content-manifest.json', 'content/wardrobe/poses/pose-a.json']);
+    assert.deepEqual(calls, ['content/wardrobe.json', 'content-manifest.json', 'content/wardrobe/poses/pose-a.json', 'content/wardrobe/poses/pose-a.json']);
+  } finally { globalThis.fetch = original; }
+});
+
+test('map cache retains two recently read results without invalidating returned maps or in-flight downloads', async () => {
+  const original = globalThis.fetch, calls = new Map<string, number>();
+  let finish!: () => void;
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url === 'content-manifest.json') return manifestResponse();
+    calls.set(url, (calls.get(url) ?? 0) + 1);
+    const response = { ok: true, json: async () => ({ id: url }) } as Response;
+    if (url === 'pending') return new Promise<Response>(resolve => { finish = () => resolve(response); });
+    return response;
+  }) as typeof fetch;
+  try {
+    const loader = new ContentLoader(); loader.trusted = true;
+    const pending = loader.map('pending');
+    const first = await loader.map('a'); await loader.map('b');
+    assert.equal(await loader.map('a'), first);
+    await loader.map('c');
+    assert.equal(await loader.map('a'), first);
+    await loader.map('b');
+    assert.equal(calls.get('a'), 1); assert.equal(calls.get('b'), 2);
+    assert.equal(first.id, 'a');
+    const sharedPending = loader.map('pending'); finish();
+    assert.equal(await pending, await sharedPending); assert.equal(calls.get('pending'), 1);
+  } finally { globalThis.fetch = original; }
+});
+
+test('pose requests share in-flight data but release completed results to their callers', async () => {
+  const original = globalThis.fetch;
+  let calls = 0, finish!: () => void;
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    if (String(input) === 'content-manifest.json') return manifestResponse();
+    calls++;
+    return new Promise<Response>(resolve => { finish = () => resolve({ ok: true, json: async () => ({ frames: [], frameRate: 8 }) } as Response); });
+  }) as typeof fetch;
+  try {
+    const loader = new ContentLoader(); loader.trusted = true;
+    const first = loader.wardrobePoses(['idle']), second = loader.wardrobePoses(['idle']);
+    finish(); const [a, b] = await Promise.all([first, second]);
+    assert.equal(a.idle, b.idle); assert.equal(calls, 1);
+    const next = loader.wardrobePoses(['idle']); finish(); await next;
+    assert.equal(calls, 2);
+  } finally { globalThis.fetch = original; }
+});
+
+test('validation releases full wardrobe poses and source-format callers can reload an individual pose', async () => {
+  const original = globalThis.fetch;
+  const source = readFileSync(new URL('../public/content/wardrobe.json', import.meta.url), 'utf8');
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls++; return { ok: true, json: async () => JSON.parse(source) } as Response;
+  }) as typeof fetch;
+  try {
+    const loader = new ContentLoader(), wardrobe = await loader.wardrobe();
+    const id = Object.keys(wardrobe.poses)[0]!;
+    const pose = wardrobe.poses[id];
+    loader.releaseValidationCaches(wardrobe);
+    assert.deepEqual(wardrobe.poses, {});
+    assert.deepEqual((await loader.wardrobePoses([id]))[id], pose);
+    assert.equal(calls, 2);
+    assert.deepEqual(wardrobe.poses, {});
   } finally { globalThis.fetch = original; }
 });
 
