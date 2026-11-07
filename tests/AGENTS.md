@@ -41,3 +41,7 @@ npm run test:standalone
 - `debug-mark-store.test.ts` 验证摘要分页不读取正文、跨实例读取及配额失败的原子覆盖；`gm-actions.test.ts` 验证持久标记的取消、损坏、现场回退与任务返回点。
 
 - `world-effects.test.ts` 验证飞弹转向和持续效果独立保留贴图到结束；`buff-loop-renderer.test.ts` 验证首次缺图后恢复。
+
+- `resident-combat-lifecycle.test.ts` 验证回标题后的会话资源释放，以及迟到退出回调不能清理新会话。
+
+- 持久标记预校验失败不通知或修改原会话；会话销毁后迟到结果不安装，退出恢复原位置后才恢复保存，并拒绝并发退出。

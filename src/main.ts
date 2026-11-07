@@ -364,7 +364,7 @@ async function resumeSlot(slot:SaveSlotRef,signal?:AbortSignal):Promise<void> {
         request.throwIfAborted();return candidate;
       },
       stopCurrent:async()=>{
-        app.gm?.dispose();modeRequest.abort();app.director?.dispose();app.clearMapPrefetch();app.clearStoryPrefetch();ui.resetInput();
+        stopAutoSave();app.gm?.dispose();modeRequest.abort();app.director?.dispose();app.clearMapPrefetch();app.clearStoryPrefetch();ui.resetInput();
         const stopped=new Promise<void>(resolve=>sourceScene.events.once(Phaser.Scenes.Events.SHUTDOWN,()=>resolve()));
         game.scene.stop(sourceScene.sys.settings.key);await stopped;
         app.releaseResidentCombat();
@@ -385,7 +385,7 @@ async function resumeSlot(slot:SaveSlotRef,signal?:AbortSignal):Promise<void> {
 
 /** 新开与读档共用的会话装配：世界场景、菜单、剧情播放器与界面都接到这份会话上。 */
 function installSession(session: Session): void {
-  app.gm?.dispose();
+  stopAutoSave();app.gm?.dispose();app.director?.dispose();
   // 会话可能换了职业；旧常驻包、历史地图纹理和会话级内容解析结果都不再复用。
   app.releaseResidentCombat();
   app.clearMapHistory();
@@ -538,16 +538,14 @@ function returnToMenu(): void {
   if (!ui.canReturn) return;
   if (app.mode === 'game' && worldScene()?.loadingWorld && !ui.failed) return;
   const returnPage=app.mode==='class-select'?'slots':'home';
+  const departedSession = app.session;
   savedGameLoader.cancel();stopAutoSave();app.gm?.dispose();modeRequest.abort();modeRequest=new AbortController();clearMenuPreparations(); app.director?.dispose(); app.clearMapPrefetch(); app.clearStoryPrefetch(); ui.resetInput();
   // 会话已经销毁：把动作层一起摘掉，免得 agent 拿到一个指向已 dispose 导演的句柄。
   app.gm = undefined; delete globalThis.gm;
   const scene = currentScene();
-  const releaseSessionAssets = () => {
-    app.releaseResidentCombat();
-    app.clearMapHistory();
-    app.content.clearSessionCaches();
-    app.outfits?.destroy(); app.outfits = undefined;
-  };
+  const releaseSessionAssets = () => { app.releaseSession(departedSession); };
+  const stage = app.game?.scene.getScene(SCENE_KEYS.storyStage);
+  if (stage && (stage.sys.isActive() || stage.sys.isPaused() || stage.sys.isSleeping())) app.game!.scene.stop(SCENE_KEYS.storyStage);
   if (scene?.sys.isActive() || scene?.sys.isPaused()) {
     // 场景还活着时不能提前删纹理；等 WorldScene/当前场景真正 shutdown 后再释放。
     scene.events.once(Phaser.Scenes.Events.SHUTDOWN, releaseSessionAssets);

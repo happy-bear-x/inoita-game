@@ -206,6 +206,19 @@ export class StoryApp {
     for (const lease of this.storyPrefetches.values()) lease.release();
     this.storyPrefetches.clear();
   }
+  /** 场景退出后才解除旧局；迟到的退出回调不能清掉新会话。 */
+  releaseSession(expected: Session | undefined): boolean {
+    if (this.session !== expected) return false;
+    this.gm?.dispose(); this.gm = undefined;
+    this.director?.dispose();
+    this.checkpoint.clear();
+    this.releaseResidentCombat(); this.clearMapPrefetch(); this.clearStoryPrefetch(); this.clearMapHistory();
+    this.content.clearSessionCaches();
+    this.outfits?.destroy(); this.outfits = undefined;
+    this.saveSlot = undefined;
+    Reflect.deleteProperty(this, 'session'); Reflect.deleteProperty(this, 'director');
+    return true;
+  }
   /** 覆盖层界面。 */
   readonly ui: GameUI;
 

@@ -31,3 +31,5 @@
 - `npm run typecheck` 覆盖整个 `src`；按改动另跑 `npm test -- tests/session.test.ts`。
 
 - 控制台 GM 标记通过 `consoleGmActions` 异步持久化，屏幕面板保持本局同步标记。持久标记调试期间，自动存档、手动存档捕获与检查点都拒绝写入；退出后恢复正式现场。
+
+- 回标题先停自动保存、取消旧请求并关闭舞台和世界场景，再由 `StoryApp.releaseSession(expected)` 清会话、导演、检查点与资源池；退出回调只释放它捕获的旧会话。读档先验证独立候选，停止旧场景后再安装。

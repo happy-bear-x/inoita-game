@@ -265,6 +265,15 @@ export class WorldScene extends Phaser.Scene {
       this.hud?.destroy(); this.hud = undefined;
       this.app.domUi?.setLayerVisible('world', false);
       this.app.domUi?.setLayerVisible('hud', false);
+      this.wardrobe?.destroy(); this.wardrobe = undefined;
+      for (const wardrobe of this.companionWardrobes.values()) wardrobe.destroy();
+      this.companionWardrobes.clear(); this.companionOutfits.clear(); this.companionPreparations.clear(); this.companionFull.clear();
+      this.projectedMemberEquipment.clear(); this.projectedActorIds.clear(); this.entryPrefetches?.clear(); this.entryPrefetches = undefined;
+      this.characters = []; this.entities = []; this.baseEntities = []; this.player = undefined; this.map = undefined;
+      this.near = null; this.noclipVisual = undefined; this.equippedActor = undefined; this.triggerIndex = undefined;
+      this.targetStatusCache = undefined; this.shortcutPageCache = undefined; this.unsubscribe = undefined;
+      this.entryStoryStarted = undefined; this.prefetchTask = undefined; this.questStatuses.clear(); this.encounterResults.clear();
+      Reflect.deleteProperty(this, 'options');
     });
     this.hud = new Hud(this);
     this.layoutHud();
