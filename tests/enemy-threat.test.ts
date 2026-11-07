@@ -14,6 +14,30 @@ const basic:ResolvedBasicAttack={profileId:'test',step:0,stepCount:1,frameDurati
   approachDistanceUnits:2,searchRadiusPx:100,strikeFrame:1,swingFrame:null,swings:[],impacts:[],projectile:null,
   clips,sequence:{north:[0,1,2,3],south:[0,1,2,3],east:[0,1,2,3],west:[0,1,2,3]}};
 const skill:EnemyPlayableSkill={id:'spell',name:'spell',clips,manaCost:5,action:{requiresTarget:true,cooldownFrames:10,approachDistanceUnits:2,searchRadiusPx:100,transition:null,events:[]}};
+
+test('immobile casting waits for its shared path budget and preserves an unfinished search',()=>{
+  const run=setup([skill],'active',{canMove:false});
+  run.scores.set('first',10);
+  let grants=0;
+  run.port.pathBudget={take:(_owner,limit)=>{assert.ok(limit<=128);grants++;return grants===1?0:1;}};
+  run.ai.update(60);
+  assert.equal(run.clears(),0);assert.equal(run.checks(),0,'没领到预算时不查询路径');
+  for(let frame=0;frame<80;frame++)run.ai.update(60);
+  assert.equal(run.clears(),0,'可达但需要多帧搜索的目标不会被误当成不可达');
+  assert.equal(run.ai.snapshot().targetId,'first');
+  assert.equal(run.spends(),0);assert.equal(run.plays.length,0);
+});
+
+test('immobile casting returns home only after an unreachable sliced search completes',()=>{
+  const run=setup([skill],'active',{canMove:false});
+  run.scores.set('first',10);
+  run.port.navigationBounds=()=>({x:0,y:0,width:128,height:64});
+  run.port.canStand=point=>point.x>=0&&point.y>=0&&point.x<48&&point.y<=64;
+  let calls=0;run.port.pathBudget={take:()=>{calls++;return 1;}};
+  run.ai.update(60);assert.equal(run.clears(),0);
+  for(let frame=0;frame<100&&!run.clears();frame++)run.ai.update(60);
+  assert.ok(calls>1);assert.equal(run.clears(),1);assert.equal(run.ai.snapshot().state,'returning');
+});
 function setup(skills:EnemyPlayableSkill[]=[],aggression:EnemyBehavior['aggression']='active',overrides:Partial<EnemyBehavior>={}){
   const actor:Combatant={id:'enemy',team:'enemy',position:{x:16,y:32},bounds:{x:-8,y:-8,width:16,height:16}};
   const first:Combatant={...actor,id:'first',team:'party',position:{x:96,y:32}};

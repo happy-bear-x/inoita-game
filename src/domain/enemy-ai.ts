@@ -58,7 +58,7 @@ interface EnemyControllerState {
 const REPATH_INTERVAL_MS=180;
 /** 跨帧搜索每次推进的扩展上限；多个 AI 共享渲染帧预算。 */
 const SEARCH_SLICE=128;
-/** 施法前的同步可达性检查；不能沿用跨帧搜索，保持原判定的即时性。 */
+/** 没有旧路线时的请求上限，仍由共享预算限制实际扩展数。 */
 const HOLD_SEARCH_CAP=1024;
 /** 闲逛路径很短，一次同步算完。 */
 const WANDER_SEARCH_CAP=512;
@@ -96,6 +96,7 @@ export class EnemyController {
   private wanderDestination?:Point;
   /** 正在跨帧推进的搜索；目标变化或恢复检查点时会丢弃。 */
   private search?:{task:PathSearch;target?:Combatant;targetId?:string;destination:Point;range:number;isGoal:(point:Point)=>boolean};
+  private heldSearch?:{task:PathSearch;origin:Point;destination:Point;targetId:string;range:number;found?:boolean;retryAt:number};
   private readonly spentOnce=new Set<string>();
   private get mapWide():boolean{return this.behavior.engagement==='map-wide';}
 
@@ -177,17 +178,20 @@ export class EnemyController {
     const current=this.port.threat?this.combat?.selectedTargetId():this.targetId;
     this.combat?.targetRemoved(targetId);
     if(current!==targetId)return;
+    this.heldSearch=undefined;
     if(reason==='inactive'&&!this.mapWide){this.port.threat?.clear();this.threatCombatActive=false;}
     this.targetId=undefined;this.pendingReturn=false;
     this.path=[];this.destination=undefined;this.search=undefined;this.progressPosition=undefined;this.nextPathAt=0;this.port.stop();
     this.state=this.combat?.actionState()==='attacking'?'attacking':'idle';
   }
   disable():void {
+    this.heldSearch=undefined;
     this.combat?.cancel(true,!this.port.threat);
     this.path=[];this.destination=undefined;this.search=undefined;this.progressPosition=undefined;this.wanderDestination=undefined;this.idleElapsed=0;this.port.stop();
     if(this.state!=='returning')this.state=this.targetId?'chasing':'idle';
   }
   cancel():void{
+    this.heldSearch=undefined;
     this.combat?.cancel(true);this.state='idle';this.targetId=undefined;this.pendingReturn=false;this.threatCombatActive=false;
     this.path=[];this.destination=undefined;this.search=undefined;this.progressPosition=undefined;this.accumulator=0;this.wanderDestination=undefined;this.idleElapsed=0;this.port.stop();
   }
@@ -198,12 +202,14 @@ export class EnemyController {
   }
   /** 全图交战只停止当前追近，保留已有仇恨及寻路重试截止时间。 */
   private awaitTarget():void {
+    this.heldSearch=undefined;
     if(this.combat?.actionState()==='approaching')this.combat.cancel();
     else this.combat?.clearSelection();
     this.state='idle';this.targetId=undefined;this.pendingReturn=false;
     this.path=[];this.destination=undefined;this.search=undefined;this.progressPosition=undefined;this.wanderDestination=undefined;this.idleElapsed=0;this.port.stop();
   }
   private returnHome():void{
+    this.heldSearch=undefined;
     if(this.mapWide){this.awaitTarget();return;}
     this.port.threat?.clear();this.threatCombatActive=false;
     this.combat?.cancel(true);this.state='returning';this.targetId=undefined;this.pendingReturn=false;
@@ -328,18 +334,18 @@ export class EnemyController {
   }
 
   private holdImmobileAction(actor:Combatant,target:Combatant,range:number,skill?:EnemyPlayableSkill):boolean {
-    if(!this.port.threat||attackDistance(actor.position,actor.bounds,target.position,target.bounds)<=range||actor.states?.includes('ambush'))return false;
-    if(this.behavior.canMove&&this.behavior.moveSpeedPxPerSecond>0&&combatStateCapabilities(actor.states??[]).canMove)return false;
+    if(!this.port.threat||attackDistance(actor.position,actor.bounds,target.position,target.bounds)<=range||actor.states?.includes('ambush')){this.heldSearch=undefined;return false;}
+    if(this.behavior.canMove&&this.behavior.moveSpeedPxPerSecond>0&&combatStateCapabilities(actor.states??[]).canMove){this.heldSearch=undefined;return false;}
     const manaCost=skill?(this.port.manaCost?.(skill)??skill.manaCost):undefined;
     if(manaCost&&this.port.canSpendMana?.(manaCost)===false)return false;
     this.path=[];this.destination=undefined;this.search=undefined;if(!this.mapWide)this.nextPathAt=0;
-    // 只有技能需要“够不够得着”的判定；普攻分支的结果没人使用，别为它跑一次同步搜索。
+    // 技能搜索未完成时保留目标，下一逻辑帧继续；普攻不需要这次搜索。
     const reachable=skill?this.reachableNow(actor,target.position,target,range):true;
     this.path=[];this.destination=undefined;this.search=undefined;this.progressPosition=undefined;this.port.stop();
     // 技能动作需要走到位才算数：够不着就作废并回家。
     // 普通攻击够不着时仍留着目标（原地不动的 Boss 不该因为这一刻打不到就丢掉仇恨），
     // 目标消失后再重新选；真的再也够不着，会由反应与仇恨衰减把它带走。
-    if(skill&&!reachable)this.returnHome();
+    if(skill&&reachable===false)this.returnHome();
     else{this.state='idle';this.combat?.setReactionTarget(target.id);}
     return true;
   }
@@ -368,10 +374,24 @@ export class EnemyController {
     if(this.nextWaypoint()){this.port.followPath(this.nextWaypoint);return true;}
     this.port.stop();return this.path.length>0;
   }
-  /** 施法前的即时可达性：同步算完但带上限，不参与跨帧状态。 */
-  private reachableNow(actor:Combatant,destination:Point,target:Combatant,range:number):boolean{
-    const result=createPathSearch(actor.position,this.searchQuery(actor,destination,target,range)).step(HOLD_SEARCH_CAP);
-    return result.status==='found'&&result.path.length>0;
+  /** undefined 表示预算用完但尚未判定，不能按无路可走处理。 */
+  private reachableNow(actor:Combatant,destination:Point,target:Combatant,range:number):boolean|undefined{
+    let search=this.heldSearch;
+    if(!search||search.targetId!==target.id||search.range!==range||
+      search.origin.x!==actor.position.x||search.origin.y!==actor.position.y||
+      search.destination.x!==destination.x||search.destination.y!==destination.y||
+      (search.found!==undefined&&this.clock>=search.retryAt)){
+      const fixedTarget={...target,position:{...destination}};
+      search=this.heldSearch={task:createPathSearch(actor.position,this.searchQuery(actor,destination,fixedTarget,range)),
+        origin:{...actor.position},destination:{...destination},targetId:target.id,range,retryAt:0};
+    }
+    if(search.found!==undefined)return search.found;
+    const granted=this.port.pathBudget?.take(this.id,SEARCH_SLICE)??SEARCH_SLICE;
+    if(granted<=0)return undefined;
+    const result=search.task.step(granted);
+    if(result.status==='pending')return undefined;
+    search.found=result.status==='found';search.retryAt=this.clock+REPATH_INTERVAL_MS;
+    return search.found;
   }
   /** 脚底直线能否走过去：路径还没算完时用它判断能不能先朝目标迈一步。 */
   private straightWalkable(from:Point,to:Point):boolean{
