@@ -34,7 +34,7 @@ export async function loadEntryPlan(plan: EntryPlan, ports: EntryLoadingPorts, o
     report('正在准备剧情画面…', 0.88);
     if (plan.portraits.length) await ports.preloadPortraits(plan.portraits, signal, value => report('正在准备剧情画面…', 0.88 + value * 0.03));
     signal.throwIfAborted();
-    if (plan.sounds.length) await ports.prepareSounds(plan.sounds, signal);
+    await ports.prepareSounds(plan.sounds, signal);
     signal.throwIfAborted();
 
     report('正在布置地图…', 0.94);

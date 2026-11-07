@@ -119,3 +119,22 @@ test('pending new skills cannot start while previously prepared skills remain av
   host.preparedSkillIds.get('player').add('guardian-of-darkness');
   assert.equal(invoke('canSelectSkill','player',{id:'guardian-of-darkness',action}),true);
 });
+
+test('combat sound preparation replaces the complete current learned skill and weapon range',()=>{
+  const {host,session,invoke}=fixture();
+  host.app.wardrobe=read<WardrobeCatalog>('wardrobe');
+  host.roster={spawns:[]};host.scene.combatEnemyIds=()=>[];
+  let prepared:{skills:string[];weapons:string[];enemies:string[]}|undefined;
+  host.app.audio={prepareCombat:(skills:Iterable<string>,_sounds:Iterable<string>,options:{weaponKinds:Iterable<string>;enemyIds:Iterable<string>})=>{
+    prepared={skills:[...skills],weapons:[...options.weaponKinds],enemies:[...options.enemyIds]};return Promise.resolve();
+  }};
+  session.skills.draft=()=>({levels:{'dark-strike':1}});
+  invoke('prepareCombatSounds');
+  assert.deepEqual(prepared!.skills,['dark-strike']);
+  const equipped=host.hero.bag.equipmentItems(host.hero.bag.equipmentFor('player'));
+  assert.ok(prepared!.weapons.includes(host.app.items.items[equipped['main-hand']!].kind));
+  assert.deepEqual(prepared!.enemies,[]);
+  session.skills.draft=()=>({levels:{'guardian-of-darkness':1}});
+  invoke('prepareCombatSounds');
+  assert.deepEqual(prepared!.skills,['guardian-of-darkness']);
+});

@@ -26,7 +26,7 @@ import {groundLootFor} from '../domain/ground-loot.ts';
 import {calculateEffectiveDefense} from '../domain/physical-hit.ts';
 import type { RecoveryResult } from '../domain/recovery-items.ts';
 import Phaser from 'phaser';
-import { LOGIC_FRAME_MS, enemySkills, skillManaCost, skillForMember, memberSkillGrowth, type ResolvedBasicAttack, type BattleBuffEffect, type SkillFeedbackEvent, type ActionDispatchDefinition, type EnemyDefinition, type BattleClass, type EnemyPlayableSkill, type PlacedEnemy, type SkillAction, type CombatUnit } from '../domain/battle.ts';
+import { LOGIC_FRAME_MS, enemySkills, skillManaCost, skillForMember, memberSkillGrowth, type ResolvedBasicAttack, type BattleBuffEffect, type SkillFeedbackEvent, type ActionDispatchDefinition, type EnemyDefinition, type EnemyPlayableSkill, type PlacedEnemy, type SkillAction, type CombatUnit } from '../domain/battle.ts';
 import { CombatController,canTargetCombatant,resolveCueTargets, type Combatant, type ActionPlayback, type AttackContact, type BasicAreaContact, type BasicAttackSelection, type SkillUnitHit, type SkillUnitStart } from '../domain/combat.ts';
 import type { PartyBuffSlot } from '../domain/party-buff-targets.ts';
 import { EnemyController, type EnemyPort } from '../domain/enemy-ai.ts';
@@ -72,7 +72,7 @@ import { disturbanceCandidate } from '../domain/disturbance.ts';
 import { planSummonSpot } from '../domain/skill-geometry.ts';
 import { scaledBuffEffect, summonLifetimeFrames, summonOwnerStats, withLifetimeFrames, type SummonStats } from '../domain/summon-stats.ts';
 import { faceTarget, resolveBasicAttack } from '../domain/basic-attack.ts';
-import { skillClipName, skillClips, skillPlaybackEvents, skillSoundNames } from '../domain/skill-action.ts';
+import { skillClipName, skillClips, skillPlaybackEvents, skillSoundNames, skillSummonNames } from '../domain/skill-action.ts';
 import { costumeRecipe, hasOffhandShield } from '../domain/wardrobe.ts';
 import type { ActorDefinition, ClipName, Facing } from '../domain/content.ts';
 import type { BattleCharacter } from '../domain/character-stats.ts';
@@ -97,7 +97,7 @@ import { PendingEnemyDefeats } from '../domain/combat-outcomes.ts';
 import { CombatHitResolution } from '../domain/combat-hit-resolution.ts';
 import {moltenReflectionDamage,rollMoltenSplash,moltenSplashTargets} from '../domain/molten-armor.ts';
 import { CombatOutcomes } from '../rendering/combat-outcomes.ts';
-import { enemyCombatAssets, equipmentAttackFor, partyMemberCombatAssets, playerCombatAssets, sharedCombatAssets } from '../rendering/combat-assets.ts';
+import { classSummonEnemyIds, enemyCombatAssets, equipmentAttackFor, partyMemberCombatAssets, playerCombatAssets, sharedCombatAssets } from '../rendering/combat-assets.ts';
 import { learnedSkillIds } from '../domain/skill-configuration.ts';
 import type { WorldScene } from './world-scene.ts';
 
@@ -528,35 +528,40 @@ captureStoryActors():SceneActorState[] {
     return enemyCombatAssets(this.app.battleCatalog,definition);
   }
 
-  /** 主角与当前队员的职业定义；控制权可以切换，所以两者的技能音效都要提前加载。 */
-  private controllableClasses():BattleClass[] {
-    const classes=this.app.battleCatalog.classes;
-    return this.activeParty.flatMap(id=>{
-      const classId=id==='player'?this.hero.classId:this.app.session.party?.get(id)?.classId;
-      const character=classId?classes.find(value=>value.id===classId):undefined;
-      return character?[character]:[];
-    });
-  }
-
-  /**
-   * 参战职业的技能音效：技能自身的音效，加上技能动作自带的分支音效。
-   *
-   * 三类分支音效（动作单元、派发收尾、时间轴反馈）由玩家阵营的施法者触发，
-   * 所以按可操控角色取；画面资源的范围另在 `enemyAssets` 里按出场敌人取。
-   */
-  private prepareCombatSounds(characters:Iterable<BattleClass|undefined>):void {
+  /** 整支上阵队伍与当前地图的完整声音清单，更新时替换上一份范围。 */
+  private prepareCombatSounds():void {
+    if(!this.app.audio)return;
     const catalog=this.app.battleCatalog;
-    const skillIds=new Set<string>(),actionSounds=new Set<string>();
-    for(const character of characters){
-      if(!character)continue;
-      for(const id of character.skills){
-        const skill=catalog.skills[id];
-        if(!skill)continue;
-        skillIds.add(id);
-        if(skill.action)for(const name of skillSoundNames(skill.action))actionSounds.add(name);
+    const skillIds=new Set<string>(),actionSounds=new Set<string>(),weaponKinds=new Set<string>();
+    const enemyIds=new Set(this.scene.combatEnemyIds?.()??[]);
+    for(const spawn of this.roster.spawns)enemyIds.add(spawn.enemyId);
+    const action=(value:SkillAction|null|undefined)=>{
+      if(!value)return;
+      for(const name of skillSoundNames(value))actionSounds.add(name);
+      for(const id of skillSummonNames(value))enemyIds.add(id);
+      for(const unit of value.combatUnits??[])if(unit.effect==='summon'&&unit.creature)enemyIds.add(unit.creature);
+    };
+    for(const id of this.activeParty){
+      const member=this.memberOf(id);if(!member)continue;
+      const equipped=member.bag.equipmentItems(member.bag.equipmentFor(id));
+      for(const hand of ['main-hand','off-hand'] as const){
+        const item=equipped[hand];weaponKinds.add(item?this.app.items.items[item]?.kind??'unarmed':'unarmed');
       }
+      const learned=learnedSkillIds(catalog,member.classId,this.skillConfiguration(id,member));
+      const recipe=costumeRecipe(this.app.wardrobe,this.app.items,equipped,member.classId);
+      for(const skillId of learned){
+        skillIds.add(skillId);
+        const skill=skillForMember(catalog,id,skillId);
+        action(skill?.action);action(skill?.followUpAction);action(recipe.actions[skillId]);
+      }
+      for(const summoned of classSummonEnemyIds(catalog,member.classId,learned))enemyIds.add(summoned);
     }
-    const prepared=this.app.audio?.prepareCombat(skillIds,actionSounds);
+    for(const id of enemyIds){
+      const enemy=catalog.enemies.find(value=>value.id===id);if(!enemy)continue;
+      for(const skill of enemySkills(enemy))action(skill.action);
+      action(enemy.commandAction?.action);
+    }
+    const prepared=this.app.audio?.prepareCombat(skillIds,actionSounds,{weaponKinds,enemyIds});
     void prepared?.catch(error=>console.warn('战斗音效准备失败',error));
   }
 
@@ -2083,8 +2088,7 @@ captureStoryActors():SceneActorState[] {
     for(const id of active){
       if(this.allies.some(ally=>ally.id===id)||this.pendingAllies.has(id))continue;
       const member=party.get(id);let actor=member&&this.app.world.actors[member.definition.actor];if(!member||!actor?.collision)continue;
-      const character=this.app.battleCatalog.classes.find(value=>value.id===member.classId)!;
-      this.prepareCombatSounds([character]);
+      this.prepareCombatSounds();
       this.pendingAllies.add(id);
       this.allyLoadFailure=undefined;
       let lease:AssetLease|undefined;
@@ -2125,6 +2129,7 @@ captureStoryActors():SceneActorState[] {
       finally{this.pendingAllies.delete(id);if(!this.pendingAllies.size)for(const notify of [...this.allyWaiters])notify();}
     }
     this.syncControlled();
+    this.prepareCombatSounds();
   }
   /** 以队长脚点为锚，按上阵槽位偏到后排附近。 */
   private partyLanding(shape:NavigationShape,ignore?:NavigationActor,id?:string,
@@ -2286,7 +2291,7 @@ captureStoryActors():SceneActorState[] {
         return this.enemyAssets(definition);
       })];
     // 音效与画面并行准备，不参与战斗入口的等待：音频加载失败不该挡住战斗。
-    this.prepareCombatSounds(this.controllableClasses());
+    this.prepareCombatSounds();
     const generation=++this.generation;
     const lease=await loadSceneAssets(this.scene,needed,()=>{});
     if(this.closed||generation!==this.generation){lease.release();return;}
@@ -2618,6 +2623,7 @@ captureStoryActors():SceneActorState[] {
     }
     if(!playerChanged&&!allyTargets.length){this.scheduleSkillAssetRetry();return;}
     if(this.skillAssetRefreshRunning){this.skillAssetRefreshQueued=true;return;}
+    this.prepareCombatSounds();
     this.skillAssetRefreshRunning=true;
     void this.refreshSkillAssets(playerChanged?playerSignature:undefined,playerGate,allyTargets).finally(()=>{
       this.skillAssetRefreshRunning=false;

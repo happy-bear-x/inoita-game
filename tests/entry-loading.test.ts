@@ -79,6 +79,7 @@ test('the caller can map the whole load into a progress window', async () => {
   await loadEntryPlan(plan({ portraits: [], sounds: [] }), ports(log), {
     signal: new AbortController().signal, start: 0.5, end: 1
   });
+  assert.ok(log.includes('sounds:'),'空声音计划也要替换上一地图的持有范围');
   const values = reports(log);
   assert.ok(values.every(value => value >= 0.5 && value <= 1));
   assert.ok(Math.abs(values.at(-1)! - 0.97) < 0.001);

@@ -402,7 +402,7 @@ export class WorldScene extends Phaser.Scene {
       load: (assets, progress) => loadSceneAssets(this, assets, progress, true),
       report: silent ? () => {} : (label, value) => ui.loading(label, value),
       preloadPortraits: (files, portraitSignal, progress) => ui.preloadPortraits(files, portraitSignal, progress),
-      prepareSounds: (names, soundSignal) => { soundSignal.throwIfAborted(); return this.app.audio?.prepareStoryEffects(names) ?? Promise.resolve(); }
+      prepareSounds: (names, soundSignal) => { soundSignal.throwIfAborted(); return this.app.audio?.prepareStoryEffects(names, soundSignal) ?? Promise.resolve(); }
     }, { signal, start: options.initialEntry ? 0.5 : 0, end: mapProgressEnd });
     if(signal.aborted){loaded.currentLease.release();signal.throwIfAborted();}
     this.mapAssets = loaded.currentLease;
@@ -630,7 +630,7 @@ export class WorldScene extends Phaser.Scene {
     const presentation = storyPresentationAssets(this.app.campaign, reachable, this.assetInputs());
     const portraits = presentation.portraits.filter(file => !domAssets.peek(file));
     if (portraits.length) await this.app.ui.preloadPortraits(portraits, signal, () => {});
-    if (presentation.sounds.length) await this.app.audio?.prepareStoryEffects(presentation.sounds);
+    await this.app.audio?.prepareStoryEffects(presentation.sounds, signal);
     signal.throwIfAborted();
   }
   /**
@@ -675,7 +675,7 @@ export class WorldScene extends Phaser.Scene {
     }
     const portraits = plan.portraits.filter(file => !domAssets.peek(file));
     if (portraits.length) await this.app.ui.preloadPortraits(portraits, signal, () => {});
-    if (plan.sounds.length) await this.app.audio?.prepareStoryEffects(plan.sounds);
+    await this.app.audio?.prepareStoryEffects(plan.sounds, signal);
     signal.throwIfAborted();
     globalThis.storyDiagnostics?.record('story-entry-prefetch', { map: mapId, missing: missing.length });
   }
