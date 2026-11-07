@@ -80,7 +80,8 @@ test('world rendering uses current condition ages, keeps paused frames and remov
     hitResolution:{isAwaitingDefeat:()=>awaitingDefeat}},WorldCombat.prototype);
   const sync=()=>Reflect.get(WorldCombat.prototype,'syncBuffLoops').call(host);
   sync();assert.equal(f.nodes.length,0);f.conditions.update(60);sync();assert.equal(f.nodes.length,2);
-  sync();assert.equal(f.nodes[0].list[0].anims.currentFrame.index,2);
+  const frames=f.conditions.buffLoopFrames('actor');
+  sync();assert.equal(f.nodes[0].list[0].anims.currentFrame.index,2);assert.equal(f.conditions.buffLoopFrames('actor'),frames,'暂停期间复用循环帧描述');
   health=0;awaitingDefeat=true;sync();assert.ok(f.nodes.every(node=>node.active));
   awaitingDefeat=false;sync();assert.ok(f.nodes.every(node=>!node.active));
 });

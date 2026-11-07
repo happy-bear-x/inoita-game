@@ -41,7 +41,7 @@ import { PartyController, type PartyPort } from '../domain/party-ai.ts';
 import { PathBudget } from '../domain/path-budget.ts';
 import { memberCombatModifiers, partyProcSucceeds } from '../domain/party-combat.ts';
 import { reviveAtHealer } from '../domain/party-revival.ts';
-import type { ResourceCapacityKey, ResourceCapacities } from '../domain/combat-conditions.ts';
+import type { ResourceCapacityKey, ResourceCapacities, ConditionAppearance } from '../domain/combat-conditions.ts';
 import type { ItemResult } from '../domain/items.ts';
 import { calculateMagicResistance, rollMagicHit, rollPhysicalHit, type PhysicalFighter, type PhysicalHit } from '../domain/physical-hit.ts';
 import {AttackProcExecutor} from '../domain/attack-proc.ts';
@@ -175,6 +175,9 @@ export class WorldCombat {
   private readonly deathTweens=new Map<string,Phaser.Tweens.Tween>();
   /** 死亡表现当前是否被暂停；只在状态变化时逐角色应用。 */
   private deathVisualsPaused?:boolean;
+  private conditionVisuals?:Map<string,{visual:CharacterVisual;appearance:ConditionAppearance;
+    layers:CharacterVisual['layers'];shown:boolean;active:boolean;visible:boolean;defeating:boolean;frame:number}>;
+  private buffLoopActors?:Set<string>;
   private readonly partyControllers=new Map<string,CombatController>();
   private readonly partySkills=new Map<string,EnemyPlayableSkill[]>();
   /**
@@ -2881,17 +2884,15 @@ captureStoryActors():SceneActorState[] {
     }
   }
   private syncBuffLoops():void {
-    const ids=new Set<string>();
-    for(const id of this.activeParty){
-      ids.add(id);
-      const active=(this.memberOf(id)?.player.health??0)>0||this.hitResolution?.isAwaitingDefeat(id);
-      this.buffLoops.sync(id,this.visualOf(id),active?this.conditions.buffLoopFrames(id):[]);
+    const actors=this.buffLoopActors??=new Set<string>(),appearances=this.conditions.activeAppearances();
+    for(const id of actors)if(!appearances.get(id)?.loops){this.buffLoops.remove(id);actors.delete(id);}
+    for(const [id,appearance]of appearances){
+      if(!appearance.loops)continue;
+      const member=this.memberOf(id),visual=this.visualOf(id);
+      const active=member?member.player.health>0||this.hitResolution?.isAwaitingDefeat(id):!this.pendingDefeats.has(id);
+      if(!active||!visual?.container.active){this.buffLoops.remove(id);actors.delete(id);continue;}
+      this.buffLoops.sync(id,visual,this.conditions.buffLoopFrames(id));actors.add(id);
     }
-    for(const enemy of this.arena){
-      ids.add(enemy.key);
-      this.buffLoops.sync(enemy.key,enemy.visual,this.pendingDefeats.has(enemy.key)?[]:this.conditions.buffLoopFrames(enemy.key));
-    }
-    this.buffLoops.retainActors(ids);
   }
   update(delta:number,enabled:boolean):void{
     if(this.closed||!this.player?.container.active)return;
@@ -2906,13 +2907,6 @@ captureStoryActors():SceneActorState[] {
       }
     }
     this.feedback.setPaused(!enabled||this.defeated);
-    const colorFrame=this.app.session.combatTick;
-    setCharacterStealth(this.player,this.conditions.hasState('player','stealthed'));
-    for(const ally of this.allies)setCharacterStealth(ally.visual,this.conditions.hasState(ally.id,'stealthed'));
-    for(const enemy of this.arena)setCharacterStealth(enemy.visual,this.conditions.hasState(enemy.key,'stealthed'));
-    this.statusColors.paint(this.player,this.conditions.appearanceColors('player'),colorFrame);
-    for(const ally of this.allies)this.statusColors.paint(ally.visual,this.conditions.appearanceColors(ally.id),colorFrame);
-    for(const enemy of this.arena)if(!this.pendingDefeats.has(enemy.key))this.statusColors.paint(enemy.visual,this.conditions.appearanceColors(enemy.key),colorFrame);
     this.syncStateMarkers(enabled&&!this.performanceHidden&&!this.defeated);
     this.setPaused(!enabled||this.defeated);
     if(!enabled||this.defeated){
@@ -2958,16 +2952,28 @@ captureStoryActors():SceneActorState[] {
     this.syncBuffLoops();
   }
   /** 规则状态统一在这里变成只读表现：眩晕用金色星星，睡眠用 Zzz；都不参与结算。 */
-  private syncStateMarkers(visible:boolean):void{
-    const combatants:[string,CharacterVisual][]=[['player',this.player]];
-    for(const ally of this.allies)combatants.push([ally.id,ally.visual]);
-    for(const enemy of this.arena)combatants.push([enemy.key,enemy.visual]);
-    const seen=new Set<string>();
-    for(const [id,visual] of combatants){
-      seen.add(id);
-      this.stateMarkers.sync(id,visual,this.conditions.activeStates(id),visible);
+  private syncStateMarkers(shown:boolean):void{
+    const entries=this.conditionVisuals??=new Map(),appearances=this.conditions.activeAppearances();
+    const frame=this.app.session.combatTick;
+    for(const [id,entry]of entries)if(!appearances.has(id)||this.visualOf(id)!==entry.visual){
+      if(entry.visual.container.active){setCharacterStealth(entry.visual,false);this.statusColors.paint(entry.visual,undefined,frame);}
+      this.stateMarkers.remove(id);entries.delete(id);
     }
-    this.stateMarkers.retainActors(seen);
+    for(const [id,appearance]of appearances){
+      const visual=this.visualOf(id);if(!visual)continue;
+      const previous=entries.get(id),active=visual.container.active,visible=visual.container.visible;
+      const defeating=this.pendingDefeats.has(id);
+      const changed=!previous||previous.appearance!==appearance||previous.visual!==visual||
+        previous.layers!==visual.layers||previous.shown!==shown||previous.active!==active||previous.visible!==visible||previous.defeating!==defeating;
+      if(changed){
+        setCharacterStealth(visual,appearance.states.includes('stealthed'));
+        this.stateMarkers.sync(id,visual,appearance.states,shown);
+      }
+      if(!defeating&&(changed||appearance.colors?.length&&previous?.frame!==frame))
+        this.statusColors.paint(visual,appearance.colors,frame);
+      if(changed)entries.set(id,{visual,appearance,layers:visual.layers,shown,active,visible,defeating,frame});
+      else if(previous)previous.frame=frame;
+    }
   }
   private readVisiblePartyResources():void {
     if(this.closed||this.performanceHidden)return;
@@ -3004,7 +3010,7 @@ captureStoryActors():SceneActorState[] {
     this.pendingDefeats.flush();this.outcomes.destroy();this.feedback.destroy();
     this.hero.clearCombatResourceLimits();for(const ally of this.allies)ally.member.clearCombatResourceLimits();
     this.heroAi?.dispose();this.heroAi=undefined;
-    this.stateMarkers.clear();
+    this.stateMarkers.clear();this.conditionVisuals?.clear();
     for(const ally of [...this.allies]){ally.ai.dispose();ally.overhead.destroy();this.movement.remove(ally.visual);ally.visual.container.destroy();ally.assets?.release();}
     this.allies=[];this.partyControllers.clear();this.partySkills.clear();
     this.passivesCache.clear();this.skillTableCache.clear();this.equipmentRecoveryCache.clear();this.combatProcsCache.clear();this.combatantsCache=undefined;
@@ -3012,7 +3018,7 @@ captureStoryActors():SceneActorState[] {
     this.presenter?.clear();this.presenter=undefined;
     this.combatEffects.clear();
     this.unsubscribeHero?.();this.unsubscribeHero=undefined;this.unsubscribeSession?.();this.unsubscribeSession=undefined;
-    this.buffLoops.clear();
+    this.buffLoops.clear();this.buffLoopActors?.clear();
     this.clearEnemies();this.conditions.clear();this.summons.clear();
     this.playerAssets?.release();this.playerAssets=undefined;
     for(const leases of this.extraSkillLeases.values())for(const lease of leases)lease.release();

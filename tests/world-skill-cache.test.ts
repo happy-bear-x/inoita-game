@@ -7,6 +7,7 @@ import type {WardrobeCatalog} from '../src/domain/wardrobe.ts';
 import {playerCombatAssets} from '../src/rendering/combat-assets.ts';
 import {loadSceneAssets,missingSceneAssets} from '../src/rendering/scene-assets.ts';
 import {Session} from '../src/domain/session.ts';
+import {CombatConditions} from '../src/domain/combat-conditions.ts';
 import {BattleCharacter,type CharacterStatsCatalog} from '../src/domain/character-stats.ts';
 import type {BattleCatalog} from '../src/domain/battle.ts';
 import type {Campaign} from '../src/domain/campaign.ts';
@@ -237,4 +238,42 @@ test('restored allies must own their prepared skill assets before restore can fi
   await assert.rejects(invoke('prepareRestoredSkills'),/恢复技能素材失败/);
   host.allySkillSignatures.set('ally','original');host.extraSkillLeases.set('ally',[{release(){}}]);
   await invoke('prepareRestoredSkills');
+});
+
+test('condition rendering skips unaffected actors and refreshes only changed states or layers',()=>{
+  const {host,invoke}=fixture(),conditions=new CombatConditions();
+  host.conditions=conditions;host.app.session={combatTick:0};host.pendingDefeats=new Set();
+  let reads=0;const visuals=new Map(['one','two'].map(id=>[id,{layers:[],container:{active:true,visible:true}}]));
+  host.visualOf=(id:string)=>{reads++;return visuals.get(id);};
+  const markers:string[]=[],colors:string[]=[],removed:string[]=[];
+  host.stateMarkers={sync:(id:string)=>markers.push(id),remove:(id:string)=>removed.push(id)};
+  host.statusColors={paint:(visual:unknown)=>colors.push([...visuals].find(([,value])=>value===visual)?.[0]??'')};
+  invoke('syncStateMarkers',true);invoke('syncStateMarkers',true);assert.equal(reads,0,'无表现角色不查外观');
+  conditions.applyState('one','stun',1000);conditions.applyState('two','sleep',1000);
+  invoke('syncStateMarkers',true);assert.deepEqual(markers,['one','two']);
+  markers.length=0;colors.length=0;
+  invoke('syncStateMarkers',true);assert.deepEqual(markers,[]);assert.deepEqual(colors,[]);
+  conditions.applyState('one','stun',1200);invoke('syncStateMarkers',true);assert.deepEqual(markers,['one']);
+  markers.length=0;visuals.get('two')!.container.visible=false;invoke('syncStateMarkers',true);assert.deepEqual(markers,['two']);
+  markers.length=0;visuals.get('two')!.container.visible=true;invoke('syncStateMarkers',true);assert.deepEqual(markers,['two']);
+  markers.length=0;visuals.get('one')!.layers=[];invoke('syncStateMarkers',true);assert.deepEqual(markers,['one']);
+  conditions.clear();invoke('syncStateMarkers',true);assert.deepEqual(removed.sort(),['one','two']);
+});
+
+test('condition colors use the combat clock while pause, defeat and restore invalidate presentation',()=>{
+  const {host,invoke}=fixture(),conditions=new CombatConditions();
+  host.conditions=conditions;host.app.session={combatTick:0};host.pendingDefeats=new Set();
+  const visual={layers:[],container:{active:true,visible:true}};host.visualOf=()=>visual;
+  const frames:number[]=[],shown:boolean[]=[];
+  host.statusColors={paint:(_visual:unknown,_colors:unknown,frame:number)=>frames.push(frame)};
+  host.stateMarkers={sync:(_id:string,_visual:unknown,_states:unknown,visible:boolean)=>shown.push(visible),remove(){}};
+  conditions.applyBuff('player','dark-strike',1,{durationMs:1000,tickMs:0,states:['stun'],modifiers:[],periodic:[],appearanceColors:[{red:10,green:0,blue:0}]});
+  invoke('syncStateMarkers',true);invoke('syncStateMarkers',true);assert.deepEqual(frames,[0]);
+  host.app.session.combatTick=1;invoke('syncStateMarkers',true);assert.deepEqual(frames,[0,1]);
+  invoke('syncStateMarkers',false);const paused=frames.length;invoke('syncStateMarkers',false);assert.equal(frames.length,paused);
+  assert.equal(shown.at(-1),false);
+  host.pendingDefeats.add('player');invoke('syncStateMarkers',false);assert.equal(frames.length,paused);
+  host.pendingDefeats.clear();invoke('syncStateMarkers',true);assert.equal(frames.length,paused+1);
+  const saved=conditions.captureState();conditions.restoreState(saved);invoke('syncStateMarkers',true);
+  assert.equal(frames.length,paused+2,'读档后即使逻辑帧相同仍重新应用颜色');
 });

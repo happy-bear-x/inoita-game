@@ -61,4 +61,5 @@ npm test -- tests/scene-assets.test.ts
 
 - 世界场景 shutdown 完成时清掉角色、地图、生成名单、交互目标、外观、订阅和进图参数引用；衣柜与伙伴外观使用权一并释放。
 
+- 战斗状态表现只遍历 `CombatConditions.activeAppearances()` 与上次已显示的角色。状态、外观图层、显隐和倒下状态变化时更新；颜色只随战斗逻辑帧推进，循环特效名单持续重试缺失纹理。
 - 可见队员读取生命和法力上限时共用一次 `resourceCapacityInputs`，保留先生命后法力的读取顺序；普通上限投影不提前填充真实读取缓存。

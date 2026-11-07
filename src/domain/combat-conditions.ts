@@ -12,6 +12,8 @@ export interface ActiveCondition {
 }
 type BuffEffect=BattleBuffEffect;
 const NO_BUFF_LOOPS:readonly BuffLoopFrame[]=[];
+const NO_STATES:readonly BattleStateKey[]=[];
+export interface ConditionAppearance {states:readonly BattleStateKey[];colors:Readonly<BuffEffect['appearanceColors']>;loops:boolean}
 export interface BuffLoopFrame {buff:BattleBuffKey;effect:string;frameAge:number}
 export interface PeriodicTick { sourceId:string;targetId:string;buffId:BattleBuffKey;stackCount:number;effect:BuffEffect['periodic'][number] }
 type InitializeBuffState=(state:BattleStateKey)=>{lastActiveFrame:number}|false;
@@ -61,6 +63,31 @@ export class CombatConditions {
   private readonly invincible=new Set<string>();
   private simulationFrameRemainderMs=0;
   private revisionValue=0;
+  private readonly stateLists=new Map<string,readonly BattleStateKey[]>();
+  private readonly appearanceChanges=new Set<string>();
+  private readonly appearances=new Map<string,ConditionAppearance>();
+  private clockRevision=0;
+  private readonly loopFrames=new Map<string,{clock:number;frames:readonly BuffLoopFrame[]}>();
+  private changed(actorId:string):void {
+    this.revisionValue++;this.stateLists.delete(actorId);this.loopFrames.delete(actorId);this.appearanceChanges.add(actorId);
+  }
+  private resetAppearances():void {
+    this.revisionValue++;this.stateLists.clear();this.loopFrames.clear();this.appearances.clear();this.appearanceChanges.clear();
+    for(const id of this.states.keys())this.appearanceChanges.add(id);
+    for(const id of this.buffs.keys())this.appearanceChanges.add(id);
+  }
+  /** 只有需要表现的角色进入名单；数值增益和无状态角色不会参与逐帧绘制查询。 */
+  activeAppearances():ReadonlyMap<string,ConditionAppearance> {
+    for(const id of this.appearanceChanges){
+      const states=this.activeStates(id),colors=this.appearanceColors(id);
+      let loops=false;
+      for(const buff of this.buffs.get(id)?.values()??[])if(buff.effect.loopEffects?.length){loops=true;break;}
+      if(loops||colors?.length||states.some(state=>state==='stealthed'||state==='stun'||state==='sleep'))
+        this.appearances.set(id,{states,colors,loops});
+      else this.appearances.delete(id);
+    }
+    this.appearanceChanges.clear();return this.appearances;
+  }
   /**
    * Buff/状态集合的修订号。只在集合真正增删时推进：施加或替换 buff、施加或替换 state、
    * 显式移除、自然到期删除、`clear`、`remove(actorId)`、`restoreState`。
@@ -87,7 +114,6 @@ export class CombatConditions {
   }
   restoreState(state:CombatConditionsState):void {
     // 整份集合被替换：即使内容相同，按版本复用的读取结果也要失效。
-    this.revisionValue++;
     const copy=structuredClone(state);
     this.buffs=new Map(copy.buffs.map(([id,buffs])=>[id,new Map(buffs.map(buff=>[buff.id,buff]))]));
     this.states=new Map(copy.states.map(([id,states])=>[id,new Map(states.map(value=>[value.id,value]))]));
@@ -96,6 +122,7 @@ export class CombatConditions {
     this.resourceCapacities=new Map((copy.resourceCapacities??[]).map(([id,values])=>[id,new Map(values)]));
     this.resourceCapacityInputs=new Map((copy.resourceCapacityInputs??[]).map(([id,values])=>[id,new Map(values)]));
     this.simulationFrameRemainderMs=copy.simulationFrameRemainderMs??0;
+    this.resetAppearances();
   }
   cachedAttribute(actorId:string,id:BattleStatKey):number|undefined {
     const value=this.temporary.get(actorId)?.get(id);
@@ -155,7 +182,7 @@ export class CombatConditions {
     const buff:StoredBuff={id,sourceId,strength,stackCount,effect,remainingMs:effect.durationMs,elapsedMs:0,nextTickMs:0,
       ...(effect.simulationFrames?{nextFrameAge:0}:{})};
     buff.remainingMs=this.buffRemainingMs(buff);
-    own.set(id,buff);this.buffs.set(actorId,own);this.revisionValue++;
+    own.set(id,buff);this.buffs.set(actorId,own);this.changed(actorId);
     const resourceEntry=this.resources?.captureResourceCapacities(actorId);
     this.invalidateBuffAttributes(actorId,effect);
     for(const state of effect.states){
@@ -189,21 +216,22 @@ export class CombatConditions {
     if(removed)this.stateCount--;
     if(this.stateCount>=MAX_STATE_NODES){
       // 容量不足时旧节点已经被删掉，这也是一次真实变化。
-      if(removed)this.revisionValue++;
+      if(removed)this.changed(actorId);
       return false;
     }
     this.invalidateStateAttributes(actorId,state.id);
-    own.set(state.id,state);this.states.set(actorId,own);this.stateCount++;this.revisionValue++;return true;
+    own.set(state.id,state);this.states.set(actorId,own);this.stateCount++;this.changed(actorId);return true;
   }
   /** 显式解除当前节点时一并移除它的母Buff；自然到期只删节点。 */
   removeState(actorId:string,id:BattleStateKey,sourceId?:string):void {
     const state=this.states.get(actorId)?.get(id);
     if(!state||(sourceId!==undefined&&state.sourceId!==sourceId))return;
     if(state.ownerBuff)this.removeBuff(actorId,state.ownerBuff);
-    else {if(this.states.get(actorId)?.delete(id)){this.stateCount--;this.revisionValue++;}this.invalidateStateAttributes(actorId,id);}
+    else {if(this.states.get(actorId)?.delete(id)){this.stateCount--;this.changed(actorId);}this.invalidateStateAttributes(actorId,id);}
   }
   update(deltaMs:number,onTick?:(tick:PeriodicTick)=>void):void {
     if(!Number.isFinite(deltaMs)||deltaMs<=0)return;
+    this.clockRevision++;
     const statesAtStart:{actorId:string;own:Map<BattleStateKey,StoredState>;state:StoredState}[]=[];
     for(const [actorId,own] of this.states)for(const state of own.values())if(!state.simulationFrames)statesAtStart.push({actorId,own,state});
     const buffsAtStart:{actorId:string;own:Map<BattleBuffKey,StoredBuff>;buff:StoredBuff}[]=[];
@@ -228,8 +256,9 @@ export class CombatConditions {
     for(const {actorId,own,state} of statesAtStart){
       if(this.states.get(actorId)!==own||own.get(state.id)!==state)continue;
       state.remainingMs=Math.max(0,state.remainingMs-deltaMs);
-      if(state.remainingMs<=0){if(own.delete(state.id)){this.stateCount--;this.revisionValue++;}this.invalidateStateAttributes(actorId,state.id);}
+      if(state.remainingMs<=0){if(own.delete(state.id)){this.stateCount--;this.changed(actorId);}this.invalidateStateAttributes(actorId,state.id);}
     }
+    this.clockRevision++;
     this.refreshFrameRemainingTimes();
   }
   private advanceSimulationFrames(deltaMs:number,onTick?:((tick:PeriodicTick)=>void)):void {
@@ -245,7 +274,7 @@ export class CombatConditions {
       for(const {actorId,own,state} of stateEntries){
         if(this.states.get(actorId)!==own||own.get(state.id)!==state)continue;
         const age=state.nextFrameAge??0;
-        if(age>state.simulationFrames!.lastActiveFrame){if(own.delete(state.id)){this.stateCount--;this.revisionValue++;}this.invalidateStateAttributes(actorId,state.id);}
+        if(age>state.simulationFrames!.lastActiveFrame){if(own.delete(state.id)){this.stateCount--;this.changed(actorId);}this.invalidateStateAttributes(actorId,state.id);}
         else state.nextFrameAge=age+1;
       }
       for(const {actorId,own,buff} of entries){
@@ -290,23 +319,29 @@ export class CombatConditions {
   remove(actorId:string):void {
     const states=this.states.get(actorId),hadBuffs=this.buffs.delete(actorId),hadStates=this.states.delete(actorId);
     if(states)this.stateCount-=states.size;
-    if(hadBuffs||hadStates)this.revisionValue++;
+    if(hadBuffs||hadStates)this.changed(actorId);
     this.temporary.delete(actorId);this.resourceCapacities.delete(actorId);this.resourceCapacityInputs.delete(actorId);
   }
   removeBuff(actorId:string,id:BattleBuffKey):void {
     const buff=this.buffs.get(actorId)?.get(id);if(!buff)return;
     this.resources?.captureResourceCapacities(actorId);
     this.invalidateBuffAttributes(actorId,buff.effect);
-    if(this.buffs.get(actorId)?.delete(id))this.revisionValue++;
+    if(this.buffs.get(actorId)?.delete(id))this.changed(actorId);
     const own=this.states.get(actorId);
     for(const state of buff.effect.states){if(own?.delete(state))this.stateCount--;this.invalidateStateAttributes(actorId,state);}
   }
   clear():void {
     if(this.buffs.size||this.states.size)this.revisionValue++;
+    this.stateLists.clear();this.loopFrames.clear();this.appearances.clear();this.appearanceChanges.clear();
     this.buffs.clear();this.states.clear();this.stateCount=0;this.temporary.clear();this.resourceCapacities.clear();this.resourceCapacityInputs.clear();
   }
   hasState(actorId:string,id:BattleStateKey):boolean{return this.states.get(actorId)?.has(id)??false;}
-  activeStates(actorId:string):readonly BattleStateKey[]{return [...this.states.get(actorId)?.keys()??[]];}
+  activeStates(actorId:string):readonly BattleStateKey[]{
+    const own=this.states.get(actorId);if(!own?.size)return NO_STATES;
+    let states=this.stateLists.get(actorId);
+    if(!states){states=[...own.keys()];this.stateLists.set(actorId,states);}
+    return states;
+  }
   hasBuff(actorId:string,id:BattleBuffKey):boolean{return this.buffs.get(actorId)?.has(id)??false;}
   /** 只读取当前生效的来源，副本与内部 Buff 的属性及寿命互不影响。 */
   buffReactions(actorId:string):readonly BuffReaction[] {
@@ -315,14 +350,16 @@ export class CombatConditions {
   buffLoopFrames(actorId:string):readonly BuffLoopFrame[] {
     // 绝大多数角色没有持续特效；别为每帧的每个角色分配临时数组。
     if(!this.buffs.get(actorId)?.size)return NO_BUFF_LOOPS;
-    return [...this.buffs.get(actorId)!.values()].reverse().flatMap(buff=>{
+    const cached=this.loopFrames.get(actorId);if(cached?.clock===this.clockRevision)return cached.frames;
+    const frames=[...this.buffs.get(actorId)!.values()].reverse().flatMap(buff=>{
       const frameAge=buff.nextFrameAge??Math.floor(buff.elapsedMs/LOGIC_FRAME_MS);
       return (buff.effect.loopEffects??[]).filter(loop=>frameAge>=loop.firstFrameAge)
         .map(loop=>({buff:buff.id,effect:loop.effect,frameAge}));
     });
+    this.loopFrames.set(actorId,{clock:this.clockRevision,frames});return frames;
   }
   private capabilities(actorId:string,hostile=true){
-    return combatStateCapabilities([...this.states.get(actorId)?.values()??[]].map(state=>state.id),hostile);
+    return combatStateCapabilities(this.activeStates(actorId),hostile);
   }
   canMove(actorId:string):boolean{return this.capabilities(actorId).canMove;}
   canAct(actorId:string):boolean{return this.capabilities(actorId).canAct;}

@@ -45,3 +45,5 @@ npm run test:standalone
 - `resident-combat-lifecycle.test.ts` 验证回标题后的会话资源释放，以及迟到退出回调不能清理新会话。
 
 - 持久标记预校验失败不通知或修改原会话；会话销毁后迟到结果不安装，退出恢复原位置后才恢复保存，并拒绝并发退出。
+
+- 状态表现优化由 `combat-conditions.test.ts`、`world-skill-cache.test.ts` 和 `buff-loop-renderer.test.ts` 验证名单失效、暂停颜色、显隐、倒下/复活、恢复与纹理迟到；`enrage-runtime.test.ts` 验证血蓝共用输入且保留读取时序；`combat.test.ts` 验证已解析普攻距离随换装更新。

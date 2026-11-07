@@ -403,3 +403,20 @@ test('the invincibility port reads and writes the shared host set',()=>{
   conditions.setInvincible('ally',false);
   assert.equal(host.has('ally'),false);
 });
+
+test('condition appearance lists track only affected actors and reuse unchanged state reads',()=>{
+  const conditions=new CombatConditions();
+  assert.equal(conditions.activeStates('empty'),conditions.activeStates('other-empty'));
+  conditions.applyState('one','stun',120);conditions.applyState('two','stealthed',1000);
+  const appearances=conditions.activeAppearances(),two=appearances.get('two');
+  const states=conditions.activeStates('two');
+  assert.equal(conditions.activeStates('two'),states);
+  conditions.update(60);assert.equal(conditions.activeAppearances().get('two'),two);
+  conditions.update(60);assert.equal(conditions.activeAppearances().has('one'),false);
+  assert.equal(conditions.activeAppearances().get('two'),two,'其他角色状态到期不重建这一角色');
+  const saved=conditions.captureState();conditions.clear();assert.equal(conditions.activeAppearances().size,0);
+  conditions.restoreState(saved);assert.ok(conditions.activeAppearances().has('two'));
+  conditions.remove('two');assert.equal(conditions.activeAppearances().size,0);
+  conditions.applyBuff('numeric','dark-strike',1,{durationMs:1000,tickMs:0,states:[],modifiers:[],periodic:[]});
+  assert.equal(conditions.activeAppearances().size,0,'只有数值的增益不加入表现名单');
+});
