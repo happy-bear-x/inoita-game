@@ -22,7 +22,6 @@ import { groundLootAssets } from './ground-loot.ts';
 import { controlSkinAssets } from './control-skin.ts';
 import { pickupMessageAssets } from './pickup-messages.ts';
 import type { PendingAsset } from './scene-assets.ts';
-import { minimapAssets } from './story-minimap.ts';
 import { statusHudAssets } from './status-hud.ts';
 
 export interface WorldAssetInputs {
@@ -250,7 +249,6 @@ export function sharedEntryAssets(input: WorldAssetInputs): PendingAsset[] {
   return [
     ...statusHudAssets(input.statusHud),
     ...controlSkinAssets(input.controlSkin),
-    ...minimapAssets(input.storyInterface),
     ...groundLootAssets(input.items),
     ...pickupMessageAssets(),
     ...input.wardrobe.textures.map(texture => ({ kind: 'image' as const, ...texture })),

@@ -10,6 +10,9 @@ import { DomStatusHud } from '../src/ui/dom/status-hud.ts';
 import type { StatusHudSkin } from '../src/domain/status-hud.ts';
 import type { StoryPlayerState } from '../src/domain/story-interface.ts';
 import type { PartyActiveSnapshot } from '../src/domain/party.ts';
+import { DomMinimap } from '../src/ui/dom/minimap.ts';
+import type { WorldMap } from '../src/domain/content.ts';
+import { MINIMAP_ASSETS } from '../src/domain/story-interface.ts';
 
 class Element extends EventTarget {
   style: Record<string, string> = {};
@@ -171,5 +174,33 @@ test('DOM status panels switch the controlled portrait, retain dead member artwo
     view.setVisible(false); assert.equal(target.hidden, true); assert.equal(roots[0].hidden, true);
     view.destroy(); await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(unsubscribed, 1); assert.equal(assets.size, 0); assert.deepEqual(errors, []);
+  } finally { h.restore(); }
+});
+
+test('DOM minimap combines terrain, keeps native marker sizes and reuses or removes markers', async () => {
+  const h = harness();
+  try {
+    const assets = new DomAssets({ image: async () => ({ width: 22, height: 20 }), atlas: async () => ({ frames: {} }) });
+    const files = Object.fromEntries(MINIMAP_ASSETS.map(part => [part, `${part}.png`]));
+    const map = { id: 'test', columns: 3, rows: 3, tileSize: 16, blocked: [true, true, false, false, false, false, true, false, true], exits: [] } as unknown as WorldMap;
+    const errors: unknown[] = [];
+    const view = new DomMinimap(h.parent, map, files, error => errors.push(error), assets);
+    view.layout({ width: 960, height: 640, insets: { left: 4, top: 2, right: 0, bottom: 0 } });
+    view.visible(true);
+    const root = view.element as unknown as Element;
+    assert.equal(root.children[0].children.length, 2, '地形按通行状态合成两条路径');
+    view.updateTasks([{ id: 'quest', x: 16, y: 32, status: 'available' }]);
+    const task = root.children.at(-1)!;
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(task.style.width, '22px', '标记保持原素材尺寸');
+    assert.equal(task.style.transform, 'translate(-50%,-50%)');
+    const count = root.children.length;
+    view.updateTasks([{ id: 'quest', x: 32, y: 32, status: 'ready' }]);
+    assert.equal(root.children.length, count, '同一个任务复用节点');
+    assert.equal(task.style.left, '13px');
+    view.updateTasks([]); assert.equal(task.removed, true);
+    assert.equal(view.extent().x, 16); assert.equal(view.extent().y, 14);
+    view.destroy(); await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(assets.size, 0); assert.deepEqual(errors, []);
   } finally { h.restore(); }
 });

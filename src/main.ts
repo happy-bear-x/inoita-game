@@ -33,7 +33,8 @@ import { validateCharacterStats, validateMenuClasses, validateItemSkills, valida
 
 import { GAME_HEIGHT, GAME_WIDTH, fitViewport, configureCanvas } from './ui/viewport.ts';
 import { gameMenuImageGroups } from './application/menu-images.ts';
-import { UI_ICON_ATLAS_FILE } from './generated/icon-atlas.ts';
+import { UI_ICON_ATLAS_FILE, UI_ICON_FRAMES } from './generated/icon-atlas.ts';
+import { MINIMAP_ASSETS } from './domain/story-interface.ts';
 import { GAME_FRAME_TIMING, installFrameLimitClock } from './application/game-timing.ts';
 import { installGameDiagnostics, installStorySkipDiagnostics } from './application/game-diagnostics.ts';
 import { storyDevMode } from './domain/dev-mode.ts';
@@ -183,8 +184,15 @@ function menuPreparationFor(signal: AbortSignal): MenuPreparation | undefined {
     };
     const fail = (error: unknown) => { if (menuPreparation === next) menuPreparation = undefined; throw error; };
     // 图标图集一次加载：物品/技能图标在世界 HUD 上就要用，不能被后台补图拖成空白。
-    next.core = host.preloadFiles([...groups.core, ...Object.values(app.controlSkin), UI_ICON_ATLAS_FILE], signal,
-      value => report(value, 0, 0.6)).then(() => recordStartPhase('menu-core-loaded')).catch(fail);
+    const coreFiles = [...groups.core, ...Object.values(app.controlSkin), UI_ICON_ATLAS_FILE];
+    const progress = [0, 0];
+    const track = (index: number) => (value: number) => { progress[index] = value; report((progress[0] + progress[1]) / 2, 0, 0.6); };
+    next.core = Promise.all([
+      host.preloadFiles(coreFiles, signal, track(0)),
+      host.preloadDomFiles([...coreFiles, Object.keys(UI_ICON_FRAMES)[0] ?? UI_ICON_ATLAS_FILE,
+        ...Object.values(app.statusHud.assets), ...Object.values(app.statusHud.buffIcons.catalog),
+        ...MINIMAP_ASSETS.map(key => app.storyInterface.assets[key])], signal, track(1))
+    ]).then(() => recordStartPhase('menu-core-loaded')).catch(fail);
     next.all = next.core.then(() => extra.length
       ? host.preloadFiles(extra, signal, value => report(value, 0.6, 0.4)).then(() => recordStartPhase('menu-extra-loaded'))
       : undefined).catch(fail);

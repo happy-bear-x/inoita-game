@@ -48,6 +48,7 @@ export class DomImage extends DomComponent {
   private fit: 'stretch' | 'cover' | 'contain' = 'stretch';
   private anchorX = .5;
   private anchorY = .5;
+  private naturalAnchor?: { x: number; y: number };
   constructor(parent: HTMLElement | DomComponent) {
     super(parent);
     this.element.style.overflow = 'hidden';
@@ -62,6 +63,9 @@ export class DomImage extends DomComponent {
   fitting(fit: 'stretch' | 'cover' | 'contain', anchorX = .5, anchorY = .5): this {
     this.fit = fit; this.anchorX = anchorX; this.anchorY = anchorY; this.layout(); return this;
   }
+  naturalSize(anchorX = 0, anchorY = 0): this {
+    this.naturalAnchor = { x: anchorX, y: anchorY }; this.layout(); return this;
+  }
   async load(assets: DomAssets, file: string): Promise<void> {
     this.signal.throwIfAborted();
     this.request?.abort();
@@ -75,6 +79,11 @@ export class DomImage extends DomComponent {
   private layout(): void {
     if (!this.source) return;
     const { frame, width, height } = this.source;
+    if (this.naturalAnchor) {
+      this.box = { ...this.box, width: frame.width, height: frame.height };
+      Object.assign(this.element.style, { width: `${frame.width}px`, height: `${frame.height}px`,
+        transform: `translate(${-this.naturalAnchor.x * 100}%,${-this.naturalAnchor.y * 100}%)` });
+    }
     let sx = this.box.width / frame.width, sy = this.box.height / frame.height, left = 0, top = 0;
     if (this.fit === 'cover') {
       const fit = portraitFit(frame, this.box, this.anchorX, this.anchorY);

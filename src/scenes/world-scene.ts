@@ -507,7 +507,7 @@ export class WorldScene extends Phaser.Scene {
     if(options.preparedScene){this.restoreScenePositions(options.preparedScene);this.combat.adoptStoryPositions(options.preparedScene.actors);}
     signal.throwIfAborted();
     if(options.checkpoint)await this.combat.restoreState(options.checkpoint,signal);
-    this.minimap = new StoryMinimap(this, this.hud!, map);
+    this.minimap = new StoryMinimap(this, this.hud!, map, this.app.storyInterface, this.app.domUi!);
     this.fpsReadout = this.createFpsReadout();
     this.resizeView(); this.refreshState();
     this.unsubscribe = this.app.session.subscribe(() => this.refreshState());
