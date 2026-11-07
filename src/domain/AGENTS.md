@@ -56,6 +56,7 @@
 - 可破坏物生成记录按完整 id 覆盖；旧档读入时去重，并清理已永久死亡且不会再生成的 `breakable:` 记录，`chest:`/`spring:` 的永久死亡记录保留。
 - 仇恨账本以 owner→source 索引为准，记录数组只用于快照与容量淘汰；增删必须同时维护两边。
 - 剧情世界的进行中遭遇以 `StoryWorldState` 的 active 索引为准，`encounters` 表只用于历史、快照和完整状态查询；新增、结算和整份恢复必须同时维护索引，每帧读取只走索引。
+- 地图敌人生成点索引按投影复用；任务、剧情、生成资格或名册身份变化及复活期限到达后才重新计算增删。`Session.enemySpawnRevision` 只跟踪死亡期限与恢复/回滚，血量和法力变化继续推进存档用的 `enemyRevision`，不会触发生成扫描。
 - 人物页大立绘按来源取图：主角和剧情同伴用 `character.portraits` 的 252×271 立绘，佣兵用 `character.classPortraits` 的职业 252×271 立绘；小头像统一用 `party-class-*` 或 `character-party-*`。`memberArt` 是唯一入口。
 - 单元测试写在 `tests/*.test.ts`。
 

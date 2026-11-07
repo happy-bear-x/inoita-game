@@ -230,6 +230,7 @@ export class Session {
   private choiceWriteRevisionValue = 0;
   private receiptRevisionValue = 0;
   private enemyRevisionValue = 0;
+  private enemySpawnRevisionValue = 0;
   /**
    * 选择写入次数的修订号：`choiceWrites` 每次写入和在恢复/回滚中重建时推进。
    * 只用于让按次数增量观察的缓存失效，不写存档。
@@ -245,6 +246,8 @@ export class Session {
    * 只用于让存档快照缓存失效，不写存档。
    */
   get enemyRevision():number { return this.enemyRevisionValue; }
+  /** 仅生成资格变化时递增，受伤和回蓝不使地图生成名单失效。 */
+  get enemySpawnRevision():number { return this.enemySpawnRevisionValue; }
   private worldContext:()=>Record<string,StoryWorldValue> = ()=>({});
   /** 任务可用性读的条件输入；带条件键，刷新时只找引用变化键的任务。 */
   private readonly questConditionInputs:{key:string;read:(context:StoryConditionContext)=>StoryWorldValue|undefined}[]=[];
@@ -312,10 +315,12 @@ export class Session {
   }
   private readonly enemyStates = new Map<string, EnemyState>();
   private setEnemyState(id:string,state:EnemyState):void {
+    if(this.enemyStates.get(id)?.deadUntil!==state.deadUntil)this.enemySpawnRevisionValue++;
     // 存档快照按 `enemyRevision` 复用；每次 set 都视为一次新写入。
     this.enemyStates.set(id,state);this.enemyRevisionValue++;
   }
   private deleteEnemyState(id:string):void {
+    if(this.enemyStates.get(id)?.deadUntil!==undefined)this.enemySpawnRevisionValue++;
     if(this.enemyStates.delete(id))this.enemyRevisionValue++;
   }
   private trackedQuest?: string;
@@ -550,7 +555,7 @@ export class Session {
     this.runtimeSnapshot=restored.runtime;
     this.restoreReceipts(restored.receipts);
     this.factSequences.clear();for(const [source,sequence]of restored.factSequences)this.factSequences.set(source,sequence);
-    this.enemyStates.clear();for(const [id,enemy] of restored.enemies)this.enemyStates.set(id,enemy);this.enemyRevisionValue++;
+    this.enemyStates.clear();for(const [id,enemy] of restored.enemies)this.enemyStates.set(id,enemy);this.enemyRevisionValue++;this.enemySpawnRevisionValue++;
     this.trackedQuest=restored.trackedQuest;this.debugFocusQuestValue=restored.debugFocusQuest;this.playerState=restored.player?Object.freeze({...restored.player}):undefined;
     this.coins=restored.money;this.gameTimeMs=restored.gameTimeMs;
     this.recovery.restoreState(restored.recovery);this.chests.restoreState(restored.chests);this.springs.restoreState(restored.springs);this.legendaryWeapons.restoreState(restored.legendaryWeapons);this.shops.restoreState(restored.shops);
@@ -1141,7 +1146,7 @@ export class Session {
     }
     if(touched.has('enemies')){
       this.enemyStates.clear();for(const [id,state] of baseline.enemies!)this.enemyStates.set(id,state);
-      this.enemyRevisionValue++;
+      this.enemyRevisionValue++;this.enemySpawnRevisionValue++;
     }
     if(touched.has('groundLoot'))groundLootFor(this).restoreState(baseline.loot!);
     if(touched.has('coins'))this.coins=baseline.coins!;

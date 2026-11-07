@@ -52,6 +52,70 @@ test('spawn projection is reused until the story world or generated spawns chang
   assert.ok(roster.spawns.some(value=>value.id.startsWith('spring:')),'宝箱/泉水生成后重新投影');
 });
 
+test('unchanged enemy spawn eligibility does not rescan the map on every battle tick',()=>{
+  const session=new Session(campaign),map=content('maps/shadow-forest-west.json') as WorldMap;
+  const roster=new WorldEnemyRoster(session,map,[],1),spawn=roster.spawns[0]!;
+  const canSpawn=session.canSpawnEnemy.bind(session);let checks=0;
+  session.canSpawnEnemy=value=>{checks++;return canSpawn(value);};
+  const revision=session.enemySpawnRevision;
+  for(let tick=0;tick<100;tick++){
+    session.setEnemyVitals(spawn.id,100-tick,0);session.advanceGameTime(60);
+    assert.deepEqual(roster.refresh(),{added:[],removed:[]});
+  }
+  assert.equal(session.enemySpawnRevision,revision);
+  assert.equal(checks,0,'受伤不改变生成资格，不重扫地图');
+  session.enemyDefeated(spawn,120);
+  assert.deepEqual(roster.refresh().removed,[spawn.id]);
+  roster.refresh(); // 槽位离场会使可破坏物替换记录失效，允许重新建立一次生成投影。
+  const afterDeath=checks;
+  session.advanceGameTime(119);assert.equal(roster.refresh().added.length,0);assert.equal(checks,afterDeath);
+  session.advanceGameTime(1);assert.deepEqual(roster.refresh().added.map(value=>value.key),[spawn.id]);
+});
+
+test('manual roster removals and restored session eligibility invalidate the stable refresh',()=>{
+  const session=new Session(campaign),map=content('maps/shadow-forest-west.json') as WorldMap;
+  const roster=new WorldEnemyRoster(session,map,[],1),spawn=roster.spawns[0]!;
+  roster.removeEnemy(spawn.id);
+  assert.deepEqual(roster.refresh().added.map(value=>value.key),[spawn.id]);
+  const saved=session.captureState();session.enemyDefeated(spawn);
+  assert.deepEqual(roster.refresh().removed,[spawn.id]);
+  session.restoreState(saved);
+  assert.deepEqual(roster.refresh().added.map(value=>value.key),[spawn.id]);
+  const placed=roster.captureState();roster.restoreState(placed);
+  assert.deepEqual(roster.refresh(),{added:[],removed:[]});
+});
+
+test('same-length direct instance replacement cannot bypass the roster identity check',()=>{
+  const session=new Session(campaign),map=content('maps/shadow-forest-west.json') as WorldMap;
+  const roster=new WorldEnemyRoster(session,map,[],1),placed=roster.enemies[0]!,original=placed.key;
+  placed.key='local-summon';placed.summonedBy='player';
+  assert.deepEqual(roster.refresh().added.map(enemy=>enemy.key),[original]);
+  assert.ok(roster.enemies.some(enemy=>enemy.key==='local-summon'),'临时召唤仍保留');
+});
+
+test('a source enemy identity changed in place refreshes its existing slot',()=>{
+  const session=new Session(campaign),map={id:'identity-map',enemySpawns:[
+    {id:'slot',enemyId:'enemy-before',x:16,y:16}
+  ]} as unknown as WorldMap;
+  const roster=new WorldEnemyRoster(session,map,[],1);
+  map.enemySpawns![0]!.enemyId='enemy-after';
+  const changes=roster.refresh();
+  assert.deepEqual(changes.removed,['slot']);
+  assert.deepEqual(changes.added.map(enemy=>enemy.enemyId),['enemy-after']);
+  assert.deepEqual(roster.refresh(),{added:[],removed:[]});
+});
+
+test('rolled-back enemy deaths invalidate the spawn eligibility cache',()=>{
+  const session=new Session(campaign),map=content('maps/shadow-forest-west.json') as WorldMap;
+  const roster=new WorldEnemyRoster(session,map,[],1),spawn=roster.spawns[0]!;
+  assert.throws(()=>session.atomic(()=>{
+    session.enemyDefeated(spawn);
+    assert.deepEqual(roster.refresh().removed,[spawn.id]);
+    throw new Error('rollback');
+  },['enemies','questBook']),/rollback/);
+  assert.deepEqual(roster.refresh().added.map(enemy=>enemy.key),[spawn.id]);
+});
+
 test('tier bands switch only after reaching the next representative level',()=>{
   const map={id:'band-map',enemySpawns:[
     {id:'low',enemyId:'enemy-low',x:0,y:0,tierLevel:10},

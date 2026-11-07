@@ -91,6 +91,11 @@ export class WorldEnemyRoster extends EnemyRoster {
   /** 可破坏物替换结果的版本：缓存重建后必须重新掷骰。 */
   private breakableRevision=0;
   private spawnsCache?:{key:string;value:readonly WorldSpawn[]};
+  private spawnIndex?:{spawns:readonly WorldSpawn[];byId:ReadonlyMap<string,WorldSpawn>};
+  private membershipRevision=0;
+  private lastRefresh?:{spawns:readonly WorldSpawn[];enemyRevision:number;questVersion:number;membershipRevision:number;members:ReadonlySet<string>;nextSpawnAt:number};
+  private questSourceRevision?:number;
+  private questSourceIds?:ReadonlySet<string>;
   private emptyReported=false;
   get spawns(): readonly WorldSpawn[] {
     const questRevision=this.collectQuestSpawns();
@@ -161,6 +166,7 @@ capturePreparedState():{roster:ReturnType<EnemyRoster['captureState']>;breakable
    */
   override restoreState(state:ReturnType<EnemyRoster['captureState']>):void{
     super.restoreState(state);
+    this.membershipRevision++;
     for(const placed of this.enemies){
       const slot=this.breakableSlots.get(placed.key);
       if(!slot)continue;
@@ -175,6 +181,17 @@ capturePreparedState():{roster:ReturnType<EnemyRoster['captureState']>;breakable
   }
 
   source(id:string):WorldSpawn|undefined{return this.sources.get(id);}
+  override placeEnemy(enemyId:string,x:number,y:number):PlacedEnemy {
+    const placed=super.placeEnemy(enemyId,x,y);this.membershipRevision++;return placed;
+  }
+  override restoreEnemy(placed:PlacedEnemy):void {
+    const before=this.enemies.length;super.restoreEnemy(placed);
+    if(this.enemies.length!==before)this.membershipRevision++;
+  }
+  override removeEnemy(key:string):void {
+    const before=this.enemies.length;super.removeEnemy(key);
+    if(this.enemies.length!==before)this.membershipRevision++;
+  }
   completedEncounters():readonly StoryEncounter[]{
     return this.session.storyWorld.activeEncounters.filter(encounter=>encounter.map===this.mapId&&encounter.spawns.length>0&&
       encounter.spawns.every(spawn=>{const state=this.session.enemyVitals(encounterSpawnId(encounter.id,spawn.id));
@@ -191,30 +208,51 @@ capturePreparedState():{roster:ReturnType<EnemyRoster['captureState']>;breakable
   }
   refresh():{added:PlacedEnemy[];removed:string[]}{
     const added:PlacedEnemy[]=[],removed:string[]=[];
-    const spawns=this.spawns,active=new Set<string>(),current=new Map<string,WorldSpawn>();
-    for(const spawn of spawns){active.add(spawn.id);current.set(spawn.id,spawn);}
+    const spawns=this.spawns,previous=this.lastRefresh;
+    if(previous?.spawns===spawns&&previous.enemyRevision===this.session.enemySpawnRevision&&
+      previous.questVersion===this.session.questBook.version&&previous.membershipRevision===this.membershipRevision&&
+      previous.members.size===this.enemies.length&&this.session.nowMs<previous.nextSpawnAt&&this.identitiesMatchSources(previous.members))return {added,removed};
+    if(this.spawnIndex?.spawns!==spawns)this.spawnIndex={spawns,byId:new Map(spawns.map(spawn=>[spawn.id,spawn]))};
+    const current=this.spawnIndex.byId;
+    let nextSpawnAt=Infinity;
     const present=new Set(this.enemies.map(enemy=>enemy.key));
     for(const placed of [...this.enemies]){
       const spawn=current.get(placed.key)??this.sources.get(placed.key);
       if(!spawn)continue;
       // 槽位离场（死亡、隐藏、从本次生成集合消失）才丢弃替换结果，下次出现重掷。
-      const leaving=!active.has(spawn.id)||!this.session.canSpawnEnemy(spawn);
+      const leaving=!current.has(spawn.id)||!this.session.canSpawnEnemy(spawn);
       // 同 key 换身份只是这一槽改了外观，缓存仍是本次访问的结果，下一帧不能再掷一次。
       if(!leaving&&placed.enemyId===spawn.enemyId)continue;
       super.removeEnemy(placed.key);present.delete(placed.key);removed.push(placed.key);
-      if(leaving){this.breakableRolls.delete(placed.key);this.breakableRevision++;}
+      if(leaving&&this.breakableRolls.delete(placed.key))this.breakableRevision++;
     }
     for(const spawn of spawns){
       this.sources.set(spawn.id,spawn);
-      if(!this.session.canSpawnEnemy(spawn)||present.has(spawn.id))continue;
+      if(!this.session.canSpawnEnemy(spawn)){
+        const deadline=this.session.enemyVitals(spawn.id).deadUntil;
+        if(typeof deadline==='number'&&deadline>this.session.nowMs)nextSpawnAt=Math.min(nextSpawnAt,deadline);
+        continue;
+      }
+      if(present.has(spawn.id))continue;
       const vitals=this.session.enemyVitals(spawn.id);
       const placed:PlacedEnemy={key:spawn.id,enemyId:spawn.enemyId,x:spawn.x,y:spawn.y,health:vitals.health,mana:vitals.mana};
       this.restoreEnemy(placed);present.add(spawn.id);added.push(placed);
     }
     // 生成集合缩小时同步丢弃旧来源，避免同图待久后 sources 只增不减。
-    for(const id of [...this.sources.keys()])if(!active.has(id))this.sources.delete(id);
+    for(const id of this.sources.keys())if(!current.has(id))this.sources.delete(id);
     this.recordEmptyDiagnostic(spawns);
+    this.lastRefresh={spawns,enemyRevision:this.session.enemySpawnRevision,questVersion:this.session.questBook.version,
+      membershipRevision:this.membershipRevision,members:present,nextSpawnAt};
     return {added,removed};
+  }
+  /** 名册公开的实例允许恢复路径修正身份；这里只核对标识，不重建表或查询生成条件。 */
+  private identitiesMatchSources(members:ReadonlySet<string>):boolean {
+    for(const placed of this.enemies){
+      if(!members.has(placed.key))return false;
+      const source=this.sources.get(placed.key);
+      if(source&&source.enemyId!==placed.enemyId)return false;
+    }
+    return true;
   }
   override setEnemyHealth(key:string,value:number,definition:EnemyDefinition):void {
     super.setEnemyHealth(key,value,definition);
@@ -250,7 +288,11 @@ capturePreparedState():{roster:ReturnType<EnemyRoster['captureState']>;breakable
   }
   private collectQuestSpawns():number{
     const snapshot=this.questEnemies?.snapshot();
-    if(snapshot)for(const id of snapshot.ids)this.questSpawnIds.add(id);
+    if(snapshot&&(snapshot.revision!==this.questSourceRevision||snapshot.ids!==this.questSourceIds)){
+      for(const id of snapshot.ids)this.questSpawnIds.add(id);
+      this.questSourceRevision=snapshot.revision;
+      this.questSourceIds=snapshot.ids;
+    }
     return snapshot?.revision??0;
   }
   /** 剧情资格：active 任务槽、剧情可见性、敌人可用性；刻意不看死亡/刷新计时。 */
