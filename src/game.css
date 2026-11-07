@@ -31,3 +31,7 @@ body.ui-occluded .text-prompt,body.ui-occluded .cloud-credentials{display:none!i
 .cloud-credentials input{position:absolute;box-sizing:border-box;padding:0 12px;border:1px solid #6b5a37;border-radius:6px;background:#0e171c;color:#f5f0df;outline:none;pointer-events:auto;touch-action:auto;-webkit-user-select:text;user-select:text;-webkit-appearance:none;appearance:none}
 .cloud-credentials input::placeholder{color:#7d7462}
 .cloud-credentials input:focus{border-color:var(--gold);box-shadow:0 0 0 2px rgba(226,200,141,.18)}
+
+/* 动作控件的按下图片跟随原生指针状态。 */
+.dom-control-pressed{display:none;mix-blend-mode:plus-lighter}
+[data-pressed="true"] .dom-control-pressed{display:block}

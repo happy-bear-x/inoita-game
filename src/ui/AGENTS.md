@@ -24,6 +24,7 @@
 - **菜单滚动区由 `StoryUI.scroll` 统一登记。** 它建区时会给 `ScrollArea` 加一条自动刷新 DOM 文字的监听；面板的 `onScroll` 只负责记自己的偏移和状态，不要再为文字单独调用刷新，也不要在菜单页绕过 `StoryUI.scroll` 自建滚动区。
 - **全屏遮罩用 `DomUi.setOccluded`。** 加载页、阵亡面板、跨图黑幕、横屏提示和挂起时，由 `uiOcclusion`（`game-ui.ts`）判断并收起 world/hud/screen 三层；加载页自己的文字放在 overlay 层。新增全屏界面时不要再让各页面各自猜显隐。
 - 文本宽度、换行、选项高度和滚动范围在交给显示组件前算完，绘制层只按结果摆放。
+- 快捷位显示契约由 `shortcut-view.ts` 提供，场景和控件共用技能、物品与冷却快照。
 - 控件尺寸从 `control-layout.ts` 的 `CONTROL_SIZES` 取；D-pad 视觉与布局用 `moveDpad` 274×274，摇杆用 `move` 210×210。
 - **长按按钮用 `UiSurface.button` 的 `hold` 选项。** 按住超过 `delayMs` 后每 `intervalMs` 执行一次，松手不再补一次点击；按钮禁用时立刻停。商店数量箭头用 350ms/80ms。
 - **摇杆的指针状态必须能自愈。** 新的 `pointerdown` 接管旧指针；`pointercancel`、`gameout`、以及 `isDown=false` 的移动事件都要回中，避免丢失 `pointerup` 后一直朝某个方向走。

@@ -1,0 +1,148 @@
+import type { ActionControlsHandlers } from '../../rendering/action-controls.ts';
+import type { ControlSkin } from '../../domain/control-skin.ts';
+import type { Cooldown } from '../../domain/combat.ts';
+import { SHORTCUT_SLOT_COUNT } from '../../domain/shortcut-bar.ts';
+import { CONTROL_SIZES, resolveControlLayout, type ControlViewport, type ControlLayoutOverrides, type ControlId } from '../control-layout.ts';
+import { SLOT_ICON_SIZE, ITEM_ICON_SIZE, type ShortcutSlot } from '../shortcut-view.ts';
+import { ActionPressGate } from '../action-press-gate.ts';
+import { DomAssets } from './assets.ts';
+import { DomButton, DomComponent, DomImage } from './components.ts';
+
+interface Control {
+  button: DomButton;
+  icon: DomImage;
+  badge: DomComponent;
+  quantity: HTMLElement;
+  fan: SVGSVGElement;
+  fanPath: SVGPathElement;
+  line: SVGPathElement;
+  usable: boolean;
+  size: number;
+  iconKey?: string;
+  fanKey?: string;
+  stateKey?: string;
+}
+
+/** 轮盘的图片、数量、冷却与命中全部属于 DOM。 */
+export class DomActionControls extends DomComponent {
+  private readonly assets: DomAssets;
+  private readonly gate = new ActionPressGate();
+  private readonly slots: Control[] = [];
+  private readonly attack: Control;
+  private readonly swap: Control;
+  private page: readonly ShortcutSlot[] = [];
+  private cooldowns: Readonly<Record<string, Cooldown>> = {};
+  private readonly skin: ControlSkin;
+  private readonly handlers: ActionControlsHandlers;
+  private readonly failed: (error: unknown) => void;
+  constructor(parent: HTMLElement, skin: ControlSkin, handlers: ActionControlsHandlers, failed: (error: unknown) => void, assets = new DomAssets()) {
+    super(parent); this.skin = skin; this.handlers = handlers; this.failed = failed; this.assets = assets;
+    Object.assign(this.element.style, { inset: '0', width: '100%', height: '100%' });
+    this.attack = this.control(CONTROL_SIZES.attack.width, [skin.button], skin['button-pressed'], () => handlers.attack());
+    for (let index = 0; index < SHORTCUT_SLOT_COUNT; index++) {
+      this.slots.push(this.control(CONTROL_SIZES.slot.width, [skin['slot-shadow'], skin['slot-ring']], skin['slot-pressed'], () => this.activate(index)));
+    }
+    this.swap = this.control(CONTROL_SIZES.swap.width, [skin.swap], skin['swap-pressed'], () => handlers.swap());
+    this.own(() => this.resetInput());
+    this.visible(false);
+  }
+  private image(parent: DomComponent, file: string, width: number, x = -width / 2, y = -width / 2, height = width): DomImage {
+    const image = new DomImage(parent).rect({ x, y, width, height });
+    void image.load(this.assets, file).catch(error => { if (!image.signal.aborted && (error as Error)?.name !== 'AbortError') this.failed(error); });
+    return image;
+  }
+  private control(width: number, files: string[], pressed: string, action: () => void): Control {
+    let control!: Control;
+    const hitRadius = width === CONTROL_SIZES.slot.width ? 40 : width / 2;
+    const button: DomButton = new DomButton(this, { enabled: () => !this.element.hidden && control.usable,
+      hitTest: event => {
+        const bounds = button.element.getBoundingClientRect();
+        const dx = (event.clientX - bounds.left) / bounds.width - .5;
+        const dy = (event.clientY - bounds.top) / bounds.height - .5;
+        return dx * dx + dy * dy <= (hitRadius / width) ** 2;
+      },
+      press: id => this.gate.press(id), release: id => this.gate.release(id), trigger: 'down', action });
+    button.rect({ x: 0, y: 0, width, height: width });
+    button.element.style.borderRadius = '50%';
+    // 图片以按钮中心为原点，按钮自身的命中区域保持原来的圆形范围。
+    const face = new DomComponent(button).rect({ x: width / 2, y: width / 2, width: 0, height: 0 });
+    for (const file of files) this.image(face, file, width);
+    const icon = new DomImage(face);
+    const fan = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    fan.setAttribute('viewBox', '-40 -40 80 80');
+    Object.assign(fan.style, { position: 'absolute', left: '-40px', top: '-40px', width: '80px', height: '80px', pointerEvents: 'none' });
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path'); path.setAttribute('fill', 'rgba(0,0,0,.55)');
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'path'); line.setAttribute('fill', 'none'); line.setAttribute('stroke', '#ffe6a3'); line.setAttribute('stroke-width', '2');
+    fan.append(path, line); face.element.appendChild(fan);
+    this.image(face, pressed, width).element.classList.add('dom-control-pressed');
+    const badge = new DomComponent(face).rect({ x: 32, y: 23, width: 0, height: 0 });
+    this.image(badge, this.skin['quantity-badge'], 38, -19, -20, 40);
+    const quantity = document.createElement('span');
+    Object.assign(quantity.style, { position: 'absolute', transform: 'translate(-50%,-50%)', fontSize: '18px', color: '#fff', lineHeight: '1' });
+    badge.element.appendChild(quantity); badge.visible(false);
+    control = { button, icon, badge, quantity, fan, fanPath: path, line, usable: true, size: SLOT_ICON_SIZE };
+    return control;
+  }
+  private activate(index: number): void {
+    const entry = this.page[index]?.entry;
+    if (entry?.kind === 'skill') this.handlers.skill(entry.id);
+    else if (entry) this.handlers.item?.(entry.id);
+  }
+  setShortcutPage(page: readonly ShortcutSlot[]): void { this.page = page.map(slot => ({ ...slot })); this.paint(); }
+  setCooldowns(cooldowns: Readonly<Record<string, Cooldown>>): void { this.cooldowns = cooldowns; this.paint(); }
+  snapshot(): readonly ShortcutSlot[] {
+    return this.page.map(slot => { const cooldown = this.cooldown(slot); return { ...slot, entry: slot.entry ? { ...slot.entry } : null, cooldown: cooldown ? { ...cooldown } : undefined }; });
+  }
+  private cooldown(slot: ShortcutSlot): Cooldown | undefined { return slot.entry?.kind === 'skill' ? this.cooldowns[slot.entry.id] : slot.cooldown; }
+  setAttack(enabled: boolean, dimUnavailable = true): void {
+    this.attack.usable = enabled; this.attack.button.element.style.opacity = enabled || !dimUnavailable ? '1' : '.4';
+  }
+  private paint(): void {
+    this.slots.forEach((control, index) => {
+      const slot = this.page[index], item = slot?.entry?.kind === 'item';
+      const size = item ? ITEM_ICON_SIZE : SLOT_ICON_SIZE;
+      const file = slot?.entry ? slot.icon : undefined;
+      const cooldown = slot ? this.cooldown(slot) : undefined, cooling = !!cooldown && cooldown.remainingMs > 0;
+      const usable = !!slot?.entry && !cooling && (item ? slot.quantity > 0 : slot.enabled);
+      const opacity = slot?.entry && !usable && !cooling ? '.4' : '1';
+      this.paintFan(control, cooldown);
+      const stateKey = `${file}|${size}|${item}|${slot?.quantity}|${usable}|${opacity}`;
+      if (stateKey === control.stateKey) return;
+      control.stateKey = stateKey;
+      if (control.iconKey !== file || control.size !== size) {
+        control.iconKey = file; control.size = size;
+        control.icon.rect({ x: -size / 2, y: -size / 2, width: size, height: size }).visible(!!file);
+        if (file) void control.icon.load(this.assets, file).catch(error => { if (!control.icon.signal.aborted && (error as Error)?.name !== 'AbortError') this.failed(error); });
+      }
+      control.badge.visible(!!item); control.quantity.textContent = item ? String(slot.quantity) : '';
+      control.usable = usable;
+      control.icon.element.style.opacity = opacity; control.badge.element.style.opacity = opacity;
+    });
+  }
+  private paintFan(control: Control, cooldown: Cooldown | undefined): void {
+    const remaining = cooldown && cooldown.remainingMs > 0 ? Math.min(1, cooldown.durationMs > 0 ? cooldown.remainingMs / cooldown.durationMs : 1) : 0;
+    const key = `${remaining}|${control.size}`;
+    if (key === control.fanKey) return;
+    control.fanKey = key; control.fan.style.display = remaining ? '' : 'none';
+    if (!remaining) return;
+    const radius = control.size / 2, angle = -Math.PI / 2 + (1 - remaining) * Math.PI * 2;
+    const x = Math.cos(angle) * radius, y = Math.sin(angle) * radius;
+    control.fanPath.setAttribute('d', remaining === 1
+      ? `M 0 ${-radius} A ${radius} ${radius} 0 1 1 0 ${radius} A ${radius} ${radius} 0 1 1 0 ${-radius}`
+      : `M 0 0 L ${x} ${y} A ${radius} ${radius} 0 ${remaining > .5 ? 1 : 0} 1 0 ${-radius} Z`);
+    control.line.setAttribute('d', remaining < 1 ? `M 0 0 L ${x} ${y}` : '');
+  }
+  layout(viewport: ControlViewport, overrides?: ControlLayoutOverrides): void {
+    const points = resolveControlLayout(viewport, overrides);
+    const place = (control: Control, id: ControlId) => {
+      const point = points[id], factor = point.scale * point.userScale;
+      control.button.element.style.left = `${point.x}px`; control.button.element.style.top = `${point.y}px`;
+      control.button.element.style.transformOrigin = '0 0';
+      control.button.element.style.transform = `scale(${factor}) translate(-50%,-50%)`;
+    };
+    place(this.attack, 'attack'); place(this.swap, 'swap');
+    this.slots.forEach((control, index) => place(control, `slot-${index}` as ControlId));
+  }
+  resetInput(): void { this.gate.reset(); for (const control of [this.attack, ...this.slots, this.swap]) control.button.reset(); }
+  override visible(shown: boolean): this { if (!shown) this.resetInput(); return super.visible(shown); }
+}

@@ -14,13 +14,15 @@ export class DomComponent {
     Object.assign(this.element.style, { position: 'absolute', pointerEvents: 'none' });
     if (parent instanceof DomComponent) {
       parent.element.appendChild(this.element);
-      parent.own(() => this.destroy());
+      const detach = parent.own(() => this.destroy());
+      this.own(detach);
     } else parent.appendChild(this.element);
   }
   get signal(): AbortSignal { return this.controller.signal; }
-  own(dispose: () => void): void {
-    if (this.signal.aborted) { dispose(); return; }
+  own(dispose: () => void): () => void {
+    if (this.signal.aborted) { dispose(); return () => {}; }
     this.disposers.add(dispose);
+    return () => { this.disposers.delete(dispose); };
   }
   rect(rect: DomRect): this {
     Object.assign(this.element.style, { left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.width}px`, height: `${rect.height}px` });
@@ -89,6 +91,7 @@ export class DomImage extends DomComponent {
 
 export interface DomPressOptions {
   enabled(): boolean;
+  hitTest?(event: PointerEvent): boolean;
   press?(pointer: number): boolean;
   release?(pointer: number): void;
   trigger: 'down' | 'up';
@@ -112,13 +115,15 @@ export class DomButton extends DomComponent {
     };
     listen('pointerdown', event => this.down(event as PointerEvent));
     listen('pointerup', event => this.up(event as PointerEvent));
-    for (const name of ['pointercancel', 'lostpointercapture']) listen(name, () => this.reset());
+    for (const name of ['pointercancel', 'lostpointercapture']) listen(name, event => {
+      if ((event as PointerEvent).pointerId === this.pointer) this.reset();
+    });
     listen('click', event => { event.preventDefault(); event.stopPropagation(); });
     this.own(() => this.reset());
   }
   private down(event: PointerEvent): void {
     event.stopPropagation(); event.preventDefault();
-    if (event.button !== 0 || this.pointer !== undefined || !this.options.enabled()) return;
+    if (event.button !== 0 || this.pointer !== undefined || !this.options.enabled() || this.options.hitTest?.(event) === false) return;
     if (this.options.press && !this.options.press(event.pointerId)) return;
     this.pointer = event.pointerId; this.repeated = false;
     this.element.setPointerCapture(event.pointerId);

@@ -14,3 +14,5 @@
 - `dom-ui.ts`、`menu-text.ts`：DOM 层、文字和菜单排版。
 - `assets.ts`：图片、图集切片、预加载与资源持有计数。
 - `components.ts`：组件容器、图片、按钮与指针生命周期。
+
+- `action-controls.ts`：轮盘图片、数量、SVG 冷却与多指动作输入。

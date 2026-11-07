@@ -19,6 +19,8 @@
 
 ## 验证
 
+- `dom-assets.test.ts` 覆盖共享图集、独立取消与失败重试；`dom-components.test.ts` 覆盖裁剪、父子清理、轮盘技能/物品、多指互斥及隐藏后释放按键。
+
 - `story-stage-isolation.test.ts` 验证加载途中跳过、迟到画面清理、共享启动与真实坐标保留；`story-skip.test.ts` 验证流程阶段及解锁顺序。
 - `scene-assets.test.ts` 验证已齐全的资源不等待无关下载，以及缺帧修复仍按队列执行。
 - `wardrobe.test.ts` 验证跨场景合成外观复用、独立取消、换装、缓存上限、会话清理及图形上下文恢复。
