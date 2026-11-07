@@ -5,7 +5,7 @@
 ## 文件
 
 - `tests/*.test.ts` 全部平铺在根目录，按模块前缀命名：`story-*` 最多，其次 `combat-*`、`quest-*`、`world-*`、`skill-*`、`action-*`。找用例先按前缀匹配，例如 `tests/combat-*.test.ts`、`tests/story-*.test.ts`。
-- `standalone.mjs`：独立安装、类型检查和构建验收，对应 `npm run test:standalone`；`content-build-smoke.mjs` 对应 `npm run test:content-build`，只验证编译后的真实内容能跑，不重复语义校验。
+- `standalone.mjs`：独立安装、类型检查和构建验收，对应 `npm run test:standalone`；`content-build-smoke.mjs` 对应 `npm run test:content-build`，复用一次临时构建验证六职业实际文件与图集帧、黑暗空间对白动作范围、最小战斗和剧情节点。
 - `helpers/`、`support/`、`fixtures/`：测试驱动、替身和固定数据，不是测试入口。
 
 ## 规则
@@ -36,7 +36,7 @@ npm run test:standalone
 
 - `session-cooldowns-party.test.ts` 验证放逐与预备队的冷却、掉落保底清理，以及旧档中已放逐成员记录的回收。
 
-- `world-skill-cache.test.ts` 验证共享技能贴图在原使用者离队后仍由后学会的主角持有，最后释放时回收。
+- `world-skill-cache.test.ts` 验证共享技能贴图在原使用者离队后仍由后学会的主角持有，最后释放时回收；覆盖退队失败清理、迟到失败、自动反应等待资源，入队期间换装的重试，以及读档等待全队技能资源、准备失败保留原战斗现场。
 
 - `debug-mark-store.test.ts` 验证摘要分页不读取正文、跨实例读取及配额失败的原子覆盖；`gm-actions.test.ts` 验证持久标记的取消、损坏、现场回退与任务返回点。
 

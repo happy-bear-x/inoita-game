@@ -111,6 +111,7 @@ test('learning guardian while a companion owns its textures survives companion d
 test('pending new skills cannot start while previously prepared skills remain available',()=>{
   const {host,invoke}=fixture();
   host.preparedSkillIds=new Map([['player',new Set(['dark-strike'])]]);
+  host.scheduleSkillAssetRefresh=()=>{};
   const action=host.app.battleCatalog.skills['dark-strike'].action!;
   const mana=host.hero.player.mana;
   assert.equal(invoke('canSelectSkill','player',{id:'guardian-of-darkness',action}),false);
@@ -137,4 +138,103 @@ test('combat sound preparation replaces the complete current learned skill and w
   session.skills.draft=()=>({levels:{'guardian-of-darkness':1}});
   invoke('prepareCombatSounds');
   assert.deepEqual(prepared!.skills,['guardian-of-darkness']);
+});
+
+test('departed owners clear failed retries even without a completed asset lease',()=>{
+  const {host,invoke}=fixture();
+  host.extraSkillLeases=new Map();host.preparedSkillIds=new Map([['departed',new Set(['heal'])]]);
+  host.skillAssetFailures.set('departed',{signature:'old',attempts:1,nextAt:0});
+  invoke('releaseSkillLeases','departed');
+  assert.equal(host.preparedSkillIds.has('departed'),false);
+  assert.equal(host.skillAssetFailures.size,0);
+  let timers=0;host.scene.time.delayedCall=()=>{timers++;return {remove(){}};};
+  host.skillAssetFailures.set('late-departure',{signature:'old',attempts:1,nextAt:0});
+  invoke('scheduleSkillAssetRetry');
+  assert.equal(timers,0,'离队的失败记录不会持续产生零延迟定时器');
+  assert.equal(host.skillAssetFailures.size,0);
+});
+
+test('blood thirst waits for its reaction assets before applying recovery and effects',()=>{
+  const {host,invoke}=fixture();
+  host.preparedSkillIds=new Map([['player',new Set<string>()]]);
+  const effects:string[]=[],healing:number[]=[];
+  host.actorAttribute=()=>10;host.restoreHealth=(_id:string,value:number)=>healing.push(value);
+  host.restoreMana=()=>{};host.presenterFor=()=>({showEffects:(_id:string,values:{effect:string}[])=>effects.push(...values.map(value=>value.effect))});
+  const event={kind:'blood-thirst',ownerId:'player',opponentId:'enemy',damageKind:'physical',outcome:'hit',hitDamage:1000,chanceThreshold:1000};
+  invoke('react',event);assert.deepEqual(effects,[]);assert.deepEqual(healing,[]);
+  host.preparedSkillIds.get('player').add('blood-thirst');
+  invoke('react',event);assert.deepEqual(effects,['life-drain','mana-recovery']);assert.deepEqual(healing,[10]);
+});
+
+function pendingAllyFixture(){
+  const {host,invoke}=fixture();
+  host.app.wardrobe=read<WardrobeCatalog>('wardrobe');
+  const actor=host.app.battleCatalog.classes.find((value:{id:string})=>value.id==='dark-knight')!.actor;
+  const member={id:'ally',classId:'dark-knight',definition:{actor:actor.id},skills:{draft:()=>({levels:{'dark-strike':1}})}};
+  const activeIds=['player','ally'];
+  host.app.session={party:{activeIds,activeSize:2,get:(id:string)=>id==='ally'?member:undefined}};
+  host.app.world={actors:{[actor.id]:actor}};
+  host.allies=[];host.pendingAllies=new Set();host.allyWaiters=new Set();host.extraSkillLeases=new Map();
+  host.roster={setPartySize(){}};host.prepareCombatSounds=()=>{};host.syncControlled=()=>{};
+  host.allySkillSignatureNow=()=> 'original';host.allySkillGateNow=()=> 'gate';
+  host.visualOf=()=>undefined;
+  host.scene.events=new EventEmitter();host.scene.anims={exists:()=>false,remove(){}};
+  host.scene.textures={exists:()=>true,get:()=>({has:()=>true}),remove(){}};
+  host.scene.preparePartyMember=async()=>{};
+  return {host,invoke,member,activeIds};
+}
+
+test('a failed ally request cannot revive retries after that ally leaves',async()=>{
+  const {host,invoke,member,activeIds}=pendingAllyFixture();
+  host.scene.textures.exists=()=>{activeIds.splice(1);throw new Error('late download failure');};
+  await invoke('refreshSkillAssets',undefined,'',[{id:'ally',member,signature:'original',gate:'gate'}]);
+  assert.equal(host.skillAssetFailures.size,0);
+});
+
+test('equipment changed during initial ally preparation defers spawning until a fresh plan',async()=>{
+  const {host,invoke}=pendingAllyFixture();
+  host.scene.preparePartyMember=async()=>{host.allySkillSignatureNow=()=> 'new-equipment';};
+  await invoke('syncAllies');
+  assert.equal(host.allies.length,0,'旧清单不能启动新装备的攻击控制器');
+  assert.equal(host.pendingAllies.size,0);
+  assert.equal(host.partySignature,'');
+  assert.equal(host.nextPartySyncAt,100,'下次更新再重试，避免在同一轮不断补载');
+});
+
+test('restore waits for all current party skill leases and rejects incomplete preparation',async()=>{
+  const {host,invoke}=fixture();
+  host.extraSkillLeases=new Map();host.preparedSkillIds=new Map();
+  let complete!:()=>void;
+  host.refreshSkillAssets=async(signature:string)=>{
+    await new Promise<void>(resolve=>{complete=resolve;});
+    host.playerSkillSignature=signature;host.extraSkillLeases.set('player',[{release(){}}]);
+    host.preparedSkillIds.set('player',new Set(['guardian-of-darkness']));
+  };
+  let finished=false;
+  const pending=invoke('prepareRestoredSkills').then(()=>{finished=true;});
+  await Promise.resolve();assert.equal(finished,false);
+  complete();await pending;assert.equal(finished,true);
+  assert.equal(host.preparedSkillIds.get('player').has('guardian-of-darkness'),true);
+  host.extraSkillLeases.clear();host.refreshSkillAssets=async()=>{};
+  await assert.rejects(invoke('prepareRestoredSkills'),/恢复技能素材失败/);
+});
+
+test('failed restored skill preparation leaves current combat state untouched',async()=>{
+  const {host,invoke}=fixture();
+  const snapshot={roster:{enemies:[],sequence:0,partySize:1},conditions:{buffs:[],states:[],temporary:[]},
+    threat:{entries:[]},party:[{id:'player',position:{x:1,y:2},facing:'south',combat:{state:'idle',cooldowns:{}}}],enemies:[],summonGroups:[]};
+  let mutations=0;host.combatRuntime={reset(){mutations++;}};host.prepareRestoredSkills=async()=>{throw new Error('asset failure');};
+  await assert.rejects(invoke('restoreState',snapshot),/asset failure/);
+  assert.equal(mutations,0);
+});
+
+test('restored allies must own their prepared skill assets before restore can finish',async()=>{
+  const {host,invoke}=pendingAllyFixture();
+  host.playerSkillSignatureNow=()=> 'player';host.playerSkillGateNow=()=> 'gate';
+  host.refreshSkillAssets=async()=>{
+    host.playerSkillSignature='player';host.extraSkillLeases.set('player',[{release(){}}]);
+  };
+  await assert.rejects(invoke('prepareRestoredSkills'),/恢复技能素材失败/);
+  host.allySkillSignatures.set('ally','original');host.extraSkillLeases.set('ally',[{release(){}}]);
+  await invoke('prepareRestoredSkills');
 });

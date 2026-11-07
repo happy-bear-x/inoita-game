@@ -492,6 +492,7 @@ captureStoryActors():SceneActorState[] {
   async restoreState(state:WorldCombatState,signal?:AbortSignal):Promise<void> {
     signal?.throwIfAborted();
     state=prepareCombatRestore(state,this.app.battleCatalog,this.app.session.party?.activeIds??[]);
+    await this.prepareRestoredSkills(signal);
     const definitions=[...new Set(state.roster.enemies.map(enemy=>enemy.enemyId))].map(id=>this.app.battleCatalog.enemies.find(enemy=>enemy.id===id)!);
     const lease=await loadSceneAssets(this.scene,definitions.flatMap(definition=>this.enemyAssets(definition)),()=>{});
     if(this.closed||signal?.aborted){lease.release();signal?.throwIfAborted();return;}
@@ -1265,6 +1266,7 @@ captureStoryActors():SceneActorState[] {
     else this.app.session.cooldowns.resetActor(id);
   }
   private learnedReactionBuff(id:string,skillId:LearnedReactionSkill):SkillReactionBuff|undefined {
+    if(this.preparedSkillIds&&!this.preparedSkillIds.get(id)?.has(skillId))return;
     const member=this.memberOf(id);if(!member)return;
     const configuration=this.skillConfiguration(id,member);
     const level=configuration.draft(this.app.battleCatalog,member.classId).levels[skillId];
@@ -1299,6 +1301,7 @@ captureStoryActors():SceneActorState[] {
       else this.applyActorBuff(command.targetId,command.buff.key,command.buff.rankPriority,command.buff.effect,command.sourceId);
     };
     if(event.kind==='blood-thirst'){
+      if(this.preparedSkillIds&&!this.preparedSkillIds.get(event.ownerId)?.has('blood-thirst'))return;
       executeBloodThirstReaction(event,{random:Math.random,
         lifeDrainPerThousand:()=>this.actorAttribute(event.ownerId,'bloodThirstLifeDrainPerThousand'),
         manaRecovery:()=>this.actorAttribute(event.ownerId,'bloodThirstManaRecovery'),apply});
@@ -1308,7 +1311,10 @@ captureStoryActors():SceneActorState[] {
     if(event.kind!=='physical-attack-effects'&&event.kind!=='physical-revenge'&&event.kind!=='physical-instinct'&&event.kind!=='physical-defense-instinct'){
       const member=this.memberOf(event.ownerId);if(!member)return;
       const configuration=this.skillConfiguration(event.ownerId,member);
-      reactions=learnedSkillReactions(this.app.battleCatalog,member.classId,configuration.draft(this.app.battleCatalog,member.classId),memberSkillGrowth(event.ownerId));
+      const draft=configuration.draft(this.app.battleCatalog,member.classId);
+      if(this.preparedSkillIds)for(const id of Object.keys(draft.levels))
+        if(!this.preparedSkillIds.get(event.ownerId)?.has(id))draft.levels[id]=0;
+      reactions=learnedSkillReactions(this.app.battleCatalog,member.classId,draft,memberSkillGrowth(event.ownerId));
     }
     const commands=resolveSkillReactions(reactions,event,{random:Math.random,learnedBuff:(id,skill)=>this.learnedReactionBuff(id,skill)});
     for(const command of commands)apply(command);
@@ -1950,7 +1956,10 @@ captureStoryActors():SceneActorState[] {
       &&this.canSelectSkill(this.controlledId,{id:skillId,action:skill.action});
   }
   private canSelectSkill(id:string,skill:NonNullable<ActionPlayback['skill']>):boolean {
-    if(this.preparedSkillIds&&!this.preparedSkillIds.get(id)?.has(skill.id))return false;
+    if(this.preparedSkillIds&&!this.preparedSkillIds.get(id)?.has(skill.id)){
+      if((this.skillAssetFailures.get(id)?.attempts??0)>=5)this.skillAssetFailures.delete(id);
+      this.scheduleSkillAssetRefresh();return false;
+    }
     const gate=skillForMember(this.app.battleCatalog,id,skill.id)?.action?.minHealthRatePerThousand??skill.action.minHealthRatePerThousand;
     if(gate!==undefined){
       // 严格大于：等于门槛不可起手。也要求自己的生命上限缓存有效。
@@ -2098,8 +2107,14 @@ captureStoryActors():SceneActorState[] {
       lease=await loadSceneAssets(this.scene,partyMemberCombatAssets(this.app.battleCatalog,this.app.wardrobe,member.classId,actor,
         learned,{items:this.app.items,equipment:this.hero.bag.equipmentItems(this.hero.bag.equipmentFor(id))}),()=>{});
       if(this.closed||party.get(id)!==member||!party.activeIds.includes(id)){lease.release();continue;}
+      if(this.allySkillSignatureNow(member)!==signature){
+        lease.release();this.partySignature='';this.nextPartySyncAt=this.scene.time.now+100;continue;
+      }
       await this.scene.preparePartyMember(id,undefined,{full:true});
       if(this.closed||party.get(id)!==member||!party.activeIds.includes(id)){lease.release();continue;}
+      if(this.allySkillSignatureNow(member)!==signature){
+        lease.release();this.partySignature='';this.nextPartySyncAt=this.scene.time.now+100;continue;
+      }
       actor=this.scene.equipmentAppearance(id)??actor;
       // 上阵落点以主角为锚点，与当前操控者是谁无关；整盒判定避免身体压进地形。
       // 整张图都没有整盒空位时退到主角脚点：队友之间不占位，移动体会在下一步自愈，
@@ -2643,14 +2658,22 @@ captureStoryActors():SceneActorState[] {
     const attempts=(previous?.signature===signature?previous.attempts:0)+1;
     const delay=Math.min(1000*2**(attempts-1),30000);
     this.skillAssetFailures.set(owner,{attempts,nextAt:this.scene.time.now+delay,signature});
-    if(attempts===1||attempts===5)globalThis.storyDiagnostics?.record('skill-asset-refresh-failed',{owner,attempts,error:String(error)});
+    if(attempts===1||attempts===5){
+      const member=this.memberOf(owner);
+      globalThis.storyDiagnostics?.record('skill-asset-refresh-failed',{owner,classId:member?.classId,signature,attempts,
+        skills:member?[...learnedSkillIds(this.app.battleCatalog,member.classId,this.skillConfiguration(owner,member))]:[],
+        error:String(error),cause:error instanceof Error?String(error.cause??''):undefined});
+    }
     this.scheduleSkillAssetRetry();
   }
   /** 只为最早的失败目标布一个重试计时器；最多尝试 5 次，之后等签名变化或重进地图。 */
   private scheduleSkillAssetRetry():void {
     if(this.closed||this.skillAssetRetryTimer)return;
     let next=Infinity;
-    for(const failure of this.skillAssetFailures.values())if(failure.attempts<5)next=Math.min(next,failure.nextAt);
+    for(const [owner,failure]of this.skillAssetFailures){
+      if(owner!=='player'&&!this.app.session.party?.activeIds.includes(owner)){this.skillAssetFailures.delete(owner);continue;}
+      if(failure.attempts<5)next=Math.min(next,failure.nextAt);
+    }
     if(!Number.isFinite(next))return;
     const delay=Math.max(0,next-this.scene.time.now);
     this.skillAssetRetryTimer=this.scene.time.delayedCall(delay,()=>{
@@ -2666,9 +2689,26 @@ captureStoryActors():SceneActorState[] {
   }
   private releaseSkillLeases(owner:string):void {
     const leases=this.extraSkillLeases.get(owner);
-    if(!leases)return;
-    for(const lease of leases)lease.release();
+    for(const lease of leases??[])lease.release();
     this.extraSkillLeases.delete(owner);this.skillAssetFailures.delete(owner);this.preparedSkillIds?.delete(owner);
+  }
+  /** 读档先取得恢复后的完整技能资源；失败时保留现有战斗现场交给调用者回滚。 */
+  private async prepareRestoredSkills(signal?:AbortSignal):Promise<void>{
+    signal?.throwIfAborted();
+    const party=this.activeParty.join('|');
+    const signature=this.playerSkillSignatureNow(),gate=this.playerSkillGateNow();
+    const allies=this.activeParty.filter(id=>id!=='player').map(id=>{
+      const member=this.app.session.party!.get(id)!;
+      return {id,member,signature:this.allySkillSignatureNow(member),gate:this.allySkillGateNow(member)};
+    });
+    await this.refreshSkillAssets(signature,gate,allies);
+    signal?.throwIfAborted();
+    if(this.closed)throw new Error('战斗场景已关闭');
+    if(this.activeParty.join('|')!==party||this.playerSkillSignatureNow()!==signature||
+      this.playerSkillSignature!==signature||!this.extraSkillLeases.has('player')||
+      allies.some(value=>this.app.session.party?.get(value.id)!==value.member||
+        this.allySkillSignatureNow(value.member)!==value.signature||this.allySkillSignatures.get(value.id)!==value.signature||
+        !this.extraSkillLeases.has(value.id)))throw new Error('恢复技能素材失败或队伍已改变，请重试');
   }
   private async refreshSkillAssets(playerSignature:string|undefined,playerGate:string,
     allies:readonly {id:string;member:CompanionMember;signature:string;gate:string}[]):Promise<void> {
@@ -2685,7 +2725,7 @@ captureStoryActors():SceneActorState[] {
           this.playerSkillSignature=playerSignature;this.playerSkillGate=playerGate;
           this.skillAssetFailures.delete('player');
         }else{lease.release();this.skillAssetRefreshQueued=true;}
-      }catch(error){this.recordSkillAssetFailure('player',playerSignature,error);}
+      }catch(error){if(!this.closed&&this.playerSkillSignatureNow()===playerSignature)this.recordSkillAssetFailure('player',playerSignature,error);}
     }
     for(const {id,member,signature,gate} of allies){
       try{
@@ -2704,7 +2744,10 @@ captureStoryActors():SceneActorState[] {
           this.allySkillSignatures.set(id,signature);this.allySkillGates.set(id,gate);
           this.skillAssetFailures.delete(id);
         }else{lease.release();this.skillAssetRefreshQueued=true;}
-      }catch(error){this.recordSkillAssetFailure(id,signature,error);}
+      }catch(error){
+        if(!this.closed&&this.app.session.party?.get(id)===member&&this.app.session.party.activeIds.includes(id)&&this.allySkillSignatureNow(member)===signature)
+          this.recordSkillAssetFailure(id,signature,error);
+      }
     }
   }
   private memberDefeated(id:string):void{
