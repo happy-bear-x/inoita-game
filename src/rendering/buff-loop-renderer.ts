@@ -3,6 +3,8 @@ import type {BattleCatalog} from '../domain/battle.ts';
 import type {BuffLoopFrame} from '../domain/combat-conditions.ts';
 import type {CharacterVisual} from './characters.ts';
 import {createEffect} from './effects.ts';
+import {effectAssets} from './combat-asset-descriptors.ts';
+import {missingSceneAssets} from './scene-assets.ts';
 
 /** 持续效果随Buff计龄，独立于角色当前攻击动作；Phaser负责素材层与动画帧。 */
 export class BuffLoopRenderer {
@@ -24,7 +26,9 @@ export class BuffLoopRenderer {
       const clip=this.catalog.attackEffects[frame.effect]?.clips.default;
       if(!clip)throw new Error(`持续增益特效资源缺失：${frame.effect}`);
       let effect=active.get(key);
-      if(!effect?.active){
+      if(!effect?.active||effect.length!==clip.layers.length){
+        if(this.scene.textures&&missingSceneAssets(this.scene,effectAssets({loop:{clips:{default:clip}}})).length)continue;
+        effect?.destroy();
         effect=createEffect(this.scene,clip,0,0,true).setName(`buff-loop:${frame.effect}`);
         visual.container.add(effect);active.set(key,effect);
       }

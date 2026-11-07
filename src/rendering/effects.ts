@@ -4,6 +4,11 @@ import { EFFECT_ATLAS_BY_FILE, EFFECT_ATLAS_PAGES } from '../generated/effect-at
 import { backdropApproximation, layerDraw } from './effect-colors.ts';
 import { blendModeOf } from './blend-modes.ts';
 import { rememberEffectAnimation } from './effect-animations.ts';
+import {effectLayerTextureKeys} from './combat-asset-descriptors.ts';
+import {retainLoadedSceneAssets} from './scene-assets.ts';
+import type {AssetLease} from '../application/assets.ts';
+
+const effectLeases=new WeakMap<Phaser.GameObjects.Container,AssetLease>();
 
 /**
  * 共用特效渲染器：普攻和技能都从这里建特效、播放、释放。
@@ -25,6 +30,14 @@ export function createEffect(scene: Phaser.Scene, clip: EffectClip, x: number, y
 
 /** 投射物转向时更换方向素材，保留动画帧和帧内进度。 */
 export function setEffectClip(scene: Phaser.Scene, effect: Phaser.GameObjects.Container, clip: EffectClip, loop: boolean): void {
+  if(scene.textures){
+    const keys=effectLayerTextureKeys(clip).filter(key=>scene.textures.exists(key));
+    const lease=retainLoadedSceneAssets(scene,keys);
+    const old=effectLeases.get(effect);
+    effectLeases.set(effect,lease);
+    if(!old)effect.once('destroy',()=>{effectLeases.get(effect)?.release();effectLeases.delete(effect);});
+    old?.release();
+  }
   const previous = (effect.list[0] as Phaser.GameObjects.Sprite | undefined)?.anims;
   const startFrame = previous?.currentFrame ? (previous.currentFrame.index - 1) % clip.frames : 0;
   const elapsed = previous?.accumulator ?? 0;

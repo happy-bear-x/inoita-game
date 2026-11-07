@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {registerHooks} from 'node:module';
 import test from 'node:test';
+import {EventEmitter} from 'node:events';
 import type Phaser from 'phaser';
 import type {BattleCatalog} from '../src/domain/battle.ts';
 import type {CharacterVisual} from '../src/rendering/characters.ts';
@@ -26,12 +27,12 @@ class Sprite {
   setScale(x:number){this.scaleX=x;return this;}setBlendMode(){return this;}setTexture(){return this;}setVisible(){return this;}
   play(config:{repeat:number}){this.repeat=config.repeat;return this;}
 }
-class Effect {
+class Effect extends EventEmitter {
   list:Sprite[]=[];active=true;name='';readonly x:number;readonly y:number;
-  constructor(x:number,y:number){this.x=x;this.y=y;}
+  constructor(x:number,y:number){super();this.x=x;this.y=y;}
   get length(){return this.list.length;}setDepth(){return this;}setName(name:string){this.name=name;return this;}
   add(sprite:Sprite){this.list.push(sprite);return this;}removeAll(){this.list=[];return this;}
-  destroy(){this.active=false;}
+  destroy(){if(!this.active)return;this.active=false;this.emit('destroy');}
 }
 function fixture(){
   const nodes:Effect[]=[],order:Effect[]=[];
@@ -42,7 +43,7 @@ function fixture(){
   const renderer=new BuffLoopRenderer(scene,catalog),conditions=new CombatConditions();
   const sync=()=>renderer.sync('actor',target,conditions.buffLoopFrames('actor'));
   conditions.applyBuff('actor','dark-strike',rank.strength,rank.effect);
-  return {nodes,order,target,renderer,conditions,sync};
+  return {scene,nodes,order,target,renderer,conditions,sync};
 }
 
 test('buff loops use native age frames at the feet, preserve layer order and ignore actor stealth and facing',()=>{
@@ -92,4 +93,17 @@ test('loop assets and frame gates are validated with the active skill content',(
   buff.ranks[0].effect.loopEffects![0].effect='soul-sword-magic';
   buff.ranks[0].effect.loopEffects![0].firstFrameAge=-1;
   assert.throws(()=>parseBattle(data),/firstFrameAge/);
+});
+
+
+test('a loop missing on its first frame is created after textures arrive',()=>{
+  const f=fixture();let loaded=false;
+  Object.assign(f.scene,{textures:{exists:()=>loaded,get:()=>({has:()=>true}),remove(){}}});
+  Object.assign(f.scene.anims,{generateFrameNumbers:()=>[0,1,2,3,4,5]});
+  f.conditions.update(60);f.sync();
+  assert.equal(f.nodes.length,0,'缺图期间不保存空容器');
+  loaded=true;f.sync();
+  assert.equal(f.nodes.length,2,'同一Buff后续刷新会重试');
+  assert.ok(f.nodes.every(effect=>effect.list.length>0));
+  f.renderer.clear();
 });

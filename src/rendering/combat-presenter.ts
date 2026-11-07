@@ -12,6 +12,7 @@ import {clipMirrored,isCurrentLayers,playCharacterSequence,setCharacterClip,show
 import {createEffect,setEffectClip} from './effects.ts';
 import {effectLayerTextureKeys} from './combat-asset-descriptors.ts';
 import {CombatEffects} from './combat-effects.ts';
+import {retainLoadedSceneAssets} from './scene-assets.ts';
 export type {ActionDispatchRunner} from '../domain/combat-action-dispatcher.ts';
 
 /** Phaser 动作表现适配器。实体身份由场景解析，规则不保存 Sprite 或 DOM。 */
@@ -81,6 +82,11 @@ export class CombatPresenter {
   renderFlight(event:FlightEvent):void {
     if(event.kind==='start'){
       const visual=this.effect(event.effect,event.directional?`heading-${event.heading}`:'default',event.position,true);
+      if(this.scene.textures){
+        const clips=Object.values(this.catalog.attackEffects[event.effect].clips);
+        const assets=retainLoadedSceneAssets(this.scene,clips.flatMap(effectLayerTextureKeys));
+        visual.once('destroy',()=>assets.release());
+      }
       this.flights.set(event.id,{visual,effect:event.effect,directional:event.directional,heading:event.directional?event.heading:undefined});
       if(event.aboveCharacters){this.transitionEffects??=this.scene.add.layer().setDepth(Number.MAX_SAFE_INTEGER-1);this.transitionEffects.add(visual);}
     }else{

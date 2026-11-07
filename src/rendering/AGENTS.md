@@ -43,3 +43,5 @@
 - `npm test -- tests/movement-content-recovery.test.ts`：内容机关压住队伍单位后的自愈。
 - `npm test -- tests/state-markers.test.ts`：眩晕/睡眠状态标记的创建与销毁。
 - `npm test -- tests/story-skip.test.ts tests/story-stage-isolation.test.ts`：跳过剧情不重建舞台，选择与任务弹窗前按逻辑快照补画。
+
+- 特效容器持有当前动画贴图到销毁；转向飞弹另持有全部方向。循环效果缺图时保留逻辑状态，素材到齐后重建，按当前帧龄显示。

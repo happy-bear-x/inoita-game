@@ -157,6 +157,8 @@ test('图集页释放后，另一个场景创建的特效动画会被清理并�
   for(const key of keys)assert.ok(f.animations.has(key),key);
   const before=new Map(keys.map(key=>[key,f.animations.get(key)]));
   lease.release();
+  for(const key of keys)assert.ok(f.animations.has(key),'持续特效仍持有图集');
+  first.destroy();
   for(const key of keys)assert.equal(f.animations.has(key),false,`页释放后应删除动画：${key}`);
   const reloaded=await loadSceneAssets(f.scene,assets,()=>{});
   const second=createEffect(otherScene,clip,0,0,true);
@@ -176,4 +178,18 @@ test('帧已经失效的特效动画在播放前会被重建',async()=>{
   const container=createEffect(f.scene,clip,0,0,true);
   assert.notEqual(f.animations.get(key),stale,'失效动画应在播放前被替换');
   container.destroy();lease.release();
+});
+
+test('a turning projectile retains every heading until its flight ends',async()=>{
+  const f=setup();
+  const [name,effect]=Object.entries(catalog.attackEffects).find(([,effect])=>effect.clips['heading-0']&&effect.clips['heading-23'])!;
+  const assets=effectAssets({[name]:effect});
+  const owner=await loadSceneAssets(f.scene,assets,()=>{});
+  const presenter=new CombatPresenter(f.scene,catalog,()=>undefined,()=>[]);
+  presenter.renderFlight({kind:'start',id:1,effect:name,position:{x:0,y:0},heading:0,directional:true,aboveCharacters:false});
+  owner.release();
+  for(const asset of assets)assert.ok(f.textures.has(asset.key),'转向所需贴图仍由飞弹持有');
+  presenter.renderFlight({kind:'step',id:1,position:{x:10,y:10},heading:23,durationMs:60});
+  presenter.renderFlight({kind:'end',id:1});
+  for(const asset of assets)assert.equal(f.textures.has(asset.key),false,'飞弹结束释放全部方向');
 });
