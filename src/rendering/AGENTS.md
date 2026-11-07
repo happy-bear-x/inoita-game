@@ -27,7 +27,7 @@
 - 动画名用游戏概念：`walk-east`、`idle-south`，不拼接帧号或方向偏移。
 - 沿用现有纹理、depth、filter 的组织方式；Phaser 4 写法以 `.agents/skills/` 和 4.2.1 文档为准。
 - **飞行物方向不变时只更新位置。** `renderFlight` 在 heading 未变时不要 `removeAll` 重画特效层；只有换向才切 clip。
-- **技能补载只加载缺失项。** 用 `missingSceneAssets` 过滤增量；战斗特效自持租约到销毁，补载租约按 owner 持有并在离队/关图时释放。
+- **技能资源按使用者持有完整清单。** `loadSceneAssets` 内部只下载缺失项，调用方登记全部所需资源；新清单准备成功且仍对应当前技能与装备时，先安装新使用权再释放旧清单，离队和关图释放对应使用者。
 - **特效图集动画按全局 AnimationManager 记账。** Phaser 的 `anims`/`textures` 是全游戏共用；纹理最后一个租约释放时，必须按全局动画表删掉所有引用其 Frame 的特效动画。播放前发现帧已失效要删掉重建（`effects.ts`），不能直接播旧动画。
 - **贴图齐全时直接取得使用权。** `loadSceneAssets` 按纹理与帧完整性先检查，全部齐全或空列表时不进入写入队列；只有缺项或修复残帧才排队。
 - **取消的加载要按纹理库对账。** Phaser 的 Loader 不保证在场景关闭时中止在途文件；`loadSceneAssets` 中止时把本批 key 记为待核对，晚到的 `addtexture` 如果没有新租约接管就立即删除，避免无主纹理。

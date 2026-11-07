@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {registerHooks} from 'node:module';
 import test from 'node:test';
+import {EventEmitter} from 'node:events';
+import type {WardrobeCatalog} from '../src/domain/wardrobe.ts';
+import {playerCombatAssets} from '../src/rendering/combat-assets.ts';
+import {loadSceneAssets,missingSceneAssets} from '../src/rendering/scene-assets.ts';
 import {Session} from '../src/domain/session.ts';
 import {BattleCharacter,type CharacterStatsCatalog} from '../src/domain/character-stats.ts';
 import type {BattleCatalog} from '../src/domain/battle.ts';
@@ -76,4 +80,29 @@ test('skill asset refresh uses cheap gates and ignores health changes',async()=>
   host.hero.bag.addEquipped('dagger','main-hand','player');
   schedule();await settle();
   assert.equal(calls.length,2,'换武器才补载');
+});
+
+
+test('learning guardian while a companion owns its textures survives companion departure',async()=>{
+  const {host,session,invoke}=fixture();
+  const catalog=host.app.battleCatalog;
+  const actor=catalog.classes.find((entry:{id:string})=>entry.id==='dark-knight')!.actor;
+  host.app.wardrobe=read<WardrobeCatalog>('wardrobe');
+  host.scene.player.actor=actor;
+  host.extraSkillLeases=new Map();
+  host.allies=[];
+  const learned=new Set(['dark-strike','guardian-of-darkness']);
+  session.skills.draft=()=>({levels:Object.fromEntries([...learned].map(id=>[id,1]))});
+  const plan=playerCombatAssets({catalog,wardrobe:host.app.wardrobe,items:host.app.items,hero:host.hero,actor,learnedSkills:learned});
+  const textures=new Set(plan.map(asset=>asset.key));
+  host.scene.events=new EventEmitter();
+  host.scene.textures={exists:(key:string)=>textures.has(key),get:()=>({has:()=>true}),remove:(key:string)=>textures.delete(key)};
+  host.scene.anims={exists:()=>false,remove(){}};
+  host.scene.load={start(){throw new Error('cached textures must not download again');}};
+  const companion=await loadSceneAssets(host.scene,plan,()=>{});
+  await invoke('refreshSkillAssets',invoke('playerSkillSignatureNow'),invoke('playerSkillGateNow'),[]);
+  companion.release();
+  assert.equal(missingSceneAssets(host.scene,plan).length,0,'主角必须独立持有已由佣兵下载的完整素材');
+  invoke('releaseSkillLeases','player');
+  assert.equal(textures.size,0,'最后一名使用者释放后回收贴图');
 });

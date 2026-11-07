@@ -90,7 +90,7 @@ import { OverheadStatus } from '../rendering/overhead-status.ts';
 import { characterAnimationState, createCharacter, PLAYER_MOVE_SPEED, setCharacterClip, type CharacterVisual } from '../rendering/characters.ts';
 import { isBodyWalking } from '../rendering/arcade-movement.ts';
 import { effectAssets } from '../rendering/effects.ts';
-import { loadSceneAssets, missingSceneAssets, retainLoadedSceneAssets } from '../rendering/scene-assets.ts';
+import { loadSceneAssets, retainLoadedSceneAssets } from '../rendering/scene-assets.ts';
 import { WorldEnemyRoster } from '../domain/world-enemies.ts';
 import { type DropCatalog } from '../domain/drops.ts';
 import { PendingEnemyDefeats } from '../domain/combat-outcomes.ts';
@@ -2643,7 +2643,10 @@ captureStoryActors():SceneActorState[] {
   }
   private addSkillLease(owner:string,lease:AssetLease):void {
     const leases=this.extraSkillLeases.get(owner);
-    if(leases)leases.push(lease);else this.extraSkillLeases.set(owner,[lease]);
+    this.extraSkillLeases.set(owner,[lease]);
+    for(const previous of leases??[])previous.release();
+    const ally=this.allies.find(value=>value.id===owner);
+    if(ally){ally.assets?.release();ally.assets=undefined;}
   }
   private releaseSkillLeases(owner:string):void {
     const leases=this.extraSkillLeases.get(owner);
@@ -2658,16 +2661,13 @@ captureStoryActors():SceneActorState[] {
       try{
         const plan=playerCombatAssets({catalog,wardrobe:this.app.wardrobe,items:this.app.items,
           hero:this.hero,actor:this.player.actor,learnedSkills:learnedSkillIds(catalog,this.hero.classId,this.app.session.skills)});
-        const missing=missingSceneAssets(this.scene,plan);
-        if(missing.length){
-          const lease=await loadSceneAssets(this.scene,missing,()=>{});
-          if(this.closed){lease.release();return;}
-          this.addSkillLease('player',lease);
-        }
+        const lease=await loadSceneAssets(this.scene,plan,()=>{});
+        if(this.closed){lease.release();return;}
         if(this.playerSkillSignatureNow()===playerSignature){
+          this.addSkillLease('player',lease);
           this.playerSkillSignature=playerSignature;this.playerSkillGate=playerGate;
           this.skillAssetFailures.delete('player');
-        }else this.skillAssetRefreshQueued=true;
+        }else{lease.release();this.skillAssetRefreshQueued=true;}
       }catch(error){this.recordSkillAssetFailure('player',playerSignature,error);}
     }
     for(const {id,member,signature,gate} of allies){
@@ -2678,17 +2678,14 @@ captureStoryActors():SceneActorState[] {
         if(!actor)continue;
         const plan=partyMemberCombatAssets(catalog,this.app.wardrobe,member.classId,actor,
           learnedSkillIds(catalog,member.classId,member.skills));
-        const missing=missingSceneAssets(this.scene,plan);
-        if(missing.length){
-          const lease=await loadSceneAssets(this.scene,missing,()=>{});
-          if(this.closed){lease.release();return;}
-          if(this.app.session.party?.get(id)!==member||!this.app.session.party?.activeIds.includes(id)){lease.release();continue;}
-          this.addSkillLease(id,lease);
-        }
+        const lease=await loadSceneAssets(this.scene,plan,()=>{});
+        if(this.closed){lease.release();return;}
+        if(this.app.session.party?.get(id)!==member||!this.app.session.party?.activeIds.includes(id)){lease.release();continue;}
         if(this.allySkillSignatureNow(member)===signature){
+          this.addSkillLease(id,lease);
           this.allySkillSignatures.set(id,signature);this.allySkillGates.set(id,gate);
           this.skillAssetFailures.delete(id);
-        }else this.skillAssetRefreshQueued=true;
+        }else{lease.release();this.skillAssetRefreshQueued=true;}
       }catch(error){this.recordSkillAssetFailure(id,signature,error);}
     }
   }

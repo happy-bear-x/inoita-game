@@ -35,3 +35,5 @@ npm run test:standalone
 ```
 
 - `session-cooldowns-party.test.ts` 验证放逐与预备队的冷却、掉落保底清理，以及旧档中已放逐成员记录的回收。
+
+- `world-skill-cache.test.ts` 验证共享技能贴图在原使用者离队后仍由后学会的主角持有，最后释放时回收。

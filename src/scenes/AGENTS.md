@@ -27,7 +27,7 @@ Phaser 场景层：驱动生命周期、转发输入，把 domain、rendering、
 - 舞台 `CREATE` 完成时始终交付 `onReady` 生命周期通知；等待画面的请求可独立取消，补画和收尾复用同一次启动。舞台衣柜准备接收画面取消信号，共用合成只在最后一个请求取消后中止。
 - 世界与舞台的 `Wardrobe` 使用 `StoryContext.outfits` 共用合成外观；场景关闭只释放自己的使用权，跨图不重复生成同一套动作。
 - 伙伴外观按需加载：队伍面板预览只准备 `idle-south`，进战斗开场再补全套；使用勇士徽章招募后由招募确认或队伍面板调用 `preparePartyMember`，不要为了省事把全部伙伴重新塞回常驻包。
-- **地图内学会新技能后要补素材。** 进图和开战的素材计划只覆盖当时已学的技能；玩家或伙伴升级、学新技能、换武器后，`WorldCombat` 用 `scheduleSkillAssetRefresh` 按签名补载新增技能的特效、姿态和召唤物。先用 `playerSkillGateNow`/`allySkillGateNow` 只比版本号，签名变化时才用 `missingSceneAssets` 加载增量；补载租约按 owner 分组，伙伴离队和关闭地图时释放。失败按 owner 退避（1s→30s，最多 5 次）。
+- **地图内学会新技能后要补素材。** 进图和开战的素材计划只覆盖当时已学的技能；玩家或伙伴升级、学新技能、换武器后，`WorldCombat` 用 `scheduleSkillAssetRefresh` 按签名补载新增技能的特效、姿态和召唤物。先用 `playerSkillGateNow`/`allySkillGateNow` 只比版本号，签名变化时登记完整资源清单，加载器只下载缺失项；新清单取得使用权后替换旧清单，迟到的旧签名直接释放，伙伴离队和关闭地图时释放。失败按 owner 退避（1s→30s，最多 5 次）。
 - **每帧读取的技能数据按版本复用。** `partyPassives`、`partySkillsFor`、`equipmentRecovery`、`combatProcs` 用技能版本、背包修订、生命阈值、潜行和组队光环版本缓存；`syncAiSkills` 每逻辑帧只更新蓝耗与频率。新增会影响这些结果的输入时，同步加进缓存键并在读档/成员移除时清空。
 - **地图触发用索引。** 进图和剧情投影后调用 `rebuildTriggerIndex`；`afterMovement` 只遍历本图的 region/near 候选，条件仍在判定时实时求值。新增会改变地图身份或角色集合的路径要重建索引。
 - **整图刷新和交互目标按签名早退。** `refreshStateSignature` 与 `interactionSignature` 覆盖地图、角色身份与外观、任务/世界/宝箱/古剑版本、操控者；新增可见性或标记输入时同步加进签名。任务投影由查询入口自己刷新，场景层不每帧强制 `session.refresh()`。
