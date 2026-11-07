@@ -50,6 +50,22 @@ test('scrolling cancels nested button holds, suppresses release clicks and accep
   domWindow.dispatchEvent(new Event('blur'));t.mock.timers.tick(500);assert.equal(calls,2);
 });
 
+test('nested menu scrolls apply scene coordinates once to content and scrollbars',t=>{
+  const f=fixture();t.after(f.cleanup);
+  const body=new UiSurface(f.scene,960,431,200);f.surface.root.add(body.root);
+  f.surface.root.setPosition(20,30).setScale(.5);body.root.setPosition(32,140);
+  const scroll=body.scroll(10,20,200,100);scroll.setHeight(500);
+  assert.equal(scroll.layer.element.parentElement,body.mount,'滚动层直接挂到场景坐标层');
+  assert.equal(scroll.layer.element.parentElement,f.surface.root.element.parentElement);
+  assert.deepEqual([scroll.layer.x,scroll.layer.y,scroll.layer.scaleX],[41,110,.5]);
+  const parts=(body.mount as unknown as MenuElement).children;
+  const bars=parts.filter(node=>['202','203'].includes(node.style.zIndex));
+  assert.equal(bars.length,2);assert(bars.every(node=>node.style.left==='138.5px'),'轨道和滑块也使用同一次坐标换算');
+  f.surface.root.setPosition(40,50).setScale(.75);scroll.layout();
+  assert.deepEqual([scroll.layer.x,scroll.layer.y,scroll.layer.scaleX],[71.5,170,.75]);
+  body.destroy();
+});
+
 test('DOM drag hit guards use centered local geometry and cancellation releases capture',t=>{
   const f=fixture();t.after(f.cleanup);let enabled=false,starts=0,ends=0;
   const node=f.surface.container(100,100).setSize(80,60).setInteractive({x:-40,y:-30,width:80,height:60},()=>enabled).draggable();

@@ -10,13 +10,14 @@ export interface ScrollBarOptions {offset?:number;insetY?:number;width?:number}
 export class UiSurface {
   readonly scene:Phaser.Scene;readonly width:number;readonly height:number;readonly depth:number;
   readonly root:UiNode;readonly staticRoot:UiNode;
+  readonly mount:HTMLElement;
   readonly scrolls:ScrollArea[]=[];readonly sliders:VolumeSlider[]=[];
   private buttons:UiNode[]=[];private focusIndex=-1;private staticKey?:string;
   enabled=()=>true;
   private cancelInput=()=>{for(const button of this.buttons)if(button.active)button.cancelPress();for(const scroll of this.scrolls)scroll.cancelGesture();};
   constructor(scene:Phaser.Scene,width:number,height:number,depth=100,layer='screen'){
     this.scene=scene;this.width=width;this.height=height;this.depth=depth;
-    this.root=new UiNode(scene,uiMount(scene,layer)).setDepth(depth);this.staticRoot=new UiNode(scene,this.root);
+    this.mount=uiMount(scene,layer);this.root=new UiNode(scene,this.mount).setDepth(depth);this.staticRoot=new UiNode(scene,this.root);
     scene.game.events.on(UI_EVENTS.cancelInput,this.cancelInput);
   }
   layout(padding=12):void{
@@ -97,10 +98,10 @@ export class ScrollArea {
   guard=():boolean=>!this.moved&&this.visible&&this.surface.enabled()&&this.surface.root.shown;
   constructor(surface:UiSurface,x:number,y:number,width:number,height:number,bleed=0,bar?:ScrollBarOptions){
     this.surface=surface;this.x=x;this.y=y;this.width=width;this.height=height;this.bleed=bleed;
-    this.layer=new UiNode(surface.scene,surface.root.element.parentElement!).setDepth(surface.depth+1);this.layer.element.style.overflow='hidden';this.layer.element.style.pointerEvents='auto';
+    this.layer=new UiNode(surface.scene,surface.mount).setDepth(surface.depth+1);this.layer.element.style.overflow='hidden';this.layer.element.style.pointerEvents='auto';
     this.content=new UiNode(surface.scene,this.layer);
-    this.track=new UiNode(surface.scene,surface.root.element.parentElement!).setDepth(surface.depth+2).setFillStyle(0,.38);
-    this.thumb=new UiNode(surface.scene,surface.root.element.parentElement!).setDepth(surface.depth+3).setFillStyle(0xe2c88d,.8);
+    this.track=new UiNode(surface.scene,surface.mount).setDepth(surface.depth+2).setFillStyle(0,.38);
+    this.thumb=new UiNode(surface.scene,surface.mount).setDepth(surface.depth+3).setFillStyle(0xe2c88d,.8);
     const signal=this.controller.signal,scene=surface.scene;
     this.layer.element.addEventListener('pointerdown',event=>{if(!surface.enabled()||!surface.root.shown)return;const p=uiPointer(scene,event);this.press={id:p.id,y:p.y,offset:this.offset};this.moved=false;},{signal,capture:true});
     window.addEventListener('pointermove',event=>{const p=uiPointer(scene,event),press=this.press;if(press?.id!==p.id)return;if(!p.isDown||!surface.enabled()||!surface.root.shown){this.cancelGesture();return;}const distance=(p.y-press.y)/surface.root.getWorldTransformMatrix().scaleY;if(Math.abs(distance)>8)this.moved=true;if(this.moved){const cancel=(node:UiNode)=>{node.cancelPress();for(const child of node.list)cancel(child);};for(const child of this.content.list)cancel(child);this.scrollTop=press.offset-distance;this.scrolled();event.preventDefault();}},{signal,capture:true,passive:false});
