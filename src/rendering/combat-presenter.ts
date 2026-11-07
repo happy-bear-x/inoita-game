@@ -97,7 +97,7 @@ export class CombatPresenter {
         flight.heading=event.heading;
         setEffectClip(this.scene,flight.visual,this.catalog.attackEffects[flight.effect].clips[`heading-${event.heading}`],true);
       }
-      this.scene.tweens.add({targets:flight.visual,x:event.position.x,y:event.position.y,duration:event.durationMs,onUpdate:()=>flight.visual.setDepth(flight.visual.y+1)});
+      this.scene.tweens.add({targets:flight.visual,x:event.position.x,y:event.position.y,duration:event.durationMs,onUpdate:()=>{const depth=flight.visual.y+1;if(flight.visual.depth!==depth)flight.visual.setDepth(depth);}});
     }
   }
   setPaused(paused:boolean):void {

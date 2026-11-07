@@ -193,3 +193,25 @@ test('a turning projectile retains every heading until its flight ends',async()=
   presenter.renderFlight({kind:'end',id:1});
   for(const asset of assets)assert.equal(f.textures.has(asset.key),false,'飞弹结束释放全部方向');
 });
+
+test('horizontal flight skips unchanged depth writes while vertical flight updates its order',async t=>{
+  const f=setup(),name='impact-spark';
+  const owner=await loadSceneAssets(f.scene,effectAssets({[name]:catalog.attackEffects[name]}),()=>{});
+  let update:()=>void=()=>{};
+  t.mock.method(f.scene.tweens,'add',(config:unknown)=>{
+    update=(config as {onUpdate:()=>void}).onUpdate;
+    return {remove(){}} as unknown as Phaser.Tweens.Tween;
+  });
+  const presenter=new CombatPresenter(f.scene,catalog,()=>undefined,()=>[]);
+  presenter.renderFlight({kind:'start',id:1,effect:name,position:{x:0,y:4},heading:0,directional:false,aboveCharacters:false});
+  const visual=f.effects(name)[0];
+  const depth=t.mock.method(visual,'setDepth',(value:number)=>{visual.depth=value;return visual;});
+  presenter.renderFlight({kind:'step',id:1,position:{x:20,y:4},heading:0,durationMs:60});
+  for(const x of [5,10,15,20]){visual.x=x;update();}
+  assert.equal(depth.mock.callCount(),0);assert.equal(visual.depth,5);
+  presenter.renderFlight({kind:'step',id:1,position:{x:20,y:10},heading:0,durationMs:60});
+  visual.y=7;update();assert.equal(visual.depth,8);
+  update();assert.equal(depth.mock.callCount(),1);
+  visual.y=10;update();assert.equal(visual.depth,11);assert.equal(depth.mock.callCount(),2);
+  presenter.renderFlight({kind:'end',id:1});owner.release();
+});
