@@ -157,6 +157,7 @@ export class StoryApp {
   game?: Phaser.Game;
   /** 画布上方的 DOM 文字层；启动时创建，场景和界面通过它写文字。 */
   domUi?: DomUi;
+  memorySampler?: import('./application/memory-sampler.ts').MemorySampler;
   frameSampler?: import('./application/frame-sampler.ts').FrameSampler;
   /** 播放剧情时锁住场景输入。 */
   get locked() { return this.ui.locked; }

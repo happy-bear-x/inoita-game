@@ -34,7 +34,8 @@ import { GAME_HEIGHT, GAME_WIDTH, fitViewport, configureCanvas } from './ui/view
 import { gameMenuImageGroups } from './application/menu-images.ts';
 import { UI_ICON_ATLAS_FILE } from './generated/icon-atlas.ts';
 import { GAME_FRAME_TIMING, installFrameLimitClock } from './application/game-timing.ts';
-import { installGameDiagnostics } from './application/game-diagnostics.ts';
+import { GAME_VERSION } from './application/asset-version.ts';
+import { installDevelopmentMemory, installGameDiagnostics, sceneMemoryCounts } from './application/game-diagnostics.ts';
 import { FrameSampler } from './application/frame-sampler.ts';
 import { storyDevMode } from './domain/dev-mode.ts';
 import { createGmActions, type GmActions } from './debug/gm-actions.ts';
@@ -336,6 +337,7 @@ async function resumeSlot(slot:SaveSlotRef,signal?:AbortSignal):Promise<void> {
   const game=app.game,sourceMode=app.mode,sourceScene=currentScene(),sourceSession=app.session,sourceLifetime=modeRequest;
   if(!game||(sourceMode!=='menu'&&sourceMode!=='game')||app.suspended||!ui.ready||savedGameLoader.busy||
     !sourceScene?.sys.isActive()||sourceMode==='game'&&worldScene()?.loadingWorld)return;
+  const finishMemory = app.memorySampler?.begin('load-save', String(slot));
   const isCurrent=()=>modeRequest===sourceLifetime&&app.mode===sourceMode&&currentScene()===sourceScene&&app.session===sourceSession&&
     (sourceScene.sys.isActive()||sourceScene.sys.isPaused());
   try{
@@ -370,10 +372,14 @@ async function resumeSlot(slot:SaveSlotRef,signal?:AbortSignal):Promise<void> {
         app.saveSlot=slot===AUTO_SAVE_SLOT?undefined:slot;
         game.scene.start(SCENE_KEYS.world,{map:location.map,x:location.x,y:location.y,facing:location.facing,
           initialEntry:true,suppressEntry:true,resumeStory:true,signal:lifetime.signal,checkpoint:world.world,generatedEntities:world.generatedEntities,preparedScene:world.scene,
-          onReady:()=>{if(!lifetime.signal.aborted&&world.audio)app.audio?.restoreStoryAudio(world.audio);}});
+          onReady:()=>{if(!lifetime.signal.aborted&&world.audio)app.audio?.restoreStoryAudio(world.audio);finishMemory?.();},
+          onError:()=>finishMemory?.(lifetime.signal.aborted ? 'cancelled' : 'error')});
       },
     },signal);
-  }catch(error){if(isCurrent())ui.loaded();throw error;}
+  }catch(error){
+    finishMemory?.(signal?.aborted || (error instanceof Error && error.name === 'AbortError') ? 'cancelled' : 'error');
+    if(isCurrent())ui.loaded();throw error;
+  }
 }
 
 /** 新开与读档共用的会话装配：世界场景、菜单、剧情播放器与界面都接到这份会话上。 */
@@ -384,6 +390,7 @@ function installSession(session: Session): void {
   app.content.clearSessionCaches();
   const campaign = app.campaign, presentation = app.storyInterface;
   app.session = session;
+  app.memorySampler?.trackSession(session);
   app.storySignal = modeRequest.signal;
   app.checkpoint.clear();
   app.changeEquipment=async(entry,slot,signal,memberId)=>requireWorldScene().changeEquipment(entry,slot,signal,memberId);
@@ -522,6 +529,7 @@ function installSession(session: Session): void {
 function returnToMenu(): void {
   if (!ui.canReturn) return;
   if (app.mode === 'game' && worldScene()?.loadingWorld && !ui.failed) return;
+  const finishMemory = app.memorySampler?.begin('return-menu', app.mode);
   const returnPage=app.mode==='class-select'?'slots':'home';
   savedGameLoader.cancel();stopAutoSave();modeRequest.abort();modeRequest=new AbortController();clearMenuPreparations(); app.director?.dispose(); app.clearMapPrefetch(); app.clearStoryPrefetch(); ui.resetInput();
   // 会话已经销毁：把动作层一起摘掉，免得 agent 拿到一个指向已 dispose 导演的句柄。
@@ -532,14 +540,16 @@ function returnToMenu(): void {
     app.clearMapHistory();
     app.content.clearSessionCaches();
   };
-  if (scene?.sys.isActive() || scene?.sys.isPaused()) {
+  const changingScene = scene && (scene.sys.isActive() || scene.sys.isPaused());
+  if (changingScene) {
     // 场景还活着时不能提前删纹理；等 WorldScene/当前场景真正 shutdown 后再释放。
     scene.events.once(Phaser.Scenes.Events.SHUTDOWN, releaseSessionAssets);
-    scene.scene.start(SCENE_KEYS.menu,{page:returnPage});
+    scene.scene.start(SCENE_KEYS.menu,{page:returnPage, finishMemory});
   } else releaseSessionAssets();
   // 初始内容请求失败时菜单场景仍在运行。
   app.mode = 'menu'; ui.lock(false,'game'); ui.setMode('menu');
   app.audio?.enterMenu();
+  if (!changingScene) finishMemory?.();
 }
 /**
  * 人、面板、上报与 CDP 共用的一份运行态。卡住时按「锁 → 场景 → 战斗 → 移动体」的顺序看：
@@ -610,16 +620,32 @@ function boot(): void {
   app.game = game;
   const collector = globalThis.storyDiagnostics;
   if (storyDevMode() && collector) {
+    const memory = installDevelopmentMemory(game, storyDevMode(), location.port, () => {
+      const world = worldScene();
+      return {
+        mode: app.mode, map: world?.map?.id ?? null,
+        world: { characters: world?.characters.length ?? 0, summons: world?.summonCount ?? 0,
+          sessionBound: !!app.session, uiSessionBound: app.storyUI.hasBoundSession, checkpoint: app.checkpoint.available },
+        ui: { labels: domUi.labelCount, inputHandlers: app.inputRouter.listenerCount },
+        engine: sceneMemoryCounts(game)
+      };
+    }, (kind, details) => collector.record(kind, details, false));
+    app.memorySampler = memory;
+    if (memory) app.content.memoryCounts = memory.content;
     app.frameSampler = new FrameSampler(() => {
       const world = app.mode === 'game' ? worldScene() : undefined;
       const counts = world?.frameActorCounts();
       return { mode: app.mode, map: world?.map?.id ?? null,
         companions: counts?.companions ?? 0, enemies: counts?.enemies ?? 0 };
-    }, details => collector.record('frame-sample', details, false));
+    }, details => collector.record('frame-sample', memory ? {...details, memory: memory.frame()} : details, false));
   }
   installGameDiagnostics(game, runtimeDiagnostics, app.frameSampler, () => app.suspended);
   game.events.once('ready', () => {
     configureCanvas(game);
+    if (app.memorySampler) collector?.record('memory-device', {
+      version: GAME_VERSION, canvas: {width: game.canvas.width, height: game.canvas.height},
+      targetFps: GAME_FRAME_TIMING.target, deviceMemoryGiB: (navigator as Navigator & {deviceMemory?: number}).deviceMemory ?? null
+    }, false);
     // iOS 弹出系统键盘会让窗口短暂失焦。Phaser 把这次失焦当成页面切走：暂停游戏
     // 循环并挂起音频，键盘收起后不一定恢复。输入框聚焦期间的失焦交给输入框自己
     // 处理；真正的页面切走仍由 lifecycle 的 visibilitychange 驱动。ready 先于
@@ -661,7 +687,10 @@ function boot(): void {
 function lifecycle(): void {
   const portrait = window.matchMedia('(orientation: portrait)');
   const setSuspended = (suspended: boolean): void => {
-    if (suspended !== app.suspended) app.frameSampler?.reset();
+    if (suspended !== app.suspended) {
+      app.frameSampler?.reset();
+      if (!suspended) app.memorySampler?.markResume();
+    }
     ui.suspend(suspended);
     const scene = currentScene();
     // 同一帧内的 pagehide/pageshow 也按事件顺序排队，避免漏掉恢复。

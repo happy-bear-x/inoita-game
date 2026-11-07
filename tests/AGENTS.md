@@ -19,6 +19,8 @@
 
 ## 验证
 
+- `game-diagnostics.test.ts` 验证开发页采样开关、切换峰值、共享贴图归属与帧摘要落盘；`content-loader.test.ts` 验证资源缓存和进行中的请求计数。
+
 ```bash
 npm test -- tests/combat.test.ts
 npm run test:standalone

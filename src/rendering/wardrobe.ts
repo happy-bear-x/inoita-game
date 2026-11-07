@@ -1,3 +1,4 @@
+import { textureMemory } from '../application/memory-sampler.ts';
 import type Phaser from 'phaser';
 import type { ActorDefinition, AnimationClip, ClipName } from '../domain/content.ts';
 import type { EquipmentSlot, ItemCatalog } from '../domain/items.ts';
@@ -153,6 +154,7 @@ export class Wardrobe {
         const columns=Math.min(pose.frames.length,Math.max(1,Math.floor(2048/width)));
         const key=`outfit-${++serial}`,texture=this.scene.textures.addDynamicTexture(key,columns*width,Math.ceil(pose.frames.length/columns)*height);
         if(!texture)throw new Error('人物外观纹理创建失败');
+        textureMemory.get(this.scene.textures)?.generatedBy(key, this.scene.sys.settings.key);
         textures.push(key);
         const stamps:{texture:string;frame:string;x:number;y:number;config:{originX:number;originY:number;scaleX:number;scaleY:number;angle:number;alpha:number}}[]=[];
         pose.frames.forEach((parts,index)=>{

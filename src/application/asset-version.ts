@@ -1,3 +1,5 @@
+export const GAME_VERSION = 'v0.0.8';
+
 declare const __STORY_ASSET_VERSION__: string;
 declare const __STORY_CONTENT_VERSION__: string;
 

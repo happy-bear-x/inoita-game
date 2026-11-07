@@ -58,6 +58,8 @@ export class DomUi {
     for (const name of this.layers.keys()) this.applyLayer(name);
   }
 
+  get labelCount(): number { return this.root?.getElementsByClassName('dom-label').length ?? 0; }
+
   get attached(): boolean { return !!this.root?.isConnected; }
 
   layer(name: DomLayerName): HTMLDivElement | undefined {

@@ -343,6 +343,7 @@ export class WorldCombat {
   get castingSkill():boolean{return !!this.combat?.activeAction()?.skill;}
   get targetId(){return this.combat?.selectedTargetId();}
   get cooldowns(){return this.combat?.snapshot().cooldowns??{};}
+  get summonCount(): number { return this.arena.reduce((count, enemy) => count + Number(!!enemy.summonedBy), 0); }
   frameActorCounts() {
     let enemies=0;
     for(const enemy of this.arena)if(!enemy.summonedBy||!this.memberOf(enemy.summonedBy))enemies++;
@@ -1920,6 +1921,7 @@ captureStoryActors():SceneActorState[] {
     if(this.pendingDefeats.has(key)){this.pendingDefeats.complete(key,false);return false;}
     const index = this.arena.findIndex(enemy => enemy.key === key);
     if (index < 0) return false;
+    const finishMemory = this.arena.length === 1 ? this.app?.memorySampler?.compare('arena-empty', key) : undefined;
     const [enemy] = this.arena.splice(index, 1);refreshCombatActors(this.arena);
     this.destroyEnemy(enemy);
     this.conditions.remove(key);
@@ -1927,6 +1929,7 @@ captureStoryActors():SceneActorState[] {
     for(const controller of this.partyControllers.values())controller.targetRemoved(key);
     if(this.focusTargetId===key)this.focusTargetId=undefined;
     this.scene.refreshCombatTarget();
+    finishMemory?.();
     return true;
   }
   private consumeRosterChanges(changes:{added:PlacedEnemy[];removed:string[]}):void{
@@ -2941,6 +2944,7 @@ captureStoryActors():SceneActorState[] {
   }
   destroy():void{
     if(this.closed)return;
+    const finishMemory = this.app.memorySampler?.compare('combat-clear', this.scene.map?.id ?? '');
     this.closed=true;this.generation++;this.combatRuntime?.dispose();this.partyDefeatWork?.clear();
     for(const notify of [...this.allyWaiters])notify();
     for(const tween of this.deathTweens.values())tween.stop();this.deathTweens.clear();this.fallen.clear();
@@ -2964,6 +2968,7 @@ captureStoryActors():SceneActorState[] {
     this.skillAssetRetryTimer?.remove(false);this.skillAssetRetryTimer=undefined;
     this.playerSkillSignature='';this.playerSkillGate='';this.allySkillSignatures.clear();
     this.allySkillGates.clear();this.skillAssetFailures.clear();
+    finishMemory?.();
     this.restoredAssets?.release();this.restoredAssets=undefined;
     this.storyAssets?.release();this.storyAssets=undefined;
   }

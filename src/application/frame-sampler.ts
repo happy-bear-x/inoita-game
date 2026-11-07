@@ -25,7 +25,7 @@ export class FrameSampler {
   readonly worldText: FrameWorkTimer;
   private readonly now: () => number;
   private readonly context: () => FrameContext;
-  private readonly report: (details: unknown) => void;
+  private readonly report: (details: object) => void;
   private previousEnd?: number;
   private startedAt?: number;
   private updatedAt?: number;
@@ -37,7 +37,7 @@ export class FrameSampler {
   private slowest?: FrameContext & {frameMs:number; updateMs:number; renderSubmitMs:number; waitMs:number;
     combatMs:number; partyPathMs:number; worldTextMs:number};
 
-  constructor(context: () => FrameContext, report: (details: unknown) => void, now = () => performance.now()) {
+  constructor(context: () => FrameContext, report: (details: object) => void, now = () => performance.now()) {
     this.context = context;
     this.report = report;
     this.now = now;

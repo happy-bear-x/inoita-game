@@ -1,3 +1,4 @@
+import { textureMemory } from '../application/memory-sampler.ts';
 import type Phaser from 'phaser';
 import type { MapFeature, WorldMap } from '../domain/content.ts';
 import type { PendingAsset } from './scene-assets.ts';
@@ -46,6 +47,7 @@ function composeColorDodge(
   if (!texture) throw new Error('无法创建颜色减淡贴图：' + textureKey);
   try {
     const ground = scene.textures.get(groundKey).getSourceImage() as HTMLImageElement;
+    textureMemory.get(scene.textures)?.generatedBy(textureKey, scene.sys.settings.key);
     const context = texture.context;
     context.drawImage(ground, left, top, width, height, 0, 0, width, height);
     const backdrop = context.getImageData(0, 0, width, height);

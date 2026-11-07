@@ -73,6 +73,7 @@ import type { PendingAsset } from '../rendering/scene-assets.ts';
 /** 进图参数：去哪张地图、落在哪里、朝哪边。 */
 export interface SceneOptions {
   initialEntry?: boolean;
+  finishMemory?: import('../application/memory-sampler.ts').FinishMemorySample;
   checkpoint?:WorldCombatState;
   suppressEntry?: boolean;
   /** 演出中的世界重建：舞台画面还在演，加载过程不再盖加载界面。 */
@@ -230,7 +231,7 @@ export class WorldScene extends Phaser.Scene {
   }
   create(): void {
     globalThis.storyDiagnostics?.record('start-phase',{phase:'world-create'});
-    if(this.options.signal?.aborted){this.options.onError?.(this.options.signal.reason);this.scene.stop();return;}
+    if(this.options.signal?.aborted){this.options.finishMemory?.('cancelled');this.options.onError?.(this.options.signal.reason);this.scene.stop();return;}
     const externalSignal=this.options.signal;
     const cancelLoad=()=>this.request.abort(externalSignal?.reason);
     externalSignal?.addEventListener('abort',cancelLoad,{once:true});
@@ -279,7 +280,15 @@ export class WorldScene extends Phaser.Scene {
     this.events.on('wake', wake);
     this.events.once('shutdown', () => this.events.off('wake', wake));
     const options=this.options, signal=this.request.signal;
-    this.open(options).catch(error => {
+    const finishMemory = options.finishMemory ?? this.app.memorySampler?.begin('map', options.map);
+    const cancelMemory = () => finishMemory?.('cancelled');
+    if (finishMemory) signal.addEventListener('abort', cancelMemory, {once:true});
+    this.open(options).then(() => {
+      if (finishMemory) signal.removeEventListener('abort', cancelMemory);
+      finishMemory?.(signal.aborted ? 'cancelled' : 'ready');
+    }, error => {
+      if (finishMemory) signal.removeEventListener('abort', cancelMemory);
+      finishMemory?.(signal.aborted ? 'cancelled' : 'error');
       // 取消也要把结果交给等待者：`restartStoryWorld` 靠 onError 结算 Promise，
       // 只在非取消时调用会让反复读图/切图时留下永远挂起的旧请求。结算必须用发起本次
       // 加载的 options——`this.options` 可能已被下一次 init 换掉，旧请求取消时会把
@@ -399,7 +408,7 @@ export class WorldScene extends Phaser.Scene {
     if(silentRequested)globalThis.storyDiagnostics?.record('story-silent-entry-missing', { map: map.id, missing });
     if (silent) ui.resetInput();
     const loaded = await loadEntryPlan(plan, {
-      load: (assets, progress) => loadSceneAssets(this, assets, progress, true),
+      load: (assets, progress) => loadSceneAssets(this, assets, progress, true, 'world:' + map.id),
       report: silent ? () => {} : (label, value) => ui.loading(label, value),
       preloadPortraits: (files, portraitSignal, progress) => ui.preloadPortraits(files, portraitSignal, progress),
       prepareSounds: (names, soundSignal) => { soundSignal.throwIfAborted(); return this.app.audio?.prepareStoryEffects(names) ?? Promise.resolve(); }
@@ -410,7 +419,7 @@ export class WorldScene extends Phaser.Scene {
     // 玩家侧战斗资源已经随主批次加载；再取一份只覆盖这些贴图的常驻租约，
     // 地图租约被历史淘汰或场景关闭时不会把战斗纹理一起删掉。
     if(includeResidentCombat){
-      this.app.residentCombatAssets=retainLoadedSceneAssets(this,plan.residentCombat??[]);
+      this.app.residentCombatAssets=retainLoadedSceneAssets(this,plan.residentCombat??[], 'world:resident-combat');
       this.app.residentCombatClassId=residentClassId;
       this.app.residentCombatReady=true;
     }
@@ -642,7 +651,11 @@ export class WorldScene extends Phaser.Scene {
     const prefetches = this.entryPrefetches ??= new Map();
     const existing = prefetches.get(mapId);
     if (existing) return existing;
-    const task = this.loadStoryEntry(mapId, script, signal).catch(error => {
+    const finishMemory = this.app.memorySampler?.begin('story-prefetch', mapId);
+    const task = this.loadStoryEntry(mapId, script, signal).then(() => {
+      finishMemory?.(signal.aborted ? 'cancelled' : 'ready');
+    }, error => {
+      finishMemory?.(signal.aborted ? 'cancelled' : 'error');
       if (!signal.aborted) globalThis.storyDiagnostics?.record('story-entry-prefetch-failed', { map: mapId, error });
       prefetches.delete(mapId);
     });
@@ -669,7 +682,7 @@ export class WorldScene extends Phaser.Scene {
     const assets = entryPlanAssets(plan);
     const missing = missingSceneAssets(this, assets);
     if (missing.length) {
-      const lease = await loadSceneAssets(this, assets, () => {}, true);
+      const lease = await loadSceneAssets(this, assets, () => {}, true, 'world:story-prefetch:' + mapId);
       if (signal.aborted || this.destroyed) { lease.release(); signal.throwIfAborted(); throw new Error('正式地图已经关闭'); }
       this.app.retainStoryPrefetch(mapId, lease);
     }
@@ -697,7 +710,7 @@ export class WorldScene extends Phaser.Scene {
           const lease = await loadSceneAssets(this, [
             { kind: 'image', key: map.id + '-ground', file: map.ground },
             { kind: 'image', key: map.id + '-canopy', file: map.canopy }
-          ], () => {}, true);
+          ], () => {}, true, 'world:exit-prefetch:' + target);
           if (signal.aborted || this.prefetchTarget !== target) lease.release();
           else this.app.retainMapPrefetch(lease);
         } catch {
@@ -1355,7 +1368,7 @@ export class WorldScene extends Phaser.Scene {
     if (this.loadingWorld||!this.exitAvailable(exit)) return;
     this.app.session.applyStoryCommands([{type:'travel',destination:{map:exit.destination,...exit.spawn,facing:exit.facing==='any'?'south':exit.facing}}]);
     this.loadingWorld = true; this.near = null; this.app.ui.loading('正在前往新的地方…');
-    this.scene.restart({ map: exit.destination, x: exit.spawn.x, y: exit.spawn.y, facing: exit.facing });
+    this.scene.restart({ map: exit.destination, finishMemory: this.app.memorySampler?.begin('map', exit.destination), x: exit.spawn.x, y: exit.spawn.y, facing: exit.facing });
   }
   /**
    * GM 调试传送：切到目标地图并等场景就绪，让后续剧情在该图的地形和实体上开演。
@@ -1389,7 +1402,7 @@ export class WorldScene extends Phaser.Scene {
         finished = true; clearTimeout(timer); resolve(result);
       };
       const timer = setTimeout(() => done({ ok: false, reason: '切图等待超时' }), 20000);
-      this.scene.restart({ map: destination, x: point.x, y: point.y, facing: 'south', suppressEntry: true,
+      this.scene.restart({ map: destination, finishMemory: this.app.memorySampler?.begin('map', destination), x: point.x, y: point.y, facing: 'south', suppressEntry: true,
         onReady: () => done({ ok: true }),
         onError: (error: unknown) => done({ ok: false, reason: error instanceof Error ? error.message : String(error) }) } satisfies SceneOptions);
     });
@@ -1408,6 +1421,7 @@ export class WorldScene extends Phaser.Scene {
   }
   /** 属性页判断成员当前是否潜行。 */
   combatStealthed(id:string):boolean { return this.combat?.stealthed(id)??false; }
+  get summonCount(): number { return this.combat?.summonCount ?? 0; }
   frameActorCounts() { return this.combat?.frameActorCounts(); }
   diagnosticSnapshot() {
     const player = this.player, movement = this.movement;
@@ -1693,7 +1707,7 @@ captureStoryScene():SceneSnapshot {
       // 场景重建既没报错也没就绪时（例如加载卡住），不能让调用方永远等下去。
       timer=setTimeout(()=>{const error=new Error('剧情世界切换超时');controller.abort(error);done(error);},30000);
       this.loadingWorld=true;
-      this.scene.restart({...location,checkpoint:world,generatedEntities,preparedScene,suppressEntry:true,silentEntry:silent,signal:controller.signal,onReady:()=>done(),onError:(error:unknown)=>done(error)} satisfies SceneOptions);
+      this.scene.restart({...location,finishMemory:this.app.memorySampler?.begin('map', location.map),checkpoint:world,generatedEntities,preparedScene,suppressEntry:true,silentEntry:silent,signal:controller.signal,onReady:()=>done(),onError:(error:unknown)=>done(error)} satisfies SceneOptions);
     });
   }
 private restoreScenePositions(snapshot:SceneSnapshot):void {

@@ -114,6 +114,17 @@ export class StoryStageScene extends Phaser.Scene {
   }
   /** 新地图加载完成前保留上一幅画面；迟到的加载只释放自己的租约。 */
   async showStage(stage: StoryStageSnapshot, signal: AbortSignal, playerAppearance?: ActorDefinition): Promise<void> {
+    const finish = this.app.memorySampler?.begin('story-stage', stage.map);
+    try {
+      await this.buildStage(stage, signal, playerAppearance);
+      finish?.();
+    } catch (error) {
+      finish?.(signal.aborted ? 'cancelled' : 'error');
+      throw error;
+    }
+  }
+
+  private async buildStage(stage: StoryStageSnapshot, signal: AbortSignal, playerAppearance?: ActorDefinition): Promise<void> {
     signal.throwIfAborted(); validateStoryStageSnapshot(stage);
     const plan=planScene(stage.scene,stage.bindings);assertScenePlan(plan);
     const actors=plan.actors.map(entry=>entry.actor);
@@ -135,7 +146,7 @@ export class StoryStageScene extends Phaser.Scene {
       if (actor) needed.push(...characterAssets(actor).filter(asset => asset.file));
     }
     needed.push(...this.app.wardrobe.textures.map(texture => ({ kind: 'image' as const, ...texture })));
-    const lease = await cancellable(loadSceneAssets(this, needed, () => {}, true), signal, value => value.release());
+    const lease = await cancellable(loadSceneAssets(this, needed, () => {}, true, 'story-stage:' + stage.map), signal, value => value.release());
     const guard = () => {
       signal.throwIfAborted();
       if (revision !== this.revision || !this.sys.isActive()) throw new DOMException('演出舞台已更新', 'AbortError');
@@ -261,6 +272,7 @@ export class StoryStageScene extends Phaser.Scene {
     }
   }
   releaseStage(preserveEarlyCurtain = false): void {
+    const finish = this.map && !preserveEarlyCurtain ? this.app.memorySampler?.compare('stage-release', this.map.id) : undefined;
     // 最终释放时先恢复世界渲染，再到场景 stop 之间露出下面已经切换好的世界，避免黑帧。
     // 换幕重建（preserveEarlyCurtain）仍由旧舞台盖着，不能中途解除遮挡。
     if (!preserveEarlyCurtain) this.setWorldCovered(false);
@@ -278,5 +290,6 @@ export class StoryStageScene extends Phaser.Scene {
     this.lease?.release(); this.lease = undefined; this.map = undefined;
     for (const lease of this.actorLeases) lease.release();
     this.actorLeases.clear();
+    finish?.();
   }
 }

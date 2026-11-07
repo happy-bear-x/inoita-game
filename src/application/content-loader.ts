@@ -17,7 +17,7 @@ interface ContentManifest {
 }
 
 /** 核心内容表跨会话常驻；会话级内容只服务当前地图/外观，可在回菜单或新会话时丢弃。 */
-type ContentScope = 'core' | 'session';
+type ContentScope = 'core' | 'maps' | 'poses';
 
 interface ContentRequest<T> {
   promise: Promise<T>;
@@ -33,6 +33,7 @@ export class ContentLoader {
    * 开发服务、Node 测试与直接 import 默认 false；main.ts 按构建常量/GM 打开。
    */
   trusted = false;
+  memoryCounts?: { maps: number; poses: number; pending: number };
   /**
    * 页面构建时注入的内容版本。生产信任路径先核对服务端清单与它是否一致；
    * Node 测试默认空串，可显式赋值来验证不匹配分支。
@@ -68,7 +69,7 @@ export class ContentLoader {
     return parseWardrobe({...core,poses:await this.wardrobePoses(ids,signal)});
   }
   async wardrobePoses(ids:readonly string[],signal?:AbortSignal):Promise<Record<string,CostumePose>>{
-    const entries=await Promise.all(ids.map(async id=>[id,await this.read<CostumePose>(wardrobePoseFile(id),value=>value as CostumePose,signal,'session')]as const));
+    const entries=await Promise.all(ids.map(async id=>[id,await this.read<CostumePose>(wardrobePoseFile(id),value=>value as CostumePose,signal,'poses')]as const));
     return Object.fromEntries(entries);
   }
   /**
@@ -77,8 +78,10 @@ export class ContentLoader {
    */
   clearSessionCaches(): void {
     for (const [file, request] of this.requests) {
-      if (request.scope === 'session' && request.finished && this.requests.get(file) === request)
+      if (request.scope !== 'core' && request.finished && this.requests.get(file) === request) {
         this.requests.delete(file);
+        if (this.memoryCounts) this.memoryCounts[request.scope]--;
+      }
     }
   }
   /**
@@ -136,10 +139,18 @@ export class ContentLoader {
       })();
       request = { promise, controller, waiters: 0, finished: false, scope };
       this.requests.set(file, request);
-      const current = request;
+      const current = request, counts = this.memoryCounts;
+      if (counts) counts.pending++;
       void promise.then(
-        () => { current.finished = true; },
+        () => {
+          current.finished = true;
+          if (counts) {
+            counts.pending--;
+            if (scope !== 'core' && this.requests.get(file) === current) counts[scope]++;
+          }
+        },
         error => {
+          if (counts) counts.pending--;
           if(!controller.signal.aborted)globalThis.storyDiagnostics?.record('content-load-error',{file,error});
           current.finished = true;
           if (this.requests.get(file) === current) this.requests.delete(file);
@@ -178,5 +189,5 @@ export class ContentLoader {
   storyInterface(signal?:AbortSignal):Promise<StoryInterface>{return this.read('content/story-interface.json',parseStoryInterface,signal);}
   storyClasses(signal?:AbortSignal){return this.read('content/story-classes.json',parseStoryClasses,signal);}
   battle(signal?:AbortSignal):Promise<BattleCatalog>{return this.read('content/battle.json',parseBattle,signal);}
-  map(file:string,signal?:AbortSignal):Promise<WorldMap>{return this.read(file,parseMap,signal,'session');}
+  map(file:string,signal?:AbortSignal):Promise<WorldMap>{return this.read(file,parseMap,signal,'maps');}
 }
