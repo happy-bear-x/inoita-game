@@ -2,33 +2,24 @@ import type { Facing } from './content.ts';
 import type { Point } from './navigation.ts';
 import type { NavigationActor, NavigationShape, NavigationWorld } from './navigation-world.ts';
 
-const FORMATION_FORWARD: Record<Facing, Point> = {
+export type CompanionStance = 'front' | 'back' | 'support';
+
+const FOLLOW_FORWARD: Record<Facing, Point> = {
   north: { x: 0, y: -1 }, south: { x: 0, y: 1 }, east: { x: 1, y: 0 }, west: { x: -1, y: 0 },
 };
 
-const FORMATION_RADIUS = Math.hypot(16, 20);
-const FORMATION_SPREAD = Math.atan2(16, 20);
-
-/** 队长朝向对应的背后方向角（屏幕坐标）。 */
-export function facingBackAngle(facing: Facing): number {
-  const forward = FORMATION_FORWARD[facing];
-  return Math.atan2(-forward.y, -forward.x);
-}
-
 /**
- * 按当前背后方向角和上阵槽位算偏移：站在队长背后约 25.6px，
- * 再沿圆弧向两侧各偏 38.7°。槽位 0 在屏幕左侧、槽位 1 在屏幕右侧（面朝南时）。
- * 两名佣兵共享同一个背后角度，平滑过程中也不会在同一侧重合。
+ * 伙伴的跟随站位：按职责分前后，槽位 0 在左、槽位 1 在右。
+ * 前排站侧前方，后排站后方，辅助站得更靠后。
  */
-export function formationSlotOffset(backAngle: number, slot: 0 | 1): Point {
-  const angle = backAngle + (slot === 0 ? -FORMATION_SPREAD : FORMATION_SPREAD);
-  return { x: Math.cos(angle) * FORMATION_RADIUS, y: Math.sin(angle) * FORMATION_RADIUS };
-}
-
-/** 沿最短方向平滑旋转背后角度，避免 180° 换边时走远路。 */
-export function smoothFormationAngle(current: number, target: number, alpha: number): number {
-  const turn = Math.atan2(Math.sin(target - current), Math.cos(target - current));
-  return current + turn * alpha;
+export function followOffset(facing: Facing, stance: CompanionStance, slot: 0 | 1 | undefined): Point {
+  const forward = FOLLOW_FORWARD[facing];
+  const right = { x: -forward.y, y: forward.x };
+  const side = slot === 1 ? 1 : -1;
+  const [distance, lateral] = stance === 'front' ? [20, 22] : stance === 'back' ? [36, 24] : [52, 26];
+  const sign = stance === 'front' ? 1 : -1;
+  return { x: forward.x * distance * sign + right.x * lateral * side,
+    y: forward.y * distance * sign + right.y * lateral * side };
 }
 
 /** 两个队伍单位按同一碰撞盒落位时是否重叠；边贴边不算重叠。 */

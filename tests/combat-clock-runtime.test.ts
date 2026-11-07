@@ -29,7 +29,7 @@ function fixture(){
     roster:{refresh:()=>({removed:[],added:[]})},
     memberOf:(id:string)=>['player','ally'].includes(id)?{player:{health:1}}:undefined,
     syncCombatResourceLimits:()=>{},syncAiSkills:()=>{},syncBuffLoops:()=>{},syncStateMarkers:()=>{},
-    consumeRosterChanges:()=>{},advanceFormation:()=>{},isPartyWiped:()=>false,suspendPartyActions:()=>{},stopEnemies:()=>{},
+    consumeRosterChanges:()=>{},isPartyWiped:()=>false,suspendPartyActions:()=>{},stopEnemies:()=>{},
     combat:{update:()=>record('player')},
     updateEnemies(enabled:boolean):void{invoke(host,'updateEnemies',enabled);},
     observeSummonCombat:()=>record('summon-awareness'),

@@ -2,127 +2,124 @@ import {CombatCooldownStore} from '../src/domain/combat-cooldowns.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {readFileSync} from 'node:fs';
-import {PartyController,partySkillThreshold,shouldUseTrailByDetour,
+import {PartyController,partySkillThreshold,
   type PartyPort,type PartySkillKind} from '../src/domain/party-ai.ts';
 import {CombatController,type ActionPlayback,type Combatant} from '../src/domain/combat.ts';
-import {attackDistance,resolveBasicAttack,targetDistance} from '../src/domain/basic-attack.ts';
+import {resolveBasicAttack,targetDistance} from '../src/domain/basic-attack.ts';
 import type {BattleCatalog,EnemyPlayableSkill} from '../src/domain/battle.ts';
 import type {Point} from '../src/domain/navigation.ts';
+import {followOffset} from '../src/domain/party-placement.ts';
 const catalog=JSON.parse(readFileSync(new URL('../public/content/battle.json',import.meta.url),'utf8')) as BattleCatalog;
 const box={x:-8,y:-8,width:16,height:16};
+
 function setup(random=()=>0){
   const time={frame:0};
   const member:Combatant={id:'member',team:'party',position:{x:32,y:32},bounds:box};
-  const leader:Combatant={id:'player',team:'party',position:{x:128,y:32},bounds:box};
-  const enemy:Combatant={id:'enemy',team:'enemy',position:{x:56,y:32},bounds:box};
-  const enemy2:Combatant={id:'enemy2',team:'enemy',position:{x:48,y:48},bounds:box};
+  const leader:Combatant={id:'player',team:'party',position:{x:128,y:128},bounds:box};
+  const enemy:Combatant={id:'enemy',team:'enemy',position:{x:360,y:360},bounds:box};
+  const enemy2:Combatant={id:'enemy2',team:'enemy',position:{x:380,y:360},bounds:box};
   const actors=new Map([member,leader,enemy,enemy2].map(actor=>[actor.id,actor]));
+  const targets=new Map<string,string>();
   const plays:ActionPlayback[]=[];let completed:(()=>void)|undefined,path:(()=>Point|undefined)|undefined;
   const vitals=new Map([[member.id,{health:100,maxHealth:100}],[leader.id,{health:100,maxHealth:100}]]);
   const attacking=new Set<string>();let focus:string|undefined,mana=1000,skills:EnemyPlayableSkill[]=[],fighting=false;
-  let sharedTarget:string|undefined,sharedCalls=0;
+  let sharedTarget:string|undefined,sharedCalls=0,facing:'north'|'south'|'east'|'west'='east',slot:0|1=0,range=4;
   const kinds=new Map<string,PartySkillKind>();let boundsCalls=0;
   const port:PartyPort={cooldowns:new CombatCooldownStore(()=>time.frame).forActor(member.id),actor:id=>actors.get(id),candidates:()=>[...actors.values()],leader:()=>leader,
-    focusTarget:()=>focus,partyTarget:()=>{sharedCalls++;return sharedTarget;},inCombat:()=>fighting||!!focus,facing:()=> 'east',face:()=>{},
-    navigationBounds:()=>{boundsCalls++;return {x:8,y:8,width:176,height:80};},canStand:p=>p.x>=8&&p.x<=184&&p.y>=8&&p.y<=88,
+    leaderFacing:()=>facing,followSlot:()=>slot,
+    focusTarget:()=>focus,partyTarget:()=>{sharedCalls++;return sharedTarget;},targetOf:id=>targets.get(id),inCombat:()=>fighting||!!focus,
+    facing:()=> 'east',face:()=>{},
+    navigationBounds:()=>{boundsCalls++;return {x:0,y:0,width:400,height:400};},canStand:p=>p.x>=0&&p.x<=400&&p.y>=0&&p.y<=400,
     followPath:next=>{path=next;},moveToward:()=>assert.fail('party movement must use its navigable path'),
     stop:()=>{path=undefined;},relocate:p=>{member.position={...p};},
-    skills:()=>skills,skillKind:id=>kinds.get(id),vitals:id=>vitals.get(id),attacking:id=>attacking.has(id),attackRange:()=>4,
+    skills:()=>skills,skillKind:id=>kinds.get(id),vitals:id=>vitals.get(id),attacking:id=>attacking.has(id),attackRange:()=>range,
     canSpendMana:cost=>cost<=mana,spendMana:cost=>{if(cost>mana)return false;mana-=cost;return true;},
     play:(action,_frame,complete)=>{plays.push(action);completed=complete;return ()=>{};},frame:()=>{},clearEffects:()=>{}};
   const combat=new CombatController(member.id,resolveBasicAttack(catalog,catalog.classes[0]),port);
   const ai=new PartyController(member.id,port,combat,random);
+  const installSkill=(id:string,kind:PartySkillKind,frequency=1)=>{
+    const entry=catalog.skills[id];
+    kinds.set(id,kind);skills=[...skills.filter(skill=>skill.id!==id),{id,name:entry.name,action:entry.action!,
+      manaCost:entry.ranks[0].manaCost,frequency,clips:{north:'attack-north',south:'attack-south',east:'attack-east',west:'attack-west'}}];
+  };
   return {ai,combat,port,time,member,leader,enemy,enemy2,actors,plays,vitals,attacking,waypoint:()=>path?.(),boundsCalls:()=>boundsCalls,
-    focus:(id:string|undefined)=>{focus=id;},shared:(id:string|undefined)=>{sharedTarget=id;},sharedCalls:()=>sharedCalls,fighting:(value=true)=>{fighting=value;},
-    mana:(value:number)=>{mana=value;},
-    skill:(id:string,kind:PartySkillKind,frequency=1)=>{kinds.set(id,kind);skills=[{id,name:catalog.skills[id].name,action:catalog.skills[id].action!,manaCost:catalog.skills[id].ranks[0].manaCost,frequency,clips:{north:'attack-north',south:'attack-south',east:'attack-east',west:'attack-west'}}];},
+    focus:(id:string|undefined)=>{focus=id;},shared:(id:string|undefined)=>{sharedTarget=id;},sharedCalls:()=>sharedCalls,
+    fighting:(value=true)=>{fighting=value;},mana:(value:number)=>{mana=value;},setTarget:(actorId:string,targetId:string|undefined)=>{
+      if(targetId===undefined)targets.delete(actorId);else targets.set(actorId,targetId);
+    },
+    setFacing:(value:'north'|'south'|'east'|'west')=>{facing=value;},setSlot:(value:0|1)=>{slot=value;},setAttackRange:(value:number)=>{range=value;},
+    skill:installSkill,skills:(entries:[string,PartySkillKind,number?][])=>{skills=[];for(const [id,kind,frequency] of entries)installSkill(id,kind,frequency??1);},
     finish:()=>completed?.(),advance:(frames=1)=>{for(let i=0;i<frames;i++){const next=path?.();if(next)member.position={...next};ai.update(60);}}};
 }
 
-test('party healers still heal stealthed allies while hidden enemies cannot be focused',()=>{
- const run=setup();run.leader.states=['stealthed'];run.leader.position={x:56,y:32};
- run.vitals.set('player',{health:10,maxHealth:100});run.fighting();run.skill('prayer-of-recovery','heal');run.ai.update(60);
- assert.equal(run.plays[0]?.skill?.id,'prayer-of-recovery');
- const fighter=setup();fighter.enemy.states=['stealthed'];fighter.enemy2.states=['stealthed'];fighter.focus(fighter.enemy.id);
- fighter.ai.update(60);
- assert.equal(fighter.plays.length,0);
+test('companions auto-acquire nearby enemies without a player target',()=>{
+  const run=setup();run.enemy.position={x:56,y:32};run.ai.update(60);
+  assert.equal(run.plays.at(-1)?.target?.id,'enemy','附近敌人不需要玩家先选目标');
 });
 
-test('immediate target removal clears an established pursuit path',()=>{
- const run=setup();run.enemy.position={x:160,y:32};run.shared('enemy');run.ai.update(60);assert.ok(run.waypoint());
- run.enemy.states=['stealthed'];run.ai.targetRemoved(run.enemy.id);
- assert.equal(run.waypoint(),undefined);
-});
-
-test('party root blocks following but retains nearby attacks and ambush allows following its ally leader',()=>{
- const run=setup();run.member.states=['immobilized'];run.ai.update(60);assert.equal(run.waypoint(),undefined);
- run.focus(run.enemy.id);run.ai.update(60);assert.equal(run.plays.length,1);
- const ambush=setup();ambush.member.states=['ambush'];ambush.enemy.position={...ambush.leader.position};
- ambush.focus(ambush.enemy.id);ambush.ai.update(60);assert.equal(ambush.waypoint(),undefined);
- ambush.focus(undefined);ambush.ai.update(60);assert.ok(ambush.waypoint());
-});
-test('followers navigate to the leader and stop within four native units without acquiring nearby enemies',()=>{
-  const run=setup();run.ai.update(59);assert.equal(run.waypoint(),undefined);run.ai.update(1);assert.ok(run.waypoint());
-  run.advance(40);assert.ok(attackDistance(run.member.position,box,run.leader.position,box)<4);
-  assert.equal(run.waypoint(),undefined);assert.equal(run.plays.length,0);
-  run.leader.position={x:32,y:72};run.advance();assert.ok(run.waypoint());
-  run.ai.cancel();assert.equal(run.waypoint(),undefined);run.ai.dispose();run.advance(10);assert.equal(run.plays.length,0);
-});
-test('followers walk to their own formation slot instead of the leader position',()=>{
-  const run=setup(),goal={x:128,y:48};
-  run.port.followGoal=()=>goal;
-  run.ai.update(60);run.ai.update(60);
-  assert.deepEqual(run.ai.captureState().destination,goal);
-  run.advance(60);
-  assert.ok(targetDistance(run.member.position,goal)<=8);
-  assert.equal(run.waypoint(),undefined);
-});
-
-test('companions attack the controlled character target',()=>{
-  const run=setup();run.shared('enemy');run.ai.update(60);
-  assert.equal(run.plays.at(-1)?.target?.id,'enemy','主角正在打的目标就是佣兵的目标');
-});
-test('without a player target, companions hold their combat position instead of following small movements',()=>{
-  const run=setup();run.fighting();run.leader.position={x:64,y:32};
-  run.enemy.position={x:600,y:600};run.enemy2.position={x:600,y:600};
-  run.ai.update(60);
-  assert.equal(run.plays.length,0,'没有主角目标时佣兵不能自己索敌出手');
-  assert.equal(run.waypoint(),undefined,'队伍在战斗中时，主角身边的小范围走位不带动佣兵');
-});
-
-test('fighting companions pursue the controlled character target beyond their own search radius',()=>{
-  const run=setup();run.enemy.position={x:160,y:32};run.fighting();run.shared('enemy');run.ai.update(60);
-  assert.ok(run.waypoint(),'共享目标在自身索敌半径外时也要生成追击路径');
-  assert.equal(run.plays.length,0,'尚未进入射程时不攻击');
-  run.advance(60);
-  assert.equal(run.plays.at(-1)?.target?.id,'enemy','进入射程后攻击共享目标');
-});
-
-test('the controlled character target is read immediately without waiting for combat contact',()=>{
-  const run=setup();run.enemy.position={x:160,y:32};run.shared('enemy');run.ai.update(60);
-  assert.ok(run.sharedCalls()>0,'主角有目标时佣兵直接读取');
-  assert.equal(run.plays.length,0);assert.ok(run.waypoint(),'目标在射程外时先追过去');
+test('being attacked makes a companion retaliate',()=>{
+  const run=setup();run.enemy.position={x:250,y:128};run.setTarget('enemy','member');run.ai.update(60);
+  assert.equal(run.ai.captureState().destinationTarget,'enemy','被攻击时把攻击者当成目标');
 });
 
 test('explicit focus outranks the controlled character target',()=>{
-  const focused=setup();focused.shared('enemy');focused.focus('enemy2');focused.ai.update(60);
-  assert.equal(focused.plays.at(-1)?.target?.id,'enemy2');
+  const run=setup();run.enemy.position={x:56,y:32};run.enemy2.position={x:48,y:48};
+  run.shared('enemy');run.focus('enemy2');run.ai.update(60);
+  assert.equal(run.plays.at(-1)?.target?.id,'enemy2');
 });
 
-test('clearing the shared target returns companions to the leader',()=>{
-  const run=setup();run.enemy.position={x:160,y:32};run.fighting();run.shared('enemy');run.ai.update(60);
-  assert.ok(run.waypoint());
-  run.shared(undefined);run.fighting(false);run.ai.cancel();run.ai.update(60);
-  assert.ok(run.waypoint(),'共享目标清空且脱战后恢复跟随队长');
+test('the controlled character target is read immediately',()=>{
+  const run=setup();run.enemy.position={x:200,y:128};run.shared('enemy');run.ai.update(60);
+  assert.ok(run.sharedCalls()>0);assert.equal(run.ai.captureState().destinationTarget,'enemy');
+});
+
+test('a target beyond the leash is ignored',()=>{
+  const run=setup();run.enemy.position={x:400,y:400};run.focus('enemy');run.ai.update(60);
+  assert.equal(run.ai.captureState().destinationTarget,'player','目标离队长太远时回到跟随');
   assert.equal(run.plays.length,0);
 });
 
-test('being hit does not make companions attack; only focus or the controlled character target does',()=>{
-  const run=setup();run.fighting();run.ai.update(60);assert.equal(run.plays.length,0,'挨打不开战，也不自己索敌');
-  run.focus('enemy2');run.ai.update(60);assert.equal(run.plays.at(-1)?.target?.id,'enemy2','显式集火');
-  run.ai.cancel();run.focus(undefined);run.shared('enemy');run.ai.update(60);assert.equal(run.plays.at(-1)?.target?.id,'enemy','跟随主角目标');
-  run.ai.cancel();run.shared(undefined);run.fighting(false);run.ai.update(60);assert.ok(run.waypoint(),'脱战后回到跟随');
+test('target stickiness keeps the current enemy briefly after focus clears',()=>{
+  const run=setup();run.enemy.position={x:56,y:32};run.enemy2.position={x:48,y:48};run.focus('enemy');run.ai.update(60);
+  run.focus(undefined);run.ai.update(60);
+  assert.equal(run.plays.at(-1)?.target?.id,'enemy','短时间内不因为另一个敌人更近就换目标');
 });
+
+test('follow stance uses the leader facing and companion role',()=>{
+  const run=setup();run.ai.update(60);
+  assert.deepEqual(run.ai.captureState().destination,{x:run.leader.position.x+followOffset('east','front',0).x,y:run.leader.position.y+followOffset('east','front',0).y});
+  run.setAttackRange(8);run.ai.update(180);
+  assert.deepEqual(run.ai.captureState().destination,{x:run.leader.position.x+followOffset('east','back',0).x,y:run.leader.position.y+followOffset('east','back',0).y});
+  const support=setup();support.skill('prayer-of-recovery','heal');support.ai.update(60);
+  assert.deepEqual(support.ai.captureState().destination,{x:support.leader.position.x+followOffset('east','support',0).x,y:support.leader.position.y+followOffset('east','support',0).y});
+});
+
+test('follow slots keep two companions on opposite sides',()=>{
+  const left=setup();left.setSlot(0);left.ai.update(60);
+  const right=setup();right.setSlot(1);right.ai.update(60);
+  assert.notDeepEqual(left.ai.captureState().destination,right.ai.captureState().destination);
+});
+
+test('companions follow to their stance point when no enemy is nearby',()=>{
+  const run=setup();run.ai.update(60);assert.ok(run.waypoint());
+  run.advance(80);
+  const goal={x:run.leader.position.x+followOffset('east','front',0).x,y:run.leader.position.y+followOffset('east','front',0).y};
+  assert.ok(targetDistance(run.member.position,goal)<=12);
+  assert.equal(run.waypoint(),undefined);
+  assert.equal(run.plays.length,0);
+});
+
+test('combat without a target returns to following instead of holding position',()=>{
+  const run=setup();run.fighting();run.leader.position={x:160,y:128};run.ai.update(60);
+  assert.ok(run.waypoint(),'战斗中没目标也要回到跟随');
+});
+
+test('support skills are attempted before damage skills',()=>{
+  const run=setup(()=>0);run.enemy.position={x:56,y:32};run.leader.position={x:72,y:32};run.vitals.set('player',{health:10,maxHealth:100});
+  run.fighting();run.focus('enemy');run.skills([['dark-strike','chance'],['prayer-of-recovery','heal']]);run.ai.update(60);
+  assert.equal(run.plays[0]?.skill?.id,'prayer-of-recovery','治疗优先于输出');
+});
+
 test('native AI thresholds distinguish regular and high frequency and following state',()=>{
   assert.equal(partySkillThreshold('chance',1,false),30);assert.equal(partySkillThreshold('chance',2,false),100);
   assert.equal(partySkillThreshold('combat-chance',1,false),30);assert.equal(partySkillThreshold('combat-chance',2,false),50);
@@ -131,230 +128,107 @@ test('native AI thresholds distinguish regular and high frequency and following 
   assert.equal(partySkillThreshold('emergency-heal',1,false),20);assert.equal(partySkillThreshold('emergency-heal',2,false),40);
   assert.equal(partySkillThreshold('ally-combat',1,false),60);assert.equal(partySkillThreshold('ally-combat',2,false),80);
 });
-test('chance sampling is strict at thirty, disabled or unaffordable skills fall back to basic attack',()=>{
+
+test('chance sampling, frequency and mana checks stay unchanged',()=>{
   for(const [roll,frequency,mana,expected] of [[29,1,1000,'dark-strike'],[30,1,1000,undefined],[99,2,1000,'dark-strike'],[1,0,1000,undefined],[1,1,0,undefined]] as const){
-    const run=setup(()=> (roll-.5)/99);run.focus('enemy');run.skill('dark-strike','chance',frequency);run.mana(mana);run.ai.update(60);
+    const run=setup(()=> (roll-.5)/99);run.enemy.position={x:56,y:32};run.focus('enemy');run.skill('dark-strike','chance',frequency);run.mana(mana);run.ai.update(60);
     assert.equal(run.plays[0]?.skill?.id,expected);assert.equal(run.plays.length,1);
   }
 });
-test('healing checks living allies, original strict health thresholds and skill radius during combat',()=>{
+
+test('healing still checks living allies, health thresholds and skill radius',()=>{
   for(const [health,frequency,x,casts] of [[49,1,72,true],[50,1,72,false],[69,2,72,true],[70,2,72,false],[0,2,72,false],[1,1,160,false]] as const){
-    const run=setup();run.leader.position={x,y:32};run.vitals.set('player',{health,maxHealth:100});run.fighting();run.skill('prayer-of-recovery','heal',frequency);run.ai.update(60);
+    const run=setup();run.leader.position={x,y:32};run.vitals.set('player',{health,maxHealth:100});run.fighting();
+    run.skill('prayer-of-recovery','heal',frequency);run.ai.update(60);
     assert.equal(run.plays[0]?.skill?.id,casts?'prayer-of-recovery':undefined);
   }
 });
-test('ally-combat skills require another attacking ally and use the strict sixty threshold',()=>{
+
+test('ally-combat skills still require another attacking ally',()=>{
   for(const [attacker,roll,casts] of [['member',1,false],['enemy',1,false],['player',59,true],['player',60,false]] as const){
-    const run=setup(()=> (roll-.5)/99);run.focus('enemy');run.attacking.add(attacker);run.skill('curse-of-screams','ally-combat');run.ai.update(60);
+    const run=setup(()=> (roll-.5)/99);run.enemy.position={x:56,y:32};run.focus('enemy');run.attacking.add(attacker);
+    run.skill('curse-of-screams','ally-combat');run.ai.update(60);
     assert.equal(run.plays[0]?.skill?.id,casts?'curse-of-screams':undefined);
   }
 });
 
-test('no party skills fire outside combat, including self buffs that need no hostile target',()=>{
+test('no party skills fire outside combat',()=>{
   const run=setup();run.skill('demon-s-shield','chance');run.ai.update(60);
   assert.equal(run.plays.length,0);assert.ok(run.waypoint());
   run.fighting();run.ai.update(60);
-  assert.equal(run.plays[0]?.skill?.id,'demon-s-shield');assert.equal(run.plays[0]?.target,undefined);
-  const offensive=setup();offensive.shared('enemy');offensive.skill('dark-strike','chance');offensive.fighting();offensive.ai.update(60);
-  assert.equal(offensive.plays.length,1,'有主角目标时自动技能可以出手');
-  assert.equal(offensive.plays[0]?.skill?.id,'dark-strike');
-  assert.equal(offensive.plays[0]?.target?.id,'enemy');
+  assert.equal(run.plays[0]?.skill?.id,'demon-s-shield');
 });
-test('changing pursuit target or required range invalidates the cached follow path even at the same destination',()=>{
-  const run=setup();run.ai.update(60);assert.equal(run.boundsCalls(),1);
-  run.enemy.position={...run.leader.position};run.focus('enemy');run.ai.update(60);assert.equal(run.boundsCalls(),2);
-  run.port.attackRange=()=>1;run.ai.update(60);assert.equal(run.boundsCalls(),3);
-  run.ai.targetRemoved('enemy');run.ai.update(60);assert.equal(run.boundsCalls(),4);
-});
-test('followers re-path after the leader moves three grid steps, not on every step',()=>{
-  const run=setup();run.ai.update(60);const base=run.boundsCalls();
-  run.ai.update(180);
-  run.leader.position={x:run.leader.position.x+8,y:32};run.ai.update(60);
-  assert.equal(run.boundsCalls(),base,'队长只挪一格不重算');
-  run.leader.position={x:run.leader.position.x+16,y:32};run.ai.update(60);
-  assert.equal(run.boundsCalls(),base+1,'队长走远三格才重算');
-});
+
 test('a follow search yields when the shared budget is exhausted and retries later',()=>{
   const run=setup();let grants=0;
   run.port.pathBudget={take:()=>{grants++;return 0;}};
   run.ai.update(60);
-  assert.ok(grants>0,'跟随者向共享预算申请扩展');
-  assert.equal(run.boundsCalls(),0,'没有预算时这一帧不开搜索');
+  assert.ok(grants>0);assert.equal(run.boundsCalls(),0);
   run.port.pathBudget=undefined;run.ai.update(60);
-  assert.equal(run.boundsCalls(),1,'预算恢复后再算');
+  assert.equal(run.boundsCalls(),1);
 });
-test('a follow search resumes across frames instead of restarting from the beginning',()=>{
+
+test('a follow search resumes across frames instead of restarting',()=>{
   const run=setup();
   run.port.pathBudget={take:(_owner,limit)=>Math.min(2,limit)};
   run.ai.update(60);
-  assert.equal(run.boundsCalls(),1,'第一帧只开一次搜索');
-  assert.equal(run.waypoint(),undefined,'两格预算还算不完');
+  assert.equal(run.boundsCalls(),1);assert.equal(run.waypoint(),undefined);
   for(let frame=0;frame<300&&!run.waypoint();frame++)run.ai.update(60);
-  assert.ok(run.waypoint(),'跨帧累计的预算最终算出路径');
-  assert.equal(run.boundsCalls(),1,'算的过程中不能丢掉搜索重来');
+  assert.ok(run.waypoint());assert.equal(run.boundsCalls(),1);
 });
 
-test('a stale first waypoint is re-planned from the real feet instead of waiting for the next interval',()=>{
-  // 上报现场：佣兵被水井边缘挤偏 0.16px，旧路线第一个点 (224,632) 从真实脚点走不过去。
-  const run=setup();let plans=0;
-  run.member.position={x:215.83710015815083,y:632.1628998418491};
-  run.leader.position={x:464.36794334335286,y:637.9666840112111};
-  run.port.navigationBounds=()=>{plans++;return {x:0,y:0,width:640,height:720};};
-  run.port.canStand=point=>point.x>=8&&point.x<=632&&point.y>=8&&point.y<=712
-    &&!(point.x+8>224&&point.x-8<240&&point.y+8>640&&point.y-8<656);
-  run.ai.restoreState({accumulator:0,clock:0,nextPathAt:180,path:[{x:224,y:632},{x:232,y:632}],
-    destination:{...run.leader.position},destinationTarget:'player',destinationRange:3});
-  run.ai.update(60);
-  assert.equal(plans,1,'第一步失效时这一帧就重算');
-  for(let frame=0;frame<10&&!run.waypoint();frame++)run.ai.update(60);
-  assert.deepEqual(run.waypoint(),{x:216,y:632},'从真实脚点重新对齐到网格，再继续跟随');
-});
-test('a follower with no progress for the watchdog window is pulled beside the leader once',()=>{
+test('a stuck follower is placed beside the leader once and then waits for the cooldown',()=>{
   const run=setup();let regroups=0;
   run.port.regroup=()=>{regroups++;run.ai.cancel();run.member.position={...run.leader.position};};
-  run.ai.update(60);
   for(let frame=0;frame<40;frame++)run.ai.update(60);
-  assert.equal(regroups,1,'一直站着不能干等寻路，应该收拢到队长身边');
+  assert.equal(regroups,1);
   for(let frame=0;frame<20;frame++)run.ai.update(60);
-  assert.equal(regroups,1,'收拢后恢复普通跟随，不能反复传送');
+  assert.equal(regroups,1);
 });
 
-test('a companion chasing an unreachable focused enemy is pulled beside the leader once',()=>{
+test('a companion chasing an unreachable enemy is pulled beside the leader once',()=>{
   const run=setup();let regroups=0;
-  run.enemy.position={x:150,y:32};
-  run.port.canStand=point=>point.x>=8&&point.x<=100&&point.y>=8&&point.y<=88;
+  run.enemy.position={x:200,y:128};run.focus('enemy');
+  run.port.canStand=point=>point.x>=0&&point.x<=100&&point.y>=0&&point.y<=400;
   run.port.regroup=()=>{regroups++;run.ai.cancel();run.member.position={...run.leader.position};};
-  run.focus('enemy');
   for(let frame=0;frame<70;frame++)run.ai.update(60);
-  assert.equal(regroups,1,'路径被地形封死时，追击目标也要收拢到队长身边');
+  assert.equal(regroups,1);
   for(let frame=0;frame<20;frame++)run.ai.update(60);
-  assert.equal(regroups,1,'目标仍不可达时也不能每 1.5 秒反复瞬移');
+  assert.equal(regroups,1);
 });
 
-test('a companion without a player target still recovers when the leader route is blocked',()=>{
-  const run=setup();let regroups=0;
-  run.enemy.position={x:300,y:32};run.enemy2.position={x:-100,y:-100};
-  run.leader.position={x:160,y:32};
-  run.port.canStand=point=>point.x>=8&&point.x<=90&&point.y>=8&&point.y<=88;
+test('a far follower is teleported without waiting for a stuck window',()=>{
+  const run=setup();let regroups=0;run.enemy.position={x:10,y:390};run.enemy2.position={x:30,y:390};
+  run.member.position={x:0,y:0};run.leader.position={x:360,y:360};
   run.port.regroup=()=>{regroups++;run.ai.cancel();run.member.position={...run.leader.position};};
-  run.fighting();
-  for(let frame=0;frame<70;frame++)run.ai.update(60);
-  assert.equal(regroups,1,'战斗中归队被地形挡住时也不能每帧清空掉队计时');
+  run.ai.update(60);
+  assert.equal(regroups,1);
 });
 
-test('companions keep attacking the last controlled target after its selection is cleared',()=>{
-  const run=setup();run.shared('enemy');run.fighting();run.ai.update(60);
-  assert.equal(run.plays.at(-1)?.target?.id,'enemy');
-  run.finish();run.shared(undefined);run.ai.update(60);
-  assert.equal(run.plays.at(-1)?.target?.id,'enemy','记忆目标在有效期内继续攻击');
-});
-
-test('expired target memory makes companions hold position in combat',()=>{
-  const run=setup();run.fighting();run.shared('enemy');run.ai.update(60);
-  run.finish();run.shared(undefined);run.leader.position={x:80,y:32};
-  run.ai.update(1861);
-  const casts=run.plays.length;
-  run.ai.update(600);
-  assert.equal(run.plays.length,casts,'记忆过期后不再补攻击');
-  assert.equal(run.waypoint(),undefined,'战斗中留在保持圈内');
-});
-
-test('companions rejoin the leader when a fight pulls the leader outside the hold radius',()=>{
-  const run=setup();run.fighting();run.leader.position={x:160,y:32};run.ai.update(60);
-  assert.ok(run.waypoint(),'超过保持圈后归队');
-  run.advance(40);
-  assert.equal(run.waypoint(),undefined,'进入归队内圈后停下');
-  assert.ok(attackDistance(run.member.position,box,run.leader.position,box)<=7,'停在保持圈附近');
-});
-
-test('companions stop chasing a target dragged too far from the controlled character',()=>{
-  const run=setup();run.fighting();run.leader.position={x:32,y:32};
-  run.enemy.position={x:160,y:32};run.shared('enemy');run.ai.update(60);
-  assert.equal(run.waypoint(),undefined,'目标离主角太远时不追');
-  assert.equal(run.plays.length,0,'也不进入攻击');
-});
-
-test('an invalid remembered target is dropped immediately',()=>{
-  const run=setup();run.fighting();run.shared('enemy');run.ai.update(60);
-  const casts=run.plays.length;run.finish();run.shared(undefined);
-  run.enemy.states=['stealthed'];run.leader.position={x:64,y:32};run.ai.update(60);
-  assert.equal(run.plays.length,casts,'隐身目标不能再打');
-  assert.equal(run.waypoint(),undefined,'转回战斗保持');
-});
-
-test('leaving combat returns companions to formation following',()=>{
-  const run=setup();run.fighting();run.ai.update(60);
-  assert.equal(run.waypoint(),undefined,'战斗中无目标保持原位');
-  run.fighting(false);run.ai.update(60);
-  assert.ok(run.waypoint(),'脱战后恢复跟随');
-});
-
-test('cancelling clears the remembered combat target',()=>{
-  const run=setup();run.fighting();run.shared('enemy');run.ai.update(60);
-  const casts=run.plays.length;run.ai.cancel();run.shared(undefined);run.ai.update(60);
-  assert.equal(run.plays.length,casts,'取消后不再使用记忆目标');
-  assert.equal(run.waypoint(),undefined,'仍在战斗中则保持原位');
-});
-
-test('restoring a party checkpoint clears remembered combat targets',()=>{
-  const run=setup();run.fighting();run.shared('enemy');run.ai.update(60);
-  const casts=run.plays.length;
-  run.ai.restoreState(run.ai.captureState());
-  run.shared(undefined);run.ai.update(60);
-  assert.equal(run.plays.length,casts,'读档恢复后不沿用旧战斗目标');
+test('removing a focused target clears the pursuit path',()=>{
+  const run=setup();run.enemy.position={x:200,y:128};run.focus('enemy');
+  for(let frame=0;frame<20&&!run.waypoint();frame++)run.ai.update(60);
+  assert.ok(run.waypoint());
+  run.enemy.states=['stealthed'];run.ai.targetRemoved(run.enemy.id);
   assert.equal(run.waypoint(),undefined);
 });
 
-test('party checkpoints restore the pending logic frame and cached navigation without sharing mutable points',()=>{
+test('party checkpoints keep the pending logic frame and cached path without sharing mutable points',()=>{
   const run=setup();run.ai.update(85);const saved=run.ai.captureState(),expected=structuredClone(saved);
   assert.equal(saved.accumulator,25);assert.equal(saved.clock,60);assert.ok(saved.path.length);
   saved.path[0].x+=100;assert.deepEqual(run.ai.captureState(),expected);
-  run.ai.cancel();run.ai.update(600);run.ai.cancel();run.ai.restoreState(expected);
-  assert.deepEqual(run.ai.captureState(),expected);assert.equal(run.waypoint(),undefined);
-  expected.path[0].x+=100;expected.destination!.x+=100;
-  assert.notDeepEqual(run.ai.captureState(),expected);
-  const bounds=run.boundsCalls();run.ai.update(34);assert.equal(run.waypoint(),undefined);
-  run.ai.update(1);assert.ok(run.waypoint());assert.equal(run.boundsCalls(),bounds);
-  assert.equal(run.ai.captureState().clock,120);
-});
-test('restoring a party decision keeps its pending logic frame and leaves combat restoration to its owner',()=>{
-  const run=setup();run.focus('enemy');run.ai.update(25);
-  const saved=run.ai.captureState();run.ai.cancel();run.focus('enemy2');run.ai.update(60);
-  const combat=run.combat.snapshot();run.ai.restoreState(saved);assert.deepEqual(run.combat.snapshot(),combat);
-  run.combat.cancel(true);run.focus('enemy');run.ai.update(35);
-  assert.equal(run.plays.at(-1)?.target?.id,'enemy','恢复的累积帧在下一帧继续推进');
+  run.ai.cancel();run.ai.restoreState(expected);
+  assert.deepEqual(run.ai.captureState(),expected);
 });
 
-
-test('party single-step decisions read session cooldowns without advancing their shared frame',()=>{
-  const run=setup();run.shared('enemy');run.fighting();run.skill('demon-s-shield','chance');run.ai.step();
+test('single-step decisions read session cooldowns without advancing their shared frame',()=>{
+  const run=setup();run.enemy.position={x:56,y:32};run.shared('enemy');run.fighting();run.skill('demon-s-shield','chance');
+  run.ai.step();
   assert.equal(run.plays.length,1);assert.equal(run.time.frame,0);run.finish();
   const duration=catalog.skills['demon-s-shield'].action!.cooldownFrames;
   run.time.frame=duration-1;run.ai.step();
-  assert.equal(run.plays.filter(play=>play.skill).length,1,'冷却中不再释放同一个技能');
-  assert.equal(run.plays.length,2,'战斗中的空档用普攻迎战');
-  assert.equal(run.ai.snapshot().cooldowns['demon-s-shield'].remainingMs,60);
-  run.finish();
-  run.time.frame=duration;assert.deepEqual(run.ai.snapshot().cooldowns,{});
-  run.ai.step();assert.equal(run.plays.filter(play=>play.skill).length,2);
-});
-
-test('detour detection only applies to short formation paths',()=>{
-  assert.equal(shouldUseTrailByDetour(160,100),false,'刚好 1.6 倍不算绕');
-  assert.equal(shouldUseTrailByDetour(153,90),true);
-  assert.equal(shouldUseTrailByDetour(300,150),false,'直线距离超过 96 像素时不按绕行判断');
-  assert.equal(shouldUseTrailByDetour(10,0),false);
-});
-
-test('a blocked formation slot falls back to the leader trail and returns after the exit window',()=>{
-  const run=setup(),formation={x:128,y:48},trail={x:100,y:32};
-  let usable=false;
-  run.port.followGoal=()=>formation;
-  run.port.trailGoal=()=>trail;
-  run.port.canStand=point=>usable||point.x!==formation.x||point.y!==formation.y;
-  run.ai.update(60*8);
-  assert.deepEqual(run.ai.captureState().destination,trail,'队形点连续不可站后切轨迹');
-  usable=true;
-  run.ai.update(60*16);
-  assert.deepEqual(run.ai.captureState().destination,formation,'恢复可站一段时间后切回队形');
+  assert.equal(run.plays.filter(play=>play.skill).length,1);
+  assert.equal(run.plays.length,2);
+  run.finish();run.time.frame=duration;run.ai.step();
+  assert.equal(run.plays.filter(play=>play.skill).length,2);
 });

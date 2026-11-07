@@ -1,30 +1,32 @@
 import { LOGIC_FRAME_MS, type EnemyPlayableSkill } from './battle.ts';
-import { attackDistance, faceTarget, targetDistance } from './basic-attack.ts';
+import { attackDistance, targetDistance } from './basic-attack.ts';
 import { CombatController, canTargetCombatant, type Combatant, type CombatPort } from './combat.ts';
 import { combatStateCapabilities } from './combat-state.ts';
 import { needsTarget } from './skill-action.ts';
+import type { Facing } from './content.ts';
+import { followOffset, type CompanionStance } from './party-placement.ts';
 import { canTraverse, createPathSearch, PATH_GRID_SIZE } from './pathfinding.ts';
 import type { GameRectangle, Point } from './navigation.ts';
 
 export type PartySkillKind = 'chance' | 'combat-chance' | 'heal' | 'ally-combat' | 'emergency-heal';
 export interface PartyPort extends CombatPort {
   leader(): Combatant | undefined;
-  /** 跟随队长时要走到的队形槽位；缺省时退回队长身边任意点。 */
-  followGoal?(): Point | undefined;
-  /** 窄路时沿主角最近走过的路径跟随的目标点；没有轨迹时退回队形目标。 */
-  trailGoal?(): Point | undefined;
+  /** 当前操控角色的朝向；跟随站位用它分前后。 */
+  leaderFacing?(): Facing;
+  /** 上阵槽位：0 左、1 右；主角被 AI 接管时没有槽位。 */
+  followSlot?(): 0 | 1 | undefined;
   focusTarget(): string | undefined;
-  /** 主操作角色当前的战斗目标；队伍联动时让佣兵攻击同一个敌人。 */
+  /** 主操作角色当前的战斗目标；软集火，只影响优先级。 */
   partyTarget?(): string | undefined;
-  /** 战斗待命时最近仍在交战的敌人；只用于转身朝向，不参与索敌。 */
-  threatTarget?(): Combatant | undefined;
+  /** 敌人当前正在打谁；用来找正在攻击玩家/队友的敌人。 */
+  targetOf?(actorId:string): string | undefined;
   /** 整个队伍是否已进入战斗：有指派目标，或最近和敌人真实交战过。 */
   inCombat(): boolean;
   navigationBounds(): GameRectangle;
   /** 每渲染帧共享的寻路扩展预算；缺省时按单次上限同步搜索（测试与无场景调用）。 */
   pathBudget?:{take(owner:string,limit:number):number};
   followPath(next: () => Point | undefined): void;
-  /** 跟随队长时长时间没有位移，让宿主把佣兵收拢到队长身边；无场景调用可省略。 */
+  /** 长时间没有位移或离得太远时，让宿主把佣兵放到队长身边；无场景调用可省略。 */
   regroup?(): void;
   skills(): readonly EnemyPlayableSkill[];
   skillKind(id:string): PartySkillKind | undefined;
@@ -42,47 +44,42 @@ interface PartyControllerState {
   destinationRange?:number;
 }
 
-/** 跟随距离按双方碰撞矩形之间的间隔计算，每个距离单位为八个地图像素。
- *  同队单位之间不碰撞，这个间隔负责让他们不贴脸、也不和玩家挤在同一点上。 */
+/** 跟随停止距离沿用距离单位，只用于存档里的旧目标范围字段。 */
 const PARTY_FOLLOW_DISTANCE_UNITS = 4;
-/** 队长走出 3 格才重算；贴脸 8px 会让跟随者每逻辑帧重开搜索。 */
+/** 目标点走出 3 格才重算；贴脸 8px 会让跟随者每逻辑帧重开搜索。 */
 const PARTY_REPATH_DISTANCE_PX = PATH_GRID_SIZE * 3;
 /** 两次重算之间的最短间隔。 */
 const PARTY_REPATH_INTERVAL_MS = 180;
-/** 跟随是一次性同步搜索的上限；预算不足时下一帧再试。 */
+/** 单次寻路搜索上限；预算不足时下一帧再试。 */
 const PARTY_SEARCH_CAP = 384;
 /** 不可达后的重试间隔。 */
 const PARTY_FAILED_PATH_MS = 600;
-/** 跟随这么久没有任何位移，就当作被地形或人群卡住，不再干等寻路。 */
-const PARTY_FOLLOW_STUCK_MS = 1500;
-/** 追击目标被卡住并收拢后，先停一段时间，避免每次重选同一目标又立刻瞬移。 */
-const PARTY_CHASE_RECOVERY_MS = 2400;
+/** 跟随这么久没有任何位移，就当作被地形或人群卡住。 */
+const PARTY_FOLLOW_STUCK_MS = 2000;
+/** 追击目标被卡住后，先停一段时间，避免立刻重选同一目标。 */
+const PARTY_CHASE_RECOVERY_MS = 1500;
 /** 位移超过这个距离才算“还在走”；碰撞抖动不算进展。 */
 const PARTY_FOLLOW_PROGRESS_PX = 4;
-/** 几乎贴脸时才不触发收拢；薄墙两侧 8px 以上也要能脱困。 */
-const PARTY_REGROUP_MIN_DISTANCE_PX = 8;
-/** 队形点连续不可站这么久后，改走主角走过的路径。 */
-const PARTY_TRAIL_ENTER_MS = 350;
-/** 队形点恢复可站这么久后再切回队形，避免门口来回抖。 */
-const PARTY_TRAIL_EXIT_MS = 800;
-/** 绕行比超过这个值、且直线距离够近时，认为队形点不自然。 */
-const PARTY_TRAIL_DETOUR_RATIO = 1.6;
-const PARTY_TRAIL_DETOUR_MAX_PX = 96;
-/** 因绕行切到轨迹后，至少保持这么久再评估回队形，避免在连续拐角里来回切。 */
-const PARTY_TRAIL_DETOUR_HOLD_MS = 1500;
-/** 主角最后一次指定目标后，佣兵最多再记这么久；与真实交战窗口一致。 */
-const PARTY_COMBAT_MEMORY_MS = 1800;
-/** 战斗中无目标时的保持圈：主角在这个半径内走动，佣兵不跟。 */
-const PARTY_COMBAT_HOLD_RADIUS_PX = 96;
-/** 超出保持圈后归队，到主角的攻击距离单位内停下（约七格）。 */
-const PARTY_COMBAT_REGROUP_DISTANCE_UNITS = 7;
-/** 目标离主角超过这个距离就放弃追击，避免被远程敌人牵着走。 */
-const PARTY_CHASE_LEASH_PX = 80;
-
-/** 队形点能站，但寻路要绕很远时，下一帧改走主角路径。 */
-export function shouldUseTrailByDetour(pathLength:number, straightDistance:number):boolean {
-  return straightDistance>0&&straightDistance<=PARTY_TRAIL_DETOUR_MAX_PX&&pathLength/straightDistance>PARTY_TRAIL_DETOUR_RATIO;
-}
+/** 站到离跟随目标这么近就不再走。 */
+const PARTY_FOLLOW_GOAL_STOP_PX = 12;
+/** 离队长这么远就直接传送，不再等寻路。 */
+const PARTY_TELEPORT_DISTANCE_PX = 240;
+/** 同一名伙伴两次传送之间的最短间隔。 */
+const PARTY_REGROUP_COOLDOWN_MS = 5000;
+/** 自动接敌半径：玩家或伙伴周围这么远的敌人会被主动打。 */
+const PARTY_ACQUIRE_RADIUS_PX = 160;
+/** 目标离队长超过这个距离就放弃追击。 */
+const PARTY_CHASE_LEASH_PX = 200;
+/** 同一目标至少保持这么久，避免来回跳。 */
+const PARTY_TARGET_STICKY_MS = 2000;
+/** 追击这么久没有位移，就放弃当前目标。 */
+const PARTY_CHASE_STUCK_MS = 2000;
+/** 近战/远程分界：攻击距离超过这个值的伙伴站后排。 */
+const PARTY_RANGED_RANGE_UNITS = 6;
+/** 技能尝试顺序：保命/辅助先于输出。频率和冷却仍然照旧。 */
+const PARTY_SKILL_PRIORITY:Record<PartySkillKind,number>={
+  'emergency-heal':0,heal:1,'ally-combat':2,'combat-chance':3,chance:4
+};
 
 /** 自动施法抽取 1 至 99 的整数，严格小于阈值时通过。 */
 export function partySkillThreshold(kind:PartySkillKind,frequency:number,following:boolean):number {
@@ -106,23 +103,16 @@ export class PartyController {
   private path:Point[]=[];
   /** 跨帧推进的寻路搜索；每帧只领一段预算，不能在预算用完时丢掉重来。 */
   private search?:ReturnType<typeof createPathSearch>;
-  /** 旧路线第一步失效时立刻重算，但别每个逻辑帧都重开搜索。 */
-  private pathRetryAt=0;
   /** 跟随队长时的最近一次真实位移，用来判断是不是一直站着。 */
   private followProgress?:Point;
   private followProgressAt=0;
-  /** 追击敌人或自动接近时的最近一次真实位移；和队长跟随分开记录，战斗状态不会互相清零。 */
+  /** 追击敌人时的最近一次真实位移；和队长跟随分开记录。 */
   private chaseProgress?:{targetId:string;position:Point;since:number};
   private chaseRecoveryUntil=0;
-  /** 主角最后一刻还在攻击的目标；主角走位清掉目标后，佣兵靠它继续打一小段时间。 */
-  private combatTarget?:{id:string;until:number};
-  /** 是否正在从战斗保持圈外归队；进入内圈才停，避免在边界上来回抖。 */
-  private combatRegrouping=false;
-  private followMode:'formation'|'trail'='formation';
-  private formationBlockedSince=0;
-  private formationUsableSince=0;
-  private trailHoldUntil=0;
-  private searchKind:'follow-formation'|'follow-trail'|'chase'|undefined;
+  /** 当前目标；只来自软集火、正在打队友的敌人或附近敌人。 */
+  private targetId?:string;
+  private targetSince=0;
+  private nextRegroupAt=0;
   private destination?:Point;
   private destinationTarget?:string;
   private destinationRange?:number;
@@ -144,22 +134,18 @@ export class PartyController {
     this.path=state.path.map(point=>({...point}));this.destination=state.destination?{...state.destination}:undefined;
     this.destinationTarget=state.destinationTarget;this.destinationRange=state.destinationRange;
     // 搜索持有的是旧场地的闭包，读档后必须重新开始。
-    this.search=undefined;this.pathRetryAt=0;this.followProgress=undefined;this.followProgressAt=0;
-    this.chaseProgress=undefined;this.chaseRecoveryUntil=0;this.combatTarget=undefined;this.combatRegrouping=false;
-    this.followMode='formation';this.formationBlockedSince=0;this.formationUsableSince=0;this.trailHoldUntil=0;this.searchKind=undefined;
+    this.search=undefined;this.followProgress=undefined;this.followProgressAt=0;
+    this.chaseProgress=undefined;this.chaseRecoveryUntil=0;this.targetId=undefined;this.targetSince=0;
+    this.nextRegroupAt=0;
   }
   targetRemoved(targetId:string):void {
     this.combatController.targetRemoved(targetId);
-    if(this.combatTarget?.id===targetId)this.combatTarget=undefined;
+    if(this.targetId===targetId){this.targetId=undefined;this.chaseProgress=undefined;}
     if(this.destinationTarget!==targetId)return;
-    this.path=[];this.search=undefined;this.pathRetryAt=0;this.followProgress=undefined;this.followProgressAt=0;
-    this.destination=undefined;this.destinationTarget=undefined;this.destinationRange=undefined;this.nextPathAt=0;this.port.stop();
+    this.clearRoute();
   }
-  cancel():void {this.combatController.cancel(true);this.path=[];this.search=undefined;this.pathRetryAt=0;
-    this.followProgress=undefined;this.followProgressAt=0;this.chaseProgress=undefined;this.chaseRecoveryUntil=0;this.combatTarget=undefined;this.combatRegrouping=false;
-    this.destination=undefined;this.destinationTarget=undefined;this.destinationRange=undefined;
-    this.nextPathAt=0;this.accumulator=0;this.followMode='formation';this.formationBlockedSince=0;
-    this.formationUsableSince=0;this.trailHoldUntil=0;this.searchKind=undefined;this.port.stop();}
+  cancel():void {this.combatController.cancel(true);this.clearRoute();this.targetId=undefined;this.chaseProgress=undefined;
+    this.chaseRecoveryUntil=0;this.nextRegroupAt=0;this.accumulator=0;this.followProgress=undefined;this.followProgressAt=0;}
   disable():void {this.cancel();}
   reset():void {this.cancel();this.combatController.reset();}
   dispose():void {this.cancel();this.disposed=true;this.combatController.dispose();}
@@ -178,147 +164,129 @@ export class PartyController {
     if(!actor){this.port.stop();return;}
     this.combatController.update();
     if(!combatStateCapabilities(actor.states??[]).canAct){
-      this.path=[];this.port.stop();this.followProgress=undefined;this.followProgressAt=0;this.combatTarget=undefined;return;
+      this.clearRoute();this.followProgress=undefined;this.followProgressAt=0;return;
     }
     const actionState=this.combatController.actionState();
-    // 默认普攻由 CombatController 直线接近目标；撞上剧情障碍时不会自己寻路。
-    // 这里只在接近阶段做无进展检测，取消接近后交给下面的收拢兜底。
     if(actionState==='approaching'){
       this.trackChaseProgress(actor,this.combatController.selectedTargetId()??'approach');
       return;
     }
     if(actionState!=='idle')return;
-    const inCombat=this.port.inCombat();
-    const recovering=this.clock<this.chaseRecoveryUntil;
-    // 佣兵只跟随主角的攻击：显式集火优先，其次主操作角色当前攻击的目标。
-    // 不自己索敌，也不因为挨打还手；主角走位清掉目标时，先吃完最后一刻的目标记忆。
-    const realtime=recovering?undefined:this.hostileTarget(actor,[
-      this.port.focusTarget(),
-      this.port.partyTarget?.()
-    ]);
-    if(realtime)this.rememberCombatTarget(realtime);
-    let target=realtime??this.recalledCombatTarget(actor,recovering);
-    // 目标被拉出主角身边时不再追，防止远程敌人把近战佣兵牵出战斗区域；
-    // 已经在攻击距离内的目标不受影响，先打完这一下再判断距离。
-    if(target&&this.chaseLeashExceeded(actor,target)
-      &&attackDistance(actor.position,actor.bounds,target.position,target.bounds)>this.port.attackRange()){
-      this.combatTarget=undefined;target=undefined;
-      this.path=[];this.search=undefined;this.pathRetryAt=0;this.nextPathAt=0;
-      this.port.stop();
-    }
-    // 重新选中目标时清掉旧的队长跟随计时；没有目标但处于战斗时仍走战斗保持，
-    // 这条计时不能被 inCombat 每帧清零，否则掉队收拢在战斗中永远等不到触发。
-    if(target){this.followProgress=undefined;this.followProgressAt=0;this.formationBlockedSince=0;this.formationUsableSince=0;}
-    // 队伍未进入战斗时只跟随，不放任何主动技能；召唤物之类的无目标技能也不例外。
-    if(inCombat){
-      const cooldowns=this.combatController.snapshot().cooldowns;
-      for(const skill of this.port.skills()){
-        const frequency=skill.frequency??1,kind=this.port.skillKind(skill.id);
-        if(!frequency||!kind||cooldowns[skill.id]||!this.combatController.canSelectSkill(skill)||this.port.canSpendMana?.(skill.manaCost??0)===false)continue;
-        if(needsTarget(skill.action)&&(!target||attackDistance(actor.position,actor.bounds,target.position,target.bounds)>skill.action.approachDistanceUnits))continue;
-        const threshold=partySkillThreshold(kind,frequency,!target);
-        let ready=false;
-        if(kind==='heal'||kind==='emergency-heal'){
-          ready=this.port.candidates().some(ally=>{
-            const hp=this.port.vitals(ally.id);
-            return ally.team===actor.team&&!!hp&&hp.health>0&&hp.health<Math.trunc(hp.maxHealth*threshold/100)
-              &&targetDistance(actor.position,ally.position)<=skill.action.searchRadiusPx;
-          });
-        }else if(kind==='ally-combat'){
-          ready=this.port.candidates().some(ally=>ally.id!==actor.id&&ally.team===actor.team&&this.port.attacking(ally.id)&&this.roll(threshold));
-        }else ready=this.roll(threshold);
-        if(ready&&this.combatController.request(skill,target?.id)==='started'){this.path=[];return;}
-      }
-    }
-    if(target){
-      const range=this.port.attackRange();
-      if(attackDistance(actor.position,actor.bounds,target.position,target.bounds)<=range){
-        this.chaseProgress=undefined;this.path=[];this.combatController.requestTarget(target.id);
-      }else{
-        if(this.trackChaseProgress(actor,target.id))return;
-        this.follow(actor,target,range);
-      }
-      return;
-    }
+    const target=this.selectTarget(actor);
+    if(this.port.inCombat()&&this.trySkill(actor,target))return;
+    if(target){this.chase(actor,target);return;}
     this.chaseProgress=undefined;
-    // 队伍仍在战斗时不跟主角的小范围走位：留在战斗位置待命，辅助技能照常释放。
-    // 只有脱战，或主角拉开到保持圈外，才恢复跟随。
-    if(inCombat){this.holdCombatPosition(actor);return;}
-    const leader=this.port.leader();
-    const formation=this.port.followGoal?.();
-    this.updateFollowMode(formation);
-    const goal=this.followMode==='trail'?this.port.trailGoal?.()??formation:formation;
-    // 有队形槽位时按「离自己的槽位点多远」判断到没到，而不是离队长多远；
-    // 否则槽位点在队长的跟随半径内，佣兵会在到达槽位前就停下。
-    if(!leader||leader.id===actor.id||(goal
-      ?targetDistance(actor.position,goal)<=8
-      :attackDistance(actor.position,actor.bounds,leader.position,leader.bounds)<PARTY_FOLLOW_DISTANCE_UNITS)){
-      this.path=[];this.port.stop();this.followProgress=undefined;this.followProgressAt=0;return;
-    }
-    this.follow(actor,leader,PARTY_FOLLOW_DISTANCE_UNITS-1,true,goal);
+    this.follow(actor);
   }
-  /** 按优先级取第一个仍可攻击的敌对目标；这里只接收主角侧给出的目标。 */
-  private hostileTarget(actor:Combatant,ids:readonly (string|undefined)[]):Combatant|undefined {
-    for(const id of ids){
-      const candidate=id?this.port.actor(id):undefined;
-      if(candidate&&candidate.team!==actor.team&&canTargetCombatant(actor,candidate))return candidate;
+  /** 软集火优先；否则保留黏性目标，再看正在打队友的敌人和附近敌人。 */
+  private selectTarget(actor:Combatant):Combatant|undefined {
+    const leader=this.port.leader();
+    const focused=this.focusedTarget(actor,leader);
+    if(focused)return focused;
+    if(this.clock<this.chaseRecoveryUntil){this.targetId=undefined;return undefined;}
+    const current=this.targetId?this.port.actor(this.targetId):undefined;
+    if(current&&this.validTarget(actor,current)&&this.withinLeash(actor,current,leader)
+      &&this.clock-this.targetSince<PARTY_TARGET_STICKY_MS)return current;
+    const threat=this.nearestThreatTarget(actor,leader);
+    if(threat)return this.rememberTarget(threat);
+    const nearby=this.nearestEnemy(actor,leader);
+    if(nearby)return this.rememberTarget(nearby);
+    this.targetId=undefined;return undefined;
+  }
+  private focusedTarget(actor:Combatant,leader:Combatant|undefined):Combatant|undefined {
+    for(const id of [this.port.focusTarget(),this.port.partyTarget?.()]){
+      const target=id?this.port.actor(id):undefined;
+      if(target&&this.validTarget(actor,target)&&this.withinLeash(actor,target,leader))return this.rememberTarget(target);
     }
     return undefined;
   }
-
-  /** 主角刚打过的目标记一小段时间；主角走位清掉目标时，佣兵不会立刻停手。 */
-  private rememberCombatTarget(target:Combatant):void {
-    this.combatTarget={id:target.id,until:this.clock+PARTY_COMBAT_MEMORY_MS};
+  private validTarget(actor:Combatant,target:Combatant):boolean {
+    return target.team!==actor.team&&canTargetCombatant(actor,target);
   }
-  /** 取仍在有效期内的记忆目标；失效或过期的目标立刻清掉。 */
-  private recalledCombatTarget(actor:Combatant,recovering:boolean):Combatant|undefined {
-    const memory=this.combatTarget;
-    if(!memory)return undefined;
-    if(recovering||this.clock>memory.until){this.combatTarget=undefined;return undefined;}
-    const target=this.port.actor(memory.id);
-    if(!target||target.team===actor.team||!canTargetCombatant(actor,target)){this.combatTarget=undefined;return undefined;}
-    // 这个目标已经不在主角的实时意图里；佣兵自己不接近敌人时（伏击等），
-    // 不能让记忆目标拦住归队，交回普通跟随。
-    const capabilities=combatStateCapabilities(actor.states??[]);
-    if(!capabilities.canMove||!capabilities.canAutoApproach){this.combatTarget=undefined;return undefined;}
-    return target;
+  private withinLeash(actor:Combatant,target:Combatant,leader:Combatant|undefined):boolean {
+    if(!leader)return true;
+    if(attackDistance(actor.position,actor.bounds,target.position,target.bounds)<=this.port.attackRange())return true;
+    return targetDistance(target.position,leader.position)<=PARTY_CHASE_LEASH_PX;
   }
-  /** 目标离主角太远就放弃追击；没有主操作角色时不做限制。 */
-  private chaseLeashExceeded(actor:Combatant,target:Combatant):boolean {
-    const leader=this.port.leader();
-    if(!leader||leader.id===actor.id)return false;
-    return targetDistance(target.position,leader.position)>PARTY_CHASE_LEASH_PX;
+  private rememberTarget(target:Combatant):Combatant {
+    if(this.targetId!==target.id){this.targetId=target.id;this.chaseProgress=undefined;}
+    this.targetSince=this.clock;return target;
   }
-  /** 战斗中没有目标：保持圈内原地待命，超出才归队；待命时转向最近的交战敌人。 */
-  private holdCombatPosition(actor:Combatant):void {
-    const leader=this.port.leader();
-    if(!leader||leader.id===actor.id){this.path=[];this.port.stop();this.combatRegrouping=false;return;}
-    const distance=targetDistance(actor.position,leader.position);
-    if(distance>PARTY_COMBAT_HOLD_RADIUS_PX)this.combatRegrouping=true;
-    else if(attackDistance(actor.position,actor.bounds,leader.position,leader.bounds)<=PARTY_COMBAT_REGROUP_DISTANCE_UNITS)this.combatRegrouping=false;
-    if(this.combatRegrouping){
-      this.follow(actor,leader,PARTY_COMBAT_REGROUP_DISTANCE_UNITS,true);
-      return;
+  /** 正在攻击玩家或队友的敌人；没有 targetOf 数据时退回最近敌人。 */
+  private nearestThreatTarget(actor:Combatant,leader:Combatant|undefined):Combatant|undefined {
+    const targetOf=this.port.targetOf;
+    if(!targetOf)return undefined;
+    const partyIds=new Set<string>();
+    for(const candidate of this.port.candidates())if(candidate.team===actor.team)partyIds.add(candidate.id);
+    let best:Combatant|undefined,bestDistance=Infinity;
+    for(const candidate of this.port.candidates()){
+      if(candidate.team===actor.team||!canTargetCombatant(actor,candidate))continue;
+      const targetId=targetOf(candidate.id);
+      if(!targetId||!partyIds.has(targetId))continue;
+      if(!this.withinLeash(actor,candidate,leader))continue;
+      const distance=targetDistance(actor.position,candidate.position);
+      if(distance<bestDistance){best=candidate;bestDistance=distance;}
     }
-    this.path=[];this.search=undefined;this.pathRetryAt=0;this.nextPathAt=0;
-    this.destination=undefined;this.destinationTarget=undefined;this.destinationRange=undefined;
-    this.port.stop();this.faceCombatThreat(actor,leader);
+    return best;
   }
-  private faceCombatThreat(actor:Combatant,leader:Combatant):void {
-    if(!this.port.face)return;
-    const threat=this.port.threatTarget?.();
-    this.port.face(faceTarget(actor.position,threat?.position??leader.position));
+  private nearestEnemy(actor:Combatant,leader:Combatant|undefined):Combatant|undefined {
+    let best:Combatant|undefined,bestDistance=Infinity;
+    for(const candidate of this.port.candidates()){
+      if(candidate.team===actor.team||!canTargetCombatant(actor,candidate))continue;
+      if(!this.withinAcquire(actor,candidate,leader))continue;
+      const distance=targetDistance(actor.position,candidate.position);
+      if(distance<bestDistance){best=candidate;bestDistance=distance;}
+    }
+    return best;
   }
-  private roll(threshold:number):boolean{return 1+Math.floor(this.random()*99)<threshold;}
-  /**
-   * 追击敌人或自动接近时，连续一段时间没有真实位移就收拢一次。
-   *
-   * 目标追击和默认普攻的直线接近都不走“跟随队长”分支；如果没有这条兜底，
-   * 被剧情障碍封在入口的佣兵会一直重算同一条不可达路线。收拢后短暂停手，
-   * 避免目标仍然不可达时每 1.5 秒重复瞬移。
-   */
+  private withinAcquire(actor:Combatant,target:Combatant,leader:Combatant|undefined):boolean {
+    if(targetDistance(target.position,actor.position)<=PARTY_ACQUIRE_RADIUS_PX)return true;
+    return !!leader&&targetDistance(target.position,leader.position)<=PARTY_ACQUIRE_RADIUS_PX;
+  }
+  private trySkill(actor:Combatant,target:Combatant|undefined):boolean {
+    const cooldowns=this.combatController.snapshot().cooldowns;
+    const skills=[...this.port.skills()].sort((a,b)=>this.skillPriority(a.id)-this.skillPriority(b.id));
+    for(const skill of skills){
+      const frequency=skill.frequency??1,kind=this.port.skillKind(skill.id);
+      if(!frequency||!kind||cooldowns[skill.id]||!this.combatController.canSelectSkill(skill)
+        ||this.port.canSpendMana?.(skill.manaCost??0)===false)continue;
+      if(needsTarget(skill.action)&&(!target||attackDistance(actor.position,actor.bounds,target.position,target.bounds)>skill.action.approachDistanceUnits))continue;
+      const threshold=partySkillThreshold(kind,frequency,!target);
+      let ready=false;
+      if(kind==='heal'||kind==='emergency-heal'){
+        ready=this.port.candidates().some(ally=>{
+          const hp=this.port.vitals(ally.id);
+          return ally.team===actor.team&&!!hp&&hp.health>0&&hp.health<Math.trunc(hp.maxHealth*threshold/100)
+            &&targetDistance(actor.position,ally.position)<=skill.action.searchRadiusPx;
+        });
+      }else if(kind==='ally-combat'){
+        ready=this.port.candidates().some(ally=>ally.id!==actor.id&&ally.team===actor.team&&this.port.attacking(ally.id)&&this.roll(threshold));
+      }else ready=this.roll(threshold);
+      if(ready&&this.combatController.request(skill,target?.id)==='started'){this.clearRoute(false);return true;}
+    }
+    return false;
+  }
+  private skillPriority(skillId:string):number {
+    const kind=this.port.skillKind(skillId);
+    return kind?PARTY_SKILL_PRIORITY[kind]:9;
+  }
+  private chase(actor:Combatant,target:Combatant):void {
+    const range=this.port.attackRange();
+    if(attackDistance(actor.position,actor.bounds,target.position,target.bounds)<=range){
+      this.chaseProgress=undefined;this.clearRoute();
+      this.combatController.requestTarget(target.id);return;
+    }
+    const leader=this.port.leader();
+    if(!this.withinLeash(actor,target,leader)){
+      this.targetId=undefined;this.clearRoute();this.follow(actor);return;
+    }
+    if(this.trackChaseProgress(actor,target.id))return;
+    this.followToTarget(actor,target,range);
+  }
+  /** 追击或自动接近时，连续一段时间没有真实位移就放弃当前目标。 */
   private trackChaseProgress(actor:Combatant,targetId:string):boolean {
     if(!this.port.regroup||this.clock<this.chaseRecoveryUntil)return false;
+    if(this.search)return false;
     const previous=this.chaseProgress;
     if(!previous||previous.targetId!==targetId){
       this.chaseProgress={targetId,position:{...actor.position},since:this.clock};
@@ -327,112 +295,112 @@ export class PartyController {
     if(Math.hypot(actor.position.x-previous.position.x,actor.position.y-previous.position.y)>=PARTY_FOLLOW_PROGRESS_PX){
       previous.position={...actor.position};previous.since=this.clock;return false;
     }
-    // 路径搜索还在跨帧推进时先不算卡住；搜索结束后如果仍没动，计时继续。
-    if(this.search)return false;
-    if(this.clock-previous.since<PARTY_FOLLOW_STUCK_MS)return false;
-    this.chaseProgress=undefined;
-    this.path=[];this.search=undefined;this.pathRetryAt=0;this.destination=undefined;
-    this.destinationTarget=undefined;this.destinationRange=undefined;this.nextPathAt=0;
-    this.combatController.cancel(true);this.port.stop();this.port.regroup?.();
-    // 宿主的收拢会调用本控制器的 cancel()；冷却必须放在收拢之后，否则会被清掉。
+    if(this.clock-previous.since<PARTY_CHASE_STUCK_MS)return false;
+    this.chaseProgress=undefined;this.targetId=undefined;this.clearRoute();
+    this.combatController.cancel(true);this.port.stop();this.tryRegroup();
     this.chaseRecoveryUntil=this.clock+PARTY_CHASE_RECOVERY_MS;
     return true;
   }
-  /** 队形点连续不可站就切轨迹；恢复可站一段时间后再切回，避免门口反复切换。 */
-  private updateFollowMode(formation?:Point):void {
-    if(!formation)return;
-    const usable=this.port.canStand(formation);
-    if(this.followMode==='formation'){
-      this.formationUsableSince=0;
-      if(usable){this.formationBlockedSince=0;return;}
-      if(!this.formationBlockedSince)this.formationBlockedSince=this.clock;
-      else if(this.clock-this.formationBlockedSince>=PARTY_TRAIL_ENTER_MS)this.switchFollowMode('trail');
-      return;
+  /** 没目标时回到职责站位：前排侧前，后排后方，辅助更靠后。 */
+  private follow(actor:Combatant):void {
+    const leader=this.port.leader();
+    if(!leader||leader.id===actor.id){this.clearRoute();return;}
+    const facing=this.port.leaderFacing?.()??'south';
+    const stance=this.stance();
+    const slot=this.port.followSlot?.()??0;
+    const offset=followOffset(facing,stance,slot);
+    const goal=this.adjustFollowGoal({x:leader.position.x+offset.x,y:leader.position.y+offset.y},actor);
+    const distance=targetDistance(actor.position,goal);
+    if(distance<=PARTY_FOLLOW_GOAL_STOP_PX){
+      this.clearRoute();this.followProgress=undefined;this.followProgressAt=0;return;
     }
-    this.formationBlockedSince=0;
-    if(!usable){this.formationUsableSince=0;return;}
-    if(this.clock<this.trailHoldUntil){this.formationUsableSince=0;return;}
-    if(!this.formationUsableSince)this.formationUsableSince=this.clock;
-    else if(this.clock-this.formationUsableSince>=PARTY_TRAIL_EXIT_MS)this.switchFollowMode('formation');
+    if(distance>PARTY_TELEPORT_DISTANCE_PX&&this.tryRegroup())return;
+    if(this.trackFollowProgress(actor,leader))return;
+    this.followToPoint(actor,leader,goal);
   }
-  /** 切换跟随方式时丢掉旧路线，下一帧从新目标重新找路。 */
-  private switchFollowMode(mode:'formation'|'trail',holdMs=0):void {
-    if(this.followMode===mode)return;
-    this.followMode=mode;
-    this.trailHoldUntil=mode==='trail'?this.clock+holdMs:0;
-    this.formationBlockedSince=0;this.formationUsableSince=0;
-    this.path=[];this.search=undefined;this.searchKind=undefined;this.destination=undefined;
-    this.pathRetryAt=0;this.nextPathAt=0;
+  private stance():CompanionStance {
+    const support=this.port.skills().some(skill=>{
+      const kind=this.port.skillKind(skill.id);
+      return kind==='heal'||kind==='emergency-heal';
+    });
+    if(support)return 'support';
+    return this.port.attackRange()>PARTY_RANGED_RANGE_UNITS?'back':'front';
   }
-  private follow(actor:Combatant,leader:Combatant,range:number,regroup=false,goal?:Point):void {
-    const capabilities=combatStateCapabilities(actor.states??[]);
-    if(!capabilities.canMove||(actor.team!==leader.team&&!capabilities.canAutoApproach)){
-      this.port.stop();this.followProgress=undefined;this.followProgressAt=0;return;
+  /** 站位点和另一名队友太近时推开；目标点站不住就找附近落点。 */
+  private adjustFollowGoal(goal:Point,actor:Combatant):Point {
+    const adjusted={...goal};
+    const leaderId=this.port.leader()?.id;
+    for(const candidate of this.port.candidates()){
+      if(candidate.id===actor.id||candidate.id===leaderId||candidate.team!==actor.team)continue;
+      const dx=adjusted.x-candidate.position.x,dy=adjusted.y-candidate.position.y;
+      const distance=Math.hypot(dx,dy);
+      if(distance<=0||distance>=24)continue;
+      const push=(24-distance)/24*6;
+      adjusted.x+=dx/distance*push;adjusted.y+=dy/distance*push;
     }
-    if(this.destinationTarget!==leader.id||this.destinationRange!==range){
-      this.path=[];this.search=undefined;this.pathRetryAt=0;this.followProgress=undefined;this.followProgressAt=0;
-      this.destination=undefined;this.nextPathAt=0;
-      this.destinationTarget=leader.id;this.destinationRange=range;
-    }
-    if(regroup){
-      if(this.trackFollowProgress(actor,leader))return;
-      // 第一步已经走不通（通常是角色被碰撞挤偏，路线起点对不上了）。
-      // 不要等下次固定重算：立刻丢掉旧路线，从当前真实位置重新找路。
-      if(!this.search&&this.path.length&&this.clock>=this.pathRetryAt&&!this.nextWaypoint()){
-        this.path=[];this.search=undefined;this.nextPathAt=this.clock;
-        this.pathRetryAt=this.clock+PARTY_REPATH_INTERVAL_MS;
+    if(this.port.canStand(adjusted))return adjusted;
+    for(const distance of [8,16]){
+      for(const [dx,dy] of [[0,-1],[-1,0],[1,0],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]]){
+        const point={x:adjusted.x+dx*distance,y:adjusted.y+dy*distance};
+        if(this.port.canStand(point))return point;
       }
-    } else {this.followProgress=undefined;this.followProgressAt=0;}
-    // 搜索跨帧推进：寻路一次算不完时保留现场、下一帧接着算。以前每次重开搜索，
-    // 超过单帧预算的长路（远距离或要绕墙）永远算不出来，佣兵就停在原地不跟随。
-    const followTarget=goal??leader.position;
-    // 槽位目标变化通常小于队长移动阈值；用更小的重算距离，交换槽位或 90° 转向才不会继续走旧位置。
-    const repathDistance=goal?16:PARTY_REPATH_DISTANCE_PX;
-    if(this.search)this.advanceSearch(actor);
-    else if(this.clock>=this.nextPathAt&&(!this.destination
-      ||targetDistance(this.destination,followTarget)>=repathDistance
-      ||!this.path.length||!this.nextWaypoint())){
-      // 先领预算再建查询：没有预算的帧连地图边界都不该读。
-      const granted=this.port.pathBudget?.take(this.id,PARTY_SEARCH_CAP)??PARTY_SEARCH_CAP;
-      if(granted>0)this.beginSearch(actor,leader,range,granted,goal);
-      else this.nextPathAt=this.clock+LOGIC_FRAME_MS;
     }
-    if(this.nextWaypoint())this.port.followPath(this.nextWaypoint);else this.port.stop();
+    return adjusted;
   }
-  /**
-   * 跟随队长时的掉队保护：连续一段时间一步没挪，就不再继续等寻路结果，
-   * 让宿主把佣兵放到队长旁边的合法落点。走不通的路线可以重算，但人不能永远留在原地。
-   */
+  /** 跟随队长时连续一段时间一步没挪，就请求宿主收拢。 */
   private trackFollowProgress(actor:Combatant,leader:Combatant):boolean {
     if(!this.port.regroup)return false;
-    // 寻路还在跨帧推进时角色本来就不该移动，不能把它当成卡住。
     if(this.search)return false;
     const previous=this.followProgress;
     if(!previous||Math.hypot(actor.position.x-previous.x,actor.position.y-previous.y)>=PARTY_FOLLOW_PROGRESS_PX){
       this.followProgress={...actor.position};this.followProgressAt=this.clock;return false;
     }
     if(this.clock-this.followProgressAt<PARTY_FOLLOW_STUCK_MS)return false;
-    // 只有几乎贴脸时才不触发收拢；薄墙两侧 8~48px 的不可达位置也要能脱困。
-    if(Math.hypot(actor.position.x-leader.position.x,actor.position.y-leader.position.y)<PARTY_REGROUP_MIN_DISTANCE_PX){
+    if(Math.hypot(actor.position.x-leader.position.x,actor.position.y-leader.position.y)<8){
       this.followProgressAt=this.clock;return false;
     }
-    this.followProgress={...actor.position};this.followProgressAt=this.clock;
-    this.path=[];this.search=undefined;this.pathRetryAt=0;this.destination=undefined;this.nextPathAt=0;
-    this.port.stop();this.port.regroup?.();
+    this.followProgress=undefined;this.clearRoute();this.port.stop();this.tryRegroup();
     return true;
   }
-  private beginSearch(actor:Combatant,leader:Combatant,range:number,granted:number,goal?:Point):void {
-    const target=goal??leader.position;
-    this.searchKind=goal?(this.followMode==='trail'?'follow-trail':'follow-formation'):'chase';
-    this.nextPathAt=this.clock+PARTY_REPATH_INTERVAL_MS;this.destination={...target};
+  private tryRegroup():boolean {
+    if(!this.port.regroup||this.clock<this.nextRegroupAt)return false;
+    this.port.regroup();
+    this.nextRegroupAt=this.clock+PARTY_REGROUP_COOLDOWN_MS;
+    return true;
+  }
+  private followToPoint(actor:Combatant,leader:Combatant,goal:Point):void {
+    if(this.destinationTarget!==leader.id||this.destinationRange!==PARTY_FOLLOW_DISTANCE_UNITS-1){
+      this.clearRoute();this.destinationTarget=leader.id;this.destinationRange=PARTY_FOLLOW_DISTANCE_UNITS-1;
+    }
+    this.followDestination(actor,goal,PARTY_FOLLOW_DISTANCE_UNITS-1);
+  }
+  private followToTarget(actor:Combatant,target:Combatant,range:number):void {
+    if(this.destinationTarget!==target.id||this.destinationRange!==range){
+      this.clearRoute();this.destinationTarget=target.id;this.destinationRange=range;
+    }
+    this.followDestination(actor,target.position,range,target);
+  }
+  private followDestination(actor:Combatant,destination:Point,range:number,target?:Combatant):void {
+    if(this.search)this.advanceSearch(actor);
+    else if(this.clock>=this.nextPathAt&&(!this.destination
+      ||targetDistance(this.destination,destination)>=PARTY_REPATH_DISTANCE_PX
+      ||!this.path.length||!this.nextWaypoint())){
+      const granted=this.port.pathBudget?.take(this.id,PARTY_SEARCH_CAP)??PARTY_SEARCH_CAP;
+      if(granted>0)this.beginSearch(actor,destination,range,granted,target);
+      else this.nextPathAt=this.clock+LOGIC_FRAME_MS;
+    }
+    const next=this.nextWaypoint();
+    if(next)this.port.followPath(this.nextWaypoint);else this.port.stop();
+  }
+  private beginSearch(actor:Combatant,destination:Point,range:number,granted:number,target?:Combatant):void {
+    this.nextPathAt=this.clock+PARTY_REPATH_INTERVAL_MS;this.destination={...destination};
     const canStand=(point:Point)=>this.port.canStand(point);
-    const radius=Math.hypot(actor.bounds.width+leader.bounds.width,actor.bounds.height+leader.bounds.height)+range*8;
+    const radius=target?Math.hypot(actor.bounds.width+target.bounds.width,actor.bounds.height+target.bounds.height)+range*8:8;
     this.search=createPathSearch(actor.position,{bounds:this.port.navigationBounds(),canStand,
-      // 有槽位时走到槽位点附近；追击敌人仍用原来的「进入攻击距离」目标。
-      isGoal:point=>canStand(point)&&(goal
-        ?targetDistance(point,goal)<=4
-        :attackDistance(point,actor.bounds,leader.position,leader.bounds)<=range),
-      heuristic:point=>Math.max(0,Math.hypot(point.x-target.x,point.y-target.y)-radius)});
+      isGoal:point=>canStand(point)&&(target
+        ?attackDistance(point,actor.bounds,target.position,target.bounds)<=range
+        :targetDistance(point,destination)<=PATH_GRID_SIZE),
+      heuristic:point=>Math.max(0,targetDistance(point,destination)-radius)});
     this.stepSearch(actor,granted);
   }
   private advanceSearch(actor:Combatant):void {
@@ -443,26 +411,18 @@ export class PartyController {
     const search=this.search;if(!search)return;
     const result=search.step(granted);
     if(result.status==='pending')return;
-    const kind=this.searchKind;this.searchKind=undefined;
     this.search=undefined;
     if(result.status==='unreachable'){this.path=[];this.nextPathAt=this.clock+PARTY_FAILED_PATH_MS;return;}
-    // 搜索跨了几帧，角色可能被其他系统挪过；从离当前位置最近的点继续，别掉头走回起点。
+    // 搜索跨了几帧，角色可能被其他系统挪过；从离当前位置最近的点继续。
     let start=0,nearest=Infinity;
     for(let index=0;index<result.path.length;index++){
       const point=result.path[index]!,distance=Math.hypot(point.x-actor.position.x,point.y-actor.position.y);
       if(distance>=nearest)break;
       start=index;nearest=distance;
     }
-    const path=result.path.slice(start);
-    // 队形点能站但路要绕很远时，下一帧改走主角路径；只在短距离内判断，避免长路误伤。
-    if(kind==='follow-formation'&&this.destination){
-      let pathLength=0,previous=actor.position;
-      for(const point of path){pathLength+=Math.hypot(point.x-previous.x,point.y-previous.y);previous=point;}
-      if(shouldUseTrailByDetour(pathLength,targetDistance(actor.position,this.destination))){this.switchFollowMode('trail',PARTY_TRAIL_DETOUR_HOLD_MS);return;}
-    }
-    this.path=path;
+    this.path=result.path.slice(start);
   }
-  private readonly nextWaypoint=():Point|undefined=>{
+  private readonly nextWaypoint=():Point|undefined => {
     const actor=this.port.actor(this.id);if(!actor||this.disposed)return;
     const target=this.destinationTarget?this.port.actor(this.destinationTarget):undefined;
     const capabilities=combatStateCapabilities(actor.states??[]);
@@ -470,12 +430,16 @@ export class PartyController {
     while(this.path.length){
       const point=this.path[0];
       if(Math.hypot(actor.position.x-point.x,actor.position.y-point.y)>.5)break;
-      // 脚点离网格点很近，但还没真正对齐。若从当前位置走不到下一个点，
-      // 这个点就是用来把身体拉回网格的，不能提前丢掉，否则会永远卡在障碍边缘。
       const following=this.path[1];
       if(following&&!canTraverse(actor.position,following,point=>this.port.canStand(point)))break;
       this.path.shift();
     }
     const next=this.path[0];return next&&canTraverse(actor.position,next,point=>this.port.canStand(point))?next:undefined;
   };
+  private clearRoute(stop=true):void {
+    this.path=[];this.search=undefined;this.destination=undefined;
+    this.destinationTarget=undefined;this.destinationRange=undefined;this.nextPathAt=0;
+    if(stop)this.port.stop();
+  }
+  private roll(threshold:number):boolean{return 1+Math.floor(this.random()*99)<threshold;}
 }
