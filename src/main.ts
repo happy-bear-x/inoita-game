@@ -614,8 +614,7 @@ function boot(): void {
   };
   const game = new Phaser.Game({
     type: Phaser.AUTO, parent: 'game', backgroundColor: '#101d24',
-    // 世界镜头是非整数倍缩放：平滑像素渲染保留像素块，同时去掉移动时的锯齿闪烁。
-    smoothPixelArt: true, roundPixels: false,
+    pixelArt: true, roundPixels: true,
     fps: GAME_FRAME_TIMING,
     callbacks: { postBoot: game => {
       const restoreClock = installFrameLimitClock(game.loop);
