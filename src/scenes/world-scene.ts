@@ -153,6 +153,8 @@ export class WorldScene extends Phaser.Scene {
   private triggerIndex?:StoryTriggerIndex<Character>;
   private refreshStateSignatureValue?:string;
   private interactionSignatureValue?:string;
+  /** 地图角色只在投影、恢复或显隐改变时使交互结果失效。 */
+  private interactionRevision=0;
   /** 屏幕固定的界面层与它上面的移动摇杆。 */
   private hud?: Hud;
   private statusHud?:StatusHud;
@@ -225,7 +227,7 @@ export class WorldScene extends Phaser.Scene {
     this.dropCatalog=undefined;this.springCatalog=undefined;this.groundLootView=undefined;this.pickupMessages=undefined;this.pickupRecipients.clear();
     this.questStatuses.clear();this.questStatusVersion=undefined;
     this.prefetchTarget = undefined; this.prefetchTask = undefined;
-    this.baseEntities=[];this.occupiedRegions.clear();this.encounterResults.clear();this.triggerIndex=undefined;this.refreshStateSignatureValue=undefined;this.interactionSignatureValue=undefined;
+    this.baseEntities=[];this.occupiedRegions.clear();this.encounterResults.clear();this.triggerIndex=undefined;this.refreshStateSignatureValue=undefined;this.interactionSignatureValue=undefined;this.interactionRevision=0;
     this.entryPrefetches?.clear();
     this.projectedActorIds.clear();
   }
@@ -1025,6 +1027,7 @@ export class WorldScene extends Phaser.Scene {
 
   /** 地图与角色集合变化后重建触发索引；内容不可变，查询侧只读。 */
   private rebuildTriggerIndex():void {
+    this.interactionRevision=(this.interactionRevision??0)+1;
     this.triggerIndex=this.map?buildStoryTriggerIndex(this.app.campaign,this.map.id,this.characters):undefined;
   }
   /** 整图角色显隐、任务标记和小地图重建只在这些输入变化时执行。 */
@@ -1045,6 +1048,7 @@ export class WorldScene extends Phaser.Scene {
     const stateSignature=this.refreshStateSignature();
     if(stateSignature===this.refreshStateSignatureValue)return;
     this.refreshStateSignatureValue=stateSignature;
+    this.interactionRevision=(this.interactionRevision??0)+1;
     const taskMarkers: MinimapTask[] = [];
     for (const character of this.characters) {
       const opened = this.chestOpened(character), consumed = this.legendarySwordConsumed(character);
@@ -1275,6 +1279,7 @@ export class WorldScene extends Phaser.Scene {
     const empty = this.springCatalog?.empty, actor = empty ? this.app.world.actors[empty] : undefined;
     if (!actor) throw new Error('泉水缺少喝空后的外观');
     character.actor = actor;
+    this.interactionRevision=(this.interactionRevision??0)+1;
     setCharacterClip(this, character, 'idle-south', true);
   }
   /** 同图重建或剧情投影后，把本次地图访问里喝空的泉水重新换成水井外观。 */
@@ -1346,7 +1351,7 @@ export class WorldScene extends Phaser.Scene {
     this.combat?.syncChestEnemies();
     const tween = this.tweens.add({ targets: character.container, alpha: 0, duration: CHEST_OPEN_MS,
       ease: (value: number) => Math.floor(value * 10) / 10,
-      onComplete: () => { this.chestFades.delete(character.entity.id); character.container.setVisible(false); }
+      onComplete: () => { this.chestFades.delete(character.entity.id); character.container.setVisible(false); this.interactionRevision=(this.interactionRevision??0)+1; }
     });
     this.chestFades.set(character.entity.id, tween);
     this.updateInteractionTarget(); this.syncHud();
@@ -1716,6 +1721,7 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
       placements.push({visual:character,position:{x:actor.x,y:actor.y},enabled:actor.visible&&!this.performing});
     }
     this.movement.placeAll(placements,{evictOccupied:true,displaceable:this.player?[this.player]:[]});
+    this.interactionRevision=(this.interactionRevision??0)+1;
   }
 
   async restoreStoryWorld(snapshot:unknown,signal:AbortSignal):Promise<void>{
@@ -1926,9 +1932,7 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
   /** 挑出「身边的可交互对象」：原版 `PLAYER_DoCheckNearNPC` 用曼哈顿距离 24 px，最近的一个胜出。 */
   private interactionSignature(controlled:CharacterVisual):string {
     const session=this.app.session;
-    const characters=this.characters.map(character=>
-      `${character.entity.id}:${character.actor.id}:${character.entity.flip?1:0}:${character.container.visible?1:0}`).join(',');
-    return [this.map?.id??'',this.combat?.controlledId??'player',controlled.container.x,controlled.container.y,characters,
+    return [this.map?.id??'',this.combat?.controlledId??'player',controlled.container.x,controlled.container.y,this.interactionRevision??0,
       session.questBook?.version??0,session.storyWorld?.revision??0,session.chests?.revision??0,
       session.legendaryWeapons?.revision??0,session.restorationVersion??0,this.performing?1:0].join('|');
   }

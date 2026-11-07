@@ -19,6 +19,31 @@ const hook=registerHooks({resolve(specifier,context,next){return specifier==='ph
 const {WorldScene}=await import('../src/scenes/world-scene.ts');hook.deregister();
 const invoke=(host:object,name:string,...args:unknown[])=>Reflect.get(WorldScene.prototype,name).call(host,...args);
 
+test('stationary interaction reuses candidates until scene positions or visibility change',()=>{
+  let inspected=0;
+  const container={x:8,y:0,visible:true,setAlpha(){return this;},setVisible(value:boolean){this.visible=value;return this;}};
+  const npc={entity:{id:'npc',actor:'npc'},actor:{id:'npc'},get container(){inspected++;return container;}};
+  const host=Object.assign(Object.create(WorldScene.prototype),{
+    app:{session:{questBook:{version:0},storyWorld:{revision:0,actorVisible:()=>true},visible:()=>true,marker:()=>null}},
+    map:{id:'map'},player:{container:{x:0,y:0}},characters:[npc],
+    chestOpened:()=>false,legendarySwordConsumed:()=>false,interactionCandidate:()=>1,setClip(){},
+    movement:{placeAll(values:{position:{x:number;y:number}}[]){Object.assign(container,values[0].position);},setEnabled(){}},
+    refreshLoadout(){},noticeQuestCompletions(){},refreshStateSignature:()=> 'visibility-change'
+  });
+  invoke(host,'updateInteractionTarget');assert.equal(host.near,npc);inspected=0;
+  for(let frame=0;frame<60;frame++)invoke(host,'updateInteractionTarget');
+  assert.equal(inspected,0,'unchanged player and world do not inspect map characters');
+  invoke(host,'restoreScenePositions',{map:'map',actors:[{worldEntityId:'npc',x:80,y:0,facing:'south',visible:true}]});
+  invoke(host,'updateInteractionTarget');assert.equal(host.near,null,'restored NPC position invalidates the nearby result');
+  invoke(host,'restoreScenePositions',{map:'map',actors:[{worldEntityId:'npc',x:8,y:0,facing:'south',visible:true}]});
+  invoke(host,'updateInteractionTarget');assert.equal(host.near,npc);
+  host.app.session.visible=()=>false;invoke(host,'refreshState');
+  invoke(host,'updateInteractionTarget');assert.equal(host.near,null,'visibility updates invalidate a stationary target');
+  host.app.session.questBook.version++;container.visible=true;
+  invoke(host,'updateInteractionTarget');assert.equal(host.near,npc,'quest changes invalidate the query');
+  host.player.container.x=80;invoke(host,'updateInteractionTarget');assert.equal(host.near,null,'player movement invalidates the query');
+});
+
 test('interaction distance filters task queries and preserves visibility, opened objects and tie order',()=>{
   const character=(id:string,x:number,extra={})=>({entity:{id},actor:{},container:{x,y:0,visible:true},...extra});
   const far=character('far',25),hidden=character('hidden',1,{container:{x:1,y:0,visible:false}});
