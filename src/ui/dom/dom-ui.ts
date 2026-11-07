@@ -72,10 +72,12 @@ export class DomUi {
     const classes = className.split(/\s+/).filter(Boolean);
     if (!classes.includes('dom-label')) classes.unshift('dom-label');
     element.className = classes.join(' ');
+    let x = 0, y = 0;
     let anchorX = anchor.x, anchorY = anchor.y, shown = this.visible.get(name) !== false;
     element.hidden = !shown;
     const applyAnchor = () => {
       element.style.transformOrigin = `${anchorX * 100}% ${anchorY * 100}%`;
+      element.style.transform = `translate3d(${x}px, ${y}px, 0) translate(${-anchorX * 100}%, ${-anchorY * 100}%)`;
     };
     applyAnchor();
     parent?.appendChild(element);
@@ -85,8 +87,8 @@ export class DomUi {
         if (element.textContent !== text) element.textContent = text;
         return label;
       },
-      setPosition(x: number, y: number): DomLabel {
-        element.style.transform = `translate3d(${x}px, ${y}px, 0) translate(${-anchorX * 100}%, ${-anchorY * 100}%)`;
+      setPosition(nextX: number, nextY: number): DomLabel {
+        x = nextX; y = nextY; applyAnchor();
         return label;
       },
       setAnchor(x: number, y: number): DomLabel {

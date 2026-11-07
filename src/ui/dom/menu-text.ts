@@ -61,7 +61,7 @@ interface MenuTextClipBox {
 /**
  * 菜单页面的 DOM 文字层。
  *
- * 图框、按钮、滑条热区和滚动继续由 Phaser 画；文字只在这里生成 DOM 标签。
+ * 图框、按钮和滑条由 DOM 组件绘制；这里统一管理页面文字与滚动裁剪。
  * 页面重绘时按 key 复用标签，内容、字号和位置都没变就不写 DOM。滚动和窗口
  * 缩放由宿主调用 `refresh()`，这里只重算位置，不重建标签。
  */
@@ -222,8 +222,8 @@ export class MenuTextLayer {
       this.clearEntries();
       return;
     }
-    const scale = this.pointOf(0, 0).scale;
-    const signature = JSON.stringify([this.page, scale, ...this.specs.map(spec => {
+    const origin = this.pointOf(0, 0);
+    const signature = JSON.stringify([this.page, origin.x, origin.y, origin.scale, ...this.specs.map(spec => {
       const y = this.bodyY(spec);
       return [spec.key, spec.text, spec.style.size, spec.style.color ?? '', spec.style.anchorX ?? 0,
         spec.style.anchorY ?? 0, spec.style.align ?? 'left', spec.x, y, this.withinClip(spec, y),

@@ -11,7 +11,7 @@
 
 ## 文件
 
-- `dom-ui.ts`、`menu-text.ts`：DOM 层、文字和菜单排版。
+- `dom-ui.ts`、`menu-text.ts`：DOM 层、文字和菜单排版。文字定位同时跟随原点与倍率变化，修改锚点立即更新变换。
 - `assets.ts`：图片、图集切片、预加载与资源持有计数。
 - `components.ts`：组件容器、图片、按钮与指针生命周期。
 
