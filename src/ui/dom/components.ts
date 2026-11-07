@@ -120,7 +120,7 @@ export class DomButton extends DomComponent {
     (this.element as HTMLButtonElement).type = 'button';
     Object.assign(this.element.style, { pointerEvents: 'none', touchAction: 'none', padding: '0', border: '0', background: 'none' });
     const hit = document.createElement('span');
-    Object.assign(hit.style, { position: 'absolute', inset: '0', pointerEvents: 'auto', touchAction: 'none' });
+    Object.assign(hit.style, { position: 'absolute', top: '0', right: '0', bottom: '0', left: '0', pointerEvents: 'auto', touchAction: 'none' });
     if (options.circleRadius !== undefined) hit.style.clipPath = `circle(${options.circleRadius}px at 50% 50%)`;
     this.element.appendChild(hit);
     const listen = (name: string, action: EventListener) => {

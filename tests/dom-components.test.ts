@@ -55,6 +55,8 @@ test('pointer capture, shared action exclusion and cancellation recover correctl
     const gate = new ActionPressGate(); let actions = 0;
     const options = { enabled: () => true, trigger: 'down' as const, action: () => { actions++; }, press: (id: number) => gate.press(id), release: (id: number) => gate.release(id) };
     const a = new DomButton(h.parent, options), b = new DomButton(h.parent, options);
+    const hit = (a.element as unknown as Element).children[0];
+    assert.deepEqual([hit.style.top, hit.style.right, hit.style.bottom, hit.style.left], ['0', '0', '0', '0'], '安卓旧版网页内核可确定热区尺寸');
     pointer(a.element, 'pointerdown', 8); pointer(b.element, 'pointerdown', 9);
     assert.equal(actions, 1);
     pointer(a.element, 'pointercancel', 99);
