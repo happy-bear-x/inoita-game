@@ -33,3 +33,5 @@
 npm test -- tests/combat.test.ts
 npm run test:standalone
 ```
+
+- `session-cooldowns-party.test.ts` 验证放逐与预备队的冷却、掉落保底清理，以及旧档中已放逐成员记录的回收。

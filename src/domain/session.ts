@@ -417,7 +417,7 @@ export class Session {
     this.hero = hero;
     this.skills = new StorySkillProgression(hero,battle);
     hero?.setSkillUseHandler((item,skill)=>this.skills.applyItem(item,skill));
-    this.party=hero&&items&&stats&&companions?new PartyRoster(hero,stats,items,companions,()=>{this.recordPerformance(['party','bag']);this.emit();},id=>{this.cooldowns.removeActor(id);this.frenzyAnimations.removeActor(id);},
+    this.party=hero&&items&&stats&&companions?new PartyRoster(hero,stats,items,companions,()=>{this.recordPerformance(['party','bag']);this.emit();},id=>{this.cooldowns.removeActor(id);this.frenzyAnimations.removeActor(id);this.lootPity.removeMember(id);},
       sourceItem=>this.recordQuestFact('recruit',sourceItem,'recruit'),operation=>this.atomic(operation,['bag','party','questBook'])):undefined;
     this.bag = hero?.bag ?? new Bag(()=>{this.recordPerformance(['bag']);this.emit();},items,character?.classId,items?'game':'none');
     const inputs={events:new Set<string>(),choices:new Set<string>(),flags:new Set<string>(),world:new Set<string>()};
@@ -562,6 +562,7 @@ export class Session {
     this.resourceRecovery.restoreState({...restored.resourceRecovery,elapsedMs:clock.frame*LOGIC_FRAME_MS});groundLootFor(this).restoreState(restored.groundLoot);
     this.questItemGenerators.restoreState(restored.questItemGeneration,groundLootFor(this));
     this.lootPity.restoreState(restored.lootPity??{version:2,members:[],chests:[],bossDefeats:[]});
+    for(const [id] of restored.lootPity?.members??[])if(id!=='player'&&!this.party?.get(id))this.lootPity.removeMember(id);
     this.restoreReservedDrops(restored.reservedDrops);
     this.partyItemChance=restored.partyItemChance??0;
   }

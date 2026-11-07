@@ -53,3 +53,33 @@ test('a rejected dismissal keeps the active member and every cooldown record',()
   assert.equal(party.get(first.id),first);
   assert.deepEqual(session.cooldowns.captureState(),before);
 });
+
+
+test('pity survives reserve and rejected dismissal, but twenty dismissed recruits leave no history',()=>{
+  const {session,party,first}=fixture();
+  session.lootPity.counters('player').equipmentMisses=11;
+  session.lootPity.counters(first.id).uniqueMisses=7;
+  assert.throws(()=>party.dismiss(first.id),/移出队伍/);
+  assert.equal(session.lootPity.counters(first.id).uniqueMisses,7);
+  party.reserve(first.id);
+  assert.equal(session.lootPity.counters(first.id).uniqueMisses,7);
+  party.dismiss(first.id);
+  for(let index=0;index<20;index++){
+    session.bag.add('mercenary-emblem-priest');
+    const member=party.recruit(session.bag.entries.find(entry=>entry.item==='mercenary-emblem-priest')!.id,()=>0).member;
+    session.lootPity.counters(member.id).equipmentMisses=3;
+    party.dismiss(member.id);
+  }
+  assert.deepEqual(session.lootPity.captureState().members.map(([id])=>id),['player']);
+  const saved=JSON.parse(JSON.stringify(session.captureState()));
+  saved.lootPity.members.push(['mercenary-retired',{equipmentMisses:3,uniqueMisses:4,epicMisses:5}]);
+  const reserve=party.activeIds.find(id=>id!=='player')!;
+  party.reserve(reserve);
+  const restored=session.captureState();
+  restored.lootPity!.members.push([reserve,{equipmentMisses:2,uniqueMisses:3,epicMisses:4}]);
+  restored.lootPity!.members.push(...saved.lootPity.members.filter(([id]:[string,unknown])=>id==='mercenary-retired'));
+  session.restoreState(JSON.parse(JSON.stringify(restored)));
+  assert.equal(session.lootPity.counters('player').equipmentMisses,11);
+  assert.equal(session.lootPity.counters(reserve).uniqueMisses,3);
+  assert.equal(session.captureState().lootPity!.members.some(([id])=>id==='mercenary-retired'),false);
+});

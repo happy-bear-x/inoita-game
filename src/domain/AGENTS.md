@@ -57,3 +57,5 @@
 ## 验证
 
 - `npm test -- tests/session.test.ts` 覆盖会话与剧情状态；`npm test -- tests/save-game.test.ts` 覆盖存档结构与格式号。
+
+- 放逐成功时同步删除该成员的掉落保底计数；移入预备队保持计数。恢复存档后按名册保留主角和仍拥有成员的计数。
