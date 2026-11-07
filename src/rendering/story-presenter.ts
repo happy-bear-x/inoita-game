@@ -36,8 +36,6 @@ export class StoryPresenter implements StoryPresentationPort {
   private state?: StoryStageSnapshot;
   /** 跳过期间只推进逻辑舞台；需要选择或任务弹窗时才补画一次。 */
   private skipping = false;
-  /** 同一份舞台状态只抓一次快照；`getWorldChanges` 与 `committed` 共用它。 */
-  private stageCapture?: { state: StoryStageSnapshot; value: StoryStageSnapshot };
   private scenes = new Map<string, SceneSnapshot>();
   private committedScenes = new Map<string, SceneSnapshot>();
   private epoch = 0;
@@ -102,8 +100,6 @@ export class StoryPresenter implements StoryPresentationPort {
     if (this.skipping) return this.captureLogicalStage();
     const scene = this.scene();
     if (!scene.map || !this.state || !this.actors.has('player')) return this.finalStage;
-    // 舞台状态没换就直接复用上一次快照；节点提交后的改动都会先替换 `this.state`。
-    if (this.stageCapture?.state === this.state) return this.stageCapture.value;
     // 演员外壳每个快照一份，外观本身按引用共享；开发/测试模式冻结外观，写坏会立刻报错。
     const actors = this.state.scene.actors.map(actor => {
       const performer = this.actors.get(actor.id);
@@ -132,9 +128,7 @@ export class StoryPresenter implements StoryPresentationPort {
     snapshot.curtain = { opacity: this.opacity, color: this.color };
     if (this.app.audio) snapshot.audio = this.app.audio.captureStoryAudio();
     snapshot.scenes = [...this.scenes.values()].filter(visited => visited.map !== snapshot.map).map(visited => structuredClone(visited));
-    const value = syncStoryScene(snapshot);
-    this.stageCapture = { state: this.state, value };
-    return value;
+    return syncStoryScene(snapshot);
   }
 
   /** 跳过时没有实际演员对象，快照直接取逻辑舞台的坐标和显隐。 */
@@ -155,7 +149,7 @@ export class StoryPresenter implements StoryPresentationPort {
     this.skipping = true;
     this.state = snapshot;
     this.scenes.set(snapshot.map, structuredClone(snapshot.scene));
-    this.stageCapture = undefined;
+
   }
   /** 选择或任务弹窗前把逻辑舞台真正画一次；素材走正常加载，缺什么补什么。 */
   async flushStage(signal: AbortSignal): Promise<void> {
@@ -312,7 +306,7 @@ export class StoryPresenter implements StoryPresentationPort {
     this.scene().clearEarlyCurtain();
     this.resetActors(true);
     this.state = snapshot;
-    this.stageCapture = undefined;
+
     const scene = this.scene();
     scene.cameras.main.stopFollow();
     for (const actor of snapshot.scene.actors) {
@@ -618,7 +612,7 @@ export class StoryPresenter implements StoryPresentationPort {
     const next = applyStorySceneAction(this.state, action);
     this.state = next;
     this.scenes.set(next.map, structuredClone(next.scene));
-    this.stageCapture = undefined;
+
   }
   private refreshLogicalAppearance(): void {
     const stage = this.captureLogicalStage();
@@ -627,7 +621,7 @@ export class StoryPresenter implements StoryPresentationPort {
     for (const actor of stage.scene.actors) if (actor.id === 'player' || actor.memberId || changed.has(actor.actor)) delete actor.appearance;
     this.state = stage;
     this.scenes.set(stage.map, structuredClone(stage.scene));
-    this.stageCapture = undefined;
+
   }
   async finish(completed: boolean, signal?: AbortSignal): Promise<void> {
     if (completed) {
@@ -652,7 +646,7 @@ export class StoryPresenter implements StoryPresentationPort {
     this.skipping = false;
     this.epoch++;
     this.resetActors(); this.opacity = 0; this.finalStage = undefined; this.baseline = undefined;
-    this.state = undefined; this.stageCapture = undefined; this.scenes.clear(); this.committedScenes.clear();
+    this.state = undefined;  this.scenes.clear(); this.committedScenes.clear();
     this.groundEffects = undefined; this.topEffects = undefined; this.toneFilter = undefined;
     const scene = this.scene();
     if (scene.sys.isActive() || scene.sys.isPaused() || scene.sys.isSleeping?.()) {
