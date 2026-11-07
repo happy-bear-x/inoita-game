@@ -68,14 +68,52 @@ interface PendingWork { work: (signal: AbortSignal, epoch: number) => Promise<bo
 const emptySnapshot = (): StoryRuntimeSnapshot => ({ version: 2, sequence: 0, runs: [], completedEvents: [], handledOccurrences: [], encounterResults: [], pendingOccurrences: [], occurrenceSequences: [] });
 const clone = <T>(value: T): T => structuredClone(value);
 
+interface PreparedStory {
+  graph: StoryGraph;
+  nodes: ReadonlyMap<string, StoryNode>;
+  eventIndex: ReadonlyMap<StoryTriggerSource, readonly StoryEvent[]>;
+  eventIds: ReadonlySet<string>;
+}
+const preparedStories = new WeakMap<StoryGraph, PreparedStory>();
+
+/** 内容身份稳定；播放器、存档校验和预演共用隔离后的只读脚本与索引。 */
+function prepareStory(source: StoryGraph): PreparedStory {
+  const cached = preparedStories.get(source);
+  if (cached) return cached;
+  validateStoryGraph(source);
+  const graph = clone({ version: source.version, scripts: source.scripts, events: source.events });
+  const freeze = (value: unknown): void => {
+    if (!value || typeof value !== 'object' || Object.isFrozen(value)) return;
+    Object.freeze(value);
+    for (const child of Object.values(value)) freeze(child);
+  };
+  freeze(graph);
+  const nodes = new Map<string, StoryNode>();
+  const eventIndex = new Map<StoryTriggerSource, StoryEvent[]>();
+  const eventIds = new Set<string>();
+  for (const [script, definition] of Object.entries(graph.scripts))
+    for (const node of definition.nodes) nodes.set(JSON.stringify([script, node.id]), node);
+  for (const event of graph.events) {
+    eventIds.add(event.id);
+    const list = eventIndex.get(event.source) ?? [];
+    list.push(event); eventIndex.set(event.source, list);
+  }
+  for (const list of eventIndex.values()) {
+    list.sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0)); Object.freeze(list);
+  }
+  const prepared = { graph, nodes, eventIndex, eventIds };
+  preparedStories.set(source, prepared);
+  return prepared;
+}
+
 /** 一个前台导演；提交后的节点与等待遭遇都可以独立恢复。 */
 export class StoryRuntime {
   private readonly graph: StoryGraph;
   private readonly port: StoryRuntimePort;
-  private readonly nodes = new Map<string, StoryNode>();
-  private readonly eventIndex = new Map<StoryTriggerSource, StoryEvent[]>();
+  private readonly nodes: ReadonlyMap<string, StoryNode>;
+  private readonly eventIndex: ReadonlyMap<StoryTriggerSource, readonly StoryEvent[]>;
   /** 可信检查点的廉价校验查这张表，不再线性扫事件。 */
-  private readonly eventIds = new Set<string>();
+  private readonly eventIds: ReadonlySet<string>;
   private state: StoryRuntimeSnapshot = emptySnapshot();
   /** 按数组引用缓存的完成事件集合；状态不可变，数组换了才重建。 */
   private completedEventCache?: { events: readonly string[]; values: Set<string> };
@@ -95,15 +133,10 @@ export class StoryRuntime {
   private pending?: { work: PendingWork; epoch: number };
   private static nodeKey(ref: StoryNodeRef): string { return JSON.stringify([ref.script, ref.node]); }
   constructor(graph: StoryGraph, port: StoryRuntimePort) {
-    validateStoryGraph(graph); this.graph = clone({version:graph.version,scripts:graph.scripts,events:graph.events}); this.port = port;
-    for (const [script, definition] of Object.entries(this.graph.scripts))
-      for (const node of definition.nodes) this.nodes.set(StoryRuntime.nodeKey({ script, node: node.id }), node);
-    this.graph.events.forEach(event => {
-      this.eventIds.add(event.id);
-      const list = this.eventIndex.get(event.source) ?? [];
-      list.push(event); this.eventIndex.set(event.source, list);
-    });
-    for (const list of this.eventIndex.values()) list.sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
+    const prepared = prepareStory(graph);
+    this.graph = prepared.graph; this.nodes = prepared.nodes;
+    this.eventIndex = prepared.eventIndex; this.eventIds = prepared.eventIds;
+    this.port = port;
   }
   get busy(): boolean { return this.playing; }
   /**

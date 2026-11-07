@@ -6,6 +6,25 @@ import type { StoryGraph, StoryNode } from '../src/domain/story-graph.ts';
 const node = (id: string, exit: StoryNode['exit'] = { type: 'end' }, money = 0): StoryNode => ({ id, presentation: [], commands: money ? [{ type: 'item-give', item: 'coin', quantity: money }] : [], exit });
 const graph = (nodes: StoryNode[]): StoryGraph => ({ version: 2, scripts: { main: { entry: nodes[0].id, nodes } }, events: [{ id: 'intro', source: 'map-entry', map: 'camp', script: 'main' }] });
 const tick = (): Promise<void> => new Promise(resolve => setImmediate(resolve));
+
+test('players share immutable story definitions while progress and restoration stay independent', async () => {
+  const data = graph([node('first', { type: 'end' }, 3)]);
+  const first = harness(data), second = harness(data);
+  const prepared: StoryNode[] = [];
+  first.port.prepare = second.port.prepare = async value => { prepared.push(value); };
+  await first.runtime.dispatch({ id: 'enter', source: 'map-entry', sequence: 1, map: 'camp' });
+  assert.equal(first.balance(), 3);
+  assert.equal(second.runtime.snapshot().completedEvents.length, 0);
+  await second.runtime.dispatch({ id: 'enter', source: 'map-entry', sequence: 1, map: 'camp' });
+  assert.equal(second.balance(), 3);
+  assert.equal(prepared[0], prepared[1]);
+  assert.notEqual(prepared[0], data.scripts.main.nodes[0]);
+  assert.equal(Object.isFrozen(prepared[0].commands), true);
+  assert.throws(() => { prepared[0].id = 'corrupted'; }, TypeError);
+  const validator = harness(data);
+  validator.runtime.restore(first.runtime.snapshot());
+  assert.deepEqual(validator.runtime.snapshot(), first.runtime.snapshot());
+});
 function harness(data: StoryGraph) {
   let balance = 0, captured = 0, rolledBack = 0, checkpoint: StoryRuntimeSnapshot | undefined;
   const played: string[] = [], commits: StoryNodeCommit[] = [], locks: boolean[] = [];
