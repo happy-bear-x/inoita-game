@@ -52,9 +52,11 @@ function setup(random=()=>0){
     finish:()=>completed?.(),advance:(frames=1)=>{for(let i=0;i<frames;i++){const next=path?.();if(next)member.position={...next};ai.update(60);}}};
 }
 
-test('companions auto-acquire nearby enemies without a player target',()=>{
+test('companions do not auto-acquire enemies that are only nearby',()=>{
   const run=setup();run.enemy.position={x:56,y:32};run.ai.update(60);
-  assert.equal(run.plays.at(-1)?.target?.id,'enemy','附近敌人不需要玩家先选目标');
+  assert.equal(run.ai.captureState().destinationTarget,'player','附近敌人不再自动接敌，回到跟随');
+  assert.ok(run.waypoint(),'没有目标时继续跟随');
+  assert.equal(run.plays.length,0,'不主动出手');
 });
 
 test('being attacked makes a companion retaliate',()=>{

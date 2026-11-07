@@ -66,8 +66,6 @@ const PARTY_FOLLOW_GOAL_STOP_PX = 12;
 const PARTY_TELEPORT_DISTANCE_PX = 240;
 /** 同一名伙伴两次传送之间的最短间隔。 */
 const PARTY_REGROUP_COOLDOWN_MS = 5000;
-/** 自动接敌半径：玩家或伙伴周围这么远的敌人会被主动打。 */
-const PARTY_ACQUIRE_RADIUS_PX = 160;
 /** 目标离队长超过这个距离就放弃追击。 */
 const PARTY_CHASE_LEASH_PX = 200;
 /** 同一目标至少保持这么久，避免来回跳。 */
@@ -119,7 +117,7 @@ export class PartyController {
   /** 追击敌人时的最近一次真实位移；和队长跟随分开记录。 */
   private chaseProgress?:{targetId:string;position:Point;since:number};
   private chaseRecoveryUntil=0;
-  /** 当前目标；只来自软集火、正在打队友的敌人或附近敌人。 */
+  /** 当前目标；只来自软集火或正在打队友的敌人。 */
   private targetId?:string;
   private targetSince=0;
   private nextRegroupAt=0;
@@ -188,7 +186,7 @@ export class PartyController {
     this.chaseProgress=undefined;
     this.follow(actor);
   }
-  /** 软集火优先；否则保留黏性目标，再看正在打队友的敌人和附近敌人。 */
+  /** 软集火优先；否则保留黏性目标，再看正在打队友的敌人。附近没交战的敌人不主动接。 */
   private selectTarget(actor:Combatant):Combatant|undefined {
     const leader=this.port.leader();
     const focused=this.focusedTarget(actor,leader);
@@ -199,8 +197,6 @@ export class PartyController {
       &&this.clock-this.targetSince<PARTY_TARGET_STICKY_MS)return current;
     const threat=this.nearestThreatTarget(actor,leader);
     if(threat)return this.rememberTarget(threat);
-    const nearby=this.nearestEnemy(actor,leader);
-    if(nearby)return this.rememberTarget(nearby);
     this.targetId=undefined;return undefined;
   }
   private focusedTarget(actor:Combatant,leader:Combatant|undefined):Combatant|undefined {
@@ -238,20 +234,6 @@ export class PartyController {
       if(distance<bestDistance){best=candidate;bestDistance=distance;}
     }
     return best;
-  }
-  private nearestEnemy(actor:Combatant,leader:Combatant|undefined):Combatant|undefined {
-    let best:Combatant|undefined,bestDistance=Infinity;
-    for(const candidate of this.port.candidates()){
-      if(candidate.team===actor.team||!canTargetCombatant(actor,candidate))continue;
-      if(!this.withinAcquire(actor,candidate,leader))continue;
-      const distance=targetDistance(actor.position,candidate.position);
-      if(distance<bestDistance){best=candidate;bestDistance=distance;}
-    }
-    return best;
-  }
-  private withinAcquire(actor:Combatant,target:Combatant,leader:Combatant|undefined):boolean {
-    if(targetDistance(target.position,actor.position)<=PARTY_ACQUIRE_RADIUS_PX)return true;
-    return !!leader&&targetDistance(target.position,leader.position)<=PARTY_ACQUIRE_RADIUS_PX;
   }
   private trySkill(actor:Combatant,target:Combatant|undefined):boolean {
     const cooldowns=this.combatController.snapshot().cooldowns;
