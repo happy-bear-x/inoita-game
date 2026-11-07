@@ -128,3 +128,67 @@ test('failed world restore validates before replacing the live world',()=>{
   assert.throws(()=>world.restoreState(bad),/重复/);assert.deepEqual(world.captureState(),before);
   const external=world.captureState();external.flags.length=0;assert.equal(world.hasFlag('opened'),true);
 });
+
+test('active encounters only read the live index after a long settled history',()=>{
+  const world=new StoryWorldState();
+  for(let index=0;index<200;index++){
+    const id=`settled-${index}`;
+    world.apply({kind:'encounter',encounter:{id,map:'cave',status:'active',spawns:[{id:'enemy',enemyId:'wolf',x:index,y:index}]}});
+    world.apply({kind:'encounter-result',id,result:index%2===0?'won':'lost'});
+  }
+  world.apply({kind:'encounter',encounter:{id:'prepared',map:'cave',status:'prepared',spawns:[{id:'enemy',enemyId:'wolf',x:0,y:0}]}});
+  world.apply({kind:'encounter',encounter:{id:'current-a',map:'cave',status:'active',spawns:[{id:'a',enemyId:'wolf',x:1,y:1}]}});
+  world.apply({kind:'encounter',encounter:{id:'current-b',map:'hall',status:'active',spawns:[{id:'b',enemyId:'wolf',x:2,y:2}]}});
+
+  assert.deepEqual(world.activeEncounters.map(encounter=>encounter.id),['current-a','current-b'],
+    '活动列表只含进行中的遭遇，顺序与加入顺序一致');
+  assert.equal(world.captureState().encounters.length,203,'已结算遭遇仍保留在历史表里');
+  assert.equal(world.encounterStatuses().size,203,'完整状态查询保持原语义');
+
+  const clone=world.activeEncounters[0]!;clone.status='won';
+  assert.equal(world.encounter('current-a')?.status,'active','读取活动列表仍返回克隆');
+
+  world.apply({kind:'encounter-result',id:'current-a',result:'won'});
+  assert.deepEqual(world.activeEncounters.map(encounter=>encounter.id),['current-b'],'结算后立刻移出活动索引');
+  assert.throws(()=>world.apply({kind:'encounter-result',id:'current-a',result:'lost'}),/结果冲突/);
+  assert.deepEqual(world.activeEncounters.map(encounter=>encounter.id),['current-b'],'冲突结果不改变活动索引');
+  world.apply({kind:'encounter-result',id:'current-b',result:'lost'});
+  assert.deepEqual(world.activeEncounters,[]);
+});
+
+test('restoring a snapshot rebuilds the active encounter index',()=>{
+  const world=new StoryWorldState();
+  for(let index=0;index<100;index++){
+    const id=`history-${index}`;
+    world.apply({kind:'encounter',encounter:{id,map:'cave',status:'active',spawns:[{id:'enemy',enemyId:'wolf',x:index,y:index}]}});
+    world.apply({kind:'encounter-result',id,result:'won'});
+  }
+  world.apply({kind:'encounter',encounter:{id:'active-a',map:'cave',status:'active',spawns:[{id:'a',enemyId:'wolf',x:1,y:1}]}});
+  world.apply({kind:'encounter',encounter:{id:'active-b',map:'hall',status:'active',spawns:[{id:'b',enemyId:'wolf',x:2,y:2}]}});
+  const snapshot=world.captureState();
+
+  const restored=new StoryWorldState();
+  restored.apply({kind:'encounter',encounter:{id:'stale',map:'cave',status:'active',spawns:[{id:'stale',enemyId:'wolf',x:9,y:9}]}});
+  restored.restoreState(snapshot);
+  assert.deepEqual(restored.activeEncounters.map(encounter=>encounter.id),['active-a','active-b'],
+    '整份恢复按快照顺序重建索引，旧世界的活动遭遇不能残留');
+
+  restored.apply({kind:'encounter-result',id:'active-a',result:'won'});
+  assert.deepEqual(restored.activeEncounters.map(encounter=>encounter.id),['active-b'],'恢复后的结算仍同步索引');
+
+  const settled=structuredClone(snapshot);
+  settled.encounters.find(encounter=>encounter.id==='active-b')!.status='won';
+  restored.restoreState(settled);
+  assert.deepEqual(restored.activeEncounters.map(encounter=>encounter.id),['active-a'],
+    '恢复时按快照里的状态重建，而不是沿用当前索引');
+
+  const empty=structuredClone(snapshot);empty.encounters=[];
+  restored.restoreState(empty);
+  assert.equal(restored.activeEncounters.length,0,'快照删掉遭遇后索引同步清空');
+
+  restored.restoreState(snapshot);
+  const before=restored.activeEncounters.map(encounter=>encounter.id);
+  const duplicate=structuredClone(snapshot);duplicate.encounters.push(structuredClone(duplicate.encounters[0]!));
+  assert.throws(()=>restored.restoreState(duplicate),/重复/);
+  assert.deepEqual(restored.activeEncounters.map(encounter=>encounter.id),before,'校验失败时不改动活动索引');
+});

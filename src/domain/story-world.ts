@@ -69,6 +69,8 @@ export class StoryWorldState {
   private flags=new Set<string>();
   private choices=new Map<string,string>();
   private encounters=new Map<string,StoryEncounter>();
+  /** 仅索引进行中的遭遇，按加入顺序排列；每帧读取只走这里，已结束的历史不参与遍历。 */
+  private activeEncounterIds=new Set<string>();
   private location?:TravelDestination;
   private mapVisit=0;
   private enemyRemovals:{enemyId:string;map?:string;all:boolean}[]=[];
@@ -111,7 +113,16 @@ export class StoryWorldState {
   }
   entity(id:string):Readonly<StoryEntityState>|undefined{const value=this.entities.get(id);return value?{...value}:undefined;}
   encounter(id:string):Readonly<StoryEncounter>|undefined{const value=this.encounters.get(id);return value?structuredClone(value):undefined;}
-  get activeEncounters():readonly StoryEncounter[]{return [...this.encounters.values()].filter(e=>e.status==='active').map(e=>structuredClone(e));}
+  /** 进行中遭遇：每帧只走 active 索引，不扫描 encounters 里只增不减的历史记录。 */
+  get activeEncounters():readonly StoryEncounter[]{
+    const result:StoryEncounter[]=[];
+    for(const id of this.activeEncounterIds){
+      const encounter=this.encounters.get(id);
+      if(!encounter)throw new Error('剧情遭遇索引失效：'+id);
+      result.push(structuredClone(encounter));
+    }
+    return result;
+  }
   exitEnabled(map:string,exit:MapExit):boolean{return this.exits.get(storyExitId(map,exit))!==false;}
   actorVisible(map:string,actor:string,characterId?:string):boolean{return !this.flags.has(JSON.stringify(['absent-actor',map,characterId??actor]));}
   enemyAvailable(map:string,enemyId:string):boolean{return !this.flags.has(JSON.stringify(['absent-enemy',map,enemyId]));}
@@ -211,7 +222,10 @@ export class StoryWorldState {
         this.validateEncounter(command.encounter);
         const existing=this.encounters.get(command.encounter.id);
         if(existing)throw new Error('剧情遭遇实例已经存在：'+existing.id);
-        this.encounters.set(command.encounter.id,structuredClone(command.encounter));this.encounterRevisionValue++;return;
+        const encounter=structuredClone(command.encounter);
+        this.encounters.set(encounter.id,encounter);
+        if(encounter.status==='active')this.activeEncounterIds.add(encounter.id);
+        this.encounterRevisionValue++;return;
       }
       case 'encounter-result':{
         const encounter=this.encounters.get(command.id);
@@ -220,7 +234,9 @@ export class StoryWorldState {
           if(encounter.status!==command.result)throw new Error('剧情遭遇结果冲突：'+command.id);
           return;
         }
-        encounter.status=command.result;this.encounterRevisionValue++;return;
+        encounter.status=command.result;
+        this.activeEncounterIds.delete(command.id);
+        this.encounterRevisionValue++;return;
       }
     }
   }
@@ -261,6 +277,9 @@ export class StoryWorldState {
     const restored=this.prepareRestore(state);
     this.entities=new Map(restored.entities.map(e=>[e.id,e]));this.exits=new Map(restored.exits);
     this.flags=new Set(restored.flags);this.choices=new Map(restored.choices);
-    this.encounters=new Map(restored.encounters.map(e=>[e.id,e]));this.location=restored.location;this.mapVisit=restored.mapVisit;this.partyBuffs=restored.partyBuffs??[];this.enemyRemovals=restored.enemyRemovals??[];this.appearances=new Map(restored.appearances??[]);this.enemyLocations=new Map((restored.enemyLocations??[]).map(value=>[value.enemyId,value]));
+    this.encounters=new Map(restored.encounters.map(e=>[e.id,e]));
+    // 整份快照替换后按快照顺序重建进行中索引，旧世界的索引不能残留。
+    this.activeEncounterIds=new Set(restored.encounters.filter(e=>e.status==='active').map(e=>e.id));
+    this.location=restored.location;this.mapVisit=restored.mapVisit;this.partyBuffs=restored.partyBuffs??[];this.enemyRemovals=restored.enemyRemovals??[];this.appearances=new Map(restored.appearances??[]);this.enemyLocations=new Map((restored.enemyLocations??[]).map(value=>[value.enemyId,value]));
   }
 }

@@ -216,6 +216,26 @@ test('loading a save taken during an active encounter restores its boss',()=>{
   assert.equal(roster.enemies.some(enemy=>enemy.key===key),true);
 });
 
+test('completed story encounters ignore a long settled history',()=>{
+  const session=new Session(campaign),map=content('maps/shadow-forest-west.json') as WorldMap;
+  const enemyId=(new WorldEnemyRoster(session,map,[],1)).spawns[0].enemyId;
+  for(let index=0;index<100;index++){
+    const id=`settled-battle-${index}`;
+    session.applyStoryCommands([{type:'encounter',encounter:{id,map:map.id,status:'active',spawns:[{id:'enemy',enemyId,x:index,y:index}]}}]);
+    session.applyStoryCommands([{type:'world',command:{kind:'encounter-result',id,result:'won'}}]);
+  }
+  const encounter={id:'current-battle',map:map.id,status:'active' as const,spawns:[{id:'boss',enemyId,x:64,y:64}]};
+  session.applyStoryCommands([{type:'encounter',encounter}]);
+  const roster=new WorldEnemyRoster(session,map,[],1),key=encounterSpawnId(encounter.id,'boss');
+  const spawn=roster.source(key)!;
+  session.setEnemyVitals(key,0,0);
+  session.enemyDefeated(spawn);
+  assert.deepEqual(roster.completedEncounters().map(value=>value.id),['current-battle'],
+    '每帧检查只遍历进行中的遭遇，不受已结算历史数量影响');
+  session.applyStoryCommands([{type:'world',command:{kind:'encounter-result',id:encounter.id,result:'won'}}]);
+  assert.deepEqual(roster.completedEncounters(),[]);
+});
+
 test('breakable spawns follow the native replacement branch and reroll after death',()=>{
   const map={id:'breakable-map',breakableSpawn:'jar' as const,enemySpawns:[
     {id:'slot',enemyId:'enemy-base',x:0,y:0,breakableEligible:true}
