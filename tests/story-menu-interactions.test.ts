@@ -1515,6 +1515,26 @@ test('shop category changes reset scrolling while details, transactions and sess
   assert.equal(bagScroll().scrollTop, offset, '成交及库存通知重绘保持同分类滚动位置');
 });
 
+test('shop inventory quantity badges move with the scrolled grid', t => {
+  const f = fixture(); t.after(f.cleanup);
+  const supplies = Object.keys(items.items).filter(id => items.items[id].category === 'consumable'
+    && items.items[id].stackable && !items.items[id].pickup).slice(0, 40);
+  assert.equal(supplies.length, 40);
+  f.add(supplies[0], 7);
+  for (const id of supplies.slice(1)) f.add(id);
+  f.menu.openShop(f.app.shops.lampShop, '');
+  const scroll = f.internals.shopPanel!.bagScroll!, entry = f.session.bag.entries.find(value => value.item === supplies[0])!;
+  const badges = visibleDomLabels(f).filter(label => label.text === String(entry.quantity));
+  assert.equal(badges.length, 1, '背包里的堆叠数量显示在角标上');
+  const badge = badges[0]!, before = badge.y;
+  const point = scroll.surface.root.getWorldTransformMatrix().transformPoint(scroll.x + 10, scroll.y + 10);
+  Object.assign(f.scene.input.activePointer, point);
+  f.scene.input.emit('wheel', f.scene.input.activePointer, [], 0, 150);
+  const scale = scroll.surface.root.getWorldTransformMatrix().scaleY;
+  assert(scroll.scrollTop > 0, '背包列表跟随滚轮滚动');
+  assert(Math.abs(before - badge.y - scroll.scrollTop * scale) < .01, '数量角标与格子一起移动');
+});
+
 test('bag grid drags swap special items and organise from a category updates every layout', t => {
   const f = fixture(); t.after(f.cleanup);
   const source = f.add('novice-weapon-scroll'), other = f.add('novice-jewel');

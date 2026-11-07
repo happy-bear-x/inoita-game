@@ -19,6 +19,7 @@
 - 这里不运行时导入 `phaser`；需要 Phaser 类型时用 `import type`，写法参考 `story-ui.ts`。
 - **DOM 文字统一带 `dom-label`。** `DomUi.label` 会自动补上这个类，它负责绝对定位、不换行和禁用指针事件；调用方只加自己的样式类。压在游戏画面上的文字用 `#ui-world`/`#ui-hud` 的软阴影，菜单文字站在面板底色上，不加描边。
 - **滚动文字用 `clip` 交给浏览器裁边。** `MenuTextLayer` 会为同一组上下边界建一个 `overflow:hidden` 的容器，滚动只移动标签；新增可滚动面板时同时给 `scroll` 和 `clip`，不要只靠 `y` 判断显隐。
+- **菜单滚动区由 `StoryUI.scroll` 统一登记。** 它建区时会给 `ScrollArea` 加一条自动刷新 DOM 文字的监听；面板的 `onScroll` 只负责记自己的偏移和状态，不要再为文字单独调用刷新，也不要在菜单页绕过 `StoryUI.scroll` 自建滚动区。
 - **全屏遮罩用 `DomUi.setOccluded`。** 加载页、阵亡面板、跨图黑幕、横屏提示和挂起时，由 `uiOcclusion`（`game-ui.ts`）判断并收起 world/hud/screen 三层；加载页自己的文字放在 overlay 层。新增全屏界面时不要再让各页面各自猜显隐。
 - 文本宽度、换行、选项高度和滚动范围在进入 Phaser 前算完，绘制层只按结果摆放。
 - 控件尺寸从 `control-layout.ts` 的 `CONTROL_SIZES` 取；D-pad 视觉与布局用 `moveDpad` 274×274，摇杆用 `move` 210×210。

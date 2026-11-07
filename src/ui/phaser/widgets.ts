@@ -337,6 +337,11 @@ export class ScrollArea {
   private shown=true;
   private virtual?:{count:number;rowHeight:number;render:(first:number,last:number)=>void;range?:[number,number]};
   onScroll?:()=>void;
+  /**
+   * 额外的滚动监听。面板用 `onScroll` 记自己的偏移和状态；菜单 DOM 文字由 `StoryUI`
+   * 在这里统一登记，新面板不会因为忘了给 `onScroll` 赋值而出现文字不跟内容走。
+   */
+  private readonly scrollListeners=new Set<()=>void>();
   private press?:{id:number;y:number;offset:number};
   private readonly order=++scrollOrder;
   moved=false;
@@ -366,6 +371,9 @@ export class ScrollArea {
     areas.add(this);
     this.layout();
   }
+  /** 登记一个“滚动位置变了”的监听；和面板自己的 `onScroll` 并存。 */
+  addScrollListener(listener:()=>void):void{this.scrollListeners.add(listener);}
+  private scrolled():void{this.onScroll?.();for(const listener of this.scrollListeners)listener();}
   reveal(button:Phaser.GameObjects.Container):void{const height=button.input?.hitArea.height??0;if(button.y<this.offset)this.scrollTop=button.y;else if(button.y+height>this.offset+this.height)this.scrollTop=button.y+height-this.height;}
   cancelGesture():void{this.press=undefined;this.moved=true;}
   get visible():boolean{return this.shown;}
@@ -410,9 +418,9 @@ export class ScrollArea {
   guard = ():boolean => !this.moved && this.contains(this.surface.scene.input.activePointer);
   private begin(pointer:Phaser.Input.Pointer):void{if(this.press&&this.press.id!==pointer.id)return;this.press={id:pointer.id,y:pointer.y,offset:this.offset};this.moved=false;}
   private down(pointer:Phaser.Input.Pointer):void{if(this.onTop(pointer))this.begin(pointer);}
-  private move(pointer:Phaser.Input.Pointer):void{if(this.press?.id!==pointer.id||!pointer.isDown)return;if(!this.surface.enabled()||!this.surface.root.visible){this.cancelGesture();return;}const distance=(pointer.y-this.press.y)/this.surface.root.getWorldTransformMatrix().scaleY;if(Math.abs(distance)>8)this.moved=true;if(this.moved){this.scrollTop=this.press.offset-distance;this.onScroll?.();}}
+  private move(pointer:Phaser.Input.Pointer):void{if(this.press?.id!==pointer.id||!pointer.isDown)return;if(!this.surface.enabled()||!this.surface.root.visible){this.cancelGesture();return;}const distance=(pointer.y-this.press.y)/this.surface.root.getWorldTransformMatrix().scaleY;if(Math.abs(distance)>8)this.moved=true;if(this.moved){this.scrollTop=this.press.offset-distance;this.scrolled();}}
   private up(pointer:Phaser.Input.Pointer):void{if(this.press?.id===pointer.id)this.press=undefined;}
-  private wheel(pointer:Phaser.Input.Pointer,_objects:Phaser.GameObjects.GameObject[],_dx:number,dy:number):void{if(this.onTop(pointer)){const before=this.offset;this.scrollTop=this.offset+dy/this.surface.root.getWorldTransformMatrix().scaleY;if(this.offset!==before)this.onScroll?.();}}
+  private wheel(pointer:Phaser.Input.Pointer,_objects:Phaser.GameObjects.GameObject[],_dx:number,dy:number):void{if(this.onTop(pointer)){const before=this.offset;this.scrollTop=this.offset+dy/this.surface.root.getWorldTransformMatrix().scaleY;if(this.offset!==before)this.scrolled();}}
   layout():void{
     const matrix=this.surface.root.getWorldTransformMatrix(),position=matrix.transformPoint(this.x,this.y),bleedX=this.bleed*matrix.scaleX,bleedY=this.bleed*matrix.scaleY;
     const maskX=position.x-bleedX,maskY=position.y-bleedY,maskWidth=(this.width+this.bleed*2)*matrix.scaleX,maskHeight=(this.height+this.bleed*2)*matrix.scaleY;
@@ -441,5 +449,5 @@ export class ScrollArea {
     this.barTrack.setPosition(x,y).setSize(barWidth,height);
     this.barThumb.setPosition(x,y+ratio*travel).setSize(barWidth,thumb);
   }
-  destroy():void{this.offRestore();const scene=this.surface.scene;scrollAreas.get(scene)?.delete(this);scene.input.off('pointerdown',this.down,this);scene.input.off('pointermove',this.move,this);scene.input.off('pointerup',this.up,this);scene.input.off('wheel',this.wheel,this);this.zone.destroy();this.barLayer.destroy(true);this.layer.destroy(true);this.mask.destroy();}
+  destroy():void{this.scrollListeners.clear();this.offRestore();const scene=this.surface.scene;scrollAreas.get(scene)?.delete(this);scene.input.off('pointerdown',this.down,this);scene.input.off('pointermove',this.move,this);scene.input.off('pointerup',this.up,this);scene.input.off('wheel',this.wheel,this);this.zone.destroy();this.barLayer.destroy(true);this.layer.destroy(true);this.mask.destroy();}
 }

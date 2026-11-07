@@ -588,7 +588,10 @@ export class StoryUI {
   private configuration(){return this.selectedMemberId==='player'?this.session!.skills:(this.member() as CompanionMember).skills;}
   private scroll(name:string,x:number,y:number,w:number,h:number,surface=this.body!,bleed=0,
     bar?:Parameters<UiSurface['scroll']>[5]):ScrollArea{
-    const scroll=surface.scroll(x,y,w,h,bleed,bar);this.scrollNames.set(name,scroll);return scroll;
+    const scroll=surface.scroll(x,y,w,h,bleed,bar);this.scrollNames.set(name,scroll);
+    // DOM 文字浮在画布上，滚动位置变了必须重新换算坐标。登记放在统一的建区入口，
+    // 每个面板都自动跟随，不再依赖某处记得写 `onScroll`。
+    scroll.addScrollListener(()=>this.menuText?.refresh());return scroll;
   }
   private finishScroll(name:string,scroll:ScrollArea,height:number):void{scroll.setHeight(height);scroll.scrollTop=this.scrollOffsets.get(`${this.page}:${name}`)??0;}
   /**
@@ -690,7 +693,6 @@ export class StoryUI {
       // 按钮只留底图与命中区；文字统一由 DOM 层按 action 顺序生成。
       actions.forEach(([label,action],index)=>this.body!.button('',320,70+index*gap,300,66,action,{parent:content}).setData('label',label));
       this.finishScroll('system',scroll,70+(actions.length-1)*gap+66+20);
-      scroll.onScroll=()=>this.menuText?.refresh();
       this.menuText?.renderPage('system');
     }
     if(this.page==='debug'&&this.app.gm){
@@ -814,7 +816,6 @@ export class StoryUI {
     }
     this.finishScroll('settings',scroll,rowTop+80);
     // 滚动时 DOM 文字跟着内容移动，并裁掉视口外的行。
-    scroll.onScroll=()=>this.menuText?.refresh();
     this.menuText?.renderPage('settings');
   }
   /** 设置页的文字全部由 DOM 渲染；页面重绘时按 key 复用标签。 */
@@ -884,8 +885,6 @@ export class StoryUI {
     }) as UiSurface['text'];
     try{ this.savePage.render(surface,this.page==='load'); }
     finally{ surfaceText.text=originalText;setSaveBoardTextSink(surface,undefined); }
-    const slots=this.scrollNames.get('slots');
-    if(slots)slots.onScroll=()=>this.menuText?.refresh();
     // 确认框打开时，主页面文字让位给确认框那一份，由 `renderSaveConfirmations` 统一渲染。
     if(!this.savePage.modalOpen)this.menuText?.renderPage(this.page);
   }
@@ -1224,7 +1223,6 @@ export class StoryUI {
     if(this.skillSection==='ai'&&level===0)return;
     const detailHeight=this.skillSection==='ai'?342:279;
     const detail=this.scroll('description',565,71,353,detailHeight);
-    detail.onScroll=()=>this.menuText?.refresh();
     const clip={top:71,bottom:71+detailHeight};
     // 说明正文按现有断行结果落字；滚动时 DOM 层按 `description` 的偏移重算位置。
     const description=this.descriptionLayout(v,skillDescriptionParts(skill,level,companion?maximum:undefined),353,22);
@@ -1442,7 +1440,6 @@ export class StoryUI {
       // 滚动条放到格子右侧的栏间空档，不压最后一列；上下各留 4 像素。
       grid=this.scroll('inventory',cells.x,cells.y,cells.width,cells.height,this.body!,0,
         {offset:10,insetY:4,width:4});
-    grid.onScroll=()=>this.menuText?.refresh();
     const slotClip={top:cells.y,bottom:cells.y+cells.height};
     for(let index=0;index<slotCount;index++){const slot=slots[index]!,x=index%cells.columns*cells.stride,y=Math.floor(index/cells.columns)*cells.stride;
       if(slot.kind==='cell'){
@@ -1514,7 +1511,6 @@ export class StoryUI {
     // 滚动区若留在内容块那一层（默认值）会被面板自己的黑底压住，正文看起来就是灰的。
     const actions=this.bagMenu(entry,worn),actionLayout=descriptionActionLayout(panel.width,actions.length);
     const detail=this.scroll('item',left+panel.scroll.x,top+panel.scroll.y,panel.scroll.width,actionLayout.scrollHeight,v);
-    detail.onScroll=()=>this.menuText?.refresh();
     // 标题、颜色与正文由同一个实例说明生成器提供；当前查看的成员决定职业与等级条件。
     const body=itemDescriptionBody({item,entry,numbers:this.app.characterStats.equipment[entry.item],catalog:this.app.characterStats,
       grades:this.app.shops.grades,member:this.member(),classNames:this.classNames(),gemNames:entry.gems.map(id=>bag.catalog.items[id]?.name),skill:entry.skill?bag.catalog.skillDescriptions?.[entry.skill]:undefined});
@@ -1562,7 +1558,6 @@ export class StoryUI {
     // 每次打开都从正文顶部开始，不沿用上一件物品的滚动位置。
     this.scrollOffsets.delete('debug:item');
     const detail=this.scroll('item',left+panel.scroll.x,top+panel.scroll.y,panel.scroll.width,panel.scroll.height,v);
-    detail.onScroll=()=>this.menuText?.refresh();
     const body=itemDescriptionBody({item,entry,numbers:this.app.characterStats.equipment[entry.item],
       catalog:this.app.characterStats,grades:this.app.shops.grades,member:this.member(),
       classNames:this.classNames(),gemNames:entry.gems.map(id=>catalog.items[id]?.name),skill:entry.skill?catalog.skillDescriptions?.[entry.skill]:undefined});
@@ -1674,7 +1669,6 @@ export class StoryUI {
     // 正文与按钮都躲进黑底：黑底占 (35,35,380,280)，底部按钮行在第 275 行。
     const inner=box.plate,scroll=this.scroll('operation',inner.x,inner.y+37,inner.width,inner.height-80,v);
     this.operationTextSpecs=[];const specs=this.operationTextSpecs;
-    scroll.onScroll=()=>this.menuText?.refresh();
     const clip={top:inner.y+37,bottom:inner.y+37+inner.height-80};
     let y=0,serial=0;
     const key=()=>`operation-${serial++}`;
@@ -1759,7 +1753,6 @@ export class StoryUI {
     drawDescriptionPanel(v,this.app.menuPanels.assets,left,top,panel.width);
     // 同物品说明：滚动区也建在说明层上，否则正文会被面板底色压暗。
     const detail=this.scroll('item',left+panel.scroll.x,top+panel.scroll.y,panel.scroll.width,panel.scroll.height,v);let y=0;
-    detail.onScroll=()=>this.menuText?.refresh();
     const scrollX=left+panel.scroll.x,scrollY=top+panel.scroll.y,
       clip={top:scrollY,bottom:scrollY+panel.scroll.height};
     itemResultDetails(this.itemResult,this.session!.bag.catalog,
