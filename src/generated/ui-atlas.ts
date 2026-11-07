@@ -7,7 +7,7 @@ export const UI_ATLAS_PAGES: readonly UiAtlasPage[] = [
     "data": "assets/ui/menu-ui-0.json",
     "frame": "assets/ui/shop/category-divider.png",
     "width": 2046,
-    "height": 1204
+    "height": 1203
   }
 ];
 export const UI_ATLAS_FRAMES: Readonly<Record<string, { key: string; frame: string; page: number }>> = {
@@ -584,21 +584,6 @@ export const UI_ATLAS_FRAMES: Readonly<Record<string, { key: string; frame: stri
   "assets/ui/menus/skill-button-pressed.png": {
     "key": "interface:assets/ui/menu-ui-0.png",
     "frame": "assets/ui/menus/skill-button-pressed.png",
-    "page": 0
-  },
-  "assets/ui/menus/skill-column-passive.png": {
-    "key": "interface:assets/ui/menu-ui-0.png",
-    "frame": "assets/ui/menus/skill-column-passive.png",
-    "page": 0
-  },
-  "assets/ui/menus/skill-column-primary.png": {
-    "key": "interface:assets/ui/menu-ui-0.png",
-    "frame": "assets/ui/menus/skill-column-primary.png",
-    "page": 0
-  },
-  "assets/ui/menus/skill-column-secondary.png": {
-    "key": "interface:assets/ui/menu-ui-0.png",
-    "frame": "assets/ui/menus/skill-column-secondary.png",
     "page": 0
   },
   "assets/ui/menus/skill-compare-arrow.png": {
@@ -1202,4 +1187,4 @@ export const UI_ATLAS_FRAMES: Readonly<Record<string, { key: string; frame: stri
     "page": 0
   }
 };
-export const UI_ATLAS_SOURCE_DIGEST = "a3e6d23a1b971bcc14572499baa0b157d5b9fe0f8a1c87eee89b13c45e0d7286";
+export const UI_ATLAS_SOURCE_DIGEST = "a36fe737c5a98f9c44f4dd3d7ae91bd4625accc3dc2944091e1aeff425bcc6f5";

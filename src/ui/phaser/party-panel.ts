@@ -220,7 +220,9 @@ export class PartyPanel {
     const companion=id==='player'?undefined:(member as CompanionMember).snapshot();
     this.skillsScroll=this.scrollArea(v,'party-skills',503,18,374,342);const scroll=this.skillsScroll;
     scroll.onScroll=()=>this.refreshText();
-    panels.skillColumns.forEach((column,index)=>v.image(column.image,index*91,0,72,17,scroll.content));
+    // 列标题改成 DOM 文字，不再从 72×17 的烘焙图读取。
+    panels.skillColumns.forEach((column,index)=>this.scrolledText(`skill-column-${index}`,column.label,
+      503+index*91+36,18+8.5,14,'#9a9a9a','party-skills',{top:18,bottom:360},{anchorX:.5,anchorY:.5}));
     character.skills.forEach((skillId,index)=>{
       const skill=this.app.battleCatalog.skills[skillId],position=panels.skillPositions[index],level=loadout.levels[skillId]??0,available=!companion||!!companion.skillCaps[skillId];
       const button=v.button('',position.column*91,20+position.row*89,75,75,()=>{this.modal={kind:'skill',id,skill:skillId};this.changed();},

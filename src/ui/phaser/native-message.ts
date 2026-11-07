@@ -23,7 +23,8 @@ export function drawNativeMessage(v:UiSurface,assets:Record<string,string>,messa
   text.setAlign('center');
   const bandHeight=text.height+150,top=(height-bandHeight)/2;
   text.destroy();
-  v.rect(screen.left,top,screen.width,bandHeight,0x000000,1);
+  // 横带保持半透明，页面压暗交给菜单的全局黑色遮罩。
+  v.rect(screen.left,top,screen.width,bandHeight,0x000000,.55);
   // 花纹素材是 240 宽；超出屏幕的部分由画布裁掉。
   for(let x=screen.left;x<screen.left+screen.width;x+=240){
     v.image(assets['message-edge'],x,top-29,240,38);

@@ -59,6 +59,8 @@ export class MenuScene extends Phaser.Scene {
   /** 确认框画在它上面；底下的页面在确认期间不接受输入。 */
   private modal?:UiSurface;
   private backdrop?:Phaser.GameObjects.Image;
+  /** 确认框后面的黑色遮罩：弹层本身保持半透明。 */
+  private popupMask?:Phaser.GameObjects.Rectangle;
   private page:'home'|'slots'|'settings'|'cloud'='home';
   /** 存档槽立绘的租约：每次进存档页按槽里的路径取，离开页面或关场景时释放。 */
   private slotPortraits?:AssetLease;
@@ -98,7 +100,7 @@ export class MenuScene extends Phaser.Scene {
   create(options:{page?:'home'|'slots'}={}):void {
     this.page='home';this.app.ui.setMode('menu');this.app.ui.loading('正在准备主菜单…');
     const controller=new AbortController();
-    this.events.once('shutdown',()=>{this.unregisterInput?.();this.unregisterInput=undefined;controller.abort();this.cancelCloudRequest();this.settleConfirm(false,false);this.slotRequest?.abort();this.prompt?.close();this.passwordPrompt?.close();this.credentials?.destroy();this.credentials=undefined;this.clearModalLabels();this.menuText?.destroy();this.menuText=undefined;this.domSpecs=[];this.slotsScroll=undefined;this.settingsList=undefined;this.cloudScroll=undefined;this.surface?.destroy();this.surface=undefined;this.modal?.destroy();this.modal=undefined;this.slotPortraits?.release();this.slotPortraits=undefined;this.events.off(Phaser.Scenes.Events.RESUME,this.renderCloudOnResume);this.events.off(Phaser.Scenes.Events.PAUSE,this.hideCredentials);this.scale.off('resize',this.layout,this);});
+    this.events.once('shutdown',()=>{this.unregisterInput?.();this.unregisterInput=undefined;controller.abort();this.cancelCloudRequest();this.settleConfirm(false,false);this.slotRequest?.abort();this.prompt?.close();this.passwordPrompt?.close();this.credentials?.destroy();this.credentials=undefined;this.clearModalLabels();this.menuText?.destroy();this.menuText=undefined;this.domSpecs=[];this.slotsScroll=undefined;this.settingsList=undefined;this.cloudScroll=undefined;this.surface?.destroy();this.surface=undefined;this.modal?.destroy();this.modal=undefined;this.popupMask?.destroy();this.popupMask=undefined;this.slotPortraits?.release();this.slotPortraits=undefined;this.events.off(Phaser.Scenes.Events.RESUME,this.renderCloudOnResume);this.events.off(Phaser.Scenes.Events.PAUSE,this.hideCredentials);this.scale.off('resize',this.layout,this);});
     // 标题页整屏独占键盘；原始事件由正式界面场景那一处桥接进 router。
     this.unregisterInput?.();this.unregisterInput=this.app.inputRouter.register('menu',this.routeKey,{exclusive:()=>true});
     this.events.on(Phaser.Scenes.Events.RESUME,this.renderCloudOnResume);
@@ -112,6 +114,7 @@ export class MenuScene extends Phaser.Scene {
       if(controller.signal.aborted){lease.release();return;}
       this.events.once('shutdown',()=>lease.release());
       this.backdrop=this.add.image(0,0,uiTexture(art('background'))).setOrigin(.5);
+      this.popupMask=this.add.rectangle(0,0,1,1,0x000000,.5).setOrigin(0).setDepth(150).setVisible(false);
       this.surface=new UiSurface(this,1200,640);this.modal=new UiSurface(this,1024,640,200);this.prompt=new TextPrompt();this.passwordPrompt=new PasswordChangePrompt();
       const domUi=this.domUi;
       if(domUi){
@@ -352,6 +355,7 @@ export class MenuScene extends Phaser.Scene {
     // 加载页会盖住画布，但 DOM 在画布之上；加载或挂起时页面文字必须让位。
     const textVisible=this.confirmAction===undefined&&this.app.ui.ready&&!this.app.ui.suspended;
     this.menuText?.setVisible(textVisible);
+    this.popupMask?.setVisible(!textVisible&&this.confirmAction!==undefined&&this.app.ui.ready&&!this.app.ui.suspended);
     if(!textVisible)for(const label of this.modalLabels)label.setVisible(false);
     this.clearModalLabels();
     if(this.confirmAction){
@@ -790,6 +794,7 @@ export class MenuScene extends Phaser.Scene {
   }
   private layout():void {
     if(this.backdrop){const source=this.backdrop.texture.getSourceImage(),factor=Math.max(this.scale.width/source.width,this.scale.height/source.height);this.backdrop.setPosition(this.scale.width/2,this.scale.height/2).setScale(factor);}
+    this.popupMask?.setSize(this.scale.width,this.scale.height);
     this.surface?.layout();
     if(this.surface&&this.modal&&this.confirmAction!==undefined)centerModal(this.modal,this.surface,1024,640);
     this.syncCredentials();

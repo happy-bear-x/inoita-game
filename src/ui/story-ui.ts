@@ -107,6 +107,13 @@ export class StoryUI {
   private noticeTextSpecs:MenuTextSpec[]=[];
   /** 物品使用/丢弃弹层的文字规格；仍是弹层本地坐标，输出时统一换算。 */
   private operationTextSpecs:MenuTextSpec[]=[];
+  /** 背包说明层与 GM 物品详情打开时，页面文字让位，只留下说明自身。 */
+  private bagDetailTextSpecs:MenuTextSpec[]=[];
+  private bagDetailOpen=false;
+  private gmDetailTextSpecs:MenuTextSpec[]=[];
+  private gmDetailOpen=false;
+  /** 弹层/说明下方的黑色遮罩；画在菜单之上、说明层之下。 */
+  private popupMask?:Phaser.GameObjects.Rectangle;
   /** 技能初始化确认框的文字规格；仍是弹层本地坐标，输出时统一换算。 */
   private skillResetTextSpecs:MenuTextSpec[]=[];
   /** 登记快捷键那一屏单独一层：它盖在遮罩上，菜单本体整块藏起来。 */
@@ -220,6 +227,8 @@ export class StoryUI {
         this.renderNoticeText(writer);
       });
       this.menuText.register('bag',writer=>{
+        // 说明层打开时上方有黑色遮罩，只输出说明文字，页面文字整层让位。
+        if(this.bagDetailOpen){for(const spec of this.bagDetailTextSpecs)writer.add(spec);return;}
         this.renderTabsText(writer);
         for(const spec of this.bagTextSpecs)writer.add(spec);
         this.renderNoticeText(writer);
@@ -253,6 +262,8 @@ export class StoryUI {
       });
       // GM 调试页的文字由面板自己收集；图框、按钮和滚动仍由 Phaser 画。
       this.menuText.register('debug',writer=>{
+        // 物品详情打开时上方有黑色遮罩，只输出详情文字。
+        if(this.gmDetailOpen){for(const spec of this.gmDetailTextSpecs)writer.add(spec);return;}
         this.renderTabsText(writer);for(const spec of this.gmTextSpecs)writer.add(spec);this.renderNoticeText(writer);
       });
       // 通用原生提示盖在任何页面之上：页面文字让位，只输出这一份。
@@ -265,6 +276,8 @@ export class StoryUI {
     this.shortcutScreen.enabled=()=>this.open&&!this.app.ui.suspended&&!this.busy&&!!this.shortcutEdit;
     this.backTab.enabled=()=>this.shortcutScreen!.enabled();
     this.hudButtons=new UiSurface(scene,960,640,50);this.backdrop=scene.add.rectangle(0,0,1,1,0x000000,.65).setOrigin(0).setDepth(99).setInteractive();
+    // 说明/弹层用：压暗菜单页但不盖住说明层（300）和弹层（400）。
+    this.popupMask=scene.add.rectangle(0,0,1,1,0x000000,.5).setOrigin(0).setDepth(250).setVisible(false);
     this.surface.enabled=()=>this.open&&!this.app.ui.suspended&&!this.busy&&!this.app.ui.controlLayoutEditing&&!this.app.ui.keyBindingEditing&&!this.shortcutEdit&&!this.operation&&!this.itemNotice&&!this.allocationExit&&!this.skillReset&&!this.savePage.blocksPage&&!this.craftingPanel?.modalOpen&&!this.shopPanel?.modalOpen&&!this.partyPanel?.modalOpen&&!this.forge?.confirming;
     this.body.enabled=()=>this.surface!.enabled();this.description.enabled=()=>this.body!.enabled();
     this.modal.enabled=()=>this.open&&!this.app.ui.suspended&&!this.busy&&(!!this.operation||!!this.itemNotice||!!this.allocationExit||this.skillReset||this.savePage.modalOpen||!!this.craftingPanel?.modalOpen||!!this.shopPanel?.modalOpen||!!this.partyPanel?.modalOpen||!!this.forge?.confirming);
@@ -279,7 +292,7 @@ export class StoryUI {
     this.unsubscribeFullscreen=onFullscreenChange(()=>{if(this.open&&this.page==='settings')this.render();});
     scene.input.on('pointermove',this.moveDrag,this);scene.input.on('pointerup',this.endDrag,this);scene.input.on('pointerupoutside',this.cancelDrag,this);
     scene.game.events.on(UI_EVENTS.minimapLayout,this.onMinimap,this);scene.game.events.on(UI_EVENTS.cancelInput,this.cancelDrag,this);
-    scene.events.once('shutdown',()=>{this.unregisterKeyboard?.();this.unregisterKeyboard=undefined;this.unsubscribe?.();this.unsubscribeFullscreen?.();this.discardAllocation();this.menuText?.destroy();this.menuText=undefined;this.shortcutPrompt?.remove();this.shortcutPrompt=undefined;scene.scale.off('resize',this.resize,this);scene.game.events.off(UI_EVENTS.minimapLayout,this.onMinimap,this);scene.game.events.off(UI_EVENTS.cancelInput,this.cancelDrag,this);this.cancelOperation();this.savePage.destroy();this.surface!.root.remove(this.body!.root);this.surface?.destroy();this.body?.destroy();this.modal?.destroy();this.hudButtons?.destroy();this.description?.destroy();this.shortcutScreen?.destroy();this.backTab?.destroy();this.backdrop?.destroy();this.controlEditor?.destroy();this.controlEditor=undefined;this.keyBindingEditor?.destroy();this.keyBindingEditor=undefined;});
+    scene.events.once('shutdown',()=>{this.unregisterKeyboard?.();this.unregisterKeyboard=undefined;this.unsubscribe?.();this.unsubscribeFullscreen?.();this.discardAllocation();this.menuText?.destroy();this.menuText=undefined;this.shortcutPrompt?.remove();this.shortcutPrompt=undefined;scene.scale.off('resize',this.resize,this);scene.game.events.off(UI_EVENTS.minimapLayout,this.onMinimap,this);scene.game.events.off(UI_EVENTS.cancelInput,this.cancelDrag,this);this.cancelOperation();this.savePage.destroy();this.surface!.root.remove(this.body!.root);this.surface?.destroy();this.body?.destroy();this.modal?.destroy();this.hudButtons?.destroy();this.description?.destroy();this.shortcutScreen?.destroy();this.backTab?.destroy();this.backdrop?.destroy();this.popupMask?.destroy();this.popupMask=undefined;this.controlEditor?.destroy();this.controlEditor=undefined;this.keyBindingEditor?.destroy();this.keyBindingEditor=undefined;});
     this.sync();
   }
   bind(session:Session,world:WorldIndex,content:StoryInterface):void{
@@ -325,6 +338,7 @@ export class StoryUI {
     this.shortcutScreen?.visible(this.open&&!this.app.ui.suspended&&!!this.shortcutEdit);this.backTab?.visible(this.open&&!this.app.ui.suspended&&!!this.shortcutEdit);
     this.shortcutPrompt?.setVisible(this.open&&!this.app.ui.suspended&&!!this.shortcutEdit);
     this.backdrop?.setVisible(this.open&&!this.app.ui.suspended);
+    this.popupMask?.setVisible(menu&&(modal||this.bagDetailOpen||this.gmDetailOpen));
     this.controlEditor?.visible(this.open&&this.app.ui.controlLayoutEditing&&!this.app.ui.suspended);
     this.keyBindingEditor?.visible(this.open&&this.app.ui.keyBindingEditing&&!this.app.ui.suspended);this.layout();
   }
@@ -474,6 +488,7 @@ export class StoryUI {
     }
     this.body?.scrolls.forEach(scroll=>scroll.layout());this.description?.scrolls.forEach(scroll=>scroll.layout());this.modal?.scrolls.forEach(scroll=>scroll.layout());if(this.hudButtons&&this.scene){const bounds=this.scene.game.canvas.getBoundingClientRect(),safe=readSafeArea(),unit=this.scene.scale.width/Math.max(1,bounds.width),scale=uiUnitScale(this.scene.scale.width,this.scene.scale.height);this.hudButtons.root.setScale(scale).setPosition((safe.left+12)*unit,(safe.top+12)*unit);this.hudButtons.root.list.forEach((button,index)=>(button as Phaser.GameObjects.Container).setPosition(0,this.minimapHeight+12+index*(HUD_SIDE_BUTTON_SIZE+8)));}
     this.backdrop?.setSize(this.scene!.scale.width,this.scene!.scale.height);
+    this.popupMask?.setSize(this.scene!.scale.width,this.scene!.scale.height);
     // 画布缩放变化后，DOM 文字的 CSS 坐标和字号要跟着重算。
     this.menuText?.refresh();
     if(this.shortcutEdit)this.placeShortcutPrompt();
@@ -690,7 +705,7 @@ export class StoryUI {
         });
         this.gmPanelOwner=gm;
       }
-      this.gmTextSpecs=[];
+      this.gmTextSpecs=[];this.gmDetailTextSpecs=[];this.gmDetailOpen=false;
       this.gmPanel?.render(this.body!,{add:spec=>this.gmTextSpecs.push(spec)});
     }
     if(this.page==='save'||this.page==='load')this.renderSavePage();
@@ -1121,7 +1136,12 @@ export class StoryUI {
     // 可视区收进左框内沿：原版滚动区是 (21,18,374,394)，内容组再左内缩 10。这里把滚动原点
     // 移到 (116,24)（相对原可视区右移 10、下移 6），再用 16 的裁剪外扩；下沿正好停在底框上沿，
     // 内容不会盖住列标题和底框。
-    const tree=this.scroll('directory',116,24,364,367,this.body!,16);panels.skillColumns.forEach((column,index)=>v.image(column.image,1+index*91,0,72,17,tree.content));
+    const tree=this.scroll('directory',116,24,364,367,this.body!,16);
+    // 列标题原来是 72×17 的烘焙文字图，改成 DOM 后不再发虚。
+    panels.skillColumns.forEach((column,index)=>this.skillTextSpecs.push({
+      key:`skill-column-${index}`,text:column.label,x:116+1+index*91+36,y:24+8.5,
+      style:{size:14,color:'#9a9a9a',anchorX:.5,anchorY:.5},scroll:'directory',clip:{top:24,bottom:391}
+    }));
     character.skills.forEach((id,index)=>{
       const entry=this.app.battleCatalog.skills[id],position=panels.skillPositions[index]!,level=draft.levels[id]??0;
       const button=v.button('',position.column*91,20+position.row*89,75,75,()=>{this.skill=id;this.scrollOffsets.delete('skills:description');this.render();},{image:entry.icon,parent:tree.content,guard:tree.guard}).setData('label',entry.name);
@@ -1147,7 +1167,10 @@ export class StoryUI {
     const v=this.body!,panels=this.app.menuPanels,party=this.session!.party!;
     const list=this.scroll('ai',116,24,364,367,this.body!,16);
     // AI 页只有两列主动技能；第三张是目录页的「被动技能」标题，原版这里只画前两个。
-    panels.skillColumns.slice(0,2).forEach((column,index)=>v.image(column.image,1+index*182,0,72,17,list.content));
+    panels.skillColumns.slice(0,2).forEach((column,index)=>this.skillTextSpecs.push({
+      key:`skill-ai-column-${index}`,text:column.label,x:116+1+index*182+36,y:24+8.5,
+      style:{size:14,color:'#9a9a9a',anchorX:.5,anchorY:.5},scroll:'ai',clip:{top:24,bottom:391}
+    }));
     // 两列之间与右列外侧的压暗分隔条。颜色与原版压暗带相同（RGB 111,111,111），但**不是**
     // `phaser/round-band.ts` 那条：这里是没有圆角件的 37 宽直条，不透明度也直接按 0–255 给
     // （30/255），而 `drawRoundBand` 的强度是 0–100 且带四角图。别把它们当成同一元件合并。
@@ -1350,7 +1373,7 @@ export class StoryUI {
     if(this.shortcutEdit)this.closeShortcutScreen();
   }
   private renderBag():void{
-    this.bagTextSpecs=[];
+    this.bagTextSpecs=[];this.bagDetailTextSpecs=[];this.bagDetailOpen=false;
     const v=this.body!,bag=this.session!.bag,panels=this.app.menuPanels,member=this.member()!,equipment=bag.equipmentFor(this.selectedMemberId),art=this.memberArt();
     // 两栏背景照原版：`UIEquip_DrawEquipBackground @0x14a7cc` 给左栏画图框加四块黑色 60% 的区域
     // （`GRPX_FillRectAlpha(..., 0xff000000, 0x3c)`），中间 (129,110,157,157) 那块留空放人物预览；
@@ -1367,6 +1390,7 @@ export class StoryUI {
     this.drawPartyColumn(v);
     const showingResult=itemResultDetails(this.itemResult,bag.catalog,id=>id,id=>id).length>0,
       describing=!showingResult&&!!this.selectedItem&&!!bag.get(this.selectedItem);
+    this.bagDetailOpen=describing||showingResult;
     // 说明面板盖住点选来源的对面那一栏：停在左栏（点背包物品）时右栏照常画背包网格，
     // 停在右栏（点身上装备）时左栏的人物与装备槽也必须照常画——否则那一块会整片空掉。
     // 只有面板盖住左栏时才省掉这一支——省掉的是被盖住的那一块，**不是把选中状态清掉**：
@@ -1477,7 +1501,7 @@ export class StoryUI {
     // 说明正文走 DOM：断行和高度仍在布局阶段算完，滚动时由文字层扣掉滚动偏移。
     const scrollX=left+panel.scroll.x,scrollY=top+panel.scroll.y,
       clip={top:scrollY,bottom:scrollY+actionLayout.scrollHeight},
-      writer={add:(spec:MenuTextSpec)=>this.bagTextSpecs.push(spec)};
+      writer={add:(spec:MenuTextSpec)=>this.bagDetailTextSpecs.push(spec)};
     drawDescriptionTitle(body.title,left,top,panel.width,body.color,{writer,keyPrefix:'item-title'});
     let y=drawDescriptionRows(v,body.rows,panel.scroll.width,
       {writer,keyPrefix:'item-row',x:scrollX,y:scrollY,scroll:'item',clip});
@@ -1490,7 +1514,7 @@ export class StoryUI {
         const button=actionLayout.buttons[index]!;
         v.button('',left+button.x,top+button.y,button.width,button.height,action.run,
           {fontSize:button.fontSize,disabled:action.disabled}).setData('label',action.label);
-        this.bagTextSpecs.push({key:`item-action-${index}`,text:action.label,
+        this.bagDetailTextSpecs.push({key:`item-action-${index}`,text:action.label,
           x:left+button.x+button.width/2,y:top+button.y+button.height/2,
           style:{size:button.fontSize,anchorX:.5,anchorY:.5,width:button.width-12,align:'center',wrap:'word'}});
       });
@@ -1503,6 +1527,7 @@ export class StoryUI {
   private renderGmItemDetail(itemId:string,close:()=>void):void{
     const v=this.description!,catalog=this.session!.bag.catalog,item=catalog.items[itemId];
     if(!item)return;
+    this.gmDetailOpen=true;
     // 未持有的物品没有掷出的实例数值；用目录默认值与最大孔数预览，避免详情里全是 0。
     const defaults=this.app.characterStats.equipment[itemId];
     const entry:ItemInstance={id:'gm-preview',item:itemId,quantity:1,enhancement:0,gems:[],
@@ -1524,7 +1549,7 @@ export class StoryUI {
     // 说明层坐标与内容块一致；调试页的文字层按内容块坐标输出。
     const scrollX=left+panel.scroll.x,scrollY=top+panel.scroll.y,
       clip={top:scrollY,bottom:scrollY+panel.scroll.height},
-      writer={add:(spec:MenuTextSpec)=>this.gmTextSpecs.push(spec)};
+      writer={add:(spec:MenuTextSpec)=>this.gmDetailTextSpecs.push(spec)};
     drawDescriptionTitle(body.title,left,top,panel.width,body.color,{writer,keyPrefix:'gm-item-title'});
     const height=drawDescriptionRows(v,body.rows,panel.scroll.width,
       {writer,keyPrefix:'gm-item-row',x:scrollX,y:scrollY,scroll:'item',clip});
@@ -1721,7 +1746,7 @@ export class StoryUI {
       id=>this.app.battleCatalog.skills[id]?.name??id,id=>this.app.storyClasses.classes.find(c=>c.id===id)?.name??id)
       .forEach((line,index)=>{
         const layout=this.descriptionLayout(v,[{text:line,color:GOLD}],panel.scroll.width,22);
-        this.pushDescriptionText(this.bagTextSpecs,`item-result-${index}`,layout,scrollX,scrollY,panel.scroll.width,22,
+        this.pushDescriptionText(this.bagDetailTextSpecs,`item-result-${index}`,layout,scrollX,scrollY,panel.scroll.width,22,
           'item',clip,y);
         y+=layout.height+5+13;
       });

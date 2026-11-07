@@ -445,9 +445,9 @@ test('skill settings page drops the initial-point label and keeps the reset butt
 test('AI settings shows two columns and clears the description for unlearned skills',t=>{
   const f=fixture();t.after(f.cleanup);
   f.menu.show('skills');f.scene.click(f.scene.button('AI 设置'));
-  const headers=panels.skillColumns.map(column=>`interface:${column.image}`);
-  assert.deepEqual(headers.map(key=>f.scene.nodes.filter(node=>node.shown&&node.texture.key===key).length),[1,1,0],
-    'AI 页只画两个主动技能列标题');
+  const headers=panels.skillColumns.map(column=>column.label);
+  assert.deepEqual(visibleDomLabels(f).filter(label=>headers.includes(label.text)).map(label=>label.text),[headers[0],headers[1]],
+    'AI 页只显示两个主动技能列标题');
   const character=battle.classes.find(value=>value.id===f.hero.classId)!;
   const draft=f.session.skills.draft(battle,f.hero.classId);
   const unlearned=character.skills.slice(0,9).find(id=>!(draft.levels[id]>0))!;

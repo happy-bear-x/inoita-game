@@ -76,11 +76,11 @@ export const DESCRIPTION_PANEL = {
   y: 0, width: 442, height: 431,
   /** 442 是这套子件的设计宽度；实际面板按它盖住的那一栏取宽，见 `descriptionPanel`。 */
   /**
-   * 黑色底色的内缩量取原版（`GRPX_FillRectAlpha(x+10,y+10,w−20,h−20,0xff000000,60)`），
-   * 不透明度按观感从原版的 60% 提到 85%：面板要压得住底下那一栏的格子与图标，
-   * 同时又看得出它是盖上去的一层，不是把那一栏整个换掉。
+   * 黑色底色的内缩量取原版（`GRPX_FillRectAlpha(x+10,y+10,w−20,h−20,0xff000000,60)`）。
+   * 面板本身保持半透明，压暗交给它下面的全屏黑色遮罩；这样能看到底下的界面，
+   * 又不会把面板画成一块纯黑。
    */
-  inset: 10, background: 0x000000, backgroundAlpha: .85,
+  inset: 10, background: 0x000000, backgroundAlpha: .35,
   /** 物品名：落点与占宽来自 `UIDesc_Draw`，`right` 是右边留给关闭按钮的那段。 */
   title: { x: 20, y: 22, right: 82, size: 24 },
   scroll: { x: 20, y: 60, width: 358, height: 258 },

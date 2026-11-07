@@ -28,7 +28,6 @@ export function gameMenuImageGroups(panels: MenuPanels, items: ItemCatalog, batt
     ...COMMON_BUTTON_IMAGES,
     ...Object.values(panels.assets),
     ...panels.equipmentSlots.map(slot => slot.emptyIcon),
-    ...panels.skillColumns.map(column => column.image),
     ...Object.values(panels.classes).map(character => character.preview),
     ...Object.values(panels.character.portraits).flatMap(character => [character.image, character.partyIcon]),
     ...Object.values(story.assets), ...Object.values(shops.assets)
