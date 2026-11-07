@@ -31,6 +31,8 @@ export interface ResidentCombatInput {
    * 运行时只装已学技能的动画特效与召唤物。
    */
   learnedSkillIds?: Iterable<string>;
+  /** 正式游玩只常驻通用反馈，角色、武器与技能交给当前地图及施法者持有。 */
+  feedbackOnly?: boolean;
 }
 
 /** 会话常驻的战斗视觉资源：一次加载，切图与战斗结束都不释放。 */
@@ -42,12 +44,9 @@ interface CombatAssetPack {
 }
 
 /**
- * 玩家侧战斗视觉资源。当前职业、已拥有佣兵、已学技能、技能姿态、召唤物和共享表现
- * 都与具体地图无关，因此和佣兵素材一样在首次进入世界时加载并常驻。
- * 运行时用 `classIds` / `ownedCompanionIds` / `learnedSkillIds` 收窄；构建期省略时覆盖全量。
- *
- * 敌人素材随地图预取，不在这里。两边的纹理键必须唯一；同一键指向不同帧配置时
- * 直接报错，避免运行时静默用错帧数。
+ * 运行时通过 feedbackOnly 持有通用反馈，职业、装备与技能由地图及使用者准备。
+ * 构建期默认枚举全部玩家资源，也可指定职业、伙伴和技能范围核对覆盖。
+ * 同一纹理键必须指向同一文件和帧配置，否则直接报错。
  */
 export function residentCombatAssets(input: ResidentCombatInput): CombatAssetPack {
   const { battle, wardrobe, world, companions } = input;
@@ -87,12 +86,13 @@ export function residentCombatAssets(input: ResidentCombatInput): CombatAssetPac
     }
   };
 
-  const shared = sharedCombatEffectMap(battle, wardrobe);
+  const shared = sharedCombatEffectMap(battle, wardrobe, !input.feedbackOnly);
   addEffects(shared);
   for (const name of feedbackEffects(battle.feedback)) effectNames.add(name);
   for (const name of COMBAT_OUTCOME_EFFECTS) effectNames.add(name);
   addAssets(combatOutcomeAssets(battle));
   addAssets(combatFeedbackAssets(battle));
+  if (input.feedbackOnly) return { assets: [...assets.values()], effectNames, actorIds };
   const selectedClasses = input.classIds === undefined ? undefined : new Set(input.classIds);
   if (selectedClasses) for (const id of selectedClasses)
     if (!battle.classes.some(character => character.id === id)) throw new Error(`常驻战斗包职业不存在：${id}`);

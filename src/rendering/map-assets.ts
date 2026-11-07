@@ -15,8 +15,8 @@ import type { StoryStage } from '../domain/story-performance.ts';
 import type { StoryEncounter, StoryWorldState } from '../domain/story-world.ts';
 import type { WardrobeCatalog } from '../domain/wardrobe.ts';
 import { characterAssets } from './characters.ts';
+import { characterSceneClips } from './combat-asset-descriptors.ts';
 import { mapSurfaceAssets } from './map-layers.ts';
-import { effectAssets } from './effects.ts';
 import { enemyCombatAssets, partyMemberCombatAssets, playerCombatAssets, sharedCombatAssets } from './combat-assets.ts';
 import { groundLootAssets } from './ground-loot.ts';
 import { controlSkinAssets } from './control-skin.ts';
@@ -129,7 +129,7 @@ export function planMapVisuals(map: WorldMap, input: WorldAssetInputs, options: 
   for (const id of actorIds) {
     const actor = world.actors[id];
     if (!actor) throw new Error(`角色资源缺失：${id}`);
-    assets.push(...characterAssets(actor));
+    assets.push(...characterAssets(actor, characterSceneClips(actor)));
   }
   return { assets, actorIds };
 }
@@ -220,7 +220,8 @@ export function planMapCombat(map: WorldMap, input: WorldAssetInputs, options: M
     const actor = member ? input.world.actors[member.definition.actor] : undefined;
     if (!member || !actor) continue;
     assets.push(...partyMemberCombatAssets(input.battle, input.wardrobe, member.classId, actor,
-      learnedSkillIds(input.battle, member.classId, member.skills)));
+      learnedSkillIds(input.battle, member.classId, member.skills),
+      { items: input.items, equipment: input.hero.bag.equipmentItems(input.hero.bag.equipmentFor(id)) }));
   }
   const joins = new Set(options.joinCompanionIds ?? []);
   if (!options.joinCompanionIds) {
@@ -252,7 +253,6 @@ export function sharedEntryAssets(input: WorldAssetInputs): PendingAsset[] {
     ...groundLootAssets(input.items),
     ...pickupMessageAssets(),
     ...input.wardrobe.textures.map(texture => ({ kind: 'image' as const, ...texture })),
-    ...effectAssets(input.world.storyEffects ?? {}),
     ...sharedCombatAssets(input.battle, input.wardrobe)
   ];
 }

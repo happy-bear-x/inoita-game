@@ -252,6 +252,8 @@ function harness() {
       }
     },
     async prepareActorAssets(){},
+    async prepareClipAssets(){},
+    async prepareEffectAssets(){},
     releaseStage(this: { map?: { id: string } }) { released++; this.map = undefined; }, events,
     clearEarlyCurtain() {},
     scene: { stop() { events.emit('shutdown'); } }
@@ -631,13 +633,42 @@ test('scene reconstruction restores held animation frames on every character lay
   for(const layer of visual.layers){assert.equal((layer.anims as unknown as {progress:number}).progress,1);assert.equal(layer.anims.isPlaying,false);}
 });
 
+test('stage loads only requested poses and effects and reuses its ownership until release', async () => {
+  const frames = new Set<string>(), queued: string[] = [];
+  const load = Object.assign(new EventEmitter(), { image: (key: string) => queued.push(key),
+    spritesheet: (key: string) => queued.push(key), start() {} });
+  const clip = (key: string) => ({ frameWidth: 8, frameHeight: 8, frames: 1, originX: 0, originY: 0,
+    frameRate: 10, mirrorX: false, layers: [{ key, file: key + '.png', blend: 'normal' }] });
+  const actor = { id: 'boss', name: 'Boss', description: '', portrait: null, clips: { 'idle-south': clip('idle'), 'skill-monster-meteor-south': clip('meteor') } } as ActorDefinition;
+  const app = { world: { actors: { boss: actor }, storyEffects: { flash: { clips: { default: clip('flash') } } } },
+    session: { storyWorld: { actorAppearance: (id: string) => id } } } as unknown as StoryContext;
+  const scene = new StoryStageScene(app);
+  Object.assign(scene, { events: new EventEmitter(), load, sys: { isActive: () => true },
+    textures: { exists: (key: string) => frames.has(key), get: () => ({ has: () => true }), remove: (key: string) => frames.delete(key) },
+    anims: { exists: () => false } });
+  const signal = new AbortController().signal;
+  const finish = async (work: Promise<void>) => {
+    await new Promise(resolve => setImmediate(resolve));
+    for (const key of queued) frames.add(key);
+    load.emit('complete'); await work;
+  };
+  await finish(scene.prepareActorAssets('boss', signal));
+  assert.deepEqual(queued, ['idle']);
+  await finish(scene.prepareClipAssets(actor, 'skill-monster-meteor-south', signal));
+  assert.deepEqual(queued, ['idle', 'meteor']);
+  await scene.prepareClipAssets(actor, 'skill-monster-meteor-south', signal);
+  await finish(scene.prepareEffectAssets('flash', signal));
+  assert.deepEqual(queued, ['idle', 'meteor', 'flash']);
+  scene.releaseStage(); assert.equal(frames.size, 0);
+});
+
 test('normal and skipped poses settle on identical held or idle animation frames',async()=>{
   const {drawStoryCharacters}=await import('../src/rendering/story-map-view.ts');
   const run=async(skip:boolean,hold:boolean)=>{
     const clip={frameWidth:8,frameHeight:8,frames:4,originX:0,originY:0,frameRate:10,mirrorX:false,
       layers:[{key:'body',file:'body.png',blend:'normal'}]};
     const appearance={id:'guard',clips:{'idle-south':clip,'fall-down-south':clip}} as ActorDefinition;
-    const scene={anims:{exists:()=>true},add:{
+    const scene={prepareClipAssets:async()=>{},anims:{exists:()=>true},add:{
       container(x:number,y:number){return {x,y,scene:{},setDepth(){return this;},setVisible(){return this;},setAlpha(){return this;},addAt(){},destroy(){}};},
       sprite(){return Object.assign(new EventEmitter(),{anims:{progress:0,isPlaying:false,timeScale:1,accumulator:0,setProgress(value:number){this.progress=value;},stop(){this.isPlaying=false;}},
         setOrigin(){return this;},setBlendMode(){return this;},setScale(){return this;},play(){this.anims.isPlaying=true;},destroy(){}});}

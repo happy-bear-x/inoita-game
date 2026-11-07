@@ -1,4 +1,4 @@
-import type { ActorDefinition, EffectClip } from '../domain/content.ts';
+import type { ActorDefinition, ClipName, EffectClip } from '../domain/content.ts';
 import {
   skillForGrowth,
   type AttackEffectDefinition,
@@ -38,14 +38,20 @@ export function stateMarkerEffects(catalog: BattleCatalog): EffectMap {
     .map(name => [name, catalog.attackEffects[name]]));
 }
 
-export function characterAssets(actor: ActorDefinition): PendingAsset[] {
-  return Object.values(actor.clips).flatMap(clip => clip ? clip.layers
+export function characterAssets(actor: ActorDefinition, clipNames?: Iterable<ClipName>): PendingAsset[] {
+  const clips = clipNames ? [...clipNames].map(name => actor.clips[name]) : Object.values(actor.clips);
+  return clips.flatMap(clip => clip ? clip.layers
     // 空文件是运行时由 Wardrobe 生成的动态纹理，不能交给 loader。
     .filter(layer => !!layer.file)
     .map(layer => ({
       kind: 'spritesheet' as const, key: layer.key, file: layer.file,
       config: { frameWidth: clip.frameWidth, frameHeight: clip.frameHeight, endFrame: clip.frames - 1 }
     })) : []);
+}
+
+/** 地图和对白先准备站立、行走与快照里正在保持的动作。 */
+export function characterSceneClips(actor: ActorDefinition, current?: ClipName): ClipName[] {
+  return (Object.keys(actor.clips) as ClipName[]).filter(name => name.startsWith('idle-') || name.startsWith('walk-') || name === current);
 }
 
 const effectPageAssets = new Map<number, PendingAsset>();
@@ -150,11 +156,13 @@ export function classEffects(catalog: BattleCatalog, character: BattleClass, att
 }
 
 /** 所有武器普攻（单手、双持、狂暴）、状态攻击增益和状态标记会用到的特效。 */
-export function sharedCombatEffectMap(catalog: BattleCatalog, wardrobe: WardrobeCatalog): EffectMap {
+export function sharedCombatEffectMap(catalog: BattleCatalog, wardrobe: WardrobeCatalog, includeWeaponAttacks = true): EffectMap {
   const effects: EffectMap = {};
-  for (const profile of Object.values(wardrobe.attacks)) Object.assign(effects, basicAttackEffects(catalog, profile));
-  for (const profile of Object.values(wardrobe.dualWieldAttacks ?? {})) Object.assign(effects, basicAttackEffects(catalog, profile));
-  for (const profile of Object.values(wardrobe.frenzyAttacks ?? {})) Object.assign(effects, basicAttackEffects(catalog, profile));
+  if (includeWeaponAttacks) {
+    for (const profile of Object.values(wardrobe.attacks)) Object.assign(effects, basicAttackEffects(catalog, profile));
+    for (const profile of Object.values(wardrobe.dualWieldAttacks ?? {})) Object.assign(effects, basicAttackEffects(catalog, profile));
+    for (const profile of Object.values(wardrobe.frenzyAttacks ?? {})) Object.assign(effects, basicAttackEffects(catalog, profile));
+  }
   for (const value of Object.values(catalog.statusAttackBuffs ?? {}))
     for (const name of buffEffectNames(value))
       if (catalog.attackEffects[name]) effects[name] = catalog.attackEffects[name];

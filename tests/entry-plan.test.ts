@@ -19,7 +19,20 @@ const hook = registerHooks({
   }
 });
 const { buildEntryPlan, entryPlanAssets } = await import('../src/application/entry-plan.ts');
+const { planMapVisuals } = await import('../src/rendering/map-assets.ts');
+const { characterAssets } = await import('../src/rendering/combat-asset-descriptors.ts');
 hook.deregister();
+
+test('dark-space dialogue prepares movement without meteor combat animations', () => {
+  const map = read<WorldMap>('maps/dark-space-b5a13a13');
+  const plan = planMapVisuals(map, inputs(), { scripts: ['event-413'] });
+  const keys = new Set(plan.assets.map(asset => asset.key));
+  const actor = world.actors['enemy-dark-forces-of-evil-1']!;
+  const meteor = characterAssets(actor, (Object.keys(actor.clips) as (keyof typeof actor.clips)[]).filter(name => name.includes('meteor')));
+  assert.ok(plan.actorIds.has(actor.id)); assert.ok(meteor.length > 0);
+  for (const asset of meteor) assert.equal(keys.has(asset.key), false, asset.key);
+  for (const asset of characterAssets(actor, ['idle-south'])) assert.ok(keys.has(asset.key), asset.key);
+});
 
 const read = <T>(name: string): T => JSON.parse(readFileSync(new URL(`../public/content/${name}.json`, import.meta.url), 'utf8')) as T;
 const world = read<WorldIndex>('world');

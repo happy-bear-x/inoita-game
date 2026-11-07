@@ -1,7 +1,7 @@
 /**
  * 生产内容烟雾测试：用真实 `public/content` 编译到临时目录，再跑一个小战斗和一个剧情节点。
  *
- * 只证明编译后的 `battle.json`/`campaign.json` 能在运行时格式下工作，不重复单元测试的语义校验。
+ * 核对六职业的实际图片、图集帧与剧情动作范围，并验证编译内容能在运行时工作。
  * 独立运行：`npm run test:content-build`；不进入每次 `npm test`。
  */
 import assert from 'node:assert/strict';
@@ -17,6 +17,11 @@ import { CombatCooldownStore } from '../src/domain/combat-cooldowns.ts';
 import { resolveBasicAttack } from '../src/domain/basic-attack.ts';
 import { needsTarget, skillEvents } from '../src/domain/skill-action.ts';
 import { StoryRuntime } from '../src/domain/story-runtime.ts';
+import { residentCombatAssets } from '../src/rendering/resident-combat-assets.ts';
+import { residentCombatCoverageGaps } from '../src/rendering/combat-visual-coverage.ts';
+import { characterAssets, characterSceneClips } from '../src/rendering/combat-asset-descriptors.ts';
+import { EFFECT_ATLAS_BY_FILE, EFFECT_ATLAS_PAGES } from '../src/generated/effect-atlas.ts';
+import { validateSpriteSheet } from '../tools/validate-spritesheet.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'story-content-smoke-'));
@@ -25,6 +30,53 @@ try {
   await buildContent(path.join(root, 'public/content'), contentDir);
   const battle = JSON.parse(await fs.readFile(path.join(contentDir, 'battle.json'), 'utf8'));
   const campaign = JSON.parse(await fs.readFile(path.join(contentDir, 'campaign.json'), 'utf8'));
+  const world = JSON.parse(await fs.readFile(path.join(contentDir, 'world.json'), 'utf8'));
+  const wardrobe = JSON.parse(await fs.readFile(path.join(contentDir, 'wardrobe.json'), 'utf8'));
+  const companions = JSON.parse(await fs.readFile(path.join(contentDir, 'companions.json'), 'utf8'));
+
+  // 六职业分别核对编译后的技能、召唤物清单及实际图片/图集帧，复用本次临时构建。
+  const headers = new Map(), atlases = new Map();
+  const headerFor = async file => {
+    if (headers.has(file)) return headers.get(file);
+    const handle = await fs.open(path.join(root, 'public', file));
+    try {
+      const header = Buffer.alloc(24); await handle.read(header, 0, 24, 0);
+      headers.set(file, header); return header;
+    } finally { await handle.close(); }
+  };
+  for (const character of battle.classes) {
+    const input = { battle, wardrobe, world, companions, classIds: [character.id], ownedCompanionIds: [] };
+    assert.deepEqual(residentCombatCoverageGaps(input), { effects: [], layers: [], actorLayers: [], definitions: [], companions: [] }, character.id);
+    const pack = residentCombatAssets(input);
+    for (const asset of pack.assets) {
+      const header = await headerFor(asset.file);
+      if (asset.kind === 'spritesheet') validateSpriteSheet(header, {
+        frameWidth: asset.config.frameWidth, frameHeight: asset.config.frameHeight, frames: asset.config.endFrame + 1
+      }, asset.file);
+      if (asset.kind === 'atlas' && !atlases.has(asset.atlas))
+        atlases.set(asset.atlas, JSON.parse(await fs.readFile(path.join(root, 'public', asset.atlas), 'utf8')));
+    }
+    for (const name of pack.effectNames) for (const clip of Object.values(battle.attackEffects[name]?.clips ?? {}))
+      for (const layer of clip.layers) {
+        const frames = EFFECT_ATLAS_BY_FILE[layer.file]; if (!frames) continue;
+        assert.ok(frames.length >= clip.frames, `${character.id}: ${name} 图集帧不足`);
+        for (const reference of frames.slice(0, clip.frames)) {
+          const page = EFFECT_ATLAS_PAGES[reference.page], atlas = atlases.get(page.data);
+          assert.ok(atlas?.frames?.[reference.frame], `${character.id}: ${name} 缺少 ${reference.frame}`);
+        }
+      }
+  }
+  assert.equal(battle.classes.length, 6);
+  const darkness = world.actors['enemy-dark-forces-of-evil-1'];
+  const dialogue = new Set(characterAssets(darkness, characterSceneClips(darkness)).map(asset => asset.key));
+  const meteor = characterAssets(darkness, Object.keys(darkness.clips).filter(name => name.includes('meteor')));
+  assert.ok(meteor.length > 0);
+  for (const asset of meteor) assert.ok(!dialogue.has(asset.key), '黑暗空间对白提前持有陨石动作');
+  let avoidedBytes = 0;
+  for (const file of new Set(meteor.map(asset => asset.file))) {
+    const header = await headerFor(file); avoidedBytes += header.readUInt32BE(16) * header.readUInt32BE(20) * 4;
+  }
+  console.log(`Six classes: files and atlas frames verified; dark-space dialogue avoids ${(avoidedBytes / 1048576).toFixed(2)} MiB meteor textures`);
 
   // 构建期清单：版本来自编译后目录，必需顶层键必须真的存在。
   const manifest = await buildContentManifest(contentDir, hashTree(contentDir));

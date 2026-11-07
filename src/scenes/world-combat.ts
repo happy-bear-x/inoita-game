@@ -2096,7 +2096,7 @@ captureStoryActors():SceneActorState[] {
       const learned=learnedSkillIds(this.app.battleCatalog,member.classId,member.skills);
       const signature=this.allySkillSignatureNow(member),gate=this.allySkillGateNow(member);
       lease=await loadSceneAssets(this.scene,partyMemberCombatAssets(this.app.battleCatalog,this.app.wardrobe,member.classId,actor,
-        learned),()=>{});
+        learned,{items:this.app.items,equipment:this.hero.bag.equipmentItems(this.hero.bag.equipmentFor(id))}),()=>{});
       if(this.closed||party.get(id)!==member||!party.activeIds.includes(id)){lease.release();continue;}
       await this.scene.preparePartyMember(id,undefined,{full:true});
       if(this.closed||party.get(id)!==member||!party.activeIds.includes(id)){lease.release();continue;}
@@ -2694,7 +2694,8 @@ captureStoryActors():SceneActorState[] {
         const actor=this.visualOf(id)?.actor??this.app.world.actors[member.definition.actor];
         if(!actor)continue;
         const learned=learnedSkillIds(catalog,member.classId,member.skills);
-        const plan=partyMemberCombatAssets(catalog,this.app.wardrobe,member.classId,actor,learned);
+        const plan=partyMemberCombatAssets(catalog,this.app.wardrobe,member.classId,actor,learned,
+          {items:this.app.items,equipment:this.hero.bag.equipmentItems(this.hero.bag.equipmentFor(id))});
         const lease=await loadSceneAssets(this.scene,plan,()=>{});
         if(this.closed){lease.release();return;}
         if(this.app.session.party?.get(id)!==member||!this.app.session.party?.activeIds.includes(id)){lease.release();continue;}

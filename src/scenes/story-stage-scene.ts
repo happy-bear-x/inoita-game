@@ -2,7 +2,7 @@ import { SCENE_KEYS } from '../application/scene-keys.ts';
 import Phaser from 'phaser';
 import type { StoryContext } from '../application/ports.ts';
 import type { AssetLease } from '../application/assets.ts';
-import type { ActorDefinition, WorldMap } from '../domain/content.ts';
+import type { ActorDefinition, ClipName, WorldMap } from '../domain/content.ts';
 import type { SceneActorState } from '../domain/scene-snapshot.ts';
 import { validateStoryStageSnapshot, type StoryCurtain, type StoryStageSnapshot } from '../domain/story-performance.ts';
 import { assertScenePlan,planScene } from '../domain/scene-plan.ts';
@@ -10,6 +10,7 @@ import { NavigationWorld } from '../domain/navigation-world.ts';
 import { MovementWorld } from '../rendering/movement-world.ts';
 import { characterAssets, type CharacterVisual } from '../rendering/characters.ts';
 import { effectAssets } from '../rendering/effects.ts';
+import { characterSceneClips } from '../rendering/combat-asset-descriptors.ts';
 import { loadSceneAssets, type PendingAsset } from '../rendering/scene-assets.ts';
 import { drawStoryCharacters, drawStoryMap } from '../rendering/story-map-view.ts';
 import { mapSurfaceAssets } from '../rendering/map-layers.ts';
@@ -46,6 +47,7 @@ export class StoryStageScene extends Phaser.Scene {
   movement?: MovementWorld;
   private lease?: AssetLease;
   private readonly actorLeases = new Set<AssetLease>();
+  private readonly preparedAssetKeys = new Set<string>();
   private clearMap?: () => void;
   private revision = 0;
   /** 舞台是否已经用不透明底色完全盖住正式世界。 */
@@ -123,16 +125,12 @@ export class StoryStageScene extends Phaser.Scene {
     const map = this.map?.id === stage.map ? this.map : await this.app.content.map(reference.file, signal);
     signal.throwIfAborted();
     const appearances = new Map<string, ActorDefinition>();
-    const needed: PendingAsset[] = [...mapSurfaceAssets(map, this.app.world.props), ...effectAssets(this.app.world.storyEffects ?? {})];
+    const needed: PendingAsset[] = [...mapSurfaceAssets(map, this.app.world.props)];
     for (const actor of actors) {
       const appearance = this.appearanceFor(actor, stage, playerAppearance);
       if (!appearance) throw new Error('角色资源缺失：' + actor.actor);
       appearances.set(actor.id, appearance);
-      needed.push(...characterAssets(appearance).filter(asset => asset.file));
-    }
-    for (const member of stage.cast) {
-      const actor = this.app.world.actors[member.actor];
-      if (actor) needed.push(...characterAssets(actor).filter(asset => asset.file));
+      needed.push(...characterAssets(appearance, characterSceneClips(appearance, actor.clip)));
     }
     needed.push(...this.app.wardrobe.textures.map(texture => ({ kind: 'image' as const, ...texture })));
     const lease = await cancellable(loadSceneAssets(this, needed, () => {}, true), signal, value => value.release());
@@ -210,12 +208,27 @@ export class StoryStageScene extends Phaser.Scene {
     const actors = [...new Set([actorId, this.app.session.storyWorld.actorAppearance(actorId)])]
       .map(id => this.app.world.actors[id]);
     if (actors.some(actor => !actor)) throw new Error('角色资源缺失：' + actorId);
-    const needed = actors.flatMap(actor => characterAssets(actor).filter(asset => asset.file));
+    const needed = actors.flatMap(actor => characterAssets(actor, characterSceneClips(actor)));
+    await this.prepareAssets(needed, signal, revision);
+  }
+  async prepareClipAssets(actor: ActorDefinition, clip: ClipName, signal: AbortSignal): Promise<void> {
+    await this.prepareAssets(characterAssets(actor, [clip]), signal, this.revision);
+  }
+  async prepareEffectAssets(name: string, signal: AbortSignal): Promise<void> {
+    const effect = this.app.world.storyEffects?.[name];
+    if (!effect) throw new Error('剧情特效缺失：' + name);
+    await this.prepareAssets(effectAssets({ [name]: effect }), signal, this.revision);
+  }
+  private async prepareAssets(needed: PendingAsset[], signal: AbortSignal, revision: number): Promise<void> {
+    signal.throwIfAborted();
+    needed = needed.filter(asset => !this.preparedAssetKeys.has(asset.key));
+    if (!needed.length) return;
     const lease = await cancellable(loadSceneAssets(this, needed, () => {}, true), signal, value => value.release());
     if (signal.aborted || revision !== this.revision || !this.sys.isActive()) {
       lease.release(); signal.throwIfAborted(); throw new DOMException('演出舞台已更新', 'AbortError');
     }
     this.actorLeases.add(lease);
+    for (const asset of needed) this.preparedAssetKeys.add(asset.key);
   }
   /** 动作中新增对象只补对象，不重建地图、镜头或正在播放的动作。 */
   ensureActors(stage: StoryStageSnapshot): void {
@@ -278,5 +291,6 @@ export class StoryStageScene extends Phaser.Scene {
     this.lease?.release(); this.lease = undefined; this.map = undefined;
     for (const lease of this.actorLeases) lease.release();
     this.actorLeases.clear();
+    this.preparedAssetKeys.clear();
   }
 }

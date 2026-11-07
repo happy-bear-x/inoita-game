@@ -11,7 +11,8 @@ import type { ActorDefinition, Facing, TravelDestination } from '../domain/conte
 import type { PerformanceAction, PerformancePlayback, StoryCurtain, StoryPresentationPort, StoryStage, StoryStageSnapshot } from '../domain/story-performance.ts';
 import { cameraDuration, mapEffectTone } from '../domain/story-performance.ts';
 import { faceTarget } from '../domain/basic-attack.ts';
-import { characterAnimationState, setCharacterClip } from './characters.ts';
+import { characterAnimationState, characterAssets, setCharacterClip } from './characters.ts';
+import { missingSceneAssets } from './scene-assets.ts';
 import type { CharacterVisual } from './characters.ts';
 import { createEffect } from './effects.ts';
 import type { WorldScene } from '../scenes/world-scene.ts';
@@ -601,6 +602,8 @@ export class StoryPresenter implements StoryPresentationPort {
         // event-4 在 `show player` 之前对隐藏的玩家放 `story-attention`，以前会在
         // 地图入口留下一个没有人的感叹号。
         if (!target.visible) return;
+        if (!await this.prepareVisual(playback.signal, playback.skipSignal,
+          signal => scene.prepareEffectAssets(action.effect, signal))) return;
         const clip = this.app.world.storyEffects?.[action.effect]?.clips.default;
         if (!clip) throw new Error('剧情特效缺失：' + action.effect);
         const anchor = visual.actor.effectAnchor ?? { x: 0, y: 0 };
@@ -610,6 +613,8 @@ export class StoryPresenter implements StoryPresentationPort {
       }
       case 'location-effect': {
         if (playback.skipSignal.aborted) return;
+        if (!await this.prepareVisual(playback.signal, playback.skipSignal,
+          signal => scene.prepareEffectAssets(action.effect, signal))) return;
         const placed = this.app.world.storyEffects?.[action.effect];
         if (!placed) throw new Error('剧情特效缺失：' + action.effect);
         const effect = createEffect(scene, placed.clips.default, action.x, action.y);
@@ -641,6 +646,14 @@ export class StoryPresenter implements StoryPresentationPort {
     }
     const scene = this.scene();
     const clip = `${action.pose}-${actor.facing}` as const;
+    if (this.skipping && scene.textures && missingSceneAssets(scene, characterAssets(actor.visual.actor, [clip])).length) {
+      this.applyLogicalAction(action); return;
+    }
+    if (!this.skipping && !await this.prepareVisual(playback.signal, playback.skipSignal,
+      signal => scene.prepareClipAssets(actor.visual.actor, clip, signal))) {
+      const logical = this.captureStage(); if (logical) this.applyLogicalStage(logical);
+      this.applyLogicalAction(action); return;
+    }
     setCharacterClip(scene, actor.visual, clip, true);
     // 原版按 `ACTDATABASE +4` 决定动作播完要不要排收尾：等于 1 的动作停在末帧保持姿势
     // （114／115／147／149），其余回待机。待机自己循环，不需要收尾事件。

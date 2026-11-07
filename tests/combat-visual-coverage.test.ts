@@ -9,7 +9,7 @@ import type { WorldIndex, WorldMap } from '../src/domain/content.ts';
 import type { ItemCatalog } from '../src/domain/items.ts';
 import type { CompanionCatalog } from '../src/domain/party.ts';
 import type { WardrobeCatalog } from '../src/domain/wardrobe.ts';
-import { enemyCombatAssets } from '../src/rendering/combat-assets.ts';
+import { classSummonEnemyIds, enemyCombatAssets, partyMemberCombatAssets } from '../src/rendering/combat-assets.ts';
 import { residentCombatCoverageGaps } from '../src/rendering/combat-visual-coverage.ts';
 import { residentCombatAssets } from '../src/rendering/resident-combat-assets.ts';
 import type { WorldAssetInputs } from '../src/rendering/map-assets.ts';
@@ -77,6 +77,52 @@ test('the map combat plan follows the hero learned skills', () => {
   assert.equal(planKeys(scoped).has(effectKey), false, '未学技能不进入进图计划');
   levels.firestorm = 1;
   assert.ok(planKeys(scoped).has(effectKey), '学会新技能后进图计划补上');
+});
+
+test('party actor textures follow learned skills while preserving basic actions', () => {
+  const character = battle.classes.find(value => value.id === 'dark-knight')!;
+  const actor = structuredClone(character.actor);
+  const template = actor.clips['idle-south']!;
+  const clip = (key: string) => ({ ...template, layers: [{ key, file: `${key}.png`, blend: 'normal' as const }] });
+  actor.clips['idle-south'] = clip('learned-idle');
+  actor.clips['attack-south'] = clip('learned-attack');
+  actor.clips[`skill-${character.skills[0]}-south`] = clip('learned-skill');
+  actor.clips[`skill-${character.skills[1]}-south`] = clip('unlearned-skill');
+  const keys = new Set(partyMemberCombatAssets(battle, wardrobe, character.id, actor, new Set([character.skills[0]!])).map(asset => asset.key));
+  assert.ok(keys.has('learned-idle'));
+  assert.ok(keys.has('learned-attack'));
+  assert.ok(keys.has('learned-skill'));
+  assert.equal(keys.has('unlearned-skill'), false);
+});
+
+test('enemy plans preserve custom skill and command clips while skipping unrelated story poses', () => {
+  const enemy = structuredClone(battle.enemies.find(value => value.basicAttack && value.skills?.some(skill => 'action' in skill))!);
+  const template = enemy.actor.clips['idle-south']!;
+  const clip = (key: string) => ({ ...template, layers: [{ key, file: `${key}.png`, blend: 'normal' as const }] });
+  enemy.actor.clips['skill-custom-south'] = clip('custom-action');
+  enemy.actor.clips['skill-command-south'] = clip('command-action');
+  enemy.actor.clips['skill-unrelated-south'] = clip('unrelated-action');
+  const skill = enemy.skills!.find((value): value is EnemyPlayableSkill => 'action' in value)!;
+  skill.clips = { north: 'skill-custom-south', south: 'skill-custom-south', east: 'skill-custom-south', west: 'skill-custom-south' };
+  enemy.commandAction = { ...skill, clips: { north: 'skill-command-south', south: 'skill-command-south', east: 'skill-command-south', west: 'skill-command-south' } };
+  const keys = new Set(enemyCombatAssets(battle, enemy).map(asset => asset.key));
+  assert.ok(keys.has('custom-action'));
+  assert.ok(keys.has('command-action'));
+  assert.equal(keys.has('unrelated-action'), false);
+  for (const name of Object.values(enemy.basicAttack!.clips))
+    for (const layer of enemy.actor.clips[name]!.layers) assert.ok(keys.has(layer.key));
+});
+
+test('class summon preparation includes companion growth and passive follow-up actions', () => {
+  const catalog = structuredClone(battle);
+  const character = catalog.classes[0]!;
+  const skill = catalog.skills[character.skills[0]!]!;
+  const summon = (creature: string) => ({ ...skill.action!, events: [], combatUnits: [{ effect: 'summon', creature }] }) as unknown as NonNullable<typeof skill.action>;
+  skill.action = null;
+  skill.followUpAction = summon('follow-up-summon');
+  skill.companion = { ...skill.companion!, action: summon('companion-summon') };
+  assert.deepEqual(classSummonEnemyIds(catalog, character.id, new Set([skill.id])).sort(), ['companion-summon', 'follow-up-summon']);
+  assert.deepEqual(classSummonEnemyIds(catalog, character.id, new Set()), []);
 });
 
 test('companion skill stance effects are resident, not only the hero class', () => {  const pack = residentCombatAssets({ battle, wardrobe, world, companions });

@@ -51,6 +51,7 @@ import { freezeSnapshot, storyDevMode } from '../domain/dev-mode.ts';
 import type { TravelDestination } from '../domain/content.ts';
 import type {StoryAudioState} from '../application/game-audio.ts';
 
+import {characterSceneClips} from '../rendering/combat-asset-descriptors.ts';
 import { PLAYER_MOVE_SPEED, characterAnimationState, characterAssets, createCharacter, setCharacterClip } from '../rendering/characters.ts';
 import { drawMapLayers, type MapLayerHandles } from '../rendering/map-layers.ts';
 import type { CharacterVisual } from '../rendering/characters.ts';
@@ -1776,7 +1777,7 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     const needed=[...new Set(projectedActors)].filter(id=>!this.projectedActorIds.has(id));
     if(needed.length){
       const lease=await this.loadAssets(needed.flatMap(id=>{
-        const actor=this.app.world.actors[id];if(!actor)throw new Error(`剧情角色资源缺失：${id}`);return characterAssets(actor);
+        const actor=this.app.world.actors[id];if(!actor)throw new Error(`剧情角色资源缺失：${id}`);return characterAssets(actor,characterSceneClips(actor));
       }),this.map.name,false,true);
       if(signal.aborted||this.destroyed){lease.release();signal.throwIfAborted();throw new Error('正式地图已经关闭');}
       this.storyEntityAssets.push(lease);for(const id of needed)this.projectedActorIds.add(id);

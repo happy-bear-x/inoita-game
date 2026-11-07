@@ -14,6 +14,16 @@ const wardrobe = parseWardrobe(read('wardrobe.json'));
 const world = parseWorld(read('world.json'));
 const companions = parseCompanions(read('companions.json'));
 
+test('runtime resident resources only retain common combat feedback', () => {
+  const full = residentCombatAssets({ battle, wardrobe, world, companions });
+  const feedback = residentCombatAssets({ battle, wardrobe, world, companions, feedbackOnly: true });
+  assert.equal(feedback.actorIds.size, 0);
+  assert.ok(feedback.assets.length < full.assets.length);
+  assert.ok(feedback.effectNames.has('state-sleep'));
+  assert.ok(feedback.effectNames.has('state-stun'));
+  assert.equal(feedback.effectNames.has('firestorm-swing'), false);
+});
+
 test('scoped resident packs keep only the active class and owned companion appearances', () => {
   const full = residentCombatAssets({ battle, wardrobe, world, companions });
   const fullByKey = new Map(full.assets.map(asset => [asset.key, JSON.stringify(asset)]));

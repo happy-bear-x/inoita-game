@@ -262,6 +262,7 @@ function prepareStory(signal: AbortSignal): Promise<void> {
       validateStoryReferences(campaign, world, battle, storyMaps, items);
       validateStoryPerformance(world, campaign, storyMaps, app.audio?.catalog);
       validateStoryPortraits(world, presentation);
+      app.content.releaseValidationCaches(wardrobe);
     }
     recordStartPhase('story-validated',{trusted:app.content.trusted});
     Object.assign(app, { world, campaign, storyInterface: presentation, battleCatalog: battle, characterStats: stats,

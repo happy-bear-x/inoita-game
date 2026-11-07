@@ -113,7 +113,11 @@
 
 地图 prop 走独立图集：`npm run atlas:props` 把 `world.props` 按 SHA-256 去重后打包为 `public/assets/props/atlas/props-0.png/json`，生成 `src/generated/prop-atlas.ts` 的 prop key → 页/frame 映射；`public/content/world.json` 和地图 JSON 完全不变。`mapSurfaceAssets()` 对每张有 feature 的地图只加入一次图集页，`drawMapLayers()` 用 `texture+frame` 绘制，`composeColorDodge()` 从 frame 的裁剪矩形取像素。原始 prop PNG 保留，`validate:content` 校验所有 763 个 prop、17,535 个 feature、帧尺寸/边界/摘要和图集新鲜度。
 
-首次进入世界时，常驻战斗包只包含当前主角职业、全部伙伴外观和共享特效：`residentCombatAssets({..., classIds:[session.character.classId]})`。上阵伙伴的职业特效由每图 `planMapCombat` 和战斗内 `syncAllies` 加载；新游戏/读档/回菜单会释放旧租约并重置 `residentCombatReady`，`residentCombatClassId` 防止换职业后误用旧包。
+游戏期间长期保留的战斗素材只包含命中、结果和状态等通用反馈。当前队伍按实际装备、已学技能和召唤物登记完整的素材清单，各使用者分别持有资源；加载器只下载缺失文件。新配置准备成功后再释放旧清单，新技能准备期间不扣蓝、不进入冷却。飞弹和持续特效独立持有贴图到结束，召唤物持有到退场。
+
+地图与对白先准备演员的待机、行走和恢复快照中的当前动作，剧情动作与特效在执行前准备。像素、图片尺寸和切帧一致的角色图片在构建时共用，动画分别保留播放速度和循环规则。音效按当前队伍、敌人和剧情更新，已经播放的声音保留到结束；背景音乐只保留当前及上一首。
+
+剧情播放器与校验器共用只读内容和索引，每局单独保存游标与进度。地图解析缓存最多保留最近两张已完成地图，动作姿势由会话外观池持有；完整校验后释放临时数据。回标题先停止自动保存、取消旧请求并关闭场景，再按会话身份清理导演、检查点、地图引用和资源池，迟到的旧局退出回调不会清除新局。
 
 ## 云存档
 
