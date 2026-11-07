@@ -51,6 +51,11 @@ export class GameAudio {
   private readonly queued = new Map<string, { path: string; resolve: (loaded: boolean) => void }>();
   /** 正在等待加载完成、准备补播的音效；同一条只补播一次。 */
   private readonly replayQueued = new Set<string>();
+  private readonly residentEffects: Set<string>;
+  private combatEffects = new Set<string>();
+  private storyEffects = new Set<string>();
+  private readonly loadedEffects = new Set<string>();
+  private readonly playingEffects = new Map<string, Set<Phaser.Sound.BaseSound>>();
   private loading = false;
   private scheduled = false;
   private music?: Phaser.Sound.BaseSound;
@@ -68,6 +73,9 @@ export class GameAudio {
   constructor(scene: Phaser.Scene, catalog: AudioCatalog, isSuspended: () => boolean) {
     this.scene = scene;
     this.catalog = catalog;
+    this.residentEffects = new Set([
+      ...Object.values(catalog.ui), LEVEL_UP_EFFECT, catalog.combat.shieldBlock, catalog.combat.periodicDamage,
+    ].filter(name => !!catalog.effects[name]).map(name => `se:${name}`));
     this.isSuspended = isSuspended;
     this.scene.load.maxParallelDownloads = 2;
   }
@@ -94,8 +102,12 @@ export class GameAudio {
 
   enterMenu(): void {
     this.contextRevision++;
+    this.combatEffects = new Set();
+    this.storyEffects = new Set();
     this.setLoop('music', this.catalog.menuMusic);
     this.setLoop('ambience', null);
+    this.releaseRetainedMusic();
+    this.releaseUnusedEffects();
   }
 
   enterStory(): void {
@@ -141,7 +153,7 @@ export class GameAudio {
     if (!name || volume <= 0 || !this.catalog.effects[name]) return;
     const key = `se:${name}`;
     if (this.scene.cache.audio.exists(key)) {
-      if (!this.isSuspended()) this.scene.sound.play(key, { volume: 0.75 * volume });
+      if (!this.isSuspended()) this.playEffect(key, volume);
       return;
     }
     // 音效要等到加载完成才响；同一次加载期间重复触发只补播一次，免得到货瞬间叠放几遍。
@@ -152,8 +164,30 @@ export class GameAudio {
       this.replayQueued.delete(key);
       const current = this.settings.effects;
       if (loaded && context === this.contextRevision && current > 0 && !this.isSuspended())
-        this.scene.sound.play(key, { volume: 0.75 * current });
+        this.playEffect(key, current);
+      if (loaded) this.releaseAbandonedKey(key);
     });
+  }
+
+  private playEffect(key: string, volume: number): void {
+    const sound = this.scene.sound.add(key, { volume: 0.75 * volume });
+    let active = this.playingEffects.get(key);
+    if (!active) this.playingEffects.set(key, active = new Set());
+    active.add(sound);
+    let finished = false;
+    const finish = (destroy: boolean): void => {
+      if (finished) return;
+      finished = true;
+      sound.off('complete', complete); sound.off('stop', complete); sound.off('destroy', destroyed);
+      active.delete(sound);
+      if (!active.size) this.playingEffects.delete(key);
+      if (destroy) sound.destroy();
+      this.releaseAbandonedKey(key);
+    };
+    const complete = (): void => finish(true);
+    const destroyed = (): void => finish(false);
+    sound.once('complete', complete); sound.once('stop', complete); sound.once('destroy', destroyed);
+    if (!sound.play()) complete();
   }
 
   ui(name: keyof AudioCatalog['ui']): void { this.effect(this.catalog.ui[name]); }
@@ -175,33 +209,56 @@ export class GameAudio {
   monsterAttack(id: string): void { this.effect(this.catalog.enemies[id]?.attack); }
   monsterDeath(id: string): void { this.effect(this.catalog.enemies[id]?.death); }
 
-  /**
-   * 进入战斗前预加载战斗音效：固定战斗音效、全部武器反馈、全部怪物攻击／死亡／受击，
-   * 加上参战职业的技能音效与技能动作自带的分支音效（动作单元、派发收尾、时间轴反馈）。
-   *
-   * 武器与怪物按目录全量取；技能音效只能由战斗层按参战职业给出。
-   */
-  prepareCombat(skillIds: Iterable<string | null | undefined>, actionSounds: Iterable<string | null | undefined> = []): Promise<void> {
-    return this.prepare([
-      LEVEL_UP_EFFECT, this.catalog.combat.shieldBlock, this.catalog.combat.periodicDamage,
-      ...Object.values(this.catalog.combat.weapons).flatMap(entry =>
+  /** 调用方提供当前整支队伍与地图的完整清单；替换时仍在播放的旧音效保留到结束。 */
+  prepareCombat(skillIds: Iterable<string | null | undefined>, actionSounds: Iterable<string | null | undefined> = [],
+    options: { weaponKinds?: Iterable<string>; enemyIds?: Iterable<string> } = {}): Promise<void> {
+    return this.prepareEffects('combat', [
+      ...[...(options.weaponKinds ?? [])].map(kind => this.catalog.combat.weapons[kind] ?? this.catalog.combat.weapons.unarmed).filter(Boolean).flatMap(entry =>
         [entry.critical, entry.blocked, ...entry.normal.map(cue => cue.sound), ...(entry.miss ? [entry.miss] : [])]),
-      ...Object.values(this.catalog.enemies).flatMap(entry => Object.values(entry)),
+      ...[...(options.enemyIds ?? [])].flatMap(id => Object.values(this.catalog.enemies[id] ?? {})),
       ...[...skillIds].map(id => id ? this.catalog.skills[id] : undefined),
       ...actionSounds
     ]);
   }
 
-  prepareUi(): Promise<void> { return this.prepare(Object.values(this.catalog.ui)); }
+  prepareUi(): Promise<void> { return this.prepareKeys(this.residentEffects, () => true); }
 
   /** 剧情 `sound` 动作引用的是 `audio.json effects`，进图前一并装好，第一次播放不再等加载。 */
-  prepareStoryEffects(names: Iterable<string | null | undefined>): Promise<void> { return this.prepare(names); }
+  prepareStoryEffects(names: Iterable<string | null | undefined>, signal?: AbortSignal): Promise<void> {
+    return this.prepareEffects('story', names, signal);
+  }
+
+  private async prepareEffects(scope: 'combat' | 'story', names: Iterable<string | null | undefined>, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted();
+    const wanted = new Set([...names].filter((name): name is string => !!name && !!this.catalog.effects[name]).map(name => `se:${name}`));
+    if (scope === 'combat') this.combatEffects = wanted;
+    else this.storyEffects = wanted;
+    const current = (): boolean => !signal?.aborted && wanted === (scope === 'combat' ? this.combatEffects : this.storyEffects);
+    const cancel = (): void => {
+      if (wanted === (scope === 'combat' ? this.combatEffects : this.storyEffects)) {
+        if (scope === 'combat') this.combatEffects = new Set();
+        else this.storyEffects = new Set();
+      }
+      this.releaseUnusedEffects();
+    };
+    signal?.addEventListener('abort', cancel, { once: true });
+    this.releaseUnusedEffects();
+    try { await this.prepareKeys(wanted, current); signal?.throwIfAborted(); }
+    finally { signal?.removeEventListener('abort', cancel); }
+  }
 
   /** 按批预加载音效名；分批让加载期间到达的冷音效最多只等一批，而不是等整批排干。 */
-  private async prepare(names: Iterable<string | null | undefined>): Promise<void> {
-    const wanted = [...new Set([...names].filter((name): name is string => !!name && !!this.catalog.effects[name]))];
-    for (let index = 0; index < wanted.length; index += PRELOAD_BATCH)
-      await Promise.all(wanted.slice(index, index + PRELOAD_BATCH).map(name => this.load(`se:${name}`, this.catalog.effects[name])));
+  private async prepareKeys(keys: Set<string>, current: () => boolean): Promise<void> {
+    const wanted = [...keys];
+    for (let index = 0; index < wanted.length && current(); index += PRELOAD_BATCH)
+      await Promise.all(wanted.slice(index, index + PRELOAD_BATCH).map(async key => {
+        await this.load(key, this.catalog.effects[key.slice(3)]);
+        this.releaseAbandonedKey(key);
+      }));
+  }
+
+  private releaseUnusedEffects(): void {
+    for (const key of this.loadedEffects) this.releaseAbandonedKey(key);
   }
 
   private setLoop(channel: 'music' | 'ambience', id: string | null): void {
@@ -232,7 +289,7 @@ export class GameAudio {
     // 解码后的 BGM 很大，但往回切图很常见；保留上一首，超出的再释放。
     if (previousKey) {
       if (music) this.retainMusic(previousKey);
-      else this.scene.cache.audio.remove(previousKey);
+      else this.releaseAbandonedKey(previousKey);
     }
     if (!key || !path) { if (music && volume <= 0) this.releaseRetainedMusic(); return; }
     void this.load(key, path).then(loaded => {
@@ -264,11 +321,14 @@ export class GameAudio {
    * 同一 key 可能被前后两代请求共用（A→B→A），所以按「现在还有谁要它」判断，而不是按 revision。
    */
   private releaseAbandonedKey(key: string): void {
+    if (this.residentEffects.has(key) || this.combatEffects.has(key) || this.storyEffects.has(key)) return;
+    if (this.playingEffects.get(key)?.size || this.replayQueued.has(key)) return;
     if (key === this.playingMusicKey || key === this.playingAmbienceKey) return;
     if (this.retainedMusic.includes(key)) return;
     if (key === this.desiredKey('music') || key === this.desiredKey('ambience')) return;
     if (this.scene.sound.getAll(key).some(sound => sound.isPlaying)) return;
     this.scene.cache.audio.remove(key);
+    this.loadedEffects.delete(key);
   }
 
   private retainMusic(key: string): void {
@@ -289,6 +349,7 @@ export class GameAudio {
   }
   private load(key: string, path: string): Promise<boolean> {
     if (!path) return Promise.resolve(false);
+    if (key.startsWith('se:')) this.loadedEffects.add(key);
     if (this.scene.cache.audio.exists(key)) return Promise.resolve(true);
     if (Date.now() < (this.failedUntil.get(key) ?? 0)) return Promise.resolve(false);
     const existing = this.pending.get(key);

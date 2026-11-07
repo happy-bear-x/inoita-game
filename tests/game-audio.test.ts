@@ -8,6 +8,86 @@ import { GameAudio, type AudioCatalog } from '../src/application/game-audio.ts';
 
 const catalog = JSON.parse(readFileSync(new URL('../public/content/audio.json', import.meta.url), 'utf8')) as AudioCatalog;
 
+test('音效只准备当前武器、已学技能、地图敌人和动作声音', async () => {
+  const f = harness();
+  const ready = f.audio.prepareCombat(['guardian-of-darkness'], ['A_Skill_Attack01'], {
+    weaponKinds: ['bow'], enemyIds: ['enemy-scorpion-1'],
+  });
+  await f.drain(); await ready;
+  const bow = catalog.combat.weapons.bow;
+  const expected = [catalog.skills['guardian-of-darkness'], 'A_Skill_Attack01',
+    bow.critical, bow.blocked, bow.miss, ...bow.normal.map(cue => cue.sound),
+    ...Object.values(catalog.enemies['enemy-scorpion-1'])].filter(Boolean).map(name => `se:${name}`);
+  assert.deepEqual(f.cachedKeys(), new Set(expected));
+  assert.equal(f.cachedKeys().has(`se:${catalog.skills.firestorm}`), false);
+});
+
+test('旧音效播放和暂停期间保留，最后一次播放完成才释放', async () => {
+  const f = harness();
+  const name = catalog.skills['guardian-of-darkness'];
+  const key = `se:${name}`;
+  const ready = f.audio.prepareCombat(['guardian-of-darkness']);
+  await f.drain(); await ready;
+  f.audio.effect(name); f.audio.effect(name);
+  const active = f.sounds.filter(sound => sound.key === key);
+  active[0].isPlaying = false;
+  await f.audio.prepareCombat([]);
+  assert.ok(f.cachedKeys().has(key), '暂停的声音也持有缓存');
+  active[1].complete();
+  assert.ok(f.cachedKeys().has(key));
+  active[0].complete();
+  assert.equal(f.cachedKeys().has(key), false);
+  assert.ok(active.every(sound => sound.destroyed));
+});
+
+test('未被计划持有的临时声音播完释放，基础反馈继续常驻', async () => {
+  const f = harness();
+  const ready = f.audio.prepareUi(); await f.drain(); await ready;
+  f.audio.effect(catalog.skills.firestorm); await f.drain();
+  f.audio.ui('select');
+  for (const sound of f.sounds) sound.complete();
+  assert.equal(f.cachedKeys().has(`se:${catalog.skills.firestorm}`), false);
+  assert.ok(f.cachedKeys().has(`se:${catalog.ui.select}`));
+  assert.ok(f.cachedKeys().has(`se:${catalog.combat.shieldBlock}`));
+});
+
+test('替换计划与回标题后，迟到批次释放且不继续加载旧清单', async () => {
+  const f = harness();
+  const ready = f.audio.prepareCombat(Object.keys(catalog.skills));
+  await setImmediate();
+  const started = f.requested().length;
+  assert.ok(started > 0 && started <= 6);
+  f.audio.enterMenu();
+  await f.drain(); await ready;
+  assert.equal(f.requested().filter(key => key.startsWith('se:')).length, started);
+  assert.deepEqual([...f.cachedKeys()].filter(key => key.startsWith('se:')), []);
+});
+
+test('剧情准备可取消，过期取消不能清掉新的共享声音', async () => {
+  const f = harness();
+  const name = catalog.skills.firestorm, key = `se:${name}`;
+  const controller = new AbortController();
+  const old = f.audio.prepareStoryEffects([name], controller.signal);
+  const rejected = assert.rejects(old, { name: 'AbortError' });
+  await setImmediate();
+  const current = f.audio.prepareStoryEffects([name]);
+  controller.abort();
+  await f.drain(); await current; await rejected;
+  assert.ok(f.cachedKeys().has(key));
+  await f.audio.prepareStoryEffects([]);
+  assert.equal(f.cachedKeys().has(key), false);
+});
+
+test('回标题清除上一局的音乐历史，同时保留标题曲', async () => {
+  const f = harness();
+  const tracks = Object.keys(catalog.music).filter(name => name !== catalog.menuMusic).slice(0, 2);
+  f.audio.setStoryMusic(tracks[0]); await f.drain();
+  f.audio.setStoryMusic(tracks[1]); await f.drain();
+  assert.ok(tracks.every(name => f.cachedKeys().has(`bgm:${name}`)));
+  f.audio.enterMenu(); await f.drain();
+  assert.deepEqual([...f.cachedKeys()].filter(key => key.startsWith('bgm:')), [`bgm:${catalog.menuMusic}`]);
+});
+
 function harness(options: { suspended?: () => boolean } = {}) {
   const cache = new Set<string>();
   const queued: string[] = [];
@@ -17,7 +97,7 @@ function harness(options: { suspended?: () => boolean } = {}) {
   const batches: number[] = [];
   /** 一次性音效的播放记录；循环音频走 sound.add()，不进这里。 */
   const played: string[] = [];
-  const sounds: { key: string; isPlaying: boolean; destroyed: boolean; volume: number; setVolume(value: number): void; destroy(): void }[] = [];
+  const sounds: (EventEmitter & { key: string; isPlaying: boolean; destroyed: boolean; volume: number; setVolume(value: number): void; destroy(): void; complete(): void })[] = [];
   let sinceStart = 0;
   const loader = Object.assign(new EventEmitter(), {
     audio(key: string) { requested.push(key); queued.push(key); sinceStart++; },
@@ -32,16 +112,18 @@ function harness(options: { suspended?: () => boolean } = {}) {
         sounds.length = 0;
       },
       getAll(key: string) { return sounds.filter(sound => sound.key === key); },
-      add(key: string) {
+      add(key: string, config: { loop?: boolean } = {}) {
         assert.ok(cache.has(key));
-        const sound = {
+        const events = new EventEmitter();
+        const sound = Object.assign(events, {
           key, isPlaying: false, destroyed: false, volume: 1,
-          play() { this.isPlaying = true; },
+          play() { this.isPlaying = true; if (!config.loop) played.push(key); return true; },
           pause() { this.isPlaying = false; },
-          stop() { this.isPlaying = false; },
+          stop() { this.isPlaying = false; events.emit('stop'); },
+          complete() { this.isPlaying = false; events.emit('complete'); },
           setVolume(value: number) { this.volume = value; },
-          destroy() { this.destroyed = true; },
-        };
+          destroy() { this.destroyed = true; this.isPlaying = false; events.emit('destroy'); },
+        });
         sounds.push(sound);
         return sound;
       },
@@ -303,7 +385,9 @@ test('战斗音效预加载覆盖运行时能触发的每一条音效', async ()
   assert.ok(sounds.has('A_Skill_Attack01'));
 
   const f = harness();
-  const pending = f.audio.prepareCombat(Object.keys(catalog.skills), sounds);
+  const pending = f.audio.prepareCombat(Object.keys(catalog.skills), sounds, {
+    weaponKinds: Object.keys(catalog.combat.weapons), enemyIds: Object.keys(catalog.enemies),
+  });
   await f.drain();
   await pending;
   const cached = f.cachedKeys();
