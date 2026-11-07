@@ -421,3 +421,20 @@ test('a second encounter occurrence with the same cast owns fresh enemy resource
   add('run-2');
   assert.deepEqual(roster.refresh().added.map(enemy=>enemy.key),[encounterSpawnId('run-2','earl')]);
 });
+
+test('pruning old completed encounters also clears their one-off enemy death records',()=>{
+  const session=new Session(campaign),map=content('maps/shadow-forest-west.json') as WorldMap;
+  const roster=new WorldEnemyRoster(session,map,[],1),enemyId=roster.spawns[0].enemyId,keys:string[]=[];
+  for(let index=0;index<65;index++){
+    const encounter={id:`repeat-${index}`,map:map.id,status:'active' as const,
+      spawns:[{id:'mob',enemyId,x:128+index,y:128}]};
+    session.applyStoryCommands([{type:'encounter',encounter}]);
+    const key=encounterSpawnId(encounter.id,'mob');keys.push(key);
+    session.enemyDefeated({...encounter.spawns[0]!,id:key,respawn:false});
+    session.applyStoryCommands([{type:'world',command:{kind:'encounter-result',id:encounter.id,result:'won'}}]);
+  }
+  assert.equal(session.storyWorld.encounter('repeat-0'),undefined,'超出上限的已完成遭遇被删');
+  assert.deepEqual(session.enemyVitals(keys[0]!),{},'它的怪物死亡记录一起清掉');
+  assert.equal(session.storyWorld.encounter('repeat-64')?.status,'won');
+  assert.equal(session.enemyVitals(keys[64]!).deadUntil,'permanent','窗口内最近一次遭遇仍保留状态');
+});

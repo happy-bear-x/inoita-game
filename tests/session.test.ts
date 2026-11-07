@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { Session } from '../src/domain/session.ts';
+import { encounterSpawnId } from '../src/domain/world-enemies.ts';
 import { StoryDirector } from '../src/domain/story-director.ts';
 import type { StoryUI } from '../src/domain/story-director.ts';
 import { canStandOnTerrain, ExitTrigger } from '../src/domain/navigation.ts';
@@ -128,4 +129,50 @@ test('actor markers reuse the quest book version instead of rescanning every que
   session.focusDebugQuest('grafton-mission');
   session.markerActor('darius','npc-40');
   assert.ok(scans>base,'调试焦点变化后重新扫描');
+});
+
+/** 创建一条一次性遭遇、记录它的怪物永久死亡，并结算。 */
+function settleEncounter(session:Session,id:string,map:string):string{
+  const enemyId='enemy-wild-wolf-1';
+  session.applyStoryCommands([{type:'encounter',encounter:{id,map,status:'active',spawns:[{id:'mob',enemyId,x:128,y:128}]}}]);
+  const key=encounterSpawnId(id,'mob');
+  session.enemyDefeated({id:key,enemyId,x:128,y:128,respawn:false});
+  session.applyStoryCommands([{type:'world',command:{kind:'encounter-result',id,result:'won'}}]);
+  return key;
+}
+
+test('the encounter-result receipt restores both the world and the enemy states it pruned',()=>{
+  const session=new Session(campaign),map=campaign.start.map;
+  for(let index=0;index<64;index++)settleEncounter(session,`receipt-${index}`,map);
+  const active='receipt-late';
+  session.applyStoryCommands([{type:'encounter',encounter:{id:active,map,status:'active',spawns:[{id:'mob',enemyId:'enemy-wild-wolf-1',x:128,y:128}]}}]);
+  const activeKey=encounterSpawnId(active,'mob');
+  session.enemyDefeated({id:activeKey,enemyId:'enemy-wild-wolf-1',x:128,y:128,respawn:false});
+  const before=session.captureState();
+  const receipt=session.applyStoryCommands([{type:'world',command:{kind:'encounter-result',id:active,result:'won'}}],undefined,{deferFinalize:true});
+  assert.equal(session.storyWorld.encounter('receipt-0'),undefined,'新完成的一条把最旧历史挤出去');
+  assert.deepEqual(session.enemyVitals(encounterSpawnId('receipt-0','mob')),{});
+  receipt.rollback();
+  assert.deepEqual(session.captureState(),before,'世界和敌人状态一起回到提交前');
+  assert.equal(session.storyWorld.encounter('receipt-0')?.status,'won');
+  assert.equal(session.enemyVitals(encounterSpawnId('receipt-0','mob')).deadUntil,'permanent');
+});
+
+test('loading an older save trims unbounded completed encounters and their enemy states',()=>{
+  const session=new Session(campaign),map=campaign.start.map;
+  const state=session.captureState();
+  const completed=Array.from({length:66},(_,index)=>({
+    id:`legacy-${index}`,map,status:'won' as const,spawns:[{id:'mob',enemyId:'enemy-wild-wolf-1',x:128,y:128}],
+  }));
+  state.storyWorld.encounters=[...completed,{id:'legacy-active',map,status:'active' as const,spawns:[]}];
+  state.enemies=completed.map(encounter=>[encounterSpawnId(encounter.id,'mob'),{deadUntil:'permanent' as const}]);
+  session.restoreState(state);
+  assert.equal(session.storyWorld.encounter('legacy-0'),undefined);
+  assert.equal(session.storyWorld.encounter('legacy-1'),undefined);
+  assert.equal(session.storyWorld.encounter('legacy-2')?.status,'won');
+  assert.equal(session.storyWorld.encounter('legacy-active')?.status,'active','active 遭遇必须保留');
+  assert.deepEqual(session.enemyVitals(encounterSpawnId('legacy-0','mob')),{});
+  assert.deepEqual(session.enemyVitals(encounterSpawnId('legacy-1','mob')),{});
+  assert.equal(session.enemyVitals(encounterSpawnId('legacy-65','mob')).deadUntil,'permanent');
+  assert.equal(session.captureState().storyWorld.encounters.length,65,'64 条已完成加 1 条 active');
 });

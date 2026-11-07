@@ -27,6 +27,16 @@ export interface StoryEncounter {
   status:'prepared'|'active'|'won'|'lost';
   spawns:StoryEncounterSpawn[];
 }
+/**
+ * 已完成遭遇只保留最近这些条。
+ *
+ * 唯一需要已完成状态的消费者是 `StoryDirector.observe` 的 battle 触发：它只关心刚结束、
+ * 还没观察过的结果。`StoryRuntime` 自己的 `encounterResults` 也只记最近 64 条，
+ * 这里取同一个窗口，超出的一次性遭遇及其怪物死亡记录都不会再被任何代码读到。
+ */
+export const COMPLETED_ENCOUNTER_HISTORY_LIMIT=64;
+const isCompletedEncounter=(encounter:Readonly<StoryEncounter>):boolean=>
+  encounter.status==='won'||encounter.status==='lost';
 export interface StoryWorldSnapshot {
   entities:StoryEntityState[];
   exits:[string,boolean][];
@@ -71,6 +81,10 @@ export class StoryWorldState {
   private encounters=new Map<string,StoryEncounter>();
   /** 仅索引进行中的遭遇，按加入顺序排列；每帧读取只走这里，已结束的历史不参与遍历。 */
   private activeEncounterIds=new Set<string>();
+  /** 完成顺序；裁剪按它淘汰最早结束的遭遇，而不是按创建顺序。 */
+  private completedEncounterOrder:string[]=[];
+  /** 已被有界历史裁掉、等待会话清理对应敌人状态的遭遇。 */
+  private prunedEncounters:StoryEncounter[]=[];
   private location?:TravelDestination;
   private mapVisit=0;
   private enemyRemovals:{enemyId:string;map?:string;all:boolean}[]=[];
@@ -122,6 +136,31 @@ export class StoryWorldState {
       result.push(structuredClone(encounter));
     }
     return result;
+  }
+  /** 取走刚被历史上限裁掉的遭遇；会话据此删除这些一次性遭遇的敌人状态。 */
+  consumePrunedEncounters():StoryEncounter[]{
+    const value=this.prunedEncounters;this.prunedEncounters=[];return value;
+  }
+  /** 已完成遭遇截到最近 {@link COMPLETED_ENCOUNTER_HISTORY_LIMIT} 条，并记下被裁掉的实例。 */
+  private pruneCompletedEncounters():void{
+    const tracked=new Set(this.completedEncounterOrder);
+    for(const [id,encounter] of this.encounters)
+      if(isCompletedEncounter(encounter)&&!tracked.has(id))this.completedEncounterOrder.push(id);
+    const completed=this.completedEncounterOrder.filter(id=>{
+      const encounter=this.encounters.get(id);return !!encounter&&isCompletedEncounter(encounter);
+    });
+    const excess=completed.length-COMPLETED_ENCOUNTER_HISTORY_LIMIT;
+    if(excess<=0){this.completedEncounterOrder=completed;return;}
+    this.completedEncounterOrder=completed.slice(excess);
+    for(const id of completed.slice(0,excess)){
+      const encounter=this.encounters.get(id);
+      if(!encounter)continue;
+      this.encounters.delete(id);
+      this.activeEncounterIds.delete(id);
+      this.prunedEncounters.push(structuredClone(encounter));
+    }
+    // 世界快照按 revision 复用；删掉遭遇后必须让缓存和观察者都看到这次变化。
+    this.revisionValue++;this.encounterRevisionValue++;
   }
   exitEnabled(map:string,exit:MapExit):boolean{return this.exits.get(storyExitId(map,exit))!==false;}
   actorVisible(map:string,actor:string,characterId?:string):boolean{return !this.flags.has(JSON.stringify(['absent-actor',map,characterId??actor]));}
@@ -236,7 +275,9 @@ export class StoryWorldState {
         }
         encounter.status=command.result;
         this.activeEncounterIds.delete(command.id);
-        this.encounterRevisionValue++;return;
+        this.completedEncounterOrder.push(encounter.id);
+        this.encounterRevisionValue++;
+        this.pruneCompletedEncounters();return;
       }
     }
   }
@@ -281,5 +322,10 @@ export class StoryWorldState {
     // 整份快照替换后按快照顺序重建进行中索引，旧世界的索引不能残留。
     this.activeEncounterIds=new Set(restored.encounters.filter(e=>e.status==='active').map(e=>e.id));
     this.location=restored.location;this.mapVisit=restored.mapVisit;this.partyBuffs=restored.partyBuffs??[];this.enemyRemovals=restored.enemyRemovals??[];this.appearances=new Map(restored.appearances??[]);this.enemyLocations=new Map((restored.enemyLocations??[]).map(value=>[value.enemyId,value]));
+    // 旧存档可能带着无界增长的历史；恢复后先按当前上限裁剪。恢复失败时旧状态不受影响，
+    // 所以这次裁剪只属于这份新状态，先清掉上一轮没被取走的裁剪记录。
+    this.prunedEncounters=[];
+    this.completedEncounterOrder=[...this.encounters.values()].filter(isCompletedEncounter).map(encounter=>encounter.id);
+    this.pruneCompletedEncounters();
   }
 }

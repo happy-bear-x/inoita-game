@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { StoryWorldState, storyExitId } from '../src/domain/story-world.ts';
+import { StoryWorldState, storyExitId, type StoryWorldSnapshot } from '../src/domain/story-world.ts';
 
 test('a permanent story actor moves between maps while other instances keep their own positions',()=>{
   const world=new StoryWorldState(),base=[{id:'forest-darius',actor:'darius',x:216,y:136,hint:'mission',condition:{type:'flag' as const,flag:'visible'}},{id:'soldier',actor:'shadow-soldier',x:168,y:120}];
@@ -121,6 +121,37 @@ test('story exit gates and encounter terminal results survive a stable snapshot'
   assert.equal(copy.activeEncounters.length,0);
 });
 
+test('completed encounters keep only the most recent 64 by completion order while active ones stay',()=>{
+  const world=new StoryWorldState();
+  world.apply({kind:'encounter',encounter:{id:'always-active',map:'forest',status:'active',spawns:[]}});
+  for(let index=0;index<66;index++)world.apply({kind:'encounter',encounter:{id:`battle-${index}`,map:'forest',status:'active',spawns:[]}});
+  // 倒序完成：裁剪淘汰的是最早结束的遭遇，不是最早创建的那条。
+  for(let index=65;index>=0;index--)world.apply({kind:'encounter-result',id:`battle-${index}`,result:'won'});
+  assert.equal(world.encounter('battle-65'),undefined,'最早完成的遭遇已被裁掉');
+  assert.equal(world.encounter('battle-64'),undefined);
+  assert.equal(world.encounter('battle-63')?.status,'won');
+  assert.equal(world.encounter('battle-0')?.status,'won','最近完成的记录仍保留');
+  assert.equal(world.encounter('always-active')?.status,'active','active 遭遇不参与已完成历史');
+  assert.deepEqual(world.consumePrunedEncounters().map(encounter=>encounter.id),['battle-65','battle-64']);
+  assert.deepEqual(world.consumePrunedEncounters(),[]);
+  assert.equal([...world.encounterStatuses().values()].filter(encounter=>encounter.status==='won').length,64);
+});
+
+test('restoring a legacy snapshot trims completed encounters to the bounded history',()=>{
+  const completed:StoryWorldSnapshot['encounters']=Array.from({length:66},(_,index)=>({
+    id:`legacy-${index}`,map:'forest',status:'won' as const,spawns:[{id:`mob-${index}`,enemyId:'wolf',x:index,y:index}],
+  }));
+  const snapshot:StoryWorldSnapshot={entities:[],exits:[],flags:[],choices:[],mapVisit:0,
+    encounters:[...completed,{id:'legacy-active',map:'forest',status:'active',spawns:[]}]};
+  const world=new StoryWorldState();world.restoreState(snapshot);
+  assert.equal(world.encounter('legacy-0'),undefined);
+  assert.equal(world.encounter('legacy-1'),undefined);
+  assert.equal(world.encounter('legacy-2')?.status,'won');
+  assert.equal(world.encounter('legacy-active')?.status,'active');
+  assert.deepEqual(world.consumePrunedEncounters().map(encounter=>encounter.id),['legacy-0','legacy-1']);
+  assert.equal(world.captureState().encounters.length,65,'64 条已完成记录加 1 条 active');
+});
+
 test('failed world restore validates before replacing the live world',()=>{
   const world=new StoryWorldState();world.apply({kind:'flag',id:'opened',value:true});
   world.apply({kind:'choice',id:'lesson',value:'skills'});
@@ -142,8 +173,10 @@ test('active encounters only read the live index after a long settled history',(
 
   assert.deepEqual(world.activeEncounters.map(encounter=>encounter.id),['current-a','current-b'],
     '活动列表只含进行中的遭遇，顺序与加入顺序一致');
-  assert.equal(world.captureState().encounters.length,203,'已结算遭遇仍保留在历史表里');
-  assert.equal(world.encounterStatuses().size,203,'完整状态查询保持原语义');
+  assert.equal(world.captureState().encounters.length,67,'已结算历史只保留最近 64 条，外加 prepared 与 active');
+  assert.equal(world.encounter('settled-0'),undefined,'最旧的已完成遭遇应被裁剪');
+  assert.ok(world.encounter('settled-199'),'最近完成的遭遇仍保留');
+  assert.equal(world.encounterStatuses().size,67,'完整状态查询与有界历史保持一致');
 
   const clone=world.activeEncounters[0]!;clone.status='won';
   assert.equal(world.encounter('current-a')?.status,'active','读取活动列表仍返回克隆');

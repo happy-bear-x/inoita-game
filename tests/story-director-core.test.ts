@@ -440,3 +440,26 @@ test('a branch reads item grants and quest acceptance applied by the same node',
   assert.equal(accept.session.status('branch-accept'),'active');
   assert.equal(accept.session.flags.has('accept-wrong'),false,'分支看到同节点接取的任务后应走 then');
 });
+
+test('the latest completed encounter still triggers its battle event after older history is pruned',async()=>{
+  const content:Campaign={...structuredClone(base),
+    scripts:{...structuredClone(base.scripts),
+      'guards-script':{entry:'done',nodes:[{id:'done',presentation:[],commands:[{type:'flag',flag:'guards-played'}],exit:{type:'end'}}]}},
+    events:[{id:'guards-event',source:'battle',key:'guards',script:'guards-script'}]};
+  const session=new Session(content);
+  // 先攒满 64 条已完成遭遇；构造导演时它们都已被观察过，不会补发 battle 触发。
+  for(let index=0;index<64;index++){
+    session.storyWorld.apply({kind:'encounter',encounter:{id:`filler-${index}`,map:base.start.map,status:'active',spawns:[]}});
+    session.storyWorld.apply({kind:'encounter-result',id:`filler-${index}`,result:'won'});
+  }
+  const ui:StoryUI={async dialogue(){},async choice(_prompt,options){return options[0];},async questPopup(){},toast(){},closeDialogue(){},skipDialogue(){}};
+  const director=new StoryDirector(content,session,ui,()=>{});
+  session.applyStoryCommands([{type:'encounter',encounter:{id:'run-1:guards',definitionId:'guards',
+    map:base.start.map,status:'active',spawns:[]}}]);
+  session.applyStoryCommands([{type:'world',command:{kind:'encounter-result',id:'run-1:guards',result:'won'}}]);
+  for(let attempt=0;attempt<20&&!session.storyWorld.hasFlag('guards-played');attempt++)await tick();
+  assert.equal(session.storyWorld.encounter('filler-0'),undefined,'更早的完成记录已被裁剪');
+  assert.equal(session.storyWorld.encounter('run-1:guards')?.status,'won');
+  assert.equal(session.storyWorld.hasFlag('guards-played'),true,'最近完成遭遇的 battle 触发仍然可见');
+  director.dispose();
+});

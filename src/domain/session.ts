@@ -22,6 +22,7 @@ import type { Campaign, CampaignQuest } from './campaign.ts';
 import { QuestBook, sideQuestIds, type QuestBookCheckpoint, type QuestBookState, type QuestCommand, type QuestGoal, type QuestProgress, type QuestFact, type QuestSettlement } from './quest-book.ts';
 import { evaluateStoryCondition, storyConditionReferences, type StoryCondition, type StoryConditionContext, type StoryWorldValue } from './story-condition.ts';
 import { StoryWorldState, type StoryWorldSnapshot } from './story-world.ts';
+import { encounterSpawnId } from './world-enemies.ts';
 import type { StoryCommand } from './story-graph.ts';
 import { StoryRuntime, type StoryRuntimeSnapshot } from './story-runtime.ts';
 import { toPlaybackCheckpoint } from './playback-checkpoint.ts';
@@ -76,7 +77,7 @@ export interface SessionState {
 }
 
 /** 剧情命令会改到的会话子系统；批次开始时只抓这些的旧值。 */
-type StorySubsystem = 'bag'|'hero'|'skills'|'party'|'lootPity'|'storyWorld'|'groundLoot'
+type StorySubsystem = 'bag'|'hero'|'skills'|'party'|'lootPity'|'storyWorld'|'enemies'|'groundLoot'
   |'questBook'|'coins'|'receipts'|'playerState'|'runtimeSnapshot';
 /** 一次剧情命令提交的回执：`StoryDirector` 在分支求值失败时用它恢复到提交前。 */
 export interface StoryCommitReceipt {
@@ -92,6 +93,8 @@ interface StoryCommandBaseline {
   party?:ReturnType<PartyRoster['captureState']>;
   quests?:{checkpoint:QuestBookCheckpoint;factSequences:[string,number][]};
   world?:StoryWorldSnapshot;
+  /** 完成遭遇被历史上限裁掉时，同一批次会删除它的一次性敌人状态；回滚必须一起恢复。 */
+  enemies?:[string,EnemyState][];
   /** 选择标识的写入次数；和世界快照一起回滚，避免取消演出后留下假的“又选了一次”。 */
   choiceWrites?:[string,number][];
   loot?:GroundLootState;
@@ -122,7 +125,8 @@ function storyCommandSubsystems(command:StoryCommand):readonly StorySubsystem[]{
     case 'item-give':case 'item-take':return ['bag'];
     case 'money-give':case 'money-take':return ['coins'];
     case 'item-drop':return ['groundLoot'];
-    case 'flag':case 'choice':case 'world':case 'travel':case 'encounter':return ['storyWorld'];
+    case 'flag':case 'choice':case 'travel':case 'encounter':return ['storyWorld'];
+    case 'world':return command.command.kind==='encounter-result'?['storyWorld','enemies']:['storyWorld'];
     case 'party-join':case 'party-leave':return ['party','bag','lootPity'];
     case 'party-control':return ['party'];
     case 'health':case 'mana':return ['hero','party','playerState'];
@@ -549,6 +553,7 @@ export class Session {
     this.coins=restored.money;this.gameTimeMs=restored.gameTimeMs;
     this.recovery.restoreState(restored.recovery);this.chests.restoreState(restored.chests);this.springs.restoreState(restored.springs);this.legendaryWeapons.restoreState(restored.legendaryWeapons);this.shops.restoreState(restored.shops);
     this.pruneBreakableEnemyStates();
+    this.forgetPrunedEncounterEnemies();
     const clock=restored.combatClock??{frame:Math.floor(restored.resourceRecovery.elapsedMs/LOGIC_FRAME_MS),remainderMs:restored.resourceRecovery.elapsedMs%LOGIC_FRAME_MS};
     this.combatClock.restoreState(clock);this.cooldowns.restoreState(restored.cooldowns??{actors:[]});
     this.frenzyAnimations.restoreState(restored.frenzyAnimations??[]);
@@ -685,6 +690,14 @@ export class Session {
       this.deleteEnemyState(id);
       this.chests.removeSpawn(id);
     }
+  }
+  /**
+   * 一次性剧情遭遇被有界历史淘汰后，它的怪物死亡记录也不会再被任何名册或结算读到。
+   * key 必须和生成时一致，统一走 `encounterSpawnId`，不要在这里另拼格式。
+   */
+  private forgetPrunedEncounterEnemies():void {
+    for(const encounter of this.storyWorld.consumePrunedEncounters())
+      for(const spawn of encounter.spawns)this.deleteEnemyState(encounterSpawnId(encounter.id,spawn.id));
   }
   removeStoryEnemy(id:string):void {
     this.storyWorld.apply({kind:'remove',id});
@@ -1084,6 +1097,7 @@ export class Session {
       baseline.world=this.storyWorld.captureState();
       baseline.choiceWrites=[...this.choiceWrites];
     }
+    if(touched.has('enemies'))baseline.enemies=[...this.enemyStates].map(([id,state])=>[id,structuredClone(state)]);
     if(touched.has('groundLoot'))baseline.loot=groundLootFor(this).captureState();
     if(touched.has('coins'))baseline.coins=this.coins;
     if(touched.has('receipts'))baseline.receipts=[...this.receipts].map(([key,receipt])=>[key,structuredClone(receipt)]);
@@ -1108,6 +1122,10 @@ export class Session {
       this.storyWorld.restoreState(baseline.world!);
       this.choiceWrites.clear();for(const[id,count]of baseline.choiceWrites??[])this.choiceWrites.set(id,count);
       this.choiceWriteRevisionValue++;
+    }
+    if(touched.has('enemies')){
+      this.enemyStates.clear();for(const [id,state] of baseline.enemies!)this.enemyStates.set(id,state);
+      this.enemyRevisionValue++;
     }
     if(touched.has('groundLoot'))groundLootFor(this).restoreState(baseline.loot!);
     if(touched.has('coins'))this.coins=baseline.coins!;
@@ -1212,7 +1230,13 @@ export class Session {
             case 'choice':
               this.storyWorld.apply({kind:'choice',id:command.choice,value:command.value});
               this.choiceWrites.set(command.choice,(this.choiceWrites.get(command.choice)??0)+1);this.choiceWriteRevisionValue++;break;
-            case 'world':this.storyWorld.apply(command.command);break;
+            case 'world':{
+              this.storyWorld.apply(command.command);
+              // 已完成遭遇超出有界历史时，同一同步步骤删掉它们的一次性敌人状态；
+              // `storyCommandSubsystems` 已把 `enemies` 纳入回滚集，回执或批次失败都能恢复。
+              if(command.command.kind==='encounter-result')this.forgetPrunedEncounterEnemies();
+              break;
+            }
             case 'travel':this.storyWorld.apply({kind:'travel',destination:command.destination});break;
             case 'encounter':this.storyWorld.apply({kind:'encounter',encounter:command.encounter});break;
             case 'party-join':case 'party-leave':case 'party-control':case 'health':case 'mana':case 'equip':case 'unequip-destroy':
