@@ -5,7 +5,7 @@
 ## 文件
 
 - 构建/校验：`build.mjs` 打包入口，`content-build.ts` 把内容 JSON 编译成运行时数据，`content-manifest.ts` 生成生产内容哨兵清单，`validate-content.mjs` 校验内容，`validate-spritesheet.ts` 校验精灵表，`build-version.ts` 计算资源与内容版本，`deploy.ts` 构建后核对 HTTPS 入口版本。
-- 服务/诊断：`serve-built.ts` 提供打包后的静态服务，`diagnostic-collector.mjs` 是诊断上报中间件，`diagnostic-collector.d.mts` 是它的类型声明。
+- 服务/诊断：`serve-built.ts` 提供打包后的静态服务，`diagnostic-collector.mjs` 是诊断上报中间件（2 MiB 轮转，保留 7 份；同一会话同一地图的重复检查点诊断 60 秒内只留一条），`diagnostic-collector.d.mts` 是它的类型声明。
 - 云存档：`cloud-save-store.ts` 负责账号、会话、续期、改密和存档落盘（scrypt、单会话、锁定、配额、原子写），`cloud-save-service.ts` 把 `/__cloud` HTTP 路由、CORS、限流和请求体上限接到静态服务上。
 - 图集/资源：`build-icon-atlas.ts`、`build-prop-atlas.ts`、`build-effect-atlas.ts`、`build-ui-atlas.ts` 生成图集，`build-slot-frames.ts` 生成装备槽帧，`asset-report.ts` 输出源素材重复与生产构建后的运行时素材口径。
 - 测试/审计/APK：`test.ts` 是测试入口，`audit-story-actors.ts` 审计剧情角色摆放，`screen-draft-scripts.mjs` 逐段筛选剧情演出草稿，`build-apk.mjs` 与 `verify-apk.mjs` 打包并校验 APK。

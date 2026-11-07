@@ -6,7 +6,7 @@
 
 帧阶段使用 Phaser 的 `PRE_STEP`、`POST_STEP`、`POST_RENDER` 事件观察。页面在前台超过 5 秒没有下一帧时，独立计时器会产生 `frame-stalled` 记录。后台与恢复前台的等待不计入超时。这只证明没有出帧，不能直接证明根因；暂停或图形上下文丢失也可能产生该记录。
 
-4002 的 HTTPS 入口（nginx 转发到 4004 静态服务）与 4003 开发服务都挂载 `POST /__diagnostics/report`，收到后追加到 `.diagnostics/client-errors.jsonl`，每行一条 JSON。文件达到 2 MiB 时轮转到 `client-errors.previous.jsonl`，这两个文件均被 Git 忽略。服务器在写入成功后才确认，发送失败保留手机上的待发缓存并定时重试；刷新页面也会重发。传输重试可能出现相同 `id` 的记录，排查时按 `id` 去重。
+4002 的 HTTPS 入口（nginx 转发到 4004 静态服务）与 4003 开发服务都挂载 `POST /__diagnostics/report`，收到后追加到 `.diagnostics/client-errors.jsonl`，每行一条 JSON。文件达到 2 MiB 时轮转：当前文件 → `client-errors.previous.jsonl` → `client-errors.previous-1..6.jsonl`，共保留 7 份（约 14 MiB），全部被 Git 忽略。旧客户端每帧重复上报的同一条检查点诊断，同一会话在同一张地图 60 秒内只保留第一条，避免把有用的记录挤出保留窗口。服务器在写入成功后才确认，发送失败保留手机上的待发缓存并定时重试；刷新页面也会重发。传输重试可能出现相同 `id` 的记录，排查时按 `id` 去重。
 
 在项目根目录查看最新记录：
 
