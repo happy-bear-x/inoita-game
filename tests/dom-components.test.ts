@@ -142,6 +142,34 @@ test('DOM wheel dispatches skills and items, respects cooldowns and cancels held
   } finally { h.restore(); }
 });
 
+test('wheel cooldown stays aligned with the current shortcut icon when its size changes', async () => {
+  const h = harness();
+  try {
+    const assets = new DomAssets({ image: async () => ({ width: 94, height: 94 }), atlas: async () => ({ frames: {} }) });
+    const skin = Object.fromEntries(CONTROL_PARTS.map(part => [part, `${part}.png`])) as ControlSkin;
+    const errors: unknown[] = [];
+    const wheel = new DomActionControls(h.parent, skin, { attack: () => {}, skill: () => {}, item: () => {}, swap: () => {} }, error => errors.push(error), assets);
+    wheel.layout({ width: 1200, height: 700, insets: { left: 12, right: 8, top: 0, bottom: 6 } });
+    const face = (wheel.element as unknown as Element).children[1].children[1];
+    const icon = face.children[2], overlay = face.children[3];
+    const aligned = (size: string) => {
+      assert.equal(overlay.hidden, false);
+      for (const property of ['left', 'top', 'width', 'height']) assert.equal(overlay.style[property], icon.style[property], property);
+      assert.equal(overlay.style.width, size);
+    };
+    const cooldown = { remainingMs: 500, durationMs: 1000 };
+    wheel.setShortcutPage([{ entry: { kind: 'item', id: 'potion' }, icon: 'potion.png', quantity: 2, enabled: true, cooldown }]);
+    aligned('64px');
+    wheel.setCooldowns({ skill: cooldown });
+    wheel.setShortcutPage([{ entry: { kind: 'skill', id: 'skill' }, icon: 'skill.png', quantity: 0, enabled: true }]);
+    aligned('75px');
+    wheel.setShortcutPage([{ entry: { kind: 'item', id: 'potion' }, icon: 'potion.png', quantity: 2, enabled: true, cooldown }]);
+    aligned('64px');
+    wheel.destroy(); await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(assets.size, 0); assert.deepEqual(errors, []);
+  } finally { h.restore(); }
+});
+
 test('DOM status panels switch the controlled portrait, retain dead member artwork and release subscriptions', async () => {
   const h = harness();
   try {
@@ -244,6 +272,10 @@ test('computer skill row updates native icons, item counts and cooldown seconds 
     row.setPage([{ entry: { kind: 'item', id: 'potion' }, icon: 'potion.png', quantity: 2, enabled: true, cooldown: { remainingMs: 1500, durationMs: 2000 } }]);
     assert.equal(root.children.length, count); assert.equal(cell.children.at(-1)!.textContent, '2');
     assert.equal(cell.children[3].children[0].children[1].textContent, '2');
+    const icon = cell.children[2], center = cell.children[3], overlay = center.children[0];
+    assert.equal(Number.parseFloat(center.style.left) + Number.parseFloat(overlay.style.left), Number.parseFloat(icon.style.left));
+    assert.equal(Number.parseFloat(center.style.top) + Number.parseFloat(overlay.style.top), Number.parseFloat(icon.style.top));
+    assert.equal(overlay.style.width, icon.style.width); assert.equal(overlay.style.height, icon.style.height);
     assert.equal(root.style.pointerEvents, 'auto', '技能行阻止点击穿透到游戏世界');
     row.destroy(); await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(assets.size, 0); assert.deepEqual(errors, []);

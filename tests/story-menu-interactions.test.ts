@@ -402,6 +402,8 @@ test('party skill cells hide the zero badge and show the locked overlay instead'
   assert(!zero.list.some(node=>node.element.textContent==='0'),'0 级格不画数字');
   assert(!zero.list.some(node=>`interface:${node.getData('file')}`===`interface:${panels.assets['skill-rank']}`),'0 级格不画等级底图');
   assert(zero.list.some(node=>`interface:${node.getData('file')}`===`interface:${panels.assets['skill-locked']}`),'0 级格画未掌握遮罩');
+  const overlay=zero.list.find(node=>node.getData('file')===panels.assets['skill-locked'])!,face=zero.getData('face');
+  assert.deepEqual([overlay.x,overlay.y,overlay.width,overlay.height],[face.x,face.y,face.width,face.height],'队伍技能遮罩覆盖图标');
   const rank=f.scene.button(`${battle.skills[learned].name} ${draft.levels[learned]} 级`);
   assert(rank.list.some(node=>`interface:${node.getData('file')}`===`interface:${panels.assets['skill-rank']}`),'已学会格保留等级角标');
 });
@@ -978,6 +980,8 @@ test('learning immediately redraws skill lock, rank, description and shortcut av
   const icon = () => f.scene.button(skill.name);
   const hasImage = (key: string) => icon().list.some(value => `interface:${value.getData('file')}` === `interface:${panels.assets[key]}`);
   assert(hasImage('skill-locked')); assert.equal(f.scene.button('快捷键').input!.enabled, false);
+  const overlay=icon().list.find(value=>value.getData('file')===panels.assets['skill-locked'])!,face=icon().getData('face');
+  assert.deepEqual([overlay.x,overlay.y,overlay.width,overlay.height],[face.x,face.y,face.width,face.height],'技能目录遮罩覆盖图标');
   const learn = () => { const button = f.scene.nodes.find(value => value.shown && value.input?.enabled && String(value.getData('label')).startsWith('学习')); assert(button); f.scene.click(button); };
   learn(); assert.equal(f.session.skills.level(id), 1); assert(!hasImage('skill-locked')); assert(hasImage('skill-rank-1'));
   assert.equal(f.scene.button('快捷键').input!.enabled, true);

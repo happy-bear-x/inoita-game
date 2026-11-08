@@ -99,7 +99,7 @@ export class DomActionControls extends DomComponent {
       const cooldown = slot ? this.cooldown(slot) : undefined, cooling = !!cooldown && cooldown.remainingMs > 0;
       const usable = !!slot?.entry && !cooling && (item ? slot.quantity > 0 : slot.enabled);
       const opacity = slot?.entry && !usable && !cooling ? '.4' : '1';
-      this.paintFan(control, cooldown);
+      control.cooldown.update(cooldown, size / 2);
       const stateKey = `${file}|${size}|${item}|${slot?.quantity}|${usable}|${opacity}`;
       if (stateKey === control.stateKey) return;
       control.stateKey = stateKey;
@@ -112,9 +112,6 @@ export class DomActionControls extends DomComponent {
       control.usable = usable;
       control.icon.element.style.opacity = opacity; control.badge.element.style.opacity = opacity;
     });
-  }
-  private paintFan(control: Control, cooldown: Cooldown | undefined): void {
-    control.cooldown.update(cooldown, control.size / 2);
   }
   layout(viewport: ControlViewport, overrides?: ControlLayoutOverrides): void {
     const points = resolveControlLayout(viewport, overrides);
