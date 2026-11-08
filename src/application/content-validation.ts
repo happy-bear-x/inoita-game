@@ -1189,8 +1189,9 @@ export function parseBattle(value:unknown,wardrobe?:WardrobeCatalog):BattleCatal
             if(detail.valueParts)requireValue(detail.valueParts.map(part=>part.text).join('')===detail.value,id,'技能数值片段与显示值不一致');
           }
         }
-        if(skill.kind==='passive'){
-          for(const unit of skill.passiveUnits??[])requireValue(unit.ranks.length===skill.ranks.length,id,'被动效果必须覆盖全部技能等级');
+        for(const unit of skill.passiveUnits??[]){
+          requireValue(unit.attribute!=='maxHealth'&&unit.attribute!=='maxMana',id,'被动不能改生命或法力上限：上限只由面板和增益决定');
+          if(skill.kind==='passive')requireValue(unit.ranks.length===skill.ranks.length,id,'被动效果必须覆盖全部技能等级');
         }
         if(skill.reactionsByRank){
           requireValue(skill.reactionsByRank.length===skill.ranks.length,id,'触发效果必须覆盖全部技能等级');

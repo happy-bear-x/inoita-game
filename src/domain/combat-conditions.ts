@@ -40,7 +40,7 @@ export interface CombatConditionsState {
   states:[string,StoredState[]][];
   temporary:[string,[BattleStatKey,number|{operation:CombatOperation}][]][];
   resourceCapacities?:[string,[ResourceCapacityKey,number][]][];
-  resourceCapacityInputs?:[string,[ResourceCapacityKey,string][]][];
+  resourceCapacityInputs?:[string,[ResourceCapacityKey,number][]][];
   simulationFrameRemainderMs?:number;
 }
 
@@ -58,7 +58,7 @@ export class CombatConditions {
   private stateCount=0;
   private temporary=new Map<string,Map<BattleStatKey,number|{operation:CombatOperation}>>();
   private resourceCapacities=new Map<string,Map<ResourceCapacityKey,number>>();
-  private resourceCapacityInputs=new Map<string,Map<ResourceCapacityKey,string>>();
+  private resourceCapacityInputs=new Map<string,Map<ResourceCapacityKey,number>>();
   private readonly resources:BuffResourcePort|undefined;
   private readonly invincibility:InvincibilityPort|undefined;
   private readonly invincible=new Set<string>();
@@ -143,11 +143,11 @@ export class CombatConditions {
       this.temporary.get(actorId)?.delete('maxHealth');this.temporary.get(actorId)?.delete('maxMana');
     }
   }
-  setResourceCapacityInputs(actorId:string,key:ResourceCapacityKey,signature:string):void {
-    const own=this.resourceCapacityInputs.get(actorId)??new Map<ResourceCapacityKey,string>();
+  setResourceCapacityInputs(actorId:string,key:ResourceCapacityKey,input:number):void {
+    const own=this.resourceCapacityInputs.get(actorId)??new Map<ResourceCapacityKey,number>();
     const previous=own.get(key);
-    if(previous!==undefined&&previous!==signature)this.invalidateResourceCapacities(actorId,key);
-    own.set(key,signature);this.resourceCapacityInputs.set(actorId,own);
+    if(previous!==undefined&&previous!==input)this.invalidateResourceCapacities(actorId,key);
+    own.set(key,input);this.resourceCapacityInputs.set(actorId,own);
   }
   setTemporaryAttribute(actorId:string,id:BattleStatKey,value:number):void {
     const own=this.temporary.get(actorId)??new Map();

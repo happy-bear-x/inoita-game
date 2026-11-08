@@ -1847,25 +1847,17 @@ captureStoryActors():SceneActorState[] {
     const water=!!visual&&!enemy?.definition.waterImmune&&this.movement.navigation.isWater(this.movement.position(visual));
     return Math.max(0,Math.trunc(baseSpeed*mult*this.conditions.attribute(actorId,'moveSpeed',1000)/1000*(water?0.5:1)));
   }
-  private resourceCapacityInputs(id:string):{base:{maxHealth:number;maxMana:number};passives:PassiveModifier[]}|undefined {
+  private resourceCapacityInputs(id:string):{base:{maxHealth:number;maxMana:number}}|undefined {
     const member=this.memberOf(id),enemy=combatActor(this.arena,id,actor=>actor.key);
     const base=member?.panel??(enemy&&this.roster.enemySnapshot(id,enemy.definition,this.hero.level));
     if(!base)return;
-    const passives=member?this.partyPassives(id):[];
-    for(const key of ['maxHealth','maxMana'] as const){
-      let sig=String(base[key]);
-      for(const modifier of passives)if(modifier.attribute===key){
-        const op=modifier.operation;
-        sig+=`|${op.kind}:${'amount' in op?op.amount:'ratePerThousand' in op?op.ratePerThousand:'factor' in op?op.factor:'divisor' in op?op.divisor:''}`;
-      }
-      this.conditions.setResourceCapacityInputs(id,key,sig);
-    }
-    return {base,passives};
+    for(const key of ['maxHealth','maxMana'] as const)this.conditions.setResourceCapacityInputs(id,key,base[key]);
+    return {base};
   }
   private readResourceCapacity(id:string,key:ResourceCapacityKey,inputs=this.resourceCapacityInputs(id)):number {
     if(!inputs)return 0;
     return this.conditions.readResourceCapacity(id,key,()=>{
-      const capacity=Math.max(0,this.conditions.attribute(id,key,inputs.base[key],inputs.passives));
+      const capacity=Math.max(0,this.conditions.attribute(id,key,inputs.base[key]));
       this.memberOf(id)?.setCombatResourceCapacity(key,capacity);
       return capacity;
     });

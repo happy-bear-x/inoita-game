@@ -93,15 +93,15 @@ test('only an explicit application restoration heals, including an active zero-h
 });
 
 test('resource cache and semantic inputs survive deep-copy snapshots and invalidate only changed capacities',()=>{
-  const f=fixture();f.conditions.setResourceCapacityInputs('actor','maxHealth','base:1000');
-  f.conditions.setResourceCapacityInputs('actor','maxMana','base:200');
+  const f=fixture();f.conditions.setResourceCapacityInputs('actor','maxHealth',1000);
+  f.conditions.setResourceCapacityInputs('actor','maxMana',200);
   f.read('maxHealth');f.read('maxMana');
   const state=f.conditions.captureState(),restored=fixture();restored.conditions.restoreState(state);
   state.resourceCapacities![0][1][0][1]=999;
-  state.resourceCapacityInputs![0][1][0][1]='changed outside';
-  restored.conditions.setResourceCapacityInputs('actor','maxHealth','base:1000');
+  state.resourceCapacityInputs![0][1][0][1]=1500;
+  restored.conditions.setResourceCapacityInputs('actor','maxHealth',1000);
   assert.equal(restored.read('maxHealth'),1000);assert.deepEqual(restored.computations,[]);
-  restored.base.maxHealth=1100;restored.conditions.setResourceCapacityInputs('actor','maxHealth','base:1100');
+  restored.base.maxHealth=1100;restored.conditions.setResourceCapacityInputs('actor','maxHealth',1100);
   assert.equal(restored.read('maxHealth'),1100);assert.equal(restored.read('maxMana'),200);
   assert.deepEqual(restored.computations,['maxHealth']);
   const older=fixture(),oldState=f.conditions.captureState();delete oldState.resourceCapacities;delete oldState.resourceCapacityInputs;
@@ -111,11 +111,11 @@ test('resource cache and semantic inputs survive deep-copy snapshots and invalid
 test('first semantic inputs preserve a valid zero cache and capacity invalidation clears temporary overrides',()=>{
   const conditions=new CombatConditions(),unexpected=()=>assert.fail('must use valid cached capacity');
   assert.equal(conditions.readResourceCapacity('actor','maxHealth',()=>0),0);
-  conditions.setResourceCapacityInputs('actor','maxHealth','first');
+  conditions.setResourceCapacityInputs('actor','maxHealth',1000);
   assert.equal(conditions.readResourceCapacity('actor','maxHealth',unexpected),0);
   conditions.setTemporaryAttribute('actor','maxHealth',-5);
   assert.equal(conditions.readResourceCapacity('actor','maxHealth',unexpected),-5);
-  conditions.setResourceCapacityInputs('actor','maxHealth','changed');
+  conditions.setResourceCapacityInputs('actor','maxHealth',1100);
   assert.equal(conditions.readResourceCapacity('actor','maxHealth',()=>200),200);
   conditions.setTemporaryAttribute('actor','physicalAttack',12);conditions.clearTemporary('actor');
   assert.equal(conditions.readResourceCapacity('actor','maxHealth',unexpected),200);
@@ -124,10 +124,10 @@ test('first semantic inputs preserve a valid zero cache and capacity invalidatio
 });
 
 test('actor removal and world clearing discard capacities and their input history',()=>{
-  const f=fixture();f.conditions.setResourceCapacityInputs('actor','maxHealth','first');f.read('maxHealth');
+  const f=fixture();f.conditions.setResourceCapacityInputs('actor','maxHealth',1000);f.read('maxHealth');
   f.conditions.remove('actor');f.base.maxHealth=1300;
   assert.equal(f.read('maxHealth'),1300);
-  f.conditions.setResourceCapacityInputs('actor','maxHealth','second');
+  f.conditions.setResourceCapacityInputs('actor','maxHealth',1200);
   assert.equal(f.read('maxHealth'),1300);assert.equal(f.computations.length,2);
   f.conditions.clear();f.base.maxHealth=1400;assert.equal(f.read('maxHealth'),1400);
 });
