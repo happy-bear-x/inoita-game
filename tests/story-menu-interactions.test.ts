@@ -24,7 +24,7 @@ import type { ControlSkin } from '../src/domain/control-skin.ts';
 import type { ShopCatalog, Storefront } from '../src/domain/shop.ts';
 import type { StoryClassCatalog } from '../src/domain/story-class.ts';
 import type { StoryInterface } from '../src/domain/story-interface.ts';
-import { ControlLayoutPreferences, CONTROL_IDS, resolveControlLayout, type ControlId } from '../src/ui/control-layout.ts';
+import { ControlLayoutPreferences, CONTROL_IDS, HUD_SIDE_BUTTON_SIZE, resolveControlLayout, type ControlId } from '../src/ui/control-layout.ts';
 import { KeyBindingPreferences } from '../src/application/key-bindings.ts';
 import { controlSettings } from '../src/application/control-settings.ts';
 import { controlViewport } from '../src/ui/phaser/control-layout-viewport.ts';
@@ -504,6 +504,21 @@ test('system exposes load alongside save while settings keeps the working displa
   assert.equal(toggle(rows.critical).getData('label'),'关闭');
   assert.equal(toggle(rows.fps).getData('label'),'开启','暴击光效与帧率显示互不影响');
   assert.equal(audio.settings.music,0);assert.equal(audio.settings.effects,.25);
+});
+
+test('HUD buttons stay directly below the minimap across resize and recreation', t => {
+  const f=fixture();t.after(f.cleanup);
+  for(const [width,height,mapHeight] of [[1024,640,132],[1179,540,168],[800,480,90]] as const){
+    f.scene.resize(width,height);f.scene.game.events.emit(UI_EVENTS.minimapLayout,mapHeight);
+    const save=f.scene.button('存档'),menu=f.scene.button('菜单');
+    assert.equal(save.y,mapHeight+12);
+    assert.equal(menu.y,mapHeight+12+HUD_SIDE_BUTTON_SIZE+8);
+    assert.equal(save.x,0);assert.equal(menu.x,0);
+    assert(f.scene.canHit(save));assert(f.scene.canHit(menu));
+  }
+  f.controls.mode='menu';f.menu.sync();f.controls.mode='game';f.menu.sync();
+  assert.equal(f.scene.button('存档').y,102,'按钮重新创建后仍紧贴小地图');
+  assert.equal(f.scene.button('菜单').y,102+HUD_SIDE_BUTTON_SIZE+8);
 });
 
 test('organise keeps its position above the category rail without overlapping it', t => {

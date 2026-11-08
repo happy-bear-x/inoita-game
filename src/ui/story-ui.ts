@@ -483,7 +483,16 @@ export class StoryUI {
       const {scale}=controlPlacement(this.scene,this.scene.scale.width,this.scene.scale.height),bounds=this.scene.game.canvas.getBoundingClientRect(),safe=readSafeArea(),unit=this.scene.scale.width/Math.max(1,bounds.width);
       this.shortcutScreen.root.setPosition(0,0).setScale(scale);this.backTab.root.setPosition(safe.left*unit,safe.top*unit).setScale(scale);
     }
-    this.body?.scrolls.forEach(scroll=>scroll.layout());this.description?.scrolls.forEach(scroll=>scroll.layout());this.modal?.scrolls.forEach(scroll=>scroll.layout());if(this.hudButtons&&this.scene){const bounds=this.scene.game.canvas.getBoundingClientRect(),safe=readSafeArea(),unit=this.scene.scale.width/Math.max(1,bounds.width),scale=uiUnitScale(this.scene.scale.width,this.scene.scale.height);this.hudButtons.root.setScale(scale).setPosition((safe.left+12)*unit,(safe.top+12)*unit);this.hudButtons.root.list.forEach((button,index)=>(button as UiNode).setPosition(0,this.minimapHeight+12+index*(HUD_SIDE_BUTTON_SIZE+8)));}
+    this.body?.scrolls.forEach(scroll=>scroll.layout());this.description?.scrolls.forEach(scroll=>scroll.layout());this.modal?.scrolls.forEach(scroll=>scroll.layout());
+    if(this.hudButtons&&this.scene){
+      const v=this.hudButtons,viewport=controlViewport(this.scene),scale=uiUnitScale(viewport.width,viewport.height);
+      v.root.setScale(scale).setPosition(viewport.insets.left+12,viewport.insets.top+12);
+      let index=0;
+      for(const button of v.root.list){
+        if(button===v.staticRoot)continue;
+        button.setPosition(0,this.minimapHeight+12+index++*(HUD_SIDE_BUTTON_SIZE+8));
+      }
+    }
     this.backdrop?.setSize(this.scene!.scale.width,this.scene!.scale.height);
     this.popupMask?.setSize(this.scene!.scale.width,this.scene!.scale.height);
     // 画布缩放变化后，DOM 文字的 CSS 坐标和字号要跟着重算。
