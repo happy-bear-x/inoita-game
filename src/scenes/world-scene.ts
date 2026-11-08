@@ -152,6 +152,8 @@ export class WorldScene extends Phaser.Scene {
     legendary:number;restore:number;performing:boolean;map:string;owner:string};
   /** 地图角色只在投影、恢复或显隐改变时使交互结果失效。 */
   private interactionRevision=0;
+  /** 地图角色集合的修订号；整图刷新摘要用它代替逐角色拼名单。 */
+  private charactersRevision=0;
   /** 屏幕固定的界面层与它上面的移动摇杆。 */
   private hud?: Hud;
   private statusHud?:StatusHud;
@@ -223,7 +225,7 @@ export class WorldScene extends Phaser.Scene {
     this.dropCatalog=undefined;this.springCatalog=undefined;this.groundLootView=undefined;this.pickupMessages=undefined;this.pickupRecipients.clear();
     this.questStatuses.clear();this.questStatusVersion=undefined;
     this.prefetchTarget = undefined; this.prefetchTask = undefined;
-    this.baseEntities=[];this.occupiedRegions.clear();this.encounterResults.clear();this.triggerIndex=undefined;this.refreshStateSignatureValue=undefined;this.lastInteractionScan=undefined;this.interactionRevision=0;
+    this.baseEntities=[];this.occupiedRegions.clear();this.encounterResults.clear();this.triggerIndex=undefined;this.refreshStateSignatureValue=undefined;this.lastInteractionScan=undefined;this.interactionRevision=0;this.charactersRevision=0;
     this.entryPrefetches?.clear();
     this.projectedActorIds.clear();
   }
@@ -469,6 +471,7 @@ export class WorldScene extends Phaser.Scene {
     mapNavigation.prepareTerrainRouting();
     this.movement = new MovementWorld(this, mapNavigation);
     for (const entity of this.entities) this.characters.push(this.createActor(entity));
+    this.charactersRevision=(this.charactersRevision??0)+1;
     this.rebuildTriggerIndex();
     // 同图场景重建（检查点恢复、剧情演出）沿用本次地图访问的喝空记录。
     this.restoreDrainedSprings();
@@ -1019,9 +1022,7 @@ export class WorldScene extends Phaser.Scene {
   /** 整图角色显隐、任务标记和小地图重建只在这些输入变化时执行。 */
   private refreshStateSignature():string {
     const session=this.app.session;
-    const characters=this.characters.map(character=>
-      `${character.entity.id}:${character.entity.actor}:${character.entity.characterId??''}:${character.actor.id}`).join(',');
-    return [this.map?.id??'',this.performing?1:0,this.combat?.controlledId??'player',characters,
+    return [this.map?.id??'',this.performing?1:0,this.combat?.controlledId??'player',this.charactersRevision,
       session.questBook?.version??0,session.storyWorld?.revision??0,session.chests?.revision??0,
       session.legendaryWeapons?.revision??0,session.runtimeState?.sequence??0,session.restorationVersion??0,
       session.debugFocusQuest??''].join('|');
@@ -1799,6 +1800,7 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
       character.entity={...entity};
       const facing=this.app.session.storyWorld.entity(entity.id)?.facing;if(facing)this.setClip(character,`idle-${facing}`);
     }
+    this.charactersRevision=(this.charactersRevision??0)+1;
     // 投影可能按 entity.actor 重建角色；喝空的泉水要重新落回水井外观。
     this.restoreDrainedSprings();
     const positions=this.characters.map(character=>({visual:character,position:{x:character.entity.x,y:character.entity.y},enabled:this.app.session.visible(character.entity)}));
