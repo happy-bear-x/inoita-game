@@ -6,7 +6,6 @@ import { UiNode, UiImage, uiMount } from '../src/ui/dom/node.ts';
 import { QuestPopup } from '../src/ui/phaser/quest-popup.ts';
 import type { GameUI } from '../src/ui/game-ui.ts';
 import { UiSurface } from '../src/ui/dom/surface.ts';
-import { CharacterPreview } from '../src/ui/dom/character-preview.ts';
 import { LiveCharacterPreview } from '../src/ui/phaser/live-character-preview.ts';
 import { domAssets } from '../src/ui/dom/assets.ts';
 import { SceneUiAssets } from '../src/ui/phaser/ui-asset-host.ts';
@@ -116,34 +115,11 @@ test('contained atlas images keep their proportions and remain inside the previe
   assert.deepEqual([picture.style.width,picture.style.height,picture.style.left,picture.style.top],['800px','400px','-130px','-60px']);
 });
 
-test('character preview reuses source pixels, follows its target box and releases detached images',t=>{
-  const f=fixture();t.after(f.cleanup);
-  let exports=0;const source={width:200,height:200,toDataURL:()=>{exports++;return 'data:image/png;base64,source';}};
-  Object.assign(f.scene,{textures:{get:()=>({get:()=>({cutX:20,cutY:40}),getSourceImage:()=>source})}});
-  const actor={clips:{'idle-south':{frameWidth:40,frameHeight:80,originX:.5,originY:1,mirrorX:true,layers:[{key:'body',blend:'normal'}]}}} as unknown as ActorDefinition;
-  const preview=new CharacterPreview(f.scene);preview.show(f.surface,actor,{x:0,y:0,width:80,height:160});
-  const image=f.surface.root.list.at(-1)!;assert.deepEqual([image.x,image.y,image.scaleX],[40,160,2]);
-  preview.detach();assert(!image.visible);preview.show(f.surface,actor,{x:100,y:50,width:40,height:80});
-  assert.deepEqual([image.x,image.y,image.scaleX],[120,130,1]);assert.equal(exports,1);
-  preview.destroy();assert(!image.active);
-});
-
-test('class preview uses the asset URL when Phaser has revoked its temporary image URL',t=>{
-  const f=fixture();t.after(f.cleanup);
-  const source={width:200,height:80,src:'blob:revoked-after-load'};
-  Object.assign(f.scene,{textures:{get:()=>({get:()=>({cutX:0,cutY:0}),getSourceImage:()=>source})}});
-  const actor={clips:{'idle-south':{frameWidth:40,frameHeight:80,originX:.5,originY:1,mirrorX:false,layers:[{key:'class',file:'assets/class-idle.png',blend:'normal'}]}}} as unknown as ActorDefinition;
-  const preview=new CharacterPreview(f.scene);preview.show(f.surface,actor,{x:0,y:0,width:80,height:160});
-  const picture=(f.surface.root.list.at(-1)!.element as unknown as MenuElement).children[0];
-  assert.equal(picture.src,'assets/class-idle.png');
-  assert.notEqual(picture.src,source.src);
-  preview.destroy();
-});
-
 test('live character preview reuses the visual and tracks menu layout and visibility',t=>{
   const f=fixture();t.after(f.cleanup);
   const box={setOrigin(){return this;},setScrollFactor(){return this;},setDepth(){return this;},setVisible(_v:boolean){return this;},setPosition(_x:number,_y:number){return this;},setSize(_w:number,_h:number){return this;},destroy(){}};
-  Object.assign(f.scene,{textures:{exists:()=>true},add:{rectangle:()=>box}});
+  let backgrounds=0;
+  Object.assign(f.scene,{textures:{exists:()=>true},add:{rectangle:()=>{backgrounds++;return box;}}});
   const actor={id:'hero',clips:{'idle-south':{frameWidth:40,frameHeight:80,originX:.5,originY:1,mirrorX:false,layers:[{key:'outfit'}]}}} as unknown as ActorDefinition;
   const state={created:0,destroyed:0,x:0,y:0,scale:0,visible:false};
   const container={setDepth(){return this;},setScrollFactor(){return this;},setVisible(v:boolean){state.visible=v;return this;},setScale(v:number){state.scale=v;return this;},setPosition(x:number,y:number){state.x=x;state.y=y;return this;},destroy(){state.destroyed++;}};
@@ -156,6 +132,11 @@ test('live character preview reuses the visual and tracks menu layout and visibi
   assert.deepEqual([state.x,state.y,state.scale],[120,130,1]);
   preview.visible(false);assert.equal(state.visible,false);assert.equal(hole,undefined);
   preview.visible(true);assert.equal(state.visible,true);preview.destroy();assert.equal(state.destroyed,1);
+  const classPreview=new LiveCharacterPreview(f.scene,()=>{},actor=>{state.created++;return {actor,container} as never;},null);
+  classPreview.show(f.surface,actor,{x:0,y:0,width:80,height:160});
+  assert.equal(backgrounds,1,'职业角色直接显示在场景背景上');
+  classPreview.show(f.surface,{...actor,id:'other'}, {x:0,y:0,width:80,height:160});
+  assert.equal(state.destroyed,2,'切换职业释放上一个角色');classPreview.destroy();assert.equal(state.destroyed,3);
 });
 
 test('menu preloads share caller cancellation and release the retained DOM images',async t=>{

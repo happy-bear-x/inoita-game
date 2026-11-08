@@ -3,10 +3,12 @@ import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
 import { InputRouter } from '../src/application/input-router.ts';
 import { EventEmitter } from 'node:events';
+import { readFileSync } from 'node:fs';
 import { DomUi } from '../src/ui/dom/dom-ui.ts';
 import { UiNode } from '../src/ui/dom/node.ts';
 import { UiSurface } from '../src/ui/dom/surface.ts';
 import { installMenuDom, MenuElement } from './support/menu-dom.ts';
+import { domAssets } from '../src/ui/dom/assets.ts';
 
 // 只替换 Phaser 的运行边界；场景的键盘判断跑真实代码。
 const hook = registerHooks({ resolve(specifier, context, next) {
@@ -14,6 +16,7 @@ const hook = registerHooks({ resolve(specifier, context, next) {
     export default {
       Scene: class { constructor(config) { this.key = typeof config === 'string' ? config : config?.key; } },
       BlendModes: { NORMAL: 0, ADD: 1, SCREEN: 2, MULTIPLY: 3 },
+      Textures: { FilterMode: { NEAREST: 1 } },
       Scenes: { Events: { RESUME: 'resume', PAUSE: 'pause' } },
       Input: { Events: { POINTER_MOVE: 'pointermove', POINTER_UP: 'pointerup', POINTER_UP_OUTSIDE: 'pointerupoutside' } },
       Math: { Clamp: (value, min, max) => Math.max(min, Math.min(max, value)) },
@@ -25,6 +28,54 @@ const { FormalUiScene } = await import('../src/scenes/formal-ui-scene.ts');
 const { MenuScene } = await import('../src/scenes/menu-scene.ts');
 const { StoryClassScene } = await import('../src/scenes/story-class-scene.ts');
 hook.deregister();
+
+test('class selection plays live previews and retains the page when changing classes',async t=>{
+  const restore=installMenuDom();t.after(restore);
+  t.mock.method(domAssets,'preloadFiles',async()=>({release(){}}));
+  const catalog=JSON.parse(readFileSync(new URL('../public/content/story-classes.json',import.meta.url),'utf8'));
+  const app={storyClasses:catalog,ui:{ready:true,loading(){},loaded(){},error(){}},suspended:false};
+  const scene=new StoryClassScene(app as never) as any;
+  scene.events=new EventEmitter();scene.scale=Object.assign(new EventEmitter(),{width:1024,height:640});
+  scene.game={events:new EventEmitter(),canvas:{getBoundingClientRect:()=>({left:0,top:0,width:1024,height:640})}};
+  const filters:string[]=[],animations=new Map<string,any>(),played:string[]=[],containers:any[]=[];
+  scene.textures=Object.assign(new EventEmitter(),{exists:()=>true,get:(key:string)=>({has:()=>true,setFilter:()=>filters.push(key)}),remove(){}});
+  scene.anims={exists:(key:string)=>animations.has(key),get:(key:string)=>animations.get(key),
+    generateFrameNumbers:(key:string,{start,end}:{start:number;end:number})=>Array.from({length:end-start+1},(_,i)=>({key,frame:start+i})),
+    create:(config:any)=>{animations.set(config.key,config);},remove:(key:string)=>animations.delete(key)};
+  const background={width:0,height:0,setOrigin(){return this;},setScrollFactor(){return this;},setDepth(){return this;},
+    setPosition(x:number,y:number){Object.assign(this,{x,y});return this;},setDisplaySize(width:number,height:number){Object.assign(this,{width,height});return this;},destroy(){}};
+  scene.add={image:()=>background,container:()=>{
+    const container={list:[] as any[],destroyed:false,visible:true,x:0,y:0,scale:1,
+      setDepth(){return this;},setScrollFactor(){return this;},setVisible(value:boolean){this.visible=value;return this;},
+      setScale(value:number){this.scale=value;return this;},setPosition(x:number,y:number){this.x=x;this.y=y;return this;},
+      addAt(sprite:any,index:number){this.list.splice(index,0,sprite);return this;},destroy(){this.destroyed=true;}};
+    containers.push(container);return container;
+  },sprite:()=>({scene,alpha:1,anims:{timeScale:1,accumulator:0},
+    setOrigin(){return this;},setBlendMode(){return this;},setScale(){return this;},play(config:{key:string}){played.push(config.key);return this;}})};
+  await scene.open(new AbortController().signal);
+  const page=[...scene.surface.root.list],preview=scene.preview,first=containers[0];
+  assert.equal(filters.length,catalog.classes.length,'每个职业的动画使用清晰像素');
+  assert.equal(played.length,1);assert.equal(animations.get(played[0]).repeat,-1);
+  scene.choose(catalog.classes.find((entry:any)=>entry.id===catalog.defaultClass));
+  assert.equal(containers.length,1,'重复选择当前职业不重建角色');
+  for(const [index,entry] of catalog.classes.entries()){
+    scene.choose(entry);
+    assert.deepEqual(scene.surface.root.list,page,'切换职业保留原来的按钮和面板');
+    assert.equal(scene.preview,preview);assert.equal(scene.selections[index].visible,true);
+    assert.equal(scene.selections.filter((selection:any)=>selection.visible).length,1);
+    const clip=entry.previewActor.clips['idle-south'];
+    assert.equal(containers.at(-1).scale,3*scene.surface.root.scaleX);
+    assert.ok(played.at(-1)!.startsWith(clip.layers[0].key));
+  }
+  assert.equal(first.destroyed,true,'切换职业释放旧角色');
+  app.suspended=true;scene.update();assert.equal(containers.at(-1).visible,false);
+  app.suspended=false;scene.update();assert.equal(containers.at(-1).visible,true);
+  scene.scale.width=800;scene.scale.height=480;scene.layout();
+  assert.equal(containers.at(-1).scale,3*scene.surface.root.scaleX,'窗口变化时角色跟随页面缩放');
+  assert.equal(background.width,800*scene.surface.root.scaleX);
+  scene.preview.destroy();scene.background.destroy();scene.surface.destroy();scene.events.emit('shutdown');
+  await new Promise(resolve=>setTimeout(resolve,0));
+});
 
 test('dialogue and choice text stays above its shade and hides during occlusion',t=>{
   const restore=installMenuDom();t.after(restore);

@@ -17,6 +17,7 @@ const AnimationState=require('../node_modules/phaser/src/animations/AnimationSta
 const Animation=require('../node_modules/phaser/src/animations/Animation.js');
 const battle=JSON.parse(readFileSync(new URL('../public/content/battle.json',import.meta.url),'utf8'));
 const goblin=battle.enemies.find((enemy:{id:string})=>enemy.id==='enemy-goblin-1').actor as ActorDefinition;
+const classes=JSON.parse(readFileSync(new URL('../public/content/story-classes.json',import.meta.url),'utf8')).classes as {id:string;previewActor:ActorDefinition}[];
 
 function setup(actor:ActorDefinition=structuredClone(goblin)){
   const counts={sprites:0,destroyed:0,localAnimations:0};
@@ -66,6 +67,17 @@ function setup(actor:ActorDefinition=structuredClone(goblin)){
   const sprite=()=>character.layers[0] as unknown as Sprite;
   return {scene,character,sprite,counts,removed,textureMap,actor};
 }
+
+test('all class selection actors play their full idle animation continuously',()=>{
+  for(const entry of classes){
+    const f=setup(entry.previewActor),clip=entry.previewActor.clips['idle-south']!,state=f.sprite().anims!;
+    assert.equal(f.character.clipName,'idle-south',entry.id);
+    assert.equal(state.isPlaying,true,entry.id);
+    assert.equal(state.currentAnim?.frames.length,clip.frames,entry.id);
+    assert.equal(state.currentAnim?.repeat,-1,entry.id);
+    f.character.container.destroy();assert.equal(f.counts.destroyed,clip.layers.length);
+  }
+});
 
 test('repeated real goblin attacks reuse sprites and one local Phaser animation while batches still change',()=>{
   const f=setup(),body=f.sprite(),frames=[0,1,2,3,4,5,6];

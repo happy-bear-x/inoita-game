@@ -7,7 +7,7 @@
 - 布局：`bag-layout.ts`（背包格位）、`skill-book-layout.ts`（技能书页的图标格与右栏）、`choice-layout.ts`（选项竖排）、`control-layout.ts`（控件键位）、`item-layout.ts`（物品格与货币）、`shop-layout.ts`（商店两栏）、`quest-popup-layout.ts`（任务窗）、`description-text-layout.ts`（说明断行）、`text-layout.ts`（通用换行）、`cloud-save-layout.ts`（云存档页状态、颜色与几何）、`portrait-fit.ts`（头像等比裁剪）、`viewport.ts`（画布缩放、安全区与参考分辨率）。
 - 文本与样式：`text-style.ts`（共用字体）、`text-prompt.ts`（系统键盘输入，用于存档改名）、`cloud-credentials-input.ts`（云存档页内嵌的账号/密码输入框）、`password-change-prompt.ts`（修改密码的当前/新/确认三项表单）、`dialogue-text.ts`（对白分页、断行与逐字显示）、`item-detail-lines.ts`（物品说明行）、`skill-detail-lines.ts`（技能说明行）、`item-result-details.ts`（操作结果说明）、`enhancement-odds-lines.ts`（强化结果句与混沌结果表）、`item-name-color.ts`（品质颜色与装备格边框）、`character-values.ts`（角色数值）。
 - 接口与交互：`game-ui.ts`（UI 能力与视图接口）、`story-ui.ts`（剧情与菜单 UI 的接口、页面枚举和提示文案）、`story-ui-signature.ts`（菜单页面 viewModel 与显式签名）、`save-page.ts`（存档/读档页 controller）、`action-press-gate.ts`（动作按钮互斥）、`common-button.ts`（通用按钮素材）、`instant-message.ts`（屏幕提示）、`slot-frame.ts`（格子底图）。
-- DOM 组件：`dom/node.ts`、`dom/surface.ts` 提供菜单图片、文本、按钮、裁剪、滚动与原生指针；`dom/volume-slider.ts` 提供音量条，`dom/character-preview.ts` 提供角色静态预览。
+- DOM 组件：`dom/node.ts`、`dom/surface.ts` 提供菜单图片、文本、按钮、裁剪、滚动与原生指针；`dom/volume-slider.ts` 提供音量条。
 - DOM 文字：`dom/dom-ui.ts`（标签创建、层与坐标换算）、`dom/menu-text.ts`（菜单页、滚动与裁剪）。
 
 ## 规则
