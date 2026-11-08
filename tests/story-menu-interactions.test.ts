@@ -185,6 +185,7 @@ interface MenuInternals {
   surface: UiSurface;
   description: UiSurface;
   modal: UiSurface;
+  modalBox: { width: number; height: number };
   busy: boolean;
   notice?: string;
   shortcutEdit?: { page: number };
@@ -2360,4 +2361,21 @@ test('场景关闭后菜单作用域已注销', () => {
   f.inputRouter.register('world',event=>{pressed.push(event.key);return true;});
   f.scene.key('Escape');
   assert.deepEqual(pressed,['Escape'],'菜单注销后按键落到世界层');
+});
+
+test('long item descriptions keep the discard quantity row inside the dialog', t => {
+  const f=fixture();t.after(f.cleanup);
+  const source=f.add('sp-weapon-enhance-scroll',3);
+  f.menu.debugDescribe(source.id);
+  f.scene.click(f.scene.button('丢弃'));
+  const box=f.internals.modalBox,scroll=f.internals.modal.scrolls[0]!;
+  assert.ok(box.height>350,'弹层按长说明增高，不再截断正文');
+  assert.ok((scroll as unknown as {extent:number}).extent<=scroll.height+1e-6,'正文高度落在可视区内');
+  const root=f.internals.modal.root,scale=root.scaleX;
+  const inside=(label:FakeDomLabel)=>label.y>=root.y-1e-6&&label.y<=root.y+box.height*scale+1e-6;
+  for(const text of ['−','＋','全部'])assert.ok(inside(domLabel(f,text)!),`${text} 落在弹层内`);
+  for(const label of ['减少数量','增加数量'])assert.ok(f.scene.buttons(label).every(button=>{
+    const bottom=button.getWorldTransformMatrix().transformPoint(0,button.height);
+    return bottom.y<=root.y+box.height*scale+1e-6;
+  }),`${label} 底边不越出弹层`);
 });

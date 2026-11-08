@@ -1706,76 +1706,99 @@ export class StoryUI {
     this.operation={entry,kind,quantity:1};this.scrollOffsets.delete('bag:operation');this.render();
   }
   private renderOperation():void{
-    // 弹层画布的锚点由这里的框尺寸决定，不再写死；框从左上角开始画。
-    const v=this.modal!,box=tradeLayout.quantity,op=this.operation!,bag=this.session!.bag;this.beginModal(box.width,box.height);v.visible(true);
-    // 与商店的数量框同一个原版弹层：同样的图组 19 外框，同样的内缩 35 黑底。
-    drawPopupPanel(v,this.app.menuPanels.assets,box.width,box.height);
-    // 正文与按钮都躲进黑底：黑底占 (35,35,380,280)，底部按钮行在第 275 行。
-    const inner=box.plate,scroll=this.scroll('operation',inner.x,inner.y+37,inner.width,inner.height-80,v);
-    this.operationTextSpecs=[];const specs=this.operationTextSpecs;
-    const clip={top:inner.y+37,bottom:inner.y+37+inner.height-80};
-    let y=0,serial=0;
-    const key=()=>`operation-${serial++}`;
-    const line=(value:string,size=22)=>{
-      // 仍用排版探针算换行高度，但不再创建可见的 Phaser 文字。
-      const layout=this.descriptionLayout(v,[{text:value,color:GOLD}],inner.width,size);
-      specs.push({key:key(),text:value,x:inner.x,y:inner.y+37+y,
-        style:{size,color:GOLD,width:inner.width,wrap:'word'},scroll:'operation',clip});
-      y+=layout.height+13;
-    };
-    /** 滚动区文字：左对齐传左边缘，按钮文字传中心点。 */
-    const scrollText=(value:string,x:number,width:number,size:number,offsetY:number,centered=false)=>{
-      specs.push({key:key(),text:value,x:inner.x+x,y:inner.y+37+y+offsetY,
-        style:{size,color:GOLD,width:width||undefined,wrap:width?'word':undefined,
-          ...(centered?{anchorX:.5,anchorY:.5}:{})},scroll:'operation',clip});
-    };
-    const reward=(items:{item:string;quantity:number}[])=>items.forEach(entry=>{
-      v.image(bag.catalog.items[entry.item].icon,0,y,44,44,scroll.content);
-      scrollText(`${bag.catalog.items[entry.item].name} × ${entry.quantity}`,60,inner.width-60,22,6);
-      y+=57;
-    });
-
-    const entry=bag.get(op.entry);if(!entry){this.operation=undefined;v.visible(false);return;}const item=bag.catalog.items[entry.item],use=item.use;
-    specs.push({key:'operation-title',text:op.kind==='discard'?'丢弃物品':USE_LABELS[use!.kind],
-      x:inner.x,y:inner.y+5,style:{size:26,color:GOLD,width:inner.width,wrap:'word'}});
-    line(item.name,25);line(item.description||'确认后执行本次操作。');
+    const v=this.modal!,box=tradeLayout.quantity,op=this.operation!,bag=this.session!.bag;
+    const entry=bag.get(op.entry);if(!entry){this.operation=undefined;v.visible(false);return;}
+    const item=bag.catalog.items[entry.item],use=item.use,inner=box.plate;
+    // 先把正文排成内容块，量出真实高度；弹层高度因此跟着内容走，长说明不再被固定框裁掉。
+    type Content={kind:'line';text:string;size:number}|{kind:'reward';item:string;quantity:number};
+    const content:Content[]=[{kind:'line',text:item.name,size:25},{kind:'line',text:item.description||'确认后执行本次操作。',size:22}];
+    let quantityRow=false;
     if(op.kind==='discard'){
-      line(`确定丢弃 ${item.name}？`);
-      if(entry.quantity>1){
-        v.button('',0,y,80,48,()=>{op.quantity=Math.max(1,op.quantity-1);this.render();},{parent:scroll.content,guard:scroll.guard}).setData('label','减少数量');
-        scrollText('−',40,68,20,24,true);
-        scrollText(String(op.quantity),108,0,24,8);
-        v.button('',190,y,80,48,()=>{op.quantity=Math.min(entry.quantity,op.quantity+1);this.render();},{parent:scroll.content,guard:scroll.guard}).setData('label','增加数量');
-        scrollText('＋',230,68,20,24,true);
-        v.button('',260,y,inner.width-260,48,()=>{op.quantity=entry.quantity;this.render();},{parent:scroll.content,guard:scroll.guard}).setData('label','全部');
-        scrollText('全部',260+(inner.width-260)/2,inner.width-272,20,24,true);
-        y+=64;
-      }
+      content.push({kind:'line',text:`确定丢弃 ${item.name}？`,size:22});
+      quantityRow=entry.quantity>1;
     }
-    else if(use?.kind==='pack'||use?.kind==='box'){line(use.kind==='pack'?'礼盒内含以下物品：':'获得下列物品中的一种：');reward(use.rewards!);}
-    else if(use?.kind==='recipe'){line('随机展开下列一种配方：');for(const id of use.recipes!)line(`${bag.catalog.recipes[id].name}${bag.learnedRecipes.includes(id)?' · 已收录':''}`);}
-    else if(use?.kind==='recruit')line(`加入佣兵名册 · ${use.classId?this.app.storyClasses.classes.find(c=>c.id===use.classId)!.name:'随机职业'}`);
+    else if(use?.kind==='pack'||use?.kind==='box'){
+      content.push({kind:'line',text:use.kind==='pack'?'礼盒内含以下物品：':'获得下列物品中的一种：',size:22});
+      for(const reward of use.rewards!)content.push({kind:'reward',...reward});
+    }
+    else if(use?.kind==='recipe'){
+      content.push({kind:'line',text:'随机展开下列一种配方：',size:22});
+      for(const id of use.recipes!)content.push({kind:'line',text:`${bag.catalog.recipes[id].name}${bag.learnedRecipes.includes(id)?' · 已收录':''}`,size:22});
+    }
+    else if(use?.kind==='recruit')content.push({kind:'line',text:`加入佣兵名册 · ${use.classId?this.app.storyClasses.classes.find(c=>c.id===use.classId)!.name:'随机职业'}`,size:22});
     else if(use?.kind==='revive'){
       const party=this.session!.party!;
       if(!party.livingIds.length){
         op.member=undefined;
-        line('全队阵亡时无法使用复活卷轴，请返回检查点或读取存档。');
+        content.push({kind:'line',text:'全队阵亡时无法使用复活卷轴，请返回检查点或读取存档。',size:22});
       }else{
         const fallen=party.activeIds.filter(id=>!party.alive(id));
         op.member=fallen[0];
         const name=op.member==='player'?this.world!.actors[this.session!.campaign.start.actor].name:op.member?party.get(op.member)!.definition.name:undefined;
-        line(name?`复活目标：${name}`:'当前没有阵亡的出战队员');
+        content.push({kind:'line',text:name?`复活目标：${name}`:'当前没有阵亡的出战队员',size:22});
       }
     }
-    else if(use?.kind==='reset-skills'){line(`确定为${this.world!.actors[this.session!.campaign.start.actor].name}初始化技能？`);line('清空已学技能与快捷栏，返还正常加点；卓越灵药增加的技能点会消失。');}
-    else if(entry.item===SKILL_POINT_ITEM)line(`确定对${this.world!.actors[this.session!.campaign.start.actor].name}使用${item.name}？`);
-    if(op.error)line(op.error);this.finishScroll('operation',scroll,y);
+    else if(use?.kind==='reset-skills'){
+      content.push({kind:'line',text:`确定为${this.world!.actors[this.session!.campaign.start.actor].name}初始化技能？`,size:22});
+      content.push({kind:'line',text:'清空已学技能与快捷栏，返还正常加点；卓越灵药增加的技能点会消失。',size:22});
+    }
+    else if(entry.item===SKILL_POINT_ITEM)content.push({kind:'line',text:`确定对${this.world!.actors[this.session!.campaign.start.actor].name}使用${item.name}？`,size:22});
+    if(op.error)content.push({kind:'line',text:op.error,size:22});
+
+    // 仍用排版探针算换行高度，但不再创建可见的 Phaser 文字。
+    const rewardText=(part:{item:string;quantity:number})=>`${bag.catalog.items[part.item].name} × ${part.quantity}`;
+    const heights=content.map(part=>part.kind==='line'
+      ?this.descriptionLayout(v,[{text:part.text,color:GOLD}],inner.width,part.size).height+13
+      :Math.max(57,this.descriptionLayout(v,[{text:rewardText(part),color:GOLD}],inner.width-60,22).height+13));
+    const textHeight=heights.reduce((sum,value)=>sum+value,0);
+    // 内容区从黑底上沿再下 37 开始；数量行固定在底部按钮上方，正文只在它上面滚动。
+    const quantitySpace=quantityRow?60:0;
+    const height=Math.min(600,Math.max(box.height,inner.y+37+textHeight+quantitySpace+12+box.button.height+20));
+    this.beginModal(box.width,height);v.visible(true);
+    // 与商店的数量框同一个原版弹层：同样的图组 19 外框，同样的内缩 35 黑底。
+    drawPopupPanel(v,this.app.menuPanels.assets,box.width,height);
+    const buttonY=height-75,quantityTop=buttonY-12-48,textTop=inner.y+37,textBottom=(quantityRow?quantityTop:buttonY)-12;
+    const scroll=this.scroll('operation',inner.x,textTop,inner.width,Math.max(0,textBottom-textTop),v);
+    this.operationTextSpecs=[];const specs=this.operationTextSpecs;
+    const clip={top:textTop,bottom:textBottom};
+    let y=0,serial=0;
+    const key=()=>`operation-${serial++}`;
+    content.forEach((part,index)=>{
+      if(part.kind==='line')specs.push({key:key(),text:part.text,x:inner.x,y:textTop+y,
+        style:{size:part.size,color:GOLD,width:inner.width,wrap:'word'},scroll:'operation',clip});
+      else{
+        v.image(bag.catalog.items[part.item].icon,0,y,44,44,scroll.content);
+        specs.push({key:key(),text:rewardText(part),x:inner.x+60,y:textTop+y+6,
+          style:{size:22,color:GOLD,width:inner.width-60,wrap:'word'},scroll:'operation',clip});
+      }
+      y+=heights[index]!;
+    });
+    this.finishScroll('operation',scroll,textHeight);
+
+    specs.push({key:'operation-title',text:op.kind==='discard'?'丢弃物品':USE_LABELS[use!.kind],
+      x:inner.x,y:inner.y+5,style:{size:26,color:GOLD,width:inner.width,wrap:'word'}});
+    if(quantityRow){
+      const quantityButton=(label:string,x:number,width:number,action:()=>void)=>
+        v.button('',x,quantityTop,width,48,action,{guard:scroll.guard}).setData('label',label);
+      quantityButton('减少数量',inner.x,80,()=>{op.quantity=Math.max(1,op.quantity-1);this.render();});
+      quantityButton('增加数量',inner.x+190,80,()=>{op.quantity=Math.min(entry.quantity,op.quantity+1);this.render();});
+      quantityButton('全部',inner.x+260,inner.width-260,()=>{op.quantity=entry.quantity;this.render();});
+      const centerY=quantityTop+24;
+      specs.push({key:key(),text:'−',x:inner.x+40,y:centerY,
+        style:{size:20,color:GOLD,width:68,wrap:'word',anchorX:.5,anchorY:.5}});
+      specs.push({key:key(),text:String(op.quantity),x:inner.x+108,y:quantityTop+8,style:{size:24,color:GOLD}});
+      specs.push({key:key(),text:'＋',x:inner.x+230,y:centerY,
+        style:{size:20,color:GOLD,width:68,wrap:'word',anchorX:.5,anchorY:.5}});
+      specs.push({key:key(),text:'全部',x:inner.x+260+(inner.width-260)/2,y:centerY,
+        style:{size:20,color:GOLD,width:inner.width-272,wrap:'word',anchorX:.5,anchorY:.5}});
+    }
+
     const using=op.kind==='use',revivalBlocked=using&&use?.kind==='revive'&&!op.member;
     const disabled=op.confirmed||this.busy||(using&&!!this.itemUseProblem(entry))||revivalBlocked;
     // 底部按钮沿用原版数量框的排布：确定在左、取消在右，125×55。
     const modalButton=(label:string,x:number,action:()=>void,isDisabled=false)=>{
-      v.button('',x,box.button.y,box.button.width,box.button.height,action,{disabled:isDisabled}).setData('label',label);
-      specs.push({key:key(),text:label,x:x+box.button.width/2,y:box.button.y+box.button.height/2,
+      v.button('',x,buttonY,box.button.width,box.button.height,action,{disabled:isDisabled}).setData('label',label);
+      specs.push({key:key(),text:label,x:x+box.button.width/2,y:buttonY+box.button.height/2,
         style:{size:Math.min(22,box.button.height*.42),color:GOLD,anchorX:.5,anchorY:.5,
           width:box.button.width-12,align:'center',wrap:'word'}});
     };
