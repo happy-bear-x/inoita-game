@@ -835,6 +835,7 @@ final class UpdateManager {
             JSONObject json = new JSONObject();
             json.put("version", 1);
             json.put("shellVersion", BuildConfig.SHELL_VERSION);
+            json.put("versionCode", BuildConfig.VERSION_CODE);
             json.put("channel", BuildConfig.UPDATE_CHANNEL);
             json.put("buildId", snapshot.buildId());
             json.put("active", state.active());
