@@ -328,7 +328,8 @@ export class StoryUI {
       ()=>this.menuText?.refresh(),()=>this.menuText?.renderPage('quests'));
     this.partyPanel?.destroyPreview();
     this.partyPanel=new PartyPanel(session,world,this.app,()=>this.render(),(id,page)=>this.selectMember(id,page),
-      (view,name,x,y,width,height)=>this.scroll(name,x,y,width,height,view),()=>this.menuText?.refresh(),this.bagPortrait);
+      (view,name,x,y,width,height)=>this.scroll(name,x,y,width,height,view),()=>this.menuText?.refresh(),this.bagPortrait,
+      ()=>this.menuText?.renderPage('party'),scroll=>{for(const [name,value] of this.scrollNames)if(value===scroll)this.scrollNames.delete(name);scroll.destroy();const index=this.body!.scrolls.indexOf(scroll);if(index>=0)this.body!.scrolls.splice(index,1);});
     this.unsubscribe=session.subscribe(()=>{
       // 快捷键登记、控制布局编辑与强化台/技能书页打开时由各自的界面显式重绘；
       // 子页面的动作在完成后调 changed 统一重绘一次，避免会话通知再画一遍。

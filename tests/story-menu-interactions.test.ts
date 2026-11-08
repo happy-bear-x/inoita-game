@@ -2240,6 +2240,21 @@ test('switching members on the skills page retains the frame and tab buttons',t=
   assert.deepEqual(visibleDomLabels(f).map(label=>label.text).sort(),labels);
 });
 
+test('switching members in the party panel retains the roster and tabs',t=>{
+  const f=fixture();t.after(f.cleanup);const member=f.recruit('warlock');
+  f.menu.show('party');
+  for(const tabName of ['人物能力','装备','技能目录']){
+    f.scene.click(f.scene.button(tabName));
+    const roster=f.scene.button(member.definition.name),tab=f.scene.button(tabName),frame=f.internals.body.root.list[1];
+    f.scene.click(roster);
+    assert.equal(f.scene.button(member.definition.name),roster);assert.equal(f.scene.button(tabName),tab);assert.equal(f.internals.body.root.list[1],frame);
+    const selected=[...f.internals.body.root.list];f.scene.click(roster);assert.deepEqual(f.internals.body.root.list,selected);
+    const labels=visibleDomLabels(f).map(label=>label.text).sort();f.menu.show('party');
+    assert.deepEqual(visibleDomLabels(f).map(label=>label.text).sort(),labels);
+    f.scene.click(f.scene.button(world.actors[campaign.start.actor].name));
+  }
+});
+
 test('using a mercenary emblem prepares only the new member preview', t => {
   const f=fixture();t.after(f.cleanup);
   f.menu.show('party');

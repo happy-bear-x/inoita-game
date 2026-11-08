@@ -47,13 +47,21 @@ export class PartyPanel {
   private preparation?:AbortController;
   private readonly preview?:LiveCharacterPreview;
   private previewSlot?:{surface:UiSurface;parent:UiNode;id:string};
+  private readonly updateSelection:()=>void;
+  private readonly removeScroll:(scroll:ScrollArea)=>void;
+  private surface?:UiSurface;
+  private selectionMarks=new Map<string,UiNode>();
+  private detailNodes:UiNode[]=[];
+  private rosterTextCount=0;
 
   constructor(session:Session,world:WorldIndex,app:StoryUIContext,changed:()=>void,
-    inspect:(id:string,page:'bag'|'skills')=>void,scrollArea?:ScrollFactory,refreshText:()=>void=()=>{},preview?:LiveCharacterPreview){
+    inspect:(id:string,page:'bag'|'skills')=>void,scrollArea?:ScrollFactory,refreshText:()=>void=()=>{},preview?:LiveCharacterPreview,
+    updateSelection:()=>void=()=>{},removeScroll:(scroll:ScrollArea)=>void=()=>{}){
     this.session=session;this.world=world;this.app=app;this.changed=changed;this.inspect=inspect;
     this.scrollArea=scrollArea??((view,_name,x,y,width,height)=>view.scroll(x,y,width,height));
     this.refreshText=refreshText;
     this.preview=preview;
+    this.updateSelection=updateSelection;this.removeScroll=removeScroll;
   }
   get modalOpen():boolean{return !!this.modal;}
   /** 重绘前把合成立绘摘下来，避免被页面清理销毁后无法复用。 */
@@ -63,9 +71,19 @@ export class PartyPanel {
   cancel():void{this.modal=undefined;this.changed();}
   captureScroll():void{this.skillsOffset=this.skillsScroll?.scrollTop??this.skillsOffset;}
   select(id:string):void{
+    if(this.selected===id)return;
     const slot=this.session.party!.snapshot().rosterSlots.indexOf(id);
+    const previousPage=this.page,previous=this.selected;
     if(slot>=0)this.page=Math.floor(slot/9);
-    this.selected=id;this.error='';this.skillsOffset=0;this.skillsScroll=undefined;this.modal=undefined;this.changed();
+    this.selected=id;this.error='';this.skillsOffset=0;this.modal=undefined;
+    if(this.surface&&previousPage===this.page&&this.selectionMarks.has(id)){
+      if(previous)this.selectionMarks.get(previous)?.setVisible(false);
+      this.selectionMarks.get(id)?.setVisible(true);
+      for(const node of this.detailNodes)node.destroy();this.detailNodes=[];
+      if(this.skillsScroll){this.removeScroll(this.skillsScroll);this.skillsScroll=undefined;}
+      this.preview?.detach();this.previewSlot=undefined;this.surface.pruneDestroyed();
+      this.pageText.length=this.rosterTextCount;this.renderSelected(this.surface);this.updateSelection();
+    }else{this.skillsScroll=undefined;this.changed();}
     this.prepare(id);
   }
   /** 选中项的外观资源就绪后重绘；切换选择时旧请求作废。 */
@@ -120,7 +138,7 @@ export class PartyPanel {
     return{lineHeight,height:Math.max(0,lines.length*lineHeight-5)};
   }
   render(v:UiSurface,modal:UiSurface,placeModal?:PlaceModal):void{
-    this.placeModal=placeModal;this.pageText=[];
+    this.placeModal=placeModal;this.pageText=[];this.surface=v;this.selectionMarks.clear();
     const party=this.session.party;if(!party)return;
     const snapshot=party.snapshot(),assets=this.app.menuPanels.assets;
     // The protagonist and story members do not consume mercenary roster slots.
@@ -134,7 +152,7 @@ export class PartyPanel {
       const button=v.button('',6,80+index*91,52,65,()=>this.select(id),{bare:true}).setData('label',this.name(id));
       v.imageCover(this.portrait(id),0,0,52,58,button,.5,.2).setAlpha(this.member(id)!.player.health>0?1:.45);
       this.text(`story-role-${id}`,id==='player'?'主角':'伙伴',6+26,80+index*91+63,16,GOLD,.5,0);
-      if(this.selected===id)v.rect(0,0,52,58,0xffda88,.12,button).setStrokeStyle(2,0xffda88);
+      const selected=v.rect(0,0,52,58,0xffda88,.12,button).setStrokeStyle(2,0xffda88).setVisible(this.selected===id);this.selectionMarks.set(id,selected);
     });
     for(let index=0;index<9;index++){
       const id=snapshot.rosterSlots[this.page*9+index],x=70+index%3*136,y=5+Math.floor(index/3)*123;
@@ -146,7 +164,7 @@ export class PartyPanel {
         this.text(`roster-dead-${index}`,'阵亡',x+63,y+88,18,TEXT_COLORS.dangerSoft,.5,0);
       }
       v.image(assets['party-frame'],-7,-7,141,128,button);
-      if(id===this.selected)v.image(assets['party-selected'],-7,-7,141,128,button);
+      if(id){const selected=v.image(assets['party-selected'],-7,-7,141,128,button).setVisible(id===this.selected);this.selectionMarks.set(id,selected);}
       if(id&&snapshot.active.includes(id))v.image(assets['party-deployed'],68,54,78,64,button);
     }
     const id=this.selected,member=id?this.member(id):undefined;
@@ -160,19 +178,24 @@ export class PartyPanel {
         {image:assets[`party-tab-${tab}`],disabled:!member}).setData('label',{info:'人物能力',equipment:'装备',skills:'技能目录'}[tab]);
       button.setAlpha(!member ? .4 : this.tab===tab ? 1 : .55);
     });
+    this.rosterTextCount=this.pageText.length;this.renderSelected(v);
+    if(this.modal)this.renderModal(modal);
+  }
+  private renderSelected(v:UiSurface):void{
+    const before=new Set(v.root.list),id=this.selected,member=id?this.member(id):undefined,party=this.session.party!;
     if(id&&member){
       if(this.tab==='info')this.renderInfo(v,id);
       else if(this.tab==='equipment')this.renderEquipment(v,id);
       else this.renderSkills(v,id);
       if(id!=='player'&&(member as CompanionMember).source==='mercenary'){
-        const deployed=snapshot.active.includes(id);
+        const snapshot=party.snapshot(),deployed=snapshot.active.includes(id);
         this.menuButton(v,'deployed',deployed?'移出队伍':'加入队伍',70,
           ()=>this.run(()=>deployed?party.reserve(id):party.deployFirstAvailable(id)),deployed?member.player.health<=0:snapshot.active.length>=3||member.player.health<=0);
         this.menuButton(v,'dismiss','放逐',272,()=>{this.modal={kind:'dismiss',id};this.changed();},deployed);
       }
     }
     if(this.error)this.text('error',this.error,70,434,18,TEXT_COLORS.dangerSoft,0,0,{width:808,wrap:'word'});
-    if(this.modal)this.renderModal(modal);
+    this.detailNodes=v.root.list.filter(node=>!before.has(node));
   }
   /** 底部动作按钮；文字单独写进 DOM，按钮本身只保留图框和命中区。 */
   private menuButton(v:UiSurface,key:'deployed'|'dismiss',label:string,x:number,action:()=>void,disabled:boolean):void{
