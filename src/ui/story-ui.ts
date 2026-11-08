@@ -168,6 +168,7 @@ export class StoryUI {
   private bagPortrait?:LiveCharacterPreview;
   private backdropPieces:UiNode[]=[];
   private bagPreview?:UiNode;
+  private bagSelection?:UiImage;
   private bagEquipment=new Map<EquipmentSlot,{button:UiNode;icon:UiImage;drop:{object:UiNode;entry?:string;slot:EquipmentSlot}}>();
   private scrollOffsets=new Map<string,number>();private scrollNames=new Map<string,ScrollArea>();
   private drag?:{entry:string;pointer:number;x:number;y:number;timer:Phaser.Time.TimerEvent;active:boolean;ghost?:UiImage};private suppressClick=false;
@@ -1437,8 +1438,8 @@ export class StoryUI {
     if(this.shortcutEdit)this.closeShortcutScreen();
   }
   private renderBag():void{
-    this.bagTextSpecs=[];this.bagDetailTextSpecs=[];this.bagDetailOpen=false;this.bagEquipment.clear();
-    const v=this.body!,bag=this.session!.bag,panels=this.app.menuPanels,member=this.member()!,equipment=bag.equipmentFor(this.selectedMemberId);
+    this.bagTextSpecs=[];this.bagDetailTextSpecs=[];this.bagDetailOpen=false;this.bagEquipment.clear();this.bagSelection=undefined;
+    const v=this.body!,bag=this.session!.bag,panels=this.app.menuPanels;
     // 两栏背景照原版：`UIEquip_DrawEquipBackground @0x14a7cc` 给左栏画图框加四块黑色 60% 的区域
     // （`GRPX_FillRectAlpha(..., 0xff000000, 0x3c)`），中间 (129,110,157,157) 那块留空放人物预览；
     // 右栏只有图框——`UIEquip_DrawInvenBackground @0x14aed0` 不铺底，格子直接浮在背景上。
@@ -1466,14 +1467,7 @@ export class StoryUI {
     const panelCoversBag=(describing||showingResult)&&this.descSide==='right';
     if(!covered){
       if(!describing)this.selectedItem=undefined;
-      this.bagPreview=v.container(0,0);
-      this.renderBagPreview();
-      for(const slot of panels.equipmentSlots){const id=slot.id as EquipmentSlot,entry=equipment[id],instance=entry?bag.get(entry):undefined,item=instance?bag.catalog.items[instance.item]:undefined;const button=v.button('',85+slot.x,slot.y,74,74,()=>{const current=bag.equipmentFor(this.selectedMemberId)[id];if(current)this.selectItem(current,'right');},{image:slotFrameImage(this.app,this.session!,instance)});const icon=v.image(item?.icon??slot.emptyIcon,item?5:13,item?5:13,item?64:48,item?64:48,button);button.setData('label',slot.name);const drop={object:button,entry,slot:id};this.drops.push(drop);this.bagEquipment.set(id,{button,icon,drop});}
-      // 等级／职业行：`UIEquip_DrawEquip` 在左框内 (46,368) 画 323 宽的文本底板，文字居中于它、
-      // 颜色 #e2cb9e、纵向上沿在底板顶边下 7 像素（`GRPX_DrawStringWithFont(..., y+375, 居中)`）。
-      // 底板在静态层，这里只登记会随成员变化的等级与职业文字。
-      this.bagTextSpecs.push({key:'bag-level',text:`Lv. ${member.level}　${this.app.storyClasses.classes.find(c=>c.id===member.classId)!.name}`,
-        x:292,y:375,style:{size:22,color:TEXT_COLORS.primary,anchorX:.5,anchorY:0}});
+      this.renderBagEquipment();
     }
     if(showingResult){this.renderItemResult();}
     else if(describing)this.renderItemDetail(this.selectedItem!);
@@ -1488,7 +1482,7 @@ export class StoryUI {
         this.drops.push({object:v.image(panels.assets['inventory-slot'],x,y,layout.slot.size,layout.slot.size,grid.content),view:slot.view,cell:slot.cell});
         continue;
       }const entry=slot.entry,item=bag.catalog.items[entry.item];
-      const button=v.button('',x,y,layout.slot.size,layout.slot.size,()=>{if(this.suppressClick)return;this.selectItem(entry.id,'left');},{image:slotFrameImage(this.app,this.session!,entry),parent:grid.content,guard:grid.guard}).setData('label',item.name);v.image(item.icon,layout.slot.icon.x,layout.slot.icon.y,layout.slot.icon.size,layout.slot.icon.size,button);if(entry.id===this.selectedItem)v.image(panels.assets['inventory-selected'],layout.slot.selection.x,layout.slot.selection.y,layout.slot.selection.size,layout.slot.selection.size,button);this.drops.push({object:button,entry:entry.id,view:slot.view,cell:slot.cell});
+      const button=v.button('',x,y,layout.slot.size,layout.slot.size,()=>{if(this.suppressClick)return;this.selectItem(entry.id,'left');},{image:slotFrameImage(this.app,this.session!,entry),parent:grid.content,guard:grid.guard}).setData('label',item.name);v.image(item.icon,layout.slot.icon.x,layout.slot.icon.y,layout.slot.icon.size,layout.slot.icon.size,button);if(entry.id===this.selectedItem)this.bagSelection=v.image(panels.assets['inventory-selected'],layout.slot.selection.x,layout.slot.selection.y,layout.slot.selection.size,layout.slot.selection.size,button);this.drops.push({object:button,entry:entry.id,view:slot.view,cell:slot.cell});
       // 格子角标和数量随网格一起滚动；key 用袋位+格号，翻物品时不新建标签。
       // 说明面板盖住背包栏时这些标签不能留在 DOM 最上层，否则会浮在面板正文上面。
       const slotKey=`bag-slot-${slot.view}-${slot.cell}`;
@@ -1501,7 +1495,7 @@ export class StoryUI {
         if(entry.gems.length)this.bagTextSpecs.push({key:`${slotKey}-gems`,text:'◆'.repeat(entry.gems.length),
           x:cells.x+x+2,y:cells.y+y+52,style:{size:16,anchorX:0,anchorY:0},scroll:'inventory',clip:slotClip});
       }
-      if(!panelCoversBag)button.on('pointerdown',(pointer:UiPointer)=>this.startDrag(pointer,entry.id,grid));
+      button.on('pointerdown',(pointer:UiPointer)=>{if(!this.bagDetailOpen||this.descSide!=='right')this.startDrag(pointer,entry.id,grid);});
     }
     this.finishScroll('inventory',grid,Math.ceil(slotCount/cells.columns)*cells.stride);
     // 原版金额先画币再画数字：金 530 / 银 633 / 铜 736，数字在币右侧 44、下移 6、白色。
@@ -1868,11 +1862,12 @@ export class StoryUI {
   private selectMember(id:string,page:Page):void{
     const wasAdjusting=this.adjusting;
     if(this.requestAllocationExit(()=>this.selectMember(id,page)))return;
-    const updateBag=this.open&&page==='bag'&&this.page==='bag'&&!this.bagDetailOpen&&this.bagEquipment.size>0;
+    const restoreBag=this.bagDetailOpen&&!!this.selectedItem&&!this.itemResult;
+    const updateBag=this.open&&page==='bag'&&this.page==='bag'&&(restoreBag||!this.bagDetailOpen&&this.bagEquipment.size>0);
     const updateStatus=this.open&&page==='status'&&this.page==='status'&&!wasAdjusting&&!!this.statusPortrait?.active;
     const updateSkills=this.open&&page==='skills'&&this.page==='skills'&&this.skillTabs.size>0;
     this.cancelOperation();this.selectedMemberId=id;this.selectedItem=undefined;this.skill=undefined;this.skillSection='directory';
-    if(updateBag||updateStatus||updateSkills){if(updateBag)this.updateBagMember();else if(updateStatus)this.updateStatusMember();else this.updateSkillsMember();this.sessionSignature=this.sessionDataSignature()??this.sessionSignature;}else this.show(page);
+    if(updateBag||updateStatus||updateSkills){if(updateBag){if(restoreBag)this.closeBagDetailForMember();this.updateBagMember();}else if(updateStatus)this.updateStatusMember();else this.updateSkillsMember();this.sessionSignature=this.sessionDataSignature()??this.sessionSignature;}else this.show(page);
     const signal=this.request.signal;
     void this.app.preparePartyMember?.(id,signal).then(()=>{
       if(!signal.aborted&&this.open&&this.page==='bag'&&this.selectedMemberId===id)this.renderBagPreview();
@@ -1915,6 +1910,36 @@ export class StoryUI {
       groupEffects:this.session!.party?.groupModifiers()??{},growth:memberSkillGrowth(this.selectedMemberId),stealthed:this.app.combatStealthed?.(this.selectedMemberId)??false});
     const combatAttribute=this.app.combatAttribute,resolve=combatAttribute?(key:string,base:number)=>combatAttribute(this.selectedMemberId,key as BattleStatKey,base,modifiers):undefined;
     return characterCombatValues(effectiveCharacterPanel(member.panel,member.level,modifiers,resolve));
+  }
+  private renderBagEquipment():void{
+    const v=this.body!,bag=this.session!.bag,panels=this.app.menuPanels,member=this.member()!,equipment=bag.equipmentFor(this.selectedMemberId);
+    this.bagPreview=v.container(0,0);this.renderBagPreview();
+    for(const slot of panels.equipmentSlots){
+      const id=slot.id as EquipmentSlot,entry=equipment[id],instance=entry?bag.get(entry):undefined,item=instance?bag.catalog.items[instance.item]:undefined;
+      const button=v.button('',85+slot.x,slot.y,74,74,()=>{const current=bag.equipmentFor(this.selectedMemberId)[id];if(current)this.selectItem(current,'right');},{image:slotFrameImage(this.app,this.session!,instance)});
+      const icon=v.image(item?.icon??slot.emptyIcon,item?5:13,item?5:13,item?64:48,item?64:48,button);button.setData('label',slot.name);
+      const drop={object:button,entry,slot:id};this.drops.push(drop);this.bagEquipment.set(id,{button,icon,drop});
+    }
+    this.bagTextSpecs.push({key:'bag-level',text:`Lv. ${member.level}　${this.app.storyClasses.classes.find(c=>c.id===member.classId)!.name}`,
+      x:292,y:375,style:{size:22,color:TEXT_COLORS.primary,anchorX:.5,anchorY:0}});
+  }
+  private closeBagDetailForMember():void{
+    const coversEquipment=this.descSide==='left';
+    this.bagDetailOpen=false;this.bagDetailTextSpecs=[];this.bagSelection?.destroy();this.bagSelection=undefined;
+    this.description?.clear();
+    for(const [name,scroll] of this.scrollNames)if(scroll.surface===this.description)this.scrollNames.delete(name);
+    if(coversEquipment){this.renderBagEquipment();return;}
+    const bag=this.session!.bag,layout=bagLayout(),cells=layout.grid,clip={top:cells.y,bottom:cells.y+cells.height};
+    const {slots}=inventoryView({all:bag.allCells,...bag.pouchCells},this.filter);
+    slots.forEach((slot,index)=>{
+      if(slot.kind!=='item')return;
+      const entry=slot.entry,item=bag.catalog.items[entry.item],x=index%cells.columns*cells.stride,y=Math.floor(index/cells.columns)*cells.stride,key=`bag-slot-${slot.view}-${slot.cell}`;
+      if(item.stackable)this.bagTextSpecs.push({key:`${key}-quantity`,text:String(entry.quantity),x:cells.x+x+layout.badge.x,y:cells.y+y+layout.badge.y,style:{size:20,color:layout.badge.color,anchorX:1,anchorY:0},scroll:'inventory',clip});
+      if(entry.enhancement)this.bagTextSpecs.push({key:`${key}-enhancement`,text:`+${entry.enhancement}`,x:cells.x+x+2,y:cells.y+y+2,style:{size:17,anchorX:0,anchorY:0},scroll:'inventory',clip});
+      if(entry.gems.length)this.bagTextSpecs.push({key:`${key}-gems`,text:'◆'.repeat(entry.gems.length),x:cells.x+x+2,y:cells.y+y+52,style:{size:16,anchorX:0,anchorY:0},scroll:'inventory',clip});
+    });
+    const money=splitMoney(this.session!.money);
+    (['gold','silver','copper'] as const).forEach((unit,index)=>this.bagTextSpecs.push({key:`bag-money-${unit}`,text:String(money[unit]),x:layout.money.x+index*layout.money.stride+layout.money.digit.x,y:layout.money.y+layout.money.digit.y,style:{size:20,color:layout.money.color,anchorX:0,anchorY:0}}));
   }
   private updateBagMember():void{
     const member=this.member()!,bag=this.session!.bag,equipment=bag.equipmentFor(this.selectedMemberId),panels=this.app.menuPanels;

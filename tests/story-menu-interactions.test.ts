@@ -2200,6 +2200,22 @@ test('switching members in the bag retains the inventory and unchanged controls'
   f.scene.click(weapon);assert.equal(f.internals.selectedItem,orb.id,'保留的装备按钮读取新队员的装备');
 });
 
+test('switching members closes either bag detail without rebuilding the inventory',t=>{
+  for(const worn of [false,true]){
+    const f=fixture();t.after(f.cleanup);const member=f.recruit('warlock'),jewel=f.add('novice-jewel');
+    f.menu.show('bag');
+    f.scene.click(f.scene.button(worn?'主手':f.session.bag.catalog.items[jewel.item].name));
+    const organize=f.scene.button('整理'),portrait=f.scene.button(member.definition.name),grid=f.internals.body.scrolls.find(scroll=>scroll.x===496+34)!;
+    f.scene.click(portrait);
+    assert.equal(f.internals.selectedMemberId,member.id);assert.equal(f.internals.selectedItem,undefined);
+    assert.equal(f.scene.button('整理'),organize);assert.equal(f.scene.button(member.definition.name),portrait);
+    assert.equal(f.internals.body.scrolls.find(scroll=>scroll.x===496+34),grid);
+    assert(f.scene.button('主手'));
+    const labels=visibleDomLabels(f).map(label=>label.text).sort();f.menu.show('bag');
+    assert.deepEqual(visibleDomLabels(f).map(label=>label.text).sort(),labels);
+  }
+});
+
 test('switching members on the status page updates values without rebuilding controls',t=>{
   const f=fixture();t.after(f.cleanup);const member=f.recruit('warlock');
   f.menu.show('status');const children=[...f.internals.body.root.list],portrait=f.scene.button(member.definition.name);
