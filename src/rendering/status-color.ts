@@ -20,10 +20,12 @@ export class StatusColorRenderer {
     });
   }
   paint(character:CharacterVisual,colors:readonly StatusColor[]|undefined,logicalFrame:number):void {
+    // 只有一种颜色时矩阵不随逻辑帧变化；把帧号固定，避免每个逻辑帧重设同一张矩阵。
+    const frame=colors&&colors.length>1?logicalFrame:0;
     const previous=this.appearances.get(character),flash=this.flashes.has(character);
-    // 着色规则、逻辑帧和图层批次都没变时不必重设 color matrix；换动作会换新图层数组。
-    if(previous&&!flash&&!previous.flash&&previous.colors===colors&&previous.frame===logicalFrame&&previous.layers===character.layers)return;
-    this.appearances.set(character,{colors,frame:logicalFrame,layers:character.layers,flash});
+    // 着色规则、有效帧和图层批次都没变时不必重设 color matrix；换动作会换新图层数组。
+    if(previous&&!flash&&!previous.flash&&previous.colors===colors&&previous.frame===frame&&previous.layers===character.layers)return;
+    this.appearances.set(character,{colors,frame,layers:character.layers,flash});
     for(const sprite of character.layers){
       let filter=this.filters.get(sprite);
       if(!colors?.length&&!flash){filter?.setActive(false);continue;}
@@ -34,7 +36,7 @@ export class StatusColorRenderer {
         this.filters.set(sprite,filter);
       }
       const blackBackdrop=sprite.blendMode===Phaser.BlendModes.ADD||sprite.blendMode===Phaser.BlendModes.SCREEN;
-      filter.colorMatrix.set(statusColorMatrix(colors?.length?colors:[{red:0,green:0,blue:0}],logicalFrame,flash,
+      filter.colorMatrix.set(statusColorMatrix(colors?.length?colors:[{red:0,green:0,blue:0}],frame,flash,
         blackBackdrop));
       filter.setActive(true);
     }
