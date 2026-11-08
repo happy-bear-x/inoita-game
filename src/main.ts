@@ -1,5 +1,6 @@
 // 必须最先执行：补齐旧版 Android WebView 缺少的浏览器 API，后面的模块才能正常加载。
 import './application/browser-compat.ts';
+import {installPageInteractionGuard} from './application/page-interaction-guard.ts';
 import {prepareSavedGame} from './application/saved-game.ts';
 import {SavedGameLoader} from './application/saved-game-loader.ts';
 import {AutoSaver} from './application/auto-save.ts';
@@ -71,6 +72,8 @@ function requireWorldScene(): WorldScene {
   return scene;
 }
 
+// 在创建画布前拦住整页缩放和长按菜单，避免第一次触摸就改掉视口。
+installPageInteractionGuard();
 fitViewport();
 let layoutFrame = 0;
 /**

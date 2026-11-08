@@ -1,5 +1,5 @@
 :root{color-scheme:dark;--gold:#e2c88d;--ink:#101d24}
-*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}html,body{margin:0;width:100%;height:100%;overflow:hidden;overscroll-behavior:none;background:#080d12;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;color:#f5f0df;touch-action:none;-webkit-user-select:none;user-select:none}button{font:inherit;color:inherit;cursor:pointer;touch-action:none}button:focus-visible{outline:2px solid var(--gold);outline-offset:4px}[hidden]{display:none!important}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}html,body{margin:0;width:100%;height:100%;overflow:hidden;overscroll-behavior:none;background:#080d12;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;color:#f5f0df;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-text-size-adjust:100%;text-size-adjust:100%}img{-webkit-user-drag:none}button{font:inherit;color:inherit;cursor:pointer;touch-action:none}button:focus-visible{outline:2px solid var(--gold);outline-offset:4px}[hidden]{display:none!important}
 #safe-area{position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}#game-frame{position:fixed;overflow:hidden;background:var(--ink)}#game{position:absolute;inset:0}#game canvas{display:block}
 
 /* 屏幕图片与控件按场景分层；独立文字位于同层图片之上。 */
@@ -21,14 +21,14 @@ body.ui-occluded .text-prompt,body.ui-occluded .cloud-credentials{display:none!i
 .text-prompt .text-prompt-hint{font-size:13px;line-height:1.4;margin-top:-4px;color:#b8ab92}
 .text-prompt label{display:flex;flex-direction:column;gap:6px;font-size:13px;color:#b8ab92}
 .text-prompt .text-prompt-error{color:#ff8a80;font-size:13px;line-height:1.4;margin:-2px 0 0}
-.text-prompt input{font:inherit;font-size:16px;padding:10px 12px;border-radius:6px;border:1px solid #6b5a37;background:#0e171c;color:#f5f0df;touch-action:auto;-webkit-user-select:text;user-select:text}
+.text-prompt input{font:inherit;font-size:16px;padding:10px 12px;border-radius:6px;border:1px solid #6b5a37;background:#0e171c;color:#f5f0df;touch-action:auto;-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
 .text-prompt-actions{display:flex;gap:12px}
 .text-prompt-actions button{flex:1;padding:10px;border-radius:6px;border:1px solid #6b5a37;background:#2a3740;color:#e2c88d;touch-action:manipulation}
 .text-prompt-actions button[disabled]{opacity:.45}
 
 /* 云存档登录：账号/密码输入框直接盖在面板对应行上，并和画布共用 #game-frame 的坐标。 */
 .cloud-credentials{position:absolute;inset:0;z-index:5;display:none;pointer-events:none;touch-action:auto}
-.cloud-credentials input{position:absolute;box-sizing:border-box;padding:0 12px;border:1px solid #6b5a37;border-radius:6px;background:#0e171c;color:#f5f0df;outline:none;pointer-events:auto;touch-action:auto;-webkit-user-select:text;user-select:text;-webkit-appearance:none;appearance:none}
+.cloud-credentials input{position:absolute;box-sizing:border-box;padding:0 12px;border:1px solid #6b5a37;border-radius:6px;background:#0e171c;color:#f5f0df;outline:none;pointer-events:auto;touch-action:auto;-webkit-user-select:text;user-select:text;-webkit-touch-callout:default;-webkit-appearance:none;appearance:none}
 .cloud-credentials input::placeholder{color:#7d7462}
 .cloud-credentials input:focus{border-color:var(--gold);box-shadow:0 0 0 2px rgba(226,200,141,.18)}
 
