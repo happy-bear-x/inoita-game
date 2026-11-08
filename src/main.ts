@@ -400,6 +400,7 @@ function installSession(session: Session): void {
   app.checkpoint.clear();
   app.changeEquipment=async(entry,slot,signal,memberId)=>requireWorldScene().changeEquipment(entry,slot,signal,memberId);
   app.equipmentAppearance=memberId=>worldScene()?.equipmentAppearance(memberId);
+  app.equipmentPreview=memberId=>worldScene()?.equipmentPreview(memberId);
   app.preparePartyMember=async(id,signal,options)=>{const scene=worldScene();if(scene)await scene.preparePartyMember(id,signal,options);};
   app.releasePartyPreview=()=>worldScene()?.releasePartyPreview();
   // 属性页只在菜单重绘时读一次；菜单打开期间战斗已暂停，Buff 不会继续走。

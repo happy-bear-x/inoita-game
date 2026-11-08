@@ -104,6 +104,7 @@ export class StoryApp {
   outfits?: OutfitPool;
   changeEquipment?: (entry: string | undefined, slot: EquipmentSlot, signal?: AbortSignal, memberId?:string) => Promise<string>;
   equipmentAppearance?:(memberId:string)=>import('./domain/content.ts').ActorDefinition|undefined;
+  equipmentPreview?:(memberId:string)=>string|undefined;
   menuPanels!: MenuPanels;
   storyClasses!: StoryClassCatalog;
   /** 当前界面场景持有的菜单图片租约账。 */

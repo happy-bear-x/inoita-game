@@ -27,6 +27,7 @@ export class Wardrobe {
     outfit.users++; this.current = outfit;
     for (const [key, lease] of this.held) if (lease.outfit !== outfit) { lease.release(); this.held.delete(key); }
   }
+  get preview(): string | undefined { return this.current?.preview; }
   async prepare(base: ActorDefinition, equipment: Partial<Record<EquipmentSlot, string>>, classId?: string,
     options?: WardrobePrepareOptions): Promise<Outfit> {
     if (!this.active) throw new DOMException('场景已关闭', 'AbortError');

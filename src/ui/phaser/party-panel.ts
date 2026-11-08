@@ -199,11 +199,11 @@ export class PartyPanel {
   }
   private renderEquipment(v:UiSurface,id:string):void{
     const panels=this.app.menuPanels,member=this.member(id)!,bag=this.session.bag,equipment=bag.equipmentFor(id);
-    const appearance=this.app.equipmentAppearance?.(id),clip=appearance?.clips['idle-south'],preview={x:623,y:124,width:127,height:114};
-    if(appearance&&clip?.layers.every(layer=>v.scene.textures.exists(layer.key))){
+    const appearance=this.app.equipmentAppearance?.(id),snapshot=this.app.equipmentPreview?.(id),preview={x:623,y:124,width:127,height:114};
+    if(appearance&&CharacterPreview.available(v.scene,appearance,snapshot)){
       // 和背包页共用同一套合成立绘：按预览框缩放居中，换人时替换，翻页时摘下来保留缓存。
       const character=this.preview??(this.preview=new CharacterPreview(v.scene));
-      character.show(v,appearance,preview);
+      character.show(v,appearance,preview,v.root,snapshot);
     }else v.imageContain(this.portrait(id),preview.x,preview.y,preview.width,preview.height);
     for(const slot of panels.equipmentSlots){
       const entry=equipment[slot.id as EquipmentSlot],instance=entry?bag.get(entry):undefined,item=instance?bag.catalog.items[instance.item]:undefined;

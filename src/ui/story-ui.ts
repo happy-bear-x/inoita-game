@@ -1838,10 +1838,10 @@ export class StoryUI {
     const v=this.body, parent=this.bagPreview, member=this.member();
     if(!v||!parent?.active||!member||!this.scene)return;
     this.bagPortrait?.detach();parent.removeAll(true);
-    const preview=bagLayout().preview,appearance=this.app.equipmentAppearance?.(this.selectedMemberId),clip=appearance?.clips['idle-south'];
-    if(appearance&&clip?.layers.every(layer=>this.scene!.textures.exists(layer.key))){
+    const preview=bagLayout().preview,appearance=this.app.equipmentAppearance?.(this.selectedMemberId),snapshot=this.app.equipmentPreview?.(this.selectedMemberId);
+    if(appearance&&CharacterPreview.available(this.scene,appearance,snapshot)){
       const character=this.bagPortrait??(this.bagPortrait=new CharacterPreview(this.scene));
-      character.show(v,appearance,preview,parent);
+      character.show(v,appearance,preview,parent,snapshot);
     }else{
       const art=this.memberArt(),panels=this.app.menuPanels;
       v.imageContain(this.selectedMemberId==='player'?panels.classes[member.classId].preview:art.partyIcon,preview.x,preview.y,preview.width,preview.height,parent);

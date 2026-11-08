@@ -110,6 +110,7 @@ export interface StoryUIContext {
   captureSaveWorld?: () => SaveWorldResult;
   changeEquipment?: (entry: string | undefined, slot: EquipmentSlot, signal?: AbortSignal, memberId?:string) => Promise<string>;
   equipmentAppearance?:(memberId:string)=>import('../domain/content.ts').ActorDefinition|undefined;
+  equipmentPreview?:(memberId:string)=>string|undefined;
   readonly battleCatalog: BattleCatalog;
   /**
    * 属性页读取当前战斗属性：把常驻被动、Buff 和临时属性一起叠到基础值上。

@@ -124,11 +124,16 @@ test('preview preparation composes only the requested clip',async t=>{
   assert.equal(run.snapshots.length,1,'单动作预览只生成自己的快照');
   run.finish(0);
   const preview=await pending;
+  assert.equal(run.wardrobe.preview,undefined,'未激活的外观不作为当前预览');
+  run.wardrobe.activate(preview);
+  assert.equal(run.wardrobe.preview,preview.preview,'预览跟随已激活的外观');
   assert.deepEqual(Object.keys(preview.actor.clips),['idle-south'],'预览外观只合成 idle-south');
   assert.equal(run.textures.size,1);
   const fullPending=run.prepare();
   run.finish(1);
   const full=await fullPending;
+  run.wardrobe.activate(full);
+  assert.equal(run.wardrobe.preview,full.preview);
   assert.deepEqual(Object.keys(full.actor.clips).sort(),['attack-north','idle-south'],'缺省仍合成整套动作');
   assert.equal(run.textures.size,3);
   assert.notEqual(await run.prepare({clipNames:['idle-south']}),full,'单动作与整套外观分开缓存');

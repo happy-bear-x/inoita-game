@@ -841,6 +841,7 @@ export class WorldScene extends Phaser.Scene {
     }
   }
   equipmentAppearance(id:string):ActorDefinition|undefined{return id==='player'?this.player?.actor:this.companionOutfits.get(id)?.actor;}
+  equipmentPreview(id:string):string|undefined{return id==='player'?this.wardrobe?.preview:this.companionOutfits.get(id)?.preview;}
   createActor(entity: EntityPlacement): Character {
     const actor = entity.id === 'player' ? this.equippedActor ?? this.app.session.character?.appearance ?? this.app.world.actors[this.app.session.storyWorld.actorAppearance(entity.actor)] : this.app.world.actors[this.app.session.storyWorld.actorAppearance(entity.actor)];
     const character: Character = { ...createCharacter(this, actor, entity), marker: null };

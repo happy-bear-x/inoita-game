@@ -127,6 +127,25 @@ test('character preview reuses source pixels, follows its target box and release
   preview.destroy();assert(!image.active);
 });
 
+test('dynamic outfit preview uses the saved first frame instead of the GPU texture source',t=>{
+  const f=fixture();t.after(f.cleanup);
+  const texture={type:'DynamicTexture',getSourceImage:()=>{throw new Error('GPU texture is not a DOM image');}};
+  Object.assign(f.scene,{textures:{exists:()=>true,get:()=>texture}});
+  const actor={clips:{'idle-south':{frameWidth:40,frameHeight:80,originX:.5,originY:1,mirrorX:false,layers:[{key:'outfit',blend:'normal'}]}}} as unknown as ActorDefinition;
+  assert.equal(CharacterPreview.available(f.scene,actor),false,'缺少可显示的首帧时保留备用图');
+  assert.equal(CharacterPreview.available(f.scene,actor,'data:image/png;base64,first'),true);
+  const preview=new CharacterPreview(f.scene);
+  preview.show(f.surface,actor,{x:0,y:0,width:80,height:160},f.surface.root,'data:image/png;base64,first');
+  const image=f.surface.root.list.at(-1)!;
+  const picture=(image.element as unknown as MenuElement).children[0];
+  assert.equal(picture.src,'data:image/png;base64,first');
+  assert.deepEqual([image.x,image.y,image.scaleX],[40,160,2]);
+  preview.show(f.surface,actor,{x:0,y:0,width:80,height:160},f.surface.root,'data:image/png;base64,second');
+  assert(!image.active,'换装后的新首帧替换旧图');
+  assert.equal(((f.surface.root.list.at(-1)!.element as unknown as MenuElement).children[0]).src,'data:image/png;base64,second');
+  preview.destroy();
+});
+
 test('menu preloads share caller cancellation and release the retained DOM images',async t=>{
   const f=fixture();t.after(f.cleanup);const request=new AbortController();let signal:AbortSignal|undefined,released=0;
   t.mock.method(domAssets,'preloadFiles',async(_files:readonly string[],input:AbortSignal)=>{signal=input;input.throwIfAborted();return {release:()=>released++};});
