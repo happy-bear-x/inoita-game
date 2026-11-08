@@ -90,6 +90,8 @@ export class EnemyController {
   private threatCombatActive=false;
   private accumulator=0;
   private clock=0;
+  /** 上一次决策与这一次之间实际过了多久；慢拍时用于补齐待机计时。 */
+  private elapsedMs=LOGIC_FRAME_MS;
   private nextPathAt=0;
   private path: Point[]=[];
   private destination?: Point;
@@ -161,10 +163,16 @@ export class EnemyController {
     this.accumulator+=deltaMs;
     while(this.accumulator>=LOGIC_FRAME_MS){this.accumulator-=LOGIC_FRAME_MS;this.step();}
   }
-  /** 宿主在同一共有帧依次调用所有角色，再推进共有时间。 */
-  step():void {
+  /** 宿主在同一共有帧依次调用所有角色，再推进共有时间；传入 nowMs 时按真实间隔补齐。 */
+  step(nowMs?:number):void {
     if(this.disposed||this.port.isPaused?.())return;
-    this.clock+=LOGIC_FRAME_MS;this.tick();
+    if(nowMs===undefined){this.elapsedMs=LOGIC_FRAME_MS;this.clock+=LOGIC_FRAME_MS;}
+    else {
+      // 刚生成的敌人没有历史时钟，按一帧算，避免第一次慢拍就跳过整个待机周期。
+      this.elapsedMs=this.clock===0?LOGIC_FRAME_MS:Math.min(LOGIC_FRAME_MS*ENEMY_IDLE_THINK_FRAMES,Math.max(0,nowMs-this.clock));
+      this.clock=nowMs;
+    }
+    this.tick();
   }
   onContact(event:AttackContact):void{
     if(this.port.threat){
@@ -518,7 +526,7 @@ export class EnemyController {
       if(this.nextWaypoint()&&this.clock-this.lastProgressAt<REPATH_INTERVAL_MS){this.port.followPath(this.nextWaypoint);return;}
       this.wanderDestination=undefined;this.path=[];this.state='idle';this.idleElapsed=0;this.port.stop();return;
     }
-    this.state='idle';this.port.stop();this.idleElapsed+=LOGIC_FRAME_MS;
+    this.state='idle';this.port.stop();this.idleElapsed+=this.elapsedMs;
     if(this.idleElapsed<config.idleDurationMs)return;
     this.idleElapsed=0;
     const move=Math.floor(this.random()*100),turn=Math.floor(this.random()*100);

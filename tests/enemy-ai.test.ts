@@ -301,6 +301,15 @@ test('a moving wanderer stops when its route is blocked and cancellation clears 
   run.ai.cancel();assert.equal(next?.(),undefined);run.ai.dispose();assert.equal(next?.(),undefined);
 });
 
+test('a slow-ticked enemy advances its clock to the shared frame time',()=>{
+  const run=wandering([0,.99,.99,.99]);
+  run.ai.step(60);
+  assert.equal(run.ai.snapshot().state,'idle','第一次慢拍只按一帧补，不跳过待机周期');
+  run.ai.step(360);
+  assert.equal(run.ai.captureState().clock,360);
+  assert.equal(run.ai.snapshot().state,'wandering','300 毫秒足够走完一次待机周期');
+});
+
 test('idle and wandering enemies need no full decision until contact or a map-wide boss',()=>{
   const idle=setup({aggression:'passive'});idle.advance();
   assert.equal(idle.ai.needsFrame(),false);

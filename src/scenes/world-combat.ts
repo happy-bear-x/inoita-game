@@ -1867,10 +1867,8 @@ captureStoryActors():SceneActorState[] {
   }
   private syncCombatResourceLimits(id:string):void {
     const member=this.memberOf(id);if(!member)return;
-    const inputs=this.resourceCapacityInputs(id);if(!inputs)return;
-    member.setCombatResourceLimits(
-      this.conditions.attribute(id,'maxHealth',inputs.base.maxHealth,inputs.passives),
-      this.conditions.attribute(id,'maxMana',inputs.base.maxMana,inputs.passives));
+    const capacities=this.readResourceCapacities(id);
+    member.setCombatResourceLimits(capacities.maxHealth,capacities.maxMana);
   }
   private applyStateConsequences(id:string,states:readonly BattleStateKey[]):void {
     if(!states.some(state=>state==='immobilized'||state==='stealthed')){this.interruptDisabled(id);return;}
@@ -1934,11 +1932,16 @@ captureStoryActors():SceneActorState[] {
   }
   private updateEnemies(frame:number): void {
     this.enemiesRunning = true;
+    const nowMs=frame*LOGIC_FRAME_MS;
+    const idleThink=frame%ENEMY_IDLE_THINK_FRAMES===0;
     for (const enemy of this.arena) {
       if(this.pendingDefeats.has(enemy.key))continue;
-      if(!(enemy.controller instanceof FriendlySummonController))enemy.controller?.step();
+      const controller=enemy.controller;
+      if(!controller||controller instanceof FriendlySummonController)continue;
+      if(!idleThink&&!controller.needsFrame())continue;
+      controller.step(nowMs);
     }
-    if(frame%ENEMY_IDLE_THINK_FRAMES===0)this.observeSummonCombat();
+    if(idleThink)this.observeSummonCombat();
     for(const enemy of this.arena)if(!this.pendingDefeats.has(enemy.key)&&enemy.controller instanceof FriendlySummonController)enemy.controller.step();
   }
 
