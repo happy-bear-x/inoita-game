@@ -67,7 +67,7 @@ export class DomActionControls extends DomComponent {
     const face = new DomComponent(button).rect({ x: width / 2, y: height / 2, width: 0, height: 0 });
     for (const file of files) this.image(face, file, width, -width / 2, -height / 2, height);
     const icon = new DomImage(face);
-    const cooldown = new DomCooldown(face);
+    const cooldown = new DomCooldown(icon, 'top-left');
     this.image(face, pressed, width, -width / 2, -height / 2, height).element.classList.add('dom-control-pressed');
     const badge = new DomComponent(face).rect({ x: 32, y: 23, width: 0, height: 0 });
     this.image(badge, this.skin['quantity-badge'], 38, -19, -20, 40);

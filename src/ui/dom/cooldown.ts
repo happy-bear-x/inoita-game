@@ -8,11 +8,13 @@ export class DomCooldown extends DomComponent {
   private readonly front: SVGPathElement;
   private readonly ring: SVGCircleElement;
   private readonly label: HTMLElement;
+  private readonly anchor: 'center' | 'top-left';
   private key = '';
-  constructor(parent: DomComponent | HTMLElement) {
+  constructor(parent: DomComponent | HTMLElement, anchor: 'center' | 'top-left' = 'center') {
     super(parent);
+    this.anchor = anchor;
     this.svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    Object.assign(this.svg.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', overflow: 'visible' });
+    Object.assign(this.svg.style, { position: 'absolute', left: '0', top: '0', width: '100%', height: '100%', overflow: 'visible' });
     this.fill = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     this.fill.setAttribute('fill', 'rgba(0,0,0,.55)');
     this.front = document.createElementNS('http://www.w3.org/2000/svg', 'path');
@@ -33,7 +35,8 @@ export class DomCooldown extends DomComponent {
     if (key === this.key) return;
     this.key = key; this.visible(active);
     if (!active) return;
-    this.rect({ x: -radius, y: -radius, width: radius * 2, height: radius * 2 });
+    const offset = this.anchor === 'center' ? -radius : 0;
+    this.rect({ x: offset, y: offset, width: radius * 2, height: radius * 2 });
     this.svg.setAttribute('viewBox', `${-radius} ${-radius} ${radius * 2} ${radius * 2}`);
     this.ring.setAttribute('r', String(Math.max(0, radius - 1)));
     const angle = -Math.PI / 2 + (1 - remaining) * Math.PI * 2, x = Math.cos(angle) * radius, y = Math.sin(angle) * radius;

@@ -149,13 +149,17 @@ test('wheel cooldown stays aligned with the current shortcut icon when its size 
     const skin = Object.fromEntries(CONTROL_PARTS.map(part => [part, `${part}.png`])) as ControlSkin;
     const errors: unknown[] = [];
     const wheel = new DomActionControls(h.parent, skin, { attack: () => {}, skill: () => {}, item: () => {}, swap: () => {} }, error => errors.push(error), assets);
-    wheel.layout({ width: 1200, height: 700, insets: { left: 12, right: 8, top: 0, bottom: 6 } });
+    wheel.layout({ width: 1200, height: 700, insets: { left: 12, right: 8, top: 0, bottom: 6 } }, { 'slot-0': { x: .7, y: .5, scale: 1.4 } });
     const face = (wheel.element as unknown as Element).children[1].children[1];
-    const icon = face.children[2], overlay = face.children[3];
+    const icon = face.children[2], overlay = icon.children[1];
     const aligned = (size: string) => {
       assert.equal(overlay.hidden, false);
-      for (const property of ['left', 'top', 'width', 'height']) assert.equal(overlay.style[property], icon.style[property], property);
+      assert.equal(overlay.style.left, '0px'); assert.equal(overlay.style.top, '0px');
+      for (const property of ['width', 'height']) assert.equal(overlay.style[property], icon.style[property], property);
       assert.equal(overlay.style.width, size);
+      const radius = Number.parseFloat(size) / 2, svg = overlay.children[0];
+      assert.equal(svg.style.left, '0'); assert.equal(svg.style.top, '0');
+      assert.equal(svg.getAttribute('viewBox'), `${-radius} ${-radius} ${radius * 2} ${radius * 2}`);
     };
     const cooldown = { remainingMs: 500, durationMs: 1000 };
     wheel.setShortcutPage([{ entry: { kind: 'item', id: 'potion' }, icon: 'potion.png', quantity: 2, enabled: true, cooldown }]);
