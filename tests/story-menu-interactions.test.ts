@@ -2085,6 +2085,21 @@ test('bag chrome is reused across rerenders and replaced when the page changes',
   assert(chrome.list.length>0,'回到背包页重新建静态图框');
 });
 
+test('late member previews do not rebuild the bag or replace the current member', async t => {
+  const f=fixture();t.after(f.cleanup);
+  const first=f.recruit('warlock'),second=f.recruit('priest');
+  const requests=new Map<string,()=>void>();
+  f.app.preparePartyMember=id=>new Promise<void>(resolve=>requests.set(id,resolve));
+  f.select(first.id);f.select(second.id);
+  const body=f.internals.body,children=[...body.root.list],button=f.scene.button('整理');
+  requests.get(first.id)!();await Promise.resolve();await Promise.resolve();
+  assert.equal(f.internals.selectedMemberId,second.id);
+  assert.deepEqual(body.root.list,children,'旧请求完成时保留当前页面节点');
+  requests.get(second.id)!();await Promise.resolve();await Promise.resolve();
+  assert.equal(f.scene.button('整理'),button,'外观就绪只更新人物预览');
+  assert.deepEqual(body.root.list,children,'背包正文节点不重建');
+});
+
 test('using a mercenary emblem prepares only the new member preview', t => {
   const f=fixture();t.after(f.cleanup);
   f.menu.show('party');

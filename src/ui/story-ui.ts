@@ -155,6 +155,7 @@ export class StoryUI {
    * 翻物品、点格子引起的重画直接搬回来用——每次重建一批精灵正是背包卡顿的一大来源。
    */
   private bagPortrait?:CharacterPreview;
+  private bagPreview?:UiNode;
   private scrollOffsets=new Map<string,number>();private scrollNames=new Map<string,ScrollArea>();
   private drag?:{entry:string;pointer:number;x:number;y:number;timer:Phaser.Time.TimerEvent;active:boolean;ghost?:UiImage};private suppressClick=false;
   private drops:{object:UiNode|UiImage;entry?:string;slot?:EquipmentSlot;view?:InventoryView;cell?:number;craft?:boolean}[]=[];
@@ -1397,7 +1398,7 @@ export class StoryUI {
   }
   private renderBag():void{
     this.bagTextSpecs=[];this.bagDetailTextSpecs=[];this.bagDetailOpen=false;
-    const v=this.body!,bag=this.session!.bag,panels=this.app.menuPanels,member=this.member()!,equipment=bag.equipmentFor(this.selectedMemberId),art=this.memberArt();
+    const v=this.body!,bag=this.session!.bag,panels=this.app.menuPanels,member=this.member()!,equipment=bag.equipmentFor(this.selectedMemberId);
     // 两栏背景照原版：`UIEquip_DrawEquipBackground @0x14a7cc` 给左栏画图框加四块黑色 60% 的区域
     // （`GRPX_FillRectAlpha(..., 0xff000000, 0x3c)`），中间 (129,110,157,157) 那块留空放人物预览；
     // 右栏只有图框——`UIEquip_DrawInvenBackground @0x14aed0` 不铺底，格子直接浮在背景上。
@@ -1425,14 +1426,8 @@ export class StoryUI {
     const panelCoversBag=(describing||showingResult)&&this.descSide==='right';
     if(!covered){
       if(!describing)this.selectedItem=undefined;
-      const preview=bagLayout().preview,appearance=this.app.equipmentAppearance?.(this.selectedMemberId),clip=appearance?.clips['idle-south'];
-      if(appearance&&this.scene&&clip?.layers.every(layer=>this.scene!.textures.exists(layer.key))){
-        // 合成立绘按预览洞缩放到刚好放得下、并在洞里居中：原版这个洞是 157×157（左框局部 129,110），
-        // 立绘必须落在洞内。CharacterPreview 同一外观只合成一次：点格子、翻物品重画时不重建精灵。
-        const character=this.bagPortrait??(this.bagPortrait=new CharacterPreview(this.scene));
-        character.show(v,appearance,preview);
-      }
-      else v.imageCover(this.selectedMemberId==='player'?panels.classes[member.classId].preview:art.partyIcon,preview.x,preview.y,preview.width,preview.height);
+      this.bagPreview=v.container(0,0);
+      this.renderBagPreview();
       for(const slot of panels.equipmentSlots){const entry=equipment[slot.id as EquipmentSlot],instance=entry?bag.get(entry):undefined,item=instance?bag.catalog.items[instance.item]:undefined;const button=v.button('',85+slot.x,slot.y,74,74,()=>{if(!entry)return;this.selectItem(entry,'right');},{image:slotFrameImage(this.app,this.session!,instance)});v.image(item?.icon??slot.emptyIcon,item?5:13,item?5:13,item?64:48,item?64:48,button);button.setData('label',slot.name);this.drops.push({object:button,entry,slot:slot.id as EquipmentSlot});}
       // 等级／职业行：`UIEquip_DrawEquip` 在左框内 (46,368) 画 323 宽的文本底板，文字居中于它、
       // 颜色 #e2cb9e、纵向上沿在底板顶边下 7 像素（`GRPX_DrawStringWithFont(..., y+375, 居中)`）。
@@ -1834,8 +1829,23 @@ export class StoryUI {
     if(this.requestAllocationExit(()=>this.selectMember(id,page)))return;
     this.cancelOperation();this.selectedMemberId=id;this.selectedItem=undefined;this.skill=undefined;this.skillSection='directory';this.show(page);
     const signal=this.request.signal;
-    void this.app.preparePartyMember?.(id,signal).then(()=>{if(!signal.aborted&&this.selectedMemberId===id)this.render();})
+    void this.app.preparePartyMember?.(id,signal).then(()=>{
+      if(!signal.aborted&&this.open&&this.page==='bag'&&this.selectedMemberId===id)this.renderBagPreview();
+    })
       .catch(error=>{if(!signal.aborted){this.notice=(error as Error).message;this.render();}});
+  }
+  private renderBagPreview():void{
+    const v=this.body, parent=this.bagPreview, member=this.member();
+    if(!v||!parent?.active||!member||!this.scene)return;
+    this.bagPortrait?.detach();parent.removeAll(true);
+    const preview=bagLayout().preview,appearance=this.app.equipmentAppearance?.(this.selectedMemberId),clip=appearance?.clips['idle-south'];
+    if(appearance&&clip?.layers.every(layer=>this.scene!.textures.exists(layer.key))){
+      const character=this.bagPortrait??(this.bagPortrait=new CharacterPreview(this.scene));
+      character.show(v,appearance,preview,parent);
+    }else{
+      const art=this.memberArt(),panels=this.app.menuPanels;
+      v.imageCover(this.selectedMemberId==='player'?panels.classes[member.classId].preview:art.partyIcon,preview.x,preview.y,preview.width,preview.height,parent);
+    }
   }
   private action(action:()=>void):void{if(this.busy)return;this.busy=true;try{action();}catch(error){this.notice=(error as Error).message;}finally{this.busy=false;}if(this.open)this.render();}
   private renderParty():void{
