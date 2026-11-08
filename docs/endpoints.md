@@ -37,14 +37,15 @@ Android/热更新壳在页面脚本之前注入：
 ```js
 globalThis.__inoitaEndpoints = {
   version: 1,
-  cloudBase: 'https://catgo.online:4002/__cloud',
-  diagnosticsReport: 'https://catgo.online:4002/__diagnostics/report'
+  cloudBase: 'http://127.0.0.1:47653/__cloud',
+  diagnosticsReport: 'http://127.0.0.1:47653/__diagnostics/report'
 };
 ```
 
-- 必须在 `diagnostics.js` 和游戏模块运行前注入。Android 用 document-start，旧 WebView 在 `onPageStarted` 补一次。
+- APK 内由 `LocalAssetServer` 把 `/__native/bootstrap.js` 插到 `index.html` 的 `<head>` 最前面；它必须在 `diagnostics.js` 和游戏模块之前运行。网页版没有这个脚本，继续走同源。
+- APK 的 `cloudBase` 和 `diagnosticsReport` 指向本地服务；本地服务再把 `/__cloud`、`/__diagnostics/report` 代理到 `config/endpoints.json` 派生出的 HTTPS 地址。页面不写域名，也不受 CORS 影响。
 - 页面唯一读取这个对象，不再读取其他地址全局变量。
-- 对象为空或字段非法时按字段降级：网页走同源；`appassets` 页面没有显式云地址时显示“云存档暂不可用”，不向本地页面源发请求。
+- 对象为空或字段非法时按字段降级：网页走同源；APK 本地页面没有显式云地址时显示“云存档暂不可用”，不向本地页面源发请求。
 - 云存档地址拒绝非本机 HTTP；调试机的 `localhost/127.0.0.1` HTTP 可以。诊断地址同样规则；生产使用 HTTPS。
 
 `src/application/endpoints.ts` 是网页侧的解析入口：
@@ -67,7 +68,7 @@ globalThis.__inoitaEndpoints = {
 - 热更新检查地址从 `androidRelease.serverBaseUrl` 派生：正式 `/update/latest.json`，自测 `/update/latest-staging.json`；清单和签名从同一根地址取。
 - 热更新下载由原生 `HttpURLConnection` 发起，不受浏览器同源限制，不需要 CORS。云存档和诊断仍按现有规则。
 - 热更新包替换后仍由宿主注入同一份地址；配置版本和游戏包版本分开。
-- 热更新的产物格式、签名校验和启动回退见 [热更新（Android WebView）](live-update.md)。
+- 热更新的产物格式、签名校验和启动回退见 [热更新（Android 自带 Chromium）](live-update.md)。
 
 ## 部署
 

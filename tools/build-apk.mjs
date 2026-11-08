@@ -25,12 +25,14 @@ const apkOut = path.join(root, 'apk-out');
 const home = os.homedir();
 const sdk = path.resolve(process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT || path.join(home, '.local/android-sdk'));
 const javaHome = resolveJavaHome();
+assertJava25(javaHome);
 const skipWeb = process.argv.includes('--skip-web');
 
-const BUILD_TOOLS = '34.0.0';
-const PLATFORM = 'android-34';
+const BUILD_TOOLS = '37.0.0';
+const PLATFORM = 'android-37.0';
+const GRADLE_VERSION = '9.7.1';
 const CMDLINE_TOOLS_URL = 'https://dl.google.com/android/repository/commandlinetools-linux-16111833_latest.zip';
-const GRADLE_URL = 'https://services.gradle.org/distributions/gradle-8.7-bin.zip';
+const GRADLE_URL = `https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip`;
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -53,12 +55,22 @@ function output(command, args, options = {}) {
 }
 
 function resolveJavaHome() {
-  if (process.env.JAVA_HOME && fs.existsSync(path.join(process.env.JAVA_HOME, 'bin/java'))) {
-    return process.env.JAVA_HOME;
+  // Cefrium 0.17.1 需要 JDK 25；优先用仓库外的本机安装，其次才看 JAVA_HOME。
+  const candidates = [path.join(home, '.local', 'jdk-25'), process.env.JAVA_HOME].filter(Boolean);
+  for (const candidate of candidates) {
+    if (fs.existsSync(path.join(candidate, 'bin/java'))) return candidate;
   }
   const javac = output('bash', ['-c', 'command -v javac']).split('\n').filter(Boolean).pop() || '';
   if (javac) return path.resolve(path.dirname(javac), '..');
-  throw new Error('找不到 JDK 17，请设置 JAVA_HOME');
+  throw new Error('找不到 JDK 25，请设置 JAVA_HOME 或安装到 ~/.local/jdk-25');
+}
+
+function assertJava25(javaHome) {
+  const result = spawnSync(path.join(javaHome, 'bin', 'java'), ['-version'], { encoding: 'utf8' });
+  const major = Number(/version "(\d+)/.exec(`${result.stdout || ''}${result.stderr || ''}`)?.[1] || 0);
+  if (major < 25) {
+    throw new Error(`Cefrium 需要 JDK 25 或更高，当前 ${javaHome} 是 JDK ${major || '未知'}`);
+  }
 }
 
 function has(file) {
@@ -105,9 +117,9 @@ function ensureGradleWrapper() {
     fs.chmodSync(gradlew, 0o755);
     return gradlew;
   }
-  const gradle = path.join(home, '.local', 'gradle-8.7', 'bin', 'gradle');
+  const gradle = path.join(home, '.local', `gradle-${GRADLE_VERSION}`, 'bin', 'gradle');
   if (!has(gradle)) {
-    console.log('[apk] 下载 Gradle 8.7');
+    console.log(`[apk] 下载 Gradle ${GRADLE_VERSION}`);
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'inoita-gradle-'));
     const zip = path.join(tmp, 'gradle.zip');
     run('curl', ['-fL', '--retry', '3', '-o', zip, GRADLE_URL]);
@@ -115,7 +127,7 @@ function ensureGradleWrapper() {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
   console.log('[apk] 生成 Gradle wrapper');
-  run(gradle, ['wrapper', '--gradle-version', '8.7', '--distribution-type', 'bin', '--no-daemon'], {
+  run(gradle, ['wrapper', '--gradle-version', GRADLE_VERSION, '--distribution-type', 'bin', '--no-daemon'], {
     cwd: androidDir, env: { JAVA_HOME: javaHome, ANDROID_HOME: sdk, ANDROID_SDK_ROOT: sdk },
   });
   fs.chmodSync(gradlew, 0o755);

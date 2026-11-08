@@ -3,6 +3,7 @@ import groovy.json.JsonSlurper
 
 plugins {
     id 'com.android.application'
+    id 'com.cefrium'
 }
 
 // 服务地址只在 config/endpoints.json 维护，Gradle、Java 和页面都不写域名。
@@ -26,14 +27,20 @@ if (hasKeystore) {
 
 android {
     namespace 'io.github.sunflower9264.inoita'
-    compileSdk 34
+    // Cefrium 0.18.0 内置 Chromium 156；编译与打包必须用 Android 37 平台。
+    compileSdk 37
 
     defaultConfig {
         applicationId 'io.github.sunflower9264.inoita'
-        minSdk 26
+        // Cefrium 最低 Android 10。旧的 WebView 壳是 26，换引擎后不再支持 8/9。
+        minSdk 29
         targetSdk 34
-        versionCode 6
-        versionName '1.0.2'
+        versionCode 9
+        versionName '2.0.0'
+        ndk {
+            // 只发 arm64；Cefrium 的 x86_64 构建只用于模拟器。
+            abiFilters 'arm64-v8a'
+        }
         // 诊断、云存档和热更都从同一个服务根地址派生；改服务器地址只改 config/endpoints.json。
         buildConfigField 'String', 'DIAGNOSTICS_URL',
                 JsonOutput.toJson(releaseServerBaseUrl + '/__diagnostics/report')
@@ -42,8 +49,8 @@ android {
         // 热更源：正式 latest.json，自测包（-PupdateChannel=staging）用 latest-staging.json。
         buildConfigField 'String', 'UPDATE_BASE_URL', JsonOutput.toJson(releaseServerBaseUrl)
         buildConfigField 'String', 'UPDATE_CHANNEL', JsonOutput.toJson(updateChannel)
-        // 改 JS 桥或更新契约时手动加一；服务端用 minShell 拦住不兼容的旧壳。
-        buildConfigField 'int', 'SHELL_VERSION', '1'
+        // 换引擎、换 JS 桥时加一；服务端用 minShell 拦住不兼容的旧壳。
+        buildConfigField 'int', 'SHELL_VERSION', '2'
         buildConfigField 'String', 'UPDATE_PUBLIC_KEY', JsonOutput.toJson(updatePublicKey)
     }
 
@@ -84,6 +91,13 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
+    packaging {
+        jniLibs {
+            // Chromium 的原生库必须解压到磁盘后再加载。
+            useLegacyPackaging = true
+        }
+    }
+
     androidResources {
         // PNG 已经在资源管线外处理过，aapt2 不再重新压缩。
         cruncherEnabled = false
@@ -102,6 +116,15 @@ android {
 }
 
 dependencies {
+    // 把 Chromium 156 打进 APK，页面不再依赖设备自带的 WebView。
+    implementation 'com.cefrium:cefrium-sdk:0.18.0'
+    // 只在一次性存档迁移时用系统 WebView 读取旧地址的 localStorage。
     implementation 'androidx.webkit:webkit:1.11.0'
-    implementation 'androidx.core:core:1.13.1'
+    implementation 'androidx.core:core:1.16.0'
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.mediarouter:mediarouter:1.7.0'
+    implementation 'androidx.browser:browser:1.8.0'
+    implementation 'org.jetbrains.kotlin:kotlin-stdlib:1.8.22'
+    // 本地资源服务：只监听 127.0.0.1，给页面送热更文件和原生端点。
+    implementation 'org.nanohttpd:nanohttpd:2.3.1'
 }

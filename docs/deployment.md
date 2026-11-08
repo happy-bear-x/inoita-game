@@ -47,4 +47,4 @@ npm run deploy     # typecheck + build + 核对 HTTPS 入口正在提供的版�
 
 内容回滚用 `git revert` 还原对应提交，再重新 `npm run deploy`。`dist/` 被 Git 忽略，不能靠 checkout 恢复；需要旧产物时，切到对应提交重新构建。
 
-Android 热更新客户端不支持降级。已经发出去的更新只能靠发布一个内容正确的新构建来撤回，不能把网站换回旧构建；详见 [热更新（Android WebView）](live-update.md)。
+Android 热更新客户端不支持降级。已经发出去的更新只能靠发布一个内容正确的新构建来撤回，不能把网站换回旧构建；详见 [热更新（Android 自带 Chromium）](live-update.md)。

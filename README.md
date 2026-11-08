@@ -52,7 +52,7 @@ public/             随游戏发布的静态资源
 tests/              单元测试与独立构建验收
 tools/              构建、校验、静态服务、APK 打包
 docs/               架构、剧情创作、部署、热更新、调试与诊断说明
-android/            Android WebView 壳（可选打包层）
+android/            Android 自带 Chromium 156 的壳（可选打包层）
 .agents/skills/     随仓库提供的 Phaser 4 开发技能
 ```
 
@@ -76,7 +76,7 @@ android/            Android WebView 壳（可选打包层）
 | 改音乐、环境音与音效 | [音频说明](docs/audio.md) → `public/content/audio.json` |
 | 调试游戏或任务 | [GM 调试模式](docs/debugging.md) |
 | 部署与缓存 | [打包服务与部署](docs/deployment.md) |
-| 安卓热更新与分发 | [热更新（Android WebView）](docs/live-update.md) |
+| 安卓热更新与分发 | [热更新（Android 自带 Chromium）](docs/live-update.md) |
 | 收集手机端报错 | [诊断说明](docs/diagnostics.md) |
 
 ## 界面与调试场景
@@ -107,9 +107,9 @@ GM 面板包含状态、人物、道具和剧情四个子页；浏览器里也�
 
 ## 打包 Android 安装包
 
-`npm run apk` 会把 `dist/` 打进 `android/` 提供的 WebView 壳。首次运行会自动下载 Android SDK 与 Gradle，并生成签名密钥到用户目录；`android/keystore.properties`、构建缓存和产物都不会进入仓库。
+`npm run apk` 会把 `dist/` 打进 `android/` 提供的 Cefrium 壳，APK 自带 Chromium 156，不再依赖设备 WebView。构建需要本机有 JDK 25，并使用 Gradle 9.7.1、AGP 9.4、Android SDK 37 和 build-tools 37.0.0；首次运行会自动下载 Android SDK 与 Gradle，并生成签名密钥到用户目录。`android/keystore.properties`、构建缓存和产物都不会进入仓库。当前 APK 约 293MB，只发 arm64-v8a。
 
-热更新在 `npm run build` 时生成 `dist/update/` 清单和签名。首次打包前运行 `npm run update:key`，私钥保存在 `~/.config/inoita/update-signing.pem`，必须单独备份；公钥 `android/update-public-key.txt` 随仓库提交。`npm run apk` 会把更新器一起打进安装包，之后改网页层代码或内容只需重新构建和部署，不再重发约 230MB 的 APK。细则见 [热更新（Android WebView）](docs/live-update.md)。
+热更新在 `npm run build` 时生成 `dist/update/` 清单和签名。首次打包前运行 `npm run update:key`，私钥保存在 `~/.config/inoita/update-signing.pem`，必须单独备份；公钥 `android/update-public-key.txt` 随仓库提交。`npm run apk` 会把更新器一起打进安装包，之后改网页层代码或内容只需重新构建和部署，不再重发约 293MB 的 APK。引擎/Chromium 版本升级仍然必须发 APK。细则见 [热更新（Android 自带 Chromium）](docs/live-update.md)。
 
 ## 特别感谢
 

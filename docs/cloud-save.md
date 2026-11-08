@@ -79,7 +79,7 @@
 - 最多同时跑 2 个 scrypt；认证接口按 IP 限流（登录 10 次/5 分钟，注册 3 次/小时）。
 - token 是 32 字节随机值，服务端只存 SHA-256 哈希；不接受超长或格式非法 token。
 - 续期在剩余 7 天内才换发新 token，旧 token 立即失效；90 天链上限防止 token 被无限续命。被盗 token 最多用到下一次续期，正主重新登录会让盗用者的 token 失效。
-- CORS 只放行同源和 `https://appassets.androidplatform.net`；其他来源返回 403。不使用 cookie，不使用 `*`。
+- CORS 只放行同源和 `https://appassets.androidplatform.net`；其他来源返回 403。不使用 cookie，不使用 `*`。2.0.0 的 APK 通过本地 `/__cloud` 代理发出请求，服务端看到的是原生请求、没有浏览器 Origin；这条 CORS 规则主要留给网页版和旧壳。
 - 不记录密码、token 或请求体。
 - 生产 4004 只监听 127.0.0.1，HTTPS 由 nginx 在 4002 终止；APK 的云地址必须是 HTTPS。
 
