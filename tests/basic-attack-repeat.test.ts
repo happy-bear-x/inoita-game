@@ -31,6 +31,7 @@ interface SceneHooks {
   interact():void;
   attackKey():void;
   startBasicAttack():void;
+  offensiveSkillCompleted(actorId:string):void;
   switchControlled(id:string):boolean;
   switchMember(direction:-1|1):void;
   autoAttack:BasicAttackRepeat;
@@ -69,6 +70,20 @@ test('the scene keeps a started attack going while the stick is at rest',()=>{
   combat.attackState='attacking';
   scene.update(0,72);
   assert.equal(attacks(),2,'动作没结束不插新的一击');
+});
+
+test('an offensive skill completion starts a basic attack and searches once when no target is selected',()=>{
+  const {scene,combat,calls}=sceneFixture();
+  combat.targetId=undefined;
+  scene.offensiveSkillCompleted('other');scene.update(0,16);
+  assert.equal(calls.filter(call=>call==='attack').length,0,'其他队员的技能不替当前角色启动普攻');
+  scene.offensiveSkillCompleted('player');scene.update(0,16);
+  assert.equal(calls.filter(call=>call==='attack').length,1,'第一次普攻允许按普攻规则搜索目标');
+  scene.update(0,16);
+  assert.equal(calls.filter(call=>call==='attack').length,1,'找不到目标不重复尝试');
+  assert.equal(scene.autoAttack.active,false);
+  combat.targetId='enemy';scene.offensiveSkillCompleted('player');scene.update(0,16);scene.update(0,16);
+  assert.equal(calls.filter(call=>call==='attack').length,3,'找到目标后继续普通连打');
 });
 
 test('the scene drops the repeat when the stick moves or the target is gone',()=>{

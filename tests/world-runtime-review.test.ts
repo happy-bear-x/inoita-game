@@ -9,6 +9,7 @@ import type { BattleCatalog } from '../src/domain/battle.ts';
 import { CombatController, type Combatant } from '../src/domain/combat.ts';
 import { PartyController, type PartyPort } from '../src/domain/party-ai.ts';
 import { resolveBasicAttack } from '../src/domain/basic-attack.ts';
+import { targetsEnemies } from '../src/domain/skill-action.ts';
 
 // These tests execute the scene adapters' coordination logic without a browser renderer.
 const phaser = registerHooks({resolve(specifier, context, next) {
@@ -19,6 +20,37 @@ const { StoryPresenter } = await import('../src/rendering/story-presenter.ts');
 const { WorldScene } = await import('../src/scenes/world-scene.ts');
 phaser.deregister();
 const battle=JSON.parse(readFileSync(new URL('../public/content/battle.json',import.meta.url),'utf8')) as BattleCatalog;
+
+test('manual hostile skills continue into basic attack only on completion and for the same controlled member',()=>{
+  for(const id of ['dark-strike','dark-attack','blood-curse','celestial-lightning'])assert.equal(targetsEnemies(battle.skills[id].action!),true,id);
+  for(const id of ['demon-s-shield','guardian-of-darkness','hell-s-pawn','prayer-of-recovery'])assert.equal(targetsEnemies(battle.skills[id].action!),false,id);
+  const calls:string[]=[],requests:any[]=[],callbacks:(()=>void)[]=[];
+  const hero={classId:'dark-knight',bag:{equipmentFor:()=>({}),equipmentItems:()=>({})}};
+  const host:any=Object.assign(Object.create(WorldCombat.prototype),{
+    scene:{canCombatControl:true,offensiveSkillCompleted:(id:string)=>calls.push(id)},closed:false,defeated:false,
+    app:{battleCatalog:battle,session:{combatTick:0,party:{controlledId:'player'},skills:{isEquipped:()=>true,draft:()=>({levels:{'dark-strike':1,'demon-s-shield':1}})}},
+      wardrobe:{defaults:{},equipment:{},stances:{'unarmed:empty':{}},skillStances:{},skills:{},attacks:{}},items:{items:{}}},
+    hero,memberOf:()=>hero,combat:{activeAction:()=>undefined},conditions:{canUseSkillShortcuts:()=>true,cannotAct:()=>false},
+    skillManaCost:()=>0,manualOffensiveSkills:new WeakMap(),controlRevision:1,
+    summonAwareness:{action(){}},visualOf:()=>({actor:{clips:{}},layers:[],container:{active:false}}),
+    combatRuntime:{request:(request:any)=>{requests.push(request);return {kind:'started'};},
+      play:(_action:any,_timing:any,_frame:any,complete:()=>void)=>{callbacks.push(complete);return()=>{};}}
+  });
+  const presenter={play:()=>()=>{}},caster={id:'player',team:'party',position:{x:0,y:0},bounds:{x:0,y:0,width:8,height:8}};
+  const start=(id:string)=>{host.attack(id);const skill=requests.at(-1).skill;host.playAction(presenter,{caster,skill,facing:'south',basicAttack:null},()=>{},()=>calls.push('finished'));};
+  start('dark-strike');assert.equal(calls.length,0,'未结束不触发普攻');callbacks.shift()!();
+  assert.deepEqual(calls,['finished','player']);
+  calls.length=0;start('demon-s-shield');callbacks.shift()!();assert.deepEqual(calls,['finished'],'辅助技能不触发普攻');
+  calls.length=0;start('dark-strike');host.controlRevision++;callbacks.shift()!();
+  assert.deepEqual(calls,['finished'],'切人后即使切回原角色也不自动接普攻');
+  calls.length=0;start('dark-strike');host.app.session.party.controlledId='ally';callbacks.shift()!();
+  assert.deepEqual(calls,['finished'],'技能完成时由其他成员操控则不接普攻');
+  calls.length=0;host.app.session.party.controlledId='player';
+  const skill=requests.at(-1).skill,runtime=new CombatRuntime(()=>0);
+  host.combatRuntime=runtime;
+  const cancel=host.playAction(presenter,{caster,skill,facing:'south',basicAttack:null},()=>{},()=>calls.push('finished'));
+  cancel();runtime.step(1);assert.deepEqual(calls,[],'取消动作不会触发结束后的普攻');
+});
 
 function partyAction(id:string,cooldowns:CombatCooldownStore) {
   const caster:Combatant={id,team:'party',position:{x:32,y:32},bounds:{x:-4,y:-4,width:8,height:8}};

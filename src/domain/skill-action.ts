@@ -21,6 +21,11 @@ export function actionCues(action: SkillAction) {
   return action.events.flatMap(event => event.kind === 'units' ? event.cues : []);
 }
 
+/** 攻击与削弱敌人的技能；自身、队友和召唤技能不算。 */
+export function targetsEnemies(action: SkillAction): boolean {
+  return actionCues(action).some(cue => ENEMY_TARGETS.includes(cue.target));
+}
+
 /** 这个动作引用到的全部特效名，收集资源和校验都用同一份遍历。 */
 export function skillEffectNames(action: SkillAction): string[] {
   if (action.effectNames !== undefined) return action.effectNames;

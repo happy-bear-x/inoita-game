@@ -1198,6 +1198,10 @@ export class WorldScene extends Phaser.Scene {
     this.autoAttack.engage();
     this.combat?.attack();
   }
+  /** 玩家主动施放的攻击技能结束后，站定时尝试接一次普攻。 */
+  offensiveSkillCompleted(actorId:string):void {
+    if(this.canControl&&this.combat?.controlledId===actorId)this.autoAttack.engageAfterSkill();
+  }
   /** 交互一次。返回假表示这一下没有命中任何可交互对象，调用方（攻击键）应改为普攻。 */
   interact(): boolean {
     if (!this.canControl) return false;

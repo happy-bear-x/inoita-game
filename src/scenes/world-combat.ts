@@ -72,7 +72,7 @@ import { disturbanceCandidate } from '../domain/disturbance.ts';
 import { planSummonSpot } from '../domain/skill-geometry.ts';
 import { scaledBuffEffect, summonLifetimeFrames, summonOwnerStats, withLifetimeFrames, type SummonStats } from '../domain/summon-stats.ts';
 import { faceTarget, resolveBasicAttack } from '../domain/basic-attack.ts';
-import { skillClipName, skillClips, skillPlaybackEvents, skillSoundNames, skillSummonNames } from '../domain/skill-action.ts';
+import { skillClipName, skillClips, skillPlaybackEvents, skillSoundNames, skillSummonNames, targetsEnemies } from '../domain/skill-action.ts';
 import { costumeRecipe, hasOffhandShield } from '../domain/wardrobe.ts';
 import type { ActorDefinition, ClipName, Facing } from '../domain/content.ts';
 import type { BattleCharacter } from '../domain/character-stats.ts';
@@ -159,6 +159,8 @@ const PATH_BUDGET_PER_RENDER_FRAME=512;
 
 /** 正式地图的战斗结算与角色表现装配。 */
 export class WorldCombat {
+  private readonly manualOffensiveSkills = new WeakMap<NonNullable<ActionPlayback['skill']>,number>();
+  private controlRevision=0;
   private actionDispatchers?:WeakMap<CombatPresenter,CombatActionDispatcher>;
   private partyDefeatWork?:Map<string,()=>void>;
   readonly scene:WorldScene;
@@ -929,7 +931,11 @@ captureStoryActors():SceneActorState[] {
     const name=action.skill?(action.skill.clips?.[action.facing]??skillClipName(action.skill.id,action.facing)):action.basicAttack?.clips[action.facing];
     const clip=name?visual.actor.clips[name as keyof typeof visual.actor.clips]:undefined;
     const clear=presenter.play(action),layers=visual.layers;
-    const cancel=this.runtime.play(action,{sourceFrames:clip?.frames??1,frameDurationMs:action.basicAttack?.frameDurationMs??LOGIC_FRAME_MS},frame,complete);
+    const manualRevision=action.skill?this.manualOffensiveSkills.get(action.skill):undefined;
+    const cancel=this.runtime.play(action,{sourceFrames:clip?.frames??1,frameDurationMs:action.basicAttack?.frameDurationMs??LOGIC_FRAME_MS},frame,()=>{
+      complete();
+      if(manualRevision!==undefined&&manualRevision===this.controlRevision&&this.controlledId===action.caster.id)this.scene.offensiveSkillCompleted(action.caster.id);
+    });
     return ()=>{
       cancel();clear();
       // 取消或收尾时直接接回待机，不再依赖后续帧的 afterMovement；
@@ -2280,6 +2286,7 @@ captureStoryActors():SceneActorState[] {
     this.feedback.cancelShake();
     this.combat=this.partyControllers.get(id);
     if(!this.combat&&id!=='player')return;
+    if(id!==this.syncedControlledId)this.controlRevision++;
     this.syncedControlledId=id;
     if(cancelActions){for(const ally of this.allies)ally.ai.cancel();this.heroAi?.cancel();}
     this.scene.syncControlledCharacter();
@@ -2522,7 +2529,9 @@ captureStoryActors():SceneActorState[] {
     if(key&&!level)return;
     const manaCost=key?this.skillManaCost(this.controlledId,key,level):undefined;
     const clips=this.controlledId==='player'||!key?undefined:skillClips(key);
-    this.runtime.request({actorId:this.controlledId,mode:action?'manual':'normal',skill:action?{id:key!,action,level,manaCost,clips}:undefined});
+    const requested=action?{id:key!,action,level,manaCost,clips}:undefined;
+    if(requested&&targetsEnemies(action!))this.manualOffensiveSkills.set(requested,this.controlRevision);
+    this.runtime.request({actorId:this.controlledId,mode:action?'manual':'normal',skill:requested});
   }
   cancelAttack(clearEffects=false):void{
     if(!clearEffects&&this.combatRuntime?.hasPendingBasicStrike(this.controlledId))return;
