@@ -200,6 +200,41 @@ test('a ready talk quest makes its delivery NPC the preferred neighbour', () => 
   assert.equal(nearId(scene), target.id, '同距离时优先任务对象');
 });
 
+test('a task NPC on the same tile beats a plain NPC with the same interaction priority', () => {
+  const rules: CampaignQuest = {
+    id: 'stacked-quest', title: '同格任务', description: '同格任务',
+    giver: 'monica-5a307cb2', giverCharacterId: 'npc-447',
+    guidance: { available: '接取', active: '进行中' }, completion: 'talk', goals: [],
+    progressText: '进行中', completeText: '完成'
+  };
+  const session = new Session({ ...campaign, quests: [rules], placements: [], questGroups: [], events: [] } as Campaign);
+  const plain: CampaignPlacement = { id: 'plain-monica', actor: 'monica-6ffc2d17', characterId: 'npc-480',
+    map: 'test-map', x: 0, y: 0, condition: { type: 'always', value: true } };
+  const quest: CampaignPlacement = { id: 'quest-monica', actor: 'monica-5a307cb2', characterId: 'npc-447',
+    map: 'test-map', x: 0, y: 0, condition: { type: 'always', value: true } };
+  const scene = sceneNearMany(session, [plain, quest], 0, 20);
+  assert.equal(session.status('stacked-quest'), 'available');
+  scene.updateInteractionTarget();
+  assert.equal(nearId(scene), 'quest-monica', '距离相同时任务 NPC 优先');
+});
+
+test('a closer plain NPC still beats a task NPC on the same tile', () => {
+  const rules: CampaignQuest = {
+    id: 'stacked-quest', title: '同格任务', description: '同格任务',
+    giver: 'monica-5a307cb2', giverCharacterId: 'npc-447',
+    guidance: { available: '接取', active: '进行中' }, completion: 'talk', goals: [],
+    progressText: '进行中', completeText: '完成'
+  };
+  const session = new Session({ ...campaign, quests: [rules], placements: [], questGroups: [], events: [] } as Campaign);
+  const plain: CampaignPlacement = { id: 'plain-monica', actor: 'monica-6ffc2d17', characterId: 'npc-480',
+    map: 'test-map', x: 0, y: 8, condition: { type: 'always', value: true } };
+  const quest: CampaignPlacement = { id: 'quest-monica', actor: 'monica-5a307cb2', characterId: 'npc-447',
+    map: 'test-map', x: 0, y: 0, condition: { type: 'always', value: true } };
+  const scene = sceneNearMany(session, [plain, quest], 0, 20);
+  scene.updateInteractionTarget();
+  assert.equal(nearId(scene), 'plain-monica', '更近的普通 NPC 仍然优先');
+});
+
 test('native quest 466 settles at its menu NPC rather than the different NPC in its detail table', async () => {
   const quest = campaign.quests.find(quest => quest.id === 'quest-466')!;
   assert.equal(quest.giver, undefined);

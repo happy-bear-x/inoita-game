@@ -1917,18 +1917,22 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
   /**
    * 一个对象能不能被选中交互：有功能（商店、宝箱、泉水、玩法服务），或者有话可说
    * （描述、闲话、摆放点声明的目标、任务发布者，以及某条进行中任务指着它）。
-   * 返回值兼作同坐标优先级：0 = 进行中任务的目标，1 = 其它可交互对象。
+   * 返回值兼作同坐标优先级：0 = 进行中任务的目标或待交付，1 = 头顶有任务标记，
+   * 2 = 其它可交互对象。
    * 原版任务目标与交付人可能摆在同一点（quest-103/106 的 npc-76 与 npc-364），
    * 目标没记满前必须选得中目标，记满后才轮到交付人。
    */
-  private interactionCandidate(character: Character): 0 | 1 | null {
+  private interactionCandidate(character: Character): 0 | 1 | 2 | null {
     const actor=character.actor, entity=character.entity;
     const slot=this.app.session.npcQuestSlot(entity.actor,entity.characterId);
+    // 0 表示这次交互会推进任务或交付；1 表示头顶有任务标记；2 表示普通可交互对象。
+    // 距离仍然优先，只有同距离时才比较这一档，避免同格的普通 NPC 抢走任务 NPC。
     if(this.app.session.canInteract(entity.actor,entity.id,entity.characterId)
       ||(slot&&this.app.session.status(slot.id)==='ready'))return 0;
+    if(this.app.session.markerActor(entity.actor,entity.characterId))return 1;
     if(actor.service||actor.chest||entity.spring||actor.description||entity.hint||entity.objective
-      ||this.app.shops?.shops[entity.actor])return 1;
-    return this.app.session.markerActor(entity.actor,entity.characterId)?1:null;
+      ||this.app.shops?.shops[entity.actor])return 2;
+    return null;
   }
   /** 挑出「身边的可交互对象」：原版 `PLAYER_DoCheckNearNPC` 用曼哈顿距离 24 px，最近的一个胜出。 */
   private updateInteractionTarget(): void {
@@ -1953,7 +1957,7 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     scan.x=x;scan.y=y;scan.revision=revision;scan.quest=quest;scan.story=story;
     scan.chests=chests;scan.legendary=legendary;scan.restore=restore;
     scan.performing=performing;scan.map=map;scan.owner=owner;
-    let nearest: Character | null = null, distance = Number.POSITIVE_INFINITY, rank = 2;
+    let nearest: Character | null = null, distance = Number.POSITIVE_INFINITY, rank = 3;
     for (const character of this.characters) {
       if (!character.container.visible) continue;
       if (this.chestOpened(character)) continue;

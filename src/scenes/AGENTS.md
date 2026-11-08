@@ -28,7 +28,7 @@ Phaser 场景层：驱动生命周期、转发输入，把 domain、rendering、
 - 小地图旁的帧率显示区分实际游戏更新次数和设置的帧率上限；实际值每秒统计，切换上限时同步更新显示。
 - 玩家主动释放的对敌技能完成后，由当前操控角色接普攻；技能被取消、施放失败或切到其他角色时不触发。
 - 击杀奖励结算、召唤生命周期和交互决策在 `src/domain/`：场景只收集输入、播放表现、决定落点并执行 domain 返回的动作/奖励清单。
-- `WorldScene.interact()` 把附近目标、任务槽和商店状态交给 `domain/interaction.ts` 的 `resolveInteraction`；选目标的 `updateInteractionTarget` 只按距离挑最近的一个，交互前场景把角色转向目标，朝向不参与能否交互的判定。
+- `WorldScene.interact()` 把附近目标、任务槽和商店状态交给 `domain/interaction.ts` 的 `resolveInteraction`；选目标的 `updateInteractionTarget` 先按距离挑最近的一个，距离相同时再比交互档位：推进任务目标或待交付为 0，头顶有任务标记为 1，普通可交互对象为 2。任务 NPC 不能因为同格普通 NPC 排在人物数组前面而失去交互。交互前场景把角色转向目标，朝向不参与能否交互的判定。
 - 有商店的 NPC 无论有没有招呼语，都算可交互目标；交互优先级仍由 `resolveInteraction` 决定。
 - 掉落落点用 `lootLanding` 避开地图进出口；不要把物品图标落在门洞上。
 - 舞台 `CREATE` 完成时始终交付 `onReady` 生命周期通知；等待画面的请求可独立取消，补画和收尾复用同一次启动。舞台衣柜准备接收画面取消信号，共用合成只在最后一个请求取消后中止。
