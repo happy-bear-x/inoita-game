@@ -35,7 +35,7 @@ android {
         // Cefrium 最低 Android 10。旧的 WebView 壳是 26，换引擎后不再支持 8/9。
         minSdk 29
         targetSdk 34
-        versionCode 9
+        versionCode 10
         versionName '2.0.0'
         ndk {
             // 只发 arm64；Cefrium 的 x86_64 构建只用于模拟器。
