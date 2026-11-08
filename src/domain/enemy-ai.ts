@@ -16,6 +16,8 @@ export interface EnemyPort extends CombatPort {
   followDistancePx?:number;
   focusTarget?():string|undefined;
   counterattack?():boolean;
+  /** 锁定目标时上报一次，供召唤物立刻知道这里开战了；目标清空后可再次上报。 */
+  engaged?(targetId:string):void;
   /** 当前生命与上限；用于原版释放条件的 HP 阈值判定。 */
   health?(id:string):{current:number;maximum:number}|undefined;
   navigationBounds(): GameRectangle;
@@ -88,6 +90,7 @@ export class EnemyController {
   private targetId?: string;
   private pendingReturn=false;
   private threatCombatActive=false;
+  private reportedEngagedId?:string;
   private accumulator=0;
   private clock=0;
   /** 上一次决策与这一次之间实际过了多久；慢拍时用于补齐待机计时。 */
@@ -173,6 +176,12 @@ export class EnemyController {
       this.clock=nowMs;
     }
     this.tick();
+    this.reportEngagement();
+  }
+  private reportEngagement():void {
+    if(this.targetId===this.reportedEngagedId)return;
+    this.reportedEngagedId=this.targetId;
+    if(this.targetId)this.port.engaged?.(this.targetId);
   }
   onContact(event:AttackContact):void{
     if(this.port.threat){
@@ -201,7 +210,7 @@ export class EnemyController {
     if(current!==targetId)return;
     this.heldSearch=undefined;
     if(reason==='inactive'&&!this.mapWide){this.port.threat?.clear();this.threatCombatActive=false;}
-    this.targetId=undefined;this.pendingReturn=false;
+    this.targetId=undefined;this.pendingReturn=false;this.reportedEngagedId=undefined;
     this.path=[];this.destination=undefined;this.search=undefined;this.progressPosition=undefined;this.nextPathAt=0;this.port.stop();
     this.state=this.combat?.actionState()==='attacking'?'attacking':'idle';
   }

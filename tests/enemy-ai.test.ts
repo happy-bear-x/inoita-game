@@ -310,6 +310,14 @@ test('a slow-ticked enemy advances its clock to the shared frame time',()=>{
   assert.equal(run.ai.snapshot().state,'wandering','300 毫秒足够走完一次待机周期');
 });
 
+test('engaging a target notifies the port once and can notify again after the target clears',()=>{
+  const run=setup();const engaged:string[]=[];run.port.engaged=id=>engaged.push(id);
+  run.ai.update(60);assert.deepEqual(engaged,['player']);
+  run.ai.update(120);assert.deepEqual(engaged,['player'],'同一目标不重复上报');
+  run.ai.targetRemoved(run.player.id);
+  run.ai.update(60);assert.deepEqual(engaged,['player','player'],'目标清空后重新接战要再报');
+});
+
 test('idle and wandering enemies need no full decision until contact or a map-wide boss',()=>{
   const idle=setup({aggression:'passive'});idle.advance();
   assert.equal(idle.ai.needsFrame(),false);

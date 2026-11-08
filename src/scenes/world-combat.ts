@@ -26,7 +26,7 @@ import {groundLootFor} from '../domain/ground-loot.ts';
 import {calculateEffectiveDefense} from '../domain/physical-hit.ts';
 import type { RecoveryResult } from '../domain/recovery-items.ts';
 import Phaser from 'phaser';
-import { LOGIC_FRAME_MS, enemySkills, skillManaCost, skillForMember, memberSkillGrowth, type ResolvedBasicAttack, type BattleBuffEffect, type SkillFeedbackEvent, type ActionDispatchDefinition, type EnemyDefinition, type EnemyPlayableSkill, type PlacedEnemy, type SkillAction, type CombatUnit, type SkillLoadout } from '../domain/battle.ts';
+import { LOGIC_FRAME_MS, enemySkills, skillManaCost, skillForMember, memberSkillGrowth, type ResolvedBasicAttack, type BattleBuffEffect, type SkillFeedbackEvent, type ActionDispatchDefinition, type EnemyDefinition, type EnemyPlayableSkill, type PlacedEnemy, type SkillAction, type SkillDefinition, type CombatUnit, type SkillLoadout } from '../domain/battle.ts';
 import { CombatController,canTargetCombatant,resolveCueTargets, type Combatant, type ActionPlayback, type AttackContact, type BasicAreaContact, type BasicAttackSelection, type SkillUnitHit, type SkillUnitStart } from '../domain/combat.ts';
 import type { PartyBuffSlot } from '../domain/party-buff-targets.ts';
 import { ENEMY_IDLE_THINK_FRAMES, EnemyController, type EnemyPort } from '../domain/enemy-ai.ts';
@@ -123,6 +123,9 @@ interface MapEnemy {
 }
 
 const TAP_FACINGS:readonly Facing[]=['north','south','east','west'];
+
+/** 观察名单只是兜底；真正的接战由 engaged 事件即时上报。 */
+const AWARENESS_SWEEP_FRAMES=16;
 
 /**
  * 点击敌人的命中矩形，按待机动作的显示范围取并集；原点在脚底，所以范围要减去锚点偏移。
@@ -609,6 +612,10 @@ captureStoryActors():SceneActorState[] {
           clear:()=>this.threat.clearOwner(enemy.key),
         },
         canFinishApproach:target=>!!placed.summonedBy&&!!this.memberOf(placed.summonedBy)||this.threat.has(enemy.key,target),
+        engaged:targetId=>{
+          const actor=this.combatant(enemy.key),target=this.combatant(targetId);
+          if(actor&&target)this.awareness.contact(actor,target,(this.app.session.combatTick??0)*LOGIC_FRAME_MS);
+        },
         actor: id => this.combatant(id), candidates: () => this.combatants(), partySlots:()=>this.partyBuffSlots(),
         isAlive:id=>this.isActorAlive(id),health:id=>this.actorHealth(id),
       rangeBonusUnits:key=>this.actorAttribute(key,'attackRangeBonusUnits'), facing: () => enemy.facing,
@@ -1728,7 +1735,10 @@ captureStoryActors():SceneActorState[] {
       shieldBlock:stats.shieldBlock,physicalResistance:stats.physicalResistance,magicResistance:stats.magicResistance});
   }
   skillManaCost(id:string,skillId:string,level:number|undefined):number|undefined {
-    const base=skillManaCost(skillForMember(this.app.battleCatalog,id,skillId),level);
+    return this.manaCostOf(skillForMember(this.app.battleCatalog,id,skillId),id,level);
+  }
+  private manaCostOf(skill:SkillDefinition|undefined,id:string,level:number|undefined):number|undefined {
+    const base=skillManaCost(skill,level);
     return base===undefined?undefined:calculateManaCost(base,this.actorAttribute(id,'manaCostRate'),this.actorAttribute(id,'manaCostReductionRate'));
   }
   private restoreMana(id:string,amount:number):void {
@@ -1941,7 +1951,7 @@ captureStoryActors():SceneActorState[] {
       if(!idleThink&&!controller.needsFrame())continue;
       controller.step(nowMs);
     }
-    if(idleThink)this.observeSummonCombat();
+    if(frame%AWARENESS_SWEEP_FRAMES===0)this.observeSummonCombat();
     for(const enemy of this.arena)if(!this.pendingDefeats.has(enemy.key)&&enemy.controller instanceof FriendlySummonController)enemy.controller.step();
   }
 
@@ -1985,16 +1995,26 @@ captureStoryActors():SceneActorState[] {
   }
   /** 快捷栏状态：起手资格对玩家入口与实际起手是同一判定，原版把失败结果显示成不可用。 */
   skillSlotAvailable(skillId:string):boolean {
-    const skill=skillForMember(this.app.battleCatalog,this.controlledId,skillId);
-    return !!skill?.action&&this.conditions.canUseSkillShortcuts(this.controlledId)
-      &&this.canSelectSkill(this.controlledId,{id:skillId,action:skill.action});
+    return this.skillAvailable(skillForMember(this.app.battleCatalog,this.controlledId,skillId),skillId);
   }
-  private canSelectSkill(id:string,skill:NonNullable<ActionPlayback['skill']>):boolean {
+  private skillAvailable(skill:SkillDefinition|undefined,skillId:string):boolean {
+    return !!skill?.action&&this.conditions.canUseSkillShortcuts(this.controlledId)
+      &&this.canSelectSkill(this.controlledId,{id:skillId,action:skill.action},skill.action);
+  }
+  /** 快捷栏一次拿到耗蓝与起手资格，省得同一格重复解析技能定义。 */
+  skillShortcutState(skillId:string,level:number|undefined):{cost:number;enabled:boolean} {
+    const skill=skillForMember(this.app.battleCatalog,this.controlledId,skillId);
+    return {cost:this.manaCostOf(skill,this.controlledId,level)??0,enabled:this.skillAvailable(skill,skillId)};
+  }
+  private canSelectSkill(id:string,skill:NonNullable<ActionPlayback['skill']>,resolvedAction?:SkillAction|null):boolean {
     if(this.preparedSkillIds&&!this.preparedSkillIds.get(id)?.has(skill.id)){
       if((this.skillAssetFailures.get(id)?.attempts??0)>=5)this.skillAssetFailures.delete(id);
       this.scheduleSkillAssetRefresh();return false;
     }
-    const gate=skillForMember(this.app.battleCatalog,id,skill.id)?.action?.minHealthRatePerThousand??skill.action.minHealthRatePerThousand;
+    const action=resolvedAction===undefined
+      ?skillForMember(this.app.battleCatalog,id,skill.id)?.action??null
+      :resolvedAction;
+    const gate=action?.minHealthRatePerThousand??skill.action.minHealthRatePerThousand;
     if(gate!==undefined){
       // 严格大于：等于门槛不可起手。也要求自己的生命上限缓存有效。
       const member=this.memberOf(id);
@@ -2003,9 +2023,9 @@ captureStoryActors():SceneActorState[] {
       if(!(maxHealth>0)||health<=Math.trunc(maxHealth*gate/1000))return false;
     }
     // 原版条件 37：没有自己的活动召唤就不能起手，判定放在扣蓝与冷却之前。
-    if((skillForMember(this.app.battleCatalog,id,skill.id)?.action?.requiresActiveSummon??skill.action.requiresActiveSummon)
+    if((action?.requiresActiveSummon??skill.action.requiresActiveSummon)
       &&!this.activeSummonsOf(id).length)return false;
-    const requirement=skillForMember(this.app.battleCatalog,id,skill.id)?.action?.requiredOffhand??skill.action.requiredOffhand;
+    const requirement=action?.requiredOffhand??skill.action.requiredOffhand;
     if(requirement!=='shield')return true;
     const member=this.memberOf(id);if(!member)return false;
     const equipment=this.hero.bag.equipmentItems(this.hero.bag.equipmentFor(id));
