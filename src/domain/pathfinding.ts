@@ -90,10 +90,11 @@ export function createPathSearch(start:Point,query:PathQuery):PathSearch {
           ({x:current.point.x+dx*PATH_GRID_SIZE,y:current.point.y+dy*PATH_GRID_SIZE}));
       for(const point of neighbors){
         const dx=point.x-current.point.x,dy=point.y-current.point.y;
-        if(dx&&dy&&(!canStand({x:point.x,y:current.point.y})||!canStand({x:current.point.x,y:point.y})))continue;
-        if(!inBounds(point)||!canTraverse(current.point,point,canStand))continue;
+        if(!inBounds(point))continue;
         const cost=current.cost+Math.hypot(dx,dy),k=key(point);
         if(cost>=(costs.get(k)??Infinity))continue;
+        if(dx&&dy&&(!canStand({x:point.x,y:current.point.y})||!canStand({x:current.point.x,y:point.y})))continue;
+        if(!canTraverse(current.point,point,canStand))continue;
         costs.set(k,cost);push({key:k,point,cost,score:cost+query.heuristic(point),parent:current});
       }
     }
