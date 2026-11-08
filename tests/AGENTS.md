@@ -22,6 +22,7 @@
 - `dom-text-layout.test.ts` 验证菜单仅移动时文字跟随、锚点即时更新；`dom-surface.test.ts` 验证输入守卫、原生拖动、取消、嵌套长按、滚动后点击、静态按钮键盘导航、嵌套菜单滚动层坐标、图片裁边翻转、角色预览与预载信号。
 - `story-menu-interactions.test.ts` 使用真实 DOM 菜单组件和原生事件，验证交易、加点、背包拖放、存读档、布局编辑与弹层输入隔离。
 - `dom-assets.test.ts` 覆盖共享图集、独立取消与失败重试；`dom-components.test.ts` 覆盖裁剪、父子清理、轮盘技能/物品、多指互斥及隐藏后释放按键。
+- `status-color-renderer.test.ts` 验证受击闪光结束后恢复原色和最新状态颜色。
 - DOM 状态栏在 `dom-components.test.ts` 验证切控、阵亡头像、目标与资源释放；`status-hud.test.ts` 验证场景暂停、唤醒和销毁时的 DOM 可见性通知。
 - `dom-components.test.ts` 同时覆盖 DOM 小地图、电脑技能行、SVG 冷却、四向移动、触摸取消和改键；`control-settings.test.ts` 覆盖操作模式的持久化与通知。
 
