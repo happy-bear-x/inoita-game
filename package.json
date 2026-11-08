@@ -30,6 +30,7 @@
     "debug-start": "node tools/debug-start/story-debug-start.ts --write",
     "debug-start:check": "node tools/debug-start/story-debug-start.ts --check",
     "report:assets": "node tools/asset-report.ts",
+    "audit:assets": "node tools/prune-assets.ts --check",
     "atlas:icons": "node tools/build-icon-atlas.ts",
     "atlas:props": "node tools/build-prop-atlas.ts",
     "atlas:effects": "node tools/build-effect-atlas.ts",

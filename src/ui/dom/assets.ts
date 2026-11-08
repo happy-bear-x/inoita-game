@@ -122,13 +122,22 @@ const browserImageLoader: DomImageLoader = {
     if (signal.aborted) { cancel(); return; }
     signal.addEventListener('abort', cancel, { once: true });
     image.onload = () => { cleanup(); resolve({ width: image.naturalWidth, height: image.naturalHeight }); };
-    image.onerror = () => { cleanup(); reject(new Error(`界面图片加载失败：${url}`)); };
+    image.onerror = () => {
+      cleanup();
+      globalThis.storyDiagnostics?.record('asset-load-error', { source: 'dom-image', url });
+      reject(new Error(`界面图片加载失败：${url}`));
+    };
     image.src = url;
   }),
   atlas: async (url, signal) => {
-    const response = await fetch(url, { signal });
-    if (!response.ok) throw new Error(`界面图集加载失败：${url}`);
-    return await response.json() as AtlasData;
+    try {
+      const response = await fetch(url, { signal });
+      if (!response.ok) throw new Error(`界面图集加载失败：${url}`);
+      return await response.json() as AtlasData;
+    } catch (error) {
+      globalThis.storyDiagnostics?.record('asset-load-error', { source: 'dom-atlas', url, error });
+      throw error;
+    }
   }
 };
 
