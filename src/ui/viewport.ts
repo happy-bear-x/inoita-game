@@ -29,9 +29,10 @@ export function readSafeArea(): { left: number; right: number; top: number; bott
   const safe = getComputedStyle(element('safe-area'));
   const value = { left: parseFloat(safe.paddingLeft) || 0, right: parseFloat(safe.paddingRight) || 0,
     top: parseFloat(safe.paddingTop) || 0, bottom: parseFloat(safe.paddingBottom) || 0 };
-  // Android 壳隐藏系统栏并铺满整屏；横屏时顶部不会再压状态栏，顶部安全区不应再给
-  // 小地图和右上角 HUD 留空。左右安全区继续保留，用来避开横屏时的挖孔和手势区。
-  if (typeof globalThis.InotiaNative !== 'undefined' && globalThis.innerWidth > globalThis.innerHeight) value.top = 0;
+  // 安卓横屏时画面已经以可视区顶边为起点；顶部按画面边缘排布，左右仍避开挖孔与手势区。
+  const android = typeof globalThis.InotiaNative !== 'undefined'
+    || (typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent));
+  if (android && globalThis.innerWidth > globalThis.innerHeight) value.top = 0;
   safeAreaCache = { revision: safeAreaRevision, value };
   return value;
 }

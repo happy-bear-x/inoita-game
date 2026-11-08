@@ -68,7 +68,7 @@ export class DomMinimap extends DomComponent {
   }
   layout(viewport: ControlViewport): void {
     const scale = uiUnitScale(viewport.width, viewport.height);
-    this.placed = { x: viewport.insets.left + 12, y: viewport.insets.top + 12, scale };
+    this.placed = { x: viewport.insets.left + 12, y: viewport.insets.top, scale };
     Object.assign(this.element.style, { left: `${this.placed.x}px`, top: `${this.placed.y}px`, transformOrigin: '0 0', transform: `scale(${scale})` });
   }
   extent(): { x: number; y: number; width: number; height: number } {

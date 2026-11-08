@@ -487,7 +487,7 @@ export class StoryUI {
     this.body?.scrolls.forEach(scroll=>scroll.layout());this.description?.scrolls.forEach(scroll=>scroll.layout());this.modal?.scrolls.forEach(scroll=>scroll.layout());
     if(this.hudButtons&&this.scene){
       const v=this.hudButtons,viewport=controlViewport(this.scene),scale=uiUnitScale(viewport.width,viewport.height);
-      v.root.setScale(scale).setPosition(viewport.insets.left+12,viewport.insets.top+12);
+      v.root.setScale(scale).setPosition(viewport.insets.left+12,viewport.insets.top);
       let index=0;
       for(const button of v.root.list){
         if(button===v.staticRoot)continue;

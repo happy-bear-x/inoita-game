@@ -178,7 +178,8 @@ export class DomStatusHud extends DomComponent {
     const place = (root: DomComponent, x: number, y: number, scale: number) => {
       Object.assign(root.element.style, { left: `${x}px`, top: `${y}px`, transformOrigin: '0 0', transform: `scale(${scale})` });
     };
-    place(this.playerPanel.root, right - (this.skin.player.width - this.skin.player.inset.right) * size, top, size);
+    place(this.playerPanel.root, right - (this.skin.player.width - this.skin.player.inset.right) * size,
+      top - this.skin.player.inset.top * size, size);
     place(this.targetPanel, (viewport.width - this.skin.target.width * size) / 2, top, size);
     const swap = resolveControlLayout(viewport).swap;
     const column = memberColumnLayout({ top, playerHeight: this.skin.player.height * size, memberHeight: this.skin.member.height,

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {fitViewport,configureCanvas,readSafeArea} from '../src/ui/viewport.ts';
+import {controlViewport} from '../src/ui/phaser/control-layout-viewport.ts';
 
 /** 假窗口对象：测试只需要 `fitViewport` 读的 `visualViewport`。 */
 interface FakeWindow {
@@ -72,6 +73,34 @@ test('safe area is measured once until the viewport changes',()=>{
   fitViewport();
   readSafeArea();
   assert.equal(reads,measured+1,'视口重建后重新测量');
+ }finally{
+  for(const[name,descriptor]of original){if(descriptor)Object.defineProperty(globalThis,name,descriptor);else delete globals[name];}
+ }
+});
+
+test('Android landscape uses the visible top edge for both browser and packaged UI',()=>{
+ const globals=globalThis as unknown as Record<string,unknown>;
+ const names=['window','document','navigator','getComputedStyle','innerWidth','innerHeight','InotiaNative'];
+ const original=names.map(name=>[name,Object.getOwnPropertyDescriptor(globalThis,name)] as const);
+ const style={setProperty(){}};
+ try{
+  globals.window={visualViewport:{width:802,height:360,offsetLeft:0,offsetTop:0}};
+  globals.document={getElementById:(id:string)=>id==='game-frame'?{style}:{}};
+  globals.getComputedStyle=()=>({paddingLeft:'24px',paddingRight:'8px',paddingTop:'32px',paddingBottom:'12px'});
+  Object.defineProperty(globalThis,'navigator',{configurable:true,value:{userAgent:'Mozilla/5.0 (Linux; Android 11)'}});
+  globals.innerWidth=802;globals.innerHeight=360;
+  fitViewport();
+  assert.deepEqual(readSafeArea(),{left:24,right:8,top:0,bottom:12},'安卓浏览器横屏保留其他方向的安全边距');
+  const scene={scale:{width:802,height:360},game:{canvas:{getBoundingClientRect:()=>({width:802,height:360})}}} as unknown as import('phaser').Scene;
+  assert.deepEqual(controlViewport(scene).insets,{left:24,right:8,top:0,bottom:12},'地图和状态栏共用的坐标从画面顶边开始');
+  Object.defineProperty(globalThis,'navigator',{configurable:true,value:{userAgent:'test'}});
+  globals.InotiaNative={};fitViewport();
+  assert.deepEqual(readSafeArea(),{left:24,right:8,top:0,bottom:12},'安装包横屏同样贴近顶边');
+  delete globals.InotiaNative;fitViewport();
+  assert.equal(readSafeArea().top,32,'其他平台保留顶部安全边距');
+  Object.defineProperty(globalThis,'navigator',{configurable:true,value:{userAgent:'Android'}});
+  globals.innerWidth=360;globals.innerHeight=802;fitViewport();
+  assert.equal(readSafeArea().top,32,'安卓竖屏保留顶部安全边距');
  }finally{
   for(const[name,descriptor]of original){if(descriptor)Object.defineProperty(globalThis,name,descriptor);else delete globals[name];}
  }

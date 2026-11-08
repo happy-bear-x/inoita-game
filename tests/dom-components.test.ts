@@ -162,6 +162,8 @@ test('DOM status panels switch the controlled portrait, retain dead member artwo
     view.setVisible(true);
     await new Promise(resolve => setTimeout(resolve, 0));
     const roots = (view.element as unknown as Element).children;
+    const playerScale=Number(roots[0].style.transform.match(/scale\(([^)]+)\)/)?.[1]);
+    assert.ok(Math.abs(Number.parseFloat(roots[0].style.top)+skin.player.inset.top*playerScale)<1e-9,'主角状态栏的可见顶边对齐屏幕');
     const all = (node: Element): Element[] => [node, ...node.children.flatMap(all)];
     const playerImages = all(roots[0]).filter(node => node.src.endsWith('player.png'));
     const allyImages = all(roots[1]).filter(node => node.src.endsWith('ally.png'));
@@ -206,7 +208,7 @@ test('DOM minimap combines terrain, keeps native marker sizes and reuses or remo
     assert.equal(root.children.length, count, '同一个任务复用节点');
     assert.equal(task.style.left, '13px');
     view.updateTasks([]); assert.equal(task.removed, true);
-    assert.equal(view.extent().x, 16); assert.equal(view.extent().y, 14);
+    assert.equal(view.extent().x, 16); assert.equal(view.extent().y, 2);
     view.destroy(); await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(assets.size, 0); assert.deepEqual(errors, []);
   } finally { h.restore(); }
