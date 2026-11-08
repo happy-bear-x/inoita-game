@@ -19,10 +19,13 @@ export function centerModal(modal: UiSurface, parent: UiSurface, width: number, 
 /**
  * 画布在 surface 本地坐标里覆盖的范围。surface 会按设备安全区和留白缩放、居中，
  * 直接按 `surface.width` 画的横带会在屏幕两侧留下空隙；需要铺满整屏时用这里的范围。
- * 默认以 surface 自身为绘制外框；弹层按更大的虚拟外框居中时传 width、height。
+ * 原点取 surface 根节点的实际屏幕位置，安全区左右不相等时横带也不会偏出屏幕。
  */
-export function screenCoverage(surface: UiSurface, width = surface.width, height = surface.height):{left:number;top:number;width:number;height:number} {
-  const scaleX = surface.root.scaleX || 1, scaleY = surface.root.scaleY || 1;
-  const visibleWidth = surface.scene.scale.width / scaleX, visibleHeight = surface.scene.scale.height / scaleY;
-  return {left:(width - visibleWidth) / 2, top:(height - visibleHeight) / 2, width:visibleWidth, height:visibleHeight};
+export function screenCoverage(surface: UiSurface):{left:number;top:number;width:number;height:number} {
+  const matrix = surface.root.getWorldTransformMatrix();
+  const scaleX = matrix.scaleX || 1, scaleY = matrix.scaleY || 1;
+  const origin = matrix.transformPoint(0, 0);
+  // 按画布根节点的实际屏幕原点反算，菜单在安全区内居中时也不受左右安全区不对称影响。
+  return {left:-origin.x / scaleX, top:-origin.y / scaleY,
+    width:surface.scene.scale.width / scaleX, height:surface.scene.scale.height / scaleY};
 }

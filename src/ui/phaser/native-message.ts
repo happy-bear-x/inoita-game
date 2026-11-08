@@ -16,8 +16,8 @@ const BUTTON_SIZE=20;
  */
 export function drawNativeMessage(v:UiSurface,assets:Record<string,string>,message:string,accept:()=>void,cancel?:()=>void,
   writer?:MenuTextWriter):void {
-  // 弹层常按 1024×640 的外框居中，但 surface 自身可能是 450×350；横带按外框算屏幕范围。
-  const width=1024,height=640,screen=screenCoverage(v,width,height),center=width/2;
+  // 弹层常按 1024×640 的外框居中，但 surface 自身可能是 450×350；横带按根节点实际原点铺满屏幕。
+  const width=1024,height=640,screen=screenCoverage(v),center=width/2;
   v.rect(screen.left,screen.top,screen.width,screen.height,0xaa966e,.13);
   const text=v.text(message,center,0,410,24,'#ffffff').setOrigin(.5,0);
   text.setAlign('center');
