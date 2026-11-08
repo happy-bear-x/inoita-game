@@ -164,7 +164,6 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
         root.addView(browser.getSurfaceContainer(), new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
-        browser.setBackgroundColor(getColor(R.color.background));
         browser.setMediaPlaybackRequiresUserGesture(false);
         browser.setPinchToZoomEnabled(false);
         browser.setDarkMode(false);

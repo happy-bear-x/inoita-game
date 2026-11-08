@@ -33,6 +33,7 @@
 - 回退只发生在「新版本重建浏览器后、标题页调用 `markBootOk()` 前」的 90 秒窗口；正常游玩时 `onRenderProcessTerminated` 只重建浏览器。回退后弹出提示并允许重试，失败 buildId 有 24 小时冷却。
 - 更新生命周期通过 `Diagnostics` 写 `update-*` 事件，带 buildId、文件数、失败原因和 `buildInfo`。
 - 壳使用 edge-to-edge：`setDecorFitsSystemWindows(false)`，Cefrium 的 surface 铺满整屏；安全区只由网页用于 HUD、侧边按钮和文字避让，不参与画布尺寸。全屏开关在自带引擎里返回 `packaged`，由隐藏系统栏实现沉浸式。
+- 页面背景色设在视图树上：`browser.getSurfaceContainer().setBackgroundColor(...)`。`CefriumBrowser` 是屏幕上显示的 surface 浏览器，它的 `setBackgroundColor` 只对离屏浏览器有效，调用会立刻抛 `IllegalStateException` 让应用闪退。
 - 明文只允许本机 `127.0.0.1` 与 `localhost`；release 的云存档/诊断地址必须是 HTTPS。本地 HTTP 服务只绑定 `127.0.0.1`，不监听局域网。
 - **不要降级 Cefrium 到 0.17.1**。0.18.0 修复了同进程系统 WebView 与 Cefrium 并存、`addDocumentStartJavaScript` 在原生层杀死进程的启动崩溃；存档迁移会在启动时创建一次系统 WebView，正好踩中前者。升级时同时改 `android/build.gradle` 的插件版本和 `app/build.gradle` 的 SDK 版本。
 - **引擎升级必须发 APK**。Cefrium/Chromium 是原生库，热更只能换 `dist/` 里的网页内容。Chromium 版本由 `com.cefrium:cefrium-sdk` 决定，升级时改版本号并重新打包。Cefrium 是 LGPL-3.0-or-later 或商业许可；分发 APK 时保留根目录 `THIRD-PARTY-NOTICES.md` 并提供源码地址。
