@@ -147,7 +147,9 @@ export class WorldScene extends Phaser.Scene {
   /** 本图的区域/近身事件与角色分组；进图和剧情投影后各建一次。 */
   private triggerIndex?:StoryTriggerIndex<Character>;
   private refreshStateSignatureValue?:string;
-  private interactionSignatureValue?:string;
+  /** 上一次交互扫描的输入；逐字段比较，静止帧不拼名单。 */
+  private lastInteractionScan?:{x:number;y:number;revision:number;quest:number;story:number;chests:number;
+    legendary:number;restore:number;performing:boolean;map:string;owner:string};
   /** 地图角色只在投影、恢复或显隐改变时使交互结果失效。 */
   private interactionRevision=0;
   /** 屏幕固定的界面层与它上面的移动摇杆。 */
@@ -221,7 +223,7 @@ export class WorldScene extends Phaser.Scene {
     this.dropCatalog=undefined;this.springCatalog=undefined;this.groundLootView=undefined;this.pickupMessages=undefined;this.pickupRecipients.clear();
     this.questStatuses.clear();this.questStatusVersion=undefined;
     this.prefetchTarget = undefined; this.prefetchTask = undefined;
-    this.baseEntities=[];this.occupiedRegions.clear();this.encounterResults.clear();this.triggerIndex=undefined;this.refreshStateSignatureValue=undefined;this.interactionSignatureValue=undefined;this.interactionRevision=0;
+    this.baseEntities=[];this.occupiedRegions.clear();this.encounterResults.clear();this.triggerIndex=undefined;this.refreshStateSignatureValue=undefined;this.lastInteractionScan=undefined;this.interactionRevision=0;
     this.entryPrefetches?.clear();
     this.projectedActorIds.clear();
   }
@@ -1927,18 +1929,28 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     return this.app.session.markerActor(entity.actor,entity.characterId)?1:null;
   }
   /** 挑出「身边的可交互对象」：原版 `PLAYER_DoCheckNearNPC` 用曼哈顿距离 24 px，最近的一个胜出。 */
-  private interactionSignature(controlled:CharacterVisual):string {
-    const session=this.app.session;
-    return [this.map?.id??'',this.combat?.controlledId??'player',controlled.container.x,controlled.container.y,this.interactionRevision??0,
-      session.questBook?.version??0,session.storyWorld?.revision??0,session.chests?.revision??0,
-      session.legendaryWeapons?.revision??0,session.restorationVersion??0,this.performing?1:0].join('|');
-  }
   private updateInteractionTarget(): void {
     const controlled=this.combat?.controlledVisual??this.player;
-    if (!controlled) { this.near = null;this.interactionSignatureValue=undefined;return; }
-    const signature=this.interactionSignature(controlled);
-    if(signature===this.interactionSignatureValue)return;
-    this.interactionSignatureValue=signature;
+    if (!controlled) { this.near = null;this.lastInteractionScan=undefined;return; }
+    const session=this.app.session;
+    const x=controlled.container.x, y=controlled.container.y;
+    const revision=this.interactionRevision??0;
+    const quest=session.questBook?.version??0;
+    const story=session.storyWorld?.revision??0;
+    const chests=session.chests?.revision??0;
+    const legendary=session.legendaryWeapons?.revision??0;
+    const restore=session.restorationVersion??0;
+    const performing=!!this.performing;
+    const map=this.map?.id??'';
+    const owner=this.combat?.controlledId??'player';
+    const scan=this.lastInteractionScan??(this.lastInteractionScan={x:Number.NaN,y:Number.NaN,revision:-1,quest:-1,
+      story:-1,chests:-1,legendary:-1,restore:-1,performing:false,map:'',owner:''});
+    if(x===scan.x&&y===scan.y&&revision===scan.revision&&quest===scan.quest&&story===scan.story
+      &&chests===scan.chests&&legendary===scan.legendary&&restore===scan.restore
+      &&performing===scan.performing&&map===scan.map&&owner===scan.owner)return;
+    scan.x=x;scan.y=y;scan.revision=revision;scan.quest=quest;scan.story=story;
+    scan.chests=chests;scan.legendary=legendary;scan.restore=restore;
+    scan.performing=performing;scan.map=map;scan.owner=owner;
     let nearest: Character | null = null, distance = Number.POSITIVE_INFINITY, rank = 2;
     for (const character of this.characters) {
       if (!character.container.visible) continue;

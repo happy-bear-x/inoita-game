@@ -67,15 +67,16 @@ test('interaction distance filters task queries and preserves visibility, opened
   const far=character('far',25),hidden=character('hidden',1,{container:{x:1,y:0,visible:false}});
   const chest=character('chest',2,{actor:{chest:true}}),spring=character('spring',3,{entity:{id:'spring',spring:true}});
   const decorative=character('decorative',4),first=character('first',24),tie=character('tie',-24);
-  const queried:string[]=[];let refreshed=0,signature=0;
+  const queried:string[]=[];let refreshed=0;
   const host={app:{session:{refresh:()=>refreshed++,chests:{isOpened:()=>true},springs:{isEmpty:()=>true}}},map:{id:'map'},
     player:{container:{x:0,y:0}},characters:[far,hidden,chest,spring,decorative,first,tie],near:null as unknown,
+    interactionRevision:0,
     chestOpened:(value:typeof chest)=>value===chest,
-    legendarySwordConsumed:()=>false,interactionSignature:()=>String(signature++),
+    legendarySwordConsumed:()=>false,
     interactionCandidate:(value:typeof far)=>{queried.push(value.entity.id);return value!==decorative?1:null;}};
   invoke(host,'updateInteractionTarget');
   assert.equal(refreshed,0,'交互目标不再每帧刷新任务簿');assert.deepEqual(queried,['decorative','first','tie']);assert.equal(host.near,first);
-  first.container.x=30;tie.container.x=-30;invoke(host,'updateInteractionTarget');assert.equal(host.near,null);
+  first.container.x=30;tie.container.x=-30;host.interactionRevision++;invoke(host,'updateInteractionTarget');assert.equal(host.near,null);
 });
 
 test('shortcut pages reuse layout snapshots while mana, eligibility, quantity and recovery stay live',t=>{
