@@ -163,6 +163,7 @@ export class StoryUI {
   private bagPortrait?:LiveCharacterPreview;
   private backdropPieces:UiNode[]=[];
   private bagPreview?:UiNode;
+  private bagEquipment=new Map<EquipmentSlot,{button:UiNode;icon:UiImage;drop:{object:UiNode;entry?:string;slot:EquipmentSlot}}>();
   private scrollOffsets=new Map<string,number>();private scrollNames=new Map<string,ScrollArea>();
   private drag?:{entry:string;pointer:number;x:number;y:number;timer:Phaser.Time.TimerEvent;active:boolean;ghost?:UiImage};private suppressClick=false;
   private drops:{object:UiNode|UiImage;entry?:string;slot?:EquipmentSlot;view?:InventoryView;cell?:number;craft?:boolean}[]=[];
@@ -1442,7 +1443,7 @@ export class StoryUI {
     if(this.shortcutEdit)this.closeShortcutScreen();
   }
   private renderBag():void{
-    this.bagTextSpecs=[];this.bagDetailTextSpecs=[];this.bagDetailOpen=false;
+    this.bagTextSpecs=[];this.bagDetailTextSpecs=[];this.bagDetailOpen=false;this.bagEquipment.clear();
     const v=this.body!,bag=this.session!.bag,panels=this.app.menuPanels,member=this.member()!,equipment=bag.equipmentFor(this.selectedMemberId);
     // 两栏背景照原版：`UIEquip_DrawEquipBackground @0x14a7cc` 给左栏画图框加四块黑色 60% 的区域
     // （`GRPX_FillRectAlpha(..., 0xff000000, 0x3c)`），中间 (129,110,157,157) 那块留空放人物预览；
@@ -1473,7 +1474,7 @@ export class StoryUI {
       if(!describing)this.selectedItem=undefined;
       this.bagPreview=v.container(0,0);
       this.renderBagPreview();
-      for(const slot of panels.equipmentSlots){const entry=equipment[slot.id as EquipmentSlot],instance=entry?bag.get(entry):undefined,item=instance?bag.catalog.items[instance.item]:undefined;const button=v.button('',85+slot.x,slot.y,74,74,()=>{if(!entry)return;this.selectItem(entry,'right');},{image:slotFrameImage(this.app,this.session!,instance)});v.image(item?.icon??slot.emptyIcon,item?5:13,item?5:13,item?64:48,item?64:48,button);button.setData('label',slot.name);this.drops.push({object:button,entry,slot:slot.id as EquipmentSlot});}
+      for(const slot of panels.equipmentSlots){const id=slot.id as EquipmentSlot,entry=equipment[id],instance=entry?bag.get(entry):undefined,item=instance?bag.catalog.items[instance.item]:undefined;const button=v.button('',85+slot.x,slot.y,74,74,()=>{const current=bag.equipmentFor(this.selectedMemberId)[id];if(current)this.selectItem(current,'right');},{image:slotFrameImage(this.app,this.session!,instance)});const icon=v.image(item?.icon??slot.emptyIcon,item?5:13,item?5:13,item?64:48,item?64:48,button);button.setData('label',slot.name);const drop={object:button,entry,slot:id};this.drops.push(drop);this.bagEquipment.set(id,{button,icon,drop});}
       // 等级／职业行：`UIEquip_DrawEquip` 在左框内 (46,368) 画 323 宽的文本底板，文字居中于它、
       // 颜色 #e2cb9e、纵向上沿在底板顶边下 7 像素（`GRPX_DrawStringWithFont(..., y+375, 居中)`）。
       // 底板在静态层，这里只登记会随成员变化的等级与职业文字。
@@ -1872,12 +1873,31 @@ export class StoryUI {
   private cancelDrag():void{this.drag?.timer.remove();this.drag?.ghost?.destroy();this.drag=undefined;}
   private selectMember(id:string,page:Page):void{
     if(this.requestAllocationExit(()=>this.selectMember(id,page)))return;
-    this.cancelOperation();this.selectedMemberId=id;this.selectedItem=undefined;this.skill=undefined;this.skillSection='directory';this.show(page);
+    const updateBag=this.open&&page==='bag'&&this.page==='bag'&&!this.bagDetailOpen&&this.bagEquipment.size>0;
+    this.cancelOperation();this.selectedMemberId=id;this.selectedItem=undefined;this.skill=undefined;this.skillSection='directory';
+    if(updateBag){this.updateBagMember();this.sessionSignature=this.sessionDataSignature()??this.sessionSignature;}else this.show(page);
     const signal=this.request.signal;
     void this.app.preparePartyMember?.(id,signal).then(()=>{
       if(!signal.aborted&&this.open&&this.page==='bag'&&this.selectedMemberId===id)this.renderBagPreview();
     })
-      .catch(error=>{if(!signal.aborted){this.notice=(error as Error).message;this.render();}});
+      .catch(error=>{if(!signal.aborted&&this.open&&this.selectedMemberId===id){this.notice=(error as Error).message;this.menuText?.renderPage(this.page);}});
+  }
+  private updateBagMember():void{
+    const member=this.member()!,bag=this.session!.bag,equipment=bag.equipmentFor(this.selectedMemberId),panels=this.app.menuPanels;
+    for(const slot of panels.equipmentSlots){
+      const id=slot.id as EquipmentSlot,view=this.bagEquipment.get(id);if(!view)continue;
+      const entry=equipment[id],instance=entry?bag.get(entry):undefined,item=instance?bag.catalog.items[instance.item]:undefined;
+      const face=view.button.getData('face') as UiImage|undefined,frame=slotFrameImage(this.app,this.session!,instance),icon=item?.icon??slot.emptyIcon;
+      if(face&&face.getData('file')!==frame)face.load(frame);
+      if(view.icon.getData('file')!==icon)view.icon.load(icon);
+      const offset=item?5:13,size=item?64:48;
+      if(view.icon.x!==offset)view.icon.setPosition(offset,offset);
+      if(view.icon.width!==size||view.icon.height!==size)view.icon.resize(size,size);
+      view.drop.entry=entry;
+    }
+    const level=this.bagTextSpecs.find(spec=>spec.key==='bag-level');
+    if(level)level.text=`Lv. ${member.level}　${this.app.storyClasses.classes.find(c=>c.id===member.classId)!.name}`;
+    this.renderBagPreview();this.menuText?.renderPage('bag');
   }
   private renderBagPreview():void{
     const v=this.body, parent=this.bagPreview, member=this.member();

@@ -2184,6 +2184,22 @@ test('late member previews do not rebuild the bag or replace the current member'
   assert.deepEqual(body.root.list,children,'背包正文节点不重建');
 });
 
+test('switching members in the bag retains the inventory and unchanged controls', t => {
+  const f=fixture();t.after(f.cleanup);
+  const member=f.recruit('warlock');
+  const orb=f.add('crystal-orb');
+  f.session.bag.equip(orb.id,'main-hand',member.id,member.classId,3);
+  f.menu.show('bag');
+  const body=f.internals.body,children=[...body.root.list],organize=f.scene.button('整理'),portrait=f.scene.button(member.definition.name),weapon=f.scene.button('主手');
+  f.scene.click(portrait);
+  assert.equal(f.internals.selectedMemberId,member.id);
+  assert.deepEqual(body.root.list,children);
+  assert.equal(f.scene.button('整理'),organize);
+  assert.equal(f.scene.button(member.definition.name),portrait);
+  assert.equal(f.scene.button('主手'),weapon);
+  f.scene.click(weapon);assert.equal(f.internals.selectedItem,orb.id,'保留的装备按钮读取新队员的装备');
+});
+
 test('using a mercenary emblem prepares only the new member preview', t => {
   const f=fixture();t.after(f.cleanup);
   f.menu.show('party');
