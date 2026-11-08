@@ -221,7 +221,7 @@ export class MenuScene extends Phaser.Scene {
         setVisible:(visible?:boolean)=>unknown;
       }={
         height:size+5,
-        setOrigin(anchorX=0,anchorY=0){spec.style.anchorX=anchorX;spec.style.anchorY=anchorY;return fake;},
+        setOrigin(anchorX=0,anchorY=anchorX){spec.style.anchorX=anchorX;spec.style.anchorY=anchorY;return fake;},
         setAlign(align){spec.style.align=align;return fake;},
         setPosition(nextX,nextY){spec.x=nextX;spec.y=nextY;return fake;},
         setVisible(){return fake;},

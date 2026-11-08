@@ -406,6 +406,42 @@ test('the cloud page keeps labels, inputs and notes inside the framed panel',asy
   assert(inside(note.x,note.y,note.width,note.height),'滚动区超出图框');
 });
 
+test('cloud button labels stay centered in their buttons before and after login',async()=>{
+  for(const loggedIn of [false,true]){
+    const cloud=cloudStub({loggedIn});const f=fixture(undefined,cloud.port);
+    const scale=loggedIn ? .55 : 1.2,offsetX=37,offsetY=19;
+    f.state.menuText?.destroy();
+    const domUi=(f.app as unknown as {domUi:Pick<DomUi,'label'>}).domUi;
+    const menuText=new MenuTextLayer(domUi,(x,y)=>({x:offsetX+x*scale,y:offsetY+y*scale,scale}),()=>undefined);
+    for(const page of ['home','slots','cloud'])menuText.register(page,writer=>{for(const spec of f.state.domSpecs)writer.add(spec);});
+    f.state.menuText=menuText;
+    const original=f.view.button;
+    f.view.button=function(label,x,y,width,height,action,options={}){
+      const button=original.call(this,label,x,y,width,height,action,options);
+      if(label){
+        const text=this.text as unknown as (value:string,x:number,y:number,width:number,size:number,color:string,parent:unknown)=>{setOrigin(x:number):unknown};
+        text.call(this,label,width/2,height/2,width-12,(options as {fontSize?:number}).fontSize??Math.min(22,height*.42),'#f3deb0',button).setOrigin(.5);
+      }
+      return button;
+    };
+    f.click('开始游戏');f.click('云存档');await settle();
+    const labels=loggedIn?['修改密码','导入本机存档','下载云存档','退出登录']:['登录','注册'];
+    for(const text of labels){
+      const button=f.view.buttons.find(item=>item.getData('label')===text)!;
+      const spec=f.state.domSpecs.find(item=>item.text===text)!;
+      assert.ok(button&&spec,text);
+      assert.equal(spec.x,button.x+button.width/2,`${text} 的横向中心`);
+      assert.equal(spec.y,button.y+button.height/2,`${text} 的纵向中心`);
+      assert.equal(spec.style.anchorX,.5);assert.equal(spec.style.anchorY,.5);
+      const label=f.domLabels.slice().reverse().find(item=>!item.removed&&item.text===text)!;
+      assert.ok(label,text);
+      assert.equal(label.x,offsetX+(button.x+button.width/2)*scale);
+      assert.equal(label.y,offsetY+(button.y+button.height/2)*scale);
+      assert.deepEqual(label.anchor,[.5,.5]);
+    }
+  }
+});
+
 test('cloud login switches to the signed-in actions',async()=>{
   const cloud=cloudStub();
   const f=fixture(undefined,cloud.port);
