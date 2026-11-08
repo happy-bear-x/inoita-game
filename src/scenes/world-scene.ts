@@ -1045,7 +1045,9 @@ export class WorldScene extends Phaser.Scene {
     this.combat?.setPerformanceActive(this.performing);
     const { session } = this.app;
     this.noticeQuestCompletions();
-    const stateSignature=this.refreshStateSignature();
+    // 小地图创建前的那次刷新也会写签名；把「小地图是否已就绪」算进签名，
+    // 保证创建后的第一次刷新一定执行，把本图任务人物交给小地图。
+    const stateSignature=this.refreshStateSignature()+(this.minimap?'|minimap':'');
     if(stateSignature===this.refreshStateSignatureValue)return;
     this.refreshStateSignatureValue=stateSignature;
     this.interactionRevision=(this.interactionRevision??0)+1;

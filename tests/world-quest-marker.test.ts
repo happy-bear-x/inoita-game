@@ -71,3 +71,44 @@ test('a quest marker is created when a quest becomes available after the map is 
   invoke(host, 'refreshState');
   assert.equal(created.length, 1);
 });
+
+test('the minimap receives quest characters on the first refresh after it is created', () => {
+  const taskLists: unknown[][] = [];
+  const container = {
+    visible: true, x: 64, y: 96, children: [] as unknown[],
+    setVisible(value: boolean) { container.visible = value; },
+  };
+  const marker = {
+    dom: { visible: false, text: '', style: { color: '' },
+      setVisible(value: boolean) { marker.dom.visible = value; },
+      setText(value: string) { marker.dom.text = value; },
+      setStyle(value: { color: string }) { Object.assign(marker.dom.style, value); } },
+    visible: true,
+  };
+  const character = {
+    entity: { id: 'npc-1', actor: 'elder', characterId: 'npc-1' },
+    actor: { id: 'elder' }, container, marker,
+  };
+  const session = {
+    questBook: { version: 1 }, storyWorld: { revision: 0, actorVisible: () => true },
+    chests: { revision: 0 }, legendaryWeapons: { revision: 0 },
+    runtimeState: { sequence: 0 }, restorationVersion: 0,
+    marker: () => 'available', markerActor: () => true, visible: () => true,
+  };
+  const host = Object.assign(Object.create(WorldScene.prototype), {
+    app: { session }, characters: [character], map: { id: 'map' },
+    player: { container: { x: 0, y: 0 } },
+    refreshLoadout() {}, noticeQuestCompletions() {},
+    chestOpened: () => false, legendarySwordConsumed: () => false,
+    movement: { setEnabled() {} },
+  });
+  // 进图流程里，第一次刷新发生在小地图创建之前；此时标记列表无人接收。
+  invoke(host, 'refreshState');
+  // 小地图就绪后，即使会话状态没变，也要完整刷新一次并把任务人物交过去。
+  host.minimap = {
+    updatePlayer() {},
+    updateTasks(tasks: unknown[]) { taskLists.push(tasks); },
+  };
+  invoke(host, 'refreshState');
+  assert.deepEqual(taskLists, [[{ id: 'npc-1', x: 64, y: 96, status: 'available' }]]);
+});
