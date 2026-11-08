@@ -1404,6 +1404,9 @@ export class StoryUI {
     screen.clear();const v=screen,{scale,anchor}=controlPlacement(scene,scene.scale.width,scene.scale.height),slots=this.shortcutBar().page(edit.page),positions=resolveControlLayout(controlViewport(scene),this.app.controlLayout.snapshot());
     // 顶部提示：原版 `GRPX_DrawStringWithFont(TEXTDATABASE[146], 屏宽/2, 110)`，白字居中。
     this.placeShortcutPrompt();
+    // 攻击按钮是轮盘的中心锚点，登记屏也要按当前布局画出来；只画槽位会让中间空一块。
+    const attack=positions.attack,attackWidth=CONTROL_SIZES.attack.width*attack.userScale,attackHeight=CONTROL_SIZES.attack.height*attack.userScale;
+    v.image(skin.button,attack.x/scale-attackWidth/2,attack.y/scale-attackHeight/2,attackWidth,attackHeight);
     // 六个圆槽：输入矩形与槽框都乘设备倍率，换组后沿用同一个槽位的尺寸。
     for(let slot=0;slot<SHORTCUT_SLOT_COUNT;slot++){const point=positions[`slot-${slot}` as ControlId],userScale=point.userScale;
       const slotFrame=CONTROL_SIZES.slot.width*userScale,input=80*userScale,slotBleed=(slotFrame-input)/2;

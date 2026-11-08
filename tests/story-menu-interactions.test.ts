@@ -24,7 +24,7 @@ import type { ControlSkin } from '../src/domain/control-skin.ts';
 import type { ShopCatalog, Storefront } from '../src/domain/shop.ts';
 import type { StoryClassCatalog } from '../src/domain/story-class.ts';
 import type { StoryInterface } from '../src/domain/story-interface.ts';
-import { ControlLayoutPreferences, CONTROL_IDS, HUD_SIDE_BUTTON_SIZE, resolveControlLayout, type ControlId } from '../src/ui/control-layout.ts';
+import { ControlLayoutPreferences, CONTROL_IDS, CONTROL_SIZES, HUD_SIDE_BUTTON_SIZE, resolveControlLayout, type ControlId } from '../src/ui/control-layout.ts';
 import { KeyBindingPreferences } from '../src/application/key-bindings.ts';
 import { controlSettings } from '../src/application/control-settings.ts';
 import { controlViewport } from '../src/ui/phaser/control-layout-viewport.ts';
@@ -189,6 +189,7 @@ interface MenuInternals {
   busy: boolean;
   notice?: string;
   shortcutEdit?: { page: number };
+  shortcutScreen: UiSurface;
   shopPanel?: { store: Storefront; bagScroll?: ScrollArea };
   confirmOperation(): void;
 }
@@ -1003,6 +1004,10 @@ test('a skill moves to the last registered shortcut and clicking that slot again
   f.menu.show('skills');f.scene.click(f.scene.button(skill.name));
   if(f.scene.buttons('取消快捷键').length)f.scene.click(f.scene.button('取消快捷键'));
   f.scene.click(f.scene.button('快捷键'));
+  const attack=f.internals.shortcutScreen.root.list.find(node=>node.getData('file')===f.app.controlSkin.button);
+  assert.ok(attack,'登记屏画出攻击按钮');
+  assert.equal(attack.width,CONTROL_SIZES.attack.width,'攻击按钮按控件尺寸显示');
+  assert.equal(attack.height,CONTROL_SIZES.attack.height);
   const row=()=>f.session.bag.captureState().shortcuts.find(([owner])=>owner==='player')![1];
   f.scene.click(f.scene.button('快捷位 1'));
   f.scene.click(f.scene.button('快捷位 2'));
