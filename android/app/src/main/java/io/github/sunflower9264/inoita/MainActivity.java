@@ -133,7 +133,6 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
         if (isFinishing() || isDestroyed()) return;
 
         webView = new WebView(this);
-        webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
         webView.setBackgroundColor(getColor(R.color.background));
         webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
         webView.setVerticalScrollBarEnabled(false);
