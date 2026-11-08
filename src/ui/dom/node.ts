@@ -167,7 +167,7 @@ export class UiImage extends UiNode {
   private request?:AbortController;
   private source?:DomImageSource;
   private requestedWidth?:number;private requestedHeight?:number;
-  private cover?:{x:number;y:number};
+  private fit?:{x:number;y:number;mode:'cover'|'contain'};
   constructor(scene:Phaser.Scene,parent:UiNode|HTMLElement=uiMount(scene),file?:string){
     super(scene,parent);this.element.style.overflow='hidden';this.picture=document.createElement('img');this.picture.draggable=false;this.picture.alt='';
     Object.assign(this.picture.style,{position:'absolute',maxWidth:'none',pointerEvents:'none'});this.element.appendChild(this.picture);
@@ -177,11 +177,11 @@ export class UiImage extends UiNode {
   applySource(source:DomImageSource):this{this.source=source;this.picture.src=source.url;const ratio=source.frame.width/source.frame.height;super.setSize(this.requestedWidth??(this.requestedHeight!==undefined?this.requestedHeight*ratio:source.frame.width),this.requestedHeight??(this.requestedWidth!==undefined?this.requestedWidth/ratio:source.frame.height));this.draw();this.emit('loaded');return this;}
   override setDisplaySize(width:number,height:number):this{this.requestedWidth=width;this.requestedHeight=height;super.setSize(width,height);this.draw();return this;}
   resize(width?:number,height?:number):this{this.requestedWidth=width;this.requestedHeight=height;if(this.source)this.applySource(this.source);else super.setSize(width??this.width,height??this.height);return this;}
-  fitting(x=.5,y=.5):this{this.cover={x,y};this.draw();return this;}
+  fitting(x=.5,y=.5,mode:'cover'|'contain'='cover'):this{this.fit={x,y,mode};this.draw();return this;}
   override setFlipX(value:boolean):this{super.setFlipX(value);this.draw();return this;}
   override setFlipY(value:boolean):this{super.setFlipY(value);this.draw();return this;}
   setCrop(x:number,y:number,width:number,height:number):this{this.element.style.clipPath=`inset(${y}px ${Math.max(0,this.width-x-width)}px ${Math.max(0,this.height-y-height)}px ${x}px)`;return this;}
-  private draw():void{if(!this.source)return;const source=this.source,frame=source.frame;let sx=this.width/frame.width,sy=this.height/frame.height,left=0,top=0;if(this.cover){sx=sy=Math.max(sx,sy);left=(this.width-frame.width*sx)*this.cover.x;top=(this.height-frame.height*sy)*this.cover.y;}Object.assign(this.picture.style,{width:`${source.width*sx}px`,height:`${source.height*sy}px`,left:`${left-frame.x*sx}px`,top:`${top-frame.y*sy}px`});this.picture.style.transform=`scale(${this.flipX?-1:1},${this.flipY?-1:1})`;this.picture.style.transformOrigin=`${this.width/2-left+frame.x*sx}px ${this.height/2-top+frame.y*sy}px`;}
+  private draw():void{if(!this.source)return;const source=this.source,frame=source.frame;let sx=this.width/frame.width,sy=this.height/frame.height,left=0,top=0;if(this.fit){sx=sy=this.fit.mode==='cover'?Math.max(sx,sy):Math.min(sx,sy);left=(this.width-frame.width*sx)*this.fit.x;top=(this.height-frame.height*sy)*this.fit.y;}Object.assign(this.picture.style,{width:`${source.width*sx}px`,height:`${source.height*sy}px`,left:`${left-frame.x*sx}px`,top:`${top-frame.y*sy}px`,clipPath:`inset(${frame.y*sy}px ${(source.width-frame.x-frame.width)*sx}px ${(source.height-frame.y-frame.height)*sy}px ${frame.x*sx}px)`});this.picture.style.transform=`scale(${this.flipX?-1:1},${this.flipY?-1:1})`;this.picture.style.transformOrigin=`${this.width/2-left+frame.x*sx}px ${this.height/2-top+frame.y*sy}px`;}
   override destroy():void{this.request?.abort();this.lease?.release();this.lease=undefined;super.destroy();}
 }
 

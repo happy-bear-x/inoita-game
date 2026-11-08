@@ -204,7 +204,7 @@ export class PartyPanel {
       // 和背包页共用同一套合成立绘：按预览框缩放居中，换人时替换，翻页时摘下来保留缓存。
       const character=this.preview??(this.preview=new CharacterPreview(v.scene));
       character.show(v,appearance,preview);
-    }else v.imageCover(this.portrait(id),preview.x,preview.y,preview.width,preview.height);
+    }else v.imageContain(this.portrait(id),preview.x,preview.y,preview.width,preview.height);
     for(const slot of panels.equipmentSlots){
       const entry=equipment[slot.id as EquipmentSlot],instance=entry?bag.get(entry):undefined,item=instance?bag.catalog.items[instance.item]:undefined;
       const button=v.button('',482+slot.x,slot.y,74,74,()=>this.inspect(id,'bag'),{image:slotFrameImage(this.app,this.session,instance)}).setData('label',`${slot.name}：${item?.name??'空'}`);

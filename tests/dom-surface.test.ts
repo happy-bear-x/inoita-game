@@ -104,6 +104,17 @@ test('image size is available before loading and flipping preserves the outer an
   assert.equal(image.element.style.clipPath,'inset(0px 120px 0px 0px)');
 });
 
+test('contained atlas images keep their proportions and remain inside the preview box',t=>{
+  const f=fixture();t.after(f.cleanup);
+  const image=new UiImage(f.scene,f.surface.root).resize(100,100).fitting(.5,.5,'contain');
+  image.applySource({url:'atlas.png',width:400,height:200,frame:{x:40,y:30,width:100,height:50}});
+  const picture=(image.element as unknown as MenuElement).children[0];
+  assert.deepEqual([picture.style.width,picture.style.height,picture.style.left,picture.style.top],['400px','200px','-40px','-5px']);
+  assert.equal(picture.style.clipPath,'inset(30px 260px 120px 40px)','留白不能露出图集里的相邻图片');
+  image.fitting(.5,.5,'cover');
+  assert.deepEqual([picture.style.width,picture.style.height,picture.style.left,picture.style.top],['800px','400px','-130px','-60px']);
+});
+
 test('character preview reuses source pixels, follows its target box and releases detached images',t=>{
   const f=fixture();t.after(f.cleanup);
   let exports=0;const source={width:200,height:200,toDataURL:()=>{exports++;return 'data:image/png;base64,source';}};

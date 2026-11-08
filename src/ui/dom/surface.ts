@@ -34,6 +34,7 @@ export class UiSurface {
   visible(value:boolean):void{this.root.setVisible(value);this.scrolls.forEach(scroll=>scroll.syncVisibility());}
   image(file:string,x:number,y:number,width?:number,height?:number,parent=this.root):UiImage{return new UiImage(this.scene,parent,file).setPosition(x,y).resize(width,height);}
   imageCover(file:string,x:number,y:number,width:number,height:number,parent=this.root,anchorX=.5,anchorY=.5):UiImage{return this.image(file,x,y,width,height,parent).fitting(anchorX,anchorY);}
+  imageContain(file:string,x:number,y:number,width:number,height:number,parent=this.root):UiImage{return this.image(file,x,y,width,height,parent).fitting(.5,.5,'contain');}
   text(value:string,x:number,y:number,width=0,size=22,color='#f3deb0',parent=this.root):UiText{return new UiText(this.scene,parent,value,x,y,width,size,color);}
   rect(x:number,y:number,width:number,height:number,color=0x21190f,alpha=.95,parent=this.root):UiNode{return new UiNode(this.scene,parent).setPosition(x,y).setSize(width,height).setFillStyle(color,alpha);}
   container(x=0,y=0,parent=this.root):UiNode{return new UiNode(this.scene,parent).setPosition(x,y);}

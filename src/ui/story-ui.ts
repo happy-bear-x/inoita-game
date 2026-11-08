@@ -1844,7 +1844,7 @@ export class StoryUI {
       character.show(v,appearance,preview,parent);
     }else{
       const art=this.memberArt(),panels=this.app.menuPanels;
-      v.imageCover(this.selectedMemberId==='player'?panels.classes[member.classId].preview:art.partyIcon,preview.x,preview.y,preview.width,preview.height,parent);
+      v.imageContain(this.selectedMemberId==='player'?panels.classes[member.classId].preview:art.partyIcon,preview.x,preview.y,preview.width,preview.height,parent);
     }
   }
   private action(action:()=>void):void{if(this.busy)return;this.busy=true;try{action();}catch(error){this.notice=(error as Error).message;}finally{this.busy=false;}if(this.open)this.render();}
