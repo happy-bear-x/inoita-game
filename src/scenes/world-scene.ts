@@ -170,7 +170,7 @@ export class WorldScene extends Phaser.Scene {
   private nameBanner?: NameBanner;
   private minimap?: StoryMinimap;
   private nextMinimapEnemyUpdate = 0;
-  private fpsReadout?: { dom?: DomLabel; lastValue?: number; lastVisible?: boolean };
+  private fpsReadout?: { dom?: DomLabel; lastValue?: number; lastLimit?: number; lastVisible?: boolean };
   /** 真实游戏步进计数：只在场景 update 里自增，不受 120Hz 屏幕的 RAF 回调次数影响。 */
   private fpsFrames = 0;
   private fpsWindowStart = 0;
@@ -1111,6 +1111,11 @@ export class WorldScene extends Phaser.Scene {
       readout.dom.setVisible(visible);
     }
     if (!visible) return;
+    const limit = displaySettings.frameRateLimit;
+    if (readout.lastValue !== undefined && readout.lastLimit !== limit) {
+      readout.lastLimit = limit;
+      readout.dom.setText(`实际 ${readout.lastValue} / 上限 ${limit} 帧`);
+    }
     // updateFps 每个真实游戏步进只调用一次；不用 loop.actualFps，因为那个值按 RAF
     // 回调计数，120Hz 屏幕会显示约 120，而游戏实际只更新、渲染约 60 次。
     const now = performance.now();
@@ -1122,9 +1127,10 @@ export class WorldScene extends Phaser.Scene {
     if (elapsed < 1000) return;
     const value = Math.round(this.fpsFrames * 1000 / elapsed);
     this.fpsFrames = 0; this.fpsWindowStart = now;
-    if (readout.lastValue !== value) {
+    if (readout.lastValue !== value || readout.lastLimit !== limit) {
       readout.lastValue = value;
-      readout.dom.setText(`${value} FPS`);
+      readout.lastLimit = limit;
+      readout.dom.setText(`实际 ${value} / 上限 ${limit} 帧`);
     }
   }
   private layoutHud(): void {
