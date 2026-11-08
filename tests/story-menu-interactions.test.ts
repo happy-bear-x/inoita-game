@@ -573,14 +573,14 @@ test('custom menu buttons share native art and keep labels above their pressed l
     f.menu.show(page);
     if(page==='status')f.scene.click(f.scene.button('查看属性加点'));
     const tabLabels=new Set(['人物','背包','技能','队伍','任务','系统','关闭菜单']);
-    const commonButton=(node:Display)=>(node.getData('face') as UiNode|undefined)?.list.length===3;
+    const commonButton=(node:Display)=>(node.getData('face') as UiNode|undefined)?.list[0]?.getData('file')===COMMON_BUTTON.image;
     const buttons=f.scene.nodes.filter(node=>node.shown&&node.getData('uiAction')&&
       commonButton(node)&&node.getData('label')&&!tabLabels.has(node.getData('label')));
     assert(buttons.length>0,`${page}包含文字按钮`);
     for(const button of buttons){
       for(const [part,file] of [['face',COMMON_BUTTON.image],['highlight',COMMON_BUTTON.pressed]] as const){
         const layer=button.getData(part) as Display;
-        assert.equal(layer.list.length,3,'DOM 按钮由原图左端、中段、右端组成');
+        assert.equal(layer.list.length,1,'DOM 按钮使用连续的原版图片');
         assert(layer.list.every(image=>`interface:${image.getData('file')}`===`interface:${file}`));
       }
       assert.equal(button.getData('labelText'),undefined,`${page}文字改由 DOM 绘制`);
@@ -598,9 +598,10 @@ test('custom menu buttons share native art and keep labels above their pressed l
   assert.equal(f.scene.nodes.filter(node=>node.shown&&node.getData('uiAction')&&node.getData('labelText')).length,0,'设置页文字改由 DOM 绘制');
 });
 
-test('DOM common button slices stay inside hit areas and preserve selected feedback on input cancellation', t => {
+test('DOM common buttons use a continuous image and preserve selected feedback on input cancellation', t => {
   const f=fixture();t.after(f.cleanup);f.scene.game.renderer.type=2;f.menu.show('system');
-  // 窄按钮和方按钮覆盖两种宽高比，后者触及 NineSlice 的最小宽度。
+  for(const file of COMMON_BUTTON_IMAGES)assert.equal(UI_ATLAS_FRAMES[file],undefined,'连续按钮使用独立图片');
+  // 窄按钮和方按钮覆盖两种宽高比，后者触及两端的最小宽度。
   const narrow=f.internals.surface.button('窄按钮',0,0,84,44,()=>{}, {selected:true}) as unknown as Display;
   f.internals.surface.button('方按钮',0,70,58,58,()=>{});
   const tabLabels=new Set(['人物','背包','技能','队伍','任务','系统','关闭菜单']);
@@ -610,11 +611,13 @@ test('DOM common button slices stay inside hit areas and preserve selected feedb
     const area=button.input!.hitArea;
     for(const [part,file] of [['face',COMMON_BUTTON.image],['highlight',COMMON_BUTTON.pressed]] as const){
       const group=button.getData(part) as Display;
-      assert.equal(group.list.length,3,'DOM 保留原图左端、中段、右端');
+      assert.equal(group.list.length,1,'按钮皮肤是连续图片，避免三段拼接缝');
       for(const slice of group.list){
         assert.equal(slice.getData('file'),file);
         assert(slice.x>=-1e-8&&slice.x+slice.width<=area.width+1e-8,'切片横向落在按钮内');
         assert(slice.y>=-1e-8&&slice.y+slice.height<=area.height+1e-8,'切片纵向落在按钮内');
+        assert.equal(slice.element.style.borderImageSlice,`0 ${COMMON_BUTTON.cap} fill`);
+        assert.equal(slice.element.style.borderImageRepeat,'stretch');
       }
     }
   }

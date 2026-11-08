@@ -41,8 +41,8 @@ export class UiSurface {
   button(label:string,x:number,y:number,width:number,height:number,action:()=>void,options:{image?:string;pressed?:string;fontSize?:number;disabled?:boolean;selected?:boolean;bare?:boolean;native?:boolean;pressedRect?:{x:number;y:number;width:number;height:number};pressedAdd?:boolean;parent?:UiNode;guard?:()=>boolean;hold?:{delayMs?:number;intervalMs?:number}}={}):UiNode{
     const parent=options.parent??this.root,result=this.container(x,y,parent).setSize(width,height),common=!options.image&&!options.bare;
     const draw=(file:string):UiImage=>{const image=this.image(file,0,0,options.native?undefined:width,options.native?undefined:height,result);if(options.native){const center=()=>image.setPosition((width-image.width)/2,(height-image.height)/2);center();image.on('loaded',center);}return image;};
-    const face=options.image?draw(options.image):common?this.sliced(COMMON_BUTTON.image,0,0,width,height,COMMON_BUTTON.cap,0,result):undefined;
-    const highlight=options.pressed?draw(options.pressed):common?this.sliced(COMMON_BUTTON.pressed,0,0,width,height,COMMON_BUTTON.cap,0,result):undefined;
+    const face=options.image?draw(options.image):common?this.buttonFace(COMMON_BUTTON.image,width,height,result):undefined;
+    const highlight=options.pressed?draw(options.pressed):common?this.buttonFace(COMMON_BUTTON.pressed,width,height,result):undefined;
     if(common||options.pressedAdd)highlight?.setBlendMode('add');
     if(options.pressedRect){const area=options.pressedRect;highlight?.setPosition(area.x,area.y).setDisplaySize(area.width,area.height);}
     const text=label?this.text(label,width/2,height/2,width-12,options.fontSize??Math.min(22,height*.42),'#f3deb0',result).setOrigin(.5):undefined;
@@ -60,6 +60,22 @@ export class UiSurface {
     result.on('pointerup',(pointer:UiPointer)=>{if(press!==pointer.id)return;const repeated=held,run=allowed();cancel();if(!repeated&&run){this.scene.game.events.emit(UI_EVENTS.select);action();}});
     result.on('pointerupoutside',cancel).once('destroy',cancel);
     if(options.disabled)result.getData('setEnabled')(false);this.buttons.push(result);return result;
+  }
+  private buttonFace(file:string,width:number,height:number,parent:UiNode):UiNode{
+    const group=this.container(0,0,parent).setSize(width,height),controller=group.controller;
+    const draw=(source:NonNullable<ReturnType<typeof domAssets.peek>>)=>{
+      const frame=source.frame,scale=Math.min(height/frame.height,width/(COMMON_BUTTON.cap*2));
+      const cap=COMMON_BUTTON.cap*scale,faceHeight=frame.height*scale;
+      const face=this.container(0,(height-faceHeight)/2,group).setSize(width,faceHeight).setData('file',file);
+      Object.assign(face.element.style,{boxSizing:'border-box',borderStyle:'solid',borderColor:'transparent',
+        borderWidth:`0 ${cap}px`,borderImageSource:`url(${JSON.stringify(source.url)})`,
+        borderImageSlice:`0 ${COMMON_BUTTON.cap} fill`,borderImageWidth:`0 ${cap}px`,borderImageRepeat:'stretch'});
+    };
+    const cached=domAssets.peek(file);if(cached)draw(cached);
+    void domAssets.acquire(file,controller.signal).then(lease=>{
+      if(!group.active){lease.release();return;}group.once('destroy',()=>lease.release());
+      if(!cached)draw(lease.source);
+    }).catch(error=>{if(!controller.signal.aborted)console.error(error);});return group;
   }
   focusables():UiNode[]{return this.enabled()&&this.root.shown?this.buttons.filter(button=>button.shown&&button.input?.enabled):[];}
   focus(button:UiNode):void{for(const candidate of this.buttons)candidate.getData('highlight')?.setVisible(candidate===button||candidate.getData('selected'));this.scrolls.find(scroll=>scroll.content===button.parentContainer)?.reveal(button);}
