@@ -485,9 +485,15 @@ test('system exposes load alongside save while settings keeps the working displa
   const rows={fps:260,critical:440} as const;
   assert(toggle(rows.fps));assert(toggle(rows.critical));
   assert(domTexts().includes('帧率上限'));
-  f.scene.click(f.scene.button('60 帧'));
+  assert.equal(f.scene.button('60 帧').getData('selected'),true);
+  assert.equal(f.scene.button('120 帧').getData('selected'),false);
+  f.scene.click(f.scene.button('120 帧'));
   assert.equal(displaySettings.frameRateLimit,120);
-  assert(f.scene.button('120 帧'));
+  assert.equal(f.scene.button('60 帧').getData('selected'),false);
+  assert.equal(f.scene.button('120 帧').getData('selected'),true);
+  f.scene.click(f.scene.button('60 帧'));
+  assert.equal(displaySettings.frameRateLimit,60);
+  assert.equal(f.scene.button('60 帧').getData('selected'),true);
   // 设置项按 90 行距排，谁也盖不住谁；操作方式位于滚动内容末尾，不要求在首屏视口内。
   const control=f.scene.nodes.find(node=>node.shown&&node.getData('uiAction')&&String(node.getData('label')).startsWith('操作方式：'))!,criticalToggle=toggle(rows.critical);
   assert(control.y>=criticalToggle.y+criticalToggle.input!.hitArea.height,'操作方式排在暴击光效下方');

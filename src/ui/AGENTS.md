@@ -22,7 +22,7 @@
 - `story-ui.ts` 只在 `attach` 时向 `app.inputRouter` 注册一个 `menu` 作用域，菜单打开时独占键盘；场景不再单独订阅 `keydown`。
 - **页面 controller 拥有这一页的状态和操作。** `save-page.ts` 是存档/读档页的样板：确认框、改名输入、读写请求和 Escape 分层都在 controller 里，`StoryUI` 只保留路由、生命周期、共享输入和整页重绘。后续拆 `party`、`quests`、`shop` 等页面时沿用同一方向，不重写面板绘制。
 - **每个菜单页面都有显式签名。** 页面 viewModel 与签名集中在 `story-ui-signature.ts`：用 `page`、`selectedMemberId`、`bag.revision`、`questBook.version`、`party` 形状、技能版本、存档槽摘要、设置值和面板自己的 `viewModel()` 拼出来，不做对象深度哈希。新增 `Page` 必须同时在 `STORY_MENU_PAGES` 和签名分支里补上；会话通知只在该页签名变化时重绘，数据没变不重绘。
-- 设置页提供帧率上限（60 / 120）与帧率显示两个独立选项；上限切换立即生效并保留本机选择。
+- 设置页并列显示 60 / 120 帧上限并标出当前选择；上限切换立即生效并保留本机选择，帧率显示是独立开关。
 - 这里不运行时导入 `phaser`；需要 Phaser 类型时用 `import type`，写法参考 `story-ui.ts`。
 - **DOM 文字统一带 `dom-label`。** `DomUi.label` 会自动补上这个类，它负责绝对定位、不换行和禁用指针事件；调用方只加自己的样式类。压在游戏画面上的文字用 `#ui-world`/`#ui-hud` 的软阴影，菜单文字站在面板底色上，不加描边。
 - **滚动文字用 `clip` 交给浏览器裁边。** `MenuTextLayer` 会为同一组上下边界建一个 `overflow:hidden` 的容器，滚动只移动标签；新增可滚动面板时同时给 `scroll` 和 `clip`，不要只靠 `y` 判断显隐。

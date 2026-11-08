@@ -798,10 +798,12 @@ export class StoryUI {
     v.button('',485,260,220,66,()=>{displaySettings.setFps(!fps);this.render();},{parent:content})
       .setData('label',fps?'开启':'关闭');
     const frameRateLimit=displaySettings.frameRateLimit;
-    v.button('',485,350,220,66,()=>{
-      displaySettings.setFrameRateLimit(frameRateLimit===60?120:60);
-      this.render();
-    },{parent:content}).setData('label',`${frameRateLimit} 帧`);
+    for(const [index,limit] of ([60,120] as const).entries()){
+      v.button('',485+index*150,350,135,66,()=>{
+        displaySettings.setFrameRateLimit(limit);
+        this.render();
+      },{parent:content,selected:frameRateLimit===limit}).setData('label',`${limit} 帧`);
+    }
     // 暴击光环和爆闪只影响画面，默认开启；不影响暴击冲击、数字、震屏或音效。
     const decorations=displaySettings.criticalDecorations;
     v.button('',485,440,220,66,()=>{
@@ -852,7 +854,8 @@ export class StoryUI {
     add('fps-label','帧率显示',260,275,25);
     add('fps-toggle',displaySettings.fps?'开启':'关闭',595,293,22,.5,.5);
     add('frame-rate-label','帧率上限',260,365,25);
-    add('frame-rate-toggle',`${displaySettings.frameRateLimit} 帧`,595,383,22,.5,.5);
+    add('frame-rate-60','60 帧',552.5,383,22,.5,.5);
+    add('frame-rate-120','120 帧',702.5,383,22,.5,.5);
     add('critical-label','暴击光效',260,455,25);
     add('critical-toggle',displaySettings.criticalDecorations?'开启':'关闭',595,473,22,.5,.5);
     let rowTop=530;
