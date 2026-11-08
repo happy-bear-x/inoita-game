@@ -252,6 +252,16 @@ export class PartyRoster {
     const index=this.slots.indexOf(id);
     return index===0?0:index===1?1:undefined;
   }
+  /**
+   * 跟随站位：按当前操控者重新排左右，而不是沿用固定名册槽位。
+   * 上阵顺序保持主角、槽位 0、槽位 1；去掉操控者后，剩下的跟随者一人一侧。
+   * 主角不在名册槽里，固定 `slotOf('player')` 会返回 undefined，不能直接拿来做跟随侧位。
+   */
+  followSlotOf(leaderId:string,id:string):0|1|undefined {
+    const followers=this.activeIds.filter(active=>active!==leaderId);
+    const index=followers.indexOf(id);
+    return index<0?undefined:(index%2===0?0:1);
+  }
   get livingIds():string[]{return this.activeIds.filter(id=>this.alive(id));}
   get activeSize():number{return this.activeIds.length;}
   get(id:string):CompanionMember|undefined{return this.owned.get(id);}
