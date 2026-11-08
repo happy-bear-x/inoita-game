@@ -49,6 +49,7 @@ npm test -- tests/example.test.ts
 
 - TypeScript 改动需要类型检查；没有相关用例时运行 `npm run typecheck`。
 - 内容、内容校验器或素材引用有变化时运行 `npm run validate:content`。
+- 素材引用或图集映射变化时运行 `npm run audit:assets`；它只检查保留集，不移动文件。
 - 内容构建链路（`tools/content-build.ts`、`tools/content-manifest.ts`、`tools/build.mjs`）有变化时运行 `npm run test:content-build`，它会用真实内容编译到临时目录并跑一场最小战斗和一个剧情节点。
 - 相关检查通过后继续完成任务；只有新改动、新失败或尚未解决的疑点才扩大测试。
 - 全量单元测试只在用户明确要求时使用 `npm run test:all`；独立安装与构建验收用 `npm run test:standalone`。测试写法见 `tests/AGENTS.md`。
@@ -98,6 +99,7 @@ public/                原样复制进构建产物的静态资源和内容
   content/             剧情、任务、地图、战斗、物品、音频等内容 JSON
   assets/              图片与音频素材
 config/                环境服务根地址（AGENTS.md；网页固定同源，Android 调试/发布分环境）
+asset-archive/         构建裁剪出的未引用素材（不进 Git；源文件仍在 public/assets）
 tests/                 单元测试（AGENTS.md；helpers、support 另有）
 tools/                 构建、校验、调试现场表生成、静态服务、APK 打包（AGENTS.md；debug-start 另有）
 deploy/                nginx 站点等部署配置
@@ -115,12 +117,14 @@ android/               Android WebView 壳（可选，规则见 AGENTS.md）
 npm test -- tests/combat.test.ts   # 类型检查 + 指定用例
 npm run typecheck                  # 只做类型检查
 npm run validate:content           # 内容、校验器或素材引用变化时
+npm run audit:assets               # 只检查素材保留集，不裁剪
 npm run test:content-build         # 真实内容编译后跑最小战斗与剧情节点
 npm run debug-start                # 内容改动后重新生成 GM 任务现场表
 npm run debug-start:check          # 只检查 GM 任务现场表是否过期
 npm run test:all                   # 用户明确要求全量单元测试时
 npm run test:standalone            # 独立安装、类型检查与构建验收
-npm run build                      # 校验并替换 dist/
+npm run build                      # 校验、替换 dist/，并把未引用素材移进 asset-archive/
+npm run build -- --no-prune        # 保留全部素材，只做引用检查
 npm run deploy                     # 类型检查 + 构建 + 核对 HTTPS 入口版本
 npm run serve                      # 前台启动打包静态服务（默认 4004）
 npm run dev                        # 开发服务器 http://localhost:4003/
@@ -142,7 +146,7 @@ npm run verify:update              # 核对 APK 基线与线上清单的差量
 - **画得太多或反复重建。** 同一张图能一起画就别拆开；方向没变就只挪位置，不要删掉重做；数字文字不要每帧重画。
 - **占内存太多。** 不用的图、声音、地图要能释放；常用素材只留当前进度需要的；缓存要有上限，最久没用的先删。换图、回菜单、新开一局都是清理时机。
 - **存档、加载、解析太重。** 这些活放到进图、回菜单、读档时做，不要塞进游戏循环；存档只写变化的部分，不要每次全量复制。
-- **内容本身太重。** 同一张图按方向存好几份、没用到的素材也打包进去，构建时就能去重和瘦身。
+- **内容本身太重。** 同一张图按方向存好几份、没用到的素材也打包进去，构建时就能去重和瘦身。`npm run build` 会按运行时引用裁剪 `dist/assets`，把未引用文件移进 `asset-archive/`；源文件仍在 `public/assets`。
 
 **先问四个数：** 这件事多久做一次、每次碰多少对象、每次造多少临时对象、占多少内存。只要有一项随玩家进度增长，就改成缓存、索引、降频、复用或上限。
 
