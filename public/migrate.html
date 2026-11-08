@@ -1,0 +1,15 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>迁移本机存档</title>
+<script>
+(function () {
+  var out = {};
+  try {
+    for (var index = 0; index < localStorage.length; index++) {
+      var key = localStorage.key(index);
+      out[key] = localStorage.getItem(key);
+    }
+  } catch (error) { /* 旧 WebView 读取失败时返回空对象 */ }
+  window.__migration = out;
+})();
+</script>

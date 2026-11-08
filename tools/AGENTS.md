@@ -15,6 +15,8 @@
 
 - `tools/` 不进入 tsconfig 的 include，脚本独立于应用的类型检查运行。
 - `.mjs` 脚本不做类型检查；`.ts` 脚本由 Node 的类型剥离直接执行，写法保持可擦除。
+- **Android 打包工具链**：Cefrium 需要 JDK 25、Gradle 9.7.1、AGP 9.4、Android SDK 37 和 build-tools 37.0.0。`build-apk.mjs` 优先使用 `~/.local/jdk-25`，其次 `JAVA_HOME`；低于 JDK 25 直接失败。不要退回 JDK 17 / Gradle 8.7。
+- `verify-apk.mjs` 会检查 Cefrium 类、arm64 原生库、16 KB 页对齐；Cefrium 自带的 `icudtl.dat`、`*.pak`、`stored-locales/`、`cefrium/` 不参与和 `dist` 的逐文件对比。
 - 改动构建、校验或打包逻辑后运行对应命令验证：`npm run build`、`npm run validate:content`、`npm run test:standalone`，APK 改动用 `npm run apk` 和 `npm run verify:apk`。
 - 生成物 `dist/`、`public/content/debug/start.json`、`src/generated/*` 由脚本产出，内容变化后重跑对应生成命令。
 - 构建在 `dist/content-manifest.json` 写生产内容哨兵：记录编译后内容的 `contentVersion` 和 `campaign.json`/`battle.json` 的必需顶层键。清单放在 `content/` 外，不参与 `hashTree(content)`；运行时只读清单，不重算 34MB 内容哈希。

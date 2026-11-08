@@ -3,7 +3,7 @@
  *
  * 全屏是浏览器能力，不是游戏状态：不写 localStorage，也不进存档。设置页按
  * `fullscreenSupported()` 决定是否显示这一项——iPhone Safari 没有 Fullscreen API；
- * 项目自带的 Android WebView 壳没有接宿主全屏回调（APK 本身用隐藏系统栏实现沉浸式），
+ * 项目自带的 Android 壳没有接宿主全屏回调（APK 本身用隐藏系统栏实现沉浸式），
  * 这两处点了都不会有反应，所以直接不显示。
  */
 type LegacyDocument = Document & {
@@ -15,7 +15,7 @@ type LegacyElement = HTMLElement & { webkitRequestFullscreen?: () => void | Prom
 /** `lock()` 不在 TypeScript 的 DOM 类型里，运行时只有部分移动浏览器提供。 */
 type LockableOrientation = ScreenOrientation & { lock?: (orientation: string) => Promise<void> };
 
-/** APK 内页面的固定源；该 WebView 壳没有实现全屏回调。 */
+/** 旧 WebView 壳的固定源；该壳没有实现全屏回调。 */
 const PACKAGED_HOST = 'appassets.androidplatform.net';
 
 function legacyDocument(): LegacyDocument | undefined {
@@ -29,6 +29,8 @@ export type FullscreenStatus = 'available' | 'packaged' | 'unsupported';
 export function fullscreenStatus(): FullscreenStatus {
   const doc = legacyDocument();
   if (!doc) return 'unsupported';
+  // 自带 Chromium 的 Android 壳同样用隐藏系统栏实现沉浸式，不需要网页全屏。
+  if ((globalThis as { __inoitaEngine?: string }).__inoitaEngine === 'cefrium') return 'packaged';
   if (typeof location !== 'undefined' && location.hostname === PACKAGED_HOST) return 'packaged';
   const element = doc.documentElement as LegacyElement;
   const request = element.requestFullscreen ?? element.webkitRequestFullscreen;

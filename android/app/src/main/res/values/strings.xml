@@ -4,6 +4,11 @@
     <string name="exit_message">退出游戏？</string>
     <string name="exit_confirm">退出</string>
     <string name="exit_cancel">继续</string>
+    <string name="browser_init_failed_title">浏览器初始化失败</string>
+    <string name="browser_init_failed_message">内置 Chromium 没有启动。请重新安装 APK；仍然失败时，把机型和 Android 版本发给我们。</string>
+    <string name="local_server_failed_title">本地资源服务启动失败</string>
+    <string name="local_server_failed_message">端口 %1$d 被占用。关闭占用该端口的应用后重新打开游戏。</string>
+    <string name="migration_booting">正在迁移本机存档…</string>
 
     <string name="update_available_title">发现新版本</string>
     <string name="update_available_message">发现新版本，需要下载 %1$s MB（%2$d 个文件）</string>

@@ -6,7 +6,7 @@ import { signBytes, tryReadUpdateKey, verifyBytes, writePublicKey } from './upda
 
 export { signBytes, verifyBytes };
 
-const MIN_SHELL = 1;
+const MIN_SHELL = 2;
 const HEX16 = /^[0-9a-f]{16}$/;
 const HEX64 = /^[0-9a-f]{64}$/;
 const UPDATE_DIR = 'update';

@@ -17,7 +17,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
 const outDir = path.join(root, 'apk-out');
 const sdk = path.resolve(process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT || path.join(os.homedir(), '.local/android-sdk'));
-const buildTools = path.join(sdk, 'build-tools', '34.0.0');
+const buildTools = path.join(sdk, 'build-tools', '37.0.0');
 
 const apk = process.argv[2]
   ? path.resolve(process.argv[2])
@@ -68,11 +68,14 @@ try {
 
   const signed = run(path.join(buildTools, 'apksigner'), ['verify', '--verbose', '--print-certs', apk], { allowFailure: true });
   check('APK 签名有效', signed.status === 0, signed.status === 0 ? '' : signed.stderr.trim());
-  check('签名为 v2', /Verified using v2 scheme \(APK Signature Scheme v2\): true/.test(signed.stdout));
+  check('签名为 v2 或 v3', /Verified using v2 scheme .*: true/.test(signed.stdout)
+    || /Verified using v3 scheme .*: true/.test(signed.stdout));
   check('签名为 v3', /Verified using v3 scheme \(APK Signature Scheme v3\): true/.test(signed.stdout));
 
   const aligned = run(path.join(buildTools, 'zipalign'), ['-c', '-v', '4', apk], { allowFailure: true });
   check('4 字节对齐', aligned.status === 0);
+  const aligned16 = run(path.join(buildTools, 'zipalign'), ['-c', '-P', '16', '-v', '4', apk], { allowFailure: true });
+  check('16 KB 页对齐', aligned16.status === 0);
 
   const integrity = run('unzip', ['-tqq', apk], { allowFailure: true });
   check('ZIP 完整性', integrity.status === 0);
@@ -86,7 +89,7 @@ try {
       fs.readFileSync(path.join(root, 'android', 'app', 'build.gradle'), 'utf8'))?.[1] ?? '';
   check(`版本 ${expectedVersion || '未知'}`,
     expectedVersion !== '' && badging.includes(`versionName='${expectedVersion}'`));
-  check('minSdk 26', /sdkVersion:'26'/.test(badging));
+  check('minSdk 29', /minSdkVersion:'29'/.test(badging));
   check('targetSdk 34', /targetSdkVersion:'34'/.test(badging));
   check('启动 Activity', /launchable-activity: name='io\.github\.sunflower9264\.inoita\.MainActivity'/.test(badging));
 
@@ -109,8 +112,12 @@ try {
   check('诊断脚本与 dist 一致', diagnosticsInApk === fs.readFileSync(path.join(dist, 'diagnostics.js'), 'utf8'));
   const dexText = entries.filter(name => /^classes\d*\.dex$/.test(name))
     .map(name => run('unzip', ['-p', apk, name]).stdout).join('\n');
-  check('包含原生诊断桥', dexText.includes('InotiaNative'));
-  check('APK 内没有 native 库', !entries.some(name => name.startsWith('lib/')));
+  check('包含 Cefrium 浏览器', dexText.includes('com/cefrium/CefriumBrowser'));
+  check('包含本地资源服务', dexText.includes('LocalAssetServer'));
+  const nativeLibs = entries.filter(name => name.startsWith('lib/'));
+  check('包含 arm64 Chromium 原生库', nativeLibs.some(name => name.startsWith('lib/arm64-v8a/') && name.endsWith('.so')));
+  check('只打包 arm64 ABI', nativeLibs.length > 0 && nativeLibs.every(name => name.startsWith('lib/arm64-v8a/')));
+  check('原生库解压到磁盘', /extractNativeLibs[^=]*=true/.test(xmltree));
   check('未打包 .build-meta.json', !apkAssets.includes('.build-meta.json'));
 
   const distFiles = walk(dist).filter(name => name !== '.build-meta.json');
@@ -173,11 +180,17 @@ try {
 
   const distSet = new Set(distFiles);
   const missing = distFiles.filter(name => !apkSet.has(name));
-  const extra = apkAssets.filter(name => !distSet.has(name));
-  check('资产文件集合与 dist 完全一致', missing.length === 0 && extra.length === 0,
+  // Cefrium 自带 Chromium 运行资源，不属于游戏内容，不参与和 dist 的逐文件对比。
+  // 0.18.0 会把引擎资源改名为 `名字+com.cefrium+`，避免和系统 WebView 撞名。
+  const engineAssets = ['icudtl.dat', 'resources.pak', 'chrome_100_percent.pak',
+    'chrome_200_percent.pak', 'stored-locales/', 'cefrium/'];
+  const isEngineAsset = name => name.endsWith('+com.cefrium+') || engineAssets.some(prefix =>
+    prefix.endsWith('/') ? name.startsWith(prefix) : name === prefix);
+  const extra = apkAssets.filter(name => !distSet.has(name) && !isEngineAsset(name));
+  check('游戏资产与 dist 完全一致', missing.length === 0 && extra.length === 0,
     missing.length || extra.length
       ? `缺少 ${missing.length} 个${missing.length ? `（如 ${missing[0]}）` : ''}，多出 ${extra.length} 个${extra.length ? `（如 ${extra[0]}）` : ''}`
-      : `${distFiles.length} 个文件`);
+      : `${distFiles.length} 个游戏文件，另有 Chromium 运行资源`);
 
   const indexInApk = run('unzip', ['-p', apk, 'assets/index.html']).stdout;
   const indexOnDisk = fs.readFileSync(path.join(dist, 'index.html'), 'utf8');
