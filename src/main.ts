@@ -624,7 +624,7 @@ function boot(): void {
   ui.onMenu = returnToMenu;
   ui.onResetInput = () => { worldScene()?.resetInput(); };
   const game = new Phaser.Game({
-    type: Phaser.AUTO, parent: 'game', backgroundColor: '#101d24',
+    type: Phaser.WEBGL, parent: 'game', backgroundColor: '#101d24',
     pixelArt: true, roundPixels: true,
     fps: { ...GAME_FRAME_TIMING, limit: displaySettings.frameRateLimit },
     callbacks: { postBoot: game => {
