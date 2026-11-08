@@ -21,7 +21,7 @@ interface GmPanelHooks {
   /** 重画整个菜单。 */
   render(): void;
   /** 播放失败时重新打开面板，让原因当场可见，而不是等下一条操作。 */
-  reopen?(): void;
+  reopen?(message:string): void;
 }
 
 /** 把内容里的编号翻成名字；缺省时使用中文场景说明。 */
@@ -145,10 +145,15 @@ export class GmPanel {
   }
 
   /** 收尾成功后由装配层调用：保留筛选与选中任务，只切回剧情页。 */
-  showStoryPage(): void {
+  showStoryPage(message = ''): void {
     this.page = 'story';
-    this.result = '';
+    this.result = message;
     this.hooks.render();
+  }
+
+  dispose():void {
+    this.previewToken++;
+    this.previewQuest=undefined;this.previewResult=undefined;this.storyCatalog=undefined;this.writer=undefined;
   }
 
   /** GM 页文字统一走 DOM；`writer` 由菜单提供，图框、按钮和滚动仍由 Phaser 画。 */
@@ -572,12 +577,10 @@ export class GmPanel {
     this.hooks.render();
   }
   private onPlay(target: StoryDebugTarget): void {
-    this.result='';this.hooks.close();
-    void this.gm.jumpStory(target).then(result=>{
+    this.result='';const pending=this.gm.jumpStory(target);this.hooks.close();
+    void pending.then(result=>{
       // 失败原因直接写出来：多半是内容缺地点或切图被拒，只报「未能进入」没法复现。
-      this.result=result.ok?'':`未能进入任务：${result.reason??'原因未记录'}`;
-      if(!result.ok)this.hooks.reopen?.();
-      this.hooks.render();
+      if(!result.ok)this.hooks.reopen?.(`未能进入任务：${result.reason??'原因未记录'}`);
     });
   }
   private onEndDebug(): void {

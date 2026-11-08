@@ -411,12 +411,15 @@ test('a hand-written start table is applied verbatim and the opening play runs t
   const play = director.script.bind(director);
   director.script = async (name, node) => { played.push({ script: String(name), busy: director.busy }); await play(name, node); };
   const persistence: string[] = [];
+  let catalogUsers=0,releasedCatalog=0;
   const gm = createGmActions({ session, campaign: debugCampaign, director, status: () => ({}),
+    acquireStoryCatalog:async()=>{catalogUsers++;return ()=>{catalogUsers--;releasedCatalog++;};},
     persistence: { suspend: () => persistence.push('suspend'), resume: () => persistence.push('resume'), resumeAfterRollback: () => persistence.push('resume-after-rollback') },
     report: async () => true });
 
   const result = await gm.jumpStory({ quest: DEBUG_START_QUEST });
   assert.equal(result.ok, true, result.reason);
+  assert.equal(catalogUsers,0);assert.equal(releasedCatalog,1,'剧情跳转结束后释放现场表使用权');
   assert.deepEqual(played, [{ script: DEBUG_START_SCRIPT, busy: false }], '开幕演出在 debugJump 解锁后才调用');
   assert.equal(session.flags.has('debug-play-ran'), true, '开幕演出真的执行了');
   assert.equal(result.play?.script, DEBUG_START_SCRIPT);

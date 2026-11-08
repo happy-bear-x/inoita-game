@@ -21,6 +21,7 @@
 
 - `dom-text-layout.test.ts` 验证菜单仅移动时文字跟随、锚点即时更新；`dom-surface.test.ts` 验证输入守卫、原生拖动、取消、嵌套长按、滚动后点击、静态按钮键盘导航、嵌套菜单滚动层坐标、图片裁边翻转、角色预览与预载信号。
 - `story-menu-interactions.test.ts` 使用真实 DOM 菜单组件和原生事件，验证交易、加点、背包拖放、存读档、布局编辑与弹层输入隔离。
+- 调试菜单用例覆盖可见行复用、滚动到列表末尾、关闭释放、迟到预览和重新打开；`resident-combat-lifecycle.test.ts` 覆盖调试现场表的持有、释放和异步加载竞态。
 - `game-timing.test.ts` 和 `movement.test.ts` 验证 60 / 120 帧限帧切换、实际耗时、移动平滑及战斗寻路额度；`display-settings.test.ts` 验证画面偏好的默认值和持久化。
 - `dom-assets.test.ts` 覆盖共享图集、独立取消与失败重试；`dom-components.test.ts` 覆盖裁剪、父子清理、轮盘技能/物品、多指互斥及隐藏后释放按键。
 - `status-color-renderer.test.ts` 验证受击闪光结束后恢复原色和最新状态颜色。

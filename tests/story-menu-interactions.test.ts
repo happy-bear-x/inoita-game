@@ -1944,6 +1944,59 @@ test('task previews keep late results on their own selection and disable unprepa
   assert.equal(requests.length,3,'离开剧情页不再发预览');
 });
 
+test('closing the debug page releases its catalog, text and stale preview; reopening reacquires it',async t=>{
+  const f=fixture();t.after(f.cleanup);
+  const gm=createGmActions({session:f.session,campaign});
+  let finish!:(result:Awaited<ReturnType<typeof gm.previewStory>>)=>void;
+  gm.previewStory=()=>new Promise(resolve=>{finish=resolve;});
+  Object.defineProperty(f.app,'gm',{value:gm,configurable:true});
+  let acquired=0,released=0,requested=0;
+  Object.defineProperty(f.app,'acquireDebugCatalog',{configurable:true,value:async()=>{acquired++;return ()=>{released++;};}});
+  Object.defineProperty(f.app,'releaseDebugCatalog',{configurable:true,value:()=>{requested++;}});
+  f.menu.show('debug');await new Promise(resolve=>setImmediate(resolve));
+  f.scene.click(f.scene.button('调试页 剧情'));
+  assert.equal(acquired,1);assert(visibleDomLabels(f).length>0);
+  f.menu.close();
+  assert.equal(released,1);assert.equal(requested,1);
+  assert.equal((f.menu as unknown as {gmPanel?:unknown}).gmPanel,undefined);
+  assert.equal(visibleDomLabels(f).length,0);
+  finish({ok:false,reason:'迟到的预览'});await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(visibleDomLabels(f).length,0,'迟到结果不能重新显示已经关闭的界面');
+  f.menu.show('debug');await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(acquired,2);assert.ok(f.scene.button('调试页 剧情'));
+  f.menu.releaseSession(f.session);
+  assert.equal(released,2);
+  assert.equal((f.menu as unknown as {session?:unknown}).session,undefined,'回标题释放旧会话引用');
+});
+
+test('closing the menu while debug data loads does not reopen it when the load completes',async t=>{
+  const f=fixture();t.after(f.cleanup);
+  const gm=createGmActions({session:f.session,campaign});
+  Object.defineProperty(f.app,'gm',{value:gm,configurable:true});
+  let finish!:(release:()=>void)=>void,released=0,requested=0;
+  Object.defineProperty(f.app,'acquireDebugCatalog',{configurable:true,value:()=>new Promise<()=>void>(resolve=>{finish=resolve;})});
+  Object.defineProperty(f.app,'releaseDebugCatalog',{configurable:true,value:()=>{requested++;}});
+  f.menu.show('system');f.menu.show('debug');f.menu.close();
+  finish(()=>{released++;});await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(f.menu.menuOpen,false);assert.equal(released,1);assert.equal(requested,1);
+  assert.equal(f.scene.buttons('调试页 剧情').length,0);
+});
+
+test('a failed story jump reacquires the catalog before showing its error',async t=>{
+  const f=fixture();t.after(f.cleanup);
+  const gm=createGmActions({session:f.session,campaign});
+  gm.previewStory=async target=>({ok:true,preview:{quest:target.quest,phase:'available',location:campaign.start}});
+  Object.defineProperty(f.app,'gm',{value:gm,configurable:true});
+  let acquired=0,released=0;
+  Object.defineProperty(f.app,'acquireDebugCatalog',{configurable:true,value:async()=>{acquired++;return ()=>{released++;};}});
+  Object.defineProperty(f.app,'releaseDebugCatalog',{configurable:true,value:()=>{}});
+  f.menu.show('debug');await new Promise(resolve=>setImmediate(resolve));
+  f.scene.click(f.scene.button('调试页 剧情'));await new Promise(resolve=>setImmediate(resolve));
+  f.scene.click(f.scene.button('进入任务'));await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(released,1);assert.equal(acquired,2);
+  assert.ok(visibleDomLabels(f).some(label=>label.text.includes('未能进入任务：当前会话还没有装配剧情导演')));
+});
+
 
 test('the GM character page levels, heals and toggles the debug switches', async t => {
   const f = fixture(); t.after(f.cleanup);

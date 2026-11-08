@@ -456,6 +456,7 @@ function installSession(session: Session): void {
   // 这样「默认关闭」是结构上的保证，而不是靠调用方自觉。
   app.gm = gmOn() ? createGmActions({
     session, campaign, director, markStore: new IndexedDbDebugMarkStore(),
+    acquireStoryCatalog:()=>app.acquireDebugCatalog(),
     prepareMark: async (mark, signal) => { signal.throwIfAborted(); const prepared = prepareDebugMark(mark, app); signal.throwIfAborted(); return prepared; },
     status: () => runtimeDiagnostics(),
     onStoryPreparation: preparing => { if(preparing)app.ui.loading('正在准备剧情…');else app.ui.loaded(); },

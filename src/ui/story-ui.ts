@@ -88,6 +88,10 @@ export class StoryUI {
   /** GM 面板按当前的动作层实例缓存；换会话（动作层重建）时一起换掉。 */
   private gmPanel?:GmPanel;
   private gmPanelOwner?:GmActions;
+  private debugCatalogRelease?:()=>void;
+  private debugOpenToken=0;
+  private debugStoryOnOpen=false;
+  private debugStoryMessage='';
   private minimapHeight=132;
   private scene?:Phaser.Scene;private surface?:UiSurface;private body?:UiSurface;private hudButtons?:UiSurface;private modal?:UiSurface;private description?:UiSurface;
   /** 菜单页文字走 DOM；图框、按钮、滑条热区和滚动仍由 Phaser 画。 */
@@ -359,11 +363,22 @@ export class StoryUI {
   }
   show(page:Page):void{
     if(!this.session||!this.app.ui.ready||this.app.ui.mode!=='game'||this.app.ui.suspended||(!this.open&&this.app.ui.locked))return;
+    if(page!=='debug'){this.debugOpenToken++;this.debugStoryOnOpen=false;this.debugStoryMessage='';}
+    if(page==='debug'&&!this.debugCatalogRelease&&this.app.acquireDebugCatalog){
+      const token=++this.debugOpenToken,session=this.session;
+      void this.app.acquireDebugCatalog().then(release=>{
+        if(token!==this.debugOpenToken||this.session!==session){release();this.app.releaseDebugCatalog?.();return;}
+        this.debugCatalogRelease=release;this.show('debug');
+        if(this.debugStoryOnOpen){this.debugStoryOnOpen=false;this.gmPanel?.showStoryPage(this.debugStoryMessage);this.debugStoryMessage='';}
+      },error=>{if(token===this.debugOpenToken)this.app.ui.toast(`调试数据加载失败：${error instanceof Error?error.message:String(error)}`);});
+      return;
+    }
     if(this.page!==page&&this.requestAllocationExit(()=>this.show(page)))return;
     if(page==='quests'&&(!this.open||this.page!==page))this.questPanel?.reset();
     if(!this.open){this.open=true;this.app.ui.lock(true,'story-menu');}
     if(this.page!==page){
       if(this.page==='party')this.app.releasePartyPreview?.();
+      if(this.page==='debug')this.releaseDebugPanel();
       this.itemResult=undefined;this.cancelOperation();this.adjusting=false;this.notice='';
     }
     // render() 末尾已经 sync 过；这里再调一次会把整层再排版一遍。
@@ -374,8 +389,11 @@ export class StoryUI {
     if(!this.app.gm)return;
     // 收尾可能刚好还在释放导演锁；菜单关着时稍后再试，避免这次回页被 quietly 丢掉。
     if(!this.open&&this.app.ui.locked){setTimeout(()=>this.openDebugStory(),100);return;}
-    this.show('debug');
-    this.gmPanel?.showStoryPage();
+    this.openDebugStoryWithMessage('');
+  }
+  private openDebugStoryWithMessage(message:string):void{
+    this.debugStoryOnOpen=true;this.debugStoryMessage=message;this.show('debug');
+    if(this.gmPanel){this.debugStoryOnOpen=false;this.gmPanel.showStoryPage(message);this.debugStoryMessage='';}
   }
   openCrafting(actorId:string):void {
     if(!this.session||!this.app.crafting||this.world?.actors[actorId]?.service!=='fusion-machine'||this.app.ui.mode!=='game')return;
@@ -431,9 +449,22 @@ export class StoryUI {
   }
   close():void{
     if(this.open&&this.requestAllocationExit(()=>this.close()))return;
-    if(!this.open)return;this.controlEditor?.close();this.app.ui.setControlLayoutEditing(false);
+    this.debugOpenToken++;this.debugStoryOnOpen=false;this.debugStoryMessage='';
+    if(!this.open)return;if(this.page==='debug')this.releaseDebugPanel();this.controlEditor?.close();this.app.ui.setControlLayoutEditing(false);
     this.keyBindingEditor?.close();this.app.ui.setKeyBindingEditing(false);this.cancelOperation();this.modalActive=false;this.shortcutEdit=undefined;this.shortcutScreen?.clear();this.backTab?.clear();this.shopPanel=undefined;this.bagPortrait?.destroy();this.bagPortrait=undefined;this.partyPanel?.destroyPreview();this.app.releasePartyPreview?.();this.craftingPanel=undefined;this.craftingActor=undefined;this.forge=undefined;this.skillBook=undefined;this.open=false;this.scrollNames.forEach((scroll,name)=>this.scrollOffsets.set(`${this.page}:${name}`,scroll.scrollTop));this.scrollNames.clear();this.body?.clear();this.description?.clear();if(this.surface&&this.body){this.surface.root.remove(this.body.root);this.surface.clear();this.surface.root.add(this.body.root);}this.keyboardFocus=undefined;this.surface?.visible(false);this.body?.visible(false);this.description?.visible(false);this.modal?.visible(false);this.shortcutScreen?.visible(false);this.backTab?.visible(false);this.backdrop?.setVisible(false);this.app.ui.resetInput();this.app.ui.lock(false,'story-menu');
     if(this.loadReturnToDefeat){this.loadReturnToDefeat=false;if(this.app.ui.defeated)this.app.ui.revealDefeat();}
+  }
+  private releaseDebugPanel():void{
+    this.gmPanel?.dispose();this.gmPanel=undefined;this.gmPanelOwner=undefined;
+    this.gmTextSpecs=[];this.gmDetailTextSpecs=[];this.gmDetailOpen=false;
+    this.menuText?.beginPage('');
+    this.debugCatalogRelease?.();this.debugCatalogRelease=undefined;this.app.releaseDebugCatalog?.();
+  }
+  releaseSession(expected:Session|undefined):void{
+    if(this.session!==expected)return;
+    this.close();this.releaseDebugPanel();this.unsubscribe?.();this.unsubscribe=undefined;
+    this.questPanel=undefined;this.partyPanel?.destroyPreview();this.partyPanel=undefined;
+    this.session=undefined;this.world=undefined;this.content=undefined;
   }
   private cancelOperation():void{this.cancelDrag();this.request.abort();this.request=new AbortController();this.busy=false;this.operation=undefined;this.itemNotice=undefined;this.skillReset=false;this.savePage?.cancelPending();this.partyPanel?.close();this.craftingPanel?.close();this.forge=undefined;this.skillBook=undefined;this.modal?.clear();this.modal?.visible(false);}
   /** 返回是否消费这次按键；菜单关闭时把未消费的按键让给剧情层和世界。 */
@@ -714,7 +745,7 @@ export class StoryUI {
       if(this.gmPanelOwner!==this.app.gm){
         const gm=this.app.gm;
         const mapNames=new Map((this.world?.maps??[]).map(map=>[map.id,map.name]));
-        this.gmPanel=new GmPanel(gm,this.session.campaign,{close:()=>this.close(),render:()=>this.render(),reopen:()=>this.show('debug')},{
+        this.gmPanel=new GmPanel(gm,this.session.campaign,{close:()=>this.close(),render:()=>{if(this.app.gm===gm&&this.gmPanelOwner===gm)this.render();},reopen:message=>{if(this.app.gm===gm)this.openDebugStoryWithMessage(message);}},{
           mapName:id=>mapNames.get(id),
           actorName:id=>this.world?.actors[id]?.name,
           questGroup:id=>this.session?.campaign.questGroups.find(group=>group.questIds.includes(id))?.title,

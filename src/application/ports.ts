@@ -133,6 +133,8 @@ export interface StoryUIContext {
   returnToMenu?: () => void;
   /** GM（调试）动作层。**只在开关打开时存在**：关闭时没有它，系统页也就没有「调试」入口。 */
   readonly gm?: import('../debug/gm-actions.ts').GmActions;
+  acquireDebugCatalog?:()=>Promise<()=>void>;
+  releaseDebugCatalog?:()=>void;
   /** 当前操控角色卡死时搬回主可行走区域；由 main.ts 接到世界场景。 */
   rescuePlayer?: () => { ok: boolean; reason?: string; moved?: boolean };
 }

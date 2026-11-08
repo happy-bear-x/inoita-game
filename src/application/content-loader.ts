@@ -206,6 +206,7 @@ export class ContentLoader {
   campaign(signal?:AbortSignal):Promise<Campaign>{return this.read('content/campaign.json',parseCampaign,signal);}
   /** GM 现场表按需加载；普通游玩不请求这个文件。 */
   storyDebug(signal?:AbortSignal){return this.read('content/debug/start.json',parseStoryDebugCatalog,signal);}
+  releaseStoryDebug():void { this.requests.delete('content/debug/start.json'); }
   storyInterface(signal?:AbortSignal):Promise<StoryInterface>{return this.read('content/story-interface.json',parseStoryInterface,signal);}
   storyClasses(signal?:AbortSignal){return this.read('content/story-classes.json',parseStoryClasses,signal);}
   battle(signal?:AbortSignal):Promise<BattleCatalog>{return this.read('content/battle.json',parseBattle,signal);}

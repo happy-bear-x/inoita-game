@@ -117,6 +117,7 @@ interface GmPersistencePort {
 }
 
 interface GmPorts {
+  acquireStoryCatalog?:()=>Promise<()=>void>;
   markStore?: DebugMarkStore;
   prepareMark?: (mark: DebugMark, signal: AbortSignal) => Promise<DebugMark>;
   session: Session;
@@ -470,20 +471,23 @@ export function createGmActions(ports: GmPorts): GmActions {
 
   return {
     previewStory: async target => {
+      let release:(()=>void)|undefined;
       try {
+        release=await ports.acquireStoryCatalog?.();
         const prepared = await prepareTaskStart(session, target);
         return { ok: true, preview: storyTaskPreview(campaign, target, prepared) };
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         const gap = debugGapFor(campaign, target.quest);
         return { ok: false, reason: gap ? `${reason}（缺口：${gap.detail}）` : reason, ...(gap ? { gap } : {}) };
-      }
+      } finally { release?.(); }
     },
     jumpStory: target => runAsync('jumpStory', [target], async (): Promise<GmStoryJumpResult> => {
       if (!director) return {ok:false,reason:'当前会话还没有装配剧情导演'};
       if (jumping) return {ok:false,reason:'正在准备剧情，请稍候'};
       if (debugRun || markRun) return {ok:false,reason:'当前已有调试现场，请先结束本次调试'};
       jumping = true;
+      let releaseCatalog:(()=>void)|undefined;
       const gaps = () => { const gap = debugGapFor(campaign, target.quest); return gap ? { gap } : {}; };
       let origin: SessionState | undefined;
       let originWorld: unknown;
@@ -495,6 +499,7 @@ export function createGmActions(ports: GmPorts): GmActions {
         ports.persistence?.resume();
       };
       try {
+        releaseCatalog=await ports.acquireStoryCatalog?.();
         // 准备、安装与切图都在导演的调试锁里完成；开幕演出等锁放开后再开演，
         // 否则演出里的选项和操作会被同一把锁挡住。
         const result = await director.debugJump(async (): Promise<GmResult> => {
@@ -556,7 +561,7 @@ export function createGmActions(ports: GmPorts): GmActions {
           catch { /* 保留原始失败原因 */ }
         }
         return {ok:false, reason:error instanceof Error ? error.message : String(error), ...gaps()};
-      } finally { jumping = false; }
+      } finally { releaseCatalog?.();jumping = false; }
     }),
     endStoryDebug: () => runAsync('endStoryDebug', [], async (): Promise<GmEndDebugResult> => {
       if (disposed) return { ok: false, reason: '当前调试会话已经关闭' };

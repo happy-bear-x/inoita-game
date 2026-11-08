@@ -5,6 +5,17 @@ import { ContentLoader } from '../src/application/content-loader.ts';
 
 const fixture = JSON.parse(readFileSync(new URL('../public/content/status-hud.json', import.meta.url), 'utf8'));
 
+test('releasing the debug catalog makes the next request reload it',async()=>{
+  const original=globalThis.fetch;let calls=0;
+  globalThis.fetch=(async()=>{calls++;return {ok:true,json:async()=>({tasks:[]})} as Response;}) as typeof fetch;
+  try{
+    const loader=new ContentLoader();
+    const first=await loader.storyDebug();assert.equal(await loader.storyDebug(),first);
+    loader.releaseStoryDebug();const next=await loader.storyDebug();
+    assert.notEqual(next,first);assert.equal(calls,2);
+  }finally{globalThis.fetch=original;}
+});
+
 test('concurrent callers fetch and parse one content file once, even if one caller cancels', async () => {
   const original = globalThis.fetch;
   let calls = 0, parses = 0;

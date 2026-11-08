@@ -37,3 +37,36 @@ test('session release clears old gameplay owners and ignores a delayed callback 
   assert.deepEqual([disposed, poolDestroyed, cacheCleared], [1, 1, 1]);
   assert.equal(app.releaseSession(current), false);
 });
+
+test('debug catalog releases only after active users finish and reloads when needed',async()=>{
+  const app=new StoryApp({} as GameUI);
+  app.campaign={} as StoryApp['campaign'];
+  let loads=0,clears=0;
+  app.content.storyDebug=async()=>{loads++;return {tasks:[]} as NonNullable<StoryApp['campaign']['debugStory']>;};
+  app.content.releaseStoryDebug=()=>{clears++;};
+  const first=await app.acquireDebugCatalog(),second=await app.acquireDebugCatalog();
+  assert.equal(loads,1);app.releaseDebugCatalog();
+  first();assert.ok(app.campaign.debugStory,'进行中的跳转仍能读取现场表');
+  second();assert.equal(app.campaign.debugStory,undefined);assert.equal(clears,1);
+  second();assert.equal(clears,1,'重复释放不影响引用计数');
+  const third=await app.acquireDebugCatalog();assert.equal(loads,2);
+  app.releaseDebugCatalog();third();assert.equal(app.campaign.debugStory,undefined);
+});
+
+test('a catalog load that finishes after release cannot restore discarded data',async()=>{
+  const app=new StoryApp({} as GameUI);app.campaign={} as StoryApp['campaign'];
+  let finish!:(value:NonNullable<StoryApp['campaign']['debugStory']>)=>void;
+  app.content.storyDebug=()=>new Promise(resolve=>{finish=resolve;});
+  const pending=app.loadDebugCatalog();app.releaseDebugCatalog();finish({tasks:[]});await pending;
+  assert.equal(app.campaign.debugStory,undefined);
+});
+
+test('closing while a catalog is loading defers release until the active request finishes',async()=>{
+  const app=new StoryApp({} as GameUI);app.campaign={} as StoryApp['campaign'];
+  let finish!:(value:NonNullable<StoryApp['campaign']['debugStory']>)=>void;
+  app.content.storyDebug=()=>new Promise(resolve=>{finish=resolve;});
+  const pending=app.acquireDebugCatalog();app.releaseDebugCatalog();finish({tasks:[]});
+  const release=await pending;
+  assert.ok(app.campaign.debugStory,'完成前不能中断预览或跳转');
+  release();assert.equal(app.campaign.debugStory,undefined);
+});
