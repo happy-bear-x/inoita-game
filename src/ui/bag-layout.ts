@@ -150,6 +150,12 @@ export function descriptionActionLayout(panelWidth:number, count:number): Descri
   };
 }
 
+/** 动作文字按按钮中间的平直区域缩放；按每字最多一个字号估算，保留两端圆角。 */
+export function descriptionActionLabelSize(label:string, buttonWidth:number, maxSize:number):number {
+  const length=Array.from(label).length;
+  return length ? Math.max(1,Math.min(maxSize,Math.floor(Math.max(1,buttonWidth-41)/length))) : maxSize;
+}
+
 /**
  * 背包右区块：外框把格子与分类侧栏包在一起。
  * 外框 496..952，内沿 520..928；分类侧栏 869..926，分隔线 867。

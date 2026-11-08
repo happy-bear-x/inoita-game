@@ -54,7 +54,7 @@ import { centerModal } from './phaser/modal-placement.ts';
 import { itemResultDetails } from './item-result-details.ts';
 import { itemDescriptionBody } from './item-detail-lines.ts';
 import { slotFrameImage } from './slot-frame.ts';
-import { bagLayout, BAG_DESCRIPTION_WIDTH, DESCRIPTION_PANEL, descriptionActionLayout, descriptionPanel, SIDE_FILTER_TEXT_SIZE } from './bag-layout.ts';
+import { bagLayout, BAG_DESCRIPTION_WIDTH, DESCRIPTION_PANEL, descriptionActionLayout, descriptionActionLabelSize, descriptionPanel, SIDE_FILTER_TEXT_SIZE } from './bag-layout.ts';
 import { skillDescriptionParts, skillLearningParts, skillNextLevelPreview } from './skill-detail-lines.ts';
 import { layoutDescriptionText } from './description-text-layout.ts';
 import type { DescriptionTextPart } from '../domain/description-text.ts';
@@ -1566,11 +1566,12 @@ export class StoryUI {
     if(actions.length){
       actions.forEach((action,index)=>{
         const button=actionLayout.buttons[index]!;
+        const fontSize=descriptionActionLabelSize(action.label,button.width,button.fontSize);
         v.button('',left+button.x,top+button.y,button.width,button.height,action.run,
-          {fontSize:button.fontSize,disabled:action.disabled}).setData('label',action.label);
+          {fontSize,disabled:action.disabled}).setData('label',action.label);
         this.bagDetailTextSpecs.push({key:`item-action-${index}`,text:action.label,
           x:left+button.x+button.width/2,y:top+button.y+button.height/2,
-          style:{size:button.fontSize,anchorX:.5,anchorY:.5,width:button.width-12,align:'center',wrap:'word'}});
+          style:{size:fontSize,anchorX:.5,anchorY:.5,width:button.width-40,align:'center',wrap:'none'}});
       });
     }
   }

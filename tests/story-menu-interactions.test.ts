@@ -136,11 +136,12 @@ class MenuScene {
 
 class FakeDomLabel {
   text = ''; x = 0; y = 0; visible = true; removed = false;
+  anchor = [0,0];
   readonly style: Record<string, unknown> = {};
   element = { remove: () => {} };
   setText(value: string) { this.text = value; return this; }
   setPosition(x: number, y: number) { this.x = x; this.y = y; return this; }
-  setAnchor() { return this; }
+  setAnchor(x:number,y:number) { this.anchor=[x,y];return this; }
   setVisible(value: boolean) { this.visible = value; return this; }
   setStyle(value: Partial<CSSStyleDeclaration>) { Object.assign(this.style, value); return this; }
   remove() { this.removed = true; }
@@ -817,6 +818,21 @@ test('item description actions use text buttons instead of baked images', t => {
     assert.equal(button.getData('labelText'),undefined,`${label} 的文字改由 DOM 绘制`);
     assert.ok(visibleDomLabels(f).some(value=>value.text===label),`${label} 有 DOM 文字`);
     assert.ok(!String(button.getData('face')?.getData('file')??'').includes('item-'),`${label} 不使用动作图`);
+  }
+});
+
+test('long item actions stay centered inside their button faces',t=>{
+  const f=fixture();t.after(f.cleanup);
+  for(const [item,label] of [['lamp','召唤神灯商人'],[items.startingShortcut,'取消快捷键']] as const){
+    const entry=item==='lamp'?f.add('lamp'):f.entry(item);
+    f.menu.debugDescribe(entry.id);
+    const button=f.scene.button(label),text=domLabel(f,label)!;
+    assert.ok(text,label);
+    const matrix=button.getWorldTransformMatrix(),center=matrix.transformPoint(button.width/2,button.height/2);
+    assert.ok(Math.abs(text.x-center.x)<1e-8&&Math.abs(text.y-center.y)<1e-8,`${label} 在按钮中心`);
+    const fontSize=Number.parseFloat(String(text.style.fontSize));
+    assert.ok(Array.from(label).length*fontSize<=(button.width-40)*matrix.scaleX+1e-6,`${label} 完整落在按钮内部`);
+    assert.equal(text.anchor[0],.5);assert.equal(text.anchor[1],.5);
   }
 });
 
