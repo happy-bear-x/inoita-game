@@ -87,8 +87,8 @@ test('shortcut pages reuse layout snapshots while mana, eligibility, quantity an
   t.mock.getter(session.recovery,'cooldown',()=>recoveryCooldown);
   const host=Object.assign(Object.create(WorldScene.prototype),{app:{session,battleCatalog:battle,items},
     controls:{setShortcutPage:(value:readonly ShortcutSlot[])=>{slots=value;}},
-    combat:{controlledMember:hero,controlledId:'player',skillSlotAvailable:()=>allowed,
-      skillManaCost:(_owner:string,_skill:string,rank:number)=>{seenRank=rank;return cost;}}});
+    combat:{controlledMember:hero,controlledId:'player',
+      skillShortcutState:(_skill:string,rank:number)=>{seenRank=rank;return {cost,enabled:allowed};}}});
   invoke(host,'refreshShortcutPage');assert.equal(slots[0].enabled,true);assert.equal(seenRank,1);
   const draft=t.mock.method(session.skills,'draft');
   for(let frame=0;frame<10;frame++)invoke(host,'refreshShortcutPage');

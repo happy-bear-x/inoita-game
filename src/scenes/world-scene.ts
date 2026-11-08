@@ -890,9 +890,9 @@ export class WorldScene extends Phaser.Scene {
     if(!entry)return {entry:null,quantity:0,enabled:false};
     const combat=this.combat;
     if(entry.kind==='skill'){
-      const cost=combat?combat.skillManaCost(combat.controlledId,entry.id,level)??0:0;
+      const state=combat?.skillShortcutState(entry.id,level);
       return {entry,icon:this.app.battleCatalog.skills[entry.id]?.icon,quantity:0,
-        enabled:!!combat&&combat.skillSlotAvailable(entry.id)&&mana>=cost};
+        enabled:!!state?.enabled&&mana>=(state?.cost??0)};
     }
     const item=this.app.items.items[entry.id],quantity=this.app.session.bag.count(entry.id);
     return {entry,icon:item?.icon,quantity,enabled:quantity>0,

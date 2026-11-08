@@ -117,6 +117,7 @@ test('快捷栏资格与实际起手共用同一盾牌判定',()=>{
   const host={hero:{bag:{equipmentFor:(id:string)=>id,equipmentItems:(id:string)=>equipment[id]}},
     controlledId:'caster',
     app:{battleCatalog:catalog,items,wardrobe:{defaultShield:false}},
+    conditions:{canUseSkillShortcuts:()=>true},
     canSelectSkill:Reflect.get(WorldCombat.prototype,'canSelectSkill'),
     memberOf:(id:string)=>id==='caster'?host.hero:undefined};
   const available=Reflect.get(WorldCombat.prototype,'skillSlotAvailable') as (this:typeof host,skillId:string)=>boolean;

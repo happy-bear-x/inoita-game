@@ -1735,7 +1735,8 @@ captureStoryActors():SceneActorState[] {
       shieldBlock:stats.shieldBlock,physicalResistance:stats.physicalResistance,magicResistance:stats.magicResistance});
   }
   skillManaCost(id:string,skillId:string,level:number|undefined):number|undefined {
-    return this.manaCostOf(skillForMember(this.app.battleCatalog,id,skillId),id,level);
+    const base=skillManaCost(skillForMember(this.app.battleCatalog,id,skillId),level);
+    return base===undefined?undefined:calculateManaCost(base,this.actorAttribute(id,'manaCostRate'),this.actorAttribute(id,'manaCostReductionRate'));
   }
   private manaCostOf(skill:SkillDefinition|undefined,id:string,level:number|undefined):number|undefined {
     const base=skillManaCost(skill,level);
@@ -1987,7 +1988,9 @@ captureStoryActors():SceneActorState[] {
   }
   /** 快捷栏状态：起手资格对玩家入口与实际起手是同一判定，原版把失败结果显示成不可用。 */
   skillSlotAvailable(skillId:string):boolean {
-    return this.skillAvailable(skillForMember(this.app.battleCatalog,this.controlledId,skillId),skillId);
+    const skill=skillForMember(this.app.battleCatalog,this.controlledId,skillId);
+    return !!skill?.action&&this.conditions.canUseSkillShortcuts(this.controlledId)
+      &&this.canSelectSkill(this.controlledId,{id:skillId,action:skill.action},skill.action);
   }
   private skillAvailable(skill:SkillDefinition|undefined,skillId:string):boolean {
     return !!skill?.action&&this.conditions.canUseSkillShortcuts(this.controlledId)
