@@ -85,7 +85,7 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     if(domUi){
       this.domInstant=domUi.label('screen','dom-instant',{x:.5,y:0});
       this.domToast=domUi.label('screen','dom-toast',{x:.5,y:0});
-      this.domSpeaker=domUi.label('screen','dom-speaker');
+      this.domSpeaker=domUi.label('overlay','dom-speaker');
       // 加载页文字放在 overlay 层：它要活过全局遮挡开关，其余文字一律收起。
       this.domLoadingTitle=domUi.label('overlay','dom-loading-title',{x:.5,y:0}).setVisible(false);
       this.domLoading=domUi.label('overlay','dom-loading',{x:.5,y:0}).setVisible(false);
@@ -228,7 +228,7 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
   private ensureChoiceDom():ChoiceDom|undefined{
     const domUi=this.app.domUi;if(!domUi)return undefined;
     if(this.choiceDom)return this.choiceDom;
-    const clip=()=>domUi.label('screen','dom-label dom-choice-clip').setStyle({overflow:'hidden',pointerEvents:'none'});
+    const clip=()=>domUi.label('overlay','dom-label dom-choice-clip').setStyle({overflow:'hidden',pointerEvents:'none'});
     this.choiceDom={prompt:[],
       description:{clip:clip(),labels:[],placements:[],top:0,scale:1},
       list:{clip:clip(),labels:[],placements:[],top:0,scale:1}};
@@ -259,7 +259,7 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     x:number,y:number,size:number,color:string):DomLabel{
     const domUi=this.app.domUi!;
     let label=pool[index];
-    if(!label){label=domUi.label('screen','dom-label');pool.push(label);}
+    if(!label){label=domUi.label('overlay','dom-label');pool.push(label);}
     if(label.element.parentElement!==parent)parent.appendChild(label.element);
     return label.setText(text).setStyle({fontSize:`${Math.max(10,size)}px`,color}).setPosition(x,y).setVisible(true);
   }
@@ -295,7 +295,7 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     });
     for(const [index,run] of next.entries()){
       let target=this.dialogueDomRuns[index];
-      if(!target){target=domUi.label('screen','dom-dialogue-run');this.dialogueDomRuns.push(target);}
+      if(!target){target=domUi.label('overlay','dom-dialogue-run');this.dialogueDomRuns.push(target);}
       const point=this.surfacePoint(run.x,run.y);
       target.setText(run.text).setPosition(point.x,point.y);
       target.setStyle({fontSize:`${Math.max(10,box.size*point.scale)}px`,color:run.color});
@@ -306,7 +306,7 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
   }
   sync(ui:GameUI):void{
     if(!this.surface)return;
-    if(!ui.dialogueLine)this.hideDialogueDom();
+    if(!ui.dialogueLine||uiOcclusion(ui)||ui.quest||ui.choices)this.hideDialogueDom();
     const portrait=window.innerHeight>window.innerWidth;
     const cover=ui.worldRebuildCover;
     const quest=ui.mode==='game'&&!portrait&&!cover&&!ui.loadingState&&!ui.defeated?ui.quest:undefined;
@@ -324,7 +324,7 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     const bodySignature=JSON.stringify([ui.page,ui.dialogueLine?.presentation]);
     const signature=JSON.stringify([ui.mode,ui.loadingState?.label,!!ui.loadingState?.retry,ui.failed,ui.suspended,portrait,cover,defeat,ui.toastMessage,shell,ui.portraitFile,ui.canSkip,showSkip,ui.choices?.prompt,ui.choices?.description,ui.choices?.options,ui.quest?.definition.id,ui.quest?.kind]);
     if(signature===this.signature){
-      if(this.dialogueShell&&bodySignature!==this.dialogueBodySignature){this.dialogueBodySignature=bodySignature;this.renderDialogueBody(ui);}
+      if(this.dialogueShell&&!uiOcclusion(ui)&&bodySignature!==this.dialogueBodySignature){this.dialogueBodySignature=bodySignature;this.renderDialogueBody(ui);}
       this.progressBar?.setSize(560*progress,5);this.syncLoadingDom(ui,portrait);this.syncPortraitDom(portrait);this.syncDefeatDom(ui,portrait,cover);return;
     }
     this.signature=signature;this.dialogueShell=false;this.resetChoiceDom();
@@ -369,7 +369,7 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
         optionTextHeights,
       });
       const panel=v.rect(0,layout.top,960,layout.panelHeight,0x000000,.86);v.root.sendToBack(panel);
-      const dom=this.ensureChoiceDom(),domLayer=this.app.domUi?.layer('screen');
+      const dom=this.ensureChoiceDom(),domLayer=this.app.domUi?.layer('overlay');
       const scale=this.surfacePoint(0,0).scale;
       if(dom&&domLayer){
         let cursor=0;
@@ -441,6 +441,7 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
       this.domToast.setText(ui.toastMessage!);this.domToast.setPosition(m.tx+480*scale,m.ty+164*scale);
     }
     this.dialogueBodySignature=bodySignature;
+    if(uiOcclusion(ui)){this.hideDialogueDom();this.hideChoiceDom();}
     this.syncDefeatDom(ui,portrait,cover);
     v.layout(0);
     this.syncLoadingDom(ui,portrait);this.syncPortraitDom(portrait);

@@ -2,6 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
 import { InputRouter } from '../src/application/input-router.ts';
+import { EventEmitter } from 'node:events';
+import { DomUi } from '../src/ui/dom/dom-ui.ts';
+import { UiNode } from '../src/ui/dom/node.ts';
+import { UiSurface } from '../src/ui/dom/surface.ts';
+import { installMenuDom, MenuElement } from './support/menu-dom.ts';
 
 // 只替换 Phaser 的运行边界；场景的键盘判断跑真实代码。
 const hook = registerHooks({ resolve(specifier, context, next) {
@@ -20,6 +25,40 @@ const { FormalUiScene } = await import('../src/scenes/formal-ui-scene.ts');
 const { MenuScene } = await import('../src/scenes/menu-scene.ts');
 const { StoryClassScene } = await import('../src/scenes/story-class-scene.ts');
 hook.deregister();
+
+test('dialogue and choice text stays above its shade and hides during occlusion',t=>{
+  const restore=installMenuDom();t.after(restore);
+  const dom=new DomUi();
+  dom.layer=name=>document.getElementById(`ui-${name}`) as HTMLDivElement;
+  dom.setOccluded=()=>{};
+  const ui={mode:'game',ready:true,suspended:false,worldRebuildCover:false,defeated:false,canSkip:false,
+    dialogueLine:{speaker:'说话人',actor:'npc',text:'对白内容'},page:'对白内容',revealed:4,
+    choices:undefined as undefined|{prompt:string;options:never[];choose:()=>void},quest:undefined,
+    pressDialogue:()=>{},releaseDialogue:()=>{},resetInput:()=>{}};
+  const app={ui,domUi:dom,storyInterface:{assets:{}},director:{canSkip:false}};
+  const scene=new FormalUiScene(app as never) as any;
+  scene.events=new EventEmitter();scene.scale=Object.assign(new EventEmitter(),{width:1024,height:640});
+  scene.game={events:new EventEmitter(),canvas:{getBoundingClientRect:()=>({left:0,top:0,width:1024,height:640})}};
+  scene.surface=new UiSurface(scene,960,640,1000,'overlay');
+  scene.background=new UiNode(scene,scene.surface.mount);scene.blocker=new UiNode(scene,scene.surface.mount).setInteractive();
+  scene.questPopup={sync:()=>{}};scene.domSpeaker=dom.label('overlay','dom-speaker');
+  t.after(()=>{scene.surface.destroy();scene.background.destroy();scene.blocker.destroy();scene.events.emit('shutdown');});
+  scene.sync(ui);
+  const overlay=document.getElementById('ui-overlay') as unknown as MenuElement;
+  const speaker=scene.domSpeaker.element as unknown as MenuElement,run=scene.dialogueDomRuns[0].element as unknown as MenuElement;
+  assert.equal(scene.surface.mount.parentElement,overlay);assert.equal(speaker.parentElement,overlay);assert.equal(run.parentElement,overlay);
+  assert.equal(speaker.hidden,false);assert.equal(run.hidden,false);
+  ui.suspended=true;scene.sync(ui);assert.equal(speaker.hidden,true);assert.equal(run.hidden,true);
+  ui.page='暂停期间更新';scene.sync(ui);assert.equal(run.hidden,true,'遮挡期间正文变化不会让文字重新出现');
+  ui.suspended=false;scene.sync(ui);assert.equal(speaker.hidden,false);assert.equal(run.hidden,false);
+  ui.worldRebuildCover=true;scene.sync(ui);assert.equal(speaker.hidden,true);assert.equal(run.hidden,true);
+  ui.worldRebuildCover=false;scene.sync(ui);assert.equal(run.hidden,false);
+  ui.choices={prompt:'选择',options:[],choose:()=>{}};scene.sync(ui);
+  const choice=scene.choiceDom.prompt[0].element as MenuElement;
+  assert.equal(choice.parentElement,overlay);assert.equal(choice.hidden,false);assert.equal(run.hidden,true);
+  ui.suspended=true;scene.sync(ui);assert.equal(choice.hidden,true);
+  ui.suspended=false;scene.sync(ui);assert.equal(choice.hidden,false);
+});
 
 interface FakeEvent { key: string; target?: { tagName: string }; prevented: number; preventDefault(): void }
 function press(key: string, target?: { tagName: string }): FakeEvent {
