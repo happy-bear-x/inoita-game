@@ -354345,8 +354345,22 @@
       "actor": "claude-e6e221a8",
       "characterId": "npc-449",
       "condition": {
-        "type": "always",
-        "value": true
+        "type": "not",
+        "condition": {
+          "type": "any",
+          "conditions": [
+            {
+              "type": "quest",
+              "quest": "quest-334",
+              "status": "ready"
+            },
+            {
+              "type": "quest",
+              "quest": "quest-335",
+              "status": "accepted"
+            }
+          ]
+        }
       },
       "map": "mist-village-1b503cf0",
       "x": 216,
@@ -354597,8 +354611,19 @@
       "actor": "felix-a1cb422a",
       "characterId": "npc-483",
       "condition": {
-        "type": "always",
-        "value": true
+        "type": "any",
+        "conditions": [
+          {
+            "type": "quest",
+            "quest": "quest-334",
+            "status": "ready"
+          },
+          {
+            "type": "quest",
+            "quest": "quest-335",
+            "status": "accepted"
+          }
+        ]
       },
       "map": "mist-village-1b503cf0",
       "x": 584,

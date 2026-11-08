@@ -1,7 +1,7 @@
 import type {Campaign} from '../domain/campaign.ts';
-import type {EntityPlacement, WorldMap} from '../domain/content.ts';
+import type {EntityPlacement, QuestStatus, WorldMap} from '../domain/content.ts';
 import type {StoryCastMember} from '../domain/story-performance.ts';
-import type {StoryCondition} from '../domain/story-condition.ts';
+import {evaluateStoryCondition, type StoryCondition, type StoryConditionContext} from '../domain/story-condition.ts';
 import type {StoryDebugCatalog, StoryDebugTask} from '../domain/story-debug.ts';
 
 interface DebugCatalogInput {
@@ -17,14 +17,42 @@ const worldBound = (member: StoryCastMember): boolean =>
   || !!member.characterId || !!member.memberId || !!member.enemyId;
 
 /** 现场表里的标记条件只需要判定标记；未知条件不冒充否定，交给运行时安装复核。 */
-function flagCondition(condition: StoryCondition | undefined, flags: Set<string>): boolean {
-  if (!condition) return true;
-  if (condition.type === 'always') return condition.value !== false;
-  if (condition.type === 'flag') return flags.has(condition.flag) === (condition.value !== false);
-  if (condition.type === 'all') return condition.conditions.every(child => flagCondition(child, flags));
-  if (condition.type === 'any') return condition.conditions.some(child => flagCondition(child, flags));
-  if (condition.type === 'not') return !flagCondition(condition.condition, flags);
-  return true;
+interface TaskVisibility {
+  flags: Set<string>;
+  holds(condition: StoryCondition | undefined): boolean;
+}
+
+/**
+ * 现场表的显隐按任务状态和标记求值。
+ * 没写进现场表的任务按干净会话的可用条件推初始状态；未知事件/选择/世界值不冒充成立。
+ */
+function taskVisibility(task: StoryDebugTask, campaign: Campaign): TaskVisibility {
+  const flags = new Set(task.start?.world?.flags ?? []);
+  const explicit = new Map((task.start?.quests ?? []).map(entry => [entry.id, entry]));
+  const definitions = new Map(campaign.quests.map(quest => [quest.id, quest]));
+  const resolved = new Map<string, QuestStatus>();
+  const resolving = new Set<string>();
+  const context: StoryConditionContext = {
+    questStatus: id => {
+      const listed = explicit.get(id);
+      if (listed) return listed.status;
+      const cached = resolved.get(id);
+      if (cached) return cached;
+      const definition = definitions.get(id);
+      if (!definition || resolving.has(id)) return 'locked';
+      resolving.add(id);
+      const value: QuestStatus = evaluateStoryCondition(definition.availableWhen, context) ? 'available' : 'locked';
+      resolving.delete(id);
+      resolved.set(id, value);
+      return value;
+    },
+    questCompletedCycles: id => explicit.get(id)?.completedCycles ?? 0,
+    eventStatus: () => 'idle',
+    choice: () => undefined,
+    flag: id => flags.has(id),
+    world: () => undefined
+  };
+  return { flags, holds: condition => evaluateStoryCondition(condition, context) };
 }
 
 /**
@@ -36,12 +64,12 @@ export function validateDebugCatalog(input: DebugCatalogInput): void {
   const pairs = phasePairs(campaign);
   for (const task of catalog.tasks) {
     if (!task.start) continue;
-    const flags = new Set(task.start.world?.flags ?? []);
+    const view = taskVisibility(task, campaign);
     const mapId = task.entry.map;
-    assertEntryCast(task, campaign, maps, mapId, flags);
-    assertQuestContacts(task, campaign, maps, flags);
+    assertEntryCast(task, campaign, maps, mapId, view);
+    assertQuestContacts(task, campaign, maps, view);
     for (const [character, partner] of pairs.get(mapId) ?? []) {
-      const visible = visibleCharacters(campaign, maps, mapId, flags);
+      const visible = visibleCharacters(campaign, maps, mapId, view);
       if (visible.has(character) && visible.has(partner))
         throw new Error(`调试现场表 ${task.quest} 的阶段角色同时可见：${mapId} ${character} / ${partner}`);
     }
@@ -49,7 +77,7 @@ export function validateDebugCatalog(input: DebugCatalogInput): void {
 }
 
 function assertEntryCast(task: StoryDebugTask, campaign: Campaign,
-  maps: ReadonlyMap<string, WorldMap>, mapId: string, flags: Set<string>): void {
+  maps: ReadonlyMap<string, WorldMap>, mapId: string, view: TaskVisibility): void {
   if (!task.play) return;
   const script = campaign.scripts[task.play.script];
   const entry = task.play.node ?? script?.entry;
@@ -60,7 +88,7 @@ function assertEntryCast(task: StoryDebugTask, campaign: Campaign,
     if (action.type !== 'stage') continue;
     const stageMap = action.mapFromWorld ? mapId : action.map;
     if (!maps.has(stageMap)) throw new Error(`调试现场表 ${task.quest} 的舞台地图不存在：${stageMap}`);
-    const visible = visibleEntities(campaign, maps, stageMap, flags);
+    const visible = visibleEntities(campaign, maps, stageMap, view);
     for (const member of action.cast) {
       if (appeared.has(member.id) || !worldBound(member) || member.visible === false) continue;
       const found = visible.some(entity =>
@@ -74,21 +102,21 @@ function assertEntryCast(task: StoryDebugTask, campaign: Campaign,
 }
 
 function assertQuestContacts(task: StoryDebugTask, campaign: Campaign,
-  maps: ReadonlyMap<string, WorldMap>, flags: Set<string>): void {
+  maps: ReadonlyMap<string, WorldMap>, view: TaskVisibility): void {
   const quest = campaign.quests.find(row => row.id === task.quest);
   if (!quest) return;
   for (const character of [quest.giverCharacterId, quest.deliveryCharacterId]) {
     if (!character) continue;
     const placement = campaign.placements.find(entity => entity.characterId === character);
     if (!placement) continue;
-    const visible = visibleCharacters(campaign, maps, placement.map, flags);
+    const visible = visibleCharacters(campaign, maps, placement.map, view);
     if (!visible.has(character))
       throw new Error(`调试现场表 ${task.quest} 的任务联系人不可见：${placement.map}/${character}`);
   }
 }
 
 function visibleEntities(campaign: Campaign, maps: ReadonlyMap<string, WorldMap>,
-  mapId: string, flags: Set<string>): EntityPlacement[] {
+  mapId: string, view: TaskVisibility): EntityPlacement[] {
   const map = maps.get(mapId);
   if (!map) return [];
   const authored = campaign.placements.filter(entity => entity.map === mapId);
@@ -96,13 +124,13 @@ function visibleEntities(campaign: Campaign, maps: ReadonlyMap<string, WorldMap>
     other.characterId && entity.characterId ? other.characterId === entity.characterId : other.actor === entity.actor));
   return [...base, ...authored].filter(entity => {
     const character = entity.characterId ?? entity.actor;
-    return !flags.has(absentKey(mapId, character)) && flagCondition(entity.condition, flags);
+    return !view.flags.has(absentKey(mapId, character)) && view.holds(entity.condition);
   });
 }
 
 function visibleCharacters(campaign: Campaign, maps: ReadonlyMap<string, WorldMap>,
-  mapId: string, flags: Set<string>): Set<string> {
-  return new Set(visibleEntities(campaign, maps, mapId, flags)
+  mapId: string, view: TaskVisibility): Set<string> {
+  return new Set(visibleEntities(campaign, maps, mapId, view)
     .map(entity => entity.characterId).filter((value): value is string => !!value));
 }
 
