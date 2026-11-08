@@ -2038,7 +2038,7 @@ captureStoryActors():SceneActorState[] {
       healCandidates:()=>this.healCandidates(),
       facing,
       leader:()=>this.combatant(this.controlledId),leaderFacing:()=>this.facingOfControlled(),
-      followSlot:()=>this.app.session.party?.slotOf(id),focusTarget:()=>this.focusTargetId,
+      followSlot:()=>this.app.session.party?.followSlotOf(this.controlledId,id),focusTarget:()=>this.focusTargetId,
       partyTarget:()=>this.currentTargetOf(this.controlledId),targetOf:actorId=>this.currentTargetOf(actorId),
       // 玩家指派了目标，或队伍最近与敌人真实交战过，都算整个队伍已进入战斗。
       inCombat:()=>!!this.focusTargetId||this.awareness.inCombat((this.app.session.combatTick??0)*LOGIC_FRAME_MS),
@@ -2173,15 +2173,19 @@ captureStoryActors():SceneActorState[] {
     this.syncControlled();
     this.prepareCombatSounds();
   }
-  /** 以队长脚点为锚，按上阵槽位偏到后排附近。 */
+  /** 以队长脚点为锚，按相对当前队长的跟随侧位偏到后排附近。 */
   private partyLanding(shape:NavigationShape,ignore?:NavigationActor,id?:string,
     leader:CharacterVisual|undefined=this.scene.player):Point|undefined {
     if(!this.movement||!leader)return undefined;
     const anchor=this.movement.position(leader);
-    const slot=id?this.app.session.party?.slotOf(id):undefined;
+    // 补位偏移也要按实际队长重新排左右，不能沿用固定名册槽位。
+    const leaderId=leader===this.player?'player':this.controlledId;
+    const slot=id?this.app.session.party?.followSlotOf(leaderId,id):undefined;
     const offset=slot===undefined?undefined:followOffset(this.facingOfControlled(),'back',slot);
     const origin=offset?{x:anchor.x+offset.x,y:anchor.y+offset.y}:anchor;
-    const avoid=[anchor,...this.allies.filter(ally=>this.movement!.actor(ally.visual)!==ignore)
+    // 主角不是 `allies` 的一员；操控佣兵时补位必须把主角也列为避让点，否则会瞬移叠到主角身上。
+    const avoid=[anchor,...(leader===this.player?[]:[this.movement.position(this.player)]),
+      ...this.allies.filter(ally=>this.movement!.actor(ally.visual)!==ignore)
       .map(ally=>this.movement!.position(ally.visual))];
     return choosePartyLanding(this.movement.navigation,shape,origin,ignore,avoid);
   }

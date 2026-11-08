@@ -192,6 +192,20 @@ test('reserve experience and group skills apply without deployment, duplicates d
   party.dismiss(first.id);assert.equal(party.groupModifiers()['low-health-resistance'],100);
   party.dismiss(second.id);assert.equal(party.groupModifiers()['low-health-resistance'],undefined);
 });
+test('follow slots are reranked around the controlled member',()=>{
+  const {party}=setup(),first=recruit(party),second=recruit(party);
+  party.deployFirstAvailable(first.id);party.deployFirstAvailable(second.id);
+  assert.deepEqual(party.activeIds,['player',first.id,second.id]);
+  const sides=(leader:string)=>{
+    const result:Record<string,0|1|undefined>={};
+    for(const member of party.activeIds)if(member!==leader)result[member]=party.followSlotOf(leader,member);
+    return result;
+  };
+  assert.deepEqual(sides('player'),{[first.id]:0,[second.id]:1});
+  assert.deepEqual(sides(first.id),{player:0,[second.id]:1});
+  assert.deepEqual(sides(second.id),{player:0,[first.id]:1});
+  assert.equal(party.followSlotOf('player','player'),undefined);
+});
 test('deployment refuses implicit replacement and death selects the next living slot cyclically',()=>{
   const {hero,party}=setup();const first=recruit(party),second=recruit(party),third=recruit(party);
   party.deployFirstAvailable(first.id);party.deployFirstAvailable(second.id);

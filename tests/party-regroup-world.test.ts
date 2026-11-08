@@ -29,7 +29,7 @@ function fixture(options:{sealed?:boolean;wall?:boolean}={}){
       setAlpha(){return container;},setVisible(value){container.visible=value;return container;}};
     const visual={id,actor:{collision:{...body},clips:{}},container};
     const position={...point};positions.set(visual,position);
-    const actor:NavigationActor={shape:()=>visual.actor,position:()=>position,enabled:()=>visual.container.visible};
+    const actor:NavigationActor={shape:()=>visual.actor,position:()=>position,enabled:()=>visual.container.visible,faction:()=> 'party'};
     actors.set(visual,actor);navigation.register(actor);return visual;
   }
   const hero=addVisual('player',{x:512,y:512});
@@ -52,6 +52,11 @@ function fixture(options:{sealed?:boolean;wall?:boolean}={}){
   };
   const party={activeIds:['player','companion','second'],controlledId:'companion',
     slotOf:(id:string)=>id==='companion'?0:id==='second'?1:undefined,
+    followSlotOf:(leaderId:string,id:string)=>{
+      const followers=['player','companion','second'].filter(active=>active!==leaderId);
+      const index=followers.indexOf(id);
+      return index<0?undefined:(index%2===0?0:1) as 0|1;
+    },
     switchControl:()=>{switches+=1;return true;}};
   function ally(id:string,point:Point):TestAlly{
     const visual=addVisual(id,point);
@@ -194,6 +199,20 @@ test('the party landing anchor is the hero, not the controlled mercenary',()=>{
   assert.ok(landing);
   assert.ok(Math.hypot(landing.x-512,landing.y-512)<=48,'落点由主角位置决定');
   assert.ok(Math.hypot(landing.x-64,landing.y-64)>100,'不是围着被操控的佣兵');
+});
+
+test('catch-up landing avoids the hero when a companion is controlled',()=>{
+  const f=fixture();f.party.controlledId='companion';
+  const companion=f.allies[0]!,follower=f.allies[1]!;
+  Object.assign(f.positions.get(companion.visual)!,{x:100,y:100});
+  Object.assign(f.positions.get(follower.visual)!,{x:600,y:600});
+  // 操控 0 号佣兵时，1 号佣兵相对队长的后排侧位正好落在这里；主角站在同一个点上。
+  Object.assign(f.positions.get(f.hero)!,{x:76,y:64});
+  Reflect.get(WorldCombat.prototype,'catchUpFollower').call(f.combat,follower.id);
+  const landing=f.positions.get(follower.visual)!,hero=f.positions.get(f.hero)!;
+  assert.notDeepEqual(landing,{x:600,y:600},'卡住补位应该真的移动');
+  assert.ok(Math.abs(landing.x-hero.x)>=16||Math.abs(landing.y-hero.y)>=16,
+    '补位落点不能和主角重叠');
 });
 
 test('a stuck follower is placed beside the controlled member',()=>{

@@ -11,6 +11,7 @@ node_modules/
 .cloud-save-dev/
 
 apk-out/
+asset-archive/
 android/.gradle/
 android/local.properties
 android/keystore.properties

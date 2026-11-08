@@ -5,7 +5,7 @@ import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 const source=fileURLToPath(new URL('../',import.meta.url));
 const temporary=await fs.mkdtemp(path.join(os.tmpdir(),'story-standalone-'));
-const excluded=new Set(['node_modules','dist','test-results','.releases']);
+const excluded=new Set(['node_modules','dist','test-results','.releases','asset-archive','apk-out']);
 try{
  await fs.cp(source,temporary,{recursive:true,filter:file=>!excluded.has(path.basename(file))&&!path.basename(file).startsWith('.build-')});
  for(const args of [['ci','--offline'],['run','typecheck'],['run','build']]){
