@@ -7,6 +7,7 @@ import { SCENE_KEYS } from '../application/scene-keys.ts';
 import { StatusHud } from '../ui/phaser/status-hud.ts';
 import { worldZoom } from '../ui/viewport.ts';
 import { OverheadStatus } from '../rendering/overhead-status.ts';
+import { QuestMarker } from '../rendering/quest-marker.ts';
 import Phaser from 'phaser';
 import { ExitTrigger, overlapsFootRect } from '../domain/navigation.ts';
 import { claimNearTrigger } from '../domain/story-trigger-occupancy.ts';
@@ -58,7 +59,6 @@ import type { CharacterVisual } from '../rendering/characters.ts';
 import { loadSceneAssets, missingSceneAssets, retainLoadedSceneAssets } from '../rendering/scene-assets.ts';
 import { Hud } from '../rendering/hud.ts';
 import type { DomLabel } from '../ui/dom/dom-ui.ts';
-import { DomImage } from '../ui/dom/components.ts';
 import { ActionControls, type ShortcutSlot } from '../ui/phaser/action-controls.ts';
 import { ShortcutBar, type ShortcutEntry } from '../domain/shortcut-bar.ts';
 import type { SkillConfiguration } from '../domain/skill-configuration.ts';
@@ -98,14 +98,6 @@ export type SaveWorldReason = 'debug' | 'loading' | 'not-ready' | 'no-survivors'
 export type SaveWorldResult =
   | { ok: true; map: { id: string; name: string }; world: StoryWorldViewSnapshot }
   | { ok: false; reason: SaveWorldReason };
-
-/** 任务状态图标，浮在人物头顶；与小地图共用原版的三张状态图。 */
-interface QuestMarker {
-  holder: HTMLDivElement;
-  image: DomImage;
-  file: string;
-  visible: boolean;
-}
 
 /** 场景里的一个人物：一个容器装着若干张动作图层。 */
 interface Character extends CharacterVisual {
@@ -865,50 +857,17 @@ export class WorldScene extends Phaser.Scene {
         listener=>this.app.session.subscribe(listener));
       this.overheadStatus.setVisible(false);
     }
-    if (entity.id !== 'player' && this.app.session.markerActor(entity.actor,entity.characterId)) this.createQuestMarker(character);
     return character;
   }
 
   /** 任务标记按需创建：任务可能在进图后才变为可接取，不能只在建角色时判断一次。 */
   private createQuestMarker(character: Character): void {
     if (character.marker) return;
-    const parent=this.app.domUi?.layer('world');
-    if(!parent)return;
-    // 图标底边中心对准人物头顶；holder 承担位置和缩放，图片本身保持原图像素。
-    const holder=document.createElement('div');
-    Object.assign(holder.style,{position:'absolute',left:'0px',top:'0px',width:'0px',height:'0px',
-      pointerEvents:'none',transformOrigin:'0 0'});
-    parent.appendChild(holder);
-    character.marker={holder,image:new DomImage(holder).naturalSize(.5,.5),file:'',visible:true};
-  }
-  private loadQuestMarker(marker:QuestMarker,file:string):void{
-    if(marker.file===file)return;
-    marker.file=file;
-    if(!file)return;
-    void marker.image.load(domAssets,file).catch(error=>{
-      if(marker.image.signal.aborted||(error as Error)?.name==='AbortError')return;
-      globalThis.storyDiagnostics?.record('ui-image-error',{error});
-    });
+    character.marker = new QuestMarker(this, character);
   }
   private removeQuestMarker(character: Character): void {
-    const marker=character.marker;if(!marker)return;
-    marker.image.destroy();marker.holder.remove();character.marker=null;
-  }
-  private updateQuestMarkers():void{
-    const domUi=this.app.domUi;if(!domUi)return;
-    const camera=this.cameras.main;
-    // 1 个世界像素对应的 CSS 像素：同时包含镜头缩放和画布显示缩放。
-    const unit=domUi.worldToScreen(camera,1,0).x-domUi.worldToScreen(camera,0,0).x;
-    for(const character of this.characters){
-      const marker=character.marker;if(!marker)continue;
-      const visible=marker.visible&&character.container.visible&&!this.performing&&!this.stageOccluded;
-      if(!visible){marker.image.visible(false);continue;}
-      const frame=domUi.frameSize(camera);
-      const point=domUi.worldToScreen(camera,character.container.x,character.container.y-50);
-      const onScreen=point.x>-24&&point.y>-24&&point.x<frame.width+24&&point.y<frame.height+24;
-      marker.image.visible(onScreen);if(!onScreen)continue;
-      Object.assign(marker.holder.style,{left:`${point.x}px`,top:`${point.y}px`,transform:`scale(${unit})`});
-    }
+    character.marker?.destroy();
+    character.marker = null;
   }
   setClip(character: Character, name: ClipName): void {
     setCharacterClip(this, character, name);
@@ -1082,13 +1041,9 @@ export class WorldScene extends Phaser.Scene {
       // 任务可能在进图后才变为可接取：标记缺失时按当前任务状态补建，而不是只在建角色时判断一次。
       if (character.entity.id !== 'player' && !character.marker && status && marked)
         this.createQuestMarker(character);
-      if (character.marker) {
-        const marker=character.marker;
-        const file=marked&&status?this.app.storyInterface.assets[`minimap-${status}`]:undefined;
-        marker.visible=!!file;
-        this.loadQuestMarker(marker,file??'');
-        marker.image.visible(marker.visible);
-      }
+      // 只换图：位置、镜头缩放、演出隐藏和舞台遮挡都由人物容器带过去。
+      if (character.marker)
+        character.marker.setFile(marked && status ? this.app.storyInterface.assets[`minimap-${status}`] : undefined);
       if (character.entity.id !== 'player' && character.container.visible && marked
         && status && status !== 'locked' && status !== 'completed')
         taskMarkers.push({id: character.entity.id, x: character.container.x, y: character.container.y, status});
@@ -2000,7 +1955,7 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     this.app.domUi?.setLayerVisible('world', this.canControl && !this.performing && !this.stageOccluded);
     if (this.stageOccluded) {
       this.syncStageOcclusion();
-      if (this.stageOccluded) { this.updateQuestMarkers(); return; }
+      if (this.stageOccluded) return;
     }
     // 卡顿时最多补 2 个逻辑帧；补 3 帧会把 AI/寻路/状态的尖峰叠成三倍。
     const stepDelta=Math.min(delta,120);
@@ -2018,7 +1973,6 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
       this.playStory(()=>this.app.director.encounterResult(encounter.id,'won',`result:${encounter.id}:won`));break;
     }
     this.statusHud?.update(this.app.session.combatTick);
-    this.updateQuestMarkers();
     this.groundLootView?.setPaused(!this.canCombatControl);
     if(this.canCombatControl&&this.map){const store=groundLootFor(this.app.session);store.advance(this.map.id,stepDelta);
       if(store.revision!==this.groundLootRevision){this.groundLootRevision=store.revision;this.groundLootView?.sync(store.forMap(this.map.id));}}

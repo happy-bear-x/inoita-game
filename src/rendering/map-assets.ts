@@ -21,6 +21,7 @@ import { enemyCombatAssets, partyMemberCombatAssets, playerCombatAssets, sharedC
 import { groundLootAssets } from './ground-loot.ts';
 import { controlSkinAssets } from './control-skin.ts';
 import { pickupMessageAssets } from './pickup-messages.ts';
+import { questMarkerAssets } from './quest-marker.ts';
 import type { PendingAsset } from './scene-assets.ts';
 import { statusHudAssets } from './status-hud.ts';
 
@@ -245,13 +246,14 @@ export function planMapCombat(map: WorldMap, input: WorldAssetInputs, options: M
   return assets;
 }
 
-/** 所有地图共用、进入世界前必须就位的素材：HUD、控制皮肤、地面物品、衣柜图集、剧情特效与战斗全局。 */
+/** 所有地图共用、进入世界前必须就位的素材：HUD、控制皮肤、地面物品、头顶任务图标、衣柜图集、剧情特效与战斗全局。 */
 export function sharedEntryAssets(input: WorldAssetInputs): PendingAsset[] {
   return [
     ...statusHudAssets(input.statusHud),
     ...controlSkinAssets(input.controlSkin),
     ...groundLootAssets(input.items),
     ...pickupMessageAssets(),
+    ...questMarkerAssets(input.storyInterface),
     ...input.wardrobe.textures.map(texture => ({ kind: 'image' as const, ...texture })),
     ...sharedCombatAssets(input.battle, input.wardrobe)
   ];

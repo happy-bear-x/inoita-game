@@ -20,22 +20,6 @@ const hook=registerHooks({resolve(specifier,context,next){return specifier==='ph
 const {WorldScene}=await import('../src/scenes/world-scene.ts');hook.deregister();
 const invoke=(host:object,name:string,...args:unknown[])=>Reflect.get(WorldScene.prototype,name).call(host,...args);
 
-test('quest markers measure the viewport only while a marker is visible',()=>{
-  let measurements=0,visible=false;
-  const holder={style:{} as Record<string,string>};
-  const marker={holder,image:{visible(value:boolean){visible=value;}},file:'',visible:false};
-  const character={marker,container:{visible:true,x:20,y:80}};
-  const camera={zoom:1};
-  const host={app:{domUi:{frameSize:()=>{measurements++;return {width:800,height:480};},
-      worldToScreen:(_camera:unknown,x:number,y:number)=>({x:20+x,y:30+y})}},
-    cameras:{main:camera},characters:[character],performing:false,stageOccluded:false};
-  invoke(host,'updateQuestMarkers');assert.equal(measurements,0);assert.equal(visible,false);
-  marker.visible=true;invoke(host,'updateQuestMarkers');
-  assert.equal(measurements,1);assert.equal(visible,true);
-  assert.deepEqual({left:holder.style.left,top:holder.style.top},{left:'40px',top:'60px'});
-  host.stageOccluded=true;invoke(host,'updateQuestMarkers');assert.equal(measurements,1);assert.equal(visible,false);
-});
-
 test('stationary loot retries when bag, quests, recipients or restored progress change',()=>{
   let attempts=0,accept=false;
   const session={bag:{revision:0},questBook:{version:0},storyWorld:{revision:0},restorationVersion:0,

@@ -7,7 +7,7 @@
 - 角色/移动：`characters.ts`、`arcade-movement.ts`、`movement-world.ts`、`movement-interpolation.ts`、`character-visibility.ts`、`name-banner.ts`、`control-skin.ts`。
 - 地图/资源：`map-layers.ts`、`map-assets.ts`、`prop-atlas.ts`、`scene-assets.ts`、`story-map-view.ts`、`story-minimap.ts`。
 - 战斗表现：`combat-presenter.ts`、`combat-effects.ts`、`combat-feedback.ts`、`combat-outcomes.ts`、`combat-assets.ts`、`combat-asset-descriptors.ts`、`resident-combat-assets.ts`、`combat-visual-coverage.ts`、`buff-loop-renderer.ts`、`state-markers.ts`、`status-color.ts`、`status-hud.ts`、`overhead-status.ts`。
-- 剧情/HUD/其他：`story-presenter.ts`、`hud.ts`、`action-controls.ts`、`ground-loot.ts`、`pickup-messages.ts`、`wardrobe.ts`、`outfit-pool.ts`、`wardrobe-cache.ts`、`effects.ts`、`effect-animations.ts`、`effect-colors.ts`、`blend-modes.ts`、`webgl-recovery.ts`。
+- 剧情/HUD/其他：`story-presenter.ts`、`hud.ts`、`action-controls.ts`、`ground-loot.ts`、`pickup-messages.ts`、`quest-marker.ts`、`wardrobe.ts`、`outfit-pool.ts`、`wardrobe-cache.ts`、`effects.ts`、`effect-animations.ts`、`effect-colors.ts`、`blend-modes.ts`、`webgl-recovery.ts`。
 
 ## 规则
 
@@ -15,7 +15,8 @@
 
 - 本目录只读取 `domain` 状态并绘制，规则变化和存档写入留在 `domain` 与 `application`。
 - `Hud.watchVisibility` 将所属场景的暂停、睡眠与恢复状态传给 DOM 状态栏；组件关闭时注销监听，场景销毁时统一隐藏。
-- 拾取提示用当前镜头投影位置，并与任务标记共用同一帧的画框、画布测量。
+- 拾取提示是画布外的 DOM 元素，每帧按当前镜头投影定位。
+- **头顶任务图标画在人物容器里。** `quest-marker.ts` 的 `QuestMarker` 挂在角色容器下，位置、镜头缩放、演出隐藏和舞台遮挡随容器；只有任务状态变化时换图，不做逐帧投影。三张状态图进共享入口素材，小地图那份 DOM 图片另由资源池持有。
 - 屏幕状态栏与小地图的图片由 DOM 资源池持有；地图贴图计划只为头顶血条保留 `overhead-frame` 和 `overhead-leader`。
 - **正式游玩只长期保留通用战斗反馈。** `residentCombatAssets` 的 `feedbackOnly` 覆盖命中、结果和状态反馈；当前地图与施法者分别持有角色、装备、已学技能及召唤物的完整清单。构建期省略该选项，用职业、伙伴、技能集合做覆盖校验。
 - 地图和对白先加载演员的待机、行走与快照当前动作；剧情姿态和特效在实际执行前加载，跳过不等待画面，补画按快照恢复所需动作。敌人战斗素材仍覆盖其技能与递归召唤物。
