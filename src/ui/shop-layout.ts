@@ -1,5 +1,6 @@
+import { bagLayout } from './bag-layout.ts';
 /** 说明面板与背包共用同一套矩形，只在 bag-layout 里维护一份。 */
-import { MONEY, SIDE_BUTTON_OFFSETS, SLOT, SLOT_STRIDE } from './item-layout.ts';
+import { MONEY, SLOT, SLOT_STRIDE } from './item-layout.ts';
 import { TEXT_COLORS } from './text-style.ts';
 
 /**
@@ -132,6 +133,7 @@ export { descriptionPanel } from './bag-layout.ts';
 export function shopLayout(classified:boolean):ShopLayout {
   const leftFrame = classified ? {x:18, y:0, width:462, height:431} : {x:85, y:0, width:395, height:431};
   const bagFrame = {x:484, y:0, width:395, height:431};
+  const bag=bagLayout();
   // 分类页固定 131；一般商店把 288 宽的标题框居中在左框上。
   const titleX = classified ? leftFrame.x+131 : leftFrame.x+Math.trunc((leftFrame.width-288)/2);
   const title = {x:titleX, y:leftFrame.y-35, width:288, height:82};
@@ -144,7 +146,7 @@ export function shopLayout(classified:boolean):ShopLayout {
       divider:{x:leftFrame.x+93, y:leftFrame.y+10, width:14, height:411},
     },
     shelf:classified ? {x:leftFrame.x+117, y:leftFrame.y+86} : {x:leftFrame.x+36, y:leftFrame.y+80},
-    sideButtons:{x:bagFrame.x+389, y:bagFrame.y+12, width:57, height:57, offsets:SIDE_BUTTON_OFFSETS},
+    sideButtons:{...bag.sideButtons,x:bag.sideButtons.x+bagFrame.x-bag.bagFrame.x},
     category:{
       scroll:{x:leftFrame.x+10, y:leftFrame.y+10, width:88, height:412},
       button:{width:88, height:69, stride:69},

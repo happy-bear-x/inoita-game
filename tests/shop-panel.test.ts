@@ -80,7 +80,7 @@ class Surface {
     const before=this.calls[index-1];
     return call.kind==='border'&&!!before&&before.kind==='rect'&&before.color===0;});}
   /** 说明面板的内缩黑底：`GRPX_FillRectAlpha(...,0xff000000,60)` 的矩形。 */
-  get descriptionFills(){return this.calls.filter(call=>call.kind==='rect'&&call.color===0);}
+  get descriptionFills(){return this.calls.filter(call=>call.kind==='rect'&&call.color===0&&call.alpha===.85);}
   /** 面板上不画字的按钮（关闭钮）用 `setData('label')` 标身份，所以两种标签都要认。 */
   get buttons(){return this.calls.filter(call=>call.kind==='button'&&(call.label!==''||call.node?.label));}
 }
@@ -150,8 +150,8 @@ test('shop layout keeps the native panel geometry',()=>{
   // 分类列自己的修饰：上下两块 103×24 端盖夹住一条 14×411 竖条。
   assert.deepEqual(classified.categoryColumn,{cap:{x:18,y:0,bottom:407,width:103,height:24},
     divider:{x:111,y:10,width:14,height:411}});
-  // 背包栏右侧那 6 个按钮与背包页同一列：右框内 (389,12)，组内 y 步长 0x46。
-  assert.deepEqual(general.sideButtons,{x:873,y:12,width:57,height:57,offsets:[0,0x46,0x8b,0xd0,0x115,0x15b]});
+  // 背包分类与背包页共用平铺侧栏，随商店右框平移。
+  assert.deepEqual(general.sideButtons,{x:857,y:40,width:57,height:57,offsets:[0,59,118,177,236,295]});
   assert.deepEqual(general.bag,{x:518,y:27,width:323,height:323,stride:83,columns:4});
   assert.deepEqual(general.money,{x:518,y:365,plate:{x:518,y:368,width:323,height:34},
     stride:103,coin:{width:44,height:40},digit:{x:44,y:6},color:'#ffffff'});
@@ -240,7 +240,7 @@ test('shop panel draws money, slots and badges at the native coordinates',()=>{
   const {surface,texts}=open('merchandise-dealer-b09d9585');
   // 两栏只画图框，不铺底：面板里露出来的是黑色 65% 遮罩下的世界画面。
   assert.deepEqual(surface.calls.filter(call=>call.kind==='border').map(call=>[call.x,call.y,call.width,call.height]),
-    [[85,0,395,431],[484,0,395,431]]);
+    [[85,0,395,431],[484,0,456,431]]);
   assert.equal(surface.calls.filter(call=>call.kind==='frame').length,0,'两栏都不铺底');
   const title=surface.images.find(call=>String(call.file).includes('merchant-title'))!;
   assert.deepEqual([title.x,title.y,title.width,title.height],[138,-35,288,82]);
@@ -297,22 +297,13 @@ test('both shops keep the bag category column on the right of the bag frame',()=
     assert.deepEqual(buttons.map(call=>call.node!.label),labels,`${id} 右侧这一列是六个分类`);
     assert.deepEqual(buttons.map(call=>[call.x,call.y]),side.offsets.map(offset=>[side.x,side.y+offset]));
     assert.ok(buttons.every(call=>call.width===side.width&&call.height===side.height),'按钮 57×57');
-    // 外框画在按钮矩形的 −(5,12) 上，与背包页同一套（图组 15 索引 20，选中的叠 19）。
-    const frames=surface.calls.filter(call=>call.kind==='image'&&/page-button-/.test(String(call.file)));
-    assert.ok(frames.every(call=>call.x===-5&&call.y===-12),'外框落在按钮矩形 −(5,12) 上');
-    assert.equal(frames.filter(call=>String(call.file).includes('selected')).length,1,'只有当前分类画选中态');
-    assert.equal(frames.length,labels.length+1,'六个常态外框加一个选中外框');
-    // 这一列两端的角件只在第一个／最后一个分类被选中时画（原版 `0x1675b4`／`0x1675fc`）。
-    const caps=()=>surface.calls.filter(call=>call.kind==='image'&&/column-cap/.test(String(call.file)));
+    const highlights=()=>surface.calls.filter(call=>call.kind==='rect'&&call.color===0xe2c88d&&call.alpha===.10);
     const pick=(label:string)=>{const call=surface.calls.filter(item=>item.kind==='button'&&String(item.node?.label??'')===label).at(-1)!;(call.action as ()=>void)();draw();};
-    // 默认选中的是第一个分类，所以上端角件在；切到中间分类两端都不画。
-    assert.deepEqual(caps().map(call=>[String(call.file).split('/').pop(),call.x,call.y,call.width,call.height]),
-      [['column-cap-top.png',side.x-19,side.y-12,21,34]],'第一个分类选中时画上端角件');
+    assert.deepEqual(highlights().map(call=>[call.x,call.y,call.width,call.height]),[[side.x,side.y,side.width,side.height]]);
     pick(labels[2]);
-    assert.equal(caps().length,0,'选中的是中间分类时两端不画角件');
+    assert.deepEqual(highlights().map(call=>[call.x,call.y]),[[side.x,side.y+side.offsets[2]]]);
     pick(labels.at(-1)!);
-    assert.deepEqual(caps().map(call=>[String(call.file).split('/').pop(),call.y]),
-      [['column-cap-bottom.png',side.y+side.offsets.at(-1)!+38]],'最后一个分类选中时画下端角件');
+    assert.deepEqual(highlights().map(call=>[call.x,call.y]),[[side.x,side.y+side.offsets.at(-1)!]]);
     pick(labels[0]);
     // 分类真的在筛背包：默认「全部」看得见所有东西，切到武器只剩武器。
     const sellable=(label:string)=>surface.calls.filter(call=>call.kind==='button'&&String(call.node?.label??'')===label).length;
@@ -410,7 +401,7 @@ test('trade follows the native steps: description, quantity box, then confirmati
   // 弹层用的是图组 19 的边框家族，不是内容栏那套九宫格。
   assert.deepEqual(popupFrame(surface),nativePopupFrame(450,350));
   // 框内先铺黑底，再画物品图标与计数区。
-  assert.deepEqual(surface.calls.filter(call=>call.kind==='rect').map(call=>[call.x,call.y,call.width,call.height]),
+  assert.deepEqual(surface.calls.filter(call=>call.kind==='rect'&&call.x===plate.x&&call.y===plate.y).map(call=>[call.x,call.y,call.width,call.height]),
     [[plate.x,plate.y,plate.width,plate.height]]);
   const itemIcon=surface.images.find(call=>call.x===icon.x&&call.y===icon.y);
   assert.ok(itemIcon,'数量框画了物品图标');

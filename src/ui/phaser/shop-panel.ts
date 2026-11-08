@@ -1,3 +1,4 @@
+import { drawBagRail, drawBagRailSelection } from './bag-rail.ts';
 import type { UiNode } from '../dom/node.ts';
 import type { Session } from '../../domain/session.ts';
 import type { ItemInstance } from '../../domain/items.ts';
@@ -207,13 +208,11 @@ export class ShopPanel {
     this.placeModal=placeModal;this.pageText=[];this.modalText=[];this.text=text;
     const {store,session,catalog}=this,classified=store.shop.categories.length>0;
     const layout=this.layout=shopLayout(classified),{leftFrame,bagFrame,title,shelf,bag,slot,category}=layout;
-    // 两栏都只有图框：`UIStore_Draw` 与 `UIStore_DrawInvenBackground` 都只调 `UI_DrawBorderRect`，
-    // 面板里看到的是黑色 65% 遮罩下的世界画面（见 `work/findings/menu-backdrop-2026-10-11.md`），
-    // 所以这里不能用带填充的 `frame()`——那会把两栏刷成一块不透明的深棕，与背包页也对不上。
+    // 两栏内容区保留透明背景，背包侧栏使用共用图框和底色。
     // 两栏图框、店名和货架空格子不随筛选/选中变化，放进静态层只画一次。
     v.staticLayer(`shop:${store.shop.name}:${classified}`,()=>{
       v.border(this.frames,leftFrame.x,leftFrame.y,leftFrame.width,leftFrame.height,v.staticRoot);
-      v.border(this.frames,bagFrame.x,bagFrame.y,bagFrame.width,bagFrame.height,v.staticRoot);
+      drawBagRail(v,this.frames,bagFrame.x,v.staticRoot);
       v.image(catalog.assets['merchant-title'],title.x,title.y,title.width,title.height,v.staticRoot);
       if(classified){
         const column=layout.categoryColumn;
@@ -281,18 +280,15 @@ export class ShopPanel {
     // 玩家买进时仍然看得到、点得到分类。
     const side=layout.sideButtons;
     INVENTORY_SIDE_FILTERS.forEach((filter,index)=>{
+        if(this.filter===filter)drawBagRailSelection(v,side.x,side.y+side.offsets[index],side.width,side.height);
         const button=v.button('',side.x,side.y+side.offsets[index],side.width,side.height,
           ()=>{this.filter=filter;this.bagOffset=0;if(this.bagScroll)this.bagScroll.scrollTop=0;
             this.batchSelection.clear();this.batchError=undefined;this.changed();},{bare:true});
-        v.image(this.frames['page-button-frame'],-5,-12,undefined,undefined,button);
-        if(this.filter===filter)v.image(this.frames['page-button-selected'],-5,-12,undefined,undefined,button);
         this.addPage(`shop-filter-${filter}`,INVENTORY_LABELS[filter],side.x+side.width/2,
           side.y+side.offsets[index]+side.height/2,SIDE_FILTER_TEXT_SIZE,undefined,.5,.5,
           {width:side.width-6,align:'center',wrap:'word'});
       button.setData('label',INVENTORY_LABELS[filter]);
     });
-    if(this.filter===INVENTORY_SIDE_FILTERS[0])v.image(this.frames['column-cap-top'],side.x-19,side.y-12,21,34);
-    if(this.filter===INVENTORY_SIDE_FILTERS.at(-1))v.image(this.frames['column-cap-bottom'],side.x-19,side.y+side.offsets.at(-1)!+38,21,34);
     // 批量出售的入口与动作放在背包框上方那一条空带里（和标题框同一高度），不占格子。
     // 说明面板打开时先收起，避免和“出售”那一步抢同一块区域。
     if(!this.selection){

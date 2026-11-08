@@ -46,7 +46,7 @@ interface BagLayout {
   slot:typeof SLOT;
   /** 分类侧栏：右区块外框内的 6 个 57×57 平铺行。 */
   sideButtons:{x:number; y:number; width:number; height:number; offsets:number[]};
-  /** 整理保持在背包框上方外侧，使用方角面板。 */
+  /** 整理保持在背包框上方外侧。 */
   organize:BagRect;
   money:{x:number; y:number; plate:BagRect; stride:number; coin:{width:number; height:number}; digit:{x:number; y:number}; color:string};
   badge:{x:number; y:number; color:string};

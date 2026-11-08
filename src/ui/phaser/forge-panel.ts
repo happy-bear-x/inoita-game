@@ -1,3 +1,4 @@
+import { drawBagRail, drawBagRailSelection } from './bag-rail.ts';
 import { equipmentPower, type CharacterPanel, type CharacterStatsCatalog, type Modifier } from '../../domain/character-stats.ts';
 import { equipmentLevel } from '../../domain/chaos-equipment.ts';
 import { ItemApplicationError } from '../../domain/item-application.ts';
@@ -6,7 +7,7 @@ import type { ItemDefinition, ItemInstance } from '../../domain/items.ts';
 import type { MenuPanels } from '../../domain/menu-panels.ts';
 import { bagLayout } from '../bag-layout.ts';
 import { TEXT_COLORS } from '../text-style.ts';
-import { SIDE_BUTTON_OFFSETS, SLOT, SLOT_STRIDE } from '../item-layout.ts';
+import { SLOT, SLOT_STRIDE } from '../item-layout.ts';
 import { ENHANCEMENT_ODDS_ROW_STRIDE, ENHANCEMENT_ODDS_ROW_TOP, ENHANCEMENT_ODDS_TOP, enhancementOddsView, type EnhancementOutcomeTone } from '../enhancement-odds-lines.ts';
 import { drawNativeMessage } from './native-message.ts';
 import type { UiSurface, ScrollArea } from './widgets.ts';
@@ -82,7 +83,7 @@ export class ForgePanel {
   render(v:UiSurface,modal:UiSurface,placeModal:(width:number,height:number)=>void,text?:ForgeTextTarget):void {
     this.pageText=[];this.modalText=[];this.text=text;this.surface=v;
     const assets=this.panels.assets;
-    v.border(assets,10,0,462,431);v.border(assets,496,0,395,431);
+    v.border(assets,10,0,462,431);drawBagRail(v,assets);
     this.scroll=undefined;this.leftScroll=undefined;
     // 左框内容可能随强化概率、宝石孔和属性条数变长，统一放进可滚动区。
     const left=this.scrollAt('forge-left',0,0,458,431);this.leftScroll=left;
@@ -103,15 +104,16 @@ export class ForgePanel {
     if(this.confirmation)this.renderConfirmation(modal,placeModal);
   }
   private renderTabs(v:UiSurface):void {
-    const assets=this.panels.assets;
+    const side=bagLayout().sideButtons;
     ([['enchant','强化'],['socket','镶嵌'],['purify','净化']] as const).forEach(([tab,label],index)=>{
-      const button=v.button('',885,12+SIDE_BUTTON_OFFSETS[index]!,57,57,()=>this.setTab(tab),{bare:true}).setData('label',label);
-      v.image(assets['page-button-frame'],-5,-12,undefined,undefined,button);
-      if(this.tab===tab)v.image(assets['page-button-selected'],-5,-12,undefined,undefined,button);
-      this.addText(`forge-tab-${tab}`,label,885+28.5,12+SIDE_BUTTON_OFFSETS[index]!+28.5,19,GOLD,.5,.5,
-        {width:51,align:'center',wrap:'word'},{});
+      const y=side.y+side.offsets[index]!;
+      if(this.tab===tab)drawBagRailSelection(v,side.x,y,side.width,side.height);
+      v.button('',side.x,y,side.width,side.height,()=>this.setTab(tab),{bare:true}).setData('label',label);
+      this.addText(`forge-tab-${tab}`,label,side.x+side.width/2,y+side.height/2,19,GOLD,.5,.5,
+        {width:side.width-6,align:'center',wrap:'word'},{});
     });
   }
+
   private setTab(tab:ForgeTab):void {
     if(this.tab===tab)return;
     this.tab=tab;this.selectedItem=undefined;this.socketIndex=undefined;this.replaceIndex=undefined;

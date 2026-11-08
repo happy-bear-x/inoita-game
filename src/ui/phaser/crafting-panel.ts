@@ -1,3 +1,4 @@
+import { drawBagRail, drawBagRailSelection } from './bag-rail.ts';
 import type { UiPointer } from '../dom/node.ts';
 import type { UiNode, UiImage } from '../dom/node.ts';
 import {equipmentPower} from '../../domain/character-stats.ts';
@@ -106,7 +107,7 @@ export class CraftingPanel {
     this.pageText=[];this.modalText=[];this.text=text;this.surface=v;
     const assets=this.panels.assets;
     this.drops=[];
-    v.border(assets,10,0,462,431);v.border(assets,496,0,395,431);
+    v.border(assets,10,0,462,431);drawBagRail(v,assets);
     this.renderModeStrip(v);
     if(this.mode==='recipes')this.renderRecipes(v);
     else if(this.mode==='socket')this.renderSocket(v);
@@ -263,9 +264,8 @@ export class CraftingPanel {
     }
     INVENTORY_SIDE_FILTERS.forEach((filter,index)=>{
       const side=layout.sideButtons,y=side.y+side.offsets[index];
-      const button=v.button('',side.x,y,side.width,side.height,()=>{this.filter=filter;this.offset=0;this.changed();},{bare:true}).setData('label',INVENTORY_LABELS[filter]);
-      v.image(assets['page-button-frame'],-5,-12,undefined,undefined,button);
-      if(filter===this.filter)v.image(assets['page-button-selected'],-5,-12,undefined,undefined,button);
+      if(filter===this.filter)drawBagRailSelection(v,side.x,y,side.width,side.height);
+      v.button('',side.x,y,side.width,side.height,()=>{this.filter=filter;this.offset=0;this.changed();},{bare:true}).setData('label',INVENTORY_LABELS[filter]);
       this.addText(`craft-bag-filter-${filter}`,INVENTORY_LABELS[filter],side.x+side.width/2,y+side.height/2,19,undefined,.5,.5,
         {width:side.width-6,align:'center',wrap:'word'});
     });

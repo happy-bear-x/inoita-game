@@ -541,8 +541,8 @@ test('equipment description keeps the character column and restores on close', t
 test('custom menu buttons share native art and keep labels above their pressed layer', t => {
   const f=fixture();t.after(f.cleanup);
   Object.defineProperty(f.app,'audio',{value:{settings:{music:1,effects:1},setVolume(){}}});
-  // 背包页的整理和分类已改用方角/平铺行，不再走共用按钮皮肤。
-  for(const page of ['system','status'] as const){
+  // 分类为平铺行，整理按钮使用共用皮肤。
+  for(const page of ['bag','system','status'] as const){
     f.menu.show(page);
     if(page==='status')f.scene.click(f.scene.button('查看属性加点'));
     const tabLabels=new Set(['人物','背包','技能','队伍','任务','系统','关闭菜单']);
@@ -647,7 +647,7 @@ test('forge opens as a menu page and enhances continuously', t => {
   assert.equal(forge.targetId,weapon.id);
   assert.equal(f.scene.buttons('强化').length,1,'强化页签唯一');
   assert.equal(f.scene.buttons('镶嵌').length,1,'镶嵌页签唯一');
-  assert.equal(f.scene.button('强化').x,885,'页签在右侧边栏');
+  assert.equal(f.scene.button('强化').x,869,'页签在右侧边栏');
   assert.equal(f.scene.button('强化').input!.hitArea.width,57);
   assert.ok(visibleDomLabels(f).some(label=>label.text.includes('选择一张强化卷轴')));
   f.scene.click(f.scene.button('卷轴:低级武器强化卷轴'));

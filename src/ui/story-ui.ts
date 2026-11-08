@@ -42,6 +42,7 @@ import type { DomLabel } from './dom/dom-ui.ts';
 import { setSaveBoardTextSink, type SaveBoardTextSpec } from './phaser/save-board.ts';
 import { drawDescriptionClose, drawDescriptionPanel, drawDescriptionRows, drawDescriptionSeparator, drawDescriptionTitle } from './phaser/description-panel.ts';
 import { drawNativeMessage } from './phaser/native-message.ts';
+import { drawBagRail, drawBagRailSelection } from './phaser/bag-rail.ts';
 import type { SaveGame } from '../domain/save-game.ts';
 import { SavePage } from './save-page.ts';
 import type { SaveWorldReason, StoryWorldViewSnapshot } from '../scenes/world-scene.ts';
@@ -53,7 +54,7 @@ import { centerModal } from './phaser/modal-placement.ts';
 import { itemResultDetails } from './item-result-details.ts';
 import { itemDescriptionBody } from './item-detail-lines.ts';
 import { slotFrameImage } from './slot-frame.ts';
-import { bagLayout, BAG_DESCRIPTION_WIDTH, BAG_OUTER_FRAME, BAG_RAIL, DESCRIPTION_PANEL, descriptionActionLayout, descriptionPanel, SIDE_FILTER_TEXT_SIZE } from './bag-layout.ts';
+import { bagLayout, BAG_DESCRIPTION_WIDTH, DESCRIPTION_PANEL, descriptionActionLayout, descriptionPanel, SIDE_FILTER_TEXT_SIZE } from './bag-layout.ts';
 import { skillDescriptionParts, skillLearningParts, skillNextLevelPreview } from './skill-detail-lines.ts';
 import { layoutDescriptionText } from './description-text-layout.ts';
 import type { DescriptionTextPart } from '../domain/description-text.ts';
@@ -1393,13 +1394,7 @@ export class StoryUI {
     // 右栏只有图框——`UIEquip_DrawInvenBackground @0x14aed0` 不铺底，格子直接浮在背景上。
     v.staticLayer('bag',()=>{
       v.border(panels.assets,85,0,409,431,v.staticRoot);
-      // 右区块用一个大圆角金框把格子和分类侧栏包在一起。
-      v.border(panels.assets,BAG_OUTER_FRAME.x,BAG_OUTER_FRAME.y,BAG_OUTER_FRAME.width,BAG_OUTER_FRAME.height,v.staticRoot);
-      v.rect(BAG_RAIL.dividerX,BAG_RAIL.y,1,BAG_RAIL.height,0x6b5a37,.8,v.staticRoot);
-      v.rect(BAG_RAIL.x,BAG_RAIL.y,BAG_RAIL.width,BAG_RAIL.height,0x000000,.35,v.staticRoot);
-      for(let index=0;index<6;index++)
-        v.rect(BAG_RAIL.x,BAG_RAIL.rowTop+index*BAG_RAIL.rowStep+BAG_RAIL.rowHeight-1,
-          BAG_RAIL.width,1,0x6b5a37,.5,v.staticRoot);
+      drawBagRail(v,panels.assets,496,v.staticRoot);
       for(const [x,y,width,height] of [[24,24,361,86],[24,110,105,157],[286,110,99,157],[24,267,361,140]])
         v.rect(85+x,y,width,height,0x000000,.6,v.staticRoot);
       // 黑底之后叠四块 41×41 的角色图角（组 15 索引 48／49／53／54），画在框外 2 像素处。
@@ -1475,22 +1470,14 @@ export class StoryUI {
         style:{size:20,color:layout.money.color,anchorX:0,anchorY:0}});
     });
     const organize=layout.organize;
-    // 整理保持在框外原位，但外轮廓改成方角深底 + 金色直边，不再用圆角按钮皮肤。
-    v.rect(organize.x,organize.y,organize.width,organize.height,0x000000,.55)
-      .setStrokeStyle(2,0xe2c88d,.9);
-    v.button('',organize.x,organize.y,organize.width,organize.height,()=>this.action(()=>bag.organize()),{bare:true})
+    v.button('',organize.x,organize.y,organize.width,organize.height,()=>this.action(()=>bag.organize()))
       .setData('label','整理');
     this.bagTextSpecs.push({key:'bag-organize',text:'整理',x:organize.x+organize.width/2,y:organize.y+organize.height/2,
       style:{size:Math.min(22,organize.height*.42),anchorX:.5,anchorY:.5,width:organize.width-12,align:'center',wrap:'word'}});
-    // 分类侧栏：不再使用灰色圆角按钮图，改成外框内的一组平铺行。
-    // 选中行用 2 像素金色竖条 + 略亮底色，文字仍走 DOM。
     const side=layout.sideButtons;
     INVENTORY_SIDE_FILTERS.forEach((filter,index)=>{
       const rowY=side.y+side.offsets[index];
-      if(this.filter===filter){
-        v.rect(side.x,rowY,side.width,side.height,0xe2c88d,.10);
-        v.rect(side.x,rowY,2,side.height,0xe2c88d,.9);
-      }
+      if(this.filter===filter)drawBagRailSelection(v,side.x,rowY,side.width,side.height);
       const button=v.button('',side.x,rowY,side.width,side.height,()=>{this.cancelDrag();this.filter=filter;this.itemResult=undefined;this.selectedItem=undefined;this.itemNotice=undefined;this.scrollOffsets.delete('bag:inventory');this.render();},{bare:true});
       this.bagTextSpecs.push({key:`bag-filter-${filter}`,text:INVENTORY_LABELS[filter],
         x:side.x+side.width/2,y:rowY+side.height/2,
