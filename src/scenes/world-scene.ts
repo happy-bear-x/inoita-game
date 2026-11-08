@@ -162,6 +162,7 @@ export class WorldScene extends Phaser.Scene {
   private unsubscribeControlMode?: () => void;
   private shortcutPageCache?:{configuration:SkillConfiguration;version:number;bagRevision:number;owner:string;classId:string;page:number;
     entries:(ShortcutEntry|null)[];levels:Record<string,number>;slotsSignature?:string};
+  private shortcutTick?:number;
   private nameBanner?: NameBanner;
   private minimap?: StoryMinimap;
   private nextMinimapEnemyUpdate = 0;
@@ -216,7 +217,7 @@ export class WorldScene extends Phaser.Scene {
     this.options = options; this.characters = []; this.near = null; this.loadingWorld = true; this.destroyed = false;
     this.stageOccluded = false;
     this.movement = undefined; this.lastPlayerPosition = undefined;this.combat=undefined;this.checkpointPending=!options.checkpoint;this.checkpointWaitLogged=false;
-    this.shortcutPageCache=undefined;
+    this.shortcutPageCache=undefined;this.shortcutTick=undefined;
     this.dropCatalog=undefined;this.springCatalog=undefined;this.groundLootView=undefined;this.pickupMessages=undefined;this.pickupRecipients.clear();
     this.questStatuses.clear();this.questStatusVersion=undefined;
     this.prefetchTarget = undefined; this.prefetchTask = undefined;
@@ -917,6 +918,14 @@ export class WorldScene extends Phaser.Scene {
     cache.slotsSignature=slotsSignature;
     this.skillHud?.setPage(slots);
     this.controls.setShortcutPage(slots);
+  }
+
+  /** 战斗钟走一格才重算快捷栏；切人、翻页、背包变化等事件路径仍会立即刷新。 */
+  private refreshShortcutPageIfTickChanged():void {
+    const tick=this.app.session.combatTick;
+    if(this.shortcutTick===tick)return;
+    this.shortcutTick=tick;
+    this.refreshShortcutPage();
   }
   private refreshLoadout(): void {
     this.refreshShortcutPage();
@@ -1976,7 +1985,7 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     this.groundLootView?.setPaused(!this.canCombatControl);
     if(this.canCombatControl&&this.map){const store=groundLootFor(this.app.session);store.advance(this.map.id,stepDelta);
       if(store.revision!==this.groundLootRevision){this.groundLootRevision=store.revision;this.groundLootView?.sync(store.forMap(this.map.id));}}
-    this.refreshShortcutPage();
+    this.refreshShortcutPageIfTickChanged();
     if (!this.canControl) { if (!this.performing) this.movement.stop(controlled); return; }
     if(this.combat?.playerCannotMove()){this.movement.stop(controlled);return;}
     // 原版 GAMESTATE_PressKeyPlay：CHAR_IsSkillOn 时整段跳过方向输入。

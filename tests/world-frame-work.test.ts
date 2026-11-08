@@ -113,6 +113,20 @@ test('shortcut pages reuse layout snapshots while mana, eligibility, quantity an
   session.bag.remove(potion,session.bag.count(potion));invoke(host,'refreshShortcutPage');assert.equal(slots[5].entry,null);
 });
 
+test('shortcut refresh follows combat ticks instead of every render frame',()=>{
+  let refreshed=0;
+  const host=Object.assign(Object.create(WorldScene.prototype),{
+    app:{session:{combatTick:0}},
+    refreshShortcutPage:()=>{refreshed++;}
+  });
+  invoke(host,'refreshShortcutPageIfTickChanged');
+  invoke(host,'refreshShortcutPageIfTickChanged');
+  assert.equal(refreshed,1,'同一逻辑帧只刷新一次');
+  host.app.session.combatTick=1;
+  invoke(host,'refreshShortcutPageIfTickChanged');
+  assert.equal(refreshed,2,'逻辑帧前进后重新刷新');
+});
+
 test('companion skill growth, saved configurations and restores advance the shortcut input version',()=>{
   const catalog={classes:[{id:'priest',skills:['heal']}],skills:{heal:{kind:'active'}}} as unknown as BattleCatalog;
   const skills=new CompanionSkillProgression({heal:2},{heal:{classId:'priest',position:0,maxLevel:2,requiredLevels:[1,5]}});
