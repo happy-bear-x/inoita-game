@@ -58,7 +58,7 @@ import { bagLayout, BAG_DESCRIPTION_WIDTH, DESCRIPTION_PANEL, descriptionActionL
 import { skillDescriptionParts, skillLearningParts, skillNextLevelPreview } from './skill-detail-lines.ts';
 import { layoutDescriptionText } from './description-text-layout.ts';
 import type { DescriptionTextPart } from '../domain/description-text.ts';
-import { tradeLayout } from './shop-layout.ts';
+import { POPUP_FRAME, tradeLayout } from './shop-layout.ts';
 import { TEXT_COLORS } from './text-style.ts';
 import { splitMoney } from '../domain/money.ts';
 import { LiveCharacterPreview, type PreviewRect } from './phaser/live-character-preview.ts';
@@ -244,13 +244,7 @@ export class StoryUI {
         for(const spec of this.skillTextSpecs)writer.add(spec);
         this.renderNoticeText(writer);
       });
-      this.menuText.register('bag',writer=>{
-        this.renderTabsText(writer);
-        // 说明面板只盖住一栏：让出落在这块矩形里的页面文字，标签和另一栏继续显示。
-        for(const spec of this.bagTextSpecs)if(!this.bagDetailOpen||!this.bagDescriptionCovers(spec))writer.add(spec);
-        if(this.bagDetailOpen)for(const spec of this.bagDetailTextSpecs)writer.add(spec);
-        this.renderNoticeText(writer);
-      });
+      this.menuText.register('bag',writer=>this.renderBagText(writer));
       // 技能书页顶部标题画在菜单画布坐标里，换算到内容块坐标后和面板文字一起输出。
       this.menuText.register('learn',writer=>{
         writer.add({key:'learn-title',text:'使用技能书',x:512-CONTENT_ORIGIN.x,y:25-CONTENT_ORIGIN.y,
@@ -288,8 +282,9 @@ export class StoryUI {
       });
       // 通用原生提示盖在任何页面之上：页面文字让位，只输出这一份。
       this.menuText.register('native-notice',writer=>{for(const spec of this.noticeTextSpecs)writer.add(spec);});
-      // 物品使用/丢弃弹层：本地坐标统一换成内容块坐标后输出。
+      // 物品使用/丢弃弹层：底下的背包页继续显示，只让出被弹层盖住的文字。
       this.menuText.register('operation-notice',writer=>{
+        if(this.page==='bag')this.renderBagText(writer,spec=>this.operationTextCovers(spec));
         for(const spec of this.operationTextSpecs)writer.add(this.modalTextSpec(spec));
       });
     }
@@ -579,6 +574,29 @@ export class StoryUI {
     const layout=bagLayout(),covered=this.descSide==='left'?layout.leftFrame:layout.bagFrame,
       panel=descriptionPanel(this.descSide==='left'?covered.width:BAG_DESCRIPTION_WIDTH);
     return this.descriptionCovers(spec,{x:covered.x,y:panel.y,width:panel.width,height:panel.height});
+  }
+  /** 背包页文字：说明面板盖住的那一栏与弹层盖住的区域让位，其余照常显示。 */
+  private renderBagText(writer:MenuTextWriter,skip?:(spec:MenuTextSpec)=>boolean):void {
+    this.renderTabsText(writer);
+    for(const spec of this.bagTextSpecs)
+      if((!this.bagDetailOpen||!this.bagDescriptionCovers(spec))&&!skip?.(spec))writer.add(spec);
+    if(this.bagDetailOpen)for(const spec of this.bagDetailTextSpecs)if(!skip?.(spec))writer.add(spec);
+    this.renderNoticeText(writer);
+  }
+  /**
+   * 物品操作弹层在图框外扩范围内盖住页面。DOM 文字层在画布图片之上，
+   * 落进这块矩形的背包文字必须让位，否则会压在弹层黑底上。
+   */
+  private operationTextCovers(spec:MenuTextSpec):boolean {
+    if(!this.modal||!this.body)return false;
+    const pad=POPUP_FRAME.corner.outer;
+    const start=this.modalToPagePoint(0,0),end=this.modalToPagePoint(this.modalBox.width,this.modalBox.height);
+    const textWidth=spec.style.width??Array.from(spec.text).length*spec.style.size;
+    const lineHeight=spec.style.lineHeight??spec.style.size+5;
+    const lines=spec.style.width?Math.max(1,Math.ceil(Array.from(spec.text).length*spec.style.size/Math.max(1,spec.style.width))):1;
+    const height=lineHeight*lines;
+    const left=spec.x-(spec.style.anchorX??0)*textWidth,top=spec.y-(spec.style.anchorY??0)*height;
+    return left<=end.x+pad&&left+textWidth>=start.x-pad&&top<=end.y+pad&&top+height>=start.y-pad;
   }
   /** GM 调试页的物品详情固定在左侧，高 392；只让出这块矩形里的文字。 */
   private gmDescriptionCovers(spec:MenuTextSpec):boolean {

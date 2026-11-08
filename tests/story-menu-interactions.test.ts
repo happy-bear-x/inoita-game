@@ -2385,6 +2385,18 @@ test('long item descriptions keep the discard quantity row inside the dialog', t
   }),`${label} 底边不越出弹层`);
 });
 
+test('the discard dialog keeps the bag text outside the popup', t => {
+  const f=fixture();t.after(f.cleanup);
+  const source=f.add('skills-reset-spell',3);
+  f.menu.debugDescribe(source.id);
+  f.scene.click(f.scene.button('丢弃'));
+  assert.ok(f.internals.operation);
+  const labels=visibleDomLabels(f);
+  assert.ok(labels.some(label=>label.text==='人物'),'顶部页签文字仍然显示');
+  assert.ok(labels.some(label=>label.text==='武器'),'背包分类文字仍然显示');
+  assert.ok(labels.some(label=>label.text==='丢弃物品'),'弹层标题仍然显示');
+});
+
 test('key binding editor keeps its text inside the framed page', t => {
   const f=fixture();t.after(f.cleanup);t.after(()=>controlSettings.setMode('stick'));
   controlSettings.setMode('keyboard');
