@@ -1694,6 +1694,10 @@ export class StoryUI {
     const use=this.session!.bag.catalog.items[instance.item].use;
     // 技能书不弹确认框：独立页本身就承担选择与确认。
     if(kind==='use'&&use?.kind==='learn'){this.openSkillBook(entry);return;}
+    // 神灯的动作按钮直接使用一枚并打开商店。
+    if(kind==='use'&&use?.kind==='merchant'){
+      this.operation={entry,kind,quantity:1};this.confirmOperation();return;
+    }
     // 回血药水与再生药水都走队伍结算：全队生效、共用一个时钟。
     if(kind==='use'&&(use?.kind==='recover-health'||use?.kind==='regenerate')){this.app.useRecoveryItem?.(entry,this.selectedMemberId);this.render();return;}
     if(kind==='use'&&use&&NON_MENU_USE_KINDS.has(use.kind))return;

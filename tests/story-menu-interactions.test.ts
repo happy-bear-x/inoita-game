@@ -1069,8 +1069,10 @@ test('discarding a lamp only removes inventory; using a lamp opens its shop', t 
   f.menu.debugUse(lamp.id, 'discard'); f.scene.click(f.scene.button('确定'));
   assert.equal(f.session.bag.count('lamp'), 1); assert.equal(f.scene.buttons('返回背包').length, 0);
   assert(f.scene.buttons('背包').length, '丢弃后留在背包页');
-  f.menu.debugUse(f.entry('lamp').id); f.scene.click(f.scene.button('确定'));
+  f.menu.debugDescribe(f.entry('lamp').id);
+  f.scene.click(f.scene.button('召唤神灯商人'));
   assert.equal(f.session.bag.count('lamp'), 0); assert.equal(f.scene.buttons('背包').length, 0, '使用后进入商店而非菜单标签页');
+  assert.equal(f.internals.operation,undefined,'召唤直接完成，不显示使用确认框');
   assert(visibleDomLabels(f).some(label => label.text.includes('神灯')), '真实商店面板已经绘制');
 });
 
