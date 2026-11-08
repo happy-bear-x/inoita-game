@@ -1868,9 +1868,9 @@ captureStoryActors():SceneActorState[] {
     return {maxHealth:this.readResourceCapacity(id,'maxHealth',inputs),maxMana:this.readResourceCapacity(id,'maxMana',inputs)};
   }
   private syncCombatResourceLimits(id:string):void {
-    const member=this.memberOf(id);if(!member)return;
-    const capacities=this.readResourceCapacities(id);
-    member.setCombatResourceLimits(capacities.maxHealth,capacities.maxMana);
+    const member=this.memberOf(id),inputs=this.resourceCapacityInputs(id);
+    if(!member||!inputs)return;
+    member.setCombatResourceLimits(this.readResourceCapacity(id,'maxHealth',inputs),this.readResourceCapacity(id,'maxMana',inputs));
   }
   private applyStateConsequences(id:string,states:readonly BattleStateKey[]):void {
     if(!states.some(state=>state==='immobilized'||state==='stealthed')){this.interruptDisabled(id);return;}
