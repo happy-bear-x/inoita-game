@@ -13,6 +13,7 @@ import { MenuTextLayer, type MenuTextClip, type MenuTextPoint, type MenuTextSpec
 import type { DomLabel, DomUi } from '../ui/dom/dom-ui.ts';
 import { drawNativeMessage } from '../ui/phaser/native-message.ts';
 import { centerModal } from '../ui/phaser/modal-placement.ts';
+import { CHANGELOG_LAYOUT, changelogMetrics, changelogVisibleRange } from '../ui/changelog-layout.ts';
 import { TextPrompt } from '../ui/text-prompt.ts';
 import { PasswordChangePrompt } from '../ui/password-change-prompt.ts';
 import { CloudCredentialsInput, type CredentialInputRect } from '../ui/cloud-credentials-input.ts';
@@ -63,6 +64,17 @@ export class MenuScene extends Phaser.Scene {
   private backdrop?:UiImage;
   /** 确认框后面的黑色遮罩：弹层本身保持半透明。 */
   private popupMask?:UiNode;
+  /** 更新日志弹窗：点按钮才加载，滚动时只输出可视条目。 */
+  private changelogOpen=false;
+  private changelogState:'idle'|'loading'|'ready'|'empty'|'error'='idle';
+  private changelogEntries:string[]=[];
+  private changelogHeights:number[]=[];
+  private changelogOffsets:number[]=[];
+  private changelogSpecs:MenuTextSpec[]=[];
+  private changelogScroll?:ScrollArea;
+  private changelogScrollTop=0;
+  private changelogRequest?:AbortController;
+  private changelogError='';
   private page:'home'|'slots'|'settings'|'cloud'='home';
   /** 存档槽立绘的租约：每次进存档页按槽里的路径取，离开页面或关场景时释放。 */
   private slotPortraits?:AssetLease;
@@ -102,7 +114,7 @@ export class MenuScene extends Phaser.Scene {
   create(options:{page?:'home'|'slots'}={}):void {
     this.page='home';this.app.ui.setMode('menu');this.app.ui.loading('正在准备主菜单…');
     const controller=new AbortController();
-    this.events.once('shutdown',()=>{this.unregisterInput?.();this.unregisterInput=undefined;controller.abort();this.cancelCloudRequest();this.settleConfirm(false,false);this.slotRequest?.abort();this.prompt?.close();this.passwordPrompt?.close();this.credentials?.destroy();this.credentials=undefined;this.clearModalLabels();this.menuText?.destroy();this.menuText=undefined;this.domSpecs=[];this.slotsScroll=undefined;this.settingsList=undefined;this.cloudScroll=undefined;this.surface?.destroy();this.surface=undefined;this.modal?.destroy();this.modal=undefined;this.popupMask?.destroy();this.popupMask=undefined;this.slotPortraits?.release();this.slotPortraits=undefined;this.events.off(Phaser.Scenes.Events.RESUME,this.renderOnResume,this);this.events.off(Phaser.Scenes.Events.PAUSE,this.hideCredentials);this.scale.off('resize',this.layout,this);});
+    this.events.once('shutdown',()=>{this.unregisterInput?.();this.unregisterInput=undefined;controller.abort();this.cancelCloudRequest();this.settleConfirm(false,false);this.slotRequest?.abort();this.changelogRequest?.abort();this.changelogRequest=undefined;this.changelogOpen=false;this.app.releaseChangelog?.();this.prompt?.close();this.passwordPrompt?.close();this.credentials?.destroy();this.credentials=undefined;this.clearModalLabels();this.menuText?.destroy();this.menuText=undefined;this.domSpecs=[];this.slotsScroll=undefined;this.settingsList=undefined;this.cloudScroll=undefined;this.surface?.destroy();this.surface=undefined;this.modal?.destroy();this.modal=undefined;this.popupMask?.destroy();this.popupMask=undefined;this.slotPortraits?.release();this.slotPortraits=undefined;this.events.off(Phaser.Scenes.Events.RESUME,this.renderOnResume,this);this.events.off(Phaser.Scenes.Events.PAUSE,this.hideCredentials);this.scale.off('resize',this.layout,this);});
     // 标题页整屏独占键盘；原始事件由正式界面场景那一处桥接进 router。
     this.unregisterInput?.();this.unregisterInput=this.app.inputRouter.register('menu',this.routeKey,{exclusive:()=>true});
     this.events.on(Phaser.Scenes.Events.RESUME,this.renderOnResume,this);
@@ -116,21 +128,24 @@ export class MenuScene extends Phaser.Scene {
       if(controller.signal.aborted){lease.release();return;}
       this.events.once('shutdown',()=>lease.release());
       this.backdrop=new UiImage(this,undefined,art('background')).setOrigin(.5);
-      this.popupMask=new UiNode(this).setSize(1,1).setFillStyle(0,.5).setDepth(150).setVisible(false);
+      // 遮罩同时拦掉底层输入；弹层在它上面，按钮仍然先命中。
+      this.popupMask=new UiNode(this).setSize(1,1).setFillStyle(0,.5).setDepth(150).setVisible(false).setInteractive();
       this.surface=new UiSurface(this,1200,640);this.modal=new UiSurface(this,1024,640,200);this.prompt=new TextPrompt();this.passwordPrompt=new PasswordChangePrompt();
       const domUi=this.domUi;
       if(domUi){
-        this.menuText=new MenuTextLayer(domUi,(x,y)=>this.menuTextPoint(x,y),(page)=>this.menuScrollTop(page));
+        // 更新日志画在弹层画布上，文字定位跟着弹层根节点；其它页面仍用标题页画布。
+        this.menuText=new MenuTextLayer(domUi,(x,y)=>this.changelogOpen?this.modalTextPoint(x,y):this.menuTextPoint(x,y),(page)=>this.menuScrollTop(page));
         for(const page of ['home','slots','settings','cloud'] as const){
           this.menuText.register(page,writer=>{for(const spec of this.domSpecs)writer.add(spec);});
         }
+        this.menuText.register('changelog',writer=>{for(const spec of this.changelogSpecs)writer.add(spec);});
       }
       this.credentials=new CloudCredentialsInput({
         onAccount:value=>{this.cloudAccountInput=value;},
         onPassword:value=>{this.cloudPassword=value;},
       });
       // 确认框打开时页面整块不响应，确认框自己也只在有确认时响应。
-      this.modal.enabled=()=>this.app.ui.ready&&!this.app.ui.suspended&&this.sys.isActive()&&this.confirmAction!==undefined;
+      this.modal.enabled=()=>this.app.ui.ready&&!this.app.ui.suspended&&this.sys.isActive()&&(this.confirmAction!==undefined||this.changelogOpen);
       this.app.ui.menuLoaded();if(options.page==='slots')this.openSlots();else this.render();this.app.syncLifecycle?.();notifyBootReady();
     },error=>{if(!controller.signal.aborted)this.app.ui.error(String(error),()=>this.scene.restart());});
   }
@@ -142,7 +157,8 @@ export class MenuScene extends Phaser.Scene {
     if(target&&(target.tagName==='INPUT'||target.tagName==='TEXTAREA'||target.isContentEditable))return true;
     // 改名、修改密码表单或云存档账号/密码框有焦点时键盘归输入框，场景不再处理按键。
     if(this.renameRef!==undefined||this.prompt?.active||this.passwordPrompt?.active||this.credentials?.focused)return true;
-    // 确认框打开时 Escape 只关确认框，不退出页面。
+    // 更新日志和确认框打开时 Escape 只关最上层，不退出页面。
+    if(event.key==='Escape'&&this.changelogOpen){event.preventDefault();this.closeChangelog();return true;}
     if(event.key==='Escape'&&this.confirmAction!==undefined){event.preventDefault();this.confirmAction.cancel();return true;}
     if(event.key==='Escape'&&this.page!=='home'){event.preventDefault();this.back();return true;}
     return this.surface?.key(event)??false;
@@ -168,6 +184,88 @@ export class MenuScene extends Phaser.Scene {
       else this.render();
     });
     if(gm.on)texts.push({key:'gm-on',text:'调试：开',x:8,y:610,style:{size:18}});
+  }
+  /** 打开更新日志：先画加载态，数据到了再重画；主菜单自身不会在启动时加载这份文件。 */
+  private openChangelog():void{
+    if(this.changelogOpen||this.page!=='home'||!this.app.ui.ready||this.app.ui.suspended)return;
+    this.changelogOpen=true;this.changelogState='loading';this.changelogError='';
+    this.changelogEntries=[];this.changelogHeights=[];this.changelogOffsets=[];
+    this.changelogSpecs=[];this.changelogScrollTop=0;
+    this.changelogRequest?.abort();
+    const controller=this.changelogRequest=new AbortController();
+    this.render();
+    const load=this.app.loadChangelog;
+    if(!load){this.changelogState='error';this.changelogError='当前版本没有更新日志';this.render();return;}
+    void load(controller.signal).then(catalog=>{
+      if(controller.signal.aborted||this.changelogRequest!==controller||!this.changelogOpen)return;
+      this.changelogEntries=catalog.entries.slice();
+      this.changelogState=this.changelogEntries.length?'ready':'empty';
+      this.render();
+    },error=>{
+      if(controller.signal.aborted||this.changelogRequest!==controller||!this.changelogOpen)return;
+      this.changelogState='error';
+      this.changelogError=error instanceof Error?error.message:'未知原因';
+      this.render();
+    });
+  }
+  private closeChangelog():void{
+    this.changelogRequest?.abort();this.changelogRequest=undefined;
+    this.changelogOpen=false;this.changelogState='idle';this.changelogError='';
+    this.changelogEntries=[];this.changelogHeights=[];this.changelogOffsets=[];
+    this.changelogSpecs=[];this.changelogScroll=undefined;this.changelogScrollTop=0;
+    this.app.releaseChangelog?.();
+    this.render();
+  }
+  /** 更新日志弹窗：复用标题页存档/设置框，内层铺不透明底，右上角圆形关闭。 */
+  private drawChangelog(v:UiSurface):void{
+    const {panel,inner,scroll:area,close,textSize}=CHANGELOG_LAYOUT;
+    v.image(art('slot'),panel.x,panel.y,panel.width,panel.height);
+    v.rect(inner.x,inner.y,inner.width,inner.height,0x120d08,1);
+    const scroll=v.scroll(area.x,area.y,area.width,area.height);
+    this.changelogScroll=scroll;
+    scroll.onScroll=()=>{this.changelogScrollTop=scroll.scrollTop;this.rebuildChangelogSpecs();this.menuText?.renderPage('changelog');};
+    v.button('',panel.x+panel.width-close.right-close.size,panel.y+close.top,close.size,close.size,
+      ()=>this.closeChangelog(),{image:CLOSE_IMAGE,pressed:CLOSE_PRESSED}).setData('label','关闭更新日志');
+    this.changelogSpecs=[];
+    if(this.changelogState==='loading')this.changelogMessage('正在加载更新日志…');
+    else if(this.changelogState==='error')this.changelogMessage(`更新日志加载失败：${this.changelogError}`);
+    else if(this.changelogState!=='ready'||!this.changelogEntries.length)this.changelogMessage('暂无更新日志。');
+    else this.renderChangelogEntries(v,scroll,textSize);
+  }
+  /** 加载中、空列表和失败都只显示一行居中文字。 */
+  private changelogMessage(text:string):void{
+    const area=CHANGELOG_LAYOUT.scroll;
+    this.changelogSpecs=[{key:'changelog-message',text,x:area.x+area.width/2,y:area.y+area.height/2,
+      style:{size:CHANGELOG_LAYOUT.textSize,color:GOLD,anchorX:.5,anchorY:.5,
+        width:area.width-40,align:'center',wrap:'word'}}];
+  }
+  /** 先量每条正文的实际高度，算出总高度；真正输出时只取可视范围。 */
+  private renderChangelogEntries(v:UiSurface,scroll:ScrollArea,textSize:number):void{
+    const area=CHANGELOG_LAYOUT.scroll;
+    const heights=this.changelogEntries.map(entry=>{
+      const probe=v.text(entry,0,0,area.width,textSize,GOLD);
+      const height=probe.height;
+      probe.destroy();
+      return height;
+    });
+    const metrics=changelogMetrics(heights);
+    this.changelogHeights=heights;this.changelogOffsets=metrics.offsets;
+    scroll.setHeight(metrics.total);
+    scroll.scrollTop=this.changelogScrollTop;
+    this.rebuildChangelogSpecs();
+  }
+  /** 滚动时只替换屏幕内（含缓冲）的条目，不重建整份日志。 */
+  private rebuildChangelogSpecs():void{
+    const scroll=this.changelogScroll;
+    if(!scroll)return;
+    const area=CHANGELOG_LAYOUT.scroll;
+    const {first,last}=changelogVisibleRange(this.changelogOffsets,this.changelogHeights,scroll.scrollTop,area.height);
+    const specs:MenuTextSpec[]=[];
+    for(let index=first;index<=last;index++)specs.push({key:`changelog-${index}`,text:this.changelogEntries[index]!,
+      x:area.x,y:area.y+this.changelogOffsets[index]!,
+      style:{size:CHANGELOG_LAYOUT.textSize,color:GOLD,width:area.width,wrap:'word'},
+      scroll:'changelog',clip:{top:area.y,bottom:area.y+area.height}});
+    this.changelogSpecs=specs;
   }
 
   /** DOM 文字层由启动装配注入；菜单接口没有它，运行时从应用实例取。 */
@@ -197,6 +295,7 @@ export class MenuScene extends Phaser.Scene {
     if(page==='slots')return this.slotsScroll?.scrollTop;
     if(page==='settings')return this.settingsList?.scrollTop;
     if(page==='cloud')return this.cloudScroll?.scrollTop;
+    if(page==='changelog')return this.changelogScroll?.scrollTop;
     return undefined;
   }
   /** 存档槽绘制的文字规格转成菜单文字规格。 */
@@ -262,7 +361,7 @@ export class MenuScene extends Phaser.Scene {
     const view=this.surface;view.clear();this.modal?.clear();
     // DOM 标签直接写屏幕坐标；先让根节点用当前窗口尺寸完成布局，避免首帧按旧变换闪一下。
     view.layout();
-    const guard=()=>this.app.ui.ready&&!this.app.ui.suspended&&this.sys.isActive()&&this.confirmAction===undefined&&this.renameRef===undefined;
+    const guard=()=>this.app.ui.ready&&!this.app.ui.suspended&&this.sys.isActive()&&this.confirmAction===undefined&&this.renameRef===undefined&&!this.changelogOpen;
     view.enabled=guard;
     const texts:MenuTextSpec[]=[];
     const buttonText=(key:string,label:string,x:number,y:number,width:number,height:number,size:number,
@@ -279,6 +378,8 @@ export class MenuScene extends Phaser.Scene {
       menuButton('home-start','开始游戏',416,457,369,124,()=>this.openSlots());
       menuButton('home-settings','环境设置',65,472,300,92,()=>{this.page='settings';this.render();});
       menuButton('home-challenge','挑战模式',835,472,300,92,()=>{},true);
+      // 右上角：logo 的这块是透明的，按钮不会压住标题；尺寸和「开始游戏」一致。
+      menuButton('home-changelog','更新日志',815,16,369,124,()=>this.openChangelog());
       this.addVersion(view,texts);
     }else if(this.page==='cloud'){
       texts.push(...this.drawCloudPage(view));
@@ -355,12 +456,11 @@ export class MenuScene extends Phaser.Scene {
       }
     }
     this.domSpecs=texts;
-    this.menuText?.renderPage(this.page);
     // 确认框盖住页面时先收起页面文字；确认框正文由独立的 DOM 标签绘制。
     // 加载页会盖住画布，但 DOM 在画布之上；加载或挂起时页面文字必须让位。
-    const textVisible=this.confirmAction===undefined&&this.app.ui.ready&&!this.app.ui.suspended;
-    this.menuText?.setVisible(textVisible);
-    this.popupMask?.setVisible(!textVisible&&this.confirmAction!==undefined&&this.app.ui.ready&&!this.app.ui.suspended);
+    const modalOpen=this.confirmAction!==undefined||this.changelogOpen;
+    const textVisible=this.app.ui.ready&&!this.app.ui.suspended&&(this.changelogOpen||this.confirmAction===undefined);
+    this.popupMask?.setVisible(modalOpen&&this.app.ui.ready&&!this.app.ui.suspended);
     if(!textVisible)for(const label of this.modalLabels)label.setVisible(false);
     this.clearModalLabels();
     if(this.confirmAction){
@@ -369,6 +469,12 @@ export class MenuScene extends Phaser.Scene {
       centerModal(modal,view,1024,640);
       drawNativeMessage(modal,TITLE_MESSAGE_ASSETS,action.message,()=>action.accept(),()=>action.cancel(),this.modalTextWriter());
     }
+    if(this.changelogOpen&&this.modal){
+      centerModal(this.modal,view,1024,640);
+      this.drawChangelog(this.modal);
+    }
+    this.menuText?.renderPage(this.changelogOpen?'changelog':this.page);
+    this.menuText?.setVisible(textVisible);
     this.layout();
   }
   private clearModalLabels():void{
@@ -801,7 +907,7 @@ export class MenuScene extends Phaser.Scene {
     if(this.backdrop){this.backdrop.setPosition(0,0).setOrigin(0).setScale(1).setDisplaySize(this.scale.width,this.scale.height).fitting();}
     this.popupMask?.setSize(this.scale.width,this.scale.height);
     this.surface?.layout();
-    if(this.surface&&this.modal&&this.confirmAction!==undefined)centerModal(this.modal,this.surface,1024,640);
+    if(this.surface&&this.modal&&(this.confirmAction!==undefined||this.changelogOpen))centerModal(this.modal,this.surface,1024,640);
     this.syncCredentials();
     // 画布缩放或安全区变化后，DOM 文字的 CSS 坐标和字号要跟着重算。
     this.menuText?.refresh();

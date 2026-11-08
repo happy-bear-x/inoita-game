@@ -32,6 +32,7 @@ import type { BuffReactionBuff } from '../domain/buff-reactions.ts';
 import { STORY_TRIGGER_SOURCES, validateStoryGraph, type StoryCommand, type StoryNodeRef } from '../domain/story-graph.ts';
 import { storyConditionReferences, type StoryCondition } from '../domain/story-condition.ts';
 import { placementAuthority } from '../domain/actor-authority.ts';
+import type { ChangelogCatalog } from '../domain/changelog.ts';
 
 type Check = (value: unknown, path: string) => void;
 function requireValue(condition: unknown, path: string, message: string): asserts condition {
@@ -454,6 +455,13 @@ const menuPanels=shape<MenuPanels>({itemMessages:record(text),assets:record(file
   character:object({portraits:record(object({image:file,partyIcon:file})),classPortraits:record(file),combatLabels:strings,
     labels:object({statPoints:text,skillPoints:text,health:text,mana:text,experience:text})}),
   skillPanel:object({labels:object({initialSkillPoints:text,resetButton:text})})});
+/** 标题页更新日志：条目只放正文，空条目视为写错。 */
+export function parseChangelog(value:unknown):ChangelogCatalog {
+  shape<ChangelogCatalog>({version:count,entries:array(nonEmptyText)})(value,'changelog');
+  const result=value as ChangelogCatalog;
+  requireValue(result.version===1,'changelog.version','只支持版本 1');
+  return result;
+}
 export function parseMenuPanels(value:unknown):MenuPanels {
   menuPanels(value,'menuPanels'); const result=value as MenuPanels;
   for(const key of [...ITEM_NOTICES,'craft-incompatible','craft-needs-chaos','craft-epic','craft-max','craft-money','craft-materials','craft-target','craft-confirm'])

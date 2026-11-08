@@ -144,6 +144,9 @@ export interface MenuContext {
   readonly gmMode?: { readonly on: boolean; toggle(): boolean };
   /** GM 在菜单里临时打开时补载调试现场表；普通启动不请求。 */
   loadDebugCatalog?: () => Promise<void>;
+  /** 标题页更新日志：点开弹窗才请求，关闭后释放缓存。 */
+  loadChangelog?: (signal?: AbortSignal) => Promise<import('../domain/changelog.ts').ChangelogCatalog>;
+  releaseChangelog?: () => void;
   readonly audio?:GameAudio;
   enterGame?:(slot?:number)=>Promise<void>;
   /** 标题页的「开始游戏」使用同一份存档槽。 */

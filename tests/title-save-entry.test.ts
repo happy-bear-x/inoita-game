@@ -55,7 +55,8 @@ function fakeView(width:number,height:number){
     text(value:string,x:number,y:number,_width:number,size:number){
       this.texts.push(value);
       const node:TextNode={value,x,y,size,origin:[0,0],handlers:new Map()};this.textNodes.push(node);
-      const label={setOrigin:(originX:number,originY:number)=>{node.origin=[originX,originY];return label;},
+      const lines=_width>0?Math.max(1,Math.ceil(Array.from(value).length*size*.55/_width)):1;
+      const label={height:lines*(size+5)-5,setOrigin:(originX:number,originY:number)=>{node.origin=[originX,originY];return label;},
         setPosition:(nextX:number,nextY:number)=>{node.x=nextX;node.y=nextY;return label;},
         setAlign:()=>label,destroy:()=>{},
         setInteractive:()=>label,on:(event:string,handler:()=>void)=>{node.handlers.set(event,handler);return label;}};
@@ -85,6 +86,7 @@ function fixture(gmMode?:MenuContext['gmMode'],cloud?:CloudSavePort){
   const domLabels:FakeDomLabel[]=[];
   const domUi={label:()=>{const label=new FakeDomLabel();domLabels.push(label);return label;}};
   const app:MenuContext={inputRouter:new InputRouter({textInputFocused:()=>false}),saves,gmMode,cloud,ui:{ready:true,suspended:false,setMode:()=>{},loading:()=>{},menuLoaded:()=>{},error:()=>{}},
+    loadChangelog:async()=>({version:1,entries:[]}),
     enterGame:async()=>{events.push('new');},resumeSlot:async(slot,signal)=>{events.push(`load:${slot}`);if(signal)signals.push(signal);}};
   Object.defineProperty(app,'domUi',{value:domUi});
   const view=fakeView(1200,640),modal=fakeView(1024,640);
@@ -94,9 +96,14 @@ function fixture(gmMode?:MenuContext['gmMode'],cloud?:CloudSavePort){
     cloudStatus:undefined,cloudCount:undefined,cloudRequest:undefined,confirmAction:undefined,confirmResolve:undefined,
     renameRef:undefined,slotRequest:undefined,slotPortraits:undefined,prompt:undefined,settingsScroll:0,backdrop:undefined,
     domSpecs:[] as MenuTextSpec[],menuText:undefined as MenuTextLayer|undefined,modalLabels:[] as FakeDomLabel[],
+    changelogOpen:false,changelogState:'idle',changelogEntries:[] as string[],changelogHeights:[] as number[],
+    changelogOffsets:[] as number[],changelogSpecs:[] as MenuTextSpec[],changelogScroll:undefined as FakeScroll|undefined,
+    changelogScrollTop:0,changelogRequest:undefined as AbortController|undefined,changelogError:'',
     sys:{isActive:()=>true},textures:{exists:()=>true}};
-  const menuText=new MenuTextLayer(domUi as unknown as Pick<DomUi,'label'>,(x,y)=>({x,y,scale:1}),()=>undefined);
+  const menuText=new MenuTextLayer(domUi as unknown as Pick<DomUi,'label'>,(x,y)=>({x,y,scale:1}),
+    page=>page==='changelog'?state.changelogScroll?.scrollTop:undefined);
   for(const page of ['home','slots','settings','cloud'] as const)menuText.register(page,writer=>{for(const spec of state.domSpecs)writer.add(spec);});
+  menuText.register('changelog',writer=>{for(const spec of state.changelogSpecs)writer.add(spec);});
   state.menuText=menuText;
   const scene=Object.setPrototypeOf(state,MenuScene.prototype);
   const call=(name:string,...args:unknown[])=>Reflect.get(MenuScene.prototype,name).call(scene,...args);
@@ -111,6 +118,28 @@ function fixture(gmMode?:MenuContext['gmMode'],cloud?:CloudSavePort){
   return {app,entries,events,signals,view,modal,state,call,click,clickModal:(label:string)=>clickIn(modal,label),key,saves,domLabels,domTexts};
 }
 const saved=(savedAt?:number)=>JSON.stringify({format:SAVE_FORMAT,summary:{...(savedAt===undefined?{}:{savedAt}),classId:'dark-knight',className:'黑暗骑士',level:1,mapId:'map',mapName:'营地',portrait:'portrait.png'},session:{},world:{location:{map:'map',x:0,y:0,facing:'south'},generatedEntities:[]}});
+
+test('title changelog loads on demand and only renders visible entries',async()=>{
+  const f=fixture();
+  const entries=Array.from({length:40},(_,index)=>`第 ${index+1} 条更新说明。`.repeat(6));
+  let loads=0;
+  f.app.loadChangelog=async()=>{loads++;return {version:1 as const,entries};};
+  f.click('更新日志');
+  assert.equal(loads,1,'点按钮才加载更新日志');
+  assert.ok(f.domTexts().includes('正在加载更新日志…'));
+  await new Promise(resolve=>setImmediate(resolve));
+  const labels=()=>f.domTexts().filter(text=>text.startsWith('第 '));
+  assert.ok(labels().some(text=>text.startsWith('第 1 条')),'首条可见');
+  assert.ok(labels().length>0&&labels().length<entries.length,`只渲染可视条目，实际 ${labels().length} 条`);
+  const scroll=f.state.changelogScroll!;
+  scroll.scrollTop=scroll.extent-scroll.height;
+  scroll.onScroll?.();
+  assert.ok(labels().some(text=>text.startsWith('第 40 条')),'滚到底显示最后一条');
+  assert.ok(!labels().some(text=>text.startsWith('第 1 条')),'滚出视口的条目不渲染');
+  f.clickModal('关闭更新日志');
+  assert.equal(f.state.changelogOpen,false);
+  assert.ok(!f.domTexts().some(text=>text.startsWith('第 1 条')),'关闭弹窗后日志文字撤掉');
+});
 
 test('menu draws after assets finish while the scene is paused',()=>{
   const f=fixture();let active=false;
@@ -252,7 +281,7 @@ test('title settings uses volume sliders and leftmost means silence',()=>{
 test('challenge mode is disabled and is excluded from native keyboard focus',()=>{
   const f=fixture(),challenge=f.view.buttons.find(button=>button.getData('label')==='挑战模式');assert.ok(challenge);assert.equal(challenge.input.enabled,false);
   const focus=UiSurface.prototype.focusables.call(f.view as unknown as InstanceType<typeof UiSurface>);
-  assert.deepEqual(focus.map(button=>button.getData('label')),['开始游戏','环境设置']);
+  assert.deepEqual(focus.map(button=>button.getData('label')),['开始游戏','环境设置','更新日志']);
   f.key('Tab');f.key('Enter');assert.deepEqual(f.events,[]);assert(f.view.buttons.some(button=>button.getData('label')==='存档槽 1'));
 });
 

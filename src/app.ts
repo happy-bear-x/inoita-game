@@ -142,6 +142,11 @@ export class StoryApp {
     if(this.campaign)delete this.campaign.debugStory;
     this.content.releaseStoryDebug();
   }
+  /** 标题页更新日志只在点按钮时加载，关闭弹窗后释放请求缓存。 */
+  loadChangelog(signal?:AbortSignal):Promise<import('./domain/changelog.ts').ChangelogCatalog>{
+    return this.content.changelog(signal);
+  }
+  releaseChangelog():void{this.content.releaseChangelog();}
   get mode() { return this.ui.mode; }
   set mode(value: GameMode) { this.ui.mode=value; }
   battleCatalog!: BattleCatalog;
