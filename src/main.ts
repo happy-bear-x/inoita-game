@@ -379,7 +379,11 @@ async function resumeSlot(slot:SaveSlotRef,signal?:AbortSignal):Promise<void> {
         app.saveSlot=slot===AUTO_SAVE_SLOT?undefined:slot;
         game.scene.start(SCENE_KEYS.world,{map:location.map,x:location.x,y:location.y,facing:location.facing,
           initialEntry:true,suppressEntry:true,resumeStory:true,signal:lifetime.signal,checkpoint:world.world,generatedEntities:world.generatedEntities,preparedScene:world.scene,
-          onReady:()=>{if(!lifetime.signal.aborted&&world.audio)app.audio?.restoreStoryAudio(world.audio);}});
+          onReady:()=>{
+            if(lifetime.signal.aborted)return;
+            if(world.audio)app.audio?.restoreStoryAudio(world.audio);
+            window.setTimeout(()=>{if(!lifetime.signal.aborted)globalThis.storyDiagnostics?.record('load-audio-ready',{map:location.map});},4000);
+          }});
       },
     },signal);
   }catch(error){if(isCurrent())ui.loaded();throw error;}
@@ -566,6 +570,8 @@ function returnToMenu(): void {
  */
 function runtimeDiagnostics(): Record<string, unknown> {
   const session = app.session, party = session?.party;
+  const sound=app.game?.sound, context=(sound as Phaser.Sound.WebAudioSoundManager | undefined)?.context;
+  const sounds=sound?.getAll('')??[]; // NoAudioSoundManager 的类型声明要求传入 key。
   return {
     mode: app.mode, ready: ui.ready, locked: ui.locked, lockOwners: ui.lockOwners,
     suspended: ui.suspended, defeatOpen: ui.defeatOpen, menuOpen: app.storyUI?.menuOpen ?? false,
@@ -580,7 +586,10 @@ function runtimeDiagnostics(): Record<string, unknown> {
       party: party ? { controlled: party.controlledId, active: party.activeIds,
         reserves: party.snapshot().reserves, rosterSlots: party.snapshot().rosterSlots } : null,
     } : null,
-    audio: app.audio ? { ...app.audio.captureStoryAudio(), settings: app.audio.settings } : null,
+    audio: app.audio ? { ...app.audio.captureStoryAudio(), settings: app.audio.settings,
+      contextState:context?.state??null, managerLocked:sound?.locked??null, managerMuted:sound?.mute??null,
+      playing:sounds.filter(item=>item.isPlaying).map(item=>item.key),
+      paused:sounds.filter(item=>item.isPaused).map(item=>item.key) } : null,
     world: worldScene()?.diagnosticSnapshot(),
     story: app.director ? { busy: app.director.busy,
       runs: app.director.runtime.snapshot().runs.filter(run => run.status !== 'completed')

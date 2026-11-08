@@ -21,6 +21,7 @@
 - 玩法规则只在 `domain` 写一份，`application` 负责把它接到 Phaser 和浏览器。
 - 游戏世界实现顺序：Phaser 4 内置 API → 技能 → Phaser 4.2.1 官方文档。屏幕界面采用 DOM、CSS 和 SVG，复用现有布局与状态接口。
 - 进入游戏前通过同一个预载入口同步等待菜单、DOM 状态栏、轮盘、小地图和图集图片；回菜单统一释放界面持有的图片资源。
+- 读档完成后记录音频上下文、锁定状态和播放中的音轨，供手机排查声音问题。
 - 音频恢复监听使用窗口指针捕获阶段，DOM 控件消费触摸后仍能恢复音频上下文。
 - 内置优先：移动和碰撞用 Arcade Physics（`this.physics`），镜头跟随用 `this.cameras.main.startFollow()`，逐帧动画用 `this.anims`；不要自己写循环。
 - Phaser 4 的渲染管线是 render node，FX/mask 用 filter，tint 和纹理坐标与 v3 不同；不要套 v3 写法。
