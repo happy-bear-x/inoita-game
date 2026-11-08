@@ -48,7 +48,7 @@ android {
         // Cefrium 最低 Android 10。旧的 WebView 壳是 26，换引擎后不再支持 8/9。
         minSdk 29
         targetSdk 34
-        versionCode 12
+        versionCode 13
         versionName '2.0.0'
         buildConfigField 'String', 'BASELINE_BUILD_ID', "\"${baselineBuildId}\""
         buildConfigField 'String', 'BASELINE_BUILT_AT', "\"${baselineBuiltAt}\""

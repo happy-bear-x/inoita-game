@@ -233,7 +233,11 @@ final class UpdateManager {
                 loadSnapshot();
             } catch (Exception error) {
                 Log.w(TAG, "初始化版本快照失败，降级为 APK 资源", error);
-                snapshot = Snapshot.apkOnly("apk");
+                // 构建期写入的版本号同样可信；不能用 "apk" 覆盖，否则更新检查
+                // 会把自带完整网页的安装包当成未知版本，反复提示全量下载。
+                snapshot = Snapshot.apkOnly(fallbackBuildId());
+                installedBuiltAt = BuildConfig.BASELINE_BUILT_AT;
+                Diagnostics.report("update-init-error", "message", describeError(error));
             }
             try {
                 if (applyReadyBlocking()) loadSnapshot();
@@ -292,6 +296,11 @@ final class UpdateManager {
         if (BuildConfig.UPDATE_PUBLIC_KEY.isEmpty()) {
             Log.w(TAG, "缺少更新公钥，跳过热更检查");
             return;
+        }
+        synchronized (initLock) {
+            // 初始化还没读完当前版本时不能检查：快照仍是默认的 "apk"，
+            // 会把自带完整网页的安装包误判成需要全量更新。
+            if (!initialized) return;
         }
         if (!force && System.currentTimeMillis() - state.lastCheckAt() < CHECK_INTERVAL_MS) return;
         if (!checking.compareAndSet(false, true)) return;
@@ -864,6 +873,11 @@ final class UpdateManager {
      * 标记为不可信快照，PathHandler 会全部交给 AssetsPathHandler。
      */
     private void loadSnapshot() {
+        // 先给出构建期身份：后面读状态、读清单任何一步失败，也不会退回 "apk"。
+        if (!BuildConfig.BASELINE_BUILD_ID.isEmpty()) {
+            snapshot = Snapshot.apkOnly(BuildConfig.BASELINE_BUILD_ID);
+            installedBuiltAt = BuildConfig.BASELINE_BUILT_AT;
+        }
         try {
             state.ensureDirs();
         } catch (IOException error) {
@@ -975,6 +989,18 @@ final class UpdateManager {
         state.cleanupBuilds(state.active(), state.previous());
         Log.i(TAG, "当前版本 buildId=" + buildId
                 + "，来源=" + (root == null ? "APK 资源" : root.getName()));
+        Diagnostics.report("update-snapshot", "buildId", buildId,
+                "source", root == null ? "apk" : "update",
+                "baseline", baseManifest == null ? "missing" : "read");
+    }
+
+    private static String fallbackBuildId() {
+        return BuildConfig.BASELINE_BUILD_ID.isEmpty() ? "apk" : BuildConfig.BASELINE_BUILD_ID;
+    }
+
+    private static String describeError(Throwable error) {
+        String message = error.getMessage();
+        return error.getClass().getSimpleName() + (message == null ? "" : ": " + message);
     }
 
     private byte[] readAsset(String path) throws IOException {
