@@ -181,13 +181,16 @@ export class MenuScene extends Phaser.Scene {
     const matrix=root.getWorldTransformMatrix(),point=matrix.transformPoint(x,y);
     return{x:point.x,y:point.y,scale:matrix.scaleX};
   }
-  /** 弹层本地坐标先换到整页表面，再走和页面文字同一套屏幕换算。 */
+  /**
+   * 弹层本地坐标 → 画框 CSS 坐标。弹层和页面是同一屏幕层上的两个根节点，
+   * `centerModal` 已经按页面变换放好弹层；DOM 标签要的是最终屏幕坐标，
+   * 不能再减页面原点或除以页面缩放。
+   */
   private modalTextPoint(x:number,y:number):MenuTextPoint {
-    const modal=this.modal,root=this.surface?.root;
-    if(!modal||!root)return this.menuTextPoint(x,y);
-    const world=modal.root.getWorldTransformMatrix().transformPoint(x,y);
-    const matrix=root.getWorldTransformMatrix(),origin=matrix.transformPoint(0,0);
-    return{x:(world.x-origin.x)/matrix.scaleX,y:(world.y-origin.y)/matrix.scaleY,scale:matrix.scaleX};
+    const modal=this.modal;
+    if(!modal)return this.menuTextPoint(x,y);
+    const matrix=modal.root.getWorldTransformMatrix(),point=matrix.transformPoint(x,y);
+    return{x:point.x,y:point.y,scale:matrix.scaleX};
   }
   /** 滚动文字按当前偏移重算；每次整页重画后指向新的滚动区。 */
   private menuScrollTop(page:string):number|undefined {

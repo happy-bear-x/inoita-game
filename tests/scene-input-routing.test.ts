@@ -227,6 +227,20 @@ test('标题页的 Escape 先关确认框，再返回上一页', () => {
   assert.deepEqual(calls, ['cancel-confirm', 'back']);
 });
 
+test('确认框文字使用弹层的屏幕坐标，不再减页面原点', () => {
+  const matrix = (tx: number, ty: number, scale: number) => ({
+    scaleX: scale, scaleY: scale,
+    transformPoint: (x: number, y: number) => ({ x: tx + x * scale, y: ty + y * scale }),
+  });
+  const host = {
+    modal: { root: { getWorldTransformMatrix: () => matrix(144, 0, .5) } },
+    surface: { root: { getWorldTransformMatrix: () => matrix(100, 50, .5) } },
+    menuTextPoint: () => { throw new Error('弹层文字不能回退到页面坐标'); },
+  };
+  const point = Reflect.get(MenuScene.prototype, 'modalTextPoint').call(host, 10, 20) as { x: number; y: number; scale: number };
+  assert.deepEqual(point, { x: 149, y: 10, scale: .5 }, '弹层原点加本地偏移后直接就是屏幕坐标');
+});
+
 test('职业选择页的 Escape 回标题，其他按键交给页面按钮', () => {
   const app = { inputRouter: new InputRouter({ textInputFocused: () => false }), suspended: false,
     returnToMenu: () => { app.returned += 1; }, returned: 0 };
