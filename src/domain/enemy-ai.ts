@@ -71,6 +71,9 @@ const ARRIVAL_DISTANCE_PX=.5;
 const RELEASE_HEALTH_RATE:Record<EnemyReleaseCondition,number|undefined>=
   {'hp-below-30':30,'hp-below-50':50,'hp-below-70':70,'hp-below-95':95,'always':undefined};
 
+/** 睡着的敌人每隔几逻辑帧才想一次事，约 300 毫秒。 */
+export const ENEMY_IDLE_THINK_FRAMES=5;
+
 /** 只决定目标、路径和动作；位置推进及碰撞仍由场景物理系统负责。 */
 export class EnemyController {
   private readonly id: string;
@@ -127,6 +130,13 @@ export class EnemyController {
   /** 只读行为阶段；不需要冷却快照时用这个。 */
   actionState():EnemySnapshot['state']{return this.state;}
   currentTargetId():string|undefined{return this.targetId;}
+  /** 这一逻辑帧是否必须走完整决策；待机和闲逛可以隔几帧再想。 */
+  needsFrame():boolean {
+    if(this.disposed)return false;
+    return this.mapWide||this.targetId!==undefined||this.threatCombatActive||this.pendingReturn
+      ||this.state==='chasing'||this.state==='attacking'||this.state==='returning'
+      ||(this.combat!==undefined&&(this.combat.actionState()!=='idle'||this.combat.selectedTargetId()!==undefined));
+  }
   captureState():EnemyControllerState {
     return structuredClone({state:this.state,targetId:this.targetId,pendingReturn:this.pendingReturn,threatCombatActive:this.threatCombatActive,
       accumulator:this.accumulator,clock:this.clock,nextPathAt:this.nextPathAt,path:this.path,destination:this.destination,

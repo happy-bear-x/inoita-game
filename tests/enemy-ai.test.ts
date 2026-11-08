@@ -300,3 +300,16 @@ test('a moving wanderer stops when its route is blocked and cancellation clears 
   assert.equal(next?.(),undefined);run.advance();assert.equal(run.ai.snapshot().state,'idle');
   run.ai.cancel();assert.equal(next?.(),undefined);run.ai.dispose();assert.equal(next?.(),undefined);
 });
+
+test('idle and wandering enemies need no full decision until contact or a map-wide boss',()=>{
+  const idle=setup({aggression:'passive'});idle.advance();
+  assert.equal(idle.ai.needsFrame(),false);
+  idle.ai.onContact({casterId:idle.player.id,targetId:idle.actor.id});
+  assert.equal(idle.ai.needsFrame(),true);
+
+  const boss=setup({aggression:'passive',engagement:'map-wide'});boss.advance();
+  assert.equal(boss.ai.needsFrame(),true);
+
+  const active=setup();active.advance();
+  assert.equal(active.ai.needsFrame(),true);
+});

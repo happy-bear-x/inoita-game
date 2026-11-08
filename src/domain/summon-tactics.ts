@@ -2,7 +2,7 @@ import type { ActiveCombatAction, Combatant } from './combat.ts';
 import { actionCues } from './skill-action.ts';
 
 const RECENT_CONTACT_MS=1800;
-interface SummonCombatObservation {
+export interface SummonCombatObservation {
   actor:Combatant;
   action?:ActiveCombatAction;
   chasingTargetId?:string;
@@ -34,8 +34,15 @@ export class SummonCombatAwareness {
     if(source.team==='party')this.lastCombatAt=nowMs;
     if(target)this.contact(source,target,nowMs);
   }
+  /** 敌人死亡或离场时立刻清掉它的交战记录，不等过期。 */
+  forget(actorId:string):void {
+    this.engaged.delete(actorId);
+    for(const [key,entry]of this.attacks)if(entry.enemyId===actorId||entry.targetId===actorId)this.attacks.delete(key);
+    for(const [key,entry]of this.friendlyTargets)if(key===actorId||entry.id===actorId)this.friendlyTargets.delete(key);
+  }
   observe(nowMs:number,observations:readonly SummonCombatObservation[]):void {
-    const actors=new Map(observations.map(entry=>[entry.actor.id,entry.actor]));
+    const actors=new Map<string,Combatant>();
+    for(const entry of observations)actors.set(entry.actor.id,entry.actor);
     for(const entry of observations){
       if(entry.action)this.action(entry.actor,entry.action,actors.get(entry.action.targetId??''),nowMs);
       if(entry.actor.team!=='party'&&entry.chasingTargetId){
@@ -43,9 +50,10 @@ export class SummonCombatAwareness {
         if(target?.team==='party')this.contact(entry.actor,target,nowMs);
       }
     }
-    for(const [id,at]of this.engaged)if(nowMs-at>RECENT_CONTACT_MS||!actors.has(id))this.engaged.delete(id);
-    for(const [key,entry]of this.attacks)if(nowMs-entry.at>RECENT_CONTACT_MS||!actors.has(entry.enemyId)||!actors.has(entry.targetId))this.attacks.delete(key);
-    for(const [id,entry]of this.friendlyTargets)if(nowMs-entry.at>RECENT_CONTACT_MS||!actors.has(id)||!actors.has(entry.id))this.friendlyTargets.delete(id);
+    // 名单里只有醒着的敌人；已结束的交战按时间过期，敌人死亡由 forget 立刻清掉。
+    for(const [id,at]of this.engaged)if(nowMs-at>RECENT_CONTACT_MS)this.engaged.delete(id);
+    for(const [key,entry]of this.attacks)if(nowMs-entry.at>RECENT_CONTACT_MS)this.attacks.delete(key);
+    for(const [id,entry]of this.friendlyTargets)if(nowMs-entry.at>RECENT_CONTACT_MS)this.friendlyTargets.delete(id);
   }
   tactics(ownerId:string,partyIds:readonly string[],focusTargetId?:string) {
     return {engagedTargetIds:[...this.engaged.keys()],ownerTargetId:this.friendlyTargets.get(ownerId)?.id,

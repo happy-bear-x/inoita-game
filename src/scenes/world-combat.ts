@@ -29,10 +29,10 @@ import Phaser from 'phaser';
 import { LOGIC_FRAME_MS, enemySkills, skillManaCost, skillForMember, memberSkillGrowth, type ResolvedBasicAttack, type BattleBuffEffect, type SkillFeedbackEvent, type ActionDispatchDefinition, type EnemyDefinition, type EnemyPlayableSkill, type PlacedEnemy, type SkillAction, type CombatUnit, type SkillLoadout } from '../domain/battle.ts';
 import { CombatController,canTargetCombatant,resolveCueTargets, type Combatant, type ActionPlayback, type AttackContact, type BasicAreaContact, type BasicAttackSelection, type SkillUnitHit, type SkillUnitStart } from '../domain/combat.ts';
 import type { PartyBuffSlot } from '../domain/party-buff-targets.ts';
-import { EnemyController, type EnemyPort } from '../domain/enemy-ai.ts';
+import { ENEMY_IDLE_THINK_FRAMES, EnemyController, type EnemyPort } from '../domain/enemy-ai.ts';
 import { enemyAwarenessRangeUnits } from '../domain/enemy-engagement.ts';
 import { FriendlySummonController } from '../domain/friendly-summon-ai.ts';
-import { SummonCombatAwareness } from '../domain/summon-tactics.ts';
+import { SummonCombatAwareness, type SummonCombatObservation } from '../domain/summon-tactics.ts';
 import { canTraverse } from '../domain/pathfinding.ts';
 import { choosePartyLanding, followOffset, partyBodyOverlaps } from '../domain/party-placement.ts';
 import type { NavigationActor, NavigationShape } from '../domain/navigation-world.ts';
@@ -205,6 +205,7 @@ export class WorldCombat {
   private readonly statusColors=new StatusColorRenderer();
   private readonly stateMarkers:StateMarkers;
   private readonly summons=new SummonLifecycle();
+  private readonly summonObservations:SummonCombatObservation[]=[];
   private summonAwareness?:SummonCombatAwareness;
   private get awareness():SummonCombatAwareness {
     return this.summonAwareness??=new SummonCombatAwareness((this.app.session.combatTick??0)*LOGIC_FRAME_MS);
@@ -743,8 +744,9 @@ captureStoryActors():SceneActorState[] {
     if(source&&target&&source.team!==target.team)this.summonAwareness.contact(source,target,(this.app.session.combatTick??0)*LOGIC_FRAME_MS);
   }
   private observeSummonCombat():void {
-    // 直接按队伍和敌人两份名单收集，避免每逻辑帧先拼一份全员数组再 filter/map。
-    const observations:{actor:Combatant;action?:ReturnType<CombatController['activeAction']>;chasingTargetId?:string}[]=[];
+    // 名单复用同一个数组；只装队员和醒着的敌人，睡着的等交战时由 contact 事件补上。
+    const observations=this.summonObservations;
+    observations.length=0;
     for(const id of this.activeParty){
       if(!this.isActorAlive(id))continue;
       const actor=this.combatant(id);if(!actor)continue;
@@ -754,6 +756,7 @@ captureStoryActors():SceneActorState[] {
       if(!this.isActorAlive(enemy.key))continue;
       const actor=this.combatant(enemy.key);if(!actor)continue;
       const controller=enemy.controller;
+      if(actor.team!=='party'&&!(controller instanceof EnemyController&&controller.needsFrame()))continue;
       observations.push({actor,action:controller?.combatController?.activeAction(),
         chasingTargetId:actor.team!=='party'&&controller?.actionState()==='chasing'?controller.currentTargetId():undefined});
     }
@@ -1186,6 +1189,7 @@ captureStoryActors():SceneActorState[] {
           const earnsExperience=!!(this.memberOf(event.casterId)||this.arena.some(enemy=>enemy.key===event.casterId&&this.memberOf(enemy.summonedBy??'')));
           const session=this.app.session,map=this.scene.map!.id;
           const {x,y}=targetEnemy.visual.container,key=targetEnemy.key;
+          this.summonAwareness?.forget(key);
           this.pendingDefeats.add(key,render=>{
             this.runtime.cancel(`defeat:${key}`);this.outcomes.cancelDeath(key);
             if(spawn)session.enemyDefeated(spawn);
@@ -1928,14 +1932,13 @@ captureStoryActors():SceneActorState[] {
       enemy.controller?.cancel(); enemy.presenter.clear(); this.movement.stop(enemy.visual);
     }
   }
-  private updateEnemies(enabled: boolean): void {
-    if (!enabled) { if (this.enemiesRunning) this.stopEnemies(); return; }
+  private updateEnemies(frame:number): void {
     this.enemiesRunning = true;
     for (const enemy of this.arena) {
       if(this.pendingDefeats.has(enemy.key))continue;
       if(!(enemy.controller instanceof FriendlySummonController))enemy.controller?.step();
     }
-    this.observeSummonCombat();
+    if(frame%ENEMY_IDLE_THINK_FRAMES===0)this.observeSummonCombat();
     for(const enemy of this.arena)if(!this.pendingDefeats.has(enemy.key)&&enemy.controller instanceof FriendlySummonController)enemy.controller.step();
   }
 
@@ -1959,6 +1962,7 @@ captureStoryActors():SceneActorState[] {
     const index = this.arena.findIndex(enemy => enemy.key === key);
     if (index < 0) return false;
     const [enemy] = this.arena.splice(index, 1);refreshCombatActors(this.arena);
+    this.summonAwareness?.forget(key);
     this.destroyEnemy(enemy);
     this.conditions.remove(key);
     this.summons.remove(key);
@@ -2948,7 +2952,7 @@ captureStoryActors():SceneActorState[] {
       void this.syncAllies().catch(error=>this.app.ui.toast((error as Error).message));
     if(this.controlledId!==this.syncedControlledId&&this.partyControllers.has(this.controlledId))this.syncControlled(false);
     const tickBefore=this.app.session.combatTick;
-    this.app.session.advanceCombatFrames(delta,()=>{
+    this.app.session.advanceCombatFrames(delta,frame=>{
       this.combatantsCache=undefined;
       // 名册按逻辑帧刷新；最多晚一帧（约 60ms）出现，不再每渲染帧全量扫描生成点。
       this.consumeRosterChanges(this.roster.refresh());
@@ -2967,7 +2971,7 @@ captureStoryActors():SceneActorState[] {
         enemy.summonRemainingMs=advanceSummonLifetime(enemy.summonRemainingMs);
         if(summonLifetimeExpired(enemy.summonRemainingMs))this.removeEnemy(enemy.key);
       }
-      this.updateEnemies(true);
+      this.updateEnemies(frame);
       this.runtime.step(this.app.session.combatTick);
       if(this.defeated||this.closed||!this.scene.canCombatControl){this.combatantsCache=undefined;return false;}
       this.recoverResources();

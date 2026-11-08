@@ -50,5 +50,20 @@ test('friendly attacks admit the enemy without pretending that it is attacking i
   memory.contact(monster,player,120);
   assert.equal(memory.tactics(player.id,[player.id]).threats.length,1);
   memory.observe(180,[{actor:player}]);
-  assert.deepEqual(memory.tactics(player.id,[player.id]).engagedTargetIds,[]);
+  assert.deepEqual(memory.tactics(player.id,[player.id]).engagedTargetIds,[monster.id],'敌人不在名单里，1.8 秒内仍算刚交战');
+  memory.observe(1980,[{actor:player}]);
+  assert.deepEqual(memory.tactics(player.id,[player.id]).engagedTargetIds,[],'超过 1.8 秒自然过期');
+  assert.deepEqual(memory.tactics(player.id,[player.id]).threats,[]);
+});
+
+test('forget clears a removed enemy from every contact list',()=>{
+  const memory=new SummonCombatAwareness(0);
+  memory.contact(player,monster,60);
+  memory.contact(monster,player,120);
+  assert.equal(memory.tactics(player.id,[player.id]).ownerTargetId,monster.id);
+  memory.forget(monster.id);
+  const tactics=memory.tactics(player.id,[player.id]);
+  assert.deepEqual(tactics.engagedTargetIds,[]);
+  assert.deepEqual(tactics.threats,[]);
+  assert.equal(tactics.ownerTargetId,undefined);
 });
