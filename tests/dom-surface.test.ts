@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import test, {after} from 'node:test';
 import { EventEmitter } from 'node:events';
 import type Phaser from 'phaser';
-import { UiNode, UiImage } from '../src/ui/dom/node.ts';
+import { UiNode, UiImage, uiMount } from '../src/ui/dom/node.ts';
+import { QuestPopup } from '../src/ui/phaser/quest-popup.ts';
+import type { GameUI } from '../src/ui/game-ui.ts';
 import { UiSurface } from '../src/ui/dom/surface.ts';
 import { CharacterPreview } from '../src/ui/dom/character-preview.ts';
 import { domAssets } from '../src/ui/dom/assets.ts';
@@ -120,4 +122,25 @@ test('menu preloads share caller cancellation and release the retained DOM image
   const host=new SceneUiAssets(f.scene);await host.preloadFiles(['portrait.png'],request.signal,()=>{});
   assert.equal(signal,request.signal);host.releaseContent();host.releaseContent();assert.equal(released,1);
   request.abort();await assert.rejects(host.preloadFiles(['portrait.png'],request.signal,()=>{}),{name:'AbortError'});
+});
+
+
+test('quest confirmation stays above the input blocker and accepts one tap',t=>{
+  const f=fixture();t.after(f.cleanup);
+  const blocker=new UiNode(f.scene,uiMount(f.scene,'overlay')).setSize(1024,640).setDepth(999).setInteractive();
+  const popup=new QuestPopup(f.scene,()=>true);t.after(()=>{popup.destroy();blocker.destroy();});
+  let confirmed=0;
+  const quest={kind:'start',definition:{title:'任务',description:'任务内容'},confirm:()=>{confirmed++;}} as unknown as NonNullable<GameUI['quest']>;
+  popup.sync(quest,{'quest-popup-window':'','quest-popup-rule':''},id=>id);
+  assert.equal(popup.surface.mount,blocker.element.parentElement,'任务窗和输入遮挡处于同一层');
+  assert.equal(popup.surface.mount.parentElement?.id,'ui-overlay');
+  assert(Number(popup.surface.root.element.style.zIndex)>Number(blocker.element.style.zIndex),'确认按钮位于遮挡上方');
+  const button=popup.surface.root.list.find(node=>node.getData('uiAction'))!;
+  const point=button.getWorldTransformMatrix();
+  const x=point.tx+button.width*point.scaleX/2,y=point.ty+button.height*point.scaleY/2;
+  f.send(button,'pointerdown',x,y);f.send(button,'pointerup',x,y);
+  assert.equal(confirmed,1);
+  popup.sync(undefined,{},id=>id);
+  f.send(button,'pointerdown',x,y);f.send(button,'pointerup',x,y);
+  assert.equal(confirmed,1,'关闭后不会再次确认');
 });

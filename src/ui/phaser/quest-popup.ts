@@ -1,4 +1,4 @@
-import { UiNode } from '../dom/node.ts';
+import { UiNode, uiMount } from '../dom/node.ts';
 import { UI_EVENTS } from '../../application/ui-events.ts';
 import type Phaser from 'phaser';
 import type { GameUI } from '../game-ui.ts';
@@ -57,10 +57,10 @@ export class QuestPopup {
   private domScale = 1;
 
   constructor(scene: Phaser.Scene, enabled: () => boolean, domUi?: DomUi) {
-    this.surface = new UiSurface(scene, 800, 480, 1000);
+    this.surface = new UiSurface(scene, 800, 480, 1000, 'overlay');
     this.surface.enabled = enabled;
     this.domUi = domUi;
-    this.shade = new UiNode(scene).setSize(1,1).setFillStyle(0,.65).setDepth(998.5).setVisible(false);
+    this.shade = new UiNode(scene, uiMount(scene, 'overlay')).setSize(1,1).setFillStyle(0,.65).setDepth(998).setVisible(false);
     this.surface.visible(false);
   }
 
@@ -120,7 +120,7 @@ export class QuestPopup {
     x: number, y: number, size: number, color: string): DomLabel {
     const domUi = this.domUi!;
     let label = pool[index];
-    if (!label) { label = domUi.label('screen', 'dom-label'); pool.push(label); }
+    if (!label) { label = domUi.label('overlay', 'dom-label'); pool.push(label); }
     if (label.element.parentElement !== parent) parent.appendChild(label.element);
     return label.setText(text).setStyle({ fontSize: `${Math.max(10, size)}px`, color }).setPosition(x, y).setVisible(true);
   }
@@ -164,7 +164,7 @@ export class QuestPopup {
     buttonX: number, buttonY: number, scroll: ScrollArea): void {
     const domUi = this.domUi;
     if (!domUi) return;
-    const scale = this.surfacePoint(0, 0).scale, layer = domUi.layer('screen');
+    const scale = this.surfacePoint(0, 0).scale, layer = domUi.layer('overlay');
     if (!layer) return;
 
     let cursor = 0;
@@ -177,7 +177,7 @@ export class QuestPopup {
     });
     this.hideLabels(this.domTitle, cursor);
 
-    const clip = this.domClip ??= domUi.label('screen', 'dom-label dom-quest-clip').setStyle({ overflow: 'hidden', pointerEvents: 'none' });
+    const clip = this.domClip ??= domUi.label('overlay', 'dom-label dom-quest-clip').setStyle({ overflow: 'hidden', pointerEvents: 'none' });
     const origin = this.surfacePoint(bodyX, bodyY);
     clip.setStyle({ width: `${bodyWidth * scale}px`, height: `${bodyHeight * scale}px` }).setPosition(origin.x, origin.y).setVisible(true);
 
@@ -209,7 +209,7 @@ export class QuestPopup {
     this.domScrollTop = top;
     this.domScale = scale;
 
-    const button = this.domButton ??= domUi.label('screen', 'dom-label', { x: .5, y: .5 });
+    const button = this.domButton ??= domUi.label('overlay', 'dom-label', { x: .5, y: .5 });
     const center = this.surfacePoint(buttonX + 62.5, buttonY + 27.5);
     button.setText('确认').setStyle({ fontSize: `${Math.max(10, 24 * scale)}px`, color: GOLD })
       .setPosition(center.x, center.y).setVisible(true);
