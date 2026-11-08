@@ -458,6 +458,8 @@ test('character resource labels and values align with their gauges below the por
     const values=visibleDomLabels(f).filter(value=>value.text.includes(' / ')&&Math.abs(labelPagePoint(f,value).y-point.y)<.01);
     assert.equal(values.length,1,'每个槽位各自显示一行数值');
     assert.ok(labelPagePoint(f,values[0]).x>gauge.x&&labelPagePoint(f,values[0]).x<gauge.x+gauge.width);
+    assert.match(String(values[0].style.textShadow),/#000/,'叠在彩色槽上的数值有深色描边');
+    assert.equal(label.style.textShadow,'','槽位外的标签不加描边');
   }
 });
 
