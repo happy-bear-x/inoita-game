@@ -118,3 +118,59 @@ test('the minimap receives quest characters on the first refresh after it is cre
   invoke(host, 'refreshState');
   assert.deepEqual(taskLists, [[{ id: 'npc-1', x: 64, y: 96, status: 'available' }]]);
 });
+
+test('hidden ready deliveries do not light the overhead marker or the minimap', () => {
+  type Status = 'available' | 'ready';
+  let status: Status = 'available', marked = true, version = 1, iconVisible = false;
+  const created: unknown[] = [], taskLists: unknown[][] = [];
+  const container = {
+    visible: true, x: 32, y: 48,
+    setVisible(value: boolean) { container.visible = value; },
+  };
+  interface Marker {
+    holder: unknown;
+    image: { visible(value: boolean): void; load(): Promise<void>; signal: { aborted: boolean }; destroy(): void };
+    file: string;
+    visible: boolean;
+  }
+  const character = {
+    entity: { id: 'npc-hidden', actor: 'well', characterId: 'npc-137' },
+    actor: { id: 'well' }, container, marker: undefined as Marker | undefined,
+  };
+  const session = {
+    questBook: { version }, storyWorld: { revision: 0, actorVisible: () => true },
+    chests: { revision: 0 }, legendaryWeapons: { revision: 0 },
+    runtimeState: { sequence: 0 }, restorationVersion: 0,
+    marker: () => status, markerActor: () => marked, visible: () => true,
+  };
+  const host = Object.assign(Object.create(WorldScene.prototype), {
+    app: { session, storyInterface: { assets: {
+      'minimap-available': 'available.png', 'minimap-active': 'active.png', 'minimap-ready': 'ready.png' } } },
+    characters: [character], map: { id: 'map' },
+    player: { container: { x: 0, y: 0 } },
+    minimap: { updatePlayer() {}, updateTasks(tasks: unknown[]) { taskLists.push(tasks); } },
+    refreshLoadout() {}, noticeQuestCompletions() {},
+    chestOpened: () => false, legendarySwordConsumed: () => false,
+    movement: { setEnabled() {} },
+    createQuestMarker(target: typeof character) {
+      created.push(target);
+      target.marker = {
+        holder: {},
+        image: { visible(value: boolean) { iconVisible = value; }, load: async () => {},
+          signal: { aborted: false }, destroy() {} },
+        file: '', visible: true,
+      };
+    },
+  });
+
+  invoke(host, 'refreshState');
+  assert.equal(created.length, 1);
+  assert.equal(iconVisible, true, '普通任务仍显示头顶标记');
+
+  // 同一交付人只剩隐藏任务的待交付状态：头顶和地图都不能继续提示。
+  status = 'ready'; marked = false; version += 1; session.questBook.version = version;
+  invoke(host, 'refreshState');
+  assert.equal(character.marker?.visible, false, '隐藏待交付不保留头顶图标');
+  assert.equal(iconVisible, false, '头顶图标实际隐藏');
+  assert.deepEqual(taskLists.at(-1), [], '小地图也不显示隐藏待交付');
+});

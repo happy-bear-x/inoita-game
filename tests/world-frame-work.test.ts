@@ -58,7 +58,7 @@ test('stationary interaction reuses candidates until scene positions or visibili
   const container={x:8,y:0,visible:true,setAlpha(){return this;},setVisible(value:boolean){this.visible=value;return this;}};
   const npc={entity:{id:'npc',actor:'npc'},actor:{id:'npc'},get container(){inspected++;return container;}};
   const host=Object.assign(Object.create(WorldScene.prototype),{
-    app:{session:{questBook:{version:0},storyWorld:{revision:0,actorVisible:()=>true},visible:()=>true,marker:()=>null}},
+    app:{session:{questBook:{version:0},storyWorld:{revision:0,actorVisible:()=>true},visible:()=>true,marker:()=>null,markerActor:()=>false}},
     map:{id:'map'},player:{container:{x:0,y:0}},characters:[npc],
     chestOpened:()=>false,legendarySwordConsumed:()=>false,interactionCandidate:()=>1,setClip(){},
     movement:{placeAll(values:{position:{x:number;y:number}}[]){Object.assign(container,values[0].position);},setEnabled(){}},
@@ -241,7 +241,7 @@ test('world update stays idle while the stage covers it and recovers when the st
 test('unchanged map state skips the character visibility loop',()=>{
   let touched=0;
   const host={
-    app:{session:{visible:()=>true,storyWorld:{actorVisible:()=>true},marker:()=>null}},
+    app:{session:{visible:()=>true,storyWorld:{actorVisible:()=>true},marker:()=>null,markerActor:()=>false}},
     performing:false,combat:{setPerformanceActive(){}},map:undefined,
     characters:[{entity:{id:'npc',actor:'npc'},actor:{id:'npc'},container:{x:0,y:0,setVisible:()=>touched++}}],
     refreshLoadout(){},noticeQuestCompletions(){},refreshStateSignature:()=>'same',

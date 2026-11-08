@@ -1076,18 +1076,21 @@ export class WorldScene extends Phaser.Scene {
         (!opened || this.chestFades.has(character.entity.id)) && !consumed);
       this.movement?.setEnabled(character, character.container.visible && !opened && !consumed);
       const status = session.marker(character.entity.actor,character.entity.characterId);
+      // 隐藏任务照常可交付，但不在场景里提示。头顶和小地图必须共用这一个判断，
+      // 否则隐藏任务会在小地图上多出一个玩家点不到用途的标记。
+      const marked = session.markerActor(character.entity.actor,character.entity.characterId);
       // 任务可能在进图后才变为可接取：标记缺失时按当前任务状态补建，而不是只在建角色时判断一次。
-      if (character.entity.id !== 'player' && !character.marker && status
-        && session.markerActor(character.entity.actor,character.entity.characterId))
+      if (character.entity.id !== 'player' && !character.marker && status && marked)
         this.createQuestMarker(character);
       if (character.marker) {
         const marker=character.marker;
-        const file=status?this.app.storyInterface.assets[`minimap-${status}`]:undefined;
+        const file=marked&&status?this.app.storyInterface.assets[`minimap-${status}`]:undefined;
         marker.visible=!!file;
         this.loadQuestMarker(marker,file??'');
         marker.image.visible(marker.visible);
       }
-      if (character.container.visible && status && status !== 'locked' && status !== 'completed')
+      if (character.entity.id !== 'player' && character.container.visible && marked
+        && status && status !== 'locked' && status !== 'completed')
         taskMarkers.push({id: character.entity.id, x: character.container.x, y: character.container.y, status});
     }
     const map = this.map;
