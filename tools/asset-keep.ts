@@ -11,6 +11,7 @@ import { pickupMessageAssets } from '../src/rendering/pickup-messages.ts';
 import { groundLootAssets } from '../src/rendering/ground-loot.ts';
 import { statusHudAssets } from '../src/rendering/status-hud.ts';
 import { controlSkinAssets } from '../src/rendering/control-skin.ts';
+import { questMarkerAssets } from '../src/rendering/quest-marker.ts';
 import { sharedCombatAssets } from '../src/rendering/combat-assets.ts';
 import { residentCombatAssets } from '../src/rendering/resident-combat-assets.ts';
 import type { PendingAsset } from '../src/rendering/scene-assets.ts';
@@ -201,6 +202,7 @@ export async function collectAssetKeep(contentDir: string, assetsDir: string): P
   addPendingAssets(controlSkinAssets(controlSkin as never), addPhaser);
   addPendingAssets(groundLootAssets(items as never), addPhaser);
   addPendingAssets(pickupMessageAssets(), addPhaser);
+  addPendingAssets(questMarkerAssets(storyInterface as never), addPhaser);
   for (const texture of (wardrobe.textures ?? []) as { file?: string }[]) addPhaser(texture.file);
   for (const skill of Object.values((battle.skills ?? {}) as Record<string, { icon?: string }>)) addPhaser(skill.icon);
   // 职业选择背景由 Phaser 直接加载，不是界面图集的一帧。
