@@ -41,20 +41,26 @@ function fixture(){
   return {session,host,invoke};
 }
 
-test('party passives are reused until a real input changes',()=>{
+test('party passives are reused until a real input changes',t=>{
   const {session,host,invoke}=fixture();
+  const equipment=t.mock.method(host.hero.bag,'equipmentItems');
   const before=session.skills.draftCalls;
   const first=invoke('partyPassives','player') as unknown[];
   const afterFirst=session.skills.draftCalls;
   assert.equal(afterFirst,before+1,'第一次计算要读一次技能配置');
+  assert.equal(equipment.mock.callCount(),1);
 
   const second=invoke('partyPassives','player') as unknown[];
   assert.equal(session.skills.draftCalls,afterFirst,'输入没变时不再克隆技能配置');
   assert.equal(second,first,'命中缓存时返回同一份只读结果');
+  assert.equal(equipment.mock.callCount(),1,'缓存命中时不重新整理装备');
 
   host.conditions.hasState=()=>true;
   invoke('partyPassives','player');
   assert.equal(session.skills.draftCalls,afterFirst+1,'潜行状态变化会失效一次');
+  assert.equal(equipment.mock.callCount(),2);
+  host.hero.bag.add('healing-potion-s');invoke('partyPassives','player');
+  assert.equal(equipment.mock.callCount(),3,'背包变化后重新检查装备');
 });
 
 test('ordinary hit reactions reuse one skill description without cloning buff snapshots',t=>{

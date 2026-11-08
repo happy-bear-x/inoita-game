@@ -1682,11 +1682,7 @@ captureStoryActors():SceneActorState[] {
   }
   private partyPassives(id:string):PassiveModifier[] {
     const member=this.memberOf(id);if(!member)return [];
-    const equipped=member.bag.equipmentItems(member.bag.equipmentFor(id));
-    const main=equipped['main-hand'];
-    const weapon=main?this.app.items.items[main]?.kind??'unarmed':'unarmed';
     const configuration=this.skillConfiguration(id,member);
-    const armor=equipped.body?this.app.items.items[equipped.body].kind:'';
     const growth=memberSkillGrowth(id);
     // 血量只在跨过 30% 阈值时影响组队被动；用布尔值做键，避免每次受击都重建。
     const lowHealth=member.player.health<=Math.floor(member.player.maxHealth*30/100)?1:0;
@@ -1695,6 +1691,10 @@ captureStoryActors():SceneActorState[] {
     const key=`${id}|${member.classId}|${configuration.version}|${member.bag.revision}|${lowHealth}|${stealthed}|${groupVersion}|${growth}`;
     const cached=this.passivesCache.get(id);
     if(cached?.key===key)return cached.value;
+    const equipped=member.bag.equipmentItems(member.bag.equipmentFor(id));
+    const main=equipped['main-hand'];
+    const weapon=main?this.app.items.items[main]?.kind??'unarmed':'unarmed';
+    const armor=equipped.body?this.app.items.items[equipped.body].kind:'';
     const value=memberCombatModifiers({
       catalog:this.app.battleCatalog,classId:member.classId,loadout:configuration.draft(this.app.battleCatalog,member.classId),
       weaponKind:weapon,armorKind:armor,health:member.player.health,maxHealth:member.player.maxHealth,
