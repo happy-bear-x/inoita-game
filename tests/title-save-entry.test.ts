@@ -112,6 +112,17 @@ function fixture(gmMode?:MenuContext['gmMode'],cloud?:CloudSavePort){
 }
 const saved=(savedAt?:number)=>JSON.stringify({format:SAVE_FORMAT,summary:{...(savedAt===undefined?{}:{savedAt}),classId:'dark-knight',className:'黑暗骑士',level:1,mapId:'map',mapName:'营地',portrait:'portrait.png'},session:{},world:{location:{map:'map',x:0,y:0,facing:'south'},generatedEntities:[]}});
 
+test('menu draws after assets finish while the scene is paused',()=>{
+  const f=fixture();let active=false;
+  f.state.sys.isActive=()=>active;f.view.clear();
+  f.call('render');
+  assert.equal(f.view.buttons.length,0,'暂停时跳过首次绘制');
+  active=true;f.call('renderOnResume');
+  assert.ok(f.view.buttons.some(button=>button.getData('label')==='开始游戏'),'恢复后补画标题菜单');
+  f.click('开始游戏');
+  assert.ok(f.view.buttons.some(button=>button.getData('label')==='云存档'),'恢复后的按钮可以操作');
+});
+
 test('start opens one auto row plus ten manual slots and an empty slot launches class selection',()=>{
   const f=fixture();f.click('开始游戏');assert.deepEqual(f.events,[]);
   // 空自动槽没有动作，所以只有返回钮、云存档入口与十个手动槽。

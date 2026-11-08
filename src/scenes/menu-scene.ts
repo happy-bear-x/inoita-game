@@ -94,18 +94,18 @@ export class MenuScene extends Phaser.Scene {
   private slotsScroll?:ScrollArea;
   private settingsList?:ScrollArea;
   private cloudScroll?:ScrollArea;
-  private readonly renderCloudOnResume=():void=>{
-    if(this.page==='cloud'&&this.surface&&this.sys.isActive())this.render();
-  };
+  private renderOnResume():void {
+    if(this.surface&&this.sys.isActive())this.render();
+  }
   private readonly hideCredentials=():void=>{this.credentials?.hide();};
   constructor(app:MenuContext){super(SCENE_KEYS.menu);this.app=app;}
   create(options:{page?:'home'|'slots'}={}):void {
     this.page='home';this.app.ui.setMode('menu');this.app.ui.loading('正在准备主菜单…');
     const controller=new AbortController();
-    this.events.once('shutdown',()=>{this.unregisterInput?.();this.unregisterInput=undefined;controller.abort();this.cancelCloudRequest();this.settleConfirm(false,false);this.slotRequest?.abort();this.prompt?.close();this.passwordPrompt?.close();this.credentials?.destroy();this.credentials=undefined;this.clearModalLabels();this.menuText?.destroy();this.menuText=undefined;this.domSpecs=[];this.slotsScroll=undefined;this.settingsList=undefined;this.cloudScroll=undefined;this.surface?.destroy();this.surface=undefined;this.modal?.destroy();this.modal=undefined;this.popupMask?.destroy();this.popupMask=undefined;this.slotPortraits?.release();this.slotPortraits=undefined;this.events.off(Phaser.Scenes.Events.RESUME,this.renderCloudOnResume);this.events.off(Phaser.Scenes.Events.PAUSE,this.hideCredentials);this.scale.off('resize',this.layout,this);});
+    this.events.once('shutdown',()=>{this.unregisterInput?.();this.unregisterInput=undefined;controller.abort();this.cancelCloudRequest();this.settleConfirm(false,false);this.slotRequest?.abort();this.prompt?.close();this.passwordPrompt?.close();this.credentials?.destroy();this.credentials=undefined;this.clearModalLabels();this.menuText?.destroy();this.menuText=undefined;this.domSpecs=[];this.slotsScroll=undefined;this.settingsList=undefined;this.cloudScroll=undefined;this.surface?.destroy();this.surface=undefined;this.modal?.destroy();this.modal=undefined;this.popupMask?.destroy();this.popupMask=undefined;this.slotPortraits?.release();this.slotPortraits=undefined;this.events.off(Phaser.Scenes.Events.RESUME,this.renderOnResume,this);this.events.off(Phaser.Scenes.Events.PAUSE,this.hideCredentials);this.scale.off('resize',this.layout,this);});
     // 标题页整屏独占键盘；原始事件由正式界面场景那一处桥接进 router。
     this.unregisterInput?.();this.unregisterInput=this.app.inputRouter.register('menu',this.routeKey,{exclusive:()=>true});
-    this.events.on(Phaser.Scenes.Events.RESUME,this.renderCloudOnResume);
+    this.events.on(Phaser.Scenes.Events.RESUME,this.renderOnResume,this);
     this.events.on(Phaser.Scenes.Events.PAUSE,this.hideCredentials);
     this.scale.on('resize',this.layout,this);
     // 浏览器自身的退出（Esc、手势）不会走设置页的按钮，靠事件把开关状态同步回来。
