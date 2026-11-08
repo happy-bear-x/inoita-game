@@ -1,9 +1,10 @@
 import type Phaser from 'phaser';
 import type { ActorDefinition } from '../../domain/content.ts';
 import type { UiSurface } from './surface.ts';
+import { versionedAsset } from '../../application/asset-version.ts';
 import { UiImage,uiMount } from './node.ts';
 const sourceUrls=new WeakMap<object,string>();
-/** 读取衣柜已合成的原始图片，浏览器绘制预览；世界纹理继续由衣柜管理。 */
+/** 职业选择页使用素材中的角色首帧。 */
 export class CharacterPreview {
   private readonly scene:Phaser.Scene;
   private current?:{actor:ActorDefinition;images:UiImage[]};
@@ -11,7 +12,7 @@ export class CharacterPreview {
   show(surface:UiSurface,actor:ActorDefinition,rect:{x:number;y:number;width:number;height:number}):void{
     if(this.current?.actor!==actor||this.current.images.some(image=>!image.active)){this.destroy();this.current={actor,images:[]};const clip=actor.clips['idle-south'];if(clip){
       for(const layer of clip.layers){const texture=this.scene.textures.get(layer.key),frame=texture.get(0),source=texture.getSourceImage() as HTMLImageElement|HTMLCanvasElement;
-        let url=sourceUrls.get(source);if(!url){url='toDataURL'in source?source.toDataURL():source.src;sourceUrls.set(source,url);}
+        let url=layer.file?versionedAsset(layer.file):sourceUrls.get(source);if(!url){url='toDataURL'in source?source.toDataURL():source.src;sourceUrls.set(source,url);}
         const image=new UiImage(this.scene,uiMount(this.scene)).applySource({url,width:source.width,height:source.height,frame:{x:frame.cutX,y:frame.cutY,width:clip.frameWidth,height:clip.frameHeight}}).setOrigin(clip.originX,clip.originY).setFlipX(clip.mirrorX).setBlendMode(layer.blend);this.current.images.push(image);
       }
     }}

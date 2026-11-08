@@ -128,6 +128,18 @@ test('character preview reuses source pixels, follows its target box and release
   preview.destroy();assert(!image.active);
 });
 
+test('class preview uses the asset URL when Phaser has revoked its temporary image URL',t=>{
+  const f=fixture();t.after(f.cleanup);
+  const source={width:200,height:80,src:'blob:revoked-after-load'};
+  Object.assign(f.scene,{textures:{get:()=>({get:()=>({cutX:0,cutY:0}),getSourceImage:()=>source})}});
+  const actor={clips:{'idle-south':{frameWidth:40,frameHeight:80,originX:.5,originY:1,mirrorX:false,layers:[{key:'class',file:'assets/class-idle.png',blend:'normal'}]}}} as unknown as ActorDefinition;
+  const preview=new CharacterPreview(f.scene);preview.show(f.surface,actor,{x:0,y:0,width:80,height:160});
+  const picture=(f.surface.root.list.at(-1)!.element as unknown as MenuElement).children[0];
+  assert.equal(picture.src,'assets/class-idle.png');
+  assert.notEqual(picture.src,source.src);
+  preview.destroy();
+});
+
 test('live character preview reuses the visual and tracks menu layout and visibility',t=>{
   const f=fixture();t.after(f.cleanup);
   const box={setOrigin(){return this;},setScrollFactor(){return this;},setDepth(){return this;},setVisible(_v:boolean){return this;},setPosition(_x:number,_y:number){return this;},setSize(_w:number,_h:number){return this;},destroy(){}};
