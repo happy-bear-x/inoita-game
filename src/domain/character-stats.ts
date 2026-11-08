@@ -359,9 +359,9 @@ export class BattleCharacter {
   setHealth(value:number):void {this.health=boundedHealth(value,this.player.maxHealth);for(const listener of this.listeners)listener();}
   setMana(value:number):void {this.mana=boundedHealth(value,this.player.maxMana);for(const listener of this.listeners)listener();}
   setCombatResourceLimits(maxHealth:number,maxMana:number):void {
-    const next={maxHealth:Math.max(0,Math.trunc(maxHealth)),maxMana:Math.max(0,Math.trunc(maxMana))};
-    if(this.combatResourceLimits?.maxHealth===next.maxHealth&&this.combatResourceLimits.maxMana===next.maxMana)return;
-    this.combatResourceLimits=next;
+    const health=Math.max(0,Math.trunc(maxHealth)),mana=Math.max(0,Math.trunc(maxMana));
+    if(this.combatResourceLimits?.maxHealth===health&&this.combatResourceLimits.maxMana===mana)return;
+    this.combatResourceLimits={maxHealth:health,maxMana:mana};
     for(const listener of this.listeners)listener();
   }
   setCombatResourceCapacity(key:'maxHealth'|'maxMana',value:number):void {

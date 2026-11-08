@@ -36,11 +36,11 @@ function fixture(){
   return {host,player,base,hitResolution,conditions:host.conditions,call,cast,read,project};
 }
 
-test('valid pre-cast capacity gives 160 HP, same-rank refresh gives 185, and projections do not warm a dirty cache',()=>{
+test('valid pre-cast capacity gives 160 HP, same-rank refresh gives 185, and a projection warms a dirty cache',()=>{
   const f=fixture();assert.equal(f.read(),1000);f.cast();
   assert.equal(f.player.health,260);assert.equal(f.player.maxHealth,1160);
   f.cast();assert.equal(f.player.health,445);
-  const dirty=fixture();dirty.project();dirty.cast();assert.equal(dirty.player.health,285);
+  const dirty=fixture();dirty.project();dirty.cast();assert.equal(dirty.player.health,260);
 });
 
 test('a prior unrelated Buff warms a dirty capacity before Enrage links its own modifier',()=>{
@@ -54,12 +54,12 @@ test('weak rejected ranks neither heal nor change accepted source or expiration'
   f.cast(1);assert.equal(f.player.health,340);assert.deepEqual(f.conditions.snapshot('player'),before);
 });
 
-test('max-HP modifiers without on-application restoration never heal, and real reads clamp expiration',()=>{
+test('max-HP modifiers without on-application restoration never heal, and a projection clamps expiration',()=>{
   const f=fixture();f.read();f.call('applyActorBuff','player','enrage',1,
     {durationMs:60,tickMs:0,states:[],periodic:[],simulationFrames:{lastActiveFrame:0},maxStacks:1,modifiers:[{attribute:'maxHealth',operation:{kind:'increase-thousandth',ratePerThousand:160}}]} satisfies BattleBuffEffect,'player');
   assert.equal(f.player.health,100);assert.equal(f.player.maxHealth,1160);
   f.read();f.player.health=1160;f.conditions.update(120);f.project();
-  assert.equal(f.player.maxHealth,1000);assert.equal(f.player.health,1160);
+  assert.equal(f.player.maxHealth,1000);assert.equal(f.player.health,1000);
   assert.equal(f.read(),1000);assert.equal(f.player.health,1000);
 });
 
@@ -75,7 +75,7 @@ test('direct restoration bypasses ordinary healing rates, preserves excess MP, a
 test('equipment/base capacity changes invalidate old values while ordinary HP writes preserve valid capacity',()=>{
   const f=fixture();f.read();f.player.health=50;f.cast();assert.equal(f.player.health,210);
   const changed=fixture();changed.read();changed.base.maxHealth=2000;changed.project();changed.cast();
-  assert.equal(changed.player.health,471);assert.equal(changed.player.maxHealth,2320);
+  assert.equal(changed.player.health,420);assert.equal(changed.player.maxHealth,2320);
 });
 
 test('checkpoint restore preserves whether Enrage will read a valid or dirty capacity',()=>{

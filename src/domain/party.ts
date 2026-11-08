@@ -151,9 +151,9 @@ export class CompanionMember {
     if(this.currentMana<cost)return false;this.currentMana-=cost;this.changed();return true;
   }
   setCombatResourceLimits(maxHealth:number,maxMana:number):void{
-    const next={maxHealth:Math.max(0,Math.trunc(maxHealth)),maxMana:Math.max(0,Math.trunc(maxMana))};
-    if(this.combatResourceLimits?.maxHealth===next.maxHealth&&this.combatResourceLimits.maxMana===next.maxMana)return;
-    this.combatResourceLimits=next;this.changed();
+    const health=Math.max(0,Math.trunc(maxHealth)),mana=Math.max(0,Math.trunc(maxMana));
+    if(this.combatResourceLimits?.maxHealth===health&&this.combatResourceLimits.maxMana===mana)return;
+    this.combatResourceLimits={maxHealth:health,maxMana:mana};this.changed();
   }
   setCombatResourceCapacity(key:'maxHealth'|'maxMana',value:number):void{
     const before=this.player,next=Math.max(0,Math.trunc(value));
