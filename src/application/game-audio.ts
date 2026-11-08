@@ -178,15 +178,19 @@ export class GameAudio {
     const finish = (destroy: boolean): void => {
       if (finished) return;
       finished = true;
-      sound.off('complete', complete); sound.off('stop', complete); sound.off('destroy', destroyed);
+      sound.off('complete', complete); sound.off('stop', stopped); sound.off('destroy', destroyed);
       active.delete(sound);
       if (!active.size) this.playingEffects.delete(key);
       if (destroy) sound.destroy();
       this.releaseAbandonedKey(key);
     };
     const complete = (): void => finish(true);
+    // Phaser 的 destroy 会先同步发出 stop。停止只做记账，不能再调 destroy：
+    // 否则内层销毁先把 muteNode 置空，外层继续 disconnect 就报 null。
+    // 自然播完由 complete 负责销毁；外部停止的人（removeAll）自己会销毁。
+    const stopped = (): void => finish(false);
     const destroyed = (): void => finish(false);
-    sound.once('complete', complete); sound.once('stop', complete); sound.once('destroy', destroyed);
+    sound.once('complete', complete); sound.once('stop', stopped); sound.once('destroy', destroyed);
     if (!sound.play()) complete();
   }
 

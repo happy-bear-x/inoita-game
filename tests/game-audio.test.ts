@@ -97,7 +97,7 @@ function harness(options: { suspended?: () => boolean } = {}) {
   const batches: number[] = [];
   /** 一次性音效的播放记录；循环音频走 sound.add()，不进这里。 */
   const played: string[] = [];
-  const sounds: (EventEmitter & { key: string; isPlaying: boolean; destroyed: boolean; volume: number; setVolume(value: number): void; destroy(): void; complete(): void })[] = [];
+  const sounds: (EventEmitter & { key: string; isPlaying: boolean; destroyed: boolean; destroyCalls: number; volume: number; setVolume(value: number): void; destroy(): void; complete(): void })[] = [];
   let sinceStart = 0;
   const loader = Object.assign(new EventEmitter(), {
     audio(key: string) { requested.push(key); queued.push(key); sinceStart++; },
@@ -116,13 +116,21 @@ function harness(options: { suspended?: () => boolean } = {}) {
         assert.ok(cache.has(key));
         const events = new EventEmitter();
         const sound = Object.assign(events, {
-          key, isPlaying: false, destroyed: false, volume: 1,
+          key, isPlaying: false, destroyed: false, destroyCalls: 0, volume: 1,
           play() { this.isPlaying = true; if (!config.loop) played.push(key); return true; },
           pause() { this.isPlaying = false; },
           stop() { this.isPlaying = false; events.emit('stop'); },
           complete() { this.isPlaying = false; events.emit('complete'); },
           setVolume(value: number) { this.volume = value; },
-          destroy() { this.destroyed = true; this.isPlaying = false; events.emit('destroy'); },
+          // 和 Phaser 一样：destroy 先同步发 stop，随后才标记 pendingRemove。
+          // 在 stop 回调里再次 destroy 会重入，正是 muteNode 报空的场景。
+          destroy() {
+            if (this.destroyed) return;
+            this.destroyCalls++; this.isPlaying = false;
+            events.emit('stop');
+            this.destroyed = true;
+            events.emit('destroy');
+          },
         });
         sounds.push(sound);
         return sound;
@@ -162,10 +170,12 @@ test('stopStoryAudio destroys every live sound and cancels late playback',async(
   const f=harness();f.audio.enterMenu();await f.drain();
   const live=[...f.sounds];assert(live.length);
   f.audio.effect(catalog.ui.questStart);
+  const beforeStop=[...f.sounds];
   f.audio.stopStoryAudio();await f.drain();
   assert.deepEqual(f.playing(),[]);
   assert.equal(f.sounds.length,0,'声音对象被销毁并从管理器移除');
-  assert.ok(live.every(sound=>sound.destroyed));
+  assert.ok(beforeStop.every(sound=>sound.destroyed));
+  assert.ok(beforeStop.every(sound=>sound.destroyCalls===1),'stop 回调不再重入 destroy');
   assert.deepEqual(f.played,[]);
   assert.deepEqual(f.audio.captureStoryAudio(),{music:null,ambience:null});
 });
