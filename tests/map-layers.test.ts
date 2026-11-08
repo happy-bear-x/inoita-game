@@ -17,8 +17,6 @@ hook.deregister();
 interface FakeImage {
   key: string; frame?: string; x: number; y: number; depth: number; flipped: boolean; blend: number | null;
   origin: { x: number; y: number }; scene?: object; destroyed: boolean;
-  renderable: boolean; willRender(camera: Phaser.Cameras.Scene2D.Camera): boolean;
-  getBounds(): Phaser.Geom.Rectangle;
   setOrigin(x?: number, y?: number): FakeImage; setDepth(value: number): FakeImage; setFlipX(value: boolean): FakeImage;
   setBlendMode(value: number): FakeImage; destroy(): void;
 }
@@ -64,9 +62,7 @@ function fixture(failOnKey?: string, atlas?: { key: string; frame: string; width
       image: (x: number, y: number, key: string, frame?: string) => {
         if (key === failOnKey) throw new Error('绘制失败：' + key);
         const image: FakeImage = {
-          key, frame, x, y, depth: 0, flipped: false, blend: null, origin: { x: 0, y: 0 }, scene: {}, destroyed: false, renderable: true,
-          willRender() { return image.renderable && !image.destroyed; },
-          getBounds() { const size=textures.get(key)!;return {x,y,right:x+size.width,bottom:y+size.height} as Phaser.Geom.Rectangle; },
+          key, frame, x, y, depth: 0, flipped: false, blend: null, origin: { x: 0, y: 0 }, scene: {}, destroyed: false,
           setOrigin(originX = 0, originY = 0) { image.origin = { x: originX, y: originY }; return image; },
           setDepth(value) { image.depth = value; return image; },
           setFlipX(value) { image.flipped = value; return image; },
@@ -88,25 +84,6 @@ test('map surface assets keep ground, canopy and feature props together', () => 
   ]);
   assert.deepEqual(assets.map(asset => asset.key), ['map-ground', 'map-canopy', 'prop-a']);
   assert.throws(() => mapSurfaceAssets(map([{ texture: 'missing' } as WorldMap['features'][number]]), []), /场景物件缺少资源/);
-});
-
-test('static map features skip off-screen drawing without changing camera or object visibility',()=>{
-  const run=fixture();
-  const layers=drawMapLayers(run.scene,map([
-    {texture:'prop-a',x:100,y:100,offsetX:0,offsetY:0,width:4,flip:false,blend:'normal'}
-  ]),{keyPrefix:'test-cull'});
-  const feature=run.images[1]!;
-  const matrix={a:1,b:0,c:0,d:1},shake={isRunning:false};
-  const camera={matrixCombined:matrix,zoomX:1,zoomY:1,shakeEffect:shake,
-    worldView:{x:0,y:0,right:10,bottom:10,width:10,height:10}} as unknown as Phaser.Cameras.Scene2D.Camera;
-  assert.equal(feature.willRender(camera),false);
-  Object.assign(camera.worldView,{x:50,y:50,right:110,bottom:110,width:60,height:60});
-  assert.equal(feature.willRender(camera),true,'moving or zooming the camera restores the feature');
-  Object.assign(camera.worldView,{x:0,y:0,right:10,bottom:10,width:10,height:10});
-  matrix.b=.1;assert.equal(feature.willRender(camera),true,'rotated cameras keep their full view');
-  matrix.b=0;shake.isRunning=true;assert.equal(feature.willRender(camera),true,'camera shake keeps edge features');
-  feature.renderable=false;assert.equal(feature.willRender(camera),false,'normal Phaser visibility still applies');
-  layers.destroy();
 });
 
 test('dodge pixel preserves zero background and saturates a full foreground', () => {

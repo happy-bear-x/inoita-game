@@ -97,10 +97,9 @@ export function drawMapLayers(
       const left = feature.x - (feature.flip ? feature.width - feature.offsetX : feature.offsetX);
       const top = feature.y - feature.offsetY;
       const image = scene.add.image(left, top, key, frame).setOrigin(0).setDepth(feature.y);
-      images.push(image);
       // 合成好的贴图已经按最终朝向画好，不再翻转。
       if (!dodged) image.setFlipX(feature.flip).setBlendMode(blendModeOf(feature.blend));
-      cullMapFeature(image);
+      images.push(image);
     }
     images.push(scene.add.image(0, 0, map.id + '-canopy').setOrigin(0).setDepth(10000));
     return { destroy };
@@ -108,21 +107,4 @@ export function drawMapLayers(
     destroy();
     throw error;
   }
-}
-
-/** 地图物件不移动；镜头准备好 worldView 后再跳过远离画面的物件。 */
-function cullMapFeature(image: Phaser.GameObjects.Image): void {
-  const bounds = image.getBounds(), willRender = image.willRender;
-  image.willRender = function (camera): boolean {
-    if (!willRender.call(this, camera)) return false;
-    // 旋转和震动会改变实际视野；此时保留全部物件，避免边缘闪现。
-    const view = camera.worldView;
-    const matrix = camera.matrixCombined;
-    if (matrix.b !== 0 || matrix.c !== 0 || matrix.a <= 0 || matrix.d <= 0 || camera.shakeEffect.isRunning ||
-      camera.zoomX <= 0 || camera.zoomY <= 0 ||
-      view.width <= 0 || view.height <= 0) return true;
-    const margin = 64;
-    return bounds.right >= view.x - margin && bounds.x <= view.right + margin &&
-      bounds.bottom >= view.y - margin && bounds.y <= view.bottom + margin;
-  };
 }
