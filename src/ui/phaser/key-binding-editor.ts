@@ -19,6 +19,7 @@ const FOOTER_BUTTON_FONT = Math.min(22, FOOTER_BUTTON_HEIGHT * .42);
 interface DomTextSpec {
   key: string; text: string; x: number; y: number; size: number;
   color: string; anchorX: number; anchorY: number; width?: number;
+  align: 'left' | 'center' | 'right';
 }
 
 /**
@@ -110,15 +111,15 @@ export class KeyBindingEditor {
     const v = this.canvas;
     v.clear();
     this.domSpecs = [];
-    // 只画外框，不填深色底板：键位页和“控件位置”一样透出后面的游戏画面。
-    v.border(this.assets, 0, 0, 960, 640);
+    // 桌面键位页是独立整页，铺深色底板；透明底会让文字和按钮跟游戏画面混在一起。
+    v.frame(this.assets, 0, 0, 960, 640);
     this.pushText('title', '键位设置', 480, 24, 34, GOLD, .5, 0);
     this.pushText('hint', '点击动作后按下新按键；鼠标左键攻击固定', 480, 76, 20, GOLD, .5, 0);
     this.pushText('column-left', '移动与切换', 60, 116, 24);
     this.pushText('column-right', '技能与快捷位', 500, 116, 24);
     this.paintColumn(LEFT_ACTIONS, 60);
     this.paintColumn(RIGHT_ACTIONS, 500);
-    if (this.notice) this.pushText('notice', this.notice, 480, 490, 20, '#eb9587', .5, 0, 880);
+    if (this.notice) this.pushText('notice', this.notice, 480, 490, 20, '#eb9587', .5, 0, 880, 'center');
     v.button('', 260, 528, 200, FOOTER_BUTTON_HEIGHT, () => {
       this.capture = undefined; this.preferences.reset(); this.notice = '已恢复默认键位'; this.render();
     }).setData('label', '恢复默认');
@@ -127,7 +128,7 @@ export class KeyBindingEditor {
     this.pushText('back', '返回', 590, 528 + FOOTER_BUTTON_HEIGHT / 2, FOOTER_BUTTON_FONT, GOLD, .5, .5);
     v.button('', 881, 12, 67, 67, () => this.onClose(), { image: this.assets.close, pressed: this.assets['close-pressed'] })
       .setData('label', '关闭键位设置');
-    this.pushText('footer', 'Ctrl/Alt/Command 组合和 F1–F12 由浏览器或系统占用', 480, 598, 16, GOLD, .5, 0, 900);
+    this.pushText('footer', 'Ctrl/Alt/Command 组合和 F1–F12 由浏览器或系统占用', 480, 598, 16, GOLD, .5, 0, 900, 'center');
     this.applyDom();
   }
 
@@ -141,13 +142,13 @@ export class KeyBindingEditor {
         fontSize: ACTION_BUTTON_FONT, selected: capturing
       }).setData('label', `${KEY_ACTION_LABELS[action]}：${text}`);
       this.pushText(`binding-${action}`, text, left + 260 + BUTTON_WIDTH / 2, top + BUTTON_HEIGHT / 2,
-        ACTION_BUTTON_FONT, GOLD, .5, .5, BUTTON_WIDTH - 12);
+        ACTION_BUTTON_FONT, GOLD, .5, .5, BUTTON_WIDTH - 12, 'center');
     });
   }
 
   private pushText(key: string, text: string, x: number, y: number, size: number, color = GOLD,
-    anchorX = 0, anchorY = 0, width?: number): void {
-    this.domSpecs.push({ key, text, x, y, size, color, anchorX, anchorY, width });
+    anchorX = 0, anchorY = 0, width?: number, align: DomTextSpec['align'] = 'left'): void {
+    this.domSpecs.push({ key, text, x, y, size, color, anchorX, anchorY, width, align });
   }
 
   /** 把面板坐标里的文字规格投影到画框 CSS 坐标；面板隐藏时一并收起。 */
@@ -168,7 +169,7 @@ export class KeyBindingEditor {
       const scale = matrix.scaleX;
       label.setText(spec.text).setAnchor(spec.anchorX, spec.anchorY).setPosition(point.x, point.y)
         .setStyle({ fontSize: `${Math.max(1, spec.size * scale)}px`, color: spec.color,
-          lineHeight: `${(spec.size + 5) * scale}px`, textAlign: 'left' });
+          lineHeight: `${(spec.size + 5) * scale}px`, textAlign: spec.align });
       if (spec.width !== undefined) {
         label.setStyle({ width: `${spec.width * scale}px`, whiteSpace: 'pre-wrap', overflowWrap: 'break-word' });
       } else {

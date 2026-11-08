@@ -2384,3 +2384,24 @@ test('long item descriptions keep the discard quantity row inside the dialog', t
     return bottom.y<=root.y+box.height*scale+1e-6;
   }),`${label} 底边不越出弹层`);
 });
+
+test('key binding editor keeps its text inside the framed page', t => {
+  const f=fixture();t.after(f.cleanup);t.after(()=>controlSettings.setMode('stick'));
+  controlSettings.setMode('keyboard');
+  f.menu.show('settings');
+  const row=f.scene.button('修改键位');
+  f.internals.body.scrolls.at(-1)?.reveal(row as unknown as UiNode);
+  f.scene.click(row);
+  const editor=(f.internals as unknown as {keyBindingEditor:{canvas:UiSurface}}).keyBindingEditor;
+  const root=editor.canvas.root,scale=root.scaleX;
+  const left=root.x,top=root.y,right=left+editor.canvas.width*scale,bottom=top+editor.canvas.height*scale;
+  const inside=(label:FakeDomLabel)=>label.x>=left-1e-6&&label.x<=right+1e-6&&label.y>=top-1e-6&&label.y<=bottom+1e-6;
+  for(const text of ['键位设置','移动与切换','向上移动','W','恢复默认','返回']){
+    const label=visibleDomLabels(f).find(value=>value.text===text);
+    assert.ok(label,`${text} 可见`);assert.ok(inside(label),`${text} 落在面板内`);
+  }
+  assert.equal(domLabel(f,'W')!.style.textAlign,'center','绑定值在按钮中间');
+  assert.equal(visibleDomLabels(f).find(value=>value.text.startsWith('Ctrl/Alt/Command'))!.style.textAlign,'center','底部说明居中');
+  assert.ok(editor.canvas.root.list.some(node=>node.width>=editor.canvas.width&&node.height>=editor.canvas.height),
+    '整页有底板，文字不再浮在游戏画面上');
+});
