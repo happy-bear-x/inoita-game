@@ -627,7 +627,7 @@ export class StoryUI {
       slotReading:ref=>this.app.saves.peek(ref),
       settings:()=>({
         music:this.app.audio?.settings.music??0,effects:this.app.audio?.settings.effects??0,
-        fps:displaySettings.fps,criticalDecorations:displaySettings.criticalDecorations,
+        fps:displaySettings.fps,frameRateLimit:displaySettings.frameRateLimit,criticalDecorations:displaySettings.criticalDecorations,
         fullscreen:fullscreenStatus(),fullscreenActive:fullscreenActive(),controlMode:controlSettings.mode
       }),
       learn:()=>this.skillBook?.viewModel??{entryId:'',message:''},
@@ -797,14 +797,19 @@ export class StoryUI {
     const fps=displaySettings.fps;
     v.button('',485,260,220,66,()=>{displaySettings.setFps(!fps);this.render();},{parent:content})
       .setData('label',fps?'开启':'关闭');
+    const frameRateLimit=displaySettings.frameRateLimit;
+    v.button('',485,350,220,66,()=>{
+      displaySettings.setFrameRateLimit(frameRateLimit===60?120:60);
+      this.render();
+    },{parent:content}).setData('label',`${frameRateLimit} 帧`);
     // 暴击光环和爆闪只影响画面，默认开启；不影响暴击冲击、数字、震屏或音效。
     const decorations=displaySettings.criticalDecorations;
-    v.button('',485,350,220,66,()=>{
+    v.button('',485,440,220,66,()=>{
       displaySettings.setCriticalDecorations(!decorations);
       this.render();
     },{parent:content}).setData('label',decorations?'开启':'关闭');
     // 全屏是浏览器能力；不支持的环境显示为不可用，APK 壳已经隐藏系统栏，显示为已全屏。
-    let rowTop=440;
+    let rowTop=530;
     const fullscreen=fullscreenStatus();
     if(fullscreen==='available'){
       const active=fullscreenActive();
@@ -846,9 +851,11 @@ export class StoryUI {
     }
     add('fps-label','帧率显示',260,275,25);
     add('fps-toggle',displaySettings.fps?'开启':'关闭',595,293,22,.5,.5);
-    add('critical-label','暴击光效',260,365,25);
-    add('critical-toggle',displaySettings.criticalDecorations?'开启':'关闭',595,383,22,.5,.5);
-    let rowTop=440;
+    add('frame-rate-label','帧率上限',260,365,25);
+    add('frame-rate-toggle',`${displaySettings.frameRateLimit} 帧`,595,383,22,.5,.5);
+    add('critical-label','暴击光效',260,455,25);
+    add('critical-toggle',displaySettings.criticalDecorations?'开启':'关闭',595,473,22,.5,.5);
+    let rowTop=530;
     add('fullscreen-label','全屏',260,rowTop+15,25);
     const fullscreen=fullscreenStatus();
     add('fullscreen-toggle',fullscreen==='available'?(fullscreenActive()?'开启':'关闭'):(fullscreen==='packaged'?'已全屏':'不支持'),

@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import type Phaser from 'phaser';
 import { GAME_FRAME_TIMING, installFrameLimitClock } from '../src/application/game-timing.ts';
+import { CombatClock } from '../src/domain/combat-clock.ts';
+import { PathBudget } from '../src/domain/path-budget.ts';
 
 const require = createRequire(import.meta.url);
 const TimeStep = require('../node_modules/phaser/src/core/TimeStep.js') as typeof Phaser.Core.TimeStep;
@@ -64,4 +66,67 @@ test('restoring the adapter restores instance methods without changing other gam
   assert.equal(f.loop.start, untouched.start);
   assert.equal(f.loop.resetDelta, untouched.resetDelta);
   untouched.destroy();
+});
+
+test('switching limits on the running Phaser loop preserves elapsed time and takes effect', t => {
+  const f = fixture(t, true);
+  const counts:number[]=[];
+  for (const limit of [60,120,60] as const) {
+    f.loop.setFPSLimit(limit);
+    const before=f.steps.length;
+    for (let i=0;i<1200;i++) f.step(1000/120);
+    counts.push(f.steps.length-before);
+    const last=f.steps.at(-1)!;
+    assert.ok(Math.abs(f.steps.reduce((sum,step)=>sum+step.delta,0)-last.time)<1e-6);
+  }
+  assert.ok(Math.abs(counts[0]!-600)<=2,`60 FPS: ${counts[0]}`);
+  assert.ok(counts[1]!>=1195,`120 FPS: ${counts[1]}`);
+  assert.ok(Math.abs(counts[2]!-600)<=2,`60 FPS: ${counts[2]}`);
+  f.skip(1000); f.loop.pause(); f.skip(1000); f.loop.resume();
+  const before=f.steps.length;
+  for(let i=0;i<4;i++)f.step(1000/120);
+  assert.ok(f.steps.slice(before).every(step=>step.delta<50),'暂停时间不应计入游戏');
+});
+
+test('logic-driven path searches receive the same budget at 60 and 120 FPS', async t => {
+  const simulate=async(limit:60|120)=>{
+    let result: { totals:number[]; frames:number; maxFrame:number } | undefined;
+    await t.test(`${limit} FPS`, child=>{
+      const f=fixture(child,false),clock=new CombatClock(),budget=new PathBudget(512);
+      const totals=[0,0,0,0,0];let maxFrame=0;
+      f.loop.setFPSLimit(limit);
+      const deliver=f.loop.callback;
+      f.loop.callback=(time,delta)=>{
+        deliver(time,delta);
+        budget.reset();let used=0;
+        clock.advance(Math.min(f.steps.at(-1)!.delta,120),()=>{
+          for(let i=0;i<totals.length;i++){
+            const granted=budget.take(`actor-${i}`,512);
+            totals[i]!+=granted;used+=granted;
+          }
+        });
+        maxFrame=Math.max(maxFrame,used);
+      };
+      for(let i=0;i<1200;i++)f.step(1000/120);
+      result={ totals,frames:clock.currentFrame,maxFrame };
+    });
+    return result!;
+  };
+  const at60=await simulate(60),at120=await simulate(120);
+  assert.equal(at60.frames,at120.frames);
+  assert.deepEqual(at60.totals,at120.totals);
+  assert.ok(at60.maxFrame<=512&&at120.maxFrame<=512);
+  assert.ok(at60.totals.every(total=>total>0));
+});
+
+test('a long render frame shares one path budget across both combat steps',()=>{
+  const clock=new CombatClock(),budget=new PathBudget(512);
+  let steps=0,used=0;
+  budget.reset();
+  clock.advance(120,()=>{
+    steps++;
+    for(let i=0;i<5;i++)used+=budget.take(`actor-${i}`,512);
+  });
+  assert.equal(steps,2);
+  assert.equal(used,512);
 });

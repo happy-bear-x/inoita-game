@@ -36,6 +36,7 @@ import { gameMenuImageGroups } from './application/menu-images.ts';
 import { UI_ICON_ATLAS_FILE } from './generated/icon-atlas.ts';
 import { MINIMAP_ASSETS } from './domain/story-interface.ts';
 import { GAME_FRAME_TIMING, installFrameLimitClock } from './application/game-timing.ts';
+import { displaySettings } from './application/display-settings.ts';
 import { installGameDiagnostics, installStorySkipDiagnostics } from './application/game-diagnostics.ts';
 import { storyDevMode } from './domain/dev-mode.ts';
 import { createGmActions, consoleGmActions, type ConsoleGmActions } from './debug/gm-actions.ts';
@@ -613,7 +614,7 @@ function boot(): void {
   const game = new Phaser.Game({
     type: Phaser.AUTO, parent: 'game', backgroundColor: '#101d24',
     pixelArt: true, roundPixels: true,
-    fps: GAME_FRAME_TIMING,
+    fps: { ...GAME_FRAME_TIMING, limit: displaySettings.frameRateLimit },
     callbacks: { postBoot: game => {
       const restoreClock = installFrameLimitClock(game.loop);
       game.events.once(Phaser.Core.Events.DESTROY, restoreClock);
@@ -624,6 +625,8 @@ function boot(): void {
     scene: [], banner: false, audio: { disableWebAudio: false }
   });
   app.game = game;
+  const unsubscribeFrameRate = displaySettings.subscribeFrameRateLimit(limit => game.loop.setFPSLimit(limit));
+  game.events.once(Phaser.Core.Events.DESTROY, unsubscribeFrameRate);
   installGameDiagnostics(game, runtimeDiagnostics);
   game.events.once('ready', () => {
     configureCanvas(game);

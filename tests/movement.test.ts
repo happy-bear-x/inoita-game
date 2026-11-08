@@ -21,8 +21,8 @@ const Body = movementBodyClass(BaseBody);
 const TimeStep = require('../node_modules/phaser/src/core/TimeStep.js') as typeof Phaser.Core.TimeStep;
 const square = { collision: { x: -8, y: -8, width: 16, height: 16 } };
 
-function startLoop(callback: (time: number, delta: number) => void): Phaser.Core.TimeStep {
-  const loop = new TimeStep({} as Phaser.Game, GAME_FRAME_TIMING);
+function startLoop(callback: (time: number, delta: number) => void, limit: 60 | 120 = 60): Phaser.Core.TimeStep {
+  const loop = new TimeStep({} as Phaser.Game, { ...GAME_FRAME_TIMING, limit });
   installFrameLimitClock(loop);
   loop.raf.start = () => {};
   const previous = Object.getOwnPropertyDescriptor(globalThis, 'window');
@@ -118,7 +118,7 @@ test('a fixed content body skips terrain constraints until it gets a movement in
 
 test('real game timing preserves speed and smooth display motion at 30–144 Hz', () => {
   const speed = 8 * 1000 / 60;
-  for (const hz of [30, 59.94, 60, 90, 120, 144]) {
+  for (const [limit,hz] of ([60,120] as const).flatMap(limit => [30,59.94,60,90,120,144].map(hz => [limit,hz] as const))) {
     const f = fixture({ name: 'open', bounds: { x: 0, y: 0, width: 10000, height: 10000 } });
     const player = f.add({ x: 100, y: 100 }); player.body.drive({ x: 1, y: 0 }, speed);
     let measure = false, elapsed = 0, callbacks = 0, lastDisplay = 0;
@@ -136,7 +136,7 @@ test('real game timing preserves speed and smooth display motion at 30–144 Hz'
       lastDisplay = displayed;
       f.interpolation.restore();
       assert.equal(player.object.x, physical.x, 'next physics update must see its own position');
-    });
+    },limit);
     const advance = (time: number) => loop.hasFpsLimit ? loop.stepLimitFPS(time) : loop.step(time);
     const warmup = Math.ceil(hz * 5), frames = Math.round(hz * 10);
     for (let i = 1; i <= warmup; i++) advance(i * 1000 / hz);
@@ -144,7 +144,7 @@ test('real game timing preserves speed and smooth display motion at 30–144 Hz'
     measure = true;
     for (let i = 1; i <= frames; i++) advance((warmup + i) * 1000 / hz);
     const duration = frames * 1000 / hz;
-    assert.ok(Math.abs(callbacks - Math.min(hz, 60) * duration / 1000) <= 1, `${hz} Hz must cap game frames at 60 FPS: ${callbacks}`);
+    assert.ok(Math.abs(callbacks - Math.min(hz, limit) * duration / 1000) <= 2, `${hz} Hz must cap game frames at ${limit} FPS: ${callbacks}`);
     assert.ok(Math.abs(elapsed - duration) <= 1000 / hz + .001, `${hz} Hz clock drift: ${elapsed} / ${duration}`);
     assert.ok(Math.abs(player.actor.position().x - start - speed * duration / 1000) <= speed / 60 + 1e-6);
   }

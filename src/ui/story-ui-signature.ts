@@ -15,6 +15,7 @@ export interface StoryMenuSettingsView {
   music: number;
   effects: number;
   fps: boolean;
+  frameRateLimit: 60 | 120;
   criticalDecorations: boolean;
   fullscreen: FullscreenStatus;
   fullscreenActive: boolean;

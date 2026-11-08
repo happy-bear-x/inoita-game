@@ -461,7 +461,8 @@ test('character resource labels and values align with their gauges below the por
 
 test('system exposes load alongside save while settings keeps the working display and audio preferences',t=>{
   displaySettings.setCriticalDecorations(true);
-  t.after(()=>displaySettings.setCriticalDecorations(true));
+  displaySettings.setFrameRateLimit(60);
+  t.after(()=>{displaySettings.setCriticalDecorations(true);displaySettings.setFrameRateLimit(60);});
   const f=fixture();t.after(f.cleanup);
   const audio={settings:{music:1,effects:1},setVolume(channel:'music'|'effects',value:number){this.settings[channel]=value;}};
   Object.defineProperty(f.app,'audio',{value:audio});
@@ -481,8 +482,12 @@ test('system exposes load alongside save while settings keeps the working displa
   assert.deepEqual(sliders.map(slider=>slider.label),['music','effects']);
   assert.equal(sliders[0]!.value,1);assert.equal(sliders[1]!.value,1);
   const toggle=(y:number)=>f.scene.buttons('开启').concat(f.scene.buttons('关闭')).find(node=>node.y===y)!;
-  const rows={fps:260,critical:350} as const;
+  const rows={fps:260,critical:440} as const;
   assert(toggle(rows.fps));assert(toggle(rows.critical));
+  assert(domTexts().includes('帧率上限'));
+  f.scene.click(f.scene.button('60 帧'));
+  assert.equal(displaySettings.frameRateLimit,120);
+  assert(f.scene.button('120 帧'));
   // 设置项按 90 行距排，谁也盖不住谁；操作方式位于滚动内容末尾，不要求在首屏视口内。
   const control=f.scene.nodes.find(node=>node.shown&&node.getData('uiAction')&&String(node.getData('label')).startsWith('操作方式：'))!,criticalToggle=toggle(rows.critical);
   assert(control.y>=criticalToggle.y+criticalToggle.input!.hitArea.height,'操作方式排在暴击光效下方');

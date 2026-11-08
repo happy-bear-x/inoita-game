@@ -23,6 +23,7 @@
 - 云存档是旁路能力：客户端构造不联网，只有打开云页/点击上传下载才请求；网络、token 或存储失败都结果化返回，不能抛到菜单或游戏循环。
 - 云存档和诊断的服务地址只从 `endpoints.ts` 解析。环境根地址在 `config/endpoints.json`：网页固定同源（空值）；Android 调试指向 `adb reverse` 的 `127.0.0.1:4003`，发布和网页生产共用 `https://catgo.online:4002`。Android/热更新在页面脚本前注入 `__inoitaEndpoints`；页面里不再另写域名或读取别的地址变量。
 - 只有 `game-audio.ts`、`game-timing.ts`、`game-diagnostics.ts` import Phaser，其余文件保持纯 TypeScript。
+- 画面偏好保存在本机：帧率上限只接受 60 或 120，缺省为 60；游戏启动读取偏好，设置变化立即调整 Phaser 限帧，销毁时取消订阅。帧时钟继续使用相邻交付时刻计算真实耗时。
 - 改存档结构或校验口径时，把 `src/domain/save-game.ts` 的 `SAVE_FORMAT` 加一，并在 `saved-game.ts` 的升级链补旧版到新版的迁移和旧档测试。
 - 内容加载与构建共用 `content-validation.ts` 的校验器，新增内容字段先在这里定校验口径。
 - 生产信任路径只取构建写出的 `content-manifest.json`：比较 `contentVersion` 与页面注入的 `__STORY_CONTENT_VERSION__`，并检查本次文件的必需顶层键；不匹配时明确失败并提示刷新/更新，不静默继续。启动时不对整份内容重算哈希。dev、Node 测试和 `?gm` 继续走完整校验。
