@@ -1872,11 +1872,12 @@ export class StoryUI {
   private selectMember(id:string,page:Page):void{
     if(this.requestAllocationExit(()=>this.selectMember(id,page)))return;
     const restoreBag=this.bagDetailOpen&&!!this.selectedItem&&!this.itemResult;
-    const updateBag=this.open&&page==='bag'&&this.page==='bag'&&(restoreBag||!this.bagDetailOpen&&this.bagEquipment.size>0);
+    const resultBag=this.bagDetailOpen&&!!this.itemResult;
+    const updateBag=this.open&&page==='bag'&&this.page==='bag'&&(restoreBag||resultBag||!this.bagDetailOpen&&this.bagEquipment.size>0);
     const updateStatus=this.open&&page==='status'&&this.page==='status'&&!!this.statusPortrait?.active;
     const updateSkills=this.open&&page==='skills'&&this.page==='skills'&&this.skillTabs.size>0;
     this.cancelOperation();this.selectedMemberId=id;this.selectedItem=undefined;this.skill=undefined;this.skillSection='directory';
-    if(updateBag||updateStatus||updateSkills){if(updateBag){if(restoreBag)this.closeBagDetailForMember();this.updateBagMember();}else if(updateStatus)this.updateStatusMember();else this.updateSkillsMember();this.sessionSignature=this.sessionDataSignature()??this.sessionSignature;}else this.show(page);
+    if(updateBag||updateStatus||updateSkills){if(updateBag){if(restoreBag)this.closeBagDetailForMember();if(resultBag){this.bagSelection?.destroy();this.bagSelection=undefined;}this.updateBagMember();}else if(updateStatus)this.updateStatusMember();else this.updateSkillsMember();this.sessionSignature=this.sessionDataSignature()??this.sessionSignature;}else this.show(page);
     const signal=this.request.signal;
     void this.app.preparePartyMember?.(id,signal).then(()=>{
       if(!signal.aborted&&this.open&&this.page==='bag'&&this.selectedMemberId===id)this.renderBagPreview();

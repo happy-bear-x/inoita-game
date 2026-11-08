@@ -2216,6 +2216,18 @@ test('switching members closes either bag detail without rebuilding the inventor
   }
 });
 
+test('switching members keeps an open item result and the inventory',t=>{
+  for(const worn of [false,true]){
+    const f=fixture();t.after(f.cleanup);const member=f.recruit('warlock'),jewel=f.add('novice-jewel');
+    f.menu.show('bag');f.scene.click(f.scene.button(worn?'主手':f.session.bag.catalog.items[jewel.item].name));
+    f.internals.itemResult={kind:'discard',title:'结果',message:'',rewards:[{item:'novice-jewel',quantity:1}]};f.menu.show('bag');
+    const organize=f.scene.button('整理'),portrait=f.scene.button(member.definition.name),result=visibleDomLabels(f).map(label=>label.text).find(text=>text.includes('× 1'));
+    assert(result);f.scene.click(portrait);
+    assert.equal(f.scene.button('整理'),organize);assert.equal(f.scene.button(member.definition.name),portrait);
+    assert(visibleDomLabels(f).some(label=>label.text===result));
+  }
+});
+
 test('switching members on the status page updates values without rebuilding controls',t=>{
   const f=fixture();t.after(f.cleanup);const member=f.recruit('warlock');
   f.menu.show('status');const children=[...f.internals.body.root.list],portrait=f.scene.button(member.definition.name);
