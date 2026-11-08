@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { PNG } from 'pngjs';
 
@@ -10,7 +11,7 @@ import { PNG } from 'pngjs';
  * `sourceSize`/`spriteSourceSize`，所以裁边后仍能按原来的原点绘制。
  * 这里只生成图集和 `file → 帧列表` 映射，作者态 `battle.json` 不改。
  */
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
 const CONTENT = path.join(PUBLIC, 'content');
 const ATLAS_DIR = 'assets/effect-atlas';
@@ -333,7 +334,7 @@ export const EFFECT_ATLAS_SOURCE_DIGEST = ${JSON.stringify(atlas.digest)};
     bytes: atlas.pages.reduce((sum, page) => sum + page.png.byteLength, 0) };
 }
 
-if (process.argv[1] === new URL(import.meta.url).pathname) {
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const result = writeEffectAtlas();
   console.log(`技能特效图集：${result.files} 个文件 / ${result.frames} 帧 / ${result.pages} 页，` +
     `${(result.source / 1048576).toFixed(1)} MB 解码 → ${(result.packed / 1048576).toFixed(1)} MB，` +

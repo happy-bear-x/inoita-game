@@ -11,6 +11,18 @@ type Execute = (command: string, args: string[], options: { cwd: string; stdio: 
 
 const usage = '请指定相关测试文件：npm test -- tests/example.test.ts；全量测试：npm run test:all';
 
+/**
+ * Windows 上直接 `spawnSync('npm')` 会 ENOENT：npm 实际是 `npm.cmd`，而 Node 不允许
+ * 不经 shell 执行 .cmd。交给 shell 解析，含空格的参数自行加引号。
+ */
+const isWindows = process.platform === 'win32';
+const quoteForShell = (value: string): string => (isWindows && /\s/.test(value) ? `"${value}"` : value);
+const runCommand: Execute = (command, args, options) => {
+  if (!isWindows) return spawnSync(command, args, options);
+  // 参数拼进命令行再交给 shell，避免 shell + args 数组触发的 DEP0190 警告。
+  return spawnSync([command, ...args.map(quoteForShell)].join(' '), { ...options, shell: true });
+};
+
 function selectTests(args: string[], root: string): string[] {
   if (!args.length) throw new Error(usage);
   const directory = path.join(root, 'tests');
@@ -32,7 +44,7 @@ function selectTests(args: string[], root: string): string[] {
   return [...new Set(files)];
 }
 
-export function runTests(args: string[], root: string, execute: Execute = spawnSync,
+export function runTests(args: string[], root: string, execute: Execute = runCommand,
   report: (message: string) => void = console.error): number {
   try {
     const files = selectTests(args, root);

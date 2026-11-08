@@ -1,10 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { PNG } from 'pngjs';
 import { contentDigest } from '../src/application/content-hash.ts';
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
 const CONTENT = path.join(PUBLIC, 'content');
 const ATLAS_DIR = 'assets/props/atlas';
@@ -202,7 +203,7 @@ export const PROP_ATLAS_LAYOUT_DIGEST = ${JSON.stringify(atlas.layoutDigest)};
     width: atlas.pages[0]!.width, height: atlas.pages[0]!.height, bytes };
 }
 
-if (process.argv[1] === new URL(import.meta.url).pathname) {
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const result = writePropAtlas();
   console.log(`地图 prop 图集：${result.props} 个 prop → ${result.unique} 帧 / ${result.pages} 页，${result.width}x${result.height}，${(result.bytes / 1024 / 1024).toFixed(2)} MB`);
 }

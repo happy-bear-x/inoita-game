@@ -1,0 +1,7 @@
+# 图集源码摘要把工具源文件本身算进 SHA-256，行尾不同会算出不同摘要。
+# 统一按 LF 检出，保证 macOS / Linux / Windows 得到同一份摘要。
+* text=auto eol=lf
+
+# Windows 批处理保持 CRLF。
+*.bat text eol=crlf
+*.cmd text eol=crlf
