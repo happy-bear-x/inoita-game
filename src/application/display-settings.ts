@@ -5,13 +5,13 @@
  */
 const STORAGE_KEY = 'inotia4.display.v1';
 
-export type FrameRateLimit = 60 | 120;
+export type FrameRateLimit = 30 | 60 | 120;
 interface DisplayPreferences { fps: boolean; criticalDecorations: boolean; frameRateLimit: FrameRateLimit }
 
 function preferences(): DisplayPreferences {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}');
-    return { fps: saved.fps !== false, criticalDecorations: saved.criticalDecorations !== false, frameRateLimit: saved.frameRateLimit === 120 ? 120 : 60 };
+    return { fps: saved.fps !== false, criticalDecorations: saved.criticalDecorations !== false, frameRateLimit: saved.frameRateLimit === 30 || saved.frameRateLimit === 120 ? saved.frameRateLimit : 60 };
   } catch { return { fps: true, criticalDecorations: true, frameRateLimit: 60 }; }
 }
 

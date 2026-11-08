@@ -490,12 +490,16 @@ test('system exposes load alongside save while settings keeps the working displa
   const rows={fps:260,critical:440} as const;
   assert(toggle(rows.fps));assert(toggle(rows.critical));
   assert(domTexts().includes('帧率上限'));
+  assert.equal(f.scene.button('30 帧').getData('selected'),false);
   assert.equal(f.scene.button('60 帧').getData('selected'),true);
   assert.equal(f.scene.button('120 帧').getData('selected'),false);
   f.scene.click(f.scene.button('120 帧'));
   assert.equal(displaySettings.frameRateLimit,120);
   assert.equal(f.scene.button('60 帧').getData('selected'),false);
   assert.equal(f.scene.button('120 帧').getData('selected'),true);
+  f.scene.click(f.scene.button('30 帧'));
+  assert.equal(displaySettings.frameRateLimit,30);
+  assert.equal(f.scene.button('30 帧').getData('selected'),true);
   f.scene.click(f.scene.button('60 帧'));
   assert.equal(displaySettings.frameRateLimit,60);
   assert.equal(f.scene.button('60 帧').getData('selected'),true);

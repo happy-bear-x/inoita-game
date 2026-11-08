@@ -71,7 +71,7 @@ test('restoring the adapter restores instance methods without changing other gam
 test('switching limits on the running Phaser loop preserves elapsed time and takes effect', t => {
   const f = fixture(t, true);
   const counts:number[]=[];
-  for (const limit of [60,120,60] as const) {
+  for (const limit of [30,60,120,60] as const) {
     f.loop.setFPSLimit(limit);
     const before=f.steps.length;
     for (let i=0;i<1200;i++) f.step(1000/120);
@@ -79,17 +79,18 @@ test('switching limits on the running Phaser loop preserves elapsed time and tak
     const last=f.steps.at(-1)!;
     assert.ok(Math.abs(f.steps.reduce((sum,step)=>sum+step.delta,0)-last.time)<1e-6);
   }
-  assert.ok(Math.abs(counts[0]!-600)<=2,`60 FPS: ${counts[0]}`);
-  assert.ok(counts[1]!>=1195,`120 FPS: ${counts[1]}`);
-  assert.ok(Math.abs(counts[2]!-600)<=2,`60 FPS: ${counts[2]}`);
+  assert.ok(Math.abs(counts[0]!-300)<=2,`30 FPS: ${counts[0]}`);
+  assert.ok(Math.abs(counts[1]!-600)<=2,`60 FPS: ${counts[1]}`);
+  assert.ok(counts[2]!>=1195,`120 FPS: ${counts[2]}`);
+  assert.ok(Math.abs(counts[3]!-600)<=2,`60 FPS: ${counts[3]}`);
   f.skip(1000); f.loop.pause(); f.skip(1000); f.loop.resume();
   const before=f.steps.length;
   for(let i=0;i<4;i++)f.step(1000/120);
   assert.ok(f.steps.slice(before).every(step=>step.delta<50),'暂停时间不应计入游戏');
 });
 
-test('logic-driven path searches receive the same budget at 60 and 120 FPS', async t => {
-  const simulate=async(limit:60|120)=>{
+test('logic-driven path searches receive the same budget at 30, 60 and 120 FPS', async t => {
+  const simulate=async(limit:30|60|120)=>{
     let result: { totals:number[]; frames:number; maxFrame:number } | undefined;
     await t.test(`${limit} FPS`, child=>{
       const f=fixture(child,false),clock=new CombatClock(),budget=new PathBudget(512);
@@ -112,10 +113,12 @@ test('logic-driven path searches receive the same budget at 60 and 120 FPS', asy
     });
     return result!;
   };
-  const at60=await simulate(60),at120=await simulate(120);
+  const at30=await simulate(30),at60=await simulate(60),at120=await simulate(120);
+  assert.equal(at30.frames,at60.frames);
+  assert.deepEqual(at30.totals,at60.totals);
   assert.equal(at60.frames,at120.frames);
   assert.deepEqual(at60.totals,at120.totals);
-  assert.ok(at60.maxFrame<=512&&at120.maxFrame<=512);
+  assert.ok(at30.maxFrame<=512&&at60.maxFrame<=512&&at120.maxFrame<=512);
   assert.ok(at60.totals.every(total=>total>0));
 });
 
