@@ -1875,6 +1875,15 @@ test('the GM story page lists tasks and enters the selected one without exposing
   const texts=()=>visibleDomLabels(f).map(label=>label.text).join(' ');
   const taskButtons=()=>f.scene.nodes.filter(node=>node.shown&&node.getData('uiAction')&&String(node.getData('label')).startsWith('任务 '));
   assert(taskButtons().length>0,'剧情页没有列出任务');
+  assert.ok(taskButtons().length<=8,'剧情列表只创建可见范围附近的行');
+  const list=f.internals.body.scrolls.find(scroll=>scroll.x===60&&scroll.y===100)!;
+  const firstLabel=taskButtons()[0]!.getData('label');
+  list.scrollTop=54*20;list.onScroll?.();
+  assert.notEqual(taskButtons()[0]!.getData('label'),firstLabel,'滚动后复用行并显示新的任务');
+  assert.ok(taskButtons().length<=8);
+  list.scrollTop=1e9;list.onScroll?.();
+  assert.ok(taskButtons().length>0&&taskButtons().length<=8,'滚动到底部仍保留最后一屏');
+  list.scrollTop=0;list.onScroll?.();
   assert(!/event-\d|scene-\d|quest-\d|shadow-camp/.test(texts()));
   assert.equal(f.scene.buttons('任务 向卓拉德报告').length,0);
   await new Promise(resolve=>setImmediate(resolve));
@@ -1988,8 +1997,16 @@ test('the GM item page scrolls addable items, shows details and gives a chosen q
   f.scene.click(f.scene.button('调试页 道具'));
 
   const slots = () => f.scene.nodes.filter(node => node.shown && String(node.getData('label') ?? '').startsWith('道具 '));
-  assert.equal(slots().length, gm.items().length, '所有可发放物品都在同一个滚动列表里');
+  assert.ok(slots().length<=50,'只创建当前画面附近的道具格');
   assert.ok(!slots().some(node => node.getData('label') === '道具 mana-gem'));
+  const grid=f.internals.body.scrolls.find(scroll=>scroll.x===60&&scroll.y===100)!;
+  const initial=slots()[0]!.getData('label');
+  grid.scrollTop=72*20;grid.onScroll?.();
+  assert.notEqual(slots()[0]!.getData('label'),initial,'滚动后复用格子显示新道具');
+  assert.ok(slots().length<=50);
+  grid.scrollTop=1e9;grid.onScroll?.();
+  assert.ok(slots().some(node=>node.getData('label')===`道具 ${gm.items().at(-1)!.id}`),'最后一件道具可滚动到');
+  grid.scrollTop=0;grid.onScroll?.();
 
   f.scene.click(f.scene.button('过滤 装备'));
   assert.ok(slots().every(node => {

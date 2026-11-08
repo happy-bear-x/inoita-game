@@ -263,21 +263,33 @@ export class GmPanel {
   private renderItems(body: UiSurface): string {
     const entries = this.gm.items(this.itemFilter);
     const grid = body.scroll(ITEM_GRID_X, ITEM_GRID_Y, ITEM_COLUMNS * ITEM_STRIDE, ITEM_ROWS * ITEM_STRIDE);
-    entries.forEach((entry, index) => {
-      const x = (index % ITEM_COLUMNS) * ITEM_STRIDE;
-      const y = Math.floor(index / ITEM_COLUMNS) * ITEM_STRIDE;
-      const button = this.button(body, '', x, y, ITEM_SLOT, ITEM_SLOT,
-        () => { this.itemSelected = entry.id; this.itemDetail = entry.id; this.itemQuantity = 1; this.result = ''; this.hooks.render(); },
+    const selectedId=this.itemSelected;
+    const slots = Array.from({length:Math.min(entries.length,ITEM_COLUMNS*(ITEM_ROWS+1))},()=>{
+      let entry:GmItemEntry|undefined;
+      const button = this.button(body, '', 0, 0, ITEM_SLOT, ITEM_SLOT,
+        () => { if(!entry)return;this.itemSelected = entry.id; this.itemDetail = entry.id; this.itemQuantity = 1; this.result = ''; this.hooks.render(); },
         { ...(this.references.itemSlot ? { image: this.references.itemSlot } : {}), parent: grid.content, guard: grid.guard });
-      body.image(entry.icon, 4, 4, ITEM_SLOT - 8, ITEM_SLOT - 8, button);
-      if (entry.id === this.itemSelected && this.references.itemSelected)
-        body.image(this.references.itemSelected, -5, -5, ITEM_SLOT + 10, ITEM_SLOT + 10, button);
-      button.setData('label', `道具 ${entry.id}`);
+      const icon=body.image('',4,4,ITEM_SLOT-8,ITEM_SLOT-8,button);
+      const selected=this.references.itemSelected?body.image(this.references.itemSelected,-5,-5,ITEM_SLOT+10,ITEM_SLOT+10,button):undefined;
+      return {button,icon,selected,set(value:GmItemEntry|undefined,index:number){
+        button.setVisible(!!value);if(!value){entry=undefined;return;}
+        button.setPosition((index%ITEM_COLUMNS)*ITEM_STRIDE,Math.floor(index/ITEM_COLUMNS)*ITEM_STRIDE);
+        if(entry?.icon!==value.icon)icon.load(value.icon);
+        entry=value;button.setData('label',`道具 ${value.id}`);
+        selected?.setVisible(value.id===selectedId);
+      }};
     });
     // 滚动范围按实际行数给；每次重画后恢复上次的位置。
     grid.setHeight(Math.ceil(entries.length / ITEM_COLUMNS) * ITEM_STRIDE);
-    grid.onScroll = () => { this.itemScroll = grid.scrollTop; };
     grid.scrollTop = this.itemScroll;
+    let firstSlot=-1;
+    const updateSlots=()=>{
+      const first=Math.floor(grid.scrollTop/ITEM_STRIDE)*ITEM_COLUMNS;
+      if(first===firstSlot)return;firstSlot=first;
+      slots.forEach((slot,index)=>slot.set(entries[first+index],first+index));
+    };
+    grid.onScroll = () => { this.itemScroll = grid.scrollTop;updateSlots(); };
+    updateSlots();
 
     const selected = entries.find(entry => entry.id === this.itemSelected);
     if (selected) {
@@ -388,24 +400,32 @@ export class GmPanel {
     if (debug.focus) this.button(body, this.ending ? '正在结束调试…' : '结束本次调试',660,54,150,30,
       ()=>this.onEndDebug(),{disabled:this.ending}).setData('label','结束本次调试');
     const list=body.scroll(60,100,352,336);this.references.registerScroll?.('gm-story-list',list);
-    list.onScroll=()=>{this.storyScroll=list.scrollTop;this.references.refresh?.();};
     list.setHeight(rows.length*54);
-    // 行数不多，整表一次画完：DOM 文字跟着滚动区偏移走，不必为虚拟列表再补一套文字池。
-    const listClip={top:100,bottom:436};
-    rows.forEach((item,index)=>{
-      const selected=item.task.quest===this.selectedQuest,y=index*54;
-      body.rect(0,y,352,52,selected?0x6f5232:0x241a10,selected?.74:.46,list.content);
-      const button=this.button(body,'',0,y,352,52,()=>{
+    const cells=Array.from({length:Math.min(rows.length,Math.ceil(336/54)+1)},()=>{
+      let item:StoryTaskRow|undefined;
+      const background=body.rect(0,0,352,52,0x241a10,.46,list.content);
+      const button=this.button(body,'',0,0,352,52,()=>{
+        if(!item)return;
         if(item.task.quest===this.selectedQuest)return;
         this.selectedQuest=item.task.quest;this.storyIntroScroll=0;this.hooks.render();
       },{bare:true,parent:list.content,guard:list.guard});
-      button.setData('label',`任务 ${item.title}`).setData('category',item.category);
-      this.text(clipText(item.title,17),72,105+y,328,18,selected?'#fff':'#f3deb0','gm-story-list',listClip);
-      const progress=this.references.questProgress?.(item.quest.id);
-      this.text([CATEGORY_LABELS[item.category],progress?QUEST_STATUS_LABELS[progress.status]??'':undefined]
-        .filter(Boolean).join(' · '),72,129+y,328,15,'#b8ab92','gm-story-list',listClip);
+      const title=body.text('',12,5,328,18,'#f3deb0',button);
+      const subtitle=body.text('',12,29,328,15,'#b8ab92',button);
+      return {set:(value:StoryTaskRow|undefined,index:number)=>{
+        item=value;background.setVisible(!!value);button.setVisible(!!value);if(!value)return;
+        const y=index*54,selected=value.task.quest===this.selectedQuest;
+        background.setPosition(0,y).setFillStyle(selected?0x6f5232:0x241a10,selected?.74:.46);
+        button.setPosition(0,y).setData('label',`任务 ${value.title}`).setData('category',value.category);
+        title.setText(clipText(value.title,17)).setColor(selected?'#fff':'#f3deb0');
+        const progress=this.references.questProgress?.(value.quest.id);
+        subtitle.setText([CATEGORY_LABELS[value.category],progress?QUEST_STATUS_LABELS[progress.status]??'':undefined].filter(Boolean).join(' · '));
+      }};
     });
     list.scrollTop=this.storyScroll;
+    let firstRow=-1;
+    const updateRows=()=>{const first=Math.floor(list.scrollTop/54);if(first===firstRow)return;firstRow=first;cells.forEach((cell,index)=>cell.set(rows[first+index],first+index));};
+    list.onScroll=()=>{this.storyScroll=list.scrollTop;updateRows();this.references.refresh?.();};
+    updateRows();
     if(row)this.renderTaskDetail(body,row);
     else this.text('没有符合筛选条件的任务',442,112,466,19);
     return `可调任务 ${rows.length} 个${debug.focus?` · ${DEBUG_PAUSED_NOTE}`:''}`;
