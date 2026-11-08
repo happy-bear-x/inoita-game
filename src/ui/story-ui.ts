@@ -100,6 +100,9 @@ export class StoryUI {
   private menuText?:MenuTextLayer;
   /** 人物页与人物加点确认框的文字；确认框打开时只保留后者。 */
   private statusTextSpecs:MenuTextSpec[]=[];
+  private statusPortrait?:UiImage;
+  private statusAdjustButton?:UiNode;
+  private statusResources=new Map<string,{fill:UiImage;start:UiImage;end:UiImage}>();
   private statusModalTextSpecs:MenuTextSpec[]=[];
   /** 技能页这一轮绘制收集到的文字；右侧说明区会随滚动一起换位置。 */
   private skillTextSpecs:MenuTextSpec[]=[];
@@ -989,7 +992,7 @@ export class StoryUI {
     return this.savePage.captureSaveRecord();
   }
   private renderStatus():void{
-    this.statusTextSpecs=[];
+    this.statusTextSpecs=[];this.statusResources.clear();
     const v=this.body!,member=this.member()!,actor=this.actor(),panels=this.app.menuPanels,character=this.app.storyClasses.classes.find(value=>value.id===member.classId)!,art=this.memberArt();
     const hero=this.selectedMemberId==='player'?this.session!.hero:undefined,panel=member.panel;
     const statPoints=this.allocation?.remainingPoints??hero?.statPoints??0;
@@ -998,7 +1001,7 @@ export class StoryUI {
     // @0x1e6b78` 把组 15 索引 48／49／53／54 画在 (83,−2)、(455,−2)、(83,392)、(455,392)，立绘在 (95,10)。
     v.border(panels.assets,85,0,409,431);
     for(const [corner,x,y]of [['nw',83,-2],['ne',455,-2],['sw',83,392],['se',455,392]] as const)v.image(panels.assets[`character-${corner}`],x,y,41,41);
-    v.imageCover(art.image,95,10,252,271);
+    this.statusPortrait=v.imageCover(art.image,95,10,252,271);
     // 队员栏：原版这个 104×340 的栏里放三个 104×113 的成员按钮（`Scene_Init_POPUP_SC_CHARACTER_INFO
     // @0x1e5478` 里 `SetRect(?, 0/0x71/0xe2, 104, 113)`），每个画成员头像 86×96 落在框内 +(9,9)，
     // 所以第一格的头像就在 (17,58)；点哪一格就切到那位成员身上。
@@ -1014,7 +1017,7 @@ export class StoryUI {
       this.addStatusText(`resource-${kind}-label`,panels.character.labels[kind],118,y+18.5,19,GOLD,0,.5,{width:46,align:'right'});
       this.addStatusText(`resource-${kind}-value`,max===0?'已满级':`${value} / ${max}`,290,y+18.5,17,GOLD,.5,.5,{width:223,align:'center'});
       this.addStatusText(`resource-${kind}-percent`,`${Math.floor(ratio*100)}%`,455,y+18.5,17,GOLD,1,.5);
-      const width=223*ratio,fill=v.image(panels.assets[`character-${kind}-fill`],178,y+12,223,13);fill.setCrop(0,0,fill.width*ratio,fill.height).setVisible(width>0);if(width>0){v.image(panels.assets[`character-${kind}-start`],178,y+12,7,13);v.image(panels.assets[`character-${kind}-end`],178+Math.max(0,width-7),y+12,7,13);}
+      const width=223*ratio,fill=v.image(panels.assets[`character-${kind}-fill`],178,y+12,223,13);fill.setCrop(0,0,fill.width*ratio,fill.height).setVisible(width>0);const start=v.image(panels.assets[`character-${kind}-start`],178,y+12,7,13).setVisible(width>0),end=v.image(panels.assets[`character-${kind}-end`],178+Math.max(0,width-7),y+12,7,13).setVisible(width>0);this.statusResources.set(kind,{fill,start,end});
     });
     // 右侧两块同样只有图框：原版 `Scene_Draw_...` 只对它们调 `UI_DrawBorderRect`，
     // 加点时属性栏宽 409（画到 x=905），常态宽 224，战斗指标栏固定在 `+0xe2`(226) 处、224 宽。
@@ -1051,24 +1054,9 @@ export class StoryUI {
         }
       }
     });
-    v.button('',this.adjusting?846:661,0,67,67,()=>this.toggleAllocation(),{image:panels.assets[this.adjusting?'confirm':'character-adjust'],disabled:!hero}).setData('label',this.adjusting?'确认属性加点':'查看属性加点');
+    this.statusAdjustButton=v.button('',this.adjusting?846:661,0,67,67,()=>this.toggleAllocation(),{image:panels.assets[this.adjusting?'confirm':'character-adjust'],disabled:!hero}).setData('label',this.adjusting?'确认属性加点':'查看属性加点');
     if(!this.adjusting){
-      const equipped=member.bag.equipmentItems(member.bag.equipmentFor(this.selectedMemberId));
-      const items=this.session!.bag.catalog.items,main=equipped['main-hand'];
-      const weapon=main?items[main]?.kind??'unarmed':'unarmed';
-      const armor=equipped.body?items[equipped.body].kind:'';
-      // 菜单打开时战斗被暂停，Buff 不会继续计时；这里按当前状态读一次，不挂逐帧刷新。
-      const stealthed=this.app.combatStealthed?.(this.selectedMemberId)??false;
-      const modifiers=memberCombatModifiers({
-        catalog:this.app.battleCatalog,classId:member.classId,loadout:this.configuration().draft(this.app.battleCatalog,member.classId),
-        weaponKind:weapon,armorKind:armor,health:member.player.health,maxHealth:member.player.maxHealth,
-        groupEffects:this.session!.party?.groupModifiers()??{},growth:memberSkillGrowth(this.selectedMemberId),stealthed
-      });
-      const combatAttribute=this.app.combatAttribute;
-      const resolve=combatAttribute
-        ?(key:string,base:number)=>combatAttribute(this.selectedMemberId,key as BattleStatKey,base,modifiers)
-        :undefined;
-      const values=characterCombatValues(effectiveCharacterPanel(panel,member.level,modifiers,resolve));
+      const values=this.statusCombatValues(member);
       v.border(panels.assets,722,0,224,431);
       panels.character.combatLabels.forEach((label,index)=>{
         this.addStatusText(`combat-${index}-label`,label,738,24+index*35,19,GOLD,0,0,{width:110,align:'left'});
@@ -1872,15 +1860,43 @@ export class StoryUI {
   }
   private cancelDrag():void{this.drag?.timer.remove();this.drag?.ghost?.destroy();this.drag=undefined;}
   private selectMember(id:string,page:Page):void{
+    const wasAdjusting=this.adjusting;
     if(this.requestAllocationExit(()=>this.selectMember(id,page)))return;
     const updateBag=this.open&&page==='bag'&&this.page==='bag'&&!this.bagDetailOpen&&this.bagEquipment.size>0;
+    const updateStatus=this.open&&page==='status'&&this.page==='status'&&!wasAdjusting&&!!this.statusPortrait?.active;
     this.cancelOperation();this.selectedMemberId=id;this.selectedItem=undefined;this.skill=undefined;this.skillSection='directory';
-    if(updateBag){this.updateBagMember();this.sessionSignature=this.sessionDataSignature()??this.sessionSignature;}else this.show(page);
+    if(updateBag||updateStatus){if(updateBag)this.updateBagMember();else this.updateStatusMember();this.sessionSignature=this.sessionDataSignature()??this.sessionSignature;}else this.show(page);
     const signal=this.request.signal;
     void this.app.preparePartyMember?.(id,signal).then(()=>{
       if(!signal.aborted&&this.open&&this.page==='bag'&&this.selectedMemberId===id)this.renderBagPreview();
     })
       .catch(error=>{if(!signal.aborted&&this.open&&this.selectedMemberId===id){this.notice=(error as Error).message;this.menuText?.renderPage(this.page);}});
+  }
+  private updateStatusMember():void{
+    const member=this.member()!,actor=this.actor(),panels=this.app.menuPanels,character=this.app.storyClasses.classes.find(value=>value.id===member.classId)!;
+    const text=(key:string,value:string)=>{const spec=this.statusTextSpecs.find(spec=>spec.key===key);if(spec)spec.text=value;};
+    const art=this.memberArt().image;if(this.statusPortrait?.getData('file')!==art)this.statusPortrait?.load(art);
+    text('level',`等级 ${member.level}`);text('class',character.name);text('name',actor.name);
+    for(const kind of ['health','mana','experience'] as const){
+      const player=member.player,value=player[kind],max=kind==='experience'?player.nextLevelExperience:kind==='health'?player.maxHealth:player.maxMana;
+      const ratio=kind==='experience'&&max===0?1:max>0?Math.max(0,Math.min(1,value/max)):0,width=223*ratio,view=this.statusResources.get(kind);
+      text(`resource-${kind}-value`,max===0?'已满级':`${value} / ${max}`);text(`resource-${kind}-percent`,`${Math.floor(ratio*100)}%`);
+      if(view){view.fill.setCrop(0,0,view.fill.width*ratio,view.fill.height).setVisible(width>0);view.start.setVisible(width>0);view.end.setX(178+Math.max(0,width-7)).setVisible(width>0);}
+    }
+    character.attributes.forEach((attribute,index)=>{const stat=PRIMARY_STATS[index];text(`attribute-${stat}-name`,attribute.name);text(`attribute-${stat}-value`,String(member.panel.attributes[stat]));});
+    const hero=this.selectedMemberId==='player'?this.session!.hero:undefined;
+    text('stat-points',`${panels.character.labels.statPoints} ${hero?.statPoints??0}`);
+    this.statusAdjustButton?.getData('setEnabled')?.(!!hero);
+    this.statusCombatValues(member).forEach((value,index)=>text(`combat-${index}-value`,value));
+    this.menuText?.renderPage('status');
+  }
+  private statusCombatValues(member:NonNullable<ReturnType<StoryUI['member']>>):string[]{
+    const equipped=member.bag.equipmentItems(member.bag.equipmentFor(this.selectedMemberId)),items=this.session!.bag.catalog.items,main=equipped['main-hand'];
+    const modifiers=memberCombatModifiers({catalog:this.app.battleCatalog,classId:member.classId,loadout:this.configuration().draft(this.app.battleCatalog,member.classId),
+      weaponKind:main?items[main]?.kind??'unarmed':'unarmed',armorKind:equipped.body?items[equipped.body].kind:'',health:member.player.health,maxHealth:member.player.maxHealth,
+      groupEffects:this.session!.party?.groupModifiers()??{},growth:memberSkillGrowth(this.selectedMemberId),stealthed:this.app.combatStealthed?.(this.selectedMemberId)??false});
+    const combatAttribute=this.app.combatAttribute,resolve=combatAttribute?(key:string,base:number)=>combatAttribute(this.selectedMemberId,key as BattleStatKey,base,modifiers):undefined;
+    return characterCombatValues(effectiveCharacterPanel(member.panel,member.level,modifiers,resolve));
   }
   private updateBagMember():void{
     const member=this.member()!,bag=this.session!.bag,equipment=bag.equipmentFor(this.selectedMemberId),panels=this.app.menuPanels;

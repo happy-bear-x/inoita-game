@@ -2200,6 +2200,19 @@ test('switching members in the bag retains the inventory and unchanged controls'
   f.scene.click(weapon);assert.equal(f.internals.selectedItem,orb.id,'保留的装备按钮读取新队员的装备');
 });
 
+test('switching members on the status page updates values without rebuilding controls',t=>{
+  const f=fixture();t.after(f.cleanup);const member=f.recruit('warlock');
+  f.menu.show('status');const children=[...f.internals.body.root.list],portrait=f.scene.button(member.definition.name);
+  f.scene.click(portrait);
+  assert.equal(f.internals.selectedMemberId,member.id);assert.deepEqual(f.internals.body.root.list,children);
+  assert.equal(f.scene.button(member.definition.name),portrait);
+  assert(visibleDomLabels(f).some(label=>label.text===member.definition.name));
+  assert.equal(f.scene.button('查看属性加点').input!.enabled,false);
+  const values=visibleDomLabels(f).map(label=>label.text).sort();
+  f.menu.show('status');
+  assert.deepEqual(visibleDomLabels(f).map(label=>label.text).sort(),values,'原位更新与重新打开后的数值一致');
+});
+
 test('using a mercenary emblem prepares only the new member preview', t => {
   const f=fixture();t.after(f.cleanup);
   f.menu.show('party');
