@@ -7,6 +7,7 @@ import { QuestPopup } from '../src/ui/phaser/quest-popup.ts';
 import type { GameUI } from '../src/ui/game-ui.ts';
 import { UiSurface } from '../src/ui/dom/surface.ts';
 import { CharacterPreview } from '../src/ui/dom/character-preview.ts';
+import { LiveCharacterPreview } from '../src/ui/phaser/live-character-preview.ts';
 import { domAssets } from '../src/ui/dom/assets.ts';
 import { SceneUiAssets } from '../src/ui/phaser/ui-asset-host.ts';
 import type { ActorDefinition } from '../src/domain/content.ts';
@@ -127,23 +128,22 @@ test('character preview reuses source pixels, follows its target box and release
   preview.destroy();assert(!image.active);
 });
 
-test('dynamic outfit preview uses the saved first frame instead of the GPU texture source',t=>{
+test('live character preview reuses the visual and tracks menu layout and visibility',t=>{
   const f=fixture();t.after(f.cleanup);
-  const texture={type:'DynamicTexture',getSourceImage:()=>{throw new Error('GPU texture is not a DOM image');}};
-  Object.assign(f.scene,{textures:{exists:()=>true,get:()=>texture}});
-  const actor={clips:{'idle-south':{frameWidth:40,frameHeight:80,originX:.5,originY:1,mirrorX:false,layers:[{key:'outfit',blend:'normal'}]}}} as unknown as ActorDefinition;
-  assert.equal(CharacterPreview.available(f.scene,actor),false,'缺少可显示的首帧时保留备用图');
-  assert.equal(CharacterPreview.available(f.scene,actor,'data:image/png;base64,first'),true);
-  const preview=new CharacterPreview(f.scene);
-  preview.show(f.surface,actor,{x:0,y:0,width:80,height:160},f.surface.root,'data:image/png;base64,first');
-  const image=f.surface.root.list.at(-1)!;
-  const picture=(image.element as unknown as MenuElement).children[0];
-  assert.equal(picture.src,'data:image/png;base64,first');
-  assert.deepEqual([image.x,image.y,image.scaleX],[40,160,2]);
-  preview.show(f.surface,actor,{x:0,y:0,width:80,height:160},f.surface.root,'data:image/png;base64,second');
-  assert(!image.active,'换装后的新首帧替换旧图');
-  assert.equal(((f.surface.root.list.at(-1)!.element as unknown as MenuElement).children[0]).src,'data:image/png;base64,second');
-  preview.destroy();
+  const box={setOrigin(){return this;},setScrollFactor(){return this;},setDepth(){return this;},setVisible(_v:boolean){return this;},setPosition(_x:number,_y:number){return this;},setSize(_w:number,_h:number){return this;},destroy(){}};
+  Object.assign(f.scene,{textures:{exists:()=>true},add:{rectangle:()=>box}});
+  const actor={id:'hero',clips:{'idle-south':{frameWidth:40,frameHeight:80,originX:.5,originY:1,mirrorX:false,layers:[{key:'outfit'}]}}} as unknown as ActorDefinition;
+  const state={created:0,destroyed:0,x:0,y:0,scale:0,visible:false};
+  const container={setDepth(){return this;},setScrollFactor(){return this;},setVisible(v:boolean){state.visible=v;return this;},setScale(v:number){state.scale=v;return this;},setPosition(x:number,y:number){state.x=x;state.y=y;return this;},destroy(){state.destroyed++;}};
+  let hole:unknown;
+  const preview=new LiveCharacterPreview(f.scene,value=>hole=value,actor=>{state.created++;return {actor,container} as never;});
+  preview.show(f.surface,actor,{x:0,y:0,width:80,height:160});
+  assert.deepEqual([state.x,state.y,state.scale],[40,160,2]);assert.equal(state.created,1);
+  assert.deepEqual(hole,{x:0,y:0,width:80,height:160});
+  preview.show(f.surface,actor,{x:100,y:50,width:40,height:80});assert.equal(state.created,1);
+  assert.deepEqual([state.x,state.y,state.scale],[120,130,1]);
+  preview.visible(false);assert.equal(state.visible,false);assert.equal(hole,undefined);
+  preview.visible(true);assert.equal(state.visible,true);preview.destroy();assert.equal(state.destroyed,1);
 });
 
 test('menu preloads share caller cancellation and release the retained DOM images',async t=>{

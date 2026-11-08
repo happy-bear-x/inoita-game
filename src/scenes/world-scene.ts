@@ -113,7 +113,7 @@ export class WorldScene extends Phaser.Scene {
   private readonly chestFades = new Map<string, Phaser.Tweens.Tween>();
   private wardrobe?: Wardrobe;
   private readonly companionWardrobes=new Map<string,Wardrobe>();
-  private readonly companionOutfits=new Map<string,{actor:ActorDefinition;preview:string}>();
+  private readonly companionOutfits=new Map<string,{actor:ActorDefinition}>();
   private readonly companionPreparations=new Map<string,{equipment:string;full:boolean;promise:Promise<void>}>();
   /** 已经合成了整套动作的伙伴；预览用的单动作外观不能覆盖它。 */
   private readonly companionFull=new Set<string>();
@@ -737,7 +737,7 @@ export class WorldScene extends Phaser.Scene {
     }
     if (destination) this.prefetchMap(destination);
   }
-  async changeEquipment(entry: string | undefined, slot: EquipmentSlot, signal?: AbortSignal, memberId='player'): Promise<string> {
+  async changeEquipment(entry: string | undefined, slot: EquipmentSlot, signal?: AbortSignal, memberId='player'): Promise<void> {
     if(!this.wardrobe||!this.player||this.loadingWorld||this.destroyed)throw new Error('请等待地图加载');
     if(memberId!=='player'){
       const member=this.app.session.party?.get(memberId);if(!member)throw new Error('伙伴不存在');
@@ -753,7 +753,7 @@ export class WorldScene extends Phaser.Scene {
       this.projectedMemberEquipment.set(memberId,JSON.stringify(bag.equipmentItems(bag.equipmentFor(memberId))));
       this.companionFull.add(memberId);this.combat?.updateMemberAppearance(memberId,outfit.actor);
       this.combat?.updateEquipment(memberId);
-      return outfit.preview;
+      return;
     }
     const bag=this.app.session.bag,revision=bag.revision,request=++this.outfitRequest;
     const next=entry?bag.planEquip(entry,slot):bag.planUnequip(slot);
@@ -765,7 +765,6 @@ export class WorldScene extends Phaser.Scene {
     this.movement?.refreshShape(this.player);
     if(entry)bag.equip(entry,slot);else bag.unequip(slot);
     this.combat?.updateEquipment();
-    return outfit.preview;
   }
   private companionWardrobe(id:string):Wardrobe {
     return acquireCompanionWardrobe(this.companionWardrobes,id,
@@ -841,7 +840,6 @@ export class WorldScene extends Phaser.Scene {
     }
   }
   equipmentAppearance(id:string):ActorDefinition|undefined{return id==='player'?this.player?.actor:this.companionOutfits.get(id)?.actor;}
-  equipmentPreview(id:string):string|undefined{return id==='player'?this.wardrobe?.preview:this.companionOutfits.get(id)?.preview;}
   createActor(entity: EntityPlacement): Character {
     const actor = entity.id === 'player' ? this.equippedActor ?? this.app.session.character?.appearance ?? this.app.world.actors[this.app.session.storyWorld.actorAppearance(entity.actor)] : this.app.world.actors[this.app.session.storyWorld.actorAppearance(entity.actor)];
     const character: Character = { ...createCharacter(this, actor, entity), marker: null };

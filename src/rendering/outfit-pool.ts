@@ -8,7 +8,6 @@ import { onWebGLRestore } from './webgl-recovery.ts';
 
 export interface Outfit {
   actor: ActorDefinition;
-  preview: string;
   textures: string[];
   users: number;
   redraw(): void;
@@ -170,7 +169,6 @@ export class OutfitPool {
       const key=this.catalog.variants[variant][part.piece];
       return key?{key,piece:this.catalog.sprites[key]}:undefined;
     };
-    let preview='';
     try {
       for(const [name,id]of poses) {
         signal.throwIfAborted();
@@ -213,29 +211,20 @@ export class OutfitPool {
         const clip:AnimationClip={frameWidth:width,frameHeight:height,frames:pose.frames.length,originX:-left/width,originY:-top/height,
           frameRate:pose.frameRate,mirrorX:pose.mirrorX,layers:[{key,file:'',blend:'normal'}]};
         clips[name as ClipName]=clip;
-        if(name==='idle-south')preview=await new Promise<string>((resolve,reject)=>{
-          let settled=false;
-          const finish=(result:{preview:string}|{error:unknown})=>{
-            if(settled)return;settled=true;signal.removeEventListener('abort',cancel);
-            if('error' in result)reject(result.error);else resolve(result.preview);
-          };
-          const cancel=()=>finish({error:signal.reason});
-          signal.addEventListener('abort',cancel,{once:true});
-          try{texture.snapshotArea(0,0,width,height,image=>{
-            if(settled)return;
-            if(image instanceof HTMLImageElement)void image.decode().then(()=>finish({preview:image.src}),error=>finish({error}));
-            else finish({error:new Error('人物预览生成失败')});
-          });}catch(error){finish({error});}
-        });
         // 佣兵加入时才首次合成整套外观；把每个动作分开到下一帧，
         // 避免一次性 stamp/render 所有动作形成长任务、卡住画面。
-        await new Promise<void>(resolve=>setTimeout(resolve,0));
+        await new Promise<void>((resolve,reject)=>{
+          const cancel=()=>{clearTimeout(timer);signal.removeEventListener('abort',cancel);reject(signal.reason);};
+          const timer=setTimeout(()=>{signal.removeEventListener('abort',cancel);resolve();},0);
+          signal.addEventListener('abort',cancel,{once:true});
+          if(signal.aborted)cancel();
+        });
         signal.throwIfAborted();
       }
       signal.throwIfAborted();
-      const outfit={actor:{...base,clips:{...base.clips,...clips}},preview,textures,users:0,
+      const outfit={actor:{...base,clips:{...base.clips,...clips}},textures,users:0,
         redraw:()=>{for(const paint of paints)paint();}};
       return outfit;
-    } catch(error){this.dispose({actor:base,preview:'',textures,users:0,redraw:()=>{}});throw error;}
+    } catch(error){this.dispose({actor:base,textures,users:0,redraw:()=>{}});throw error;}
   }
 }

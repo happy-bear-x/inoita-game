@@ -102,9 +102,8 @@ export class StoryApp {
   wardrobe!: WardrobeCatalog;
   /** 同一局游戏的合成外观，换地图和剧情舞台共用。 */
   outfits?: OutfitPool;
-  changeEquipment?: (entry: string | undefined, slot: EquipmentSlot, signal?: AbortSignal, memberId?:string) => Promise<string>;
+  changeEquipment?: (entry: string | undefined, slot: EquipmentSlot, signal?: AbortSignal, memberId?:string) => Promise<void>;
   equipmentAppearance?:(memberId:string)=>import('./domain/content.ts').ActorDefinition|undefined;
-  equipmentPreview?:(memberId:string)=>string|undefined;
   menuPanels!: MenuPanels;
   storyClasses!: StoryClassCatalog;
   /** 当前界面场景持有的菜单图片租约账。 */

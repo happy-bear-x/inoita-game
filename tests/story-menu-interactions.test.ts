@@ -12,7 +12,7 @@ import { UiNode } from '../src/ui/dom/node.ts';
 import type { StoryUIContext } from '../src/application/ports.ts';
 import type { BattleCatalog } from '../src/domain/battle.ts';
 import { BattleCharacter, type CharacterStatsCatalog } from '../src/domain/character-stats.ts';
-import type { ActorDefinition, WorldIndex } from '../src/domain/content.ts';
+import type { WorldIndex } from '../src/domain/content.ts';
 import type { Campaign } from '../src/domain/campaign.ts';
 import type { ItemCatalog, EquipmentSlot } from '../src/domain/items.ts';
 import type { CompanionCatalog } from '../src/domain/party.ts';
@@ -207,7 +207,6 @@ function fixture(classId = 'dark-knight') {
     changeEquipment: async (entry, slot, signal, owner = 'player') => {
       signal?.throwIfAborted(); const member = owner === 'player' ? hero : session.party!.get(owner)!;
       if (entry) session.bag.equip(entry, slot as EquipmentSlot, owner, member.classId, member.level); else session.bag.unequip(slot, owner);
-      return '';
     } };
   // 菜单文字走 DOM：这里只记录标签内容，不碰真实 document。
   const domLabels: FakeDomLabel[] = [];
@@ -2183,19 +2182,6 @@ test('late member previews do not rebuild the bag or replace the current member'
   requests.get(second.id)!();await Promise.resolve();await Promise.resolve();
   assert.equal(f.scene.button('整理'),button,'外观就绪只更新人物预览');
   assert.deepEqual(body.root.list,children,'背包正文节点不重建');
-});
-
-test('bag shows each equipped outfit using its saved first frame', t => {
-  const f=fixture();t.after(f.cleanup);
-  const member=f.recruit('warlock');
-  const actor={clips:{'idle-south':{frameWidth:40,frameHeight:80,originX:.5,originY:1,mirrorX:false,layers:[{key:'gpu',blend:'normal'}]}}} as unknown as ActorDefinition;
-  f.app.equipmentAppearance=()=>actor;
-  f.app.equipmentPreview=id=>`data:image/png;base64,${id}`;
-  f.menu.show('bag');
-  const picture=()=>f.internals.bagPreview!.list[0]!.element.firstChild as HTMLImageElement;
-  assert.equal(picture().src,'data:image/png;base64,player');
-  f.select(member.id);
-  assert.equal(picture().src,`data:image/png;base64,${member.id}`);
 });
 
 test('using a mercenary emblem prepares only the new member preview', t => {

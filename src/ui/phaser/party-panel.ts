@@ -7,7 +7,7 @@ import { memberArt } from '../../domain/menu-panels.ts';
 import type { EquipmentSlot } from '../../domain/items.ts';
 import { PRIMARY_STATS } from '../../domain/character-stats.ts';
 import { skillDetailEntries } from '../../domain/skill-display.ts';
-import { CharacterPreview } from './character-preview.ts';
+import { LiveCharacterPreview } from './live-character-preview.ts';
 import type { PlaceModal } from './modal-placement.ts';
 import { drawRoundBand } from './round-band.ts';
 import { GOLD, UiSurface, type ScrollArea } from './widgets.ts';
@@ -15,6 +15,7 @@ import { slotFrameImage } from '../slot-frame.ts';
 import { TEXT_COLORS } from '../text-style.ts';
 import { wrapText } from '../text-layout.ts';
 import type { MenuTextSpec, MenuTextWriter } from '../dom/menu-text.ts';
+import type { UiNode } from '../dom/node.ts';
 
 type DetailTab = 'info'|'equipment'|'skills';
 type PartyModal = {kind:'dismiss';id:string;error?:string}|{kind:'skill';id:string;skill:string}|{kind:'group-skill';id:string;skill:CompanionGroupEffect};
@@ -44,18 +45,20 @@ export class PartyPanel {
   private skillsScroll?:ScrollArea;
   private skillsOffset=0;
   private preparation?:AbortController;
-  private preview?:CharacterPreview;
+  private readonly preview?:LiveCharacterPreview;
+  private previewSlot?:{surface:UiSurface;parent:UiNode;id:string};
 
   constructor(session:Session,world:WorldIndex,app:StoryUIContext,changed:()=>void,
-    inspect:(id:string,page:'bag'|'skills')=>void,scrollArea?:ScrollFactory,refreshText:()=>void=()=>{}){
+    inspect:(id:string,page:'bag'|'skills')=>void,scrollArea?:ScrollFactory,refreshText:()=>void=()=>{},preview?:LiveCharacterPreview){
     this.session=session;this.world=world;this.app=app;this.changed=changed;this.inspect=inspect;
     this.scrollArea=scrollArea??((view,_name,x,y,width,height)=>view.scroll(x,y,width,height));
     this.refreshText=refreshText;
+    this.preview=preview;
   }
   get modalOpen():boolean{return !!this.modal;}
   /** 重绘前把合成立绘摘下来，避免被页面清理销毁后无法复用。 */
   detachPreview():void{this.preview?.detach();}
-  destroyPreview():void{this.preview?.destroy();this.preview=undefined;}
+  destroyPreview():void{this.preview?.destroy();}
   close():void{this.modal=undefined;this.preparation?.abort();}
   cancel():void{this.modal=undefined;this.changed();}
   captureScroll():void{this.skillsOffset=this.skillsScroll?.scrollTop??this.skillsOffset;}
@@ -68,7 +71,7 @@ export class PartyPanel {
   /** 选中项的外观资源就绪后重绘；切换选择时旧请求作废。 */
   private prepare(id:string):void{
     this.preparation?.abort();const request=this.preparation=new AbortController();
-    void this.app.preparePartyMember?.(id,request.signal).then(()=>{if(!request.signal.aborted)this.changed();})
+    void this.app.preparePartyMember?.(id,request.signal).then(()=>{if(!request.signal.aborted&&this.selected===id&&this.tab==='equipment')this.updatePreview();})
       .catch(error=>{if(!request.signal.aborted){this.error=(error as Error).message;this.changed();}});
   }
   private member(id:string){return id==='player'?this.session.hero:this.session.party!.get(id);}
@@ -151,7 +154,7 @@ export class PartyPanel {
     // 面板里露出的是黑色 65% 遮罩下的世界画面。
     v.border(assets,482,0,409,431);
     // 面板里那条压暗的圆角带：`UIMercenary_Draw @0x151ae4` 画在 `(x+34, y+136, 341, 101)`、强度 50。
-    drawRoundBand(v,assets,516,136,341,101,50);
+    drawRoundBand(v,assets,516,136,341,101,50,this.tab==='equipment'?{x:623,y:124,width:127,height:114}:undefined);
     (['info','equipment','skills'] as const).forEach((tab,index)=>{
       const button=v.button('',882,33+index*117,50,130,()=>{this.tab=tab;this.skillsOffset=0;this.skillsScroll=undefined;this.changed();},
         {image:assets[`party-tab-${tab}`],disabled:!member}).setData('label',{info:'人物能力',equipment:'装备',skills:'技能目录'}[tab]);
@@ -199,12 +202,7 @@ export class PartyPanel {
   }
   private renderEquipment(v:UiSurface,id:string):void{
     const panels=this.app.menuPanels,member=this.member(id)!,bag=this.session.bag,equipment=bag.equipmentFor(id);
-    const appearance=this.app.equipmentAppearance?.(id),snapshot=this.app.equipmentPreview?.(id),preview={x:623,y:124,width:127,height:114};
-    if(appearance&&CharacterPreview.available(v.scene,appearance,snapshot)){
-      // 和背包页共用同一套合成立绘：按预览框缩放居中，换人时替换，翻页时摘下来保留缓存。
-      const character=this.preview??(this.preview=new CharacterPreview(v.scene));
-      character.show(v,appearance,preview,v.root,snapshot);
-    }else v.imageContain(this.portrait(id),preview.x,preview.y,preview.width,preview.height);
+    this.previewSlot={surface:v,parent:v.container(0,0),id};this.updatePreview();
     for(const slot of panels.equipmentSlots){
       const entry=equipment[slot.id as EquipmentSlot],instance=entry?bag.get(entry):undefined,item=instance?bag.catalog.items[instance.item]:undefined;
       const button=v.button('',482+slot.x,slot.y,74,74,()=>this.inspect(id,'bag'),{image:slotFrameImage(this.app,this.session,instance)}).setData('label',`${slot.name}：${item?.name??'空'}`);
@@ -213,6 +211,13 @@ export class PartyPanel {
     v.button('',568,374,230,44,()=>this.inspect(id,'bag')).setData('label','更换装备');
     this.buttonText('equipment-change','更换装备',568,374,230,44);
     this.text('equipment-level',`Lv. ${member.level}`,686,331,20,GOLD,.5,0);
+  }
+  private updatePreview():void{
+    const slot=this.previewSlot;if(!slot?.parent.active||slot.id!==this.selected||this.tab!=='equipment')return;
+    const {surface:v,parent,id}=slot,appearance=this.app.equipmentAppearance?.(id),rect={x:623,y:124,width:127,height:114};
+    this.preview?.detach();parent.removeAll(true);
+    if(appearance&&this.preview&&LiveCharacterPreview.available(v.scene,appearance))this.preview.show(v,appearance,rect);
+    else v.imageContain(this.portrait(id),rect.x,rect.y,rect.width,rect.height,parent);
   }
   private renderSkills(v:UiSurface,id:string):void{
     const member=this.member(id)!,panels=this.app.menuPanels,character=this.app.battleCatalog.classes.find(c=>c.id===member.classId)!;

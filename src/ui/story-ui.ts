@@ -61,7 +61,9 @@ import type { DescriptionTextPart } from '../domain/description-text.ts';
 import { tradeLayout } from './shop-layout.ts';
 import { TEXT_COLORS } from './text-style.ts';
 import { splitMoney } from '../domain/money.ts';
-import { CharacterPreview } from './phaser/character-preview.ts';
+import { LiveCharacterPreview, type PreviewRect } from './phaser/live-character-preview.ts';
+import type { CharacterVisual } from '../rendering/characters.ts';
+import type { ActorDefinition } from '../domain/content.ts';
 import { storyMenuSignature, type StoryMenuPage, type StoryMenuViewModelSource } from './story-ui-signature.ts';
 
 type Page=StoryMenuPage;
@@ -158,7 +160,8 @@ export class StoryUI {
    * 背包页那颗合成立绘。它按当前角色和身上装备拼出来，换人、换装备才重做；
    * 翻物品、点格子引起的重画直接搬回来用——每次重建一批精灵正是背包卡顿的一大来源。
    */
-  private bagPortrait?:CharacterPreview;
+  private bagPortrait?:LiveCharacterPreview;
+  private backdropPieces:UiNode[]=[];
   private bagPreview?:UiNode;
   private scrollOffsets=new Map<string,number>();private scrollNames=new Map<string,ScrollArea>();
   private drag?:{entry:string;pointer:number;x:number;y:number;timer:Phaser.Time.TimerEvent;active:boolean;ghost?:UiImage};private suppressClick=false;
@@ -173,7 +176,7 @@ export class StoryUI {
    * 所以内容块按 (1024-960)/2 = 32 居中，内部一律使用原版 960 空间的绝对坐标。
    * 所有页共用同一个原点——商店页曾经单独上移 32 像素，那是没有依据的特例。
    */
-  attach(scene:Phaser.Scene):void{
+  attach(scene:Phaser.Scene,createPreview?:(actor:ActorDefinition)=>CharacterVisual):void{
     this.scene=scene;this.surface=new UiSurface(scene,1024,640,100);this.body=new UiSurface(scene,960,431,200);this.surface.root.add(this.body.root);this.body.root.setPosition(CONTENT_ORIGIN.x,CONTENT_ORIGIN.y);
     // 交易弹层的画布按原版数量框的 450×350 建立，确认框在其中垂直居中。
     this.modal=new UiSurface(scene,450,350,400);this.modal.root.setPosition(287,145);
@@ -284,6 +287,7 @@ export class StoryUI {
     this.shortcutScreen.enabled=()=>this.open&&!this.app.ui.suspended&&!this.busy&&!!this.shortcutEdit;
     this.backTab.enabled=()=>this.shortcutScreen!.enabled();
     this.hudButtons=new UiSurface(scene,960,640,50);this.backdrop=new UiNode(scene).setSize(1,1).setFillStyle(0,.65).setDepth(99).setInteractive();
+    this.backdropPieces=[];this.bagPortrait=createPreview?new LiveCharacterPreview(scene,rect=>this.setBackdropHole(rect),createPreview):undefined;
     // 说明/弹层用：压暗菜单页但不盖住说明层（300）和弹层（400）。
     this.popupMask=new UiNode(scene).setSize(1,1).setFillStyle(0,.5).setDepth(250).setVisible(false);
     this.surface.enabled=()=>this.open&&!this.app.ui.suspended&&!this.busy&&!this.app.ui.controlLayoutEditing&&!this.app.ui.keyBindingEditing&&!this.shortcutEdit&&!this.operation&&!this.itemNotice&&!this.allocationExit&&!this.skillReset&&!this.savePage.blocksPage&&!this.craftingPanel?.modalOpen&&!this.shopPanel?.modalOpen&&!this.partyPanel?.modalOpen&&!this.forge?.confirming;
@@ -305,7 +309,7 @@ export class StoryUI {
     window.addEventListener('blur',()=>{this.stopAllocationHold();this.cancelDrag();},{signal:nativeInput.signal});
     scene.events.once('shutdown',()=>nativeInput.abort());
     scene.game.events.on(UI_EVENTS.minimapLayout,this.onMinimap,this);scene.game.events.on(UI_EVENTS.cancelInput,this.cancelDrag,this);
-    scene.events.once('shutdown',()=>{this.unregisterKeyboard?.();this.unregisterKeyboard=undefined;this.unsubscribe?.();this.unsubscribeFullscreen?.();this.discardAllocation();this.menuText?.destroy();this.menuText=undefined;this.shortcutPrompt?.remove();this.shortcutPrompt=undefined;scene.scale.off('resize',this.resize,this);scene.game.events.off(UI_EVENTS.minimapLayout,this.onMinimap,this);scene.game.events.off(UI_EVENTS.cancelInput,this.cancelDrag,this);this.cancelOperation();this.savePage.destroy();this.surface!.root.remove(this.body!.root);this.surface?.destroy();this.body?.destroy();this.modal?.destroy();this.hudButtons?.destroy();this.description?.destroy();this.shortcutScreen?.destroy();this.backTab?.destroy();this.backdrop?.destroy();this.popupMask?.destroy();this.popupMask=undefined;this.controlEditor?.destroy();this.controlEditor=undefined;this.keyBindingEditor?.destroy();this.keyBindingEditor=undefined;});
+    scene.events.once('shutdown',()=>{this.unregisterKeyboard?.();this.unregisterKeyboard=undefined;this.unsubscribe?.();this.unsubscribeFullscreen?.();this.discardAllocation();this.menuText?.destroy();this.menuText=undefined;this.shortcutPrompt?.remove();this.shortcutPrompt=undefined;scene.scale.off('resize',this.resize,this);scene.game.events.off(UI_EVENTS.minimapLayout,this.onMinimap,this);scene.game.events.off(UI_EVENTS.cancelInput,this.cancelDrag,this);this.cancelOperation();this.savePage.destroy();this.surface!.root.remove(this.body!.root);this.surface?.destroy();this.body?.destroy();this.modal?.destroy();this.hudButtons?.destroy();this.description?.destroy();this.shortcutScreen?.destroy();this.backTab?.destroy();this.bagPortrait?.destroy();this.backdrop?.destroy();this.popupMask?.destroy();this.popupMask=undefined;this.controlEditor?.destroy();this.controlEditor=undefined;this.keyBindingEditor?.destroy();this.keyBindingEditor=undefined;});
     this.sync();
   }
   bind(session:Session,world:WorldIndex,content:StoryInterface):void{
@@ -317,7 +321,7 @@ export class StoryUI {
       ()=>this.menuText?.refresh(),()=>this.menuText?.renderPage('quests'));
     this.partyPanel?.destroyPreview();
     this.partyPanel=new PartyPanel(session,world,this.app,()=>this.render(),(id,page)=>this.selectMember(id,page),
-      (view,name,x,y,width,height)=>this.scroll(name,x,y,width,height,view),()=>this.menuText?.refresh());
+      (view,name,x,y,width,height)=>this.scroll(name,x,y,width,height,view),()=>this.menuText?.refresh(),this.bagPortrait);
     this.unsubscribe=session.subscribe(()=>{
       // 快捷键登记、控制布局编辑与强化台/技能书页打开时由各自的界面显式重绘；
       // 子页面的动作在完成后调 changed 统一重绘一次，避免会话通知再画一遍。
@@ -349,7 +353,7 @@ export class StoryUI {
     this.shortcutScreen?.visible(this.open&&!this.app.ui.suspended&&!!this.shortcutEdit);this.backTab?.visible(this.open&&!this.app.ui.suspended&&!!this.shortcutEdit);
     this.shortcutPrompt?.setVisible(this.open&&!this.app.ui.suspended&&!!this.shortcutEdit);
     this.backdrop?.setVisible(this.open&&!this.app.ui.suspended);
-    this.popupMask?.setVisible(menu&&modal);
+    this.popupMask?.setVisible(menu&&modal);this.bagPortrait?.visible(menu);
     this.controlEditor?.visible(this.open&&this.app.ui.controlLayoutEditing&&!this.app.ui.suspended);
     this.keyBindingEditor?.visible(this.open&&this.app.ui.keyBindingEditing&&!this.app.ui.suspended);this.layout();
   }
@@ -451,7 +455,7 @@ export class StoryUI {
     if(this.open&&this.requestAllocationExit(()=>this.close()))return;
     this.debugOpenToken++;this.debugStoryOnOpen=false;this.debugStoryMessage='';
     if(!this.open)return;if(this.page==='debug')this.releaseDebugPanel();this.controlEditor?.close();this.app.ui.setControlLayoutEditing(false);
-    this.keyBindingEditor?.close();this.app.ui.setKeyBindingEditing(false);this.cancelOperation();this.modalActive=false;this.shortcutEdit=undefined;this.shortcutScreen?.clear();this.backTab?.clear();this.shopPanel=undefined;this.bagPortrait?.destroy();this.bagPortrait=undefined;this.partyPanel?.destroyPreview();this.app.releasePartyPreview?.();this.craftingPanel=undefined;this.craftingActor=undefined;this.forge=undefined;this.skillBook=undefined;this.open=false;this.scrollNames.forEach((scroll,name)=>this.scrollOffsets.set(`${this.page}:${name}`,scroll.scrollTop));this.scrollNames.clear();this.body?.clear();this.description?.clear();if(this.surface&&this.body){this.surface.root.remove(this.body.root);this.surface.clear();this.surface.root.add(this.body.root);}this.keyboardFocus=undefined;this.surface?.visible(false);this.body?.visible(false);this.description?.visible(false);this.modal?.visible(false);this.shortcutScreen?.visible(false);this.backTab?.visible(false);this.backdrop?.setVisible(false);this.app.ui.resetInput();this.app.ui.lock(false,'story-menu');
+    this.keyBindingEditor?.close();this.app.ui.setKeyBindingEditing(false);this.cancelOperation();this.modalActive=false;this.shortcutEdit=undefined;this.shortcutScreen?.clear();this.backTab?.clear();this.shopPanel=undefined;this.bagPortrait?.destroy();this.partyPanel?.destroyPreview();this.app.releasePartyPreview?.();this.craftingPanel=undefined;this.craftingActor=undefined;this.forge=undefined;this.skillBook=undefined;this.open=false;this.scrollNames.forEach((scroll,name)=>this.scrollOffsets.set(`${this.page}:${name}`,scroll.scrollTop));this.scrollNames.clear();this.body?.clear();this.description?.clear();if(this.surface&&this.body){this.surface.root.remove(this.body.root);this.surface.clear();this.surface.root.add(this.body.root);}this.keyboardFocus=undefined;this.surface?.visible(false);this.body?.visible(false);this.description?.visible(false);this.modal?.visible(false);this.shortcutScreen?.visible(false);this.backTab?.visible(false);this.backdrop?.setVisible(false);this.app.ui.resetInput();this.app.ui.lock(false,'story-menu');
     if(this.loadReturnToDefeat){this.loadReturnToDefeat=false;if(this.app.ui.defeated)this.app.ui.revealDefeat();}
   }
   private releaseDebugPanel():void{
@@ -525,7 +529,7 @@ export class StoryUI {
         button.setPosition(0,this.minimapHeight+12+index++*(HUD_SIDE_BUTTON_SIZE+8));
       }
     }
-    this.backdrop?.setSize(this.scene!.scale.width,this.scene!.scale.height);
+    this.backdrop?.setSize(this.scene!.scale.width,this.scene!.scale.height);this.bagPortrait?.layout();
     this.popupMask?.setSize(this.scene!.scale.width,this.scene!.scale.height);
     // 画布缩放变化后，DOM 文字的 CSS 坐标和字号要跟着重算。
     this.menuText?.refresh();
@@ -1879,14 +1883,24 @@ export class StoryUI {
     const v=this.body, parent=this.bagPreview, member=this.member();
     if(!v||!parent?.active||!member||!this.scene)return;
     this.bagPortrait?.detach();parent.removeAll(true);
-    const preview=bagLayout().preview,appearance=this.app.equipmentAppearance?.(this.selectedMemberId),snapshot=this.app.equipmentPreview?.(this.selectedMemberId);
-    if(appearance&&CharacterPreview.available(this.scene,appearance,snapshot)){
-      const character=this.bagPortrait??(this.bagPortrait=new CharacterPreview(this.scene));
-      character.show(v,appearance,preview,parent,snapshot);
+    const preview=bagLayout().preview,appearance=this.app.equipmentAppearance?.(this.selectedMemberId);
+    if(appearance&&this.bagPortrait&&LiveCharacterPreview.available(this.scene,appearance)){
+      this.bagPortrait.show(v,appearance,preview);
     }else{
       const art=this.memberArt(),panels=this.app.menuPanels;
       v.imageContain(this.selectedMemberId==='player'?panels.classes[member.classId].preview:art.partyIcon,preview.x,preview.y,preview.width,preview.height,parent);
     }
+  }
+  private setBackdropHole(rect?:PreviewRect):void{
+    const backdrop=this.backdrop;if(!backdrop||!this.scene)return;
+    if(!rect){backdrop.setFillStyle(0,.65);for(const piece of this.backdropPieces)piece.setVisible(false);return;}
+    if(!this.backdropPieces.length)this.backdropPieces=Array.from({length:4},()=>new UiNode(this.scene!,backdrop).setFillStyle(0,.65));
+    backdrop.setFillStyle(0,0);
+    const width=this.scene.scale.width,height=this.scene.scale.height;
+    const left=Math.max(0,Math.min(width,rect.x)),top=Math.max(0,Math.min(height,rect.y));
+    const right=Math.max(left,Math.min(width,rect.x+rect.width)),bottom=Math.max(top,Math.min(height,rect.y+rect.height));
+    const boxes=[[0,0,width,top],[0,bottom,width,height-bottom],[0,top,left,bottom-top],[right,top,width-right,bottom-top]];
+    boxes.forEach(([x,y,w,h],index)=>this.backdropPieces[index]!.setPosition(x,y).setSize(w,h).setVisible(true));
   }
   private action(action:()=>void):void{if(this.busy)return;this.busy=true;try{action();}catch(error){this.notice=(error as Error).message;}finally{this.busy=false;}if(this.open)this.render();}
   private renderParty():void{

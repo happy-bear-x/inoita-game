@@ -4,6 +4,7 @@ import { UiNode, UiImage } from '../ui/dom/node.ts';
 import { SCENE_KEYS } from '../application/scene-keys.ts';
 import { UI_EVENTS } from '../application/ui-events.ts';
 import Phaser from 'phaser';
+import { createCharacter } from '../rendering/characters.ts';
 import type { StoryApp } from '../app.ts';
 import { uiOcclusion, type GameUI, type GameUiView } from '../ui/game-ui.ts';
 import { UiSurface,loadUiImages,GOLD,type ScrollArea } from '../ui/phaser/widgets.ts';
@@ -115,7 +116,7 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     this.game.canvas.addEventListener('pointercancel',this.cancelInput);this.game.events.once('destroy',()=>this.game.canvas.removeEventListener('pointercancel',this.cancelInput));
     this.events.once('shutdown',()=>{this.unregisterInput?.();this.unregisterInput=undefined;window.removeEventListener('keydown',this.bridgeKey);this.uiAssets.releaseContent();this.surface.destroy();this.questPopup.destroy();this.baseLease?.release();this.domInstant?.remove();this.domInstant=undefined;this.domToast?.remove();this.domToast=undefined;this.domSpeaker?.remove();this.domSpeaker=undefined;for(const label of [this.domLoadingTitle,this.domLoading,this.domLoadingAction,this.domLoadingMenu,this.domPortraitIcon,this.domPortraitTitle,this.domPortraitHint,this.domDefeatTitle,this.domDefeatMessage,this.domDefeatCancel,this.domDefeatConfirm,this.domDefeatCheckpoint,this.domDefeatLoad])label?.remove();this.domLoadingTitle=undefined;this.domLoading=undefined;this.domLoadingAction=undefined;this.domLoadingMenu=undefined;this.domPortraitIcon=undefined;this.domPortraitTitle=undefined;this.domPortraitHint=undefined;this.domDefeatTitle=undefined;this.domDefeatMessage=undefined;this.domDefeatCancel=undefined;this.domDefeatConfirm=undefined;this.domDefeatCheckpoint=undefined;this.domDefeatLoad=undefined;for(const run of this.dialogueDomRuns)run.remove();this.dialogueDomRuns.length=0;this.removeChoiceDom();});
     void loadUiImages(this,['/assets/ui/loading-background.webp']).then(lease=>{this.baseLease=lease;this.signature='';this.sync(this.app.ui);}).catch(console.error);
-    this.app.storyUI.attach(this);this.sync(this.app.ui);
+    this.app.storyUI.attach(this,actor=>createCharacter(this,actor,{id:'menu-preview',actor:actor.id,x:0,y:0}));this.sync(this.app.ui);
   }
   /**
    * 正式界面的弹层键盘：守卫顺序保持原样。返回 `true` 表示这一层消费了按键；

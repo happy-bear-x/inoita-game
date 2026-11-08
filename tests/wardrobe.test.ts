@@ -10,11 +10,6 @@ import { OutfitPool, OUTFIT_CACHE_LIMIT } from '../src/rendering/outfit-pool.ts'
 import { retainLoadedSceneAssets } from '../src/rendering/scene-assets.ts';
 import { acquireCompanionWardrobe, COMPANION_WARDROBE_LIMIT } from '../src/rendering/wardrobe-cache.ts';
 
-class PreviewImage {
-  src='preview';
-  decode():Promise<void>{return Promise.resolve();}
-}
-
 test('lazy poses belong to one outfit pool and reload after its session is cleared', async t => {
   const run = setup(t);
   const pose = run.catalog.poses.idle!;
@@ -23,33 +18,27 @@ test('lazy poses belong to one outfit pool and reload after its session is clear
   const pool = new OutfitPool(run.scene, run.catalog, { items: {} } as ItemCatalog, async () => {
     loads++; return { idle: pose };
   });
-  const prepare = async (index: number) => {
+  const prepare = async () => {
     const pending = pool.acquire(run.actor, {}, 'hero', undefined, new AbortController().signal);
     await new Promise(resolve => setImmediate(resolve));
-    run.finish(index); return pending;
+    return pending;
   };
-  const first = await prepare(0);
+  const first = await prepare();
   assert.equal(loads, 1); assert.deepEqual(run.catalog.poses, {});
   first.release(); pool.clear();
-  const second = await prepare(1);
+  const second = await prepare();
   assert.equal(loads, 2); assert.deepEqual(run.catalog.poses, {});
   second.release(); pool.destroy(); run.wardrobe.destroy();
 });
 
-function setup(t:test.TestContext,extraPoses=false){
-  const original=Object.getOwnPropertyDescriptor(globalThis,'HTMLImageElement');
-  Object.defineProperty(globalThis,'HTMLImageElement',{value:PreviewImage,configurable:true});
-  t.after(()=>{
-    if(original)Object.defineProperty(globalThis,'HTMLImageElement',original);
-    else Reflect.deleteProperty(globalThis,'HTMLImageElement');
-  });
-  const events=new EventEmitter(),renderer=new EventEmitter(),textures=new Set<string>(),snapshots:((image:PreviewImage)=>void)[]=[];
+function setup(_t:test.TestContext,extraPoses=false){
+  const events=new EventEmitter(),renderer=new EventEmitter(),textures=new Set<string>();
   const ops=new Map<string,{stamps:number;clears:number;renders:number}>();
   const scene={events,game:{renderer},anims:{exists:()=>false},textures:{
     addDynamicTexture(key:string){
       textures.add(key);
       const op={stamps:0,clears:0,renders:0};ops.set(key,op);
-      return {clear(){op.clears++;},stamp(){op.stamps++;},add(){},render(){op.renders++;},snapshotArea(_x:number,_y:number,_w:number,_h:number,callback:(image:PreviewImage)=>void){snapshots.push(callback);}};
+      return {clear(){op.clears++;},stamp(){op.stamps++;},add(){},render(){op.renders++;}};
     },
     get:()=>({has:()=>true}),exists:(key:string)=>textures.has(key),remove:(key:string)=>textures.delete(key)
   }} as unknown as Phaser.Scene;
@@ -58,15 +47,13 @@ function setup(t:test.TestContext,extraPoses=false){
     poses:{idle:{frames:[[]],frameRate:10,mirrorX:false},...(extraPoses?{attack:{frames:[[]],frameRate:10,mirrorX:false}}:{})}};
   const wardrobe=new Wardrobe(scene,catalog,{items:{}} as ItemCatalog);
   const actor={id:'hero',clips:{}} as ActorDefinition;
-  return {wardrobe,scene,catalog,actor,textures,events,renderer,ops,snapshots,
-    prepare:(options?:{clipNames?:Iterable<string>})=>wardrobe.prepare(actor,{},'hero',options),
-    finish:(index:number)=>snapshots[index](new PreviewImage())};
+  return {wardrobe,scene,catalog,actor,textures,events,renderer,ops,
+    prepare:(options?:{clipNames?:Iterable<string>})=>wardrobe.prepare(actor,{},'hero',options)};
 }
 
 test('concurrent outfit requests share their generated textures and release all of them',async t=>{
   const run=setup(t),first=run.prepare(),second=run.prepare();
-  assert.equal(run.snapshots.length,1);
-  run.finish(0);
+  assert.equal(run.ops.size,1);
   const [a,b]=await Promise.all([first,second]);
   assert.equal(a,b);assert.equal(run.textures.size,1);
   assert.equal(await run.prepare(),a);
@@ -75,7 +62,7 @@ test('concurrent outfit requests share their generated textures and release all 
 
 test('restoring the WebGL context repaints cached outfit textures in place',async t=>{
   const run=setup(t),pending=run.prepare();
-  run.finish(0);const outfit=await pending;run.wardrobe.activate(outfit);
+  const outfit=await pending;run.wardrobe.activate(outfit);
   for(const key of outfit.textures){const op=run.ops.get(key)!;assert.equal(op.clears,1);assert.equal(op.renders,1);}
   run.renderer.emit('restorewebgl');
   for(const key of outfit.textures){const op=run.ops.get(key)!;assert.equal(op.clears,2,'恢复后先清空旧的显存内容');assert.equal(op.renders,2,'恢复后重新画进原纹理键');}
@@ -92,9 +79,7 @@ test('clearing pending work rejects its result without removing a replacement re
   const replacement=run.prepare();
   await rejected;
   const shared=run.prepare();
-  assert.equal(run.snapshots.length,2);
-  run.finish(0);
-  run.finish(1);
+  assert.equal(run.ops.size,2);
   assert.equal(await replacement,await shared);
   assert.equal(run.textures.size,1);
   run.wardrobe.clear();assert.equal(run.textures.size,0);
@@ -104,9 +89,8 @@ test('scene shutdown disposes a pending outfit and rejects further preparation',
   const run=setup(t),pending=run.prepare(),rejected=assert.rejects(pending,{name:'AbortError'});
   run.events.emit('shutdown');await rejected;
   assert.equal(run.textures.size,0);
-  run.finish(0);assert.equal(run.textures.size,0);
   await assert.rejects(run.prepare(),{name:'AbortError'});
-  assert.equal(run.snapshots.length,1);
+  assert.equal(run.ops.size,1);
 });
 
 test('explicit outfit disposal cancels pending texture work and removes its scene listener',async t=>{
@@ -115,25 +99,19 @@ test('explicit outfit disposal cancels pending texture work and removes its scen
   run.wardrobe.destroy();await rejected;
   assert.equal(run.events.listenerCount('shutdown'),0);
   assert.equal(run.textures.size,0);
-  run.finish(0);assert.equal(run.textures.size,0);
   run.wardrobe.destroy();await assert.rejects(run.prepare(),{name:'AbortError'});
 });
 
 test('preview preparation composes only the requested clip',async t=>{
   const run=setup(t,true),pending=run.prepare({clipNames:['idle-south']});
-  assert.equal(run.snapshots.length,1,'单动作预览只生成自己的快照');
-  run.finish(0);
+  assert.equal(run.ops.size,1,'单动作预览只生成一个纹理');
   const preview=await pending;
-  assert.equal(run.wardrobe.preview,undefined,'未激活的外观不作为当前预览');
   run.wardrobe.activate(preview);
-  assert.equal(run.wardrobe.preview,preview.preview,'预览跟随已激活的外观');
   assert.deepEqual(Object.keys(preview.actor.clips),['idle-south'],'预览外观只合成 idle-south');
   assert.equal(run.textures.size,1);
   const fullPending=run.prepare();
-  run.finish(1);
   const full=await fullPending;
   run.wardrobe.activate(full);
-  assert.equal(run.wardrobe.preview,full.preview);
   assert.deepEqual(Object.keys(full.actor.clips).sort(),['attack-north','idle-south'],'缺省仍合成整套动作');
   assert.equal(run.textures.size,3);
   assert.notEqual(await run.prepare({clipNames:['idle-south']}),full,'单动作与整套外观分开缓存');
@@ -169,14 +147,13 @@ function sharedSetup(t: test.TestContext) {
 
 test('world and stage share an outfit across shutdown and returning to the map', async t => {
   const run = sharedSetup(t), world = run.create(), stage = run.create();
-  const first = world.prepare(run.actor, {}, 'hero'); run.finish(0);
-  const outfit = await first; world.activate(outfit);
+  const first = world.prepare(run.actor, {}, 'hero'); const outfit = await first; world.activate(outfit);
   const other = await stage.prepare(run.actor, {}, 'hero'); stage.activate(other);
-  assert.equal(other, outfit); assert.equal(run.snapshots.length, 1);
+  assert.equal(other, outfit); assert.equal(run.ops.size, 1);
   world.destroy(); assert.equal(run.textures.size, 1, '舞台仍持有纹理');
   stage.destroy();
   const next = run.create(), reused = await next.prepare(run.actor, {}, 'hero');
-  assert.equal(reused, outfit); assert.equal(run.snapshots.length, 1, '回图不重新合成');
+  assert.equal(reused, outfit); assert.equal(run.ops.size, 1, '回图不重新合成');
   next.destroy(); run.pool.destroy(); assert.equal(run.textures.size, 0);
 });
 
@@ -184,8 +161,7 @@ test('cancelling one shared preparation leaves the other scene waiting for the s
   const run = sharedSetup(t), first = run.create(), second = run.create();
   const a = first.prepare(run.actor, {}, 'hero'), b = second.prepare(run.actor, {}, 'hero');
   const rejected = assert.rejects(a, { name: 'AbortError' }); first.destroy(); await rejected;
-  assert.equal(run.snapshots.length, 1); run.finish(0);
-  const outfit = await b; assert.equal(run.textures.size, 1); second.activate(outfit);
+  assert.equal(run.ops.size, 1); const outfit = await b; assert.equal(run.textures.size, 1); second.activate(outfit);
   run.renderer.emit('restorewebgl');
   assert.equal(run.ops.get(outfit.textures[0])!.renders, 2, '共享外观只重绘一次');
   second.destroy();
@@ -193,11 +169,11 @@ test('cancelling one shared preparation leaves the other scene waiting for the s
 
 test('changing the worn recipe creates a new outfit and returning to it reuses the old one', async t => {
   const run = sharedSetup(t), wardrobe = run.create();
-  const a = wardrobe.prepare(run.actor, {}, 'hero'); run.finish(0); const first = await a; wardrobe.activate(first);
+  const a = wardrobe.prepare(run.actor, {}, 'hero'); const first = await a; wardrobe.activate(first);
   run.catalog.variants.other = [];
   run.catalog.equipment.coat = { main: { body: 'other' }, offHand: {} };
   run.items.items.coat = { kind: 'armor', equipment: {} } as ItemCatalog['items'][string];
-  const b = wardrobe.prepare(run.actor, { body: 'coat' }, 'hero'); run.finish(1); const second = await b; wardrobe.activate(second);
+  const b = wardrobe.prepare(run.actor, { body: 'coat' }, 'hero'); const second = await b; wardrobe.activate(second);
   assert.notEqual(first, second);
   assert.equal(await wardrobe.prepare(run.actor, {}, 'hero'), first);
   wardrobe.destroy();
@@ -205,11 +181,11 @@ test('changing the worn recipe creates a new outfit and returning to it reuses t
 
 test('shared outfit cache evicts the oldest idle result and protects the active outfit', async t => {
   const run = sharedSetup(t), active = run.create();
-  const initial = active.prepare(run.actor, {}, 'hero'); run.finish(0); const protectedOutfit = await initial; active.activate(protectedOutfit);
+  const initial = active.prepare(run.actor, {}, 'hero'); const protectedOutfit = await initial; active.activate(protectedOutfit);
   const created: string[] = [];
   for (let i = 0; i < OUTFIT_CACHE_LIMIT + 2; i++) {
     const wardrobe = run.create(), pending = wardrobe.prepare({ ...run.actor, id: 'hero-' + i }, {}, 'hero');
-    run.finish(i + 1); const outfit = await pending; created.push(outfit.textures[0]); wardrobe.destroy();
+    const outfit = await pending; created.push(outfit.textures[0]); wardrobe.destroy();
   }
   assert.equal(run.textures.size, OUTFIT_CACHE_LIMIT);
   assert.ok(run.textures.has(protectedOutfit.textures[0])); assert.ok(!run.textures.has(created[0]));
@@ -218,11 +194,11 @@ test('shared outfit cache evicts the oldest idle result and protects the active 
 
 test('session disposal waits for live users and prevents pending results from reviving the old pool', async t => {
   const run = sharedSetup(t), live = run.create(), pending = run.create();
-  const loaded = live.prepare(run.actor, {}, 'hero'); run.finish(0); const outfit = await loaded; live.activate(outfit);
+  const loaded = live.prepare(run.actor, {}, 'hero'); const outfit = await loaded; live.activate(outfit);
   const loading = pending.prepare({ ...run.actor, id: 'other' }, {}, 'hero');
   const rejected = assert.rejects(loading, { name: 'AbortError' }); run.pool.destroy(); await rejected;
   assert.ok(run.textures.has(outfit.textures[0]), '场景释放之前保留正在显示的外观');
-  run.finish(1); live.destroy(); pending.destroy(); assert.equal(run.textures.size, 0);
+  live.destroy(); pending.destroy(); assert.equal(run.textures.size, 0);
   await assert.rejects(run.create().prepare(run.actor, {}, 'hero'), { name: 'AbortError' });
 });
 
@@ -230,17 +206,16 @@ test('cached outfits keep their source parts alive until the session pool is cle
   const run = sharedSetup(t), source = { kind: 'image' as const, key: 'parts', file: 'parts.png' };
   run.catalog.textures.push(source); run.textures.add(source.key);
   const map = retainLoadedSceneAssets(run.scene, [source]);
-  const wardrobe = run.create(), pending = wardrobe.prepare(run.actor, {}, 'hero'); run.finish(0); await pending;
+  const wardrobe = run.create(), pending = wardrobe.prepare(run.actor, {}, 'hero'); await pending;
   map.release(); wardrobe.destroy(); assert.ok(run.textures.has(source.key), '缓存仍能从部件重绘');
   run.pool.destroy(); assert.equal(run.textures.size, 0);
 });
 
-test('skipping the sole outfit requester cancels composition and discards a late preview', async t => {
+test('skipping the sole outfit requester cancels composition and discards pending composition', async t => {
   const run = sharedSetup(t), wardrobe = run.create(), skip = new AbortController();
   const pending = wardrobe.prepare(run.actor, {}, 'hero', { signal: skip.signal });
   const rejected = assert.rejects(pending, { name: 'AbortError' }); skip.abort(); await rejected;
-  assert.equal(run.textures.size, 0); run.finish(0);
-  const replacement = wardrobe.prepare(run.actor, {}, 'hero');
-  assert.equal(run.snapshots.length, 2); run.finish(1); await replacement;
+  assert.equal(run.textures.size, 0); const replacement = wardrobe.prepare(run.actor, {}, 'hero');
+  assert.equal(run.ops.size, 2); await replacement;
   assert.equal(run.textures.size, 1); wardrobe.destroy();
 });

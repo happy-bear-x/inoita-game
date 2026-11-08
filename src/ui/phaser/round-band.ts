@@ -13,7 +13,7 @@ import type { UiSurface } from './widgets.ts';
  * （原版把它取反成 `100−强度` 传给 `GRPX_DrawPart` 的最后一个参数，0 表示不压暗）。
  * 人物属性行与队伍页的条带使用强度 50。
  */
-export function drawRoundBand(v: UiSurface, assets: Record<string, string>, x: number, y: number, width: number, height: number, strength: number): void {
+export function drawRoundBand(v: UiSurface, assets: Record<string, string>, x: number, y: number, width: number, height: number, strength: number, hole?:{x:number;y:number;width:number;height:number}): void {
   const alpha = strength / 100, color = 0x6f6f6f;
   v.image(assets['round-nw'], x, y, 15, 15).setAlpha(alpha);
   v.image(assets['round-ne'], x + width - 15, y, 15, 15).setAlpha(alpha);
@@ -26,5 +26,12 @@ export function drawRoundBand(v: UiSurface, assets: Record<string, string>, x: n
     [x + width - 15, y + 15, 15, height - 30],
     [x + 15, y + 15, width - 30, height - 30],
   ];
-  for (const [left, top, bandWidth, bandHeight] of bands) v.rect(left, top, bandWidth, bandHeight, color, alpha);
+  for (const [left, top, bandWidth, bandHeight] of bands) {
+    const right=left+bandWidth,bottom=top+bandHeight;
+    const l=hole?Math.max(left,hole.x):right,r=hole?Math.min(right,hole.x+hole.width):left;
+    const t=hole?Math.max(top,hole.y):bottom,b=hole?Math.min(bottom,hole.y+hole.height):top;
+    if(l>=r||t>=b){v.rect(left,top,bandWidth,bandHeight,color,alpha);continue;}
+    for(const [px,py,w,h] of [[left,top,bandWidth,t-top],[left,b,bandWidth,bottom-b],[left,t,l-left,b-t],[r,t,right-r,b-t]])
+      if(w>0&&h>0)v.rect(px,py,w,h,color,alpha);
+  }
 }

@@ -108,9 +108,8 @@ export interface StoryUIContext {
   saveSlot?:number;
   /** 当前地图与世界的存档快照；地图或战斗还没就绪时没有可存的东西。摘要由界面按菜单内容补上。 */
   captureSaveWorld?: () => SaveWorldResult;
-  changeEquipment?: (entry: string | undefined, slot: EquipmentSlot, signal?: AbortSignal, memberId?:string) => Promise<string>;
+  changeEquipment?: (entry: string | undefined, slot: EquipmentSlot, signal?: AbortSignal, memberId?:string) => Promise<void>;
   equipmentAppearance?:(memberId:string)=>import('../domain/content.ts').ActorDefinition|undefined;
-  equipmentPreview?:(memberId:string)=>string|undefined;
   readonly battleCatalog: BattleCatalog;
   /**
    * 属性页读取当前战斗属性：把常驻被动、Buff 和临时属性一起叠到基础值上。
