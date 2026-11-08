@@ -21,9 +21,12 @@ test('a quest marker is created when a quest becomes available after the map is 
     add(child: unknown) { container.children.push(child); },
   };
   interface Marker {
-    dom: { visible: boolean; text: string; style: { color: string }; setVisible(value: boolean): void; setText(value: string): void; setStyle(value: { color: string }): void };
+    holder: unknown;
+    image: { visible(value: boolean): void; load(): Promise<void>; signal: { aborted: boolean }; destroy(): void };
+    file: string;
     visible: boolean;
   }
+  let iconVisible = false;
   const character = {
     entity: { id: 'npc-1', actor: 'elder', characterId: 'npc-1' },
     actor: { id: 'elder' }, container, marker: undefined as Marker | undefined,
@@ -35,7 +38,8 @@ test('a quest marker is created when a quest becomes available after the map is 
     marker: () => status, markerActor: () => marked, visible: () => true,
   };
   const host = Object.assign(Object.create(WorldScene.prototype), {
-    app: { session },
+    app: { session, storyInterface: { assets: {
+      'minimap-available': 'available.png', 'minimap-active': 'active.png', 'minimap-ready': 'ready.png' } } },
     characters: [character],
     map: { id: 'map' },
     player: { container: { x: 0, y: 0 } },
@@ -45,11 +49,12 @@ test('a quest marker is created when a quest becomes available after the map is 
     movement: { setEnabled() {} },
     createQuestMarker(target: typeof character) {
       created.push(target);
-      const dom = { visible: true, text: '', style: { color: '#ffdb78' },
-        setVisible(value: boolean) { dom.visible = value; },
-        setText(value: string) { dom.text = value; },
-        setStyle(value: { color: string }) { Object.assign(dom.style, value); } };
-      target.marker = { dom, visible: true };
+      target.marker = {
+        holder: {},
+        image: { visible(value: boolean) { iconVisible = value; }, load: async () => {},
+          signal: { aborted: false }, destroy() {} },
+        file: '', visible: true,
+      };
     },
   });
 
@@ -60,8 +65,9 @@ test('a quest marker is created when a quest becomes available after the map is 
   status = 'available'; marked = true; version += 1; session.questBook.version = version;
   invoke(host, 'refreshState');
   assert.equal(created.length, 1, '任务变为可接取后补建头顶标记');
-  assert.equal(character.marker?.dom.visible, true);
-  assert.equal(character.marker?.dom.text, '!');
+  assert.equal(character.marker?.visible, true);
+  assert.equal(character.marker?.file, 'available.png', '头顶标记用原版可接取图标');
+  assert.equal(iconVisible, true);
   assert.deepEqual(taskLists.at(-1), [{ id: 'npc-1', x: 120, y: 80, status: 'available' }]);
 
   // 同一状态没有变化时不再刷新；状态再变也复用已有标记，不重复创建。
@@ -79,11 +85,9 @@ test('the minimap receives quest characters on the first refresh after it is cre
     setVisible(value: boolean) { container.visible = value; },
   };
   const marker = {
-    dom: { visible: false, text: '', style: { color: '' },
-      setVisible(value: boolean) { marker.dom.visible = value; },
-      setText(value: string) { marker.dom.text = value; },
-      setStyle(value: { color: string }) { Object.assign(marker.dom.style, value); } },
-    visible: true,
+    holder: {},
+    image: { visible() {}, load: async () => {}, signal: { aborted: false }, destroy() {} },
+    file: '', visible: true,
   };
   const character = {
     entity: { id: 'npc-1', actor: 'elder', characterId: 'npc-1' },
@@ -96,7 +100,9 @@ test('the minimap receives quest characters on the first refresh after it is cre
     marker: () => 'available', markerActor: () => true, visible: () => true,
   };
   const host = Object.assign(Object.create(WorldScene.prototype), {
-    app: { session }, characters: [character], map: { id: 'map' },
+    app: { session, storyInterface: { assets: {
+      'minimap-available': 'available.png', 'minimap-active': 'active.png', 'minimap-ready': 'ready.png' } } },
+    characters: [character], map: { id: 'map' },
     player: { container: { x: 0, y: 0 } },
     refreshLoadout() {}, noticeQuestCompletions() {},
     chestOpened: () => false, legendarySwordConsumed: () => false,

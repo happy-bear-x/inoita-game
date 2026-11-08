@@ -58,6 +58,7 @@ import type { CharacterVisual } from '../rendering/characters.ts';
 import { loadSceneAssets, missingSceneAssets, retainLoadedSceneAssets } from '../rendering/scene-assets.ts';
 import { Hud } from '../rendering/hud.ts';
 import type { DomLabel } from '../ui/dom/dom-ui.ts';
+import { DomImage } from '../ui/dom/components.ts';
 import { ActionControls, type ShortcutSlot } from '../ui/phaser/action-controls.ts';
 import { ShortcutBar, type ShortcutEntry } from '../domain/shortcut-bar.ts';
 import type { SkillConfiguration } from '../domain/skill-configuration.ts';
@@ -98,9 +99,11 @@ export type SaveWorldResult =
   | { ok: true; map: { id: string; name: string }; world: StoryWorldViewSnapshot }
   | { ok: false; reason: SaveWorldReason };
 
-/** 任务图标，浮在人物头顶。 */
+/** 任务状态图标，浮在人物头顶；与小地图共用原版的三张状态图。 */
 interface QuestMarker {
-  dom: DomLabel;
+  holder: HTMLDivElement;
+  image: DomImage;
+  file: string;
   visible: boolean;
 }
 
@@ -208,8 +211,6 @@ export class WorldScene extends Phaser.Scene {
   private checkpointPending=false;
   /** 同一段等待遭遇只记一条诊断；条件解除后重新允许记录。 */
   private checkpointWaitLogged=false;
-  /** DOM 任务标记上一帧的相机缩放，避免每帧重写字号。 */
-  private questMarkerZoom=0;
 
   constructor(app: StoryContext) { super({ key: SCENE_KEYS.world, physics: { default: 'arcade', arcade: { gravity: { x: 0, y: 0 }, debug: false } } }); this.app = app; }
   init(options: SceneOptions): void {
@@ -251,7 +252,7 @@ export class WorldScene extends Phaser.Scene {
       for(const lease of this.storyEntityAssets)lease.release();this.storyEntityAssets.length=0;
       this.groundLootView?.destroy();this.groundLootView=undefined;
       this.pickupMessages?.destroy();this.pickupMessages=undefined;this.pickupRecipients.clear();
-      for(const character of this.characters)character.marker?.dom.remove();
+      for(const character of this.characters)this.removeQuestMarker(character);
       this.movement?.destroy(); this.movement = undefined;
       this.mapLayers?.destroy(); this.mapLayers = undefined;
       this.stick?.destroy(); this.stick = undefined;
@@ -871,27 +872,42 @@ export class WorldScene extends Phaser.Scene {
   /** 任务标记按需创建：任务可能在进图后才变为可接取，不能只在建角色时判断一次。 */
   private createQuestMarker(character: Character): void {
     if (character.marker) return;
-    const dom=this.app.domUi?.label('world','dom-quest-marker',{x:.5,y:.5});
-    if(!dom)return;
-    dom.setStyle({fontFamily:'Georgia,serif',fontWeight:'bold',color:'#ffdb78',whiteSpace:'nowrap'});
-    character.marker={dom,visible:true};
+    const parent=this.app.domUi?.layer('world');
+    if(!parent)return;
+    // 图标底边中心对准人物头顶；holder 承担位置和缩放，图片本身保持原图像素。
+    const holder=document.createElement('div');
+    Object.assign(holder.style,{position:'absolute',left:'0px',top:'0px',width:'0px',height:'0px',
+      pointerEvents:'none',transformOrigin:'0 0'});
+    parent.appendChild(holder);
+    character.marker={holder,image:new DomImage(holder).naturalSize(.5,.5),file:'',visible:true};
+  }
+  private loadQuestMarker(marker:QuestMarker,file:string):void{
+    if(marker.file===file)return;
+    marker.file=file;
+    if(!file)return;
+    void marker.image.load(domAssets,file).catch(error=>{
+      if(marker.image.signal.aborted||(error as Error)?.name==='AbortError')return;
+      globalThis.storyDiagnostics?.record('ui-image-error',{error});
+    });
+  }
+  private removeQuestMarker(character: Character): void {
+    const marker=character.marker;if(!marker)return;
+    marker.image.destroy();marker.holder.remove();character.marker=null;
   }
   private updateQuestMarkers():void{
     const domUi=this.app.domUi;if(!domUi)return;
-    const camera=this.cameras.main,zoom=camera.zoom;
-    if(zoom!==this.questMarkerZoom){
-      this.questMarkerZoom=zoom;
-      for(const character of this.characters)character.marker?.dom?.setStyle({fontSize:`${Math.max(8,16*zoom)}px`});
-    }
+    const camera=this.cameras.main;
+    // 1 个世界像素对应的 CSS 像素：同时包含镜头缩放和画布显示缩放。
+    const unit=domUi.worldToScreen(camera,1,0).x-domUi.worldToScreen(camera,0,0).x;
     for(const character of this.characters){
-      const marker=character.marker;if(!marker?.dom)continue;
-      const visible=!!marker.visible&&character.container.visible&&!this.performing&&!this.stageOccluded;
-      if(!visible){marker.dom.setVisible(false);continue;}
+      const marker=character.marker;if(!marker)continue;
+      const visible=marker.visible&&character.container.visible&&!this.performing&&!this.stageOccluded;
+      if(!visible){marker.image.visible(false);continue;}
       const frame=domUi.frameSize(camera);
       const point=domUi.worldToScreen(camera,character.container.x,character.container.y-50);
       const onScreen=point.x>-24&&point.y>-24&&point.x<frame.width+24&&point.y<frame.height+24;
-      marker.dom.setVisible(onScreen);if(!onScreen)continue;
-      marker.dom.setPosition(point.x,point.y);
+      marker.image.visible(onScreen);if(!onScreen)continue;
+      Object.assign(marker.holder.style,{left:`${point.x}px`,top:`${point.y}px`,transform:`scale(${unit})`});
     }
   }
   setClip(character: Character, name: ClipName): void {
@@ -1065,11 +1081,11 @@ export class WorldScene extends Phaser.Scene {
         && session.markerActor(character.entity.actor,character.entity.characterId))
         this.createQuestMarker(character);
       if (character.marker) {
-        const color=status==='active'?'#adb9bb':'#ffdb78';
-        character.marker.visible=!!status;
-        character.marker.dom.setVisible(!!status);
-        character.marker.dom.setText(status==='available'?'!':'?');
-        character.marker.dom.setStyle({color});
+        const marker=character.marker;
+        const file=status?this.app.storyInterface.assets[`minimap-${status}`]:undefined;
+        marker.visible=!!file;
+        this.loadQuestMarker(marker,file??'');
+        marker.image.visible(marker.visible);
       }
       if (character.container.visible && status && status !== 'locked' && status !== 'completed')
         taskMarkers.push({id: character.entity.id, x: character.container.x, y: character.container.y, status});
@@ -1804,11 +1820,11 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     }
     const projectedIds=new Set(projected.map(entity=>entity.id));
     for(const character of [...this.characters])if(!projectedIds.has(character.entity.id)){
-      this.movement.remove(character);character.marker?.dom.remove();character.container.destroy();this.characters.splice(this.characters.indexOf(character),1);
+      this.movement.remove(character);this.removeQuestMarker(character);character.container.destroy();this.characters.splice(this.characters.indexOf(character),1);
     }
     for(const entity of projected){
       const old=this.characters.find(character=>character.entity.id===entity.id);
-      if(old&&old.actor.id!==this.app.session.storyWorld.actorAppearance(entity.actor)){this.movement.remove(old);old.marker?.dom.remove();old.container.destroy();this.characters.splice(this.characters.indexOf(old),1);}
+      if(old&&old.actor.id!==this.app.session.storyWorld.actorAppearance(entity.actor)){this.movement.remove(old);this.removeQuestMarker(old);old.container.destroy();this.characters.splice(this.characters.indexOf(old),1);}
       const character=this.characters.find(character=>character.entity.id===entity.id)??this.createActor(entity);
       if(!this.characters.includes(character))this.characters.push(character);
       character.entity={...entity};
