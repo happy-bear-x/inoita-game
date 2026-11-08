@@ -17,6 +17,19 @@ def updatePublicKeyFile = new File(rootProject.projectDir, 'update-public-key.tx
 def updatePublicKey = updatePublicKeyFile.exists()
         ? updatePublicKeyFile.getText('UTF-8').replaceAll('\\s+', '')
         : ''
+// APK 自带的网页版本号；运行时优先读 APK 里的基线清单，读不到时用它兜底，
+// 避免把自带完整网页的安装包误认成「纯 APK」而反复提示全量更新。
+def baselinePointer = null
+def baselinePointerFile = new File(rootProject.projectDir, '../dist/update/latest.json')
+if (baselinePointerFile.exists()) {
+    try {
+        baselinePointer = new JsonSlurper().parse(baselinePointerFile)
+    } catch (Exception ignored) {
+        baselinePointer = null
+    }
+}
+def baselineBuildId = baselinePointer?.buildId?.toString() ?: ''
+def baselineBuiltAt = baselinePointer?.builtAt?.toString() ?: ''
 
 def keystorePropertiesFile = rootProject.file('keystore.properties')
 def keystoreProperties = new Properties()
@@ -35,8 +48,10 @@ android {
         // Cefrium 最低 Android 10。旧的 WebView 壳是 26，换引擎后不再支持 8/9。
         minSdk 29
         targetSdk 34
-        versionCode 10
+        versionCode 11
         versionName '2.0.0'
+        buildConfigField 'String', 'BASELINE_BUILD_ID', "\"${baselineBuildId}\""
+        buildConfigField 'String', 'BASELINE_BUILT_AT', "\"${baselineBuiltAt}\""
         ndk {
             // 只发 arm64；Cefrium 的 x86_64 构建只用于模拟器。
             abiFilters 'arm64-v8a'

@@ -871,27 +871,41 @@ final class UpdateManager {
 
         UpdateManifest.Pointer basePointer = null;
         UpdateManifest.Manifest baseManifest = null;
+        String baselineError = "";
         try {
             byte[] latest = readAsset("update/latest.json");
-            if (latest != null) {
+            if (latest == null) {
+                baselineError = "update/latest.json 不存在";
+            } else {
                 UpdateManifest.Pointer pointer = UpdateManifest.parsePointer(latest);
                 byte[] manifestBytes = readAsset(pointer.manifest);
-                if (manifestBytes != null) {
+                if (manifestBytes == null) {
+                    baselineError = "基线清单不存在: " + pointer.manifest;
+                } else {
                     UpdateManifest.Manifest manifest =
                             UpdateManifest.parseManifest(manifestBytes);
                     if (manifest.buildId.equals(pointer.buildId)) {
                         basePointer = pointer;
                         baseManifest = manifest;
                     } else {
+                        baselineError = "基线清单 buildId 与指针不一致";
                         Log.w(TAG, "APK 基线清单 buildId 与指针不一致");
                     }
                 }
             }
         } catch (Exception error) {
+            baselineError = error.getClass().getSimpleName()
+                    + (error.getMessage() == null ? "" : ": " + error.getMessage());
             Log.w(TAG, "读取 APK 基线失败", error);
         }
         baselinePointer = basePointer;
         baselineManifest = baseManifest;
+        if (baseManifest == null && !BuildConfig.BASELINE_BUILD_ID.isEmpty()) {
+            // 构建期已经把基线版本写进 BuildConfig；清单读不出来时仍要认得出自己，
+            // 否则更新检查会把自带完整网页的安装包当成未知版本，反复提示全量下载。
+            Diagnostics.report("baseline-error", "message",
+                    baselineError.isEmpty() ? "APK 基线清单不可读" : baselineError);
+        }
 
         String activeId = state.active();
         if (!activeId.isEmpty() && !state.isUsable(activeId)) {
@@ -934,6 +948,9 @@ final class UpdateManager {
             chosen = baseManifest;
             buildId = basePointer.buildId;
             builtAt = basePointer.builtAt;
+        } else if (chosen == null && !BuildConfig.BASELINE_BUILD_ID.isEmpty()) {
+            buildId = BuildConfig.BASELINE_BUILD_ID;
+            builtAt = BuildConfig.BASELINE_BUILT_AT;
         }
 
         activeManifest = chosenActive;
