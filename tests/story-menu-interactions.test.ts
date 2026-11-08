@@ -2213,6 +2213,17 @@ test('switching members on the status page updates values without rebuilding con
   assert.deepEqual(visibleDomLabels(f).map(label=>label.text).sort(),values,'原位更新与重新打开后的数值一致');
 });
 
+test('switching members on the skills page retains the frame and tab buttons',t=>{
+  const f=fixture();t.after(f.cleanup);const member=f.recruit('warlock');
+  f.menu.show('skills');const body=f.internals.body,frame=body.root.list[1],portrait=f.scene.button(member.definition.name),tab=f.scene.button('技能目录');
+  f.scene.click(portrait);
+  assert.equal(f.internals.selectedMemberId,member.id);assert.equal(body.root.list[1],frame);
+  assert.equal(f.scene.button(member.definition.name),portrait);assert.equal(f.scene.button('技能目录'),tab);
+  assert.equal(f.scene.button('设置').input!.enabled,false);
+  const labels=visibleDomLabels(f).map(label=>label.text).sort();f.menu.show('skills');
+  assert.deepEqual(visibleDomLabels(f).map(label=>label.text).sort(),labels);
+});
+
 test('using a mercenary emblem prepares only the new member preview', t => {
   const f=fixture();t.after(f.cleanup);
   f.menu.show('party');

@@ -28,6 +28,7 @@ export class UiSurface {
     this.scrolls.forEach(scroll=>scroll.layout());
   }
   clear():void{this.sliders.splice(0).forEach(slider=>slider.destroy());this.scrolls.splice(0).forEach(scroll=>scroll.destroy());this.focusIndex=-1;for(const child of [...this.root.list])if(child!==this.staticRoot)child.destroy();this.buttons=this.buttons.filter(button=>button.active);}
+  pruneDestroyed():void{this.buttons=this.buttons.filter(button=>button.active);}
   clearStatic():void{this.staticKey=undefined;this.staticRoot.removeAll(true);}
   staticLayer(key:string,draw:()=>void):void{if(this.staticKey===key)return;this.clearStatic();this.staticKey=key;draw();}
   destroy():void{this.scene.game.events.off(UI_EVENTS.cancelInput,this.cancelInput);this.clear();this.clearStatic();this.root.destroy();}

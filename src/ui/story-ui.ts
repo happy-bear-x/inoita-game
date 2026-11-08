@@ -106,6 +106,8 @@ export class StoryUI {
   private statusModalTextSpecs:MenuTextSpec[]=[];
   /** 技能页这一轮绘制收集到的文字；右侧说明区会随滚动一起换位置。 */
   private skillTextSpecs:MenuTextSpec[]=[];
+  private skillContentNodes:UiNode[]=[];
+  private skillTabs=new Map<string,UiNode>();
   /** 背包页与物品说明这一轮绘制收集到的文字；格子和说明正文都按滚动区跟随。 */
   private bagTextSpecs:MenuTextSpec[]=[];
   /** GM 调试页这一轮绘制收集到的文字。 */
@@ -1166,26 +1168,30 @@ export class StoryUI {
     return{lines,lineHeight,height:Math.max(0,lines.length*lineHeight-5)};
   }
   private renderSkills():void{
-    this.skillTextSpecs=[];
-    // 设置页只剩主角的技能点初始化；选中佣兵时回到技能目录，不展示空页。
-    if(this.skillSection==='settings'&&this.selectedMemberId!=='player')this.skillSection='directory';
-    const v=this.body!,member=this.member()!,panels=this.app.menuPanels,configuration=this.configuration(),character=this.app.battleCatalog.classes.find(value=>value.id===member.classId)!;
-    this.skill??=character.skills[0];if(!character.skills.includes(this.skill))this.skill=character.skills[0];
-    const draft=configuration.draft(this.app.battleCatalog,member.classId),progression=this.selectedMemberId==='player'?this.session!.skills:undefined;
+    this.skillTextSpecs=[];this.skillTabs.clear();
+    const v=this.body!,panels=this.app.menuPanels;
     // 原版技能页也只调 `UI_DrawBorderRect`（`UISkill_Draw @0x163e6c`），左栏与右栏的标题条、
     // 内容区各是一块图框；面板里露出的是黑色 65% 遮罩下的世界画面。
     v.border(panels.assets,85,0,409,431);drawSolidBorder(v,panels.assets,537,0,409,53);v.border(panels.assets,537,53,409,378);
     this.drawPartyColumn(v);
+    (['directory','ai','settings'] as const).forEach((section,index)=>{const button=v.button('',486,38+index*118,46,118,()=>{this.skillSection=section;this.scrollOffsets.delete('skills:description');this.render();},{image:panels.assets[`skill-tab-${section}`],disabled:section!=='directory'&&(!this.session!.party||(section==='settings'&&this.selectedMemberId!=='player'))}).setData('label',{directory:'技能目录',ai:'AI 设置',settings:'设置'}[section]);this.skillTabs.set(section,button);});
+    this.renderSkillContent();
+  }
+  private renderSkillContent():void{
+    const v=this.body!,before=new Set(v.root.list),member=this.member()!,panels=this.app.menuPanels,configuration=this.configuration(),character=this.app.battleCatalog.classes.find(value=>value.id===member.classId)!;
+    if(this.skillSection==='settings'&&this.selectedMemberId!=='player')this.skillSection='directory';
+    this.skill??=character.skills[0];if(!character.skills.includes(this.skill))this.skill=character.skills[0];
+    const draft=configuration.draft(this.app.battleCatalog,member.classId),progression=this.selectedMemberId==='player'?this.session!.skills:undefined;
     if(this.skillSection==='directory')this.renderSkillDirectory(character,draft);
     else if(this.skillSection==='ai')this.renderSkillAi(character,draft);
     else this.renderSkillSettings();
-    (['directory','ai','settings'] as const).forEach((section,index)=>v.button('',486,38+index*118,46,118,()=>{this.skillSection=section;this.scrollOffsets.delete('skills:description');this.render();},{image:panels.assets[`skill-tab-${section}`],disabled:section!=='directory'&&(!this.session!.party||(section==='settings'&&this.selectedMemberId!=='player'))}).setData('label',{directory:'技能目录',ai:'AI 设置',settings:'设置'}[section]));
     // 剧情伙伴的定义 id 也叫 mercenary-*，身份只能看 source。
     const companion=progression?undefined:this.session!.party?.get(this.selectedMemberId);
     this.addSkillText('skills-header',progression?`${panels.character.labels.skillPoints} ${progression.points()}`
       :(companion?.source==='story'?'伙伴技能':'佣兵技能'),561,14,19,GOLD,0,0,
       {width:350,wrap:'word',lineHeight:24});
     this.renderSkillAside(draft,progression);
+    this.skillContentNodes=v.root.list.filter(node=>!before.has(node));
   }
   /** 技能目录：原版三列技能格，左侧两列主动、第三列被动。 */
   private renderSkillDirectory(character:BattleClass,draft:SkillLoadout):void{
@@ -1864,13 +1870,25 @@ export class StoryUI {
     if(this.requestAllocationExit(()=>this.selectMember(id,page)))return;
     const updateBag=this.open&&page==='bag'&&this.page==='bag'&&!this.bagDetailOpen&&this.bagEquipment.size>0;
     const updateStatus=this.open&&page==='status'&&this.page==='status'&&!wasAdjusting&&!!this.statusPortrait?.active;
+    const updateSkills=this.open&&page==='skills'&&this.page==='skills'&&this.skillTabs.size>0;
     this.cancelOperation();this.selectedMemberId=id;this.selectedItem=undefined;this.skill=undefined;this.skillSection='directory';
-    if(updateBag||updateStatus){if(updateBag)this.updateBagMember();else this.updateStatusMember();this.sessionSignature=this.sessionDataSignature()??this.sessionSignature;}else this.show(page);
+    if(updateBag||updateStatus||updateSkills){if(updateBag)this.updateBagMember();else if(updateStatus)this.updateStatusMember();else this.updateSkillsMember();this.sessionSignature=this.sessionDataSignature()??this.sessionSignature;}else this.show(page);
     const signal=this.request.signal;
     void this.app.preparePartyMember?.(id,signal).then(()=>{
       if(!signal.aborted&&this.open&&this.page==='bag'&&this.selectedMemberId===id)this.renderBagPreview();
     })
       .catch(error=>{if(!signal.aborted&&this.open&&this.selectedMemberId===id){this.notice=(error as Error).message;this.menuText?.renderPage(this.page);}});
+  }
+  private updateSkillsMember():void{
+    const v=this.body!;
+    for(const node of this.skillContentNodes)node.destroy();this.skillContentNodes=[];
+    for(const [name,scroll] of this.scrollNames){
+      this.scrollOffsets.set(`skills:${name}`,scroll.scrollTop);scroll.destroy();
+      const index=v.scrolls.indexOf(scroll);if(index>=0)v.scrolls.splice(index,1);
+    }
+    this.scrollNames.clear();v.pruneDestroyed();this.keyboardFocus=undefined;this.skillTextSpecs=[];
+    for(const [section,button] of this.skillTabs)button.getData('setEnabled')?.(section==='directory'||!!this.session!.party&&(section!=='settings'||this.selectedMemberId==='player'));
+    this.renderSkillContent();this.menuText?.renderPage('skills');
   }
   private updateStatusMember():void{
     const member=this.member()!,actor=this.actor(),panels=this.app.menuPanels,character=this.app.storyClasses.classes.find(value=>value.id===member.classId)!;
