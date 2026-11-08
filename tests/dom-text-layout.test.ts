@@ -17,14 +17,14 @@ test('text follows translated viewports and anchor changes without recreating la
   layer.destroy();
 });
 
-test('reused menu text updates and clears its contrast shadow',()=>{
+test('reused menu text updates and clears its contrast background',()=>{
   const dom=new DomUi(),labels:ReturnType<DomUi['label']>[]=[];
   const layer=new MenuTextLayer({label:(...args)=>{const label=dom.label(...args);labels.push(label);return label;}},(x,y)=>({x,y,scale:1}),()=>0);
-  let textShadow:string|undefined='1px 1px 0 #000';
-  layer.register('page',writer=>writer.add({key:'value',text:'10 / 20',x:0,y:0,style:{size:17,textShadow}}));
-  layer.renderPage('page');assert.equal(labels[0].element.style.textShadow,textShadow);
-  textShadow='-1px -1px 0 #000';layer.renderPage('page');assert.equal(labels[0].element.style.textShadow,textShadow);
-  textShadow=undefined;layer.renderPage('page');assert.equal(labels[0].element.style.textShadow,'');assert.equal(labels.length,1);
+  let contrastBackground=true;
+  layer.register('page',writer=>writer.add({key:'value',text:'10 / 20',x:0,y:0,style:{size:17,contrastBackground}}));
+  layer.renderPage('page');assert.equal(labels[0].element.style.background,'rgba(0,0,0,.8)');
+  contrastBackground=false;layer.renderPage('page');assert.equal(labels[0].element.style.background,'');
+  assert.equal(labels[0].element.style.padding,'');assert.equal(labels.length,1);
   layer.destroy();
 });
 

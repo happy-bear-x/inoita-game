@@ -7,7 +7,7 @@
 .dom-ui-layer{position:absolute;inset:0;overflow:hidden;pointer-events:none}
 #ui-world{z-index:1}#ui-hud{z-index:2}#ui-screen{z-index:3}#ui-overlay{z-index:4}
 .dom-label{position:absolute;z-index:1;left:0;top:0;white-space:nowrap;pointer-events:none;line-height:1.2;color:#f5f0df}
-/* 压在游戏画面上的文字使用柔和阴影；菜单中个别压在彩色状态条上的数值另行设置细描边。 */
+/* 压在游戏画面上的文字使用柔和阴影；菜单文字按底色设置对比样式。 */
 #ui-world .dom-label,#ui-hud .dom-label{text-shadow:0 1px 2px rgba(0,0,0,.6)}
 .dom-menu-clip{position:absolute;left:0;top:0;overflow:hidden;pointer-events:none}
 .dom-label[hidden],.dom-ui-layer[hidden]{display:none!important}

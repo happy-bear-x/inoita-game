@@ -7,7 +7,7 @@ export interface MenuTextPoint { x: number; y: number; scale: number }
 interface MenuTextStyle {
   size: number;
   color?: string;
-  textShadow?: string;
+  contrastBackground?: boolean;
   /** 对应 Phaser 的 `setOrigin`：0 是左/上，.5 是中，1 是右/下。 */
   anchorX?: number;
   anchorY?: number;
@@ -226,7 +226,7 @@ export class MenuTextLayer {
     const origin = this.pointOf(0, 0);
     const signature = JSON.stringify([this.page, origin.x, origin.y, origin.scale, ...this.specs.map(spec => {
       const y = this.bodyY(spec);
-      return [spec.key, spec.text, spec.style.size, spec.style.color ?? '', spec.style.textShadow ?? '', spec.style.anchorX ?? 0,
+      return [spec.key, spec.text, spec.style.size, spec.style.color ?? '', !!spec.style.contrastBackground, spec.style.anchorX ?? 0,
         spec.style.anchorY ?? 0, spec.style.align ?? 'left', spec.x, y, this.withinClip(spec, y),
         spec.style.width ?? null, this.lineHeightOf(spec.style), spec.style.wrap ?? 'none',
         spec.clip ? [spec.clip.top, spec.clip.bottom] : null];
@@ -245,8 +245,8 @@ export class MenuTextLayer {
       const anchorX = spec.style.anchorX ?? 0, anchorY = spec.style.anchorY ?? 0;
       const color = spec.style.color ?? '#f3deb0';
       const align = spec.style.align ?? 'left';
-      const textShadow = spec.style.textShadow ?? '';
-      const styleKey = `${fontSize.toFixed(2)}|${color}|${textShadow}|${anchorX}|${anchorY}|${align}`;
+      const contrastBackground = !!spec.style.contrastBackground;
+      const styleKey = `${fontSize.toFixed(2)}|${color}|${contrastBackground}|${anchorX}|${anchorY}|${align}`;
       const wrapping = this.wrappingOf(spec.style, point.scale);
       let entry = this.entries.get(spec.key);
       if (!entry) {
@@ -267,7 +267,9 @@ export class MenuTextLayer {
       if (entry.styleKey !== styleKey) {
         entry.styleKey = styleKey;
         entry.label.setAnchor(anchorX, anchorY);
-        entry.label.setStyle({ fontSize: `${fontSize.toFixed(2)}px`, color, textShadow, textAlign: align, pointerEvents: 'none' });
+        entry.label.setStyle({ fontSize: `${fontSize.toFixed(2)}px`, color, textAlign: align, pointerEvents: 'none',
+          background: contrastBackground ? 'rgba(0,0,0,.8)' : '', padding: contrastBackground ? '0 3px' : '',
+          borderRadius: contrastBackground ? '3px' : '' });
       }
       if (entry.wrapKey !== wrapping.key) {
         entry.wrapKey = wrapping.key;
