@@ -17,6 +17,14 @@ export interface DomLabel {
 }
 
 interface DomPoint { x: number; y: number }
+interface WorldMeasurements {
+  frame: HTMLElement;
+  canvas: HTMLCanvasElement;
+  game: Phaser.Game;
+  frameNumber: number;
+  frameRect: DOMRect;
+  canvasRect: DOMRect;
+}
 
 /**
  * 画布上方的 DOM 文字层。
@@ -28,6 +36,7 @@ interface DomPoint { x: number; y: number }
 export class DomUi {
   private root?: HTMLDivElement;
   private frame?: HTMLElement;
+  private worldMeasurements?: WorldMeasurements;
   private readonly layers = new Map<DomLayerName, HTMLDivElement>();
   private readonly visible = new Map<DomLayerName, boolean>();
   /** 全屏遮罩出现时统一收起普通文字层；overlay 层不受影响。 */
@@ -147,6 +156,7 @@ export class DomUi {
 
   /** 重新读取画框与安全区；只在视口变化和字体就绪后调用。 */
   layout(): void {
+    this.worldMeasurements = undefined;
     if (typeof document === 'undefined') return;
     const frame = this.frame ?? document.getElementById('game-frame');
     if (!frame) return;
@@ -154,7 +164,9 @@ export class DomUi {
   }
 
   /** 当前画框的 CSS 尺寸；DOM 文字用它换算字号和位置。 */
-  frameSize(): { width: number; height: number } {
+  frameSize(camera?: Phaser.Cameras.Scene2D.Camera): { width: number; height: number } {
+    const measurements = camera && this.measureWorld(camera);
+    if (measurements) return { width: measurements.frameRect.width, height: measurements.frameRect.height };
     if (typeof document === 'undefined') return { width: 0, height: 0 };
     const frame = this.frame ?? document.getElementById('game-frame');
     if (!frame) return { width: 0, height: 0 };
@@ -163,8 +175,8 @@ export class DomUi {
   }
 
   /** 界面单位：800×480 基准，与现有 `uiUnitScale` 同一口径。 */
-  storyUnit(): number {
-    const { width, height } = this.frameSize();
+  storyUnit(camera?: Phaser.Cameras.Scene2D.Camera): number {
+    const { width, height } = this.frameSize(camera);
     return Math.min(width / UI_UNIT_WIDTH, height / UI_UNIT_HEIGHT);
   }
 
@@ -172,12 +184,24 @@ export class DomUi {
    * 世界坐标 → 画框内 CSS 坐标。
    * 必须在相机 `preRender` 之后读取，否则会用到上一帧的 `worldView`。
    */
-  worldToScreen(camera: Phaser.Cameras.Scene2D.Camera, x: number, y: number): DomPoint {
+  private measureWorld(camera: Phaser.Cameras.Scene2D.Camera): WorldMeasurements | undefined {
     const frame = this.frame ?? (typeof document === 'undefined' ? undefined : document.getElementById('game-frame'));
-    const canvas = camera.scene?.game?.canvas;
-    if (!frame || !canvas) return { x: 0, y: 0 };
-    const frameRect = frame.getBoundingClientRect();
-    const canvasRect = canvas.getBoundingClientRect();
+    const game = camera.scene?.game, canvas = game?.canvas;
+    if (!frame || !game || !canvas) return undefined;
+    const frameNumber = game.loop?.frame;
+    const previous = this.worldMeasurements;
+    if (frameNumber !== undefined && previous?.frameNumber === frameNumber && previous.game === game &&
+      previous.frame === frame && previous.canvas === canvas) return previous;
+    const measurements = { frame, canvas, game, frameNumber, frameRect: frame.getBoundingClientRect(),
+      canvasRect: canvas.getBoundingClientRect() };
+    if (frameNumber !== undefined) this.worldMeasurements = measurements;
+    return measurements;
+  }
+
+  worldToScreen(camera: Phaser.Cameras.Scene2D.Camera, x: number, y: number): DomPoint {
+    const measurements = this.measureWorld(camera);
+    if (!measurements) return { x: 0, y: 0 };
+    const { frameRect, canvasRect } = measurements;
     const scaleX = canvasRect.width / Math.max(1, camera.scene.scale.width);
     const scaleY = canvasRect.height / Math.max(1, camera.scene.scale.height);
     return {

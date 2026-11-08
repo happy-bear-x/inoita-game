@@ -878,7 +878,7 @@ export class WorldScene extends Phaser.Scene {
   }
   private updateQuestMarkers():void{
     const domUi=this.app.domUi;if(!domUi)return;
-    const camera=this.cameras.main,zoom=camera.zoom,frame=domUi.frameSize();
+    const camera=this.cameras.main,zoom=camera.zoom;
     if(zoom!==this.questMarkerZoom){
       this.questMarkerZoom=zoom;
       for(const character of this.characters)character.marker?.dom?.setStyle({fontSize:`${Math.max(8,16*zoom)}px`});
@@ -887,6 +887,7 @@ export class WorldScene extends Phaser.Scene {
       const marker=character.marker;if(!marker?.dom)continue;
       const visible=!!marker.visible&&character.container.visible&&!this.performing&&!this.stageOccluded;
       if(!visible){marker.dom.setVisible(false);continue;}
+      const frame=domUi.frameSize(camera);
       const point=domUi.worldToScreen(camera,character.container.x,character.container.y-50);
       const onScreen=point.x>-24&&point.y>-24&&point.x<frame.width+24&&point.y<frame.height+24;
       marker.dom.setVisible(onScreen);if(!onScreen)continue;

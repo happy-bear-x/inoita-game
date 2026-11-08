@@ -81,7 +81,7 @@ export class PickupMessages {
     if(!this.domUi)return;
     {
       const layer=this.domUi.layer('world');if(!layer)return;
-      const unit=this.domUi.storyUnit();
+      const unit=this.domUi.storyUnit(this.scene.cameras.main);
       const dom=document.createElement('div');dom.className='dom-pickup';
       Object.assign(dom.style,{position:'absolute',left:'0',top:'0',display:'flex',alignItems:'center',
         gap:`${4*unit}px`,fontSize:`${20*unit}px`,lineHeight:'1',whiteSpace:'nowrap',pointerEvents:'none',
@@ -111,10 +111,10 @@ export class PickupMessages {
     if(!anchor){this.remove(entry);return;}
     if(!this.domUi)return;
     const camera=this.scene.cameras.main,point=this.domUi.worldToScreen(camera,anchor.x,anchor.y+anchor.headAnchor.y);
-    const zoom=camera.zoom,unit=this.domUi.storyUnit(),width=entry.width||entry.dom.getBoundingClientRect().width;
+    const zoom=camera.zoom,unit=this.domUi.storyUnit(camera),width=entry.width||entry.dom.getBoundingClientRect().width;
     if(!entry.width)entry.width=width;
     const right=point.x+anchor.headAnchor.x*zoom+20*zoom;
-    const x=right+width>this.domUi.frameSize().width-8?point.x-anchor.headAnchor.x*zoom-20*zoom-width:right;
+    const x=right+width>this.domUi.frameSize(camera).width-8?point.x-anchor.headAnchor.x*zoom-20*zoom-width:right;
     const y=point.y+(entry.row*MESSAGE_ROW_STEP-37-entry.lift)*unit;
     entry.dom.style.transform=`translate3d(${x}px, ${y}px, 0)`;
     entry.dom.style.display=this.visible()?'flex':'none';
