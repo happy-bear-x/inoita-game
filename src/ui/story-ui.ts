@@ -1788,12 +1788,13 @@ export class StoryUI {
       quantityButton('全部',inner.x+260,inner.width-260,()=>{op.quantity=entry.quantity;this.render();});
       const centerY=quantityTop+24;
       specs.push({key:key(),text:'−',x:inner.x+40,y:centerY,
-        style:{size:20,color:GOLD,width:68,wrap:'word',anchorX:.5,anchorY:.5}});
-      specs.push({key:key(),text:String(op.quantity),x:inner.x+108,y:quantityTop+8,style:{size:24,color:GOLD}});
+        style:{size:20,color:GOLD,width:68,align:'center',wrap:'word',anchorX:.5,anchorY:.5}});
+      specs.push({key:key(),text:String(op.quantity),x:inner.x+135,y:quantityTop+8,
+        style:{size:24,color:GOLD,anchorX:.5}});
       specs.push({key:key(),text:'＋',x:inner.x+230,y:centerY,
-        style:{size:20,color:GOLD,width:68,wrap:'word',anchorX:.5,anchorY:.5}});
+        style:{size:20,color:GOLD,width:68,align:'center',wrap:'word',anchorX:.5,anchorY:.5}});
       specs.push({key:key(),text:'全部',x:inner.x+260+(inner.width-260)/2,y:centerY,
-        style:{size:20,color:GOLD,width:inner.width-272,wrap:'word',anchorX:.5,anchorY:.5}});
+        style:{size:20,color:GOLD,width:inner.width-272,align:'center',wrap:'word',anchorX:.5,anchorY:.5}});
     }
 
     const using=op.kind==='use',revivalBlocked=using&&use?.kind==='revive'&&!op.member;

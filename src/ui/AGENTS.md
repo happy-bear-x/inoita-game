@@ -27,6 +27,7 @@
 - 关闭调试界面或切页时清理面板、预览与文字；回标题时同时解除菜单持有的会话引用。调试任务跳转失败后重新打开剧情页并显示原因。
 - 这里不运行时导入 `phaser`；需要 Phaser 类型时用 `import type`，写法参考 `story-ui.ts`。
 - **DOM 文字统一带 `dom-label`。** `DomUi.label` 会自动补上这个类，它负责绝对定位、不换行和禁用指针事件；调用方只加自己的样式类。压在游戏画面上的文字用 `#ui-world`/`#ui-hud` 的软阴影；菜单文字按背景需要设置对比样式。
+- **定宽居中文字要显式写 `align:'center'`。** `MenuTextLayer` 对定宽文字默认左对齐；同时用了 `anchorX:.5` 和 `width` 的按钮文字、数量行和底部说明若不写对齐，整段文字会贴在自己盒子的左边，看起来像没在按钮里。
 - **滚动文字用 `clip` 交给浏览器裁边。** `MenuTextLayer` 会为同一组上下边界建一个 `overflow:hidden` 的容器，滚动只移动标签；新增可滚动面板时同时给 `scroll` 和 `clip`，不要只靠 `y` 判断显隐。
 - **菜单滚动区由 `StoryUI.scroll` 统一登记。** 它建区时会给 `ScrollArea` 加一条自动刷新 DOM 文字的监听；面板的 `onScroll` 只负责记自己的偏移和状态，不要再为文字单独调用刷新，也不要在菜单页绕过 `StoryUI.scroll` 自建滚动区。
 - **全屏遮罩用 `DomUi.setOccluded`。** 加载页、阵亡面板、跨图黑幕、横屏提示和挂起时，由 `uiOcclusion`（`game-ui.ts`）判断并收起 world/hud/screen 三层；加载页自己的文字放在 overlay 层。新增全屏界面时不要再让各页面各自猜显隐。
