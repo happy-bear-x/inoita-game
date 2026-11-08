@@ -30,18 +30,35 @@ export function createEffect(scene: Phaser.Scene, clip: EffectClip, x: number, y
 
 /** 投射物转向时更换方向素材，保留动画帧和帧内进度。 */
 export function setEffectClip(scene: Phaser.Scene, effect: Phaser.GameObjects.Container, clip: EffectClip, loop: boolean): void {
-  if(scene.textures){
-    const keys=effectLayerTextureKeys(clip).filter(key=>scene.textures.exists(key));
-    const lease=retainLoadedSceneAssets(scene,keys);
-    const old=effectLeases.get(effect);
-    effectLeases.set(effect,lease);
-    if(!old)effect.once('destroy',()=>{effectLeases.get(effect)?.release();effectLeases.delete(effect);});
-    old?.release();
-  }
+  leaseEffect(scene, effect, clip);
   const previous = (effect.list[0] as Phaser.GameObjects.Sprite | undefined)?.anims;
   const startFrame = previous?.currentFrame ? (previous.currentFrame.index - 1) % clip.frames : 0;
   const elapsed = previous?.accumulator ?? 0;
+  buildEffectLayers(scene, effect, clip, loop, startFrame, elapsed, () => effect.destroy());
+}
+
+function leaseEffect(scene: Phaser.Scene, effect: Phaser.GameObjects.Container, clip: EffectClip): void {
+  if(!scene.textures)return;
+  const keys=effectLayerTextureKeys(clip).filter(key=>scene.textures.exists(key));
+  const lease=retainLoadedSceneAssets(scene,keys);
+  const old=effectLeases.get(effect);
+  effectLeases.set(effect,lease);
+  if(!old)effect.once('destroy',()=>{effectLeases.get(effect)?.release();effectLeases.delete(effect);});
+  old?.release();
+}
+
+/** 按 clip 重画所有图层并开播；`onComplete` 由调用方决定是销毁还是回收。 */
+function buildEffectLayers(
+  scene: Phaser.Scene,
+  effect: Phaser.GameObjects.Container,
+  clip: EffectClip,
+  loop: boolean,
+  startFrame: number,
+  elapsed: number,
+  onComplete: () => void,
+): string[] {
   effect.removeAll(true);
+  const animations: string[] = [];
   for (const layer of clip.layers) {
     const atlas = EFFECT_ATLAS_BY_FILE[layer.file];
     const frameRefs = atlas?.slice(0, clip.frames);
@@ -89,11 +106,100 @@ export function setEffectClip(scene: Phaser.Scene, effect: Phaser.GameObjects.Co
     const draw = layerDraw(layer);
     sprite.setBlendMode(blendModeOf(draw.kind === 'backdrop' ? backdropApproximation(layer.operations) : draw.blend));
     effect.add(sprite);
-    if (effect.length === 1 && !loop) sprite.once('animationcomplete', () => effect.destroy());
+    animations.push(animationKey);
+    if (effect.length === 1 && !loop) sprite.once('animationcomplete', onComplete);
     sprite.play({ key: animationKey, startFrame: Math.max(0, Math.min(startFrame, clip.frames - 1)), repeat: loop ? -1 : 0 });
     sprite.anims.accumulator = elapsed;
   }
   if (!effect.length && !loop && scene.time) {
-    scene.time.delayedCall(0, () => { if (effect.scene) effect.destroy(); });
+    scene.time.delayedCall(0, () => { if (effect.scene) onComplete(); });
+  }
+  return animations;
+}
+
+/** 同一个 clip 从第 0 帧重播，不重建图层。 */
+function replayEffect(scene: Phaser.Scene, effect: Phaser.GameObjects.Container, animations: string[], onComplete: () => void): void {
+  // 素材当时没加载到、一层都没建成：和首次播放一样下一拍就回收，不能留在场上等不到结束事件。
+  if (!animations.length) {
+    scene.time?.delayedCall(0, () => { if (effect.scene) onComplete(); });
+    return;
+  }
+  const sprites = effect.list as Phaser.GameObjects.Sprite[];
+  for (let index = 0; index < sprites.length; index++) {
+    const sprite = sprites[index]!;
+    sprite.anims.stop();
+    sprite.anims.accumulator = 0;
+    if (index === 0) {
+      sprite.off('animationcomplete');
+      sprite.once('animationcomplete', onComplete);
+    }
+    sprite.play({ key: animations[index]!, startFrame: 0, repeat: 0 });
+  }
+}
+
+const POOL_PER_CLIP = 4;
+const POOL_TOTAL = 64;
+
+/** 池里的容器记得自己当初按哪个片段建好，回收时才知道放回哪个桶。 */
+const pooledEffects = new WeakMap<Phaser.GameObjects.Container, { clip: EffectClip; animations: string[] }>();
+
+/**
+ * 命中特效池：同一个 clip 的容器、精灵、动画播完只隐藏不销毁，下次命中直接重播。
+ *
+ * 命中是战斗里最密的尖峰（一次范围技能能同时打出十几个特效），每次都 `add.sprite`
+ * 再销毁会让浏览器不停回收对象。池只在战斗期间存活，`destroy()` 时统一释放贴图租约。
+ */
+export class EffectPool {
+  private readonly scene: Phaser.Scene;
+  private readonly free = new Map<EffectClip, Phaser.GameObjects.Container[]>();
+  private readonly onShutdown = (): void => this.destroy();
+  private idle = 0;
+  private closed = false;
+  constructor(scene: Phaser.Scene) {
+    this.scene = scene;
+    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, this.onShutdown);
+  }
+
+  /** 取一个特效并立刻从第 0 帧播放；播完自动回到池里。 */
+  acquire(clip: EffectClip, x: number, y: number): Phaser.GameObjects.Container {
+    if (this.closed) return createEffect(this.scene, clip, x, y);
+    const pooled = this.free.get(clip)?.pop();
+    const effect = pooled?.scene ? pooled : undefined;
+    if (!effect) {
+      const created = this.scene.add.container(x, y).setDepth(y + 1);
+      leaseEffect(this.scene, created, clip);
+      const animations = buildEffectLayers(this.scene, created, clip, false, 0, 0, () => this.release(created));
+      pooledEffects.set(created, { clip, animations });
+      return created;
+    }
+    this.idle--;
+    effect.setPosition(x, y).setDepth(y + 1).setVisible(true).setActive(true);
+    replayEffect(this.scene, effect, pooledEffects.get(effect)!.animations, () => this.release(effect));
+    return effect;
+  }
+
+  /** 收回一个特效：还在播的（如数字槽位要立刻复用）会被停掉。池满或关图时直接销毁。 */
+  release(effect: Phaser.GameObjects.Container): void {
+    if (!effect.scene) return;
+    effect.parentContainer?.remove(effect);
+    effect.setVisible(false);
+    for (const sprite of effect.list as Phaser.GameObjects.Sprite[]) sprite.anims.stop();
+    effect.emit('effect-recycle');
+    const record = pooledEffects.get(effect);
+    if (!record || this.closed) { effect.destroy(); return; }
+    const bucket = this.free.get(record.clip) ?? [];
+    if (bucket.length >= POOL_PER_CLIP || this.idle >= POOL_TOTAL) { effect.destroy(); return; }
+    bucket.push(effect);
+    this.free.set(record.clip, bucket);
+    this.idle++;
+  }
+
+  destroy(): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.scene.events.off(Phaser.Scenes.Events.SHUTDOWN, this.onShutdown);
+    for (const bucket of this.free.values()) for (const effect of bucket) effect.destroy();
+    this.free.clear();
+    this.idle = 0;
   }
 }

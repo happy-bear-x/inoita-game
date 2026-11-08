@@ -2,9 +2,32 @@ import Phaser from 'phaser';
 import type { BattleCatalog } from '../domain/battle.ts';
 import { damageDigits, digitSequence, feedbackPlan, reusableDigit, type CombatHitFeedback, type CombatFeedbackSelection } from '../domain/combat-feedback.ts';
 import type { CharacterVisual } from './characters.ts';
-import { createEffect } from './effects.ts';
+import { EffectPool } from './effects.ts';
+import { rememberEffectAnimation } from './effect-animations.ts';
 
 interface Digit {effect:Phaser.GameObjects.Container;sequence:number[]}
+
+/**
+ * 数字序列动画按「贴图 + 帧序列 + 帧率」只建一次。
+ * 之前每个数字精灵都往动画表写一条同名 `damage`，命中越密写得越多。
+ */
+function playDigitAnimation(sprite:Phaser.GameObjects.Sprite,sequence:number[],frameRate:number,delayMs:number):void {
+  const anims=sprite.scene.anims,textureKey=sprite.texture.key;
+  const key=`damage:${textureKey}:${frameRate}:${sequence.join('.')}`;
+  const existing=anims.exists(key)?anims.get(key):undefined;
+  // 贴图在上一次地图关闭时被释放后，帧会失效；重建而不是播旧动画。
+  const stale=!!existing?.frames.some(frame=>{
+    const textureFrame=(frame as unknown as {frame?:{texture?:unknown}}).frame;
+    return !!textureFrame&&typeof textureFrame==='object'&&!textureFrame.texture;
+  });
+  if(existing&&(!existing.frames.length||stale))anims.remove(key);
+  if(!anims.exists(key)){
+    anims.create({key,frames:sequence.map(frame=>({key:textureKey,frame})),frameRate});
+    rememberEffectAnimation(sprite.scene,key,[textureKey]);
+  }
+  sprite.anims.stop();
+  sprite.play({key,delay:delayMs,showOnStart:true});
+}
 
 /** 命中反馈由地图持有，攻击动作结束或中断不提前销毁已生成的数字。 */
 export class CombatFeedback {
@@ -12,21 +35,26 @@ export class CombatFeedback {
   private readonly catalog:BattleCatalog;
   private readonly vibrationEnabled:boolean;
   private readonly effects=new Set<Phaser.GameObjects.Container>();
+  private readonly pool:EffectPool;
   private readonly digits:(Digit|undefined)[]=Array(32);
   private shake?:Phaser.Tweens.Tween;
   private shakeBase?:{x:number;y:number};
   private paused=false;
   private visible=true;
-  constructor(scene:Phaser.Scene,catalog:BattleCatalog,vibrationEnabled=false){this.scene=scene;this.catalog=catalog;this.vibrationEnabled=vibrationEnabled;}
+  constructor(scene:Phaser.Scene,catalog:BattleCatalog,vibrationEnabled=false){
+    this.scene=scene;this.catalog=catalog;this.vibrationEnabled=vibrationEnabled;
+    this.pool=new EffectPool(scene);
+  }
   private track(effect:Phaser.GameObjects.Container):void {
     this.effects.add(effect);effect.setVisible(this.visible);
-    effect.once('destroy',()=>this.effects.delete(effect));
+    const drop=():void=>{this.effects.delete(effect);};
+    effect.once('effect-recycle',drop);effect.once('destroy',drop);
     if(this.paused)for(const sprite of effect.list as Phaser.GameObjects.Sprite[])sprite.anims.pause();
   }
   private impact(name:string,target:CharacterVisual,attached=true):void {
     const anchor=target.actor.effectAnchor??{x:0,y:0};
     const position=attached?anchor:target.container;
-    const effect=createEffect(this.scene,this.catalog.attackEffects[name].clips.default,position.x,position.y);
+    const effect=this.pool.acquire(this.catalog.attackEffects[name].clips.default,position.x,position.y);
     if(attached)target.container.addAt(effect,target.layers.length);
     else effect.setDepth(Number.MAX_SAFE_INTEGER);
     this.track(effect);
@@ -43,17 +71,17 @@ export class CombatFeedback {
           return sprite?.visible?value!.sequence[(sprite.anims.currentFrame?.index??1)-1]??0:-1;
         }));
         if(slot<0)break;
-        this.digits[slot]?.effect.destroy();
+        const replaced=this.digits[slot];
+        if(replaced)this.pool.release(replaced.effect);
         const clip=this.catalog.attackEffects[name].clips[String(digit.digit)];
-        const effect=createEffect(this.scene,clip,target.container.x+digit.x,target.container.y+digit.y).setDepth(Number.MAX_SAFE_INTEGER);
+        const effect=this.pool.acquire(clip,target.container.x+digit.x,target.container.y+digit.y).setDepth(Number.MAX_SAFE_INTEGER);
         const sequence=digitSequence(clip.frames,digit.holdFrames);
         this.digits[slot]={effect,sequence};
-        effect.once('destroy',()=>{if(this.digits[slot]?.effect===effect)this.digits[slot]=undefined;});
+        const drop=():void=>{if(this.digits[slot]?.effect===effect)this.digits[slot]=undefined;};
+        effect.once('effect-recycle',drop);effect.once('destroy',drop);
         for(const sprite of effect.list as Phaser.GameObjects.Sprite[]){
-          sprite.anims.stop();
-          const key='damage';
-          sprite.anims.create({key,frames:sequence.map(frame=>({key:sprite.texture.key,frame})),frameRate:clip.frameRate});
-          sprite.setVisible(false).play({key,delay:digit.delayMs,showOnStart:true});
+          sprite.setVisible(false);
+          playDigitAnimation(sprite,sequence,clip.frameRate,digit.delayMs);
         }
         this.track(effect);
       }
@@ -89,5 +117,9 @@ export class CombatFeedback {
     this.visible=visible;if(!visible)this.cancelShake();
     for(const effect of this.effects)effect.setVisible(visible);
   }
-  destroy():void {this.cancelShake();for(const effect of [...this.effects])effect.destroy();}
+  destroy():void {
+    this.cancelShake();
+    for(const effect of [...this.effects])effect.destroy();
+    this.pool.destroy();
+  }
 }
