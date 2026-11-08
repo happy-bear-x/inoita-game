@@ -1,6 +1,6 @@
 # 热更新（Android 自带 Chromium）
 
-APK 把 Vite 构建的 `dist/`（当前约 171MB、1.18 万个文件）打进 assets，页面由 Cefrium 内置的 Chromium 156 打开。页面不再使用设备自带的 WebView，也不再通过 `WebViewAssetLoader` 读取 APK 资源，而是从 App 内的 `http://127.0.0.1:47653` 本地服务加载。
+APK 把 Vite 构建的 `dist/`（当前约 113MB、4200 多个文件）打进 assets，页面由 Cefrium 内置的 Chromium 156 打开。页面不再使用设备自带的 WebView，也不再通过 `WebViewAssetLoader` 读取 APK 资源，而是从 App 内的 `http://127.0.0.1:47653` 本地服务加载。
 
 离线是硬前提：游戏必须断网可玩，所以整包打进 APK，热更只做增量覆盖。不采用「壳直接加载远端 URL」的方案。
 
@@ -11,7 +11,7 @@ APK 把 Vite 构建的 `dist/`（当前约 171MB、1.18 万个文件）打进 as
 - **离线优先**。启动先用本地版本，检查更新在后台进行；检查失败自动重试，下载或启动失败给玩家明确提示，不阻塞进游戏。
 - **自带引擎**。`com.cefrium:cefrium-sdk` 内置 Chromium 156；引擎版本由 APK 决定，热更换不了 Chromium。升级引擎必须发新 APK。
 - **本地 HTTP 服务**。`LocalAssetServer` 只监听 `127.0.0.1:47653`，按 `UpdateManager` 的版本快照送文件；页面、云存档、诊断和原生端点同源。
-- **按文件增量，不整包下载**。`bundles/` 约 2.6MB，`content/` 约 27MB，`assets/` 约 170MB；修 Phaser 代码通常只动入口 bundle。
+- **按文件增量，不整包下载**。`bundles/` 约 2.6MB，`content/` 约 27MB，`assets/` 约 113MB（已裁剪未引用素材）；修 Phaser 代码通常只动入口 bundle。
 - **页面 origin 固定**。新 origin 是 `http://127.0.0.1:47653`，端口写死是为了让 `localStorage` 一直落在同一个 origin。
 - **更新源就是同一份 `dist/`**。网页版和 APK 热更共用一次构建、一次部署。
 - **壳保持薄**。游戏逻辑、内容、素材都在网页层；原生只留 Cefrium 宿主、本地资源服务和更新器。
@@ -123,7 +123,7 @@ npm run verify:update -- --apk apk-out/Inotia-4-2.0.0.apk --url https://catgo.on
 - **旧壳无法自动迁移到新壳**。换引擎不是热更能完成的；需要在发布说明里让玩家安装新 APK。
 - **私钥丢失 = 更新链断掉**。必须备份 `~/.config/inoita/update-signing.pem`。
 - **不支持降级**。`builtAt` 只增不减；撤回线上版本要部署一个内容正确的新构建。
-- **存储**：APK 约 350MB + 当前版本约 171MB；staging 只额外占用缺失文件。
+- **存储**：APK 约 293MB + 当前版本约 113MB；staging 只额外占用缺失文件。
 - **端口固定**：`127.0.0.1:47653` 被其他应用占用时，新壳会弹错误并退出；不要改成随机端口，否则 `localStorage` 存档会换 origin。
 - **本地 HTTP 服务**只用于本机，不开放局域网；明文白名单只放行 `127.0.0.1` 和 `localhost`。
 - **发布窗口竞态**：下载途中正好 `npm run deploy`，旧清单文件会随 `dist/` 消失；客户端中止、保留 staging、下次启动重试，不会装出半个坏版本。
