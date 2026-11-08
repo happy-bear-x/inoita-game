@@ -98,23 +98,6 @@ test('health and mana additions preserve their distinct dirty-capacity order, in
 });
 
 
-test('visible party gauges read HP then MP in the presentation phase and hidden actors do not warm capacities',()=>{
-  const visible=fixture(),reads:string[]=[];
-  visible.host.visualOf=()=>({container:{active:true,visible:true}});
-  const read=visible.host.readResourceCapacity.bind(visible.host);
-  let inputReads=0;const inputs=visible.host.resourceCapacityInputs.bind(visible.host);
-  visible.host.resourceCapacityInputs=(id:string)=>{inputReads++;return inputs(id);};
-  visible.host.readResourceCapacity=(id:string,key:string,prepared:unknown)=>{reads.push(key);return read(id,key,prepared);};
-  visible.call('readVisiblePartyResources');assert.deepEqual(reads,['maxHealth','maxMana']);assert.equal(inputReads,1,'血蓝共用一次输入准备');
-  visible.cast();assert.equal(visible.player.health,260);
-  for(const mode of ['hidden','performance','inactive']){
-    const hidden=fixture();hidden.host.visualOf=()=>({container:{active:mode!=='inactive',visible:mode!=='hidden'}});
-    hidden.host.performanceHidden=mode==='performance';hidden.call('readVisiblePartyResources');
-    hidden.cast();assert.equal(hidden.player.health,285,mode);
-  }
-});
-
-
 test('positive incoming damage reads a dirty health capacity before subtracting, while zero and immunity leave it dirty',()=>{
   const damaged=fixture();damaged.player.health=1160;damaged.host.showHit=()=>{};
   damaged.call('settleHit',{casterId:'enemy',targetId:'player'},{kind:'hit',damage:100},damaged.host.hero);

@@ -3020,16 +3020,7 @@ captureStoryActors():SceneActorState[] {
       else if(previous)previous.frame=frame;
     }
   }
-  private readVisiblePartyResources():void {
-    if(this.closed||this.performanceHidden)return;
-    for(const id of this.activeParty.slice(0,ACTIVE_PARTY_SLOT_COUNT)){
-      const visual=this.visualOf(id);
-      if(!visual?.container.active||!visual.container.visible||this.fallen.has(id))continue;
-      this.readResourceCapacities(id);
-    }
-  }
   afterMovement():void{
-    this.readVisiblePartyResources();
     if(this.hero.player.health>0&&this.controlledId!=='player'&&this.partyControllers.get('player')?.actionState()!=='attacking'){
       const moving=isBodyWalking(this.movement.body(this.player));
       setCharacterClip(this.scene,this.player,`${moving?'walk':'idle'}-${this.scene.facing}`);
