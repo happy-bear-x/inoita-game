@@ -102,6 +102,8 @@ export class StoryUI {
   private statusTextSpecs:MenuTextSpec[]=[];
   private statusPortrait?:UiImage;
   private statusAdjustButton?:UiNode;
+  private statusRightNodes:UiNode[]=[];
+  private statusRightAdjusting=false;
   private statusResources=new Map<string,{fill:UiImage;start:UiImage;end:UiImage}>();
   private statusModalTextSpecs:MenuTextSpec[]=[];
   /** 技能页这一轮绘制收集到的文字；右侧说明区会随滚动一起换位置。 */
@@ -998,9 +1000,6 @@ export class StoryUI {
   private renderStatus():void{
     this.statusTextSpecs=[];this.statusResources.clear();
     const v=this.body!,member=this.member()!,actor=this.actor(),panels=this.app.menuPanels,character=this.app.storyClasses.classes.find(value=>value.id===member.classId)!,art=this.memberArt();
-    const hero=this.selectedMemberId==='player'?this.session!.hero:undefined,panel=member.panel;
-    const statPoints=this.allocation?.remainingPoints??hero?.statPoints??0;
-    const attributes=this.allocation?.attributes??panel.attributes;
     // 左框只有图框（`UI_DrawBorderRect`），四角 41×41 画在框外 2 像素处：`Scene_Draw_POPUP_SC_CHARACTER_INFO
     // @0x1e6b78` 把组 15 索引 48／49／53／54 画在 (83,−2)、(455,−2)、(83,392)、(455,392)，立绘在 (95,10)。
     v.border(panels.assets,85,0,409,431);
@@ -1023,6 +1022,12 @@ export class StoryUI {
       this.addStatusText(`resource-${kind}-percent`,`${Math.floor(ratio*100)}%`,455,y+18.5,17,GOLD,1,.5);
       const width=223*ratio,fill=v.image(panels.assets[`character-${kind}-fill`],178,y+12,223,13);fill.setCrop(0,0,fill.width*ratio,fill.height).setVisible(width>0);const start=v.image(panels.assets[`character-${kind}-start`],178,y+12,7,13).setVisible(width>0),end=v.image(panels.assets[`character-${kind}-end`],178+Math.max(0,width-7),y+12,7,13).setVisible(width>0);this.statusResources.set(kind,{fill,start,end});
     });
+    this.renderStatusRight();
+  }
+  private renderStatusRight():void{
+    const v=this.body!,member=this.member()!,panels=this.app.menuPanels,character=this.app.storyClasses.classes.find(value=>value.id===member.classId)!;
+    const hero=this.selectedMemberId==='player'?this.session!.hero:undefined,statPoints=this.allocation?.remainingPoints??hero?.statPoints??0,attributes=this.allocation?.attributes??member.panel.attributes;
+    const before=new Set(v.root.list);
     // 右侧两块同样只有图框：原版 `Scene_Draw_...` 只对它们调 `UI_DrawBorderRect`，
     // 加点时属性栏宽 409（画到 x=905），常态宽 224，战斗指标栏固定在 `+0xe2`(226) 处、224 宽。
     // 两种视图都由 53 高的标题和 y=49 起的内容框相接，宽度分别为 224、409。
@@ -1071,6 +1076,7 @@ export class StoryUI {
       this.addStatusText('reset-attributes','能力初始化',571+257/2,376+48/2,Math.min(22,48*.42),GOLD,.5,.5);
     }
     this.addStatusText('stat-points',`${panels.character.labels.statPoints} ${statPoints}`,this.adjusting?534:522,14,20,AREA_TEXT);
+    this.statusRightNodes=v.root.list.filter(node=>!before.has(node));this.statusRightAdjusting=this.adjusting;
   }
   private toggleAllocation():void{
     if(this.adjusting){if(this.requestAllocationExit(()=>this.render()))return;}
@@ -1106,7 +1112,10 @@ export class StoryUI {
   private requestAllocationExit(next:()=>void):boolean{
     if(this.allocationExit)return true;
     if(!this.allocation?.hasChanges){this.discardAllocation();return false;}
-    this.allocationExit=next;this.keyboardFocus=undefined;this.render();return true;
+    this.allocationExit=next;this.keyboardFocus=undefined;
+    if(this.page==='status'&&this.modal){this.modal.clear();this.renderAllocationConfirmation();this.menuText?.renderPage('status');this.sync();}
+    else this.render();
+    return true;
   }
   private finishAllocation(commit:boolean):void{
     const next=this.allocationExit;if(!next||this.busy)return;
@@ -1861,11 +1870,10 @@ export class StoryUI {
   }
   private cancelDrag():void{this.drag?.timer.remove();this.drag?.ghost?.destroy();this.drag=undefined;}
   private selectMember(id:string,page:Page):void{
-    const wasAdjusting=this.adjusting;
     if(this.requestAllocationExit(()=>this.selectMember(id,page)))return;
     const restoreBag=this.bagDetailOpen&&!!this.selectedItem&&!this.itemResult;
     const updateBag=this.open&&page==='bag'&&this.page==='bag'&&(restoreBag||!this.bagDetailOpen&&this.bagEquipment.size>0);
-    const updateStatus=this.open&&page==='status'&&this.page==='status'&&!wasAdjusting&&!!this.statusPortrait?.active;
+    const updateStatus=this.open&&page==='status'&&this.page==='status'&&!!this.statusPortrait?.active;
     const updateSkills=this.open&&page==='skills'&&this.page==='skills'&&this.skillTabs.size>0;
     this.cancelOperation();this.selectedMemberId=id;this.selectedItem=undefined;this.skill=undefined;this.skillSection='directory';
     if(updateBag||updateStatus||updateSkills){if(updateBag){if(restoreBag)this.closeBagDetailForMember();this.updateBagMember();}else if(updateStatus)this.updateStatusMember();else this.updateSkillsMember();this.sessionSignature=this.sessionDataSignature()??this.sessionSignature;}else this.show(page);
@@ -1888,6 +1896,11 @@ export class StoryUI {
   }
   private updateStatusMember():void{
     const member=this.member()!,actor=this.actor(),panels=this.app.menuPanels,character=this.app.storyClasses.classes.find(value=>value.id===member.classId)!;
+    if(this.statusRightAdjusting!==this.adjusting){
+      for(const node of this.statusRightNodes)node.destroy();this.body!.pruneDestroyed();
+      this.statusTextSpecs=this.statusTextSpecs.filter(spec=>!spec.key.startsWith('attribute-')&&!spec.key.startsWith('combat-')&&spec.key!=='stat-points'&&spec.key!=='reset-attributes');
+      this.renderStatusRight();
+    }
     const text=(key:string,value:string)=>{const spec=this.statusTextSpecs.find(spec=>spec.key===key);if(spec)spec.text=value;};
     const art=this.memberArt().image;if(this.statusPortrait?.getData('file')!==art)this.statusPortrait?.load(art);
     text('level',`等级 ${member.level}`);text('class',character.name);text('name',actor.name);
@@ -1902,7 +1915,7 @@ export class StoryUI {
     text('stat-points',`${panels.character.labels.statPoints} ${hero?.statPoints??0}`);
     this.statusAdjustButton?.getData('setEnabled')?.(!!hero);
     this.statusCombatValues(member).forEach((value,index)=>text(`combat-${index}-value`,value));
-    this.menuText?.renderPage('status');
+    this.menuText?.renderPage('status');this.sync();
   }
   private statusCombatValues(member:NonNullable<ReturnType<StoryUI['member']>>):string[]{
     const equipped=member.bag.equipmentItems(member.bag.equipmentFor(this.selectedMemberId)),items=this.session!.bag.catalog.items,main=equipped['main-hand'];

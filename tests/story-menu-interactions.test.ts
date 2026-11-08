@@ -2229,6 +2229,21 @@ test('switching members on the status page updates values without rebuilding con
   assert.deepEqual(visibleDomLabels(f).map(label=>label.text).sort(),values,'原位更新与重新打开后的数值一致');
 });
 
+test('switching members from allocation preserves the page while handling pending points',t=>{
+  for(const pending of [false,true]){
+    const f=fixture();t.after(f.cleanup);f.hero.addExperience(f.hero.player.nextLevelExperience);const member=f.recruit('warlock');
+    f.menu.show('status');f.scene.click(f.scene.button('查看属性加点'));
+    if(pending)f.scene.click(f.scene.button('增加力量'));
+    const portrait=f.scene.button(member.definition.name),frame=f.internals.body.root.list[1];
+    f.scene.click(portrait);
+    if(pending){assert.equal(f.internals.body.root.list[1],frame);f.scene.click(f.scene.button('确定'));}
+    assert.equal(f.internals.selectedMemberId,member.id);assert.equal(f.scene.button(member.definition.name),portrait);
+    assert.equal(f.internals.body.root.list[1],frame);assert.equal(f.scene.button('查看属性加点').input!.enabled,false);
+    const labels=visibleDomLabels(f).map(label=>label.text).sort();f.menu.show('status');
+    assert.deepEqual(visibleDomLabels(f).map(label=>label.text).sort(),labels);
+  }
+});
+
 test('switching members on the skills page retains the frame and tab buttons',t=>{
   const f=fixture();t.after(f.cleanup);const member=f.recruit('warlock');
   f.menu.show('skills');const body=f.internals.body,frame=body.root.list[1],portrait=f.scene.button(member.definition.name),tab=f.scene.button('技能目录');
