@@ -118,7 +118,10 @@
       }
       recent.push(entry); recent = recent.slice(-32);
       pending.push(entry); pending = pending.slice(-32);
-      persist();
+      // 全局异常和 WebGL 丢失可能紧跟着进程退出；这类记录立即落盘，普通控制台输出继续防抖。
+      if (kind === 'window-error' || kind === 'unhandled-rejection'
+        || kind === 'webgl-context-lost' || kind === 'resource-error') persistNow();
+      else persist();
       void flush();
     } catch { /* 收集器不能成为新的游戏异常来源。 */ }
     finally { capturing = false; }
