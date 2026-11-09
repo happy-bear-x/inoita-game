@@ -46,6 +46,8 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
   private baseLease?:AssetLease;
   /** 菜单图片与立绘的租约账，`prepareMenuCore` 通过 `app.uiAssets` 找到它。 */
   private readonly uiAssets=new SceneUiAssets(this);
+  /** 场景注入完成前拿不到 this.events，销毁监听放到 create 里只挂一次。 */
+  private uiAssetsBound=false;
   private background!:UiNode;
   private cover?:UiImage;
   private blocker!:UiNode;
@@ -77,8 +79,9 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
   /** 场景键盘只做一次桥接：原始事件交给全局 router，自己不再按页面各订阅一份。 */
   private readonly bridgeKey=(event:KeyboardEvent):void=>{this.app.inputRouter.dispatch(event);};
   private unregisterInput?:()=>void;
-  constructor(app:StoryApp){super(SCENE_KEYS.formalUi);this.app=app;this.events.once(Phaser.Scenes.Events.DESTROY,()=>this.uiAssets.releaseResident());}
+  constructor(app:StoryApp){super(SCENE_KEYS.formalUi);this.app=app;}
   create():void{
+    if(!this.uiAssetsBound){this.uiAssetsBound=true;this.events.once(Phaser.Scenes.Events.DESTROY,()=>this.uiAssets.releaseResident());}
     this.background=new UiNode(this,uiMount(this,'overlay')).setSize(1,1).setFillStyle(0,1).setDepth(998);this.blocker=new UiNode(this,uiMount(this,'overlay')).setSize(1,1).setDepth(999).setInteractive();
     this.surface=new UiSurface(this,960,640,1000,'overlay');this.app.ui.view=this;this.app.uiAssets=this.uiAssets;
     const domUi=this.app.domUi;
