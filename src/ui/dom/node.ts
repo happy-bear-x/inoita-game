@@ -36,8 +36,24 @@ export function uiMount(scene:Phaser.Scene,layer='screen'):HTMLElement {
   return element;
 }
 
+// 触屏摇杆每秒会送来几十次 pointer 事件；每次都量画布位置会强制浏览器同步布局。
+// 画布位置只在窗口尺寸变化时更新，其余时候直接用缓存。
+const canvasBoundsCache=new WeakMap<Phaser.Scene,{left:number;top:number;width:number;height:number}>();
+function canvasBounds(scene:Phaser.Scene):{left:number;top:number;width:number;height:number}{
+  let cached=canvasBoundsCache.get(scene);
+  if(cached)return cached;
+  const rect=scene.game.canvas.getBoundingClientRect();
+  cached={left:rect.left,top:rect.top,width:rect.width,height:rect.height};
+  canvasBoundsCache.set(scene,cached);
+  const invalidate=():void=>{canvasBoundsCache.delete(scene);};
+  scene.scale.once('resize',invalidate);
+  window.addEventListener('resize',invalidate,{once:true,passive:true});
+  window.addEventListener('scroll',invalidate,{once:true,passive:true});
+  return cached;
+}
+
 export function uiPointer(scene:Phaser.Scene,event:PointerEvent):UiPointer {
-  const bounds=scene.game.canvas.getBoundingClientRect();
+  const bounds=canvasBounds(scene);
   let table=pointers.get(scene);if(!table){table=new Map();pointers.set(scene,table);}
   let pointer=table.get(event.pointerId);if(!pointer){pointer={id:event.pointerId,x:0,y:0,isDown:false,event};table.set(event.pointerId,pointer);}
   Object.assign(pointer,{x:(event.clientX-bounds.left)*scene.scale.width/bounds.width,y:(event.clientY-bounds.top)*scene.scale.height/bounds.height,isDown:event.type!=='pointercancel'&&event.type!=='pointerup'&&event.buttons!==0,event});
