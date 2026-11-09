@@ -16,6 +16,7 @@ Phaser 场景层：驱动生命周期、转发输入，把 domain、rendering、
 ## 规则
 
 - `WorldCombat` 把地图的 `captureStandability` 接给敌人和佣兵的寻路器。一次搜索共用一份占位，走动时再由 `movement.canStand` 检查下一步。
+- `WorldCombat` 还持有一份 `FlowFieldStore`，敌人端口按目标、目标所在 16 像素格和身体尺寸请求共享流场。流场只用 `terrainFree` 和 `blockedByContent`，不把会移动的角色当永久墙；每渲染帧和 `pathBudget` 一起重置。
 - **补位落点避开主角和所有队友。** `partyLanding` 的侧位用 `Party.followSlotOf(leaderId, id)`，避让名单同时包含当前队长、主角和其余队友；操控佣兵时主角不属于 `allies`，必须单独加入，否则卡住补位会瞬移到主角身上。
 
 - 场景只驱动生命周期、转发输入、调度下层模块；判定和数值规则写进 `src/domain/`，世界绘制交给 `src/rendering/`，屏幕界面绘制与输入交给 `src/ui/dom/`。

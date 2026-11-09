@@ -39,6 +39,7 @@ import type { NavigationActor, NavigationShape } from '../domain/navigation-worl
 import { overlapsFootRect } from '../domain/navigation.ts';
 import { PartyController, type PartyPort } from '../domain/party-ai.ts';
 import { PathBudget } from '../domain/path-budget.ts';
+import { FlowFieldStore } from '../domain/flow-field.ts';
 import { memberCombatModifiers, partyProcSucceeds } from '../domain/party-combat.ts';
 import { reviveAtHealer } from '../domain/party-revival.ts';
 import type { ResourceCapacityKey, ResourceCapacities, ConditionAppearance } from '../domain/combat-conditions.ts';
@@ -230,6 +231,8 @@ export class WorldCombat {
   private pausedValue?:boolean;
   /** 敌人、队伍与召唤共享的寻路预算，在每个渲染帧开头重置。 */
   private readonly pathBudget=new PathBudget(PATH_BUDGET_PER_RENDER_FRAME);
+  /** 同一目标多个敌人共享的流场，使用独立预算，避免和单位寻路互相饿死。 */
+  private readonly flowFields=new FlowFieldStore();
   private partyActionsSuspended=false;
   private performanceHidden=false;
   private closed=false;
@@ -627,6 +630,17 @@ captureStoryActors():SceneActorState[] {
         navigationBounds: () => this.movement!.navigation.bounds,
         pathBudget: this.pathBudget,
         navigationSnapshot: () => this.movement!.navigation.captureStandability(this.movement!.actor(visual)),
+        flowField: (targetId, target) => {
+          const body = this.movement!.actor(visual), shape = body.shape(), box = shape.collision;
+          const shapeKey = box ? `${box.width}x${box.height}` : 'none';
+          const goalBucket = `${Math.floor(target.position.x / 16)},${Math.floor(target.position.y / 16)}`;
+          const navigation = this.movement!.navigation;
+          return this.flowFields.request(`${targetId}@${goalBucket}@${shapeKey}`, target.position,
+            () => ({ bounds: navigation.bounds,
+              canStand: point => navigation.terrainFree(point) && !navigation.blockedByContent(shape, point, body) }),
+            Math.max(16, Math.hypot(target.bounds.width, target.bounds.height) / 2 + 8),
+            (this.app.session.combatTick ?? 0) * LOGIC_FRAME_MS);
+        },
         moveToward: position => { if(!this.conditions.canAutoApproach(enemy.key)){this.movement.stop(visual);return;} this.movement!.toward(visual, position, this.movementSpeed(enemy.key,definition.behavior.moveSpeedPxPerSecond)); if (definition.behavior.canTurn) enemy.facing = faceTarget(this.movement!.position(visual), position); },
         followPath: nextWaypoint => this.movement.followPath(visual, () => {
           if(!this.conditions.canMove(enemy.key))return undefined;
@@ -2978,6 +2992,7 @@ captureStoryActors():SceneActorState[] {
   update(delta:number,enabled:boolean):void{
     if(this.closed||!this.player?.container.active)return;
     this.pathBudget?.reset();
+    this.flowFields.reset();
     this.outcomes.setPaused(!enabled||this.defeated);
     const deathPaused=!enabled||this.defeated;
     if(deathPaused!==this.deathVisualsPaused){

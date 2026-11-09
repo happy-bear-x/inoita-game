@@ -25,6 +25,8 @@ export interface EnemyPort extends CombatPort {
   pathBudget?:{take(owner:string,limit:number):number};
   /** 冻结通行快照；有它时跨帧搜索读同一份地图。 */
   navigationSnapshot?():{bounds:GameRectangle;canStand(point:Point):boolean};
+  /** 同一目标多个单位共享的流场；建好之前返回 undefined，调用方继续走 A*。 */
+  flowField?(targetId:string,target:Combatant):{next(from:Point):Point|undefined}|undefined;
   threat?:{
     select(current:string|undefined):string|undefined;
     notice(source:string):void;
@@ -110,6 +112,8 @@ export class EnemyController {
   private heldSearch?:{task:PathSearch;origin:Point;targetId:string;range:number;reached:Map<string,Point[]>;witness?:Point;complete:boolean;retryAt:number};
   /** 直线追击缓存：复用这次规划捕获的占位快照，端点不变就不重复扫线。 */
   private directView?:{canStand:(point:Point)=>boolean;fromX:number;fromY:number;toX:number;toY:number;walkable:boolean};
+  /** 正在沿共享流场移动；卡住时和路径一样触发重新规划。 */
+  private flowActive=false;
   private readonly spentOnce=new Set<string>();
   private get mapWide():boolean{return this.behavior.engagement==='map-wide';}
 
@@ -217,13 +221,13 @@ export class EnemyController {
     this.state=this.combat?.actionState()==='attacking'?'attacking':'idle';
   }
   disable():void {
-    this.heldSearch=undefined;this.directView=undefined;
+    this.heldSearch=undefined;this.directView=undefined;this.flowActive=false;
     this.combat?.cancel(true,!this.port.threat);
     this.path=[];this.destination=undefined;this.search=undefined;this.progressPosition=undefined;this.wanderDestination=undefined;this.idleElapsed=0;this.port.stop();
     if(this.state!=='returning')this.state=this.targetId?'chasing':'idle';
   }
   cancel():void{
-    this.heldSearch=undefined;this.directView=undefined;
+    this.heldSearch=undefined;this.directView=undefined;this.flowActive=false;
     this.combat?.cancel(true);this.state='idle';this.targetId=undefined;this.pendingReturn=false;this.threatCombatActive=false;
     this.path=[];this.destination=undefined;this.search=undefined;this.progressPosition=undefined;this.accumulator=0;this.wanderDestination=undefined;this.idleElapsed=0;this.port.stop();
   }
@@ -388,17 +392,28 @@ export class EnemyController {
     if(!this.progressPosition||Math.hypot(actor.position.x-this.progressPosition.x,actor.position.y-this.progressPosition.y)>=ARRIVAL_DISTANCE_PX){
       this.progressPosition={...actor.position};this.lastProgressAt=this.clock;
     }
-    const stalled=(this.path.length>0||this.directView!==undefined)&&this.clock-this.lastProgressAt>=REPATH_INTERVAL_MS;
+    const stalled=(this.path.length>0||this.directView!==undefined||this.flowActive)&&this.clock-this.lastProgressAt>=REPATH_INTERVAL_MS;
     const moved=!this.destination||targetDistance(this.destination,destination)>=PATH_GRID_SIZE||range!==this.destinationRange;
     const blocked=this.path.length>0&&!canTraverse(actor.position,this.path[0],point=>this.port.canStand(point));
     // 目标换了（或从追击切回回家）就丢弃旧搜索，避免把上一条路线接回来。
     if(this.search&&this.search.targetId!==target?.id)this.search=undefined;
     // 直线能走到目标时不必再算 A*：移动交给物理层，卡住或目标绕到墙后再走搜索。
+    if(!target)this.flowActive=false;
     if(this.directView&&!this.search){
       if(!stalled&&this.directWalkable(actor,this.directGoal(actor,destination,target),this.directView.canStand)){
-        this.path=[];this.port.moveToward(destination);return true;
+        this.path=[];this.flowActive=false;this.port.moveToward(destination);return true;
       }
       this.directView=undefined;
+    }
+    // 同目标多单位共享流场；建场期间继续走下面的 A*，建好后直接读场里的方向。
+    if(follow&&target&&!this.search&&!this.path.length&&!stalled){
+      const route=this.port.flowField?.(target.id,target);
+      const next=route?.next(actor.position);
+      if(next){
+        this.flowActive=true;this.destination={...destination};this.destinationRange=range;
+        this.port.moveToward(next);return true;
+      }
+      this.flowActive=false;
     }
     if(this.search)this.advanceSearch(actor);
     else if(this.clock>=this.nextPathAt&&(moved||blocked||stalled||!this.path.length)){
@@ -499,6 +514,7 @@ export class EnemyController {
       heuristic:(point:Point)=>Math.max(0,Math.hypot(point.x-destination.x,point.y-destination.y)-radius)};
   }
   private beginSearch(actor:Combatant,destination:Point,target:Combatant|undefined,range:number,stalled:boolean):void{
+    this.flowActive=false;
     this.nextPathAt=this.clock+REPATH_INTERVAL_MS;this.destination={...destination};this.destinationRange=range;
     if(stalled)this.lastProgressAt=this.clock;
     const query=this.searchQuery(actor,destination,target,range);

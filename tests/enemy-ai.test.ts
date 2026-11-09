@@ -332,3 +332,14 @@ test('idle and wandering enemies need no full decision until contact or a map-wi
   const active=setup();active.advance();
   assert.equal(active.ai.needsFrame(),true);
 });
+
+test('a shared flow field is preferred over creating another per-enemy search',()=>{
+  const run=setup();let requests=0;
+  const free=run.port.canStand;
+  run.port.canStand=point=>free(point)&&!(point.x>=48&&point.x<=56);
+  run.port.flowField=(_targetId,target)=>{requests++;return {next:()=>({x:target.position.x-24,y:target.position.y})};};
+  run.port.pathBudget={take:()=>assert.fail('流场可用时不应再领单位寻路预算')};
+  run.ai.update(60);
+  assert.ok(requests>0,'直线被墙挡住后应请求共享流场');
+  assert.deepEqual(run.waypoint(),{x:run.player.position.x-24,y:run.player.position.y});
+});
