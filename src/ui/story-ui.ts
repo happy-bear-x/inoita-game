@@ -150,6 +150,8 @@ export class StoryUI {
   private filter:InventoryView='all';private selectedItem?:string;private descSide:'left'|'right'='left';private operation?:Operation;private itemNotice?:string;private busy=false;private request=new AbortController();
   /** 上次整页重绘时当前页依赖的数据签名；会话通知用它判断要不要重绘。 */
   private sessionSignature='';
+  /** 背包页关掉后仍保留整页 DOM 和立绘，重新打开同一版本数据时只恢复显示。 */
+  private bagPageCached=false;
   /** 当前弹层的框尺寸，由打开它的对话框声明；初值只是没有对话框时的兜底。 */
   private modalBox={width:450,height:350};
   private modalActive=false;
@@ -319,7 +321,7 @@ export class StoryUI {
   bind(session:Session,world:WorldIndex,content:StoryInterface):void{
     this.discardAllocation();
     this.loadReturnToDefeat=false;
-    this.close();this.hudButtons?.clear();this.unsubscribe?.();this.session=session;this.world=world;this.content=content;this.page='bag';this.selectedMemberId='player';this.filter='all';this.selectedItem=undefined;this.itemResult=undefined;this.scrollOffsets.clear();this.sessionSignature='';
+    this.close();this.discardBagPage();this.hudButtons?.clear();this.unsubscribe?.();this.session=session;this.world=world;this.content=content;this.page='bag';this.selectedMemberId='player';this.filter='all';this.selectedItem=undefined;this.itemResult=undefined;this.scrollOffsets.clear();this.sessionSignature='';
     this.questPanel=new QuestPanel(session,world,this.app.menuPanels,()=>this.render(),
       (view,name,x,y,width,height)=>this.scroll(name,x,y,width,height,view),
       ()=>this.menuText?.refresh(),()=>this.menuText?.renderPage('quests'));
@@ -384,14 +386,20 @@ export class StoryUI {
     }
     if(this.page!==page&&this.requestAllocationExit(()=>this.show(page)))return;
     if(page==='quests'&&(!this.open||this.page!==page))this.questPanel?.reset();
+    const reopening=!this.open;
     if(!this.open){this.open=true;this.app.ui.lock(true,'story-menu');}
+    const signature=this.sessionDataSignature();
+    const reuseBag=reopening&&page==='bag'&&this.bagPageCached&&signature!==undefined&&signature===this.sessionSignature;
     if(this.page!==page){
       if(this.page==='party')this.app.releasePartyPreview?.();
       if(this.page==='debug')this.releaseDebugPanel();
       this.itemResult=undefined;this.cancelOperation();this.adjusting=false;this.notice='';
     }
+    // 背包页的 DOM、静态图框和合成立绘都留着；数据没变时只把整层显示出来。
+    this.page=page;
+    if(reuseBag){this.sync();return;}
     // render() 末尾已经 sync 过；这里再调一次会把整层再排版一遍。
-    this.page=page;this.render();
+    this.render();
   }
   /** 调试收尾后回到设置里的调试剧情页，保留面板原来的筛选与选中任务。 */
   openDebugStory():void{
@@ -460,7 +468,16 @@ export class StoryUI {
     if(this.open&&this.requestAllocationExit(()=>this.close()))return;
     this.debugOpenToken++;this.debugStoryOnOpen=false;this.debugStoryMessage='';
     if(!this.open)return;if(this.page==='debug')this.releaseDebugPanel();this.controlEditor?.close();this.app.ui.setControlLayoutEditing(false);
-    this.keyBindingEditor?.close();this.app.ui.setKeyBindingEditing(false);this.cancelOperation();this.modalActive=false;this.shortcutEdit=undefined;this.shortcutScreen?.clear();this.backTab?.clear();this.shopPanel=undefined;this.bagPortrait?.destroy();this.partyPanel?.destroyPreview();this.app.releasePartyPreview?.();this.craftingPanel=undefined;this.craftingActor=undefined;this.forge=undefined;this.skillBook=undefined;this.open=false;this.scrollNames.forEach((scroll,name)=>this.scrollOffsets.set(`${this.page}:${name}`,scroll.scrollTop));this.scrollNames.clear();this.body?.clear();this.description?.clear();if(this.surface&&this.body){this.surface.root.remove(this.body.root);this.surface.clear();this.surface.root.add(this.body.root);}this.keyboardFocus=undefined;this.surface?.visible(false);this.body?.visible(false);this.description?.visible(false);this.modal?.visible(false);this.shortcutScreen?.visible(false);this.backTab?.visible(false);this.backdrop?.setVisible(false);this.app.ui.resetInput();this.app.ui.lock(false,'story-menu');
+    this.keyBindingEditor?.close();this.app.ui.setKeyBindingEditing(false);this.cancelOperation();this.modalActive=false;this.shortcutEdit=undefined;this.shortcutScreen?.clear();this.backTab?.clear();
+    const keepBag=this.page==='bag'&&this.bagPageCached;
+    this.shopPanel=undefined;this.partyPanel?.destroyPreview();this.app.releasePartyPreview?.();this.craftingPanel=undefined;this.craftingActor=undefined;this.forge=undefined;this.skillBook=undefined;this.open=false;
+    if(keepBag)this.bagPortrait?.visible(false);else this.bagPortrait?.destroy();
+    this.scrollNames.forEach((scroll,name)=>this.scrollOffsets.set(`${this.page}:${name}`,scroll.scrollTop));this.scrollNames.clear();
+    if(!keepBag){
+      this.body?.clear();this.description?.clear();
+      if(this.surface&&this.body){this.surface.root.remove(this.body.root);this.surface.clear();this.surface.root.add(this.body.root);}
+    }
+    this.bagPageCached=keepBag;this.keyboardFocus=undefined;this.surface?.visible(false);this.body?.visible(false);this.description?.visible(false);this.modal?.visible(false);this.shortcutScreen?.visible(false);this.backTab?.visible(false);this.backdrop?.setVisible(false);this.app.ui.resetInput();this.app.ui.lock(false,'story-menu');
     if(this.loadReturnToDefeat){this.loadReturnToDefeat=false;if(this.app.ui.defeated)this.app.ui.revealDefeat();}
   }
   private releaseDebugPanel():void{
@@ -471,9 +488,16 @@ export class StoryUI {
   }
   releaseSession(expected:Session|undefined):void{
     if(this.session!==expected)return;
-    this.close();this.releaseDebugPanel();this.unsubscribe?.();this.unsubscribe=undefined;
+    this.close();this.discardBagPage();this.releaseDebugPanel();this.unsubscribe?.();this.unsubscribe=undefined;
     this.questPanel=undefined;this.partyPanel?.destroyPreview();this.partyPanel=undefined;
     this.session=undefined;this.world=undefined;this.content=undefined;
+  }
+  /** 会话结束时丢掉缓存的背包页，避免下一位存档的角色和物品沿用旧页面。 */
+  private discardBagPage():void{
+    if(!this.bagPageCached)return;
+    this.bagPageCached=false;this.bagPortrait?.detach();
+    this.body?.clear();this.description?.clear();
+    if(this.surface&&this.body){this.surface.root.remove(this.body.root);this.surface.clear();this.surface.root.add(this.body.root);}
   }
   private cancelOperation():void{this.cancelDrag();this.request.abort();this.request=new AbortController();this.busy=false;this.operation=undefined;this.itemNotice=undefined;this.skillReset=false;this.savePage?.cancelPending();this.partyPanel?.close();this.craftingPanel?.close();this.forge=undefined;this.skillBook=undefined;this.modal?.clear();this.modal?.visible(false);}
   /** 返回是否消费这次按键；菜单关闭时把未消费的按键让给剧情层和世界。 */
@@ -726,6 +750,7 @@ export class StoryUI {
   }
   private renderNow():void{
     if(!this.open||!this.surface||!this.body||!this.session)return;
+    this.bagPageCached=false;
     // 换页先收掉上一页的 DOM 文字；当前页由各自的面板在绘制时重新登记。
     this.menuText?.beginPage(this.page);
     this.forge?.captureScroll();this.skillBook?.captureScroll();this.craftingPanel?.captureScroll();this.shopPanel?.captureScroll();this.questPanel?.captureScroll();this.partyPanel?.captureScroll();this.scrollNames.forEach((scroll,name)=>this.scrollOffsets.set(`${this.page}:${name}`,scroll.scrollTop));this.scrollNames.clear();this.surface.root.remove(this.body.root);this.surface.clear();this.bagPortrait?.detach();this.partyPanel?.detachPreview();this.body.clear();this.description?.clear();this.modal!.clear();this.surface.root.add(this.body.root);this.drops=[];this.keyboardFocus=undefined;
@@ -814,6 +839,7 @@ export class StoryUI {
     if(this.operation)this.menuText?.renderPage('operation-notice');
     else if(this.itemNotice)this.menuText?.renderPage('native-notice');
     else if(this.page==='bag'||this.page==='status'||this.page==='party'||this.page==='quests'||this.page==='skills'||this.page==='learn'||this.page==='shop'||this.page==='crafting'||this.page==='forge'||this.page==='debug')this.menuText?.renderPage(this.page);
+    this.bagPageCached=this.page==='bag';
     this.sync();
   }
   private openControlEditor():void {

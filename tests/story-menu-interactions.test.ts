@@ -2204,6 +2204,37 @@ test('bag chrome is reused across rerenders and replaced when the page changes',
   assert(chrome.list.length>0,'回到背包页重新建静态图框');
 });
 
+test('closing the bag keeps its page and reopens without rebuilding unchanged data', t => {
+  const f=fixture();t.after(f.cleanup);
+  f.menu.show('bag');
+  const body=f.internals.body,dynamic=body.root.list.find(child=>child!==body.staticRoot);
+  let clears=0;const clear=body.clear.bind(body);
+  (body as unknown as {clear:()=>void}).clear=()=>{clears+=1;clear();};
+  f.menu.close();
+  assert.equal(f.menu.menuOpen,false);
+  assert.equal(body.root.visible,false,'关闭只隐藏整页');
+  assert.equal(clears,0,'关闭不销毁背包页');
+  f.menu.show('bag');
+  assert.equal(body.root.visible,true);
+  assert.equal(clears,0,'数据没变时重新打开只恢复显示');
+  assert.equal(body.root.list.find(child=>child!==body.staticRoot),dynamic,'页面对象原样复用');
+  f.session.gainMoney(1);
+  f.menu.close();f.menu.show('bag');
+  assert.equal(clears,1,'数据变了才重建背包页');
+});
+
+test('ending a session drops the cached bag page', t => {
+  const f=fixture();t.after(f.cleanup);
+  f.menu.show('bag');f.menu.close();
+  let clears=0;const clear=f.internals.body.clear.bind(f.internals.body);
+  (f.internals.body as unknown as {clear:()=>void}).clear=()=>{clears+=1;clear();};
+  f.menu.releaseSession(f.session);
+  const cached=f.internals as unknown as {bagPageCached:boolean;session:unknown};
+  assert.equal(cached.bagPageCached,false,'换会话前丢掉旧背包页');
+  assert.equal(clears,1,'旧页面节点被清掉');
+  assert.equal(cached.session,undefined);
+});
+
 test('late member previews do not rebuild the bag or replace the current member', async t => {
   const f=fixture();t.after(f.cleanup);
   const first=f.recruit('warlock'),second=f.recruit('priest');
