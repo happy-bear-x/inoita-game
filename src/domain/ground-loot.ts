@@ -97,6 +97,11 @@ export class GroundLootStore {
   }
   forMap(map:string):GroundDrop[] {return this.onMap(map).map(drop=>structuredClone(drop));}
   /**
+   * 只读的本图掉落，包含飞行中的对象；绘制和其他只读查询直接读这些字段，不再复制整张表。
+   * 需要带出本对象之外的副本（存档、结算入参、返回给调用方）继续用 `forMap`。
+   */
+  dropsOnMap(map:string):readonly GroundDrop[] {return this.onMap(map);}
+  /**
    * 进入新地图时清掉其他地图的地面掉落；`retain` 返回 true 的保留（任务/剧情物品）。
    * 只按地图的 id 分组扫一遍，不复制掉落内容；当前地图的掉落完全不动。
    */

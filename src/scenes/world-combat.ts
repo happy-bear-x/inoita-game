@@ -1218,7 +1218,7 @@ captureStoryActors():SceneActorState[] {
               questRequirements:session.questDropRequirements(),
               pity:session.lootPity,
               reserved:{misses:session.reservedDropMisses,claimed:session.claimedReservedDrops,
-                pending:new Set(groundLootFor(session).forMap(map).flatMap(drop=>
+                pending:new Set(groundLootFor(session).dropsOnMap(map).flatMap(drop=>
                   drop.reward.kind==='item'?[drop.reward.item]:[]))},
             });
             if(settlement.killSound)this.app.audio?.monsterDeath(targetEnemy.definition.id);

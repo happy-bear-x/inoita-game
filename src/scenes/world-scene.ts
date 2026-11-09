@@ -460,7 +460,7 @@ export class WorldScene extends Phaser.Scene {
     this.mapLayers = drawMapLayers(this, map, { keyPrefix: `${map.id}-dodge` });
     this.groundLootView=new GroundLootView(this,this.app.items,(clip,x,y)=>createEffect(this,clip,x,y,true));
     const groundLoot=groundLootFor(this.app.session);
-    this.groundLootView.sync(groundLoot.forMap(map.id));this.groundLootRevision=groundLoot.revision;
+    this.groundLootView.sync(groundLoot.dropsOnMap(map.id));this.groundLootRevision=groundLoot.revision;
     this.pickupMessages=new PickupMessages(this,this.app.items,{anchor:id=>{
       const character=this.pickupRecipients.get(id);
       if(!character?.container.active)return undefined;
@@ -1458,7 +1458,7 @@ export class WorldScene extends Phaser.Scene {
       !this.app.items.items[reward.item].stackable
       ?{...reward,instance:this.app.session.bag.prepareDrop(reward.item,reward.roll?{grade:reward.roll,sockets:reward.roll.sockets}:undefined)}
       :reward),{nowMs:this.app.session.nowMs});
-    if(render&&!this.destroyed&&this.map?.id===map)this.groundLootView?.sync(store.forMap(map));
+    if(render&&!this.destroyed&&this.map?.id===map){this.groundLootView?.sync(store.dropsOnMap(map));this.groundLootRevision=store.revision;}
   }
   /** 掉落物只落在能走过去、且不压住地图进出口的位置。 */
   private lootLanding(map:string,x:number,y:number):{x:number;y:number} {
@@ -1506,7 +1506,7 @@ export class WorldScene extends Phaser.Scene {
     // 原版在批量拾取结束时播放音效 6，与捡到的是物品还是钱无关；魔法宝石另外在恢复时播音效 5。
     if(picked.length)this.app.audio?.ui('loot');
     if(picked.some(drop=>drop.reward.kind==='item'))session.emit();
-    this.groundLootView?.sync(store.forMap(this.map.id));
+    this.groundLootView?.sync(store.dropsOnMap(this.map.id));this.groundLootRevision=store.revision;
     if(visual){
       this.pickupRecipients.set(collectorId,visual);
       this.pickupMessages?.enqueue(picked.map(drop=>drop.reward).filter(reward=>reward.kind==='money'||!this.app.items.items[reward.item].pickup),collectorId);
@@ -1526,7 +1526,7 @@ export class WorldScene extends Phaser.Scene {
       session.questItemGenerators.collected(picked.map(drop=>drop.id),session.combatTick);
       session.emit();
     });
-    if(picked.length)this.groundLootView?.sync(store.forMap(mapId));
+    if(picked.length){this.groundLootView?.sync(store.dropsOnMap(mapId));this.groundLootRevision=store.revision;}
   }
   refreshCombatTarget():void{this.statusHud?.setTarget(this.combat?.targetStatus());}
   revivePartyMember(id:string,item:string):import('../domain/items.ts').ItemResult{
@@ -2002,7 +2002,7 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     this.statusHud?.update(this.app.session.combatTick);
     this.groundLootView?.setPaused(!this.canCombatControl);
     if(this.canCombatControl&&this.map){const store=groundLootFor(this.app.session);store.advance(this.map.id,stepDelta);
-      if(store.revision!==this.groundLootRevision){this.groundLootRevision=store.revision;this.groundLootView?.sync(store.forMap(this.map.id));}}
+      if(store.revision!==this.groundLootRevision){this.groundLootRevision=store.revision;this.groundLootView?.sync(store.dropsOnMap(this.map.id));}}
     this.refreshShortcutPageIfTickChanged();
     if (!this.canControl) { if (!this.performing) this.movement.stop(controlled); return; }
     if(this.combat?.playerCannotMove()){this.movement.stop(controlled);return;}
