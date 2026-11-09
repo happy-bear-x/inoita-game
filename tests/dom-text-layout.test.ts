@@ -28,27 +28,31 @@ test('reused menu text updates and clears its contrast background',()=>{
   layer.destroy();
 });
 
-test('world labels share measurements within a frame and follow camera and viewport changes',t=>{
+test('world labels use canvas pixels so a 2x bitmap keeps the same layout',t=>{
   const dom=new DomUi(),frame=document.getElementById('game-frame')!;
+  // 画框 800×480 CSS，位图 800×480；画布在画框内偏移 20/30，视口 CSS 尺寸是本例的另一半：
+  // 位图 800 对显示宽 400，比例 2，正好是高分屏上「位图是 CSS 两倍」的情形。
   let frameRect={left:10,top:20,width:800,height:480},canvasRect={left:30,top:50,width:400,height:240};
   const frameRead=t.mock.method(frame,'getBoundingClientRect',()=>frameRect as DOMRect);
   let canvasReads=0;
   const canvas={getBoundingClientRect:()=>{canvasReads++;return canvasRect;}};
   const game={canvas,loop:{frame:1}},scale={width:800,height:480};
   const camera={scene:{game,scale},worldView:{x:100,y:200},zoom:2} as unknown as Phaser.Cameras.Scene2D.Camera;
-  assert.deepEqual(dom.worldToScreen(camera,130,240),{x:50,y:70});
-  assert.deepEqual(dom.frameSize(camera),{width:800,height:480});
+  // 偏移按同一比例换到画布像素：(30-10)*2，世界位移再乘相机缩放。
+  assert.deepEqual(dom.worldToScreen(camera,130,240),{x:100,y:140});
+  assert.deepEqual(dom.frameSize(camera),{width:800,height:480},'尺寸以画布位图为口径，不看画框 CSS 尺寸');
   assert.equal(dom.storyUnit(camera),1);
   camera.worldView.x=110;camera.zoom=1;
-  assert.deepEqual(dom.worldToScreen(camera,130,240),{x:30,y:50},'camera motion stays live');
+  assert.deepEqual(dom.worldToScreen(camera,130,240),{x:60,y:100},'camera motion stays live');
   assert.equal(frameRead.mock.callCount(),1);assert.equal(canvasReads,1);
+  // 画框和画布同时换尺寸、比例回到 1：换算跟着画布走，不受画框 CSS 尺寸影响。
   frameRect={left:20,top:30,width:1000,height:600};canvasRect={left:60,top:70,width:800,height:480};
   game.loop.frame++;
-  assert.deepEqual(dom.frameSize(camera),{width:1000,height:600});
+  assert.deepEqual(dom.frameSize(camera),{width:800,height:480});
   assert.deepEqual(dom.worldToScreen(camera,130,240),{x:60,y:80});
   assert.equal(frameRead.mock.callCount(),2);assert.equal(canvasReads,2);
-  frameRect={...frameRect,width:900};dom.layout();
-  assert.equal(dom.frameSize(camera).width,900,'layout invalidates measurements immediately');
+  canvasRect={...canvasRect,left:80};dom.layout();
+  assert.deepEqual(dom.worldToScreen(camera,130,240),{x:80,y:80},'layout invalidates measurements immediately');
   assert.equal(frameRead.mock.callCount(),3);assert.equal(canvasReads,3);
 });
 

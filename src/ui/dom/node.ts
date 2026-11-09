@@ -23,7 +23,10 @@ export function uiMount(scene:Phaser.Scene,layer='screen'):HTMLElement {
   parent.appendChild(element);layers.set(layer,element);
   const layout=()=>{
     const bounds=scene.game.canvas.getBoundingClientRect(),frame=document.getElementById('game-frame')!.getBoundingClientRect();
-    Object.assign(element.style,{left:`${bounds.left-frame.left}px`,top:`${bounds.top-frame.top}px`,width:`${scene.scale.width}px`,height:`${scene.scale.height}px`,transform:`scale(${bounds.width/scene.scale.width},${bounds.height/scene.scale.height})`});
+    // `#ui-root` 已经做了「画布像素 → CSS 像素」的整体缩放，这里只描述画布内的位置和尺寸；
+    // 再套一层 transform 会把这层缩放翻倍。
+    const ratio=scene.scale.width/Math.max(1,bounds.width);
+    Object.assign(element.style,{left:`${(bounds.left-frame.left)*ratio}px`,top:`${(bounds.top-frame.top)*ratio}px`,width:`${scene.scale.width}px`,height:`${scene.scale.height}px`,transform:'none'});
   };
   layout();scene.scale.on('resize',layout);
   const hide=()=>{element.hidden=true;for(const pointer of pointers.get(scene)?.values()??[])pointer.isDown=false;for(const node of interactiveNodes.get(scene)??[])node.cancelPress();},show=()=>{element.hidden=false;};

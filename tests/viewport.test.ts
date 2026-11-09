@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {fitViewport,configureCanvas,readSafeArea} from '../src/ui/viewport.ts';
+import {fitViewport,configureCanvas,readSafeArea,renderScale} from '../src/ui/viewport.ts';
 import {controlViewport} from '../src/ui/phaser/control-layout-viewport.ts';
 
 /** 假窗口对象：测试只需要 `fitViewport` 读的 `visualViewport`。 */
@@ -106,25 +106,46 @@ test('Android landscape uses the visible top edge for both browser and packaged 
  }
 });
 
-test('canvas keeps CSS size and ignores the device pixel ratio',()=>{
+test('canvas renders at the device pixel ratio capped at 2 and keeps its CSS size',()=>{
  const globals=globalThis as unknown as Record<string,unknown>;
- const original=['window','document'].map(name=>[name,Object.getOwnPropertyDescriptor(globalThis,name)] as const);
+ const original=['document','devicePixelRatio'].map(name=>[name,Object.getOwnPropertyDescriptor(globalThis,name)] as const);
  const bounds={width:844,height:390},style={width:'',height:'',imageRendering:''};
- const scale={width:960,height:640,zoom:1,
-  resize(width:number,height:number){this.width=width;this.height=height;if(this.zoom!==1){style.width=`${width*this.zoom}px`;style.height=`${height*this.zoom}px`;}},
-  setZoom(zoom:number){this.zoom=zoom;style.width=`${this.width*zoom}px`;style.height=`${this.height*zoom}px`;}
+ const scale={width:960,height:640,zoom:1,refreshes:0,
+  resize(width:number,height:number){this.width=width;this.height=height;},
+  setZoom(zoom:number){this.zoom=zoom;style.width=`${this.width*zoom}px`;style.height=`${this.height*zoom}px`;},
+  refresh(){this.refreshes++;}
  };
  try{
   globals.document={getElementById:()=>({getBoundingClientRect:()=>bounds})};
-  globals.window={devicePixelRatio:3};
+  // DPR 3 的机型按 2 倍渲染：位图翻倍，CSS 尺寸不变，多缩放的那一次由 setZoom 写回后被改回来。
+  globals.devicePixelRatio=3;
   const game={scale,canvas:{style}} as unknown as import('phaser').Game;
   configureCanvas(game);
-  assert.deepEqual([scale.width,scale.height,style.width,style.height],[844,390,'844px','390px']);
+  assert.deepEqual([scale.width,scale.height,style.width,style.height],[1688,780,'844px','390px']);
+  assert.ok(scale.refreshes>0,'位图与 CSS 尺寸落定后重算 displayScale，指针换算才准');
   bounds.width=960;bounds.height=640;configureCanvas(game);
-  assert.deepEqual([scale.width,scale.height,style.width,style.height],[960,640,'960px','640px']);
+  assert.deepEqual([scale.width,scale.height,style.width,style.height],[1920,1280,'960px','640px']);
   bounds.width=1280;bounds.height=720;configureCanvas(game);
+  assert.deepEqual([scale.width,scale.height,style.width,style.height],[2560,1440,'1280px','720px']);
+  // DPR 1 的桌面按 CSS 尺寸渲染，与改动前完全一致。
+  globals.devicePixelRatio=1;
+  configureCanvas(game);
   assert.deepEqual([scale.width,scale.height,style.width,style.height],[1280,720,'1280px','720px']);
  }finally{
   for(const[name,descriptor]of original){if(descriptor)Object.defineProperty(globalThis,name,descriptor);else delete globals[name];}
+ }
+});
+
+test('render scale follows the device pixel ratio between 1 and 2',()=>{
+ const original=Object.getOwnPropertyDescriptor(globalThis,'devicePixelRatio');
+ const globals=globalThis as unknown as Record<string,unknown>;
+ try{
+  globals.devicePixelRatio=1;assert.equal(renderScale(),1);
+  globals.devicePixelRatio=1.5;assert.equal(renderScale(),1.5);
+  globals.devicePixelRatio=2;assert.equal(renderScale(),2);
+  globals.devicePixelRatio=3;assert.equal(renderScale(),2,'上限 2 倍，像素填充量封顶 4 倍');
+  globals.devicePixelRatio=undefined;assert.equal(renderScale(),1,'读不到设备像素比时按 CSS 尺寸渲染');
+ }finally{
+  if(original)Object.defineProperty(globalThis,'devicePixelRatio',original);else delete globals.devicePixelRatio;
  }
 });

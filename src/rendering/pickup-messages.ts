@@ -100,7 +100,7 @@ export class PickupMessages {
         const color=itemNameColor(reward.roll?.rarity);if(color)text.style.color=color;dom.appendChild(text);
       }
       layer.appendChild(dom);
-      const entry:ActiveMessage={dom,width:dom.getBoundingClientRect().width,recipientId,row,lift:0};
+      const entry:ActiveMessage={dom,width:dom.offsetWidth,recipientId,row,lift:0};
       this.active.add(entry);this.position(entry);
       entry.tween=this.scene.tweens.add({targets:entry,lift:MESSAGE_LIFT,delay:1440,duration:960,ease:'Linear',
         onComplete:()=>this.remove(entry)});
@@ -111,7 +111,9 @@ export class PickupMessages {
     if(!anchor){this.remove(entry);return;}
     if(!this.domUi)return;
     const camera=this.scene.cameras.main,point=this.domUi.worldToScreen(camera,anchor.x,anchor.y+anchor.headAnchor.y);
-    const zoom=camera.zoom,unit=this.domUi.storyUnit(camera),width=entry.width||entry.dom.getBoundingClientRect().width;
+    // 宽度按布局像素取（offsetWidth），和 worldToScreen 返回的画布坐标同一口径；
+    // getBoundingClientRect 带上了根节点的缩放，高分屏上会差一半。
+    const zoom=camera.zoom,unit=this.domUi.storyUnit(camera),width=entry.width||entry.dom.offsetWidth;
     if(!entry.width)entry.width=width;
     const right=point.x+anchor.headAnchor.x*zoom+20*zoom;
     const x=right+width>this.domUi.frameSize(camera).width-8?point.x-anchor.headAnchor.x*zoom-20*zoom-width:right;

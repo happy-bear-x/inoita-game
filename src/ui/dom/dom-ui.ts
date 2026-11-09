@@ -154,24 +154,44 @@ export class DomUi {
     layer.hidden = this.visible.get(name) === false || (this.occluded && name !== 'overlay');
   }
 
-  /** 重新读取画框与安全区；只在视口变化和字体就绪后调用。 */
+  /**
+   * 重新读取画框与安全区；只在视口变化和字体就绪后调用。
+   *
+   * 画布位图按设备像素比渲染时，位图尺寸大于 CSS 尺寸。DOM 各层的坐标一律用
+   * 画布像素（与 `surfacePoint`、`uiMount`、世界投影同一口径），再由根节点整体
+   * 缩回 CSS 尺寸显示，否则高分屏上界面会放大一倍、控件跑出屏幕。
+   */
   layout(): void {
     this.worldMeasurements = undefined;
     if (typeof document === 'undefined') return;
     const frame = this.frame ?? document.getElementById('game-frame');
     if (!frame) return;
     this.frame = frame;
+    const root = this.root;
+    if (!root) return;
+    // Node 测试里画框是假的，没有 querySelector；拿不到画布就保持上一轮尺寸。
+    const canvas = typeof frame.querySelector === 'function' ? frame.querySelector('canvas') : null;
+    const displayWidth = canvas?.clientWidth || 0, displayHeight = canvas?.clientHeight || 0;
+    const bitmapWidth = canvas?.width || 0, bitmapHeight = canvas?.height || 0;
+    // 画布还没建好（boot 早于 Phaser.Game）时保持上一轮的尺寸，等 ready 后再来一次。
+    if (!displayWidth || !displayHeight || !bitmapWidth || !bitmapHeight) return;
+    const ratio = displayWidth / bitmapWidth;
+    Object.assign(root.style, {
+      width: `${bitmapWidth}px`, height: `${bitmapHeight}px`,
+      transformOrigin: '0 0', transform: ratio === 1 ? '' : `scale(${ratio})`
+    });
   }
 
-  /** 当前画框的 CSS 尺寸；DOM 文字用它换算字号和位置。 */
+  /** 当前画布位图尺寸（DOM 坐标单位）；DOM 文字用它换算字号和位置。 */
   frameSize(camera?: Phaser.Cameras.Scene2D.Camera): { width: number; height: number } {
-    const measurements = camera && this.measureWorld(camera);
-    if (measurements) return { width: measurements.frameRect.width, height: measurements.frameRect.height };
-    if (typeof document === 'undefined') return { width: 0, height: 0 };
-    const frame = this.frame ?? document.getElementById('game-frame');
-    if (!frame) return { width: 0, height: 0 };
-    const rect = frame.getBoundingClientRect();
-    return { width: rect.width, height: rect.height };
+    if (typeof document !== 'undefined') {
+      const frame = this.frame ?? document.getElementById('game-frame');
+      const canvas = typeof frame?.querySelector === 'function' ? frame.querySelector('canvas') : null;
+      if (canvas?.width && canvas.height) return { width: canvas.width, height: canvas.height };
+    }
+    // 没有画布元素时以 Phaser 的缩放尺寸为准：那就是位图尺寸，和相机、指针同一口径。
+    if (camera?.scene?.scale) return { width: camera.scene.scale.width, height: camera.scene.scale.height };
+    return { width: 0, height: 0 };
   }
 
   /** 界面单位：800×480 基准，与现有 `uiUnitScale` 同一口径。 */
@@ -202,11 +222,13 @@ export class DomUi {
     const measurements = this.measureWorld(camera);
     if (!measurements) return { x: 0, y: 0 };
     const { frameRect, canvasRect } = measurements;
-    const scaleX = canvasRect.width / Math.max(1, camera.scene.scale.width);
-    const scaleY = canvasRect.height / Math.max(1, camera.scene.scale.height);
+    // 返回画布坐标（DOM 层统一单位）。位图可能是 CSS 尺寸的 2 倍，
+    // 画布相对画框的偏移也要按同一比例换算，否则高分屏上会偏一半。
+    const scaleX = camera.scene.scale.width / Math.max(1, canvasRect.width);
+    const scaleY = camera.scene.scale.height / Math.max(1, canvasRect.height);
     return {
-      x: canvasRect.left - frameRect.left + (x - camera.worldView.x) * camera.zoom * scaleX,
-      y: canvasRect.top - frameRect.top + (y - camera.worldView.y) * camera.zoom * scaleY
+      x: (canvasRect.left - frameRect.left) * scaleX + (x - camera.worldView.x) * camera.zoom,
+      y: (canvasRect.top - frameRect.top) * scaleY + (y - camera.worldView.y) * camera.zoom
     };
   }
 

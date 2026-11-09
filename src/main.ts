@@ -620,7 +620,7 @@ function boot(): void {
   app.storyUI = new StoryUI(app);
   app.openCrafting=actorId=>app.storyUI.openCrafting(actorId);
   app.openShop=(shopId,mapId)=>app.storyUI.openShop(shopId,mapId);
-  ui.onStateChange = () => { if(app.game)configureCanvas(app.game); app.storyUI.sync(); worldScene()?.syncHud(); domUi.setOccluded(uiOcclusion(ui)); };
+  ui.onStateChange = () => { if(app.game)configureCanvas(app.game); domUi.layout(); app.storyUI.sync(); worldScene()?.syncHud(); domUi.setOccluded(uiOcclusion(ui)); };
   ui.onMenu = returnToMenu;
   ui.onResetInput = () => { worldScene()?.resetInput(); };
   const game = new Phaser.Game({
@@ -642,6 +642,8 @@ function boot(): void {
   installGameDiagnostics(game, runtimeDiagnostics);
   game.events.once('ready', () => {
     configureCanvas(game);
+    // 画布此时才有位图尺寸，DOM 层要按它定坐标系（高分屏上位图是 CSS 尺寸的两倍）。
+    domUi.layout();
     // iOS 弹出系统键盘会让窗口短暂失焦。Phaser 把这次失焦当成页面切走：暂停游戏
     // 循环并挂起音频，键盘收起后不一定恢复。输入框聚焦期间的失焦交给输入框自己
     // 处理；真正的页面切走仍由 lifecycle 的 visibilitychange 驱动。ready 先于

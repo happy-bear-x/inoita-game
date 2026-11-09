@@ -102,8 +102,9 @@ export class CloudCredentialsInput {
     password.setAttribute('spellcheck', 'false');
 
     root.append(account, password);
-    // 画布容器是 fixed 定位；挂在它里面，输入框跟着画布一起跟随可视区偏移。
-    (document.getElementById('game-frame') ?? document.body).append(root);
+    // 坐标来自画布像素，挂在 `#ui-root` 里才能跟着 DOM 层一起缩回 CSS 尺寸；
+    // 画布还没建好时退回画布容器，输入框仍然跟可视区一起偏移。
+    (document.getElementById('ui-root') ?? document.getElementById('game-frame') ?? document.body).append(root);
     this.root = root;
     this.accountInput = account;
     this.passwordInput = password;

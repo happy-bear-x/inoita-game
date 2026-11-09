@@ -189,7 +189,8 @@ export class StoryClassScene extends Phaser.Scene {
     const scroll=this.descriptionScroll;
     if(scroll){
       // 说明由浏览器按固定宽度换行；用实际排版高度决定滚动范围，避免文字被截在框外。
-      const height=dom.description.element.getBoundingClientRect().height;
+      // 取 offsetHeight（布局像素）：getBoundingClientRect 带上了 DOM 根节点的缩放，高分屏上会小一半。
+      const height=dom.description.element.offsetHeight;
       scroll.setHeight(Math.max(1,height/Math.max(.0001,scale)));
     }
     this.positionDescription();
