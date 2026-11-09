@@ -376,15 +376,15 @@ export class MenuScene extends Phaser.Scene {
     };
     if(this.page==='home'){
       view.image(art('logo'),291,52,617,353);view.image(art('subtitle-left'),305,385,undefined,122);view.image(art('subtitle-right'),601,385,undefined,122);
-      const menuButton=(key:string,label:string,x:number,y:number,width:number,height:number,action:()=>void,disabled=false):void=>{
-        view.button('',x,y,width,height,action,{fontSize:36,disabled,guard}).setData('label',label);
-        buttonText(key,label,x,y,width,height,36,disabled?'rgba(243,222,176,.4)':GOLD);
+      const menuButton=(key:string,label:string,x:number,y:number,width:number,height:number,action:()=>void,disabled=false,fontSize=36):void=>{
+        view.button('',x,y,width,height,action,{fontSize,disabled,guard}).setData('label',label);
+        buttonText(key,label,x,y,width,height,fontSize,disabled?'rgba(243,222,176,.4)':GOLD);
       };
       menuButton('home-start','开始游戏',416,457,369,124,()=>this.openSlots());
       menuButton('home-settings','环境设置',65,472,300,92,()=>{this.page='settings';this.render();});
       menuButton('home-challenge','挑战模式',835,472,300,92,()=>{},true);
       // 右上角：按钮贴住画面右上，右边和上边各留 8 像素，整块落在 logo 右侧的空白上。
-      menuButton('home-changelog','更新日志',982,8,210,64,()=>this.openChangelog());
+      menuButton('home-changelog','更新日志',982,8,210,64,()=>this.openChangelog(),false,28);
       this.addVersion(view,texts);
     }else if(this.page==='cloud'){
       texts.push(...this.drawCloudPage(view));
