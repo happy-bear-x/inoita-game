@@ -125,7 +125,8 @@ try {
 
   const updateTemp = fs.mkdtempSync(path.join(os.tmpdir(), 'inoita-verify-apk-'));
   try {
-    run('unzip', ['-q', apk, '-d', updateTemp]);
+    // 资源名混淆后会出现只差大小写的条目，APFS 不区分大小写，必须用 -o 覆盖，否则 unzip 会卡在交互提问。
+    run('unzip', ['-o', '-q', apk, '-d', updateTemp]);
     const updateAssets = path.join(updateTemp, 'assets', 'update');
     const publicKey = readUpdatePublicKey();
     const pointerBuilds = [];
