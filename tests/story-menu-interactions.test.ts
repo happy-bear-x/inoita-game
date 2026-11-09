@@ -2402,7 +2402,8 @@ test('using a mercenary emblem prepares only the new member preview', t => {
   f.internals.confirmOperation();
   const member=f.session.party!.snapshot().members.find(value=>value.source==='mercenary');
   assert.ok(member,'徽章招募出新成员');
-  assert.deepEqual(calls,[{id:member.id,full:undefined}],'只准备新成员的预览外观，不重建整套队伍外观');
+  assert.deepEqual(calls.map(call=>call.full),[undefined,true],'先准备预览动作，再为新成员预拼整套外观');
+  assert(calls.every(call=>call.id===member.id),'只处理新成员，不重建整套队伍外观');
   assert.equal(f.session.bag.count('mercenary-emblem-warlock'),0,'徽章被消耗');
 });
 
