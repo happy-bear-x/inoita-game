@@ -31,7 +31,7 @@
 - 检查失败和下载失败都不能静默：检查失败重试用尽后弹提示，下载失败弹「更新失败」并允许重试；「稍后」只在本进程内抑制重复提示。
 - 下载和应用分开：下载并校验完成只记录持久化的 `readyBuildId`，弹「更新已准备好，重启后生效」；立即重启才切 active，选稍后或杀进程则在下次冷启动 `initialize()` 时自动应用。
 - 回退只发生在「新版本重建浏览器后、标题页调用 `markBootOk()` 前」的 90 秒窗口；正常游玩时 `onRenderProcessTerminated` 只重建浏览器。回退后弹出提示并允许重试，失败 buildId 有 24 小时冷却。
-- 更新生命周期通过 `Diagnostics` 写 `update-*` 事件，带 buildId、文件数、失败原因和 `buildInfo`。
+- 更新生命周期通过 `Diagnostics` 写 `update-*` 事件，带 buildId、文件数、失败原因和 `buildInfo`。上报走后台单线程，不能阻塞 `UpdateManager.initialize()` 和冷启动。
 - 壳使用 edge-to-edge：`setDecorFitsSystemWindows(false)`，Cefrium 的 surface 铺满整屏；安全区只由网页用于 HUD、侧边按钮和文字避让，不参与画布尺寸。全屏开关在自带引擎里返回 `packaged`，由隐藏系统栏实现沉浸式。
 - 页面背景色设在视图树上：`browser.getSurfaceContainer().setBackgroundColor(...)`。`CefriumBrowser` 是屏幕上显示的 surface 浏览器，它的 `setBackgroundColor` 只对离屏浏览器有效，调用会立刻抛 `IllegalStateException` 让应用闪退。
 - 明文只允许本机 `127.0.0.1` 与 `localhost`；release 的云存档/诊断地址必须是 HTTPS。本地 HTTP 服务只绑定 `127.0.0.1`，不监听局域网。

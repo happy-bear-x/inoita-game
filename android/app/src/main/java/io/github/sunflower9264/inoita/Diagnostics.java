@@ -11,11 +11,19 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /** 诊断上报：页面和更新流程共用同一条 HTTP 通道。 */
 final class Diagnostics {
 
     private static final String TAG = "InotiaDiagnostics";
+    /** 更新流程的诊断上报走后台线程，不能让 8 秒网络超时挡在冷启动前面。 */
+    private static final ExecutorService REPORTER = Executors.newSingleThreadExecutor(task -> {
+        Thread thread = new Thread(task, "diagnostics-report");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     private Diagnostics() {}
 
@@ -64,7 +72,7 @@ final class Diagnostics {
             JSONObject root = new JSONObject();
             root.put("version", 1);
             root.put("entries", new JSONArray().put(entry));
-            post(root.toString());
+            REPORTER.execute(() -> post(root.toString()));
         } catch (Exception error) {
             Log.w("InotiaUpdate", "更新事件上报失败: " + error.getMessage());
         }
