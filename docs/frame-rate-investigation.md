@@ -23,6 +23,8 @@ Phaser 的限帧器只在累计时间越过 `1000 / limit` 毫秒时交付一帧
 
 相邻两帧间隔超过 80ms 时另记一条 `long-frame`（最多每 3 秒一条），带 `gapMs`、`workMs`、`heapMb` 和当时的完整运行态。`gapMs` 大而 `workMs` 小，说明浏览器没给回调；两者都大，才是游戏自己算得太久。
 
+卡顿发生在游戏这一步之外时，另记 `long-animation`（Chrome 的 Long Animation Frame）：`durationMs` 是整帧时长，`styleMs` 是最后一次脚本执行之后留给样式和布局的时间，`scripts` 列出耗时最长的几个脚本及其地址。浏览器不支持时退回 `long-task`，只记 `durationMs`。`perf-sample` 里的 `domNodes` 是当时页面里的元素总数，用来判断 DOM 有没有膨胀。
+
 ## 怎么读这份清单
 
 游戏里有三种频率，混在一起看容易误判。

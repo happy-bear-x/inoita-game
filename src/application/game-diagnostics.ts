@@ -113,8 +113,53 @@ export function installGameDiagnostics(game: Phaser.Game, snapshot: () => unknow
     rafP50: rafWindow.percentile(0.5), rafP95: rafWindow.percentile(0.95),
     // 交付间隔说明「多久出一帧」，工作耗时说明「这一帧自己跑了多久」。
     workP50: workWindow.percentile(0.5), workP95: workWindow.percentile(0.95),
+    domNodes: typeof document === 'undefined' ? null : document.getElementsByTagName('*').length,
   });
   collector.setSnapshot(() => ({ ...(snapshot() as Record<string, unknown> | null ?? {}), renderer: rendererInfo(), perf: perf() }));
+  // 长帧里 gapMs 大、workMs 小，说明卡顿发生在游戏这一步之外。Long Animation Frame
+  // 会告诉我们是脚本、样式还是布局占了时间；老浏览器退回到 Long Tasks。
+  const observers: PerformanceObserver[] = [];
+  let lastTaskReport = 0;
+  const reportTask = (kind: string, details: Record<string, unknown>): void => {
+    const now = performance.now();
+    if (now - lastTaskReport < LONG_FRAME_COOLDOWN_MS) return;
+    lastTaskReport = now;
+    collector.record(kind, details);
+  };
+  const observeLongFrames = (type: string, handle: (entry: Record<string, unknown>) => void): boolean => {
+    if (typeof PerformanceObserver === 'undefined') return false;
+    const supported = (PerformanceObserver as unknown as { supportedEntryTypes?: readonly string[] }).supportedEntryTypes;
+    if (supported && !supported.includes(type)) return false;
+    try {
+      const observer = new PerformanceObserver(list => {
+        for (const entry of list.getEntries()) handle(entry as unknown as Record<string, unknown>);
+      });
+      observer.observe({ type, buffered: true } as PerformanceObserverInit);
+      observers.push(observer);
+      return true;
+    } catch { return false; }
+  };
+  const sawAnimationFrame = observeLongFrames('long-animation-frame', entry => {
+    const duration = Number(entry.duration) || 0;
+    if (duration < LONG_FRAME_MS) return;
+    const styleStart = Number(entry.styleAndLayoutStart) || 0;
+    const scripts = Array.isArray(entry.scripts) ? entry.scripts as Array<Record<string, unknown>> : [];
+    reportTask('long-animation', {
+      durationMs: Math.round(duration), blockingMs: Math.round(Number(entry.blockingDuration) || 0),
+      styleMs: styleStart ? Math.round(duration - styleStart) : null,
+      scripts: scripts.slice(0, 4).map(script => ({
+        ms: Math.round(Number(script.duration) || 0),
+        fn: String(script.sourceFunctionName ?? ''),
+        src: String(script.sourceURL ?? '').replace(globalThis.location?.origin ?? '', ''),
+      })),
+    });
+  });
+  if (!sawAnimationFrame) {
+    observeLongFrames('longtask', entry => {
+      const duration = Number(entry.duration) || 0;
+      if (duration >= LONG_FRAME_MS) reportTask('long-task', { durationMs: Math.round(duration) });
+    });
+  }
   // 自己数 rAF：引擎的 actualFps 是每秒一个平滑值，看不出跳帧的分布。
   const probeFrame = (time: number): void => {
     if (!probing) return;
@@ -179,6 +224,7 @@ export function installGameDiagnostics(game: Phaser.Game, snapshot: () => unknow
   game.events.once(Phaser.Core.Events.DESTROY, () => {
     probing = false;
     cancelAnimationFrame(rafHandle);
+    for (const observer of observers) observer.disconnect();
     game.events.off(Phaser.Core.Events.PRE_STEP, beforeUpdate);
     game.events.off(Phaser.Core.Events.POST_STEP, beforeRender);
     game.events.off(Phaser.Core.Events.POST_RENDER, afterRender);
