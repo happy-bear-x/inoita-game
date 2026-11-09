@@ -66,6 +66,10 @@ class FrameWindow {
     else { this.values[this.cursor] = value; this.cursor = (this.cursor + 1) % WINDOW_SIZE; }
   }
 
+  max(): number {
+    return this.values.length ? Math.round(Math.max(...this.values) * 10) / 10 : 0;
+  }
+
   percentile(ratio: number): number {
     if (!this.values.length) return 0;
     const sorted = this.values.slice().sort((a, b) => a - b);
@@ -108,6 +112,10 @@ export function installGameDiagnostics(game: Phaser.Game, snapshot: () => unknow
   const stepWindow = new FrameWindow(), rafWindow = new FrameWindow();
   const workWindow = new FrameWindow(), updateWindow = new FrameWindow(), renderWindow = new FrameWindow();
   let lastStepAt = 0, lastRafAt = 0, rafHandle = 0, probing = true, stepStartedAt = 0, stepPhaseEnd = 0, lastLongFrame = 0;
+  // 按键按下会让界面多一层合成；记下这一秒有多少帧处在按下状态，才能把帧率和操作对上。
+  let pressedChecks = 0, pressedSeen = 0, pressedRatio: number | null = null;
+  // 浏览器每秒到底叫了我们几次：和交付帧数分开记，才能分清「浏览器不给」还是「游戏没画」。
+  let ticks = 0, rafTicks = 0;
   const perf = (): Record<string, unknown> => ({
     stepFps, rafFps, limit: game.loop.fpsLimit, refreshHz: currentRefreshRate(),
     stepP50: stepWindow.percentile(0.5), stepP95: stepWindow.percentile(0.95),
@@ -117,6 +125,9 @@ export function installGameDiagnostics(game: Phaser.Game, snapshot: () => unknow
     updateP50: updateWindow.percentile(0.5), updateP95: updateWindow.percentile(0.95),
     renderP50: renderWindow.percentile(0.5), renderP95: renderWindow.percentile(0.95),
     domNodes: typeof document === 'undefined' ? null : document.getElementsByTagName('*').length,
+    pressedRatio,
+    rafTicks,
+    stepMax: stepWindow.max(), workMax: workWindow.max(),
   });
   // perf 放在最前面：上报超过长度上限时，state 会被截断，靠后的字段先丢。
   collector.setSnapshot(() => ({ perf: perf(), renderer: rendererInfo(), ...(snapshot() as Record<string, unknown> | null ?? {}) }));
@@ -180,6 +191,7 @@ export function installGameDiagnostics(game: Phaser.Game, snapshot: () => unknow
       if (gap > 0 && gap < 250) rafWindow.push(gap);
     }
     lastRafAt = time;
+    ticks += 1;
     rafHandle = requestAnimationFrame(probeFrame);
   };
   rafHandle = requestAnimationFrame(probeFrame);
@@ -194,6 +206,10 @@ export function installGameDiagnostics(game: Phaser.Game, snapshot: () => unknow
     stepStartedAt = 0; stepPhaseEnd = 0;
     if (typeof document !== 'undefined' && document.hidden) {
       frames = 0; windowStart = now; lastStepAt = 0; return;
+    }
+    if (typeof document !== 'undefined' && frames % 10 === 0) {
+      pressedChecks += 1;
+      if (document.querySelector('[data-pressed="true"]')) pressedSeen += 1;
     }
     workWindow.push(workMs); updateWindow.push(updateMs); renderWindow.push(renderMs);
     const gap = lastStepAt ? now - lastStepAt : 0;
@@ -215,6 +231,9 @@ export function installGameDiagnostics(game: Phaser.Game, snapshot: () => unknow
     // 切后台、弹系统框或长时间停顿时，这段空档不是渲染慢；丢掉这一窗，别上报 0 帧。
     if (elapsed > 3000) { frames = 0; windowStart = now; return; }
     stepFps = Math.round(frames * 1000 / elapsed);
+    pressedRatio = pressedChecks ? Math.round(pressedSeen * 100 / pressedChecks) / 100 : null;
+    pressedChecks = 0; pressedSeen = 0;
+    rafTicks = ticks; ticks = 0;
     rafFps = Math.round(game.loop.actualFps);
     frames = 0; windowStart = now;
     if (!announced) {

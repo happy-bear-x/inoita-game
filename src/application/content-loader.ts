@@ -149,9 +149,19 @@ export class ContentLoader {
     if (!request) {
       const controller = new AbortController();
       const promise = (async () => {
+        const startedAt = performance.now();
         const response = await fetch(versionedContent(file), { signal: controller.signal });
         if (!response.ok) throw new Error(`资源暂时无法加载：${file}`);
+        const fetchedAt = performance.now();
         const value = await response.json();
+        const parsedAt = performance.now();
+        if (parsedAt - startedAt >= 40)
+          globalThis.storyDiagnostics?.record('content-read-slow', {
+            file,
+            bytes: Number(response.headers.get('content-length')) || 0,
+            fetchMs: Math.round(fetchedAt - startedAt),
+            jsonMs: Math.round(parsedAt - fetchedAt),
+          });
         controller.signal.throwIfAborted();
         // 生产信任路径只核对内容哨兵；dev/test/GM 仍完整校验。
         if(this.trusted){

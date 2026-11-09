@@ -638,6 +638,8 @@ function boot(): void {
     scene: [], banner: false, audio: { disableWebAudio: false }
   });
   app.game = game;
+  // 真机排查用：壳内 DevTools 需要拿到 game 才能开关滤镜/图层做 A/B；不参与游戏逻辑。
+  (globalThis as { storyGame?: Phaser.Game }).storyGame = game;
   let frameLimitDisposed = false;
   const applyFrameLimit = (): void => {
     if (frameLimitDisposed) return;

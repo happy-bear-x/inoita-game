@@ -31,7 +31,8 @@ function client(storage = new Map<string, string>(), brokenStorage = false,
   options: { native?: boolean; hostname?: string; onNativeReport?: (body: string, id: string) => void } = {}) {
   const windowEvents = new EventEmitter(), documentEvents = new EventEmitter();
   const sent: { entries: Entry[] }[] = [], originals: unknown[][] = [], intervals: (() => void)[] = [];
-  let now = 1000, online = true;
+  const timeouts: { id: number; callback: () => void }[] = [];
+  let now = 1000, nextTimeout = 1, online = true;
   class Clock extends Date { static override now() { return now; } }
   const document = { currentScript: { src: 'http://localhost:4002/diagnostics.js' }, visibilityState: 'visible',
     addEventListener: (event: string, callback: (...args: unknown[]) => void) => documentEvents.on(event, callback) };
@@ -43,7 +44,10 @@ function client(storage = new Map<string, string>(), brokenStorage = false,
       setItem: (key: string, value: string) => { if (brokenStorage) throw Error('disabled'); storage.set(key, value); } },
     addEventListener: (event: string, callback: (...args: unknown[]) => void) => windowEvents.on(event, callback),
     setInterval: (callback: () => void) => { intervals.push(callback); return intervals.length; },
-    setTimeout: () => 1, clearTimeout: () => {},
+    // 落盘改成 2 秒防抖后，测试自己决定什么时候让定时器到期。
+    setTimeout: (callback: () => void) => { const id = nextTimeout++; timeouts.push({ id, callback }); return id; },
+    clearTimeout: (id: number) => { const index = timeouts.findIndex(timer => timer.id === id);
+      if (index >= 0) timeouts.splice(index, 1); },
     fetch: async (_url: string, request: { body: string }) => {
       if (!online) throw Error('offline'); sent.push(JSON.parse(request.body)); return { ok: true };
     },
@@ -62,7 +66,8 @@ function client(storage = new Map<string, string>(), brokenStorage = false,
       (sandbox as unknown as { __inoitaNativeReportResult?: (id: string, ok: boolean) => void })
         .__inoitaNativeReportResult?.(id, ok),
     online(value: boolean) { online = value; },
-    advance(ms: number) { now += ms; for (const timer of intervals) timer(); } };
+    advance(ms: number) { now += ms; for (const timer of intervals) timer(); },
+    runTimers() { for (const timer of timeouts.splice(0)) timer.callback(); } };
 }
 
 test('console and global errors retain stack, cause, state and original console output', async () => {
@@ -95,11 +100,13 @@ test('resource errors and WebGL loss are captured independently of the frame loo
 test('failed upload persists across reload and is only removed after server acknowledgement', async () => {
   const f = client(); await settle(); f.online(false);
   f.collector.record('window-error', { message: 'offline strike' }); await settle();
+  f.runTimers();
   const saved = f.storage.get('inotia4.diagnostics.pending.v1')!;
   assert.match(saved, /offline strike/);
   const next = client(f.storage); await settle();
   assert.equal(next.sent[0].entries[0].id, f.entries().at(-1)!.id);
   await next.collector.flush(); await settle();
+  next.runTimers();
   assert.equal(next.storage.get('inotia4.diagnostics.pending.v1'), '[]');
 });
 
@@ -163,11 +170,16 @@ test('reinstalling the script leaves a single console interceptor and bounds rec
   for (let i = 0; i < 45; i++) f.sandbox.console.error('x'.repeat(50000));
   assert.equal(f.originals.length, 45); assert.equal(f.entries().length, 32);
   assert(f.entries().every(entry => JSON.stringify(entry).length <= 12000));
+  f.runTimers();
   assert.equal((JSON.parse(f.storage.get('inotia4.diagnostics.pending.v1')!) as unknown[]).length, 32);
 });
 
 test('engine event observers do not replace updates and are removed on destroy', () => {
   const f = client(), events = new EventEmitter();
+  const frames: ((time: number) => void)[] = [];
+  // installGameDiagnostics 自己数 rAF 估算掉帧；Node 没有浏览器时钟，补一个不推进的壳。
+  Object.assign(globalThis, { requestAnimationFrame: (callback: (time: number) => void) => {
+    frames.push(callback); return frames.length; }, cancelAnimationFrame: () => {} });
   globalThis.storyDiagnostics = f.collector;
   try {
     installGameDiagnostics({ events } as unknown as Phaser.Game, () => ({ map: 'forest' }));
@@ -180,7 +192,11 @@ test('engine event observers do not replace updates and are removed on destroy',
     events.emit('destroy'); assert.equal(events.listenerCount('prestep'), 0);
     assert.equal(events.listenerCount('poststep'), 0); assert.equal(events.listenerCount('postrender'), 0);
     f.advance(8000); assert.equal(f.entries().at(-1)!.kind, 'test');
-  } finally { globalThis.storyDiagnostics = undefined; }
+  } finally {
+    globalThis.storyDiagnostics = undefined;
+    delete (globalThis as { requestAnimationFrame?: unknown }).requestAnimationFrame;
+    delete (globalThis as { cancelAnimationFrame?: unknown }).cancelAnimationFrame;
+  }
 });
 
 function request(middleware: Middleware, body: string, method = 'POST', url = '/__diagnostics/report') {

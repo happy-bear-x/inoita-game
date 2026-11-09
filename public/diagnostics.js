@@ -43,8 +43,18 @@
       return result;
     } catch { return '[Unserializable]'; }
   }
-  function persist() {
+  // localStorage 写入是同步的，每条记录都写会让主线程在战斗中多花十几毫秒；攒到空闲时再落一次。
+  let persistTimer = 0;
+  function writePending() {
     try { localStorage.setItem(storageKey, JSON.stringify(pending)); } catch { /* 手机可能禁用存储。 */ }
+  }
+  function persist() {
+    if (persistTimer) return;
+    persistTimer = setTimeout(() => { persistTimer = 0; writePending(); }, 2000);
+  }
+  function persistNow() {
+    if (persistTimer) { clearTimeout(persistTimer); persistTimer = 0; }
+    writePending();
   }
   try {
     const saved = JSON.parse(localStorage.getItem(storageKey) || '[]');
@@ -131,7 +141,7 @@
     }
   }, true);
   window.addEventListener('unhandledrejection', event => record('unhandled-rejection', { reason: event.reason }));
-  window.addEventListener('pagehide', () => { void flush(); });
+  window.addEventListener('pagehide', () => { persistNow(); void flush(); });
   document.addEventListener('visibilitychange', () => {
     visibleSince = Date.now(); stalled = false;
   });
