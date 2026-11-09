@@ -193,12 +193,12 @@ function menuPreparationFor(signal: AbortSignal): MenuPreparation | undefined {
     const fail = (error: unknown) => { if (menuPreparation === next) menuPreparation = undefined; throw error; };
     // 图标图集一次加载：物品/技能图标在世界 HUD 上就要用，不能被后台补图拖成空白。
     const coreFiles = [...groups.core, ...Object.values(app.controlSkin), UI_ICON_ATLAS_FILE];
-    next.core = host.preloadFiles([...coreFiles,
+    next.core = host.preloadResident([...coreFiles,
       ...Object.values(app.statusHud.assets), ...Object.values(app.statusHud.buffIcons.catalog),
       ...MINIMAP_ASSETS.map(key => app.storyInterface.assets[key])], signal, value => report(value, 0, 0.6))
       .then(() => recordStartPhase('menu-core-loaded')).catch(fail);
     next.all = next.core.then(() => extra.length
-      ? host.preloadFiles(extra, signal, value => report(value, 0.6, 0.4)).then(() => recordStartPhase('menu-extra-loaded'))
+      ? host.preloadResident(extra, signal, value => report(value, 0.6, 0.4)).then(() => recordStartPhase('menu-extra-loaded'))
       : undefined).catch(fail);
     // 只等 core 的调用方不会观察 all；挂一个空处理，避免后台失败变成未处理拒绝。
     void next.all.catch(() => {});

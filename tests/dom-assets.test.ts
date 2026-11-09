@@ -67,3 +67,12 @@ test('cancellation rejects even while a shared image remains pending', async () 
   controller.abort(); await rejected;
   assert.equal(assets.size, 0);
 });
+
+test('a leased image keeps its decoded element available to the menu', async () => {
+  const image = { naturalWidth: 32, naturalHeight: 20 } as HTMLImageElement;
+  const assets = new DomAssets({ image: async () => ({ width: 32, height: 20, image }), atlas: async () => ({ frames: {} }) });
+  const lease = await assets.acquire('resident.png', new AbortController().signal);
+  assert.equal(lease.source.image, image);
+  lease.release();
+  assert.equal(assets.size, 0);
+});

@@ -7,13 +7,16 @@ import { UI_ATLAS_FRAMES, UI_ATLAS_PAGES } from '../../generated/ui-atlas.ts';
 
 export const GOLD = '#f3deb0';
 const atlasName = (file: string): string => file.replace(/^\//, '');
-export async function loadUiImages(_scene: Phaser.Scene, files: string[], progress = (_value: number) => {}, signal = new AbortController().signal): Promise<AssetLease> {
-  const names = [...new Set([...files, ...COMMON_BUTTON_IMAGES])].flatMap(file => {
+/** 把菜单图片折成真正要下载的文件：同一张图集只留一个代表帧。 */
+export function uiImageFileNames(files: readonly string[]): string[] {
+  return [...new Set([...files, ...COMMON_BUTTON_IMAGES])].flatMap(file => {
     const name=atlasName(file);
     if(name===UI_ICON_ATLAS_DATA||name===UI_ICON_ATLAS_FILE)return Object.keys(UI_ICON_FRAMES).slice(0,1);
     const page=UI_ATLAS_PAGES.find(page=>page.file===name||page.data===name);
-    return page?Object.keys(UI_ATLAS_FRAMES).filter(key=>UI_ATLAS_FRAMES[key]!.key===page.key).slice(0,1):[file];
+    return page?Object.keys(UI_ATLAS_FRAMES).filter(key=>UI_ATLAS_FRAMES[key]!.key===page.key).slice(0,1):[name];
   });
-  return domAssets.preloadFiles(names,signal,progress);
+}
+export async function loadUiImages(_scene: Phaser.Scene, files: string[], progress = (_value: number) => {}, signal = new AbortController().signal): Promise<AssetLease> {
+  return domAssets.preloadFiles(uiImageFileNames(files),signal,progress);
 }
 export { UiSurface, ScrollArea } from '../dom/surface.ts';

@@ -147,6 +147,17 @@ test('menu preloads share caller cancellation and release the retained DOM image
   request.abort();await assert.rejects(host.preloadFiles(['portrait.png'],request.signal,()=>{}),{name:'AbortError'});
 });
 
+test('resident menu images survive content release and are loaded once',async t=>{
+  const f=fixture();t.after(f.cleanup);let calls=0,releases=0;
+  t.mock.method(domAssets,'preloadFiles',async()=>{calls+=1;return {release:()=>releases++};});
+  const host=new SceneUiAssets(f.scene),signal=new AbortController().signal;
+  await host.preloadResident(['menu-frame.png'],signal,()=>{});
+  await host.preloadResident(['/menu-frame.png'],signal,()=>{});
+  assert.equal(calls,1,'同一张常驻图只加载一次');
+  host.releaseContent();assert.equal(releases,0,'关闭本局内容不释放常驻图');
+  host.releaseResident();host.releaseResident();assert.equal(releases,1,'场景销毁才释放常驻图');
+});
+
 
 test('quest confirmation stays above the input blocker and accepts one tap',t=>{
   const f=fixture();t.after(f.cleanup);
