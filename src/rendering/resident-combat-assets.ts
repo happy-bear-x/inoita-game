@@ -2,7 +2,7 @@ import { resolveBasicAttack } from '../domain/basic-attack.ts';
 import type { BattleCatalog } from '../domain/battle.ts';
 import { feedbackEffects } from '../domain/combat-feedback.ts';
 import { COMBAT_OUTCOME_EFFECTS } from '../domain/combat-outcomes.ts';
-import type { WorldIndex } from '../domain/content.ts';
+import type { WorldIndex, ClipName } from '../domain/content.ts';
 import type { CompanionCatalog } from '../domain/party.ts';
 import type { WardrobeCatalog } from '../domain/wardrobe.ts';
 import { classSummonEnemyIds, enemyCombatAssets } from './combat-assets.ts';
@@ -18,20 +18,25 @@ export interface ResidentCombatInput {
   world: WorldIndex;
   companions: CompanionCatalog;
   /**
-   * 省略 = 全部职业（构建期全量校验）；运行时只传当前主角职业。
+   * 省略 = 全部职业（构建期全量校验）；运行时可只传主角与已拥有成员的职业。
    */
   classIds?: Iterable<string>;
   /**
-   * 已拥有的伙伴外观定义 id。省略 = 全部伙伴（构建期全量校验）；
-   * 运行时只传当前队伍已拥有的伙伴，未拥有的成员按需加载。
+   * 伙伴外观范围。省略 = 全部伙伴；运行时也省略，只限定具体成员时才传。
+   * 默认装配每个 actor 的全部动作；`baseOnlyCompanions` 为真时只装非技能动作。
    */
   ownedCompanionIds?: Iterable<string>;
+  /**
+   * 只装伙伴的基础动作（idle/walk/attack/die 等），技能动作按使用者装载。
+   * 运行时为 true；构建期省略以保留全量覆盖校验。
+   */
+  baseOnlyCompanions?: boolean;
   /**
    * 已学技能 id（主角与已拥有伙伴的并集）。省略 = 全部技能（构建期全量校验）；
    * 运行时只装已学技能的动画特效与召唤物。
    */
   learnedSkillIds?: Iterable<string>;
-  /** 正式游玩只常驻通用反馈，角色、武器与技能交给当前地图及施法者持有。 */
+  /** 只装通用反馈与战斗结果，用于调试或轻量场景；正式游玩不使用。 */
   feedbackOnly?: boolean;
 }
 
@@ -44,7 +49,7 @@ interface CombatAssetPack {
 }
 
 /**
- * 运行时通过 feedbackOnly 持有通用反馈，职业、装备与技能由地图及使用者准备。
+ * 会话常驻的战斗视觉资源：伙伴基础动作、主角与已拥有成员已学技能的特效。
  * 构建期默认枚举全部玩家资源，也可指定职业、伙伴和技能范围核对覆盖。
  * 同一纹理键必须指向同一文件和帧配置，否则直接报错。
  */
@@ -81,6 +86,7 @@ export function residentCombatAssets(input: ResidentCombatInput): CombatAssetPac
       addAssets(enemyCombatAssets(battle, definition));
     }
     for (const skillId of character.skills) {
+      if (learnedSkills && !learnedSkills.has(skillId)) continue;
       const icon = battle.skills[skillId].icon;
       addAssets([{ kind: 'image', key: icon, file: icon }]);
     }
@@ -98,7 +104,7 @@ export function residentCombatAssets(input: ResidentCombatInput): CombatAssetPac
     if (!battle.classes.some(character => character.id === id)) throw new Error(`常驻战斗包职业不存在：${id}`);
   for (const character of battle.classes)
     if (!selectedClasses || selectedClasses.has(character.id)) addClass(character.id);
-  // 佣兵的基础外观只装已拥有的成员；招募后由队伍面板和战斗开场按需加载。
+  // 伙伴基础动作全部常驻，招募后立刻能进场；技能动作与特效按使用者装载。
   const selectedCompanions = input.ownedCompanionIds === undefined ? undefined : new Set(input.ownedCompanionIds);
   if (selectedCompanions) for (const id of selectedCompanions)
     if (!companions.definitions[id]) throw new Error(`常驻战斗包伙伴不存在：${id}`);
@@ -107,7 +113,10 @@ export function residentCombatAssets(input: ResidentCombatInput): CombatAssetPac
     const actor = world.actors[definition.actor];
     if (!actor) continue;
     actorIds.add(actor.id);
-    addAssets(characterAssets(actor));
+    const clips: ClipName[] | undefined = input.baseOnlyCompanions
+      ? (Object.keys(actor.clips) as ClipName[]).filter(name => !name.startsWith('skill-'))
+      : undefined;
+    addAssets(characterAssets(actor, clips));
   }
   return { assets: [...assets.values()], effectNames, actorIds };
 }
