@@ -754,13 +754,16 @@ export class WorldScene extends Phaser.Scene {
       const bag=this.app.session.bag,revision=bag.revision;
       const next=entry?bag.planEquip(entry,slot,memberId,member.classId,member.level):bag.planUnequip(slot,memberId);
       const wardrobe=this.companionWardrobe(memberId),base=this.app.world.actors[member.definition.actor];
-      const outfit=await wardrobe.prepare(base,bag.equipmentItems(next),member.classId);
+      const learned=learnedSkillIds(this.app.battleCatalog,member.classId,member.skills);
+      const learnedSignature=[...learned].sort().join('|');
+      const outfit=await wardrobe.prepare(base,bag.equipmentItems(next),member.classId,{learnedSkills:learned});
       signal?.throwIfAborted();
       if(this.destroyed||this.app.session.party?.get(memberId)!==member||revision!==bag.revision)throw new Error('装备状态已改变，请重新选择');
       if(entry)this.app.session.bag.equip(entry,slot,memberId,member.classId,member.level);
       else this.app.session.bag.unequip(slot,memberId);
       wardrobe.activate(outfit);this.companionOutfits.set(memberId,outfit);
       this.projectedMemberEquipment.set(memberId,JSON.stringify(bag.equipmentItems(bag.equipmentFor(memberId))));
+      this.companionLearned.set(memberId,learnedSignature);
       this.companionFull.add(memberId);this.combat?.updateMemberAppearance(memberId,outfit.actor);
       this.combat?.updateEquipment(memberId);
       return;

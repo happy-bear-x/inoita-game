@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   parseBattle, parseCompanions, parseWardrobe, parseWorld
 } from '../src/application/content-validation.ts';
+import type { ClipName } from '../src/domain/content.ts';
 import { characterAssets } from '../src/rendering/combat-asset-descriptors.ts';
 import { residentCombatCoverageGaps } from '../src/rendering/combat-visual-coverage.ts';
 import { residentCombatAssets } from '../src/rendering/resident-combat-assets.ts';
@@ -75,6 +76,23 @@ test('an unknown or empty class scope is explicit, not silently full', () => {
   const empty = residentCombatAssets({ battle, wardrobe, world, companions, classIds: [] });
   for (const character of battle.classes) assert.equal(empty.actorIds.has(character.actor.id), false);
   assert.equal(empty.assets.some(asset => asset.key.includes('battle-')), false);
+});
+
+test('base-only class scope keeps base actions and excludes skill clips and icons', () => {
+  const character = battle.classes.find((value: { id: string }) => value.id === 'dark-knight')!;
+  const pack = residentCombatAssets({
+    battle, wardrobe, world, companions, classIds: [character.id], ownedCompanionIds: [],
+    baseOnlyClasses: true, learnedSkillIds: []
+  });
+  const keys = new Set(pack.assets.map(asset => asset.key));
+  const baseClips = (Object.keys(character.actor.clips) as ClipName[]).filter(name => !name.startsWith('skill-'));
+  const skillClips = (Object.keys(character.actor.clips) as ClipName[]).filter(name => name.startsWith('skill-'));
+  for (const clip of baseClips) for (const layer of character.actor.clips[clip]!.layers)
+    if (layer.file) assert.ok(keys.has(layer.key), `${clip}: ${layer.key}`);
+  for (const clip of skillClips) for (const layer of character.actor.clips[clip]!.layers)
+    if (layer.file) assert.equal(keys.has(layer.key), false, `${clip}: ${layer.key}`);
+  for (const skillId of character.skills)
+    assert.equal(keys.has(battle.skills[skillId].icon), false, `icon ${skillId}`);
 });
 
 test('resident pack only carries effects for learned skills', () => {

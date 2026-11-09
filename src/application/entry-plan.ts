@@ -1,7 +1,7 @@
 import type { EntityPlacement, WorldMap } from '../domain/content.ts';
 import { learnedSkillIds } from '../domain/skill-configuration.ts';
 import { localStoryScripts, storyReachableScripts } from '../domain/story-entry.ts';
-import { residentCombatAssets } from '../rendering/resident-combat-assets.ts';
+import { residentCombatAssets, type ResidentCombatInput } from '../rendering/resident-combat-assets.ts';
 import { planMapCombat, planMapVisuals, potentialMapEnemyIds, sharedEntryAssets, storyPresentationAssets, type MapVisualPlan, type WorldAssetInputs } from '../rendering/map-assets.ts';
 import type { PendingAsset } from '../rendering/scene-assets.ts';
 
@@ -77,6 +77,40 @@ function residentLearnedSkillIds(input: WorldAssetInputs): Set<string> | undefin
   return learned;
 }
 
+/** 常驻包只装主角和已拥有成员的职业；没有会话配置时保留全量口径。 */
+function residentClassIds(input: WorldAssetInputs): string[] | undefined {
+  if (input.heroSkills === undefined && input.party === undefined) return undefined;
+  const ids = new Set<string>([input.hero.classId]);
+  for (const member of input.party?.ownedMembers() ?? []) ids.add(member.classId);
+  return [...ids];
+}
+
+export type CommonAssetInput = Pick<WorldAssetInputs,
+  'battle' | 'items' | 'wardrobe' | 'world' | 'companions' | 'statusHud' | 'controlSkin' | 'storyInterface'>;
+
+/** 伙伴基础动作按小批预载，开始游戏时最多等一批。 */
+const COMMON_COMPANION_BATCH = 4;
+
+/**
+ * 标题页后台预载的公共素材，按小批返回。
+ * 只放与存档无关的部分：HUD、控制皮肤、掉落与任务图标、衣柜图集、通用战斗反馈，
+ * 以及全部职业和伙伴的基础动作。已学技能特效、召唤物和具体成员外观仍由进图计划补齐。
+ */
+export function commonAssetBatches(input: CommonAssetInput): PendingAsset[][] {
+  const pack = (options: Partial<Omit<ResidentCombatInput, 'battle' | 'wardrobe' | 'world' | 'companions'>> = {}) =>
+    residentCombatAssets({
+      battle: input.battle, wardrobe: input.wardrobe, world: input.world, companions: input.companions,
+      baseOnlyClasses: true, baseOnlyCompanions: true, learnedSkillIds: new Set(), ...options
+    }).assets;
+  const batches: PendingAsset[][] = [[...sharedEntryAssets(input), ...pack({ feedbackOnly: true })]];
+  for (const character of input.battle.classes)
+    batches.push(pack({ classIds: [character.id], ownedCompanionIds: [] }));
+  const companionIds = Object.keys(input.companions.definitions);
+  for (let index = 0; index < companionIds.length; index += COMMON_COMPANION_BATCH)
+    batches.push(pack({ classIds: [], ownedCompanionIds: companionIds.slice(index, index + COMMON_COMPANION_BATCH) }));
+  return batches;
+}
+
 export function buildEntryPlan(input: EntryPlanInput): EntryPlan {
   const { campaign } = input.inputs;
   const localEnemies = potentialMapEnemyIds(input.currentMap, input.inputs, { scripts: [] });
@@ -94,6 +128,7 @@ export function buildEntryPlan(input: EntryPlanInput): EntryPlan {
   const scripts = storyReachableScripts(campaign, roots);
   const presentation = storyPresentationAssets(campaign, scripts, input.inputs);
   const learnedSkills = residentLearnedSkillIds(input.inputs);
+  const classIds = residentClassIds(input.inputs);
   return {
     current: mapPlan(input.currentMap, input, scripts),
     shared: sharedEntryAssets(input.inputs),
@@ -102,6 +137,7 @@ export function buildEntryPlan(input: EntryPlanInput): EntryPlan {
         battle: input.inputs.battle, wardrobe: input.inputs.wardrobe,
         world: input.inputs.world, companions: input.inputs.companions,
         baseOnlyCompanions: true,
+        ...(classIds ? { classIds } : {}),
         ...(learnedSkills ? { learnedSkillIds: learnedSkills } : {})
       }).assets
     } : {}),

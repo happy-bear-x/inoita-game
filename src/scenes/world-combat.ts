@@ -2850,6 +2850,10 @@ captureStoryActors():SceneActorState[] {
           this.addSkillLease(id,lease);this.preparedSkillIds?.set(id,learned);
           this.allySkillSignatures.set(id,signature);this.allySkillGates.set(id,gate);
           this.skillAssetFailures.delete(id);
+          // 外观按已学技能合成；学会新技能后重拼整套，避免技能动作落回未换装的基础贴图。
+          void this.scene.preparePartyMember(id,undefined,{full:true}).catch(error=>{
+            if(!this.closed)globalThis.storyDiagnostics?.record('party-appearance-refresh-error',{id,error});
+          });
         }else{lease.release();this.skillAssetRefreshQueued=true;}
       }catch(error){
         if(!this.closed&&this.app.session.party?.get(id)===member&&this.app.session.party.activeIds.includes(id)&&this.allySkillSignatureNow(member)===signature)

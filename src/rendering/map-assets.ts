@@ -246,8 +246,11 @@ export function planMapCombat(map: WorldMap, input: WorldAssetInputs, options: M
   return assets;
 }
 
+type SharedEntryInput = Pick<WorldAssetInputs,
+  'battle' | 'items' | 'wardrobe' | 'statusHud' | 'controlSkin' | 'storyInterface'>;
+
 /** 所有地图共用、进入世界前必须就位的素材：HUD、控制皮肤、地面物品、头顶任务图标、衣柜图集、剧情特效与战斗全局。 */
-export function sharedEntryAssets(input: WorldAssetInputs): PendingAsset[] {
+export function sharedEntryAssets(input: SharedEntryInput): PendingAsset[] {
   return [
     ...statusHudAssets(input.statusHud),
     ...controlSkinAssets(input.controlSkin),

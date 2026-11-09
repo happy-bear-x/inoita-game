@@ -5,7 +5,7 @@ import test from 'node:test';
 import type { BattleCatalog } from '../src/domain/battle.ts';
 import type { Campaign } from '../src/domain/campaign.ts';
 import { BattleCharacter, type CharacterStatsCatalog } from '../src/domain/character-stats.ts';
-import type { WorldIndex, WorldMap } from '../src/domain/content.ts';
+import type { ClipName, WorldIndex, WorldMap } from '../src/domain/content.ts';
 import type { ItemCatalog } from '../src/domain/items.ts';
 import type { CompanionCatalog } from '../src/domain/party.ts';
 import type { WardrobeCatalog } from '../src/domain/wardrobe.ts';
@@ -18,7 +18,7 @@ const hook = registerHooks({
       : next(specifier, context);
   }
 });
-const { buildEntryPlan, entryPlanAssets } = await import('../src/application/entry-plan.ts');
+const { buildEntryPlan, commonAssetBatches, entryPlanAssets } = await import('../src/application/entry-plan.ts');
 const { planMapVisuals } = await import('../src/rendering/map-assets.ts');
 const { characterAssets } = await import('../src/rendering/combat-asset-descriptors.ts');
 hook.deregister();
@@ -76,6 +76,32 @@ test('entry plan assets are what open() hands to the loader', () => {
   for (const asset of plan.shared) assert.ok(keys.includes(asset.key), `missing shared ${asset.key}`);
   for (const asset of plan.residentCombat ?? []) assert.ok(keys.includes(asset.key), `missing resident ${asset.key}`);
   assert.ok(plan.scripts.length > 0, '起始图应该有本地剧情脚本');
+});
+
+test('common asset batches preload class and companion base actions without skill assets', () => {
+  const batches = commonAssetBatches(inputs());
+  const keys = new Set(batches.flat().map(asset => asset.key));
+  for (const asset of buildEntryPlan({ currentMap: startMap, inputs: inputs() }).shared)
+    assert.ok(keys.has(asset.key), `missing shared ${asset.key}`);
+  const baseClips = (clips: Record<string, unknown>) =>
+    (Object.keys(clips) as ClipName[]).filter(name => !name.startsWith('skill-'));
+  for (const character of battle.classes) {
+    for (const asset of characterAssets(character.actor, baseClips(character.actor.clips)))
+      assert.ok(keys.has(asset.key), `${character.id} base: ${asset.key}`);
+    const skillClip = (Object.keys(character.actor.clips) as ClipName[]).find(name => name.startsWith('skill-'))!;
+    for (const layer of character.actor.clips[skillClip]!.layers)
+      if (layer.file) assert.equal(keys.has(layer.key), false, `${character.id} leaked ${layer.key}`);
+    for (const skillId of character.skills)
+      assert.equal(keys.has(battle.skills[skillId].icon), false, `${character.id} leaked icon ${skillId}`);
+  }
+  for (const definition of Object.values(companions.definitions)) {
+    const actor = world.actors[definition.actor]; if (!actor) continue;
+    for (const asset of characterAssets(actor, baseClips(actor.clips)))
+      assert.ok(keys.has(asset.key), `${definition.id} base: ${asset.key}`);
+  }
+  const full = entryPlanAssets(buildEntryPlan({ currentMap: startMap, inputs: inputs(), includeResidentCombat: true }));
+  const fullKeys = new Set(full.map(asset => asset.key));
+  for (const key of keys) assert.ok(fullKeys.has(key), `common asset not in first-entry plan: ${key}`);
 });
 
 test('target map local scripts stay in the plan when a chain activeScripts set is passed', () => {

@@ -22,6 +22,11 @@ export interface ResidentCombatInput {
    */
   classIds?: Iterable<string>;
   /**
+   * 只装职业的基础动作（idle/walk/attack/die 等），技能动作按已学技能装载。
+   * 标题页公共预载为 true；进图常驻包保留全量动作，构建期也省略。
+   */
+  baseOnlyClasses?: boolean;
+  /**
    * 伙伴外观范围。省略 = 全部伙伴；运行时也省略，只限定具体成员时才传。
    * 默认装配每个 actor 的全部动作；`baseOnlyCompanions` 为真时只装非技能动作。
    */
@@ -77,7 +82,10 @@ export function residentCombatAssets(input: ResidentCombatInput): CombatAssetPac
     const character = battle.classes.find(value => value.id === classId);
     if (!character) return;
     actorIds.add(character.actor.id);
-    addAssets(characterAssets(character.actor));
+    const clips: ClipName[] | undefined = input.baseOnlyClasses
+      ? (Object.keys(character.actor.clips) as ClipName[]).filter(name => !name.startsWith('skill-'))
+      : undefined;
+    addAssets(characterAssets(character.actor, clips));
     const attack = resolveBasicAttack(battle, { actor: character.actor, basicAttack: character.basicAttack });
     addEffects(classEffects(battle, character, attack, wardrobe, learnedSkills));
     for (const id of classSummonEnemyIds(battle, classId, learnedSkills)) {
