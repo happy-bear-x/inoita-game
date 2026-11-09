@@ -40,6 +40,10 @@ const GAME_VERSION='v1.0.0';
 const FAN_WORK_NOTICE='同人作品 · 仅供个人学习研究 · 请支持官方正版';
 const CLOSE_IMAGE='/assets/ui/menus/close.png';
 const CLOSE_PRESSED='/assets/ui/menus/close-pressed.png';
+/** 更新日志弹窗复用背包面板的 24 像素图框。 */
+const CHANGELOG_BORDER:Record<string,string>=Object.fromEntries(
+  ['edge-horizontal','edge-vertical','corner-nw','corner-ne','corner-sw','corner-se']
+    .map(name=>[name,`/assets/ui/menus/${name}.png`]));
 /** DOM 文字不跟随 Phaser 容器的 alpha；禁用按钮的标签用同透明度的颜色变暗。 */
 function fadeColor(color:string,alpha:number):string {
   const match=/^#([0-9a-f]{6})$/i.exec(color);
@@ -194,9 +198,9 @@ export class MenuScene extends Phaser.Scene {
     this.changelogRequest?.abort();
     const controller=this.changelogRequest=new AbortController();
     this.render();
-    const load=this.app.loadChangelog;
-    if(!load){this.changelogState='error';this.changelogError='当前版本没有更新日志';this.render();return;}
-    void load(controller.signal).then(catalog=>{
+    if(!this.app.loadChangelog){this.changelogState='error';this.changelogError='当前版本没有更新日志';this.render();return;}
+    // 必须作为对象方法调用：解构出来会丢掉 this，生产环境里直接抛错并停在加载态。
+    void this.app.loadChangelog(controller.signal).then(catalog=>{
       if(controller.signal.aborted||this.changelogRequest!==controller||!this.changelogOpen)return;
       this.changelogEntries=catalog.entries.slice();
       this.changelogState=this.changelogEntries.length?'ready':'empty';
@@ -218,9 +222,10 @@ export class MenuScene extends Phaser.Scene {
   }
   /** 更新日志弹窗：复用标题页存档/设置框，内层铺不透明底，右上角圆形关闭。 */
   private drawChangelog(v:UiSurface):void{
-    const {panel,inner,scroll:area,close,textSize}=CHANGELOG_LAYOUT;
-    v.image(art('slot'),panel.x,panel.y,panel.width,panel.height);
-    v.rect(inner.x,inner.y,inner.width,inner.height,0x120d08,1);
+    const {panel,scroll:area,close,textSize}=CHANGELOG_LAYOUT;
+    // 和背包面板同一套图框：不透明底板 + 四角/四边，文字区域整体在框内。
+    v.rect(panel.x,panel.y,panel.width,panel.height,0x15100b,1);
+    v.border(CHANGELOG_BORDER,panel.x,panel.y,panel.width,panel.height);
     const scroll=v.scroll(area.x,area.y,area.width,area.height);
     this.changelogScroll=scroll;
     scroll.onScroll=()=>{this.changelogScrollTop=scroll.scrollTop;this.rebuildChangelogSpecs();this.menuText?.renderPage('changelog');};

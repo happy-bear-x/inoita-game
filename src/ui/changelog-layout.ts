@@ -7,10 +7,8 @@
 export const CHANGELOG_LAYOUT = {
   /** 弹窗面板：在 1024×640 弹层画布里的外框。 */
   panel: { x: 82, y: 60, width: 860, height: 520 },
-  /** 不透明文字底：贴在图框金线内侧。 */
-  inner: { x: 112, y: 112, width: 800, height: 416 },
-  /** 滚动文字区：上下左右都留出边距，文字不会压到金线。 */
-  scroll: { x: 136, y: 140, width: 752, height: 360 },
+  /** 滚动文字区：离 24 像素图框再留一圈边距，文字不会压到边框。 */
+  scroll: { x: 138, y: 140, width: 748, height: 392 },
   /** 右上角圆形关闭钮。 */
   close: { size: 67, right: 12, top: 10 },
   textSize: 24,

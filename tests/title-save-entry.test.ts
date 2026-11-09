@@ -62,6 +62,7 @@ function fakeView(width:number,height:number){
         setInteractive:()=>label,on:(event:string,handler:()=>void)=>{node.handlers.set(event,handler);return label;}};
       return label;
     },rect(){const handlers=new Map<string,()=>void>();const zone={handlers,setInteractive(){return zone;},on(event:string,handler:()=>void){handlers.set(event,handler);return zone;}};zones.push(zone);return zone;},
+    border(){},frame(){},
     clear(){this.buttons=[];this.texts=[];this.scrolls=[];this.sliders=[];this.focusIndex=-1;},
     slider(label:string,_x:number,_y:number,_width:number,value:number,onChange:(value:number)=>void){
       const slider={label,value,setValue:(next:number)=>{slider.value=next;onChange(next);}};
@@ -139,6 +140,17 @@ test('title changelog loads on demand and only renders visible entries',async()=
   f.clickModal('关闭更新日志');
   assert.equal(f.state.changelogOpen,false);
   assert.ok(!f.domTexts().some(text=>text.startsWith('第 1 条')),'关闭弹窗后日志文字撤掉');
+});
+
+test('changelog loader keeps its receiver and empty entries show the empty state',async()=>{
+  const f=fixture();
+  let receiver:unknown;
+  f.app.loadChangelog=function(this:unknown){receiver=this;return Promise.resolve({version:1 as const,entries:[]});};
+  f.click('更新日志');
+  assert.ok(f.domTexts().includes('正在加载更新日志…'));
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(receiver,f.app,'作为对象方法调用，this 不能丢');
+  assert.ok(f.domTexts().includes('暂无更新日志。'),'空日志显示暂无数据');
 });
 
 test('menu draws after assets finish while the scene is paused',()=>{
