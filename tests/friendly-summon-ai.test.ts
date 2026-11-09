@@ -25,7 +25,8 @@ function setup(role:FriendlySummonRole='hell-soldier',id='summon',behaviorOverri
   let bounds:GameRectangle={x:-128,y:-128,width:768,height:256};
   let blocked:(point:Point)=>boolean=()=>false;
   let follow:(()=>Point|undefined)|undefined;
-  let time=0,recalls=0,allowedRecall=false,paused=false,searches=0,interruptions=0;
+  let time=0,recalls=0,allowedRecall=false,paused=false,searches=0,interruptions=0,budgetRequests=0;
+  let budgetGrant:(owner:string,limit:number)=>number=(_owner,limit)=>limit;
   const actions:ActionPlayback[]=[];
   let playback:{action:ActionPlayback;frame:(index:number)=>void;complete:()=>void;index:number}|undefined;
   const stand=(point:Point)=>!blocked(point)&&!actors.some(other=>other!==actor&&Math.abs(other.position.x-point.x)<16&&Math.abs(other.position.y-point.y)<16);
@@ -34,7 +35,8 @@ function setup(role:FriendlySummonRole='hell-soldier',id='summon',behaviorOverri
     actor:key=>actors.find(item=>item.id===key),candidates:()=>actors,isAlive:key=>actors.some(item=>item.id===key),
     health:key=>vitals.get(key),facing:()=> 'south',moveToward:()=>assert.fail('budgeted pathfinding must own movement'),
     followPath:next=>{follow=next;},stop:()=>{follow=undefined;},home:()=>({x:48,y:0}),
-    navigationBounds:()=>bounds,canStand:stand,navigationSnapshot:()=>{
+    navigationBounds:()=>bounds,canStand:stand,pathBudget:{take:(owner,limit)=>{budgetRequests++;return budgetGrant(owner,limit);}},
+    navigationSnapshot:()=>{
       searches++;
       const positions=actors.filter(other=>other!==actor).map(other=>({...other.position}));
       const obstacle=blocked;
@@ -61,7 +63,8 @@ function setup(role:FriendlySummonRole='hell-soldier',id='summon',behaviorOverri
     setBounds:(value:GameRectangle)=>{bounds=value;},setBlocked:(value:(point:Point)=>boolean)=>{blocked=value;},
     allowRecall:()=>{allowedRecall=true;},setPaused:(value:boolean)=>{paused=value;},
     setAutonomousTarget:(value:(id:string)=>boolean)=>{autonomous=value;},
-    recalls:()=>recalls,searches:()=>searches,interruptions:()=>interruptions,next:()=>follow?.()};
+    setPathBudget:(value:(owner:string,limit:number)=>number)=>{budgetGrant=value;},
+    recalls:()=>recalls,searches:()=>searches,interruptions:()=>interruptions,budgetRequests:()=>budgetRequests,next:()=>follow?.()};
 }
 
 test('active friendly summons notice an enemy inside their own eight-unit awareness without an engagement signal',()=>{
@@ -319,4 +322,11 @@ test('beasts distinguish the 35 percent low-health ally threshold from ordinary 
     run.setTactics({engagedTargetIds:[normal.id,danger.id],ownerTargetId:normal.id,partyIds:['owner','ally'],threats:[{enemyId:danger.id,targetId:'ally'}]});
     run.advance();assert.equal(run.ai.snapshot().targetId,health===35?danger.id:normal.id);
   }
+});
+
+test('friendly summons spend the shared path budget instead of stepping outside it',()=>{
+  const run=setup();run.actor.position={x:96,y:0};run.setPathBudget(()=>0);
+  run.advance(20,false);
+  assert.ok(run.budgetRequests()>0,'召唤物应向共享预算领取节点');
+  assert.equal(run.next(),undefined,'拿不到预算时不产生路线推进');
 });

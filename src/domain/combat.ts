@@ -93,7 +93,6 @@ export interface CombatPort {
   canRelocateReach?(position: Point): boolean;
   /** 位移落点的可走性复核，只算地形和内容实体；省略表示不检查。 */
   canRelocateVerify?(position: Point): boolean;
-  canReach?(position: Point): boolean;
   navigationBounds?(): GameRectangle;
   /** 强制位移落位；`clearanceActorId` 指定的角色不参与占位（背后瞬移要贴着目标）。 */
   relocate(position: Point, clearanceActorId?: string): void;

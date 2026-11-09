@@ -334,7 +334,7 @@ export class WorldCombat {
     const weapon=equipment['main-hand']??equipment['off-hand'];
     const actor=this.movement.actor(this.controlledVisual);
     const landing=rollManaGem(pickup,damage,rule,weapon?this.app.items.items[weapon].kind:undefined,target,
-      point=>this.movement.navigation.canStand(actor,point)&&this.movement.navigation.path(actor,point,256)!==null);
+      point=>this.movement.navigation.canStand(actor,point)&&this.movement.navigation.sameTerrainRegion(actor.position(),point));
     if(!landing)return;
     const clip=pickup.hitDrop.directions[landing.direction].clip;
     groundLootFor(this.app.session).addFlying(map.id,target,landing,item,clip.frames*1000/clip.frameRate);
@@ -640,15 +640,15 @@ captureStoryActors():SceneActorState[] {
           return !!clearanceVisual && this.movement!.canStand(clearanceVisual, position);
         },
         canPlaceBody: (position, clearanceActorId) => this.canPlaceBodyAt(visual, position, clearanceActorId),
-        canReach: position => this.movement!.navigation.path(this.movement!.actor(visual), position, 512) !== null,
         canRelocateReach: position => {
           const actor = this.movement!.actor(visual);
           return this.movement!.navigation.sameTerrainRegion(actor.position(), position);
         },
         canRelocateVerify: position => {
           const actor = this.movement!.actor(visual);
-          return this.movement!.navigation.reachableForPlacement(
-            actor.shape(), actor.position(), position, actor);
+          return this.movement!.navigation.sameTerrainRegion(actor.position(), position)
+            && this.movement!.navigation.reachableForPlacement(
+              actor.shape(), actor.position(), position, actor, 128);
         },
         relocate: (position, clearance) => this.relocateVisual(enemy.visual, position, clearance),
         face: direction => { enemy.facing = direction; },
@@ -667,7 +667,7 @@ captureStoryActors():SceneActorState[] {
       };
       enemy.controller=placed.summonedBy&&this.memberOf(placed.summonedBy)
         ?new FriendlySummonController(enemy.key,placed.summonedBy,placed.summonedBySkill==='beast-companion'||definition.id==='enemy-beast-companion-1'?'beast':'hell-soldier',behavior,attack,{
-          ...port,canReach:undefined,
+          ...port,
           tactics:()=>this.awareness.tactics(placed.summonedBy!,this.activeParty,this.focusTargetId),
           navigationSnapshot:()=>this.movement.navigation.captureStandability(this.movement.actor(visual)),
           tryRecall:()=>this.tryRecallSummon(enemy),
@@ -2087,14 +2087,14 @@ captureStoryActors():SceneActorState[] {
       },
       regroup:()=>this.catchUpFollower(id),
       canPlaceBody:(position,clearanceActorId)=>this.canPlaceBodyAt(visual,position,clearanceActorId),
-      canReach:position=>this.movement.navigation.path(this.movement.actor(visual),position,512)!==null,
       canRelocateReach:position=>{
         const actor=this.movement.actor(visual);
         return this.movement.navigation.sameTerrainRegion(actor.position(),position);
       },
       canRelocateVerify:position=>{
         const actor=this.movement.actor(visual);
-        return this.movement.navigation.reachableForPlacement(actor.shape(),actor.position(),position,actor);
+        return this.movement.navigation.sameTerrainRegion(actor.position(),position)
+          &&this.movement.navigation.reachableForPlacement(actor.shape(),actor.position(),position,actor,128);
       },
       relocate:(position,clearance)=>this.relocateVisual(visual,position,clearance),face:setFacing,
       play:(action,frame,complete)=>{setFacing(action.facing);action.getAttackSpeedRate=()=>this.conditions.attribute(id,'attackSpeedRate',1000,this.partyPassives(id));return this.playAction(presenter,action,frame,complete);},

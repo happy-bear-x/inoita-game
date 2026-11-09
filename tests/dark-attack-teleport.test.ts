@@ -67,7 +67,7 @@ test('第八帧先瞬移转向再结算；找位失败保留挥击与动作余�
       candidates: () => targetPresent ? [player, target] : [player], facing: () => 'east',
       moveToward: () => {}, stop: () => {},
       canStand: () => available,
-      canPlaceBody: (_position, clearanceActorId) => { clearanceActors.push(clearanceActorId); return available; }, canReach: () => available,
+      canPlaceBody: (_position, clearanceActorId) => { clearanceActors.push(clearanceActorId); return available; },
       relocate: point => { player = { ...player, position: point }; order.push('relocate'); },
       face: facing => order.push(`face:${facing}`), clearEffects: () => {},
       canSpendMana: cost => mana >= cost, spendMana: cost => { mana -= cost; return true; },

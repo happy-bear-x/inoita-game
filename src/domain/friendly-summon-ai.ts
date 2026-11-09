@@ -354,8 +354,11 @@ export class FriendlySummonController {
   }
   private advanceSearch(actor:Combatant,owner:Combatant):void {
     if(!this.search||this.searchedThisFrame||!this.canMove(actor))return;
+    const requested=FRIENDLY_SUMMON_AI.searchNodesPerFrame;
+    const granted=this.port.pathBudget?.take(this.id,requested)??requested;
+    if(granted<=0)return;
     const work=this.search;this.searchedThisFrame=true;
-    const result=work.task.step(FRIENDLY_SUMMON_AI.searchNodesPerFrame);this.expandedNodes=result.expanded;
+    const result=work.task.step(granted);this.expandedNodes=result.expanded;
     if(result.status==='pending')return;
     this.search=undefined;
     const target=this.port.actor(work.targetId);

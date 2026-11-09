@@ -380,7 +380,7 @@ export class NavigationWorld {
    * 预算耗尽按不可达处理，调用方继续找下一个落点或走方向兜底。
    */
   reachableForPlacement(shape: NavigationShape, from: Point, to: Point,
-    ignore?: NavigationActor): boolean {
+    ignore?: NavigationActor, maxExpanded = PLACEMENT_SEARCH_BUDGET): boolean {
     const free = (point: Point) => this.terrainFree(point) && !this.blockedByContent(shape, point, ignore);
     if (!free(from) || !free(to)) return false;
     return findPath(from, {
@@ -388,7 +388,7 @@ export class NavigationWorld {
       canStand: free,
       isGoal: point => Math.hypot(point.x - to.x, point.y - to.y) <= PATH_GRID_SIZE && canTraverse(point, to, free),
       heuristic: point => Math.max(0, Math.hypot(point.x - to.x, point.y - to.y) - PATH_GRID_SIZE),
-    }, PLACEMENT_SEARCH_BUDGET) !== null;
+    }, maxExpanded) !== null;
   }
   /** 惰性建立 8 px 地形连通块；建表成本只发生在第一次落点/召唤查询。 */
   private terrainLabelsAt(point: Point): number[] {
