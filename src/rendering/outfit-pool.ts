@@ -172,6 +172,7 @@ export class OutfitPool {
       return key?{key,piece:this.catalog.sprites[key]}:undefined;
     };
     try {
+      let lastYieldAt=0;
       for(const [name,id]of poses) {
         signal.throwIfAborted();
         const pose=this.catalog.poses[id!];
@@ -213,20 +214,23 @@ export class OutfitPool {
         const clip:AnimationClip={frameWidth:width,frameHeight:height,frames:pose.frames.length,originX:-left/width,originY:-top/height,
           frameRate:pose.frameRate,mirrorX:pose.mirrorX,layers:[{key,file:'',blend:'normal'}]};
         clips[name as ClipName]=clip;
-        // 佣兵加入时才首次合成整套外观；把每个动作分到下一次绘制前，
-        // 让浏览器先交付这一帧，避免 stamp/render 连续挤在同一帧里。
-        await new Promise<void>((resolve,reject)=>{
-          let timer: ReturnType<typeof setTimeout> | number;
-          const cancel=()=>{
-            if(typeof requestAnimationFrame==='function')cancelAnimationFrame(timer as number);
-            else clearTimeout(timer as ReturnType<typeof setTimeout>);
-            signal.removeEventListener('abort',cancel);reject(signal.reason);
-          };
-          const done=()=>{signal.removeEventListener('abort',cancel);resolve();};
-          timer=typeof requestAnimationFrame==='function'?requestAnimationFrame(done):setTimeout(done,0);
-          signal.addEventListener('abort',cancel,{once:true});
-          if(signal.aborted)cancel();
-        });
+        // 佣兵加入时才首次合成整套外观；累计占用超过 4 毫秒才让出一次绘制，
+        // 避免 stamp/render 连续挤在同一帧里，也不让低帧率设备一姿态等一帧。
+        if(performance.now()-lastYieldAt>=4){
+          lastYieldAt=performance.now();
+          await new Promise<void>((resolve,reject)=>{
+            let timer: ReturnType<typeof setTimeout> | number;
+            const cancel=()=>{
+              if(typeof requestAnimationFrame==='function')cancelAnimationFrame(timer as number);
+              else clearTimeout(timer as ReturnType<typeof setTimeout>);
+              signal.removeEventListener('abort',cancel);reject(signal.reason);
+            };
+            const done=()=>{signal.removeEventListener('abort',cancel);resolve();};
+            timer=typeof requestAnimationFrame==='function'?requestAnimationFrame(done):setTimeout(done,0);
+            signal.addEventListener('abort',cancel,{once:true});
+            if(signal.aborted)cancel();
+          });
+        }
         signal.throwIfAborted();
       }
       signal.throwIfAborted();

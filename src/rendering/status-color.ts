@@ -8,16 +8,17 @@ export class StatusColorRenderer {
   private appearances=new WeakMap<CharacterVisual,{colors:readonly StatusColor[]|undefined;frame:number;layers:readonly Phaser.GameObjects.Sprite[]}>();
   private flashes=new WeakSet<CharacterVisual>();
   private flashTints=new WeakMap<Phaser.GameObjects.Sprite,{tinted:boolean;mode:Phaser.TintModes;color:number}>();
+  private flashSprite(sprite:Phaser.GameObjects.Sprite):void {
+    if(!sprite.active||this.flashTints.has(sprite))return;
+    this.flashTints.set(sprite,{tinted:sprite.isTinted,mode:sprite.tintMode,color:sprite.tintTopLeft});
+    sprite.setTint(0xffffff).setTintMode(Phaser.TintModes.FILL);
+  }
   flash(character:CharacterVisual,scene:Phaser.Scene):void {
     if(this.flashes.has(character))return;
     this.flashes.add(character);
     // 受击闪白走顶点着色，不开滤镜：滤镜要为角色新建或调整离屏目标，
     // 驱动会等 GPU 同步，真机上单次能卡 50ms 以上。
-    for(const sprite of character.layers){
-      if(!sprite.active)continue;
-      this.flashTints.set(sprite,{tinted:sprite.isTinted,mode:sprite.tintMode,color:sprite.tintTopLeft});
-      sprite.setTint(0xffffff).setTintMode(Phaser.TintModes.FILL);
-    }
+    for(const sprite of character.layers)this.flashSprite(sprite);
     scene.game.events.once(Phaser.Core.Events.POST_RENDER,()=>{
       this.flashes.delete(character);
       for(const sprite of character.layers){
@@ -49,5 +50,7 @@ export class StatusColorRenderer {
       filter.colorMatrix.set(statusColorMatrix(colors,frame,false,blackBackdrop));
       filter.setActive(true);
     }
+    // 闪白期间换动作会新增图层；新图层也要补上白色 tint，否则只有旧图层闪。
+    if(this.flashes.has(character))for(const sprite of character.layers)this.flashSprite(sprite);
   }
 }

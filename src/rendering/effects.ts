@@ -142,6 +142,8 @@ const POOL_TOTAL = 64;
 
 /** 池里的容器记得自己当初按哪个片段建好，回收时才知道放回哪个桶。 */
 const pooledEffects = new WeakMap<Phaser.GameObjects.Container, { clip: EffectClip; animations: string[] }>();
+/** 已经在空闲桶里的容器不能再放一次；warm 的空片段会在下一拍回调 release。 */
+const pooledFree = new WeakSet<Phaser.GameObjects.Container>();
 
 /**
  * 命中特效池：同一个 clip 的容器、精灵、动画播完只隐藏不销毁，下次命中直接重播。
@@ -163,7 +165,12 @@ export class EffectPool {
   /** 提前建好指定片段的容器、精灵和动画并放回空闲桶；首次播放只重播，不再现建。 */
   warm(clip: EffectClip, count = 1): void {
     if (this.closed) return;
-    for (let index = 0; index < count; index++) this.release(this.acquire(clip, 0, 0));
+    for (let index = 0; index < count; index++) {
+      const effect = this.acquire(clip, 0, 0);
+      // 一层都没建起来的片段会在下一拍自行回收；不要提前放进池里，否则回收回调可能命中刚被复用的容器。
+      if (!pooledEffects.get(effect)?.animations.length) { effect.destroy(); continue; }
+      this.release(effect);
+    }
   }
 
   /** 取一个特效并立刻从第 0 帧播放；播完自动回到池里。 */
@@ -178,6 +185,7 @@ export class EffectPool {
       pooledEffects.set(created, { clip, animations });
       return created;
     }
+    pooledFree.delete(effect);
     this.idle--;
     effect.setPosition(x, y).setDepth(y + 1).setVisible(true).setActive(true);
     replayEffect(this.scene, effect, pooledEffects.get(effect)!.animations, () => this.release(effect));
@@ -186,7 +194,7 @@ export class EffectPool {
 
   /** 收回一个特效：还在播的（如数字槽位要立刻复用）会被停掉。池满或关图时直接销毁。 */
   release(effect: Phaser.GameObjects.Container): void {
-    if (!effect.scene) return;
+    if (!effect.scene || pooledFree.has(effect)) return;
     effect.parentContainer?.remove(effect);
     effect.setVisible(false);
     for (const sprite of effect.list as Phaser.GameObjects.Sprite[]) sprite.anims.stop();
@@ -195,6 +203,7 @@ export class EffectPool {
     if (!record || this.closed) { effect.destroy(); return; }
     const bucket = this.free.get(record.clip) ?? [];
     if (bucket.length >= POOL_PER_CLIP || this.idle >= POOL_TOTAL) { effect.destroy(); return; }
+    pooledFree.add(effect);
     bucket.push(effect);
     this.free.set(record.clip, bucket);
     this.idle++;
