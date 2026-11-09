@@ -66,7 +66,7 @@ function inputs() {
       springs: [{ id: 'spring-a', name: 'A', unlockLevel: 1 }],
       effects: [{ spring: 'spring-a', kind: 'spawn', weight: 1, text: '', enemy: 'spring-enemy' }]
     },
-    statusHud: { assets: { frame: 'hud.png' }, buffIcons: { catalog: { icon: 'buff.png' } } },
+    statusHud: { assets: { 'overhead-frame': 'hud.png', 'overhead-leader': 'leader.png' }, buffIcons: { catalog: { icon: 'buff.png' } } },
     controlSkin: { stick: 'stick.png' },
     storyInterface: { assets: {}, portraits: {}, player: {} },
     storyWorld: {
@@ -109,6 +109,6 @@ test('enemy ids are a conservative superset across spawns, chests, springs, enco
 test('shared entry assets include story effects and HUD art', () => {
   const keys = sharedEntryAssets(inputs()).map(asset => asset.key);
   assert.ok(keys.includes('hud.png'));
-  assert.ok(keys.includes('buff.png'));
+  assert.ok(keys.includes('leader.png'));
   assert.ok(keys.includes('stick.png'));
 });
