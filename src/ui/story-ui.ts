@@ -522,7 +522,7 @@ export class StoryUI {
   /** 会话结束时丢掉缓存的背包页，避免下一位存档的角色和物品沿用旧页面。 */
   private discardBagPage():void{
     if(!this.bagPageCached)return;
-    this.bagPageCached=false;this.bagPortrait?.detach();
+    this.bagPageCached=false;this.scrollNames.clear();this.bagPortrait?.detach();
     this.body?.clear();this.description?.clear();
     if(this.surface&&this.body){this.surface.root.remove(this.body.root);this.surface.clear();this.surface.root.add(this.body.root);}
   }
