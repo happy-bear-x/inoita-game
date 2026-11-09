@@ -14,7 +14,7 @@
 
 ## 规则
 
-- 依赖方向固定：`domain`、`debug` 是纯 TypeScript，不 import Phaser 和上层目录；`application` 大多是纯逻辑，只有 `application/game-audio.ts`、`application/game-timing.ts`、`application/game-diagnostics.ts` 三个 Phaser 适配器。
+- 依赖方向固定：`domain`、`debug` 是纯 TypeScript，不 import Phaser 和上层目录；`application` 大多是纯逻辑，只有 `application/game-audio.ts`、`application/game-timing.ts` 两个 Phaser 适配器。
 - 场景只编排生命周期；世界绘制归 `rendering`，布局和状态归 `ui`，屏幕界面绘制和输入归 `ui/dom`。
 - 手机系统键盘只影响 DOM 输入框，不改变游戏画布尺寸。`main.ts` 的 `visualViewport` 重排在输入框聚焦时只跟随位置偏移（`fitViewport({keepSize:true})`），不按键盘缩小后的可视区重算尺寸；云存档输入框挂在 `#game-frame` 内，与画布共用坐标系。
 - iOS 弹出键盘会让窗口短暂失焦。`main.ts` 在启动后接管 `window.onblur/onfocus` 并关闭 Phaser 的 `pauseOnBlur`：输入框聚焦期间的失焦不能暂停游戏循环或音频，真正的页面切走由 `visibilitychange` 驱动。

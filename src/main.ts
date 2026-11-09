@@ -39,7 +39,7 @@ import { MINIMAP_ASSETS } from './domain/story-interface.ts';
 import { GAME_FRAME_TIMING, installFrameLimitClock } from './application/game-timing.ts';
 import { displaySettings } from './application/display-settings.ts';
 import { currentRefreshRate, detectRefreshRate, resolveFrameLimit } from './application/frame-pacing.ts';
-import { installGameDiagnostics, installStorySkipDiagnostics } from './application/game-diagnostics.ts';
+import { installDiagnosticSnapshot, installStorySkipDiagnostics } from './application/game-diagnostics.ts';
 import { storyDevMode } from './domain/dev-mode.ts';
 import { createGmActions, consoleGmActions, type ConsoleGmActions } from './debug/gm-actions.ts';
 import { IndexedDbDebugMarkStore } from './application/debug-mark-store.ts';
@@ -638,8 +638,6 @@ function boot(): void {
     scene: [], banner: false, audio: { disableWebAudio: false }
   });
   app.game = game;
-  // 真机排查用：壳内 DevTools 需要拿到 game 才能开关滤镜/图层做 A/B；不参与游戏逻辑。
-  (globalThis as { storyGame?: Phaser.Game }).storyGame = game;
   let frameLimitDisposed = false;
   const applyFrameLimit = (): void => {
     if (frameLimitDisposed) return;
@@ -649,7 +647,8 @@ function boot(): void {
   // 刷新率要等页面跑起来才量得到；量到之前按 60Hz 处理，60Hz 屏直接走 vsync。
   void detectRefreshRate().then(applyFrameLimit);
   game.events.once(Phaser.Core.Events.DESTROY, () => { frameLimitDisposed = true; unsubscribeFrameRate(); });
-  installGameDiagnostics(game, runtimeDiagnostics);
+  const clearDiagnosticSnapshot = installDiagnosticSnapshot(runtimeDiagnostics);
+  game.events.once(Phaser.Core.Events.DESTROY, clearDiagnosticSnapshot);
   game.events.once('ready', () => {
     configureCanvas(game);
     // iOS 弹出系统键盘会让窗口短暂失焦。Phaser 把这次失焦当成页面切走：暂停游戏

@@ -97,12 +97,6 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
             return;
         }
 
-        if (BuildConfig.REMOTE_DEBUGGING) {
-            // 只在本机调试包打开：桌面 Chrome 通过 adb forward 连进来做性能剖析。
-            Cefrium.setRemoteDebuggingEnabled(true);
-            Log.i(TAG, "远程调试已开启");
-        }
-
         updateManager = UpdateManager.get(getApplicationContext());
         updateManager.setListener(this);
         startWithMigration();

@@ -27,10 +27,6 @@ const sdk = path.resolve(process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROO
 const javaHome = resolveJavaHome();
 assertJava25(javaHome);
 const skipWeb = process.argv.includes('--skip-web');
-// 打本机调试包：只把诊断上报改到 4003（配合 adb reverse），热更和云存档仍走发布地址。
-const debugServer = process.argv.includes('--debug-server');
-// 本机调试包专用：打开壳内 Chromium 的远程调试端口，配合 `adb forward` 用桌面 Chrome 剖析。
-const remoteDebugging = process.argv.includes('--remote-debugging');
 
 const BUILD_TOOLS = '37.0.0';
 const PLATFORM = 'android-37.0';
@@ -252,10 +248,8 @@ try {
   const buildId = checkUpdateArtifacts();
   console.log(`[apk] 热更基线: ${buildId}（${channel}）`);
 
-  console.log(`[apk] Gradle assembleRelease（诊断上报：${debugServer ? '本机 4003' : '发布地址'}）`);
-  run(gradlew, [':app:assembleRelease', '--no-daemon', `-PupdateChannel=${channel}`,
-    ...(debugServer ? ['-PdiagnosticsBase=http://127.0.0.1:4003'] : []),
-    ...(remoteDebugging ? ['-PremoteDebugging=true'] : [])], {
+  console.log('[apk] Gradle assembleRelease');
+  run(gradlew, [':app:assembleRelease', '--no-daemon', `-PupdateChannel=${channel}`], {
     cwd: androidDir,
     env: { JAVA_HOME: javaHome, ANDROID_HOME: sdk, ANDROID_SDK_ROOT: sdk },
   });

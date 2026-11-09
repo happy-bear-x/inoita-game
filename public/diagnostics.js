@@ -20,7 +20,6 @@
   const session = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
   let sequence = 0, sending = false, snapshot = () => null;
   let pending = [], recent = [], capturing = false;
-  let lastFrame = 0, phase = 'boot', stalled = false, visibleSince = Date.now();
   // 限制深度和长度；错误对象、循环引用和带异常 getter 的对象都能记录。
   function safe(value, depth = 0, seen = new WeakSet()) {
     try {
@@ -112,7 +111,6 @@
       const entry = { id: session + ':' + (++sequence), session, time: new Date().toISOString(), kind,
         page: location.pathname, userAgent: navigator.userAgent, visibility: document.visibilityState,
         viewport: { width: innerWidth, height: innerHeight, pixelRatio: devicePixelRatio },
-        frame: { phase, lastFrameAgoMs: lastFrame ? Date.now() - lastFrame : null },
         details: safe(details), state };
       if (JSON.stringify(entry).length > 12000) {
         entry.details = { truncated: JSON.stringify(entry.details).slice(0, 4000) };
@@ -142,30 +140,14 @@
   }, true);
   window.addEventListener('unhandledrejection', event => record('unhandled-rejection', { reason: event.reason }));
   window.addEventListener('pagehide', () => { persistNow(); void flush(); });
-  document.addEventListener('visibilitychange', () => {
-    visibleSince = Date.now(); stalled = false;
-  });
   document.addEventListener('webglcontextlost', event => record('webgl-context-lost', { status: event.statusMessage }), true);
   document.addEventListener('webglcontextrestored', () => record('webgl-context-restored', {}), true);
   window.storyDiagnostics = {
     record, flush,
     setSnapshot(provider) { snapshot = provider; },
-    markFrame(nextPhase) {
-      phase = nextPhase; lastFrame = Date.now(); stalled = false;
-    },
-    stopFrames() {
-      lastFrame = 0; phase = 'stopped';
-    },
     export() { return JSON.stringify({ version: 1, entries: recent, pending }, null, 2); }
   };
-  // 真正阻塞整个 JavaScript 线程时此计时器也不能执行；异常造成的停帧可以记录。
-  setInterval(() => {
-    if (lastFrame && document.visibilityState === 'visible' && !stalled
-      && Date.now() - Math.max(lastFrame, visibleSince) > 5000) {
-      stalled = true;
-      record('frame-stalled', { message: '游戏超过 5 秒未进入下一帧' });
-    }
-    void flush();
-  }, 2000);
+  // 定时把待发记录送出去；错误上报不依赖游戏的帧循环。
+  setInterval(() => { void flush(); }, 2000);
   record('collector-start', { message: '手机诊断收集器已启动', version: 1 });
 })();

@@ -5,15 +5,9 @@ import { readFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
-import { registerHooks } from 'node:module';
-import type Phaser from 'phaser';
 
 const source = await readFile(new URL('../public/diagnostics.js', import.meta.url), 'utf8');
-const hooks = registerHooks({ resolve(specifier, context, next) {
-  return specifier === 'phaser' ? { shortCircuit: true, url: 'data:text/javascript,export default {Core:{Events:{PRE_STEP:"prestep",POST_STEP:"poststep",POST_RENDER:"postrender",DESTROY:"destroy"}}}' } : next(specifier, context);
-} });
-const { installGameDiagnostics, installStorySkipDiagnostics } = await import('../src/application/game-diagnostics.ts');
-hooks.deregister();
+const { installDiagnosticSnapshot, installStorySkipDiagnostics } = await import('../src/application/game-diagnostics.ts');
 const middlewareUrl = new URL('../tools/diagnostic-collector.mjs', import.meta.url).href;
 type Middleware = (req: EventEmitter & { url: string; method: string }, res: {
   setHeader(key: string, value: string): void; writeHead(status: number): void; end(): void; writableEnded: boolean;
@@ -21,10 +15,10 @@ type Middleware = (req: EventEmitter & { url: string; method: string }, res: {
 const { createDiagnosticMiddleware } = await import(middlewareUrl) as { createDiagnosticMiddleware(root: string): Middleware };
 const settle = () => new Promise<void>(resolve => setImmediate(resolve));
 
-interface Entry { id: string; kind: string; details: Record<string, unknown>; state: unknown; frame: { phase: string } }
+interface Entry { id: string; kind: string; details: Record<string, unknown>; state: unknown }
 interface Collector {
   record(kind: string, details: unknown): void; flush(): Promise<void>;
-  setSnapshot(provider: () => unknown): void; markFrame(phase: string): void; stopFrames(): void;
+  setSnapshot(provider: () => unknown): void;
   export(): string;
 }
 function client(storage = new Map<string, string>(), brokenStorage = false,
@@ -151,19 +145,6 @@ test('broken storage, circular state and throwing getters cannot prevent console
   assert.match(JSON.stringify(f.entries().at(-1)!.state), /snapshot failed/);
 });
 
-test('stopped game frames report once per gap and ignore background time', () => {
-  const f = client(); f.collector.markFrame('update'); f.advance(6000);
-  assert.equal(f.entries().at(-1)!.kind, 'frame-stalled');
-  assert.equal(f.entries().at(-1)!.frame.phase, 'update');
-  const count = f.entries().length; f.advance(6000); assert.equal(f.entries().length, count);
-  f.collector.markFrame('idle'); f.document.visibilityState = 'hidden';
-  f.documentEvents.emit('visibilitychange'); f.advance(20000); assert.equal(f.entries().length, count);
-  f.document.visibilityState = 'visible'; f.documentEvents.emit('visibilitychange');
-  f.advance(2000); assert.equal(f.entries().length, count);
-  f.advance(4000); assert.equal(f.entries().length, count + 1);
-  f.collector.stopFrames(); f.advance(10000); assert.equal(f.entries().length, count + 1);
-});
-
 test('reinstalling the script leaves a single console interceptor and bounds records', async () => {
   const f = client(); await settle(); f.online(false);
   vm.runInContext(source, f.context);
@@ -174,28 +155,18 @@ test('reinstalling the script leaves a single console interceptor and bounds rec
   assert.equal((JSON.parse(f.storage.get('inotia4.diagnostics.pending.v1')!) as unknown[]).length, 32);
 });
 
-test('engine event observers do not replace updates and are removed on destroy', () => {
-  const f = client(), events = new EventEmitter();
-  const frames: ((time: number) => void)[] = [];
-  // installGameDiagnostics 自己数 rAF 估算掉帧；Node 没有浏览器时钟，补一个不推进的壳。
-  Object.assign(globalThis, { requestAnimationFrame: (callback: (time: number) => void) => {
-    frames.push(callback); return frames.length; }, cancelAnimationFrame: () => {} });
+test('diagnostic snapshot attaches state without hooking engine frames', () => {
+  const f = client();
   globalThis.storyDiagnostics = f.collector;
   try {
-    installGameDiagnostics({ events } as unknown as Phaser.Game, () => ({ map: 'forest' }));
-    events.emit('prestep'); f.collector.record('test', {});
-    assert.equal(f.entries().at(-1)!.frame.phase, 'update');
-    events.emit('poststep'); f.collector.record('test', {});
-    assert.equal(f.entries().at(-1)!.frame.phase, 'render');
-    events.emit('postrender'); f.collector.record('test', {});
-    assert.equal(f.entries().at(-1)!.frame.phase, 'idle');
-    events.emit('destroy'); assert.equal(events.listenerCount('prestep'), 0);
-    assert.equal(events.listenerCount('poststep'), 0); assert.equal(events.listenerCount('postrender'), 0);
-    f.advance(8000); assert.equal(f.entries().at(-1)!.kind, 'test');
+    const clear = installDiagnosticSnapshot(() => ({ map: 'forest' }));
+    f.collector.record('test', {});
+    assert.deepEqual(f.entries().at(-1)!.state, { map: 'forest' });
+    clear();
+    f.collector.record('test', {});
+    assert.equal(f.entries().at(-1)!.state, null);
   } finally {
     globalThis.storyDiagnostics = undefined;
-    delete (globalThis as { requestAnimationFrame?: unknown }).requestAnimationFrame;
-    delete (globalThis as { cancelAnimationFrame?: unknown }).cancelAnimationFrame;
   }
 });
 

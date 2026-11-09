@@ -41,7 +41,6 @@
 - `verify-apk.mjs` 会检查 Cefrium 类、arm64 原生库、16 KB 页对齐和游戏资产与 `dist` 一致；Cefrium 自带的 `icudtl.dat`、`*.pak`、`stored-locales/`、`cefrium/` 不参与和 `dist` 的逐文件对比。
 - keystore、`keystore.properties` 与 Android SDK 位于仓库外，只在本机配置。
 - 清单、资源或 Java 改动后用 `npm run apk` 重新打包，再用 `npm run verify:apk` 校验产物。
-- 要在手机上收集真实诊断时用 `npm run apk -- --debug-server` 打包：只有诊断上报改到 `http://127.0.0.1:4003`，先 `adb reverse tcp:4003 tcp:4003`，记录会落进本机开发服务的 `.diagnostics/`；热更和云存档仍走发布地址。给玩家分发的包不要带这个开关。
 
 ## 验证
 

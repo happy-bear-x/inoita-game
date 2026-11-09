@@ -11,10 +11,6 @@ def endpointsFile = new File(rootProject.projectDir, '../config/endpoints.json')
 def endpoints = new JsonSlurper().parse(endpointsFile)
 def releaseServerBaseUrl =
         endpoints.environments.androidRelease.serverBaseUrl.toString().replaceAll('/+$', '')
-// 本机收真机诊断时只把上报地址换到 4003（配合 adb reverse），热更和云存档仍走发布地址。
-def diagnosticsBase = (project.findProperty('diagnosticsBase') ?: releaseServerBaseUrl)
-// 本机调试包专用：允许用桌面 Chrome 连壳内 Chromium（只开远程调试端口，不改变发布行为）。
-def remoteDebugging = (project.findProperty('remoteDebugging') ?: 'false').toString().toBoolean()
 def updateChannel = (project.findProperty('updateChannel') ?: 'stable').toString()
 // 公钥文件由 npm run update:key 生成；还没生成时留空，热更检查会自动跳过。
 def updatePublicKeyFile = new File(rootProject.projectDir, 'update-public-key.txt')
@@ -61,9 +57,8 @@ android {
             abiFilters 'arm64-v8a'
         }
         // 诊断、云存档和热更都从同一个服务根地址派生；改服务器地址只改 config/endpoints.json。
-        buildConfigField 'boolean', 'REMOTE_DEBUGGING', remoteDebugging.toString()
         buildConfigField 'String', 'DIAGNOSTICS_URL',
-                JsonOutput.toJson(diagnosticsBase + '/__diagnostics/report')
+                JsonOutput.toJson(releaseServerBaseUrl + '/__diagnostics/report')
         buildConfigField 'String', 'CLOUD_SAVE_URL',
                 JsonOutput.toJson(releaseServerBaseUrl + '/__cloud')
         // 热更源：正式 latest.json，自测包（-PupdateChannel=staging）用 latest-staging.json。
