@@ -2204,6 +2204,22 @@ test('bag chrome is reused across rerenders and replaced when the page changes',
   assert(chrome.list.length>0,'回到背包页重新建静态图框');
 });
 
+test('prewarming builds the bag before it opens', t => {
+  const f=fixture();t.after(f.cleanup);
+  f.menu.prewarmBag();
+  assert.equal(f.menu.menuOpen,false,'预热不打开菜单');
+  assert.equal(f.internals.surface.root.visible,false);
+  assert.equal(f.internals.body.root.visible,false);
+  const dynamic=f.internals.body.root.list.find(child=>child!==f.internals.body.staticRoot);
+  let clears=0;const clear=f.internals.body.clear.bind(f.internals.body);
+  (f.internals.body as unknown as {clear:()=>void}).clear=()=>{clears+=1;clear();};
+  f.menu.show('bag');
+  assert.equal(f.menu.menuOpen,true);
+  assert.equal(clears,0,'首次打开复用预热页面');
+  assert.equal(f.internals.body.root.list.find(child=>child!==f.internals.body.staticRoot),dynamic);
+  f.menu.close();
+});
+
 test('closing the bag keeps its page and reopens without rebuilding unchanged data', t => {
   const f=fixture();t.after(f.cleanup);
   f.menu.show('bag');

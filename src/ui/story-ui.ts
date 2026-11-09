@@ -152,6 +152,8 @@ export class StoryUI {
   private sessionSignature='';
   /** 背包页关掉后仍保留整页 DOM 和立绘，重新打开同一版本数据时只恢复显示。 */
   private bagPageCached=false;
+  /** 预热时菜单还没打开，只允许这一次在关闭状态绘制。 */
+  private prewarming=false;
   /** 当前弹层的框尺寸，由打开它的对话框声明；初值只是没有对话框时的兜底。 */
   private modalBox={width:450,height:350};
   private modalActive=false;
@@ -400,6 +402,15 @@ export class StoryUI {
     if(reuseBag){this.sync();return;}
     // render() 末尾已经 sync 过；这里再调一次会把整层再排版一遍。
     this.render();
+  }
+  /** 进图后先把背包页画好并藏起来；首次打开只恢复显示。 */
+  prewarmBag():void{
+    if(this.open||!this.session||!this.surface||!this.body)return;
+    const signature=this.sessionDataSignature();
+    if(this.bagPageCached&&signature!==undefined&&signature===this.sessionSignature)return;
+    this.prewarming=true;
+    try{this.page='bag';this.renderNow();}finally{this.prewarming=false;}
+    const next=this.sessionDataSignature();if(next!==undefined)this.sessionSignature=next;
   }
   /** 调试收尾后回到设置里的调试剧情页，保留面板原来的筛选与选中任务。 */
   openDebugStory():void{
@@ -749,7 +760,7 @@ export class StoryUI {
     return { attached: true, open: this.open, page: this.page, loose };
   }
   private renderNow():void{
-    if(!this.open||!this.surface||!this.body||!this.session)return;
+    if((!this.open&&!this.prewarming)||!this.surface||!this.body||!this.session)return;
     this.bagPageCached=false;
     // 换页先收掉上一页的 DOM 文字；当前页由各自的面板在绘制时重新登记。
     this.menuText?.beginPage(this.page);

@@ -340,7 +340,7 @@ async function finishStoryStart(classId: string): Promise<void> {
   recordStartPhase('session-install-start');
   installSession(newStorySession(campaign, app.world.actors[campaign.start.actor], selected, app.items,app.characterStats,app.battleCatalog,app.companions));
   recordStartPhase('session-installed');
-  selection.scene.start(SCENE_KEYS.world, { ...app.campaign.start, initialEntry: true });
+  selection.scene.start(SCENE_KEYS.world, { ...app.campaign.start, initialEntry: true, onReady: () => app.storyUI?.prewarmBag() });
   recordStartPhase('world-scene-start');
 }
 
