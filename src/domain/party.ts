@@ -235,6 +235,8 @@ export class PartyRoster {
   get activeIds():string[]{return ['player',...this.slots.filter((id):id is string=>!!id)];}
   /** 已拥有伙伴的外观定义 id（不含主角）；返回只读拷贝，供素材规划使用。 */
   ownedDefinitionIds():string[]{return [...new Set([...this.owned.values()].map(member=>member.definition.id))];}
+  /** 全部已拥有成员（含候补），供技能资源规划使用。 */
+  ownedMembers():CompanionMember[]{return [...this.owned.values()];}
   /** 上阵队员的资源读写入口，顺序为主角、上阵槽；候补名册不在内。 */
   get activeMembers():SpringPartyResources[]{
     return this.activeIds.flatMap(id=>{

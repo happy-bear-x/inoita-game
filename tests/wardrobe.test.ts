@@ -31,7 +31,7 @@ test('lazy poses belong to one outfit pool and reload after its session is clear
   second.release(); pool.destroy(); run.wardrobe.destroy();
 });
 
-function setup(_t:test.TestContext,extraPoses=false){
+function setup(_t:test.TestContext,extraPoses=false,skillPose=false){
   const events=new EventEmitter(),renderer=new EventEmitter(),textures=new Set<string>();
   const ops=new Map<string,{stamps:number;clears:number;renders:number}>();
   const scene={events,game:{renderer},anims:{exists:()=>false},textures:{
@@ -43,12 +43,13 @@ function setup(_t:test.TestContext,extraPoses=false){
     get:()=>({has:()=>true}),exists:(key:string)=>textures.has(key),remove:(key:string)=>textures.delete(key)
   }} as unknown as Phaser.Scene;
   const catalog:WardrobeCatalog={textures:[],sprites:{},defaults:{},variants:{},equipment:{},
-    stances:{'unarmed:empty':extraPoses?{'idle-south':'idle','attack-north':'attack'}:{'idle-south':'idle'}},skills:{},skillStances:{},attacks:{},
-    poses:{idle:{frames:[[]],frameRate:10,mirrorX:false},...(extraPoses?{attack:{frames:[[]],frameRate:10,mirrorX:false}}:{})}};
+    stances:{'unarmed:empty':extraPoses?{'idle-south':'idle','attack-north':'attack'}:{'idle-south':'idle'}},
+    skills:skillPose?{hero:{'skill-firestorm-south':'firestorm'}}:{},skillStances:{},attacks:{},
+    poses:{idle:{frames:[[]],frameRate:10,mirrorX:false},...(extraPoses?{attack:{frames:[[]],frameRate:10,mirrorX:false}}:{}),...(skillPose?{firestorm:{frames:[[]],frameRate:10,mirrorX:false}}:{})}};
   const wardrobe=new Wardrobe(scene,catalog,{items:{}} as ItemCatalog);
   const actor={id:'hero',clips:{}} as ActorDefinition;
   return {wardrobe,scene,catalog,actor,textures,events,renderer,ops,
-    prepare:(options?:{clipNames?:Iterable<string>})=>wardrobe.prepare(actor,{},'hero',options)};
+    prepare:(options?:{clipNames?:Iterable<string>;learnedSkills?:ReadonlySet<string>})=>wardrobe.prepare(actor,{},'hero',options)};
 }
 
 test('concurrent outfit requests share their generated textures and release all of them',async t=>{
@@ -115,6 +116,15 @@ test('preview preparation composes only the requested clip',async t=>{
   assert.deepEqual(Object.keys(full.actor.clips).sort(),['attack-north','idle-south'],'缺省仍合成整套动作');
   assert.equal(run.textures.size,3);
   assert.notEqual(await run.prepare({clipNames:['idle-south']}),full,'单动作与整套外观分开缓存');
+});
+
+test('learned skills limit which skill poses an outfit composes',async t=>{
+  const run=setup(t,true,true);
+  const unlearned=await run.prepare({learnedSkills:new Set()});
+  assert.deepEqual(Object.keys(unlearned.actor.clips).sort(),['attack-north','idle-south'],'未学技能时不合成技能姿态');
+  const learned=await run.prepare({learnedSkills:new Set(['firestorm'])});
+  assert.deepEqual(Object.keys(learned.actor.clips).sort(),['attack-north','idle-south','skill-firestorm-south'],'学会后才合成对应技能姿态');
+  run.wardrobe.destroy();
 });
 
 test('companion wardrobe cache keeps a global LRU bound and protects in-use members',()=>{

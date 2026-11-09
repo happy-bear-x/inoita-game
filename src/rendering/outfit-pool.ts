@@ -15,6 +15,8 @@ export interface Outfit {
 export interface WardrobePrepareOptions {
   /** 菜单预览只需要 idle-south；省略表示整套动作。 */
   clipNames?: Iterable<string>;
+  /** 只合成这些技能的动作；省略表示该职业全部技能（构建期/测试）。 */
+  learnedSkills?: ReadonlySet<string>;
   signal?: AbortSignal;
 }
 type WardrobePoseLoader = (ids: readonly string[], signal: AbortSignal) => Promise<Record<string, CostumePose>>;
@@ -50,7 +52,7 @@ export class OutfitPool {
   }
   key(base: ActorDefinition, equipment: Partial<Record<EquipmentSlot, string>>, classId?: string,
     options?: WardrobePrepareOptions): string {
-    const recipe = costumeRecipe(this.catalog, this.items, equipment, classId, base.id);
+    const recipe = costumeRecipe(this.catalog, this.items, equipment, classId, base.id, options?.learnedSkills);
     return JSON.stringify([base.id, base.clips, recipe.poses, Object.entries(recipe.variants).sort(),
       options?.clipNames === undefined ? null : [...options.clipNames].sort()]);
   }
@@ -144,7 +146,7 @@ export class OutfitPool {
   }
   private async prepare(base: ActorDefinition, equipment: Partial<Record<EquipmentSlot, string>>, classId: string | undefined,
     options: WardrobePrepareOptions | undefined, signal: AbortSignal): Promise<Outfit> {
-    const recipe = costumeRecipe(this.catalog, this.items, equipment, classId, base.id);
+    const recipe = costumeRecipe(this.catalog, this.items, equipment, classId, base.id, options?.learnedSkills);
     const requested = options?.clipNames === undefined ? undefined : new Set(options.clipNames);
     const poses = Object.entries(recipe.poses).filter(([name]) => !requested || requested.has(name));
     const missing = [...new Set(poses.map(([, id]) => id).filter((id): id is string => !!id && !this.catalog.poses[id]))];
@@ -211,11 +213,17 @@ export class OutfitPool {
         const clip:AnimationClip={frameWidth:width,frameHeight:height,frames:pose.frames.length,originX:-left/width,originY:-top/height,
           frameRate:pose.frameRate,mirrorX:pose.mirrorX,layers:[{key,file:'',blend:'normal'}]};
         clips[name as ClipName]=clip;
-        // 佣兵加入时才首次合成整套外观；把每个动作分开到下一帧，
-        // 避免一次性 stamp/render 所有动作形成长任务、卡住画面。
+        // 佣兵加入时才首次合成整套外观；把每个动作分到下一次绘制前，
+        // 让浏览器先交付这一帧，避免 stamp/render 连续挤在同一帧里。
         await new Promise<void>((resolve,reject)=>{
-          const cancel=()=>{clearTimeout(timer);signal.removeEventListener('abort',cancel);reject(signal.reason);};
-          const timer=setTimeout(()=>{signal.removeEventListener('abort',cancel);resolve();},0);
+          let timer: ReturnType<typeof setTimeout> | number;
+          const cancel=()=>{
+            if(typeof requestAnimationFrame==='function')cancelAnimationFrame(timer as number);
+            else clearTimeout(timer as ReturnType<typeof setTimeout>);
+            signal.removeEventListener('abort',cancel);reject(signal.reason);
+          };
+          const done=()=>{signal.removeEventListener('abort',cancel);resolve();};
+          timer=typeof requestAnimationFrame==='function'?requestAnimationFrame(done):setTimeout(done,0);
           signal.addEventListener('abort',cancel,{once:true});
           if(signal.aborted)cancel();
         });

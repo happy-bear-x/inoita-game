@@ -1,6 +1,7 @@
 import type { ClipName, Facing } from './content.ts';
 import type { EquipmentSlot, ItemCatalog } from './items.ts';
 import type { BasicAttackDefinition, SkillAction } from './battle.ts';
+import { skillClips } from './skill-action.ts';
 
 export interface CostumePiece {
   texture: string; x: number; y: number; width: number; height: number; anchorX: number; anchorY: number;
@@ -37,7 +38,7 @@ export function hasOffhandShield(items:ItemCatalog,equipment:Partial<Record<Equi
   const offhand=equipment['off-hand'];
   return offhand!==undefined?items.items[offhand]?.kind==='shield':defaultShield;
 }
-export function costumeRecipe(catalog: WardrobeCatalog, items: ItemCatalog, equipment: Partial<Record<EquipmentSlot,string>>, classId?:string,appearanceId?:string) {
+export function costumeRecipe(catalog: WardrobeCatalog, items: ItemCatalog, equipment: Partial<Record<EquipmentSlot,string>>, classId?:string,appearanceId?:string,learnedSkills?:ReadonlySet<string>) {
   const companion=appearanceId?catalog.companions?.[appearanceId]:undefined;
   const variants={...catalog.defaults,...companion?.variants};
   for(const [slot,id]of Object.entries(equipment)) {
@@ -52,6 +53,17 @@ export function costumeRecipe(catalog: WardrobeCatalog, items: ItemCatalog, equi
   const poses=catalog.stances[`${main}:${off}`];
   if(!poses)throw new Error('这组武器缺少人物动作');
   const skills=classId?catalog.skillStances[classId]?.[`${main}:${off}`]:undefined;
-  return {variants,poses:classId?{...poses,...catalog.skills[classId],...skills?.poses}:poses,
+  // 只合成已学技能的姿态；未学技能不参与外观，学会后再补。姿态动作全部保留，
+  // 因为 attack-2/3、frenzy 等名字不一定和 actor 的 clip 列表一一对应。
+  const learnedPoses=learnedSkills?new Set<string>([...learnedSkills].flatMap(id=>Object.values(skillClips(id)))):undefined;
+  const keepPose=(name:string)=>!learnedPoses||!name.startsWith('skill-')||learnedPoses.has(name);
+  const classPoses=classId?catalog.skills[classId]:undefined;
+  const filteredClassPoses=classPoses&&learnedPoses
+    ?Object.fromEntries(Object.entries(classPoses).filter(([name])=>keepPose(name))) as Partial<Record<ClipName,string>>
+    :classPoses;
+  const filteredStancePoses=skills&&learnedPoses
+    ?Object.fromEntries(Object.entries(skills.poses).filter(([name])=>keepPose(name))) as Partial<Record<ClipName,string>>
+    :skills?.poses;
+  return {variants,poses:classId?{...poses,...filteredClassPoses,...filteredStancePoses}:poses,
     actions:skills?.actions??{},attack:catalog.attacks[`${main}:${off}`],dualWieldAttack:catalog.dualWieldAttacks?.[`${main}:${off}`],frenzyAttack:catalog.frenzyAttacks?.[`${main}:${off}`],frenzyWaitFrames:catalog.frenzyWaitFrames?.[`${main}:${off}`]};
 }

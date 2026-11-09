@@ -1866,6 +1866,8 @@ export class StoryUI {
       else if(kind==='recruit'){
         const {member}=this.session!.party!.recruit(op.entry);
         this.operation=undefined;this.selectedItem=undefined;this.page='party';this.partyPanel!.select(member.id);
+        // 招募后先把整套外观拼好；上阵时直接复用，失败则等战斗开场重试。
+        void this.app.preparePartyMember?.(member.id,undefined,{full:true,pin:true}).catch(()=>{});
       }else if(kind==='revive'){
         const target=op.member!;
         if(this.app.revivePartyMember)this.app.revivePartyMember(target,op.entry);else{

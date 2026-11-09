@@ -52,7 +52,8 @@ import { freezeSnapshot, storyDevMode } from '../domain/dev-mode.ts';
 import type { TravelDestination } from '../domain/content.ts';
 import type {StoryAudioState} from '../application/game-audio.ts';
 
-import {characterSceneClips} from '../rendering/combat-asset-descriptors.ts';
+import { characterSceneClips} from '../rendering/combat-asset-descriptors.ts';
+import { partyMemberCombatAssets } from '../rendering/combat-assets.ts';
 import { PLAYER_MOVE_SPEED, characterAnimationState, characterAssets, createCharacter, setCharacterClip } from '../rendering/characters.ts';
 import { drawMapLayers, type MapLayerHandles } from '../rendering/map-layers.ts';
 import type { CharacterVisual } from '../rendering/characters.ts';
@@ -61,7 +62,7 @@ import { Hud } from '../rendering/hud.ts';
 import type { DomLabel } from '../ui/dom/dom-ui.ts';
 import { ActionControls, type ShortcutSlot } from '../ui/phaser/action-controls.ts';
 import { ShortcutBar, type ShortcutEntry } from '../domain/shortcut-bar.ts';
-import type { SkillConfiguration } from '../domain/skill-configuration.ts';
+import { learnedSkillIds, type SkillConfiguration } from '../domain/skill-configuration.ts';
 import { NameBanner } from '../rendering/name-banner.ts';
 import { StoryMinimap, type MinimapTask } from '../rendering/story-minimap.ts';
 import { displaySettings } from '../application/display-settings.ts';
@@ -108,10 +109,14 @@ export class WorldScene extends Phaser.Scene {
   private readonly chestFades = new Map<string, Phaser.Tweens.Tween>();
   private wardrobe?: Wardrobe;
   private readonly companionWardrobes=new Map<string,Wardrobe>();
+  private readonly companionAssets=new Map<string,AssetLease>();
   private readonly companionOutfits=new Map<string,{actor:ActorDefinition}>();
-  private readonly companionPreparations=new Map<string,{equipment:string;full:boolean;promise:Promise<void>}>();
+  private readonly companionPreparations=new Map<string,{equipment:string;learned:string;full:boolean;promise:Promise<void>}>();
   /** 已经合成了整套动作的伙伴；预览用的单动作外观不能覆盖它。 */
   private readonly companionFull=new Set<string>();
+  /** 招募时预拼、准备上阵前也要保留的外观；最多留最近两套。 */
+  private readonly companionPinned=new Set<string>();
+  private readonly companionLearned=new Map<string,string>();
   /** 最近一次为菜单预览准备的成员；LRU 淘汰时要保留它的外观纹理。 */
   private companionPreviewId?:string;
   private readonly projectedMemberEquipment=new Map<string,string>();
@@ -212,7 +217,10 @@ export class WorldScene extends Phaser.Scene {
   constructor(app: StoryContext) { super({ key: SCENE_KEYS.world, physics: { default: 'arcade', arcade: { gravity: { x: 0, y: 0 }, debug: false } } }); this.app = app; }
   init(options: SceneOptions): void {
     this.companionWardrobes.clear();this.companionOutfits.clear();this.companionPreparations.clear();
-    this.companionFull.clear();this.companionPreviewId=undefined;
+    this.companionFull.clear();this.companionPinned.clear();this.companionLearned.clear();
+    for(const lease of this.companionAssets.values())lease.release();
+    this.companionAssets.clear();
+    this.companionPreviewId=undefined;
     this.projectedMemberEquipment.clear();this.projectedPlayerEquipment='';
     this.wardrobe=undefined;this.equippedActor=undefined;this.outfitRequest++;
     this.request.abort(); this.request = new AbortController();
@@ -269,6 +277,9 @@ export class WorldScene extends Phaser.Scene {
       this.wardrobe?.destroy(); this.wardrobe = undefined;
       for (const wardrobe of this.companionWardrobes.values()) wardrobe.destroy();
       this.companionWardrobes.clear(); this.companionOutfits.clear(); this.companionPreparations.clear(); this.companionFull.clear();
+      this.companionPinned.clear(); this.companionLearned.clear();
+      for(const lease of this.companionAssets.values())lease.release();
+      this.companionAssets.clear();
       this.projectedMemberEquipment.clear(); this.projectedActorIds.clear(); this.entryPrefetches?.clear(); this.entryPrefetches = undefined;
       this.characters = []; this.entities = []; this.baseEntities = []; this.player = undefined; this.map = undefined;
       this.near = null; this.noclipVisual = undefined; this.equippedActor = undefined; this.triggerIndex = undefined;
@@ -779,6 +790,8 @@ export class WorldScene extends Phaser.Scene {
   private forgetCompanionWardrobe(id:string):void {
     this.companionOutfits.delete(id);this.companionPreparations.delete(id);
     this.projectedMemberEquipment.delete(id);this.companionFull.delete(id);
+    this.companionPinned.delete(id);this.companionLearned.delete(id);
+    this.companionAssets.get(id)?.release();this.companionAssets.delete(id);
     if(this.companionPreviewId===id)this.companionPreviewId=undefined;
   }
   private releaseCompanionWardrobe(id:string):void {
@@ -798,44 +811,81 @@ export class WorldScene extends Phaser.Scene {
   }
   /** 菜单刚选中的成员、上阵队员和正在准备的衣柜不参与 LRU 淘汰。 */
   private companionWardrobeInUse(id:string):boolean {
+    if(!this.app.session.party?.get(id))return false;
     return id===this.companionPreviewId||this.companionPreparations.has(id)
-      ||this.app.session.party?.activeIds.includes(id)===true;
+      ||this.companionPinned.has(id)||this.app.session.party?.activeIds.includes(id)===true;
   }
   /**
    * 准备伙伴外观。菜单预览只合成 `idle-south`；`full` 用于进战斗等需要整套动作的路径。
    */
-  async preparePartyMember(id:string,signal?:AbortSignal,options?:{full?:boolean}):Promise<void> {
+  async preparePartyMember(id:string,signal?:AbortSignal,options?:{full?:boolean;pin?:boolean}):Promise<void> {
     if(id==='player')return;
     const member=this.app.session.party?.get(id);if(!member||this.destroyed)throw new Error('伙伴不存在');
-    const full=options?.full===true;
+    const full=options?.full===true,pin=full&&options?.pin===true;
     if(!full)this.companionPreviewId=id;
     const bag=this.app.session.bag,equipment=bag.equipmentItems(bag.equipmentFor(id)),signature=JSON.stringify(equipment);
-    if(this.projectedMemberEquipment.get(id)!==signature)this.companionFull.delete(id);
+    const learned=learnedSkillIds(this.app.battleCatalog,member.classId,member.skills);
+    const signatureOf=(ids:ReadonlySet<string>)=>[...ids].sort().join('|');
+    const learnedSignature=signatureOf(learned);
+    // 装备或技能变化都会让整套外观失效；不能只比装备。
+    if(this.projectedMemberEquipment.get(id)!==signature||this.companionLearned.get(id)!==learnedSignature)this.companionFull.delete(id);
     const ready=this.companionOutfits.has(id)&&this.projectedMemberEquipment.get(id)===signature
-      &&(full?this.companionFull.has(id):true);
-    if(ready)return;
+      &&(full?this.companionFull.has(id)&&this.companionLearned.get(id)===learnedSignature:true);
+    if(ready){if(pin)this.pinCompanion(id);return;}
     const wardrobe=this.companionWardrobe(id);
     let preparation=this.companionPreparations.get(id);
-    if(!preparation||preparation.equipment!==signature||(full&&!preparation.full)){
+    if(!preparation||preparation.equipment!==signature||preparation.learned!==learnedSignature||(full&&!preparation.full)){
       const owner=this.request;
-      const promise=wardrobe.prepare(this.app.world.actors[member.definition.actor],equipment,member.classId,
-        full?undefined:{clipNames:['idle-south']}).then(outfit=>{
+      const changed=()=>this.destroyed||owner!==this.request||owner.signal.aborted
+        ||signature!==JSON.stringify(bag.equipmentItems(bag.equipmentFor(id)))||this.app.session.party?.get(id)!==member;
+      const promise=(async()=>{
+        if(full){
+          const actor=this.app.world.actors[member.definition.actor];
+          if(actor){
+            const assets=partyMemberCombatAssets(this.app.battleCatalog,this.app.wardrobe,member.classId,actor,learned,{items:this.app.items,equipment});
+            const lease=await loadSceneAssets(this,assets,()=>{},true);
+            try{
+              signal?.throwIfAborted();
+              if(changed())throw new Error('伙伴状态已改变');
+              const previous=this.companionAssets.get(id);
+              this.companionAssets.set(id,lease);previous?.release();
+            }catch(error){lease.release();throw error;}
+          }
+        }
+        return wardrobe.prepare(this.app.world.actors[member.definition.actor],equipment,member.classId,
+          full?{learnedSkills:learned}:{clipNames:['idle-south']});
+      })().then(outfit=>{
         signal?.throwIfAborted();
-        if(this.destroyed||owner!==this.request||owner.signal.aborted||signature!==JSON.stringify(bag.equipmentItems(bag.equipmentFor(id)))||this.app.session.party?.get(id)!==member)throw new Error('伙伴状态已改变');
+        if(changed())throw new Error('伙伴状态已改变');
+        // 准备期间又学了技能时，这套外观只覆盖了旧技能；留给下一次重拼。
+        if(signatureOf(learnedSkillIds(this.app.battleCatalog,member.classId,member.skills))!==learnedSignature)throw new Error('伙伴技能已改变');
         // 已经准备好整套外观时，晚到的预览结果不能把它降级成单动作外观。
         if(!full&&this.companionFull.has(id))return;
         wardrobe.activate(outfit);this.companionOutfits.set(id,outfit);
         if(full)this.companionFull.add(id);
         this.combat?.updateMemberAppearance(id,outfit.actor);
-        this.projectedMemberEquipment.set(id,signature);this.combat?.updateEquipment(id);
+        this.projectedMemberEquipment.set(id,signature);this.companionLearned.set(id,learnedSignature);
+        this.combat?.updateEquipment(id);
+        if(pin)this.pinCompanion(id);
       });
-      preparation={equipment:signature,full,promise};this.companionPreparations.set(id,preparation);
+      preparation={equipment:signature,learned:learnedSignature,full,promise};this.companionPreparations.set(id,preparation);
     }
     try{await preparation.promise;signal?.throwIfAborted();}
     finally{
       if(this.companionPreparations.get(id)===preparation)this.companionPreparations.delete(id);
       // 菜单在准备期间关闭时，预览标记已经清掉；准备完成后立即释放，不必等下次取用再淘汰。
       if(!this.companionWardrobeInUse(id))this.releaseCompanionWardrobe(id);
+    }
+  }
+
+  /** 招募时预拼的外观在正式上阵前不能被预览淘汰；最多留最近两套。 */
+  private pinCompanion(id:string):void {
+    this.companionPinned.delete(id);this.companionPinned.add(id);
+    while(this.companionPinned.size>2){
+      const oldest=this.companionPinned.values().next().value;
+      if(oldest===undefined)break;
+      this.companionPinned.delete(oldest);
+      if(!this.companionWardrobeInUse(oldest))this.releaseCompanionWardrobe(oldest);
     }
   }
   equipmentAppearance(id:string):ActorDefinition|undefined{return id==='player'?this.player?.actor:this.companionOutfits.get(id)?.actor;}
