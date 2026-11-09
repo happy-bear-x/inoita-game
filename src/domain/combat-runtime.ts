@@ -111,6 +111,8 @@ export class CombatRuntime {
       if(this.paused||this.closed)break;
     }
     // 先移除再执行，嵌套任务及取消可安全改变这一集合。
+    // 没有待办任务时直接跳过复制、过滤和排序；这是战斗和非战斗都会走到的空路径。
+    if(!this.tasks.size)return;
     let budget=4096;
     while(!this.paused&&!this.closed){
       const due=[...this.tasks.values()].filter(task=>task.dueFrame<=frame).sort((a,b)=>a.dueFrame-b.dueFrame||a.id-b.id);
