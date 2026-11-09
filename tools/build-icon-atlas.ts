@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { PNG } from 'pngjs';
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
 const CONTENT = path.join(PUBLIC, 'content');
 const ATLAS_IMAGE = 'assets/ui/menu-icons.png';
@@ -150,7 +151,7 @@ export const UI_ICON_FRAMES: Readonly<Record<string, string>> = ${JSON.stringify
   return { width: packed.width, height: packed.height, icons: iconFiles().length, unique: packed.frames.size, bytes: bytes.byteLength };
 }
 
-if (process.argv[1] === new URL(import.meta.url).pathname) {
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const result = writeIconAtlas();
   console.log(`菜单图标图集：${result.icons} 个图标 → ${result.unique} 帧，${result.width}x${result.height}，${(result.bytes / 1024 / 1024).toFixed(2)} MB`);
 }

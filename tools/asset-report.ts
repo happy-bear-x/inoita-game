@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { planClipDedupe, walkClips } from './content-build.ts';
 import { EFFECT_ATLAS_BY_FILE, EFFECT_ATLAS_PAGES } from '../src/generated/effect-atlas.ts';
@@ -206,7 +207,7 @@ async function runtimeReport(
 }
 
 const mb = (value: number): string => `${(value / 1024 / 1024).toFixed(1)} MB`;
-if (process.argv[1] === new URL(import.meta.url).pathname) {
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const report = await reportAssets(process.argv[2] ? path.resolve(process.argv[2]) : undefined);
   console.log(`资产：${report.files} 个文件 / ${mb(report.bytes)}；唯一内容 ${report.uniqueFiles} 个 / ${mb(report.uniqueBytes)}`);
   console.log(`重复：${report.duplicateGroups} 组，${report.duplicateFiles} 个多余文件，磁盘 ${mb(report.duplicateBytes)}，解码约 ${mb(report.duplicateDecodedBytes)}`);

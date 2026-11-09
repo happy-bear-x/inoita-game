@@ -1,8 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SOURCE = 'assets/ui/menus/inventory-slot.png';
 /** 边框是米色（R−B 明显大于 0），内底是中性灰（R−B≈0）。 */
 const FRAME_MIN_RED_MINUS_BLUE = 20;
@@ -39,7 +40,7 @@ function recolorFrame(source: PNG, color: [number, number, number]): PNG {
   return result;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const source = PNG.sync.read(fs.readFileSync(path.join(ROOT, 'public', SOURCE)));
   for (const frame of FRAMES) {
     const file = path.join(ROOT, 'public/assets/ui/menus', frame.file);

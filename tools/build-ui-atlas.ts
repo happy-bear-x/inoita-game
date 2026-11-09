@@ -1,12 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { PNG } from 'pngjs';
 import { gameMenuImageGroups, TITLE_MESSAGE_ASSETS } from '../src/application/menu-images.ts';
 import { COMMON_BUTTON_IMAGES } from '../src/ui/common-button.ts';
 import { UI_ICON_FRAMES } from '../src/generated/icon-atlas.ts';
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
 const CONTENT = path.join(PUBLIC, 'content');
 const PREFIX = 'assets/ui/menu-ui';
@@ -199,7 +200,7 @@ export const UI_ATLAS_SOURCE_DIGEST = ${JSON.stringify(uiAtlasSourceDigest())};
   };
 }
 
-if (process.argv[1] === new URL(import.meta.url).pathname) {
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const result = writeUiAtlas();
   console.log(`菜单 UI 图集：${result.files} 张图 → ${result.unique} 帧 / ${result.pages} 页，${(result.bytes / 1024 / 1024).toFixed(2)} MB`);
 }
