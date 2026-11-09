@@ -39,6 +39,16 @@ test('native assassination progress requires a defeat and markers follow its del
  assert.equal(session.status('cardinal-summons'),'available');
  assert.equal(session.marker('janus','npc-55'),null,'event-granted quests have no offer marker before their script grants them');
 });
+test('hidden quests keep scene markers because hidden only hides the journal',()=>{
+ const session=new Session(campaign);
+ // quest-381「序幕_战斗任务」不进任务日志，但它的交付对象是丛林路障，玩家必须能找到。
+ assert.equal(session.questBook.visible('quest-381'),false);
+ assert.equal(session.accept('quest-381'),true);
+ assert.equal(session.status('quest-381'),'ready');
+ assert.equal(session.marker('barricade-a1eb664e','npc-120'),'ready');
+ assert.equal(session.markerActor('barricade-a1eb664e','npc-120'),true,'隐藏待交付仍要挂头顶标记');
+});
+
 test('a GM focus restricts quest projections to the focused task',()=>{
  const session=new Session(campaign);
  assert.equal(session.accept('grafton-mission'),true);

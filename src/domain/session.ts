@@ -996,8 +996,9 @@ export class Session {
       const quest=this.definition(id);
       if(quest&&this.matchesQuestActor(quest,actor,characterId,true))return quest;
     }
+    // 隐藏只表示不进任务日志，不是“彩蛋任务”：可接状态同样参与任务槽。
     const available=this.campaign.quests.filter(quest=>this.status(quest.id)==='available'
-      &&this.questBook.visible(quest.id)&&this.matchesQuestActor(quest,actor,characterId,false));
+      &&this.matchesQuestActor(quest,actor,characterId,false));
     const main=available.find(quest=>this.questGroupKinds.get(quest.id)==='main');
     if(main)return main;
     if(available.length)return available[0];
@@ -1026,8 +1027,10 @@ export class Session {
   }
   marker(actor:string,characterId?:string):QuestStatus|null {const quest=this.npcQuestSlot(actor,characterId);return quest?this.status(quest.id):null;}
   /**
-   * 头顶该不该给这个角色／物件挂标记。看的是「有没有**日志可见**的任务把这里当发布者或交付对象」：
-   * 隐藏任务（如 #50 的矿洞路障）不进日志，也就不该在场景里提示玩家去点它。
+   * 头顶和小地图该不该给这个角色／物件挂标记。
+   *
+   * 隐藏任务只表示不进任务日志，不是彩蛋任务；它们和可见任务共用同一套场景标记，
+   * 可接、进行中、待交付都要提示。不要再用 `questBook.visible()` 过滤一次。
    * 调试焦点只看焦点任务：前置任务的人物不挂标记。
    */
   markerActor(actor:string,characterId?:string):boolean {
@@ -1035,13 +1038,11 @@ export class Session {
     if(!cached||cached.version!==version||cached.focus!==focus)this.markerActorProjection={version,focus,values:new Map()};
     const values=this.markerActorProjection!.values,key=actor+'\0'+(characterId??'');
     if(!values.has(key)){
-      const visibleFocus=!!focus;
       values.set(key,this.campaign.quests.some(quest=>{
         const status=this.status(quest.id);
         if(!['available','active','ready'].includes(status))return false;
         return (!focus||quest.id===focus)
-          &&this.matchesQuestActor(quest,actor,characterId,status!=='available')
-          &&(visibleFocus||this.questBook.visible(quest.id));
+          &&this.matchesQuestActor(quest,actor,characterId,status!=='available');
       }));
     }
     return values.get(key)!;

@@ -141,6 +141,7 @@ test('a hidden quest settles on the object it names once its event has granted i
   h.session.bag.add('west-mine-key', 1);
   h.session.applyStoryCommands([{ type: 'quest', command: { type: 'refresh' } }]);
   assert.equal(h.session.status(quest.id), 'ready');
+  assert.equal(h.session.markerActor(placement.actor, placement.characterId), true, '隐藏待交付也显示场景标记');
   assert.equal(h.session.itemCount('west-mine-key'), 1, '钥匙来自剧情事件，接取时不再补发');
   assert.equal(await h.director.interact(placement, world.actors[placement.actor]), true);
   assert.equal(h.session.status(quest.id), 'completed');
