@@ -29,6 +29,7 @@ function fixture(){
   const host=Object.assign(Object.create(WorldCombat.prototype),{
     app:{battleCatalog:battle,items,session},hero,
     passivesCache:new Map(),skillTableCache:new Map(),equipmentRecoveryCache:new Map(),combatProcsCache:new Map(),
+    aiSkillCostCache:new Map(),
     closed:false,
     playerSkillSignature:'',playerSkillGate:'',allySkillSignatures:new Map(),allySkillGates:new Map(),
     skillAssetFailures:new Map(),skillAssetRefreshRunning:false,skillAssetRefreshQueued:false,
@@ -352,4 +353,33 @@ test('condition colors use the combat clock while pause, defeat and restore inva
   host.pendingDefeats.clear();invoke('syncStateMarkers',true);assert.equal(frames.length,paused+1);
   const saved=conditions.captureState();conditions.restoreState(saved);invoke('syncStateMarkers',true);
   assert.equal(frames.length,paused+2,'读档后即使逻辑帧相同仍重新应用颜色');
+});
+
+test('AI mana costs are reused until equipment, conditions or temporary attributes change',()=>{
+  const {host,invoke}=fixture();
+  host.conditions={
+    hasState:()=>false,revision:0,
+    cachedAttribute:(_id:string,key:string)=>key==='manaCostRate'&&(host.conditions as {temporary?:boolean}).temporary?1000:undefined,
+    hasManaCostAttributeRamp:()=>false,
+  };
+  let computed=0;
+  host.skillManaCost=(_id:string,_skillId:string,_level:number|undefined)=>{computed++;return 10;};
+  const member=host.memberOf('player'),skills=[{id:'dark-strike',level:1}];
+  const first=invoke('aiSkillCosts','player',member,skills) as Map<string,number|undefined>;
+  assert.equal(invoke('cachedAiSkillCost',first,'player',skills[0]),10);
+  assert.equal(invoke('cachedAiSkillCost',first,'player',skills[0]),10);
+  assert.equal(computed,1,'同一组输入只算一次蓝耗');
+
+  host.hero.bag.add('healing-potion-s');
+  const afterBag=invoke('aiSkillCosts','player',member,skills) as Map<string,number|undefined>;
+  invoke('cachedAiSkillCost',afterBag,'player',skills[0]);
+  assert.equal(computed,2,'背包变化后重算');
+
+  host.conditions.revision++;
+  const afterState=invoke('aiSkillCosts','player',member,skills) as Map<string,number|undefined>;
+  invoke('cachedAiSkillCost',afterState,'player',skills[0]);
+  assert.equal(computed,3,'状态/增益变化后重算');
+
+  host.conditions.temporary=true;
+  assert.equal(invoke('aiSkillCosts','player',member,skills),undefined,'临时蓝耗属性存在时不做缓存');
 });

@@ -130,6 +130,16 @@ export class CombatConditions {
     const value=this.temporary.get(actorId)?.get(id);
     return typeof value==='number'?value:undefined;
   }
+  /**
+   * 是否有增益会按时间改变蓝耗修正。
+   * 属性增长不进 `revision`，所以调用方不能把蓝耗结果长期缓存；命中时改为每次现算。
+   */
+  hasManaCostAttributeRamp(actorId:string):boolean {
+    for(const buff of this.buffs.get(actorId)?.values()??[])
+      for(const ramp of buff.effect.attributeRamps??[])
+        if(ramp.attribute==='manaCostRate'||ramp.attribute==='manaCostReductionRate')return true;
+    return false;
+  }
   readResourceCapacity(actorId:string,key:ResourceCapacityKey,compute:()=>number):number {
     const temporary=this.cachedAttribute(actorId,key);if(temporary!==undefined)return temporary;
     const cached=this.resourceCapacities.get(actorId)?.get(key);if(cached!==undefined)return cached;
@@ -234,6 +244,8 @@ export class CombatConditions {
   update(deltaMs:number,onTick?:(tick:PeriodicTick)=>void):void {
     if(!Number.isFinite(deltaMs)||deltaMs<=0)return;
     this.clockRevision++;
+    // 没有任何状态或增益时，下面只会扫空表；直接返回，不建快照、不推进帧计时。
+    if(!this.states.size&&!this.buffs.size)return;
     const statesAtStart:{actorId:string;own:Map<BattleStateKey,StoredState>;state:StoredState}[]=[];
     for(const [actorId,own] of this.states)for(const state of own.values())if(!state.simulationFrames)statesAtStart.push({actorId,own,state});
     const buffsAtStart:{actorId:string;own:Map<BattleBuffKey,StoredBuff>;buff:StoredBuff}[]=[];

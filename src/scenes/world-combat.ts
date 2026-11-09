@@ -198,6 +198,8 @@ export class WorldCombat {
   }>;
   private readonly equipmentRecoveryCache=new Map<string,{revision:number;value:ReturnType<typeof equipmentRecoveryModifiers>}>();
   private readonly combatProcsCache=new Map<string,{revision:number;value:ReturnType<typeof equipmentCombatProcs>}>();
+  /** 队友 AI 的蓝耗只随技能等级、装备、状态和队伍加成变化；同一组输入下复用上一次结果。 */
+  private readonly aiSkillCostCache=new Map<string,{key:string;costs:Map<string,number|undefined>}>();
   private readonly pendingAllies=new Set<string>();
   private readonly allyWaiters=new Set<()=>void>();
   private allyLoadFailure?:unknown;
@@ -519,6 +521,8 @@ captureStoryActors():SceneActorState[] {
     this.defeated=false;this.wipeoutPending=false;
     // 恢复会按 roster 重建同一批召唤物；它们的会话状态来自存档，不能在这里清掉。
     this.clearEnemies(true,true);this.roster.restoreState(state.roster);this.conditions.restoreState(state.conditions);
+    // 恢复会换掉状态和增益；蓝耗缓存必须按新现场重算。
+    this.aiSkillCostCache?.clear();
     this.syncControlled();
     this.focusTargetId=state.focusTargetId;
     for(const saved of state.party){const visual=this.visualOf(saved.id);if(!visual)continue;
@@ -1724,6 +1728,7 @@ captureStoryActors():SceneActorState[] {
     this.passivesCache.delete(id);this.skillTableCache.delete(id);
     this.reactionSkillCache?.delete(id);
     this.equipmentRecoveryCache.delete(id);this.combatProcsCache.delete(id);
+    this.aiSkillCostCache?.delete(id);
   }
   private enemyFighter(key:string,definition:EnemyDefinition,playerLevel:number):PhysicalFighter|undefined {
     if(this.pendingDefeats.has(key))return;
@@ -2122,12 +2127,40 @@ captureStoryActors():SceneActorState[] {
   private syncAiSkills(id:string):void{
     const party=this.app.session.party,frequencies=party?.aiFrequency(id);
     const latest=this.partySkillsFor(id);this.partySkills.set(id,latest);
-    const mana=this.memberOf(id)?.player.mana??0;
+    const member=this.memberOf(id),mana=member?.player.mana??0;
+    const costs=member?this.aiSkillCosts(id,member,latest):undefined;
     for(const skill of latest){
-      // 技能表按版本复用，蓝耗和频率仍按当前法力每帧更新。
-      skill.manaCost=this.skillManaCost(id,skill.id,skill.level);
+      // 技能表和蓝耗按版本复用；频率仍按当前法力每逻辑帧更新。
+      skill.manaCost=costs?this.cachedAiSkillCost(costs,id,skill):this.skillManaCost(id,skill.id,skill.level);
       skill.frequency=mana>=(skill.manaCost??0)?frequencies?.get(skill.id)??1:0;
     }
+  }
+  /**
+   * 队友 AI 的蓝耗缓存。临时属性或按时间增长的蓝耗修正会让结果随时变化，
+   * 这两种情况直接返回 undefined，调用方改为每次现算，避免拿旧值。
+   */
+  private aiSkillCosts(id:string,member:BattleCharacter|CompanionMember,
+    skills:readonly EnemyPlayableSkill[]):Map<string,number|undefined>|undefined {
+    if(this.conditions.cachedAttribute(id,'manaCostRate')!==undefined
+      ||this.conditions.cachedAttribute(id,'manaCostReductionRate')!==undefined
+      ||this.conditions.hasManaCostAttributeRamp(id))return undefined;
+    const configuration=this.skillConfiguration(id,member);
+    const lowHealth=member.player.health<=Math.floor(member.player.maxHealth*30/100)?1:0;
+    const stealthed=this.conditions.hasState(id,'stealthed')?1:0;
+    const groupVersion=this.app.session.party?.groupModifierVersion??0;
+    const levels=skills.map(skill=>`${skill.id}:${skill.level}`).join(',');
+    const key=`${member.classId}|${configuration.version}|${member.bag.revision}|${this.conditions.revision}|${lowHealth}|${stealthed}|${groupVersion}|${levels}`;
+    const cached=this.aiSkillCostCache?.get(id);
+    if(cached?.key===key)return cached.costs;
+    const costs=new Map<string,number|undefined>();
+    this.aiSkillCostCache?.set(id,{key,costs});
+    return costs;
+  }
+  private cachedAiSkillCost(costs:Map<string,number|undefined>,id:string,skill:EnemyPlayableSkill):number|undefined {
+    if(costs.has(skill.id))return costs.get(skill.id);
+    const value=this.skillManaCost(id,skill.id,skill.level);
+    costs.set(skill.id,value);
+    return value;
   }
   private async syncAllies():Promise<void>{
     const party=this.app.session.party;if(!party||this.closed)return;
@@ -3052,7 +3085,7 @@ captureStoryActors():SceneActorState[] {
     this.stateMarkers.clear();this.conditionVisuals?.clear();
     for(const ally of [...this.allies]){ally.ai.dispose();ally.overhead.destroy();this.movement.remove(ally.visual);ally.visual.container.destroy();ally.assets?.release();}
     this.allies=[];this.partyControllers.clear();this.partySkills.clear();
-    this.passivesCache.clear();this.skillTableCache.clear();this.equipmentRecoveryCache.clear();this.combatProcsCache.clear();this.combatantsCache=undefined;
+    this.passivesCache.clear();this.skillTableCache.clear();this.equipmentRecoveryCache.clear();this.combatProcsCache.clear();this.aiSkillCostCache?.clear();this.combatantsCache=undefined;
     this.reactionSkillCache?.clear();
     this.combat=undefined;
     this.presenter?.clear();this.presenter=undefined;
