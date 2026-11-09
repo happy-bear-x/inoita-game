@@ -41,14 +41,18 @@ interface NavigationQuerySnapshot {
   /** 与地图共享的只读地形；整张地图生命周期内不变，查询不需要复制。 */
   readonly terrain?:CollisionMap;
   canStand(point:Point):boolean;
+  canStandXY?(x:number,y:number):boolean;
   terrainFree(point:Point):boolean;
 }
 
-function terrainFreeAt(bounds:GameRectangle,terrain:CollisionMap|undefined,point:Point):boolean {
+function terrainFreeAtXY(bounds:GameRectangle,terrain:CollisionMap|undefined,x:number,y:number):boolean {
   const r=TERRAIN_RADIUS;
-  if(point.x-r<bounds.x-COLLISION_EPSILON||point.y-r<bounds.y-COLLISION_EPSILON||
-    point.x+r>bounds.x+bounds.width+COLLISION_EPSILON||point.y+r>bounds.y+bounds.height+COLLISION_EPSILON)return false;
-  return !terrain||canStandOnTerrain(terrain,point.x,point.y,r);
+  if(x-r<bounds.x-COLLISION_EPSILON||y-r<bounds.y-COLLISION_EPSILON||
+    x+r>bounds.x+bounds.width+COLLISION_EPSILON||y+r>bounds.y+bounds.height+COLLISION_EPSILON)return false;
+  return !terrain||canStandOnTerrain(terrain,x,y,r);
+}
+function terrainFreeAt(bounds:GameRectangle,terrain:CollisionMap|undefined,point:Point):boolean {
+  return terrainFreeAtXY(bounds,terrain,point.x,point.y);
 }
 
 /** 整盒版地形判定：`rect` 是已经加上锚点的世界矩形。 */
@@ -88,15 +92,19 @@ function addOccupancy(cells: Map<number, GameRectangle[]>, box: GameRectangle): 
  * 查询矩形覆盖的广相格子必须全部检查。只查脚点所在的一格会漏掉伸进相邻格的碰撞盒，
  * 尤其是 32/48 像素宽的 Boss；格子只减少候选，最终仍用 `overlapsAt` 做精确相交。
  */
-function blockedInOccupancy(cells: Map<number, GameRectangle[]>, collision: GameRectangle, point: Point): boolean {
-  const x = point.x + collision.x, y = point.y + collision.y;
+function blockedInOccupancyXY(cells: Map<number, GameRectangle[]>, collision: GameRectangle, pointX: number, pointY: number): boolean {
+  const x = pointX + collision.x, y = pointY + collision.y;
   const left = Math.floor(x / OCCUPANCY_CELL_SIZE), right = Math.floor((x + collision.width) / OCCUPANCY_CELL_SIZE);
   const top = Math.floor(y / OCCUPANCY_CELL_SIZE), bottom = Math.floor((y + collision.height) / OCCUPANCY_CELL_SIZE);
+  const origin = { x: pointX, y: pointY };
   for (let row = top; row <= bottom; row++) for (let column = left; column <= right; column++) {
     const bucket = cells.get(occupancyCellKey(column, row));
-    if (bucket) for (const other of bucket) if (overlapsAt(collision, point, other)) return true;
+    if (bucket) for (const other of bucket) if (overlapsAt(collision, origin, other)) return true;
   }
   return false;
+}
+function blockedInOccupancy(cells: Map<number, GameRectangle[]>, collision: GameRectangle, point: Point): boolean {
+  return blockedInOccupancyXY(cells, collision, point.x, point.y);
 }
 export function mirroredCollision(box: GameRectangle | undefined, flip = false): GameRectangle | undefined {
   return box && { ...box, x: flip ? -box.x - box.width : box.x };
@@ -162,7 +170,8 @@ export class NavigationWorld {
       if(box)addOccupancy(occupied,box);
     }
     const terrainFree=(point:Point)=>terrainFreeAt(bounds,terrain,point);
-    return {bounds,start,terrain,terrainFree,canStand(point){
+    const canStandXY=(x:number,y:number)=>terrainFreeAtXY(bounds,terrain,x,y)&&(!collision||!blockedInOccupancyXY(occupied,collision,x,y));
+    return {bounds,start,terrain,terrainFree,canStandXY,canStand(point){
       // 与 `canStand()` 同口径：地形和地图边界对所有角色都生效；没有碰撞盒只表示不查人物占位。
       return terrainFree(point)&&(!collision||!blockedInOccupancy(occupied,collision,point));
     }};
@@ -328,6 +337,7 @@ export class NavigationWorld {
     const search = createPathSearch(origin, {
       bounds: this.bounds,
       canStand: free,
+      canStandXY: (x, y) => free({ x, y }),
       isGoal: point => {
         if (!this.canPlaceBody(shape, point, ignore, placements)) return false;
         if (extra && !extra(point)) return false;
@@ -366,6 +376,7 @@ export class NavigationWorld {
     return findPath(from, {
       bounds: this.bounds,
       canStand: free,
+      canStandXY: (x, y) => free({ x, y }),
       isGoal: point => Math.hypot(point.x - to.x, point.y - to.y) <= PATH_GRID_SIZE && canTraverse(point, to, free),
       heuristic: point => Math.max(0, Math.hypot(point.x - to.x, point.y - to.y) - PATH_GRID_SIZE),
     }, PLACEMENT_SEARCH_BUDGET) !== null;
@@ -386,6 +397,7 @@ export class NavigationWorld {
     return findPath(from, {
       bounds: this.bounds,
       canStand: free,
+      canStandXY: (x, y) => free({ x, y }),
       isGoal: point => Math.hypot(point.x - to.x, point.y - to.y) <= PATH_GRID_SIZE && canTraverse(point, to, free),
       heuristic: point => Math.max(0, Math.hypot(point.x - to.x, point.y - to.y) - PATH_GRID_SIZE),
     }, maxExpanded) !== null;
@@ -461,7 +473,7 @@ export class NavigationWorld {
   path(actor: NavigationActor, destination: Point, maxExpanded = Infinity): Point[] | null {
     if (!this.canStand(actor, destination)) return null;
     const free = (p: Point) => this.canStand(actor, p);
-    const path = findPath(actor.position(), { bounds: this.bounds, canStand: free,
+    const path = findPath(actor.position(), { bounds: this.bounds, canStand: free, canStandXY: (x, y) => free({ x, y }),
       isGoal: p => Math.hypot(p.x - destination.x, p.y - destination.y) <= PATH_GRID_SIZE && canTraverse(p, destination, free),
       heuristic: p => Math.max(0, Math.hypot(p.x - destination.x, p.y - destination.y) - PATH_GRID_SIZE) }, maxExpanded);
     if (path && (!path.length || Math.hypot(path.at(-1)!.x - destination.x, path.at(-1)!.y - destination.y) > .01)) path.push({ ...destination });

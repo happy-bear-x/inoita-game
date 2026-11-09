@@ -49,6 +49,7 @@ export class WalkRoute {
       this.search = createPathSearch(snapshot.start, {
         bounds: snapshot.bounds,
         canStand: point => snapshot.canStand(point),
+        canStandXY: snapshot.canStandXY ? (x, y) => snapshot.canStandXY!(x, y) : undefined,
         isGoal: point => Math.hypot(point.x - this.destination.x, point.y - this.destination.y) <= PATH_GRID_SIZE
           && canTraverse(point, this.destination, snapshot.canStand),
         heuristic: point => Math.max(0, Math.hypot(point.x - this.destination.x, point.y - this.destination.y) - PATH_GRID_SIZE)

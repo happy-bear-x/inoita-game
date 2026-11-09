@@ -20,6 +20,7 @@ interface FriendlySummonNavigationSnapshot {
   bounds: GameRectangle;
   start?: Point;
   canStand(point:Point):boolean;
+  canStandXY?(x:number,y:number):boolean;
   terrainFree?(point:Point):boolean;
 }
 export interface FriendlySummonPort extends EnemyPort {
@@ -356,7 +357,7 @@ export class FriendlySummonController {
       :(point:Point)=>frozen.canStand(point)&&edgeGap(point,{...actor,bounds:actorBounds},destination,{...target,bounds})<=range;
     const radius=kind==='target'?Math.hypot(actorBounds.width+bounds.width,actorBounds.height+bounds.height)+range*8
       :Math.hypot(actorBounds.width+bounds.width,actorBounds.height+bounds.height)+range;
-    this.search={task:createPathSearch({...actor.position},{bounds:frozen.bounds,canStand:frozen.canStand,isGoal,
+    this.search={task:createPathSearch({...actor.position},{bounds:frozen.bounds,canStand:frozen.canStand,canStandXY:frozen.canStandXY,isGoal,
       heuristic:point=>Math.max(0,distance(point,landing??destination)-(landing?PATH_GRID_SIZE:radius))}),targetId:target.id,destination,range,kind,landing};
     this.nextSearchAt=this.clock+FRIENDLY_SUMMON_AI.decisionMs;
     if(kind==='follow')this.followDestination={...destination};

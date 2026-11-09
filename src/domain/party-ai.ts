@@ -23,7 +23,7 @@ export interface PartyPort extends CombatPort {
   /** 整个队伍是否已进入战斗：有指派目标，或最近和敌人真实交战过。 */
   inCombat(): boolean;
   navigationBounds(): GameRectangle;
-  navigationSnapshot?(): Pick<PathQuery, 'bounds' | 'canStand'>;
+  navigationSnapshot?(): Pick<PathQuery, 'bounds' | 'canStand' | 'canStandXY'>;
   /** 每渲染帧共享的寻路扩展预算；缺省时按单次上限同步搜索（测试与无场景调用）。 */
   pathBudget?:{take(owner:string,limit:number):number};
   followPath(next: () => Point | undefined): void;
@@ -499,7 +499,7 @@ export class PartyController {
     const inRange=target&&!anchor;
     const radius=inRange?Math.hypot(actor.bounds.width+target.bounds.width,actor.bounds.height+target.bounds.height)+range*8
       :PATH_GRID_SIZE;
-    this.search=createPathSearch(actor.position,{bounds,canStand,
+    this.search=createPathSearch(actor.position,{bounds,canStand,canStandXY:snapshot?.canStandXY,
       isGoal:point=>(inRange?attackDistance(point,actor.bounds,target.position,target.bounds)<=range
         :targetDistance(point,goal)<=PATH_GRID_SIZE)&&canStand(point),
       heuristic:point=>Math.max(0,targetDistance(point,goal)-radius)});

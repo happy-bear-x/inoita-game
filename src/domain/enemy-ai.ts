@@ -24,7 +24,7 @@ export interface EnemyPort extends CombatPort {
   /** 每渲染帧共享的寻路扩展预算；缺省时按单次上限同步推进（测试与无场景调用）。 */
   pathBudget?:{take(owner:string,limit:number):number};
   /** 冻结通行快照；有它时跨帧搜索读同一份地图。 */
-  navigationSnapshot?():{bounds:GameRectangle;canStand(point:Point):boolean};
+  navigationSnapshot?():{bounds:GameRectangle;canStand(point:Point):boolean;canStandXY?(x:number,y:number):boolean};
   /** 同一目标多个单位共享的流场；建好之前返回 undefined，调用方继续走 A*。 */
   flowField?(targetId:string,target:Combatant):{next(from:Point):Point|undefined}|undefined;
   threat?:{
@@ -510,7 +510,8 @@ export class EnemyController {
       :(point:Point)=>Math.hypot(point.x-destination.x,point.y-destination.y)<=Math.max(PATH_GRID_SIZE,range)&&canStand(point);
     // 松的距离下界覆盖双方实体范围和量化余量，保证 A* 不高估剩余路程。
     const radius=target?Math.hypot(actor.bounds.width+target.bounds.width,actor.bounds.height+target.bounds.height)+range*8:PATH_GRID_SIZE;
-    return {bounds:snapshot?.bounds??this.port.navigationBounds(),canStand,isGoal,
+    return {bounds:snapshot?.bounds??this.port.navigationBounds(),canStand,
+      canStandXY:snapshot?.canStandXY?(x:number,y:number)=>snapshot.canStandXY!(x,y):undefined,isGoal,
       heuristic:(point:Point)=>Math.max(0,Math.hypot(point.x-destination.x,point.y-destination.y)-radius)};
   }
   private beginSearch(actor:Combatant,destination:Point,target:Combatant|undefined,range:number,stalled:boolean):void{
