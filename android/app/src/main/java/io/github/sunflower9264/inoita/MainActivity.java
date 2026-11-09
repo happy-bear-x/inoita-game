@@ -22,8 +22,6 @@ import com.cefrium.CefriumBrowser;
 
 import java.io.IOException;
 import java.util.Locale;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 /**
  * 自带 Chromium 156 的 WebView 壳。
@@ -53,7 +51,6 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
     private final Runnable pauseBrowserTask = () -> {
         if (browser != null) browser.onPause();
     };
-    private final ExecutorService diagnosticsExecutor = Executors.newSingleThreadExecutor();
     private final Runnable bootWatchdog = this::onBootWatchdog;
 
     private AlertDialog updateDialog;
@@ -217,7 +214,7 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
     }
 
     private void reportUpdateEvent(String kind, String... keyValues) {
-        diagnosticsExecutor.execute(() -> Diagnostics.report(kind, keyValues));
+        Diagnostics.report(kind, keyValues);
     }
 
     // ---- 更新界面 ----
@@ -505,7 +502,6 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
             updateManager.clearListener(this);
             updateManager.cancelDownload();
         }
-        diagnosticsExecutor.shutdownNow();
         super.onDestroy();
     }
 }
