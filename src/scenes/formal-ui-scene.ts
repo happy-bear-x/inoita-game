@@ -77,7 +77,7 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
   /** 场景键盘只做一次桥接：原始事件交给全局 router，自己不再按页面各订阅一份。 */
   private readonly bridgeKey=(event:KeyboardEvent):void=>{this.app.inputRouter.dispatch(event);};
   private unregisterInput?:()=>void;
-  constructor(app:StoryApp){super(SCENE_KEYS.formalUi);this.app=app;}
+  constructor(app:StoryApp){super(SCENE_KEYS.formalUi);this.app=app;this.events.once(Phaser.Scenes.Events.DESTROY,()=>this.uiAssets.releaseResident());}
   create():void{
     this.background=new UiNode(this,uiMount(this,'overlay')).setSize(1,1).setFillStyle(0,1).setDepth(998);this.blocker=new UiNode(this,uiMount(this,'overlay')).setSize(1,1).setDepth(999).setInteractive();
     this.surface=new UiSurface(this,960,640,1000,'overlay');this.app.ui.view=this;this.app.uiAssets=this.uiAssets;

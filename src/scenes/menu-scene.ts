@@ -8,6 +8,7 @@ import Phaser from 'phaser';
 import type { MenuContext } from '../application/ports.ts';
 import { TITLE_MESSAGE_ASSETS, titleMenuImages } from '../application/menu-images.ts';
 import { GOLD, UiSurface, loadUiImages, type ScrollArea } from '../ui/phaser/widgets.ts';
+import { SceneUiAssets } from '../ui/phaser/ui-asset-host.ts';
 import { SAVE_BOARD, SAVE_BOARD_LAYOUT, drawSaveBoardRow, newestFirstSlots, saveBoardOrigin, saveRowTitle, setSaveBoardTextSink, type SaveBoardControl, type SaveBoardTextSpec } from '../ui/phaser/save-board.ts';
 import { MenuTextLayer, type MenuTextClip, type MenuTextPoint, type MenuTextSpec, type MenuTextWriter } from '../ui/dom/menu-text.ts';
 import type { DomLabel, DomUi } from '../ui/dom/dom-ui.ts';
@@ -79,6 +80,8 @@ export class MenuScene extends Phaser.Scene {
   private changelogScrollTop=0;
   private changelogRequest?:AbortController;
   private changelogError='';
+  /** 标题图跟着场景实例活到销毁：回标题、暂停、重开都不再重新加载。 */
+  private readonly titleAssets:SceneUiAssets;
   private page:'home'|'slots'|'settings'|'cloud'='home';
   /** 存档槽立绘的租约：每次进存档页按槽里的路径取，离开页面或关场景时释放。 */
   private slotPortraits?:AssetLease;
@@ -114,7 +117,7 @@ export class MenuScene extends Phaser.Scene {
     if(this.surface&&this.sys.isActive())this.render();
   }
   private readonly hideCredentials=():void=>{this.credentials?.hide();};
-  constructor(app:MenuContext){super(SCENE_KEYS.menu);this.app=app;}
+  constructor(app:MenuContext){super(SCENE_KEYS.menu);this.app=app;this.titleAssets=new SceneUiAssets(this);this.events.once(Phaser.Scenes.Events.DESTROY,()=>this.titleAssets.releaseResident());}
   create(options:{page?:'home'|'slots'}={}):void {
     this.page='home';this.app.ui.setMode('menu');this.app.ui.loading('正在准备主菜单…');
     const controller=new AbortController();
@@ -128,9 +131,8 @@ export class MenuScene extends Phaser.Scene {
     this.events.once('shutdown',onFullscreenChange(()=>{
       if(this.page==='settings'&&this.surface&&this.sys.isActive())this.render();
     }));
-    void loadUiImages(this,titleMenuImages).then(lease=>{
-      if(controller.signal.aborted){lease.release();return;}
-      this.events.once('shutdown',()=>lease.release());
+    void this.titleAssets.preloadResident(titleMenuImages,controller.signal,()=>{}).then(()=>{
+      if(controller.signal.aborted)return;
       this.backdrop=new UiImage(this,undefined,art('background')).setOrigin(.5);
       // 遮罩同时拦掉底层输入；弹层在它上面，按钮仍然先命中。
       this.popupMask=new UiNode(this).setSize(1,1).setFillStyle(0,.5).setDepth(150).setVisible(false).setInteractive();

@@ -9,10 +9,13 @@ export interface DomImageSource {
   width: number;
   height: number;
   frame: ImageRect;
+  /** 浏览器里已解码的图片；持有它，菜单反复打开时不必重新取图和解码。 */
+  image?: HTMLImageElement;
 }
 interface AtlasData { frames: Record<string, { frame: { x: number; y: number; w: number; h: number } }> }
+export interface LoadedDomImage { width: number; height: number; image?: HTMLImageElement }
 export interface DomImageLoader {
-  image(url: string, signal: AbortSignal): Promise<{ width: number; height: number }>;
+  image(url: string, signal: AbortSignal): Promise<LoadedDomImage>;
   atlas(url: string, signal: AbortSignal): Promise<AtlasData>;
 }
 interface ImageEntry {
@@ -43,8 +46,9 @@ export class DomAssets {
     let entry = this.entries.get(key);
     if (!entry) {
       const controller = new AbortController();
-      const ready = this.loader.image(versionedAsset(imageFile), controller.signal).then(size => ({
-        url: versionedAsset(imageFile), ...size, frame: { x: 0, y: 0, ...size }
+      const ready = this.loader.image(versionedAsset(imageFile), controller.signal).then(loaded => ({
+        url: versionedAsset(imageFile), width: loaded.width, height: loaded.height,
+        frame: { x: 0, y: 0, width: loaded.width, height: loaded.height }, image: loaded.image
       }));
       entry = { users: 0, controller, ready, sources:new Map() };
       this.entries.set(key, entry);
@@ -121,7 +125,15 @@ const browserImageLoader: DomImageLoader = {
     const cancel = () => { cleanup(); image.removeAttribute('src'); reject(signal.reason); };
     if (signal.aborted) { cancel(); return; }
     signal.addEventListener('abort', cancel, { once: true });
-    image.onload = () => { cleanup(); resolve({ width: image.naturalWidth, height: image.naturalHeight }); };
+    image.onload = () => {
+      cleanup();
+      // 解码完成后再交给调用方；只拿到宽高不够，下一次显示仍会重新解码。
+      const decoded = typeof image.decode === 'function' ? image.decode() : Promise.resolve();
+      void decoded.catch(() => {}).then(() => {
+        if (signal.aborted) { image.removeAttribute('src'); reject(signal.reason); return; }
+        resolve({ width: image.naturalWidth, height: image.naturalHeight, image });
+      });
+    };
     image.onerror = () => {
       cleanup();
       globalThis.storyDiagnostics?.record('asset-load-error', { source: 'dom-image', url });

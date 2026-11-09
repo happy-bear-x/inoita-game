@@ -1559,6 +1559,28 @@ test('bag grid drags swap special items and organise from a category updates eve
   f.scene.click(f.scene.button('整理'));assert.equal(updates,1,'重复整理无更新');
 });
 
+test('bag data changes reuse the grid and only touch changed slots', t => {
+  const f=fixture();t.after(f.cleanup);
+  const scroll=f.add('novice-weapon-scroll'),jewel=f.add('novice-jewel');
+  f.menu.show('bag');
+  const body=f.internals.body,grid=body.scrolls.find(scroll=>scroll.x===496+34)!;
+  const scrollButton=f.scene.button(items.items[scroll.item].name),jewelButton=f.scene.button(items.items[jewel.item].name);
+  const scrollName=items.items[scroll.item].name,jewelName=items.items[jewel.item].name;
+  f.session.bag.placeInCell(scroll.id,'material',8);
+  assert.equal(body.scrolls.find(scroll=>scroll.x===496+34),grid,'物品移动只换格子，不重建滚动区');
+  assert.equal(f.scene.button(scrollName),scrollButton,'同一物品实例的按钮复用');
+  assert.equal(f.scene.button(jewelName),jewelButton,'没动的物品格保持原对象');
+  const added=f.add('leaf-of-life');
+  f.session.emit();
+  assert.equal(f.scene.button(scrollName),scrollButton,'新增物品不影响已有格子');
+  assert(f.scene.button(items.items[added.item].name),'新增物品出现在网格里');
+  f.session.bag.take(jewel.id,1);
+  f.session.emit();
+  assert.equal(body.scrolls.find(scroll=>scroll.x===496+34),grid,'删除物品不重建滚动区');
+  assert.equal(f.scene.button(scrollName),scrollButton,'删除别的格子不影响已有物品格');
+  assert.equal(f.scene.buttons(jewelName).length,0,'删掉的物品格被移除');
+});
+
 test('processing items use the equipment forge instead of drag-and-drop', t => {
   const f=fixture();t.after(f.cleanup);
   const source=f.add('novice-weapon-scroll',3),weapon=f.hero.bag.get(f.hero.bag.equipment['main-hand']!)!;
@@ -2141,12 +2163,14 @@ test('session notifications only repaint the menu page whose data changed', t =>
   // 背包页不显示生命值；战斗回血/掉血的会话通知不该把整页背包重建一遍。
   f.hero.setHealth(Math.max(1,f.hero.player.health-1));
   assert.equal(f.scene.button('关闭菜单'),close,'只改生命值时背包页保持原对象');
-  // 钱是背包页真正显示的数据；变化后必须真实重绘动态内容，但静态关闭按钮不重建。
+  // 钱是背包页真正显示的数据；变化后必须更新数字，但整页和滚动区都保持原对象。
   const bagScroll=f.internals.body.scrolls[0];
+  const moneyText=visibleDomLabels(f).map(label=>label.text).join('|');
   f.session.gainMoney(1);
   const rebuilt=f.scene.button('关闭菜单');
   assert.equal(rebuilt,close,'静态关闭按钮不重建');
-  assert.notEqual(f.internals.body.scrolls[0],bagScroll,'钱变化后背包动态内容重绘');
+  assert.equal(f.internals.body.scrolls[0],bagScroll,'钱变化只改文字，不重建滚动区');
+  assert.notEqual(visibleDomLabels(f).map(label=>label.text).join('|'),moneyText,'钱变化后数字更新');
   assert.equal(close.active,true,'静态对象仍在使用');
 
   // 系统页不消费会话数据，任何会话通知都不该重绘它。
@@ -2166,16 +2190,18 @@ test('session notifications only repaint the menu page whose data changed', t =>
 
 test('session notifications redraw at most once and skip unchanged pages', t => {
   const f=fixture();t.after(f.cleanup);
-  let renders=0;const body=f.internals.body,clear=body.clear.bind(body);
-  (body as unknown as {clear:()=>void}).clear=()=>{renders+=1;clear();};
+  let renders=0;
+  const internals=f.internals as unknown as {renderNow:()=>void};
+  const renderNow=internals.renderNow.bind(f.menu);
+  internals.renderNow=()=>{renders+=1;renderNow();};
 
   f.menu.show('bag');renders=0;
   f.session.emit();
   assert.equal(renders,0,'数据没变时背包页不重绘');
   f.session.gainMoney(1);
-  assert.equal(renders,1,'一次会话通知只重绘一次');
+  assert.equal(renders,0,'钱变化只更新背包文字，不重画整页');
   f.session.batchNotifications(()=>{f.session.gainMoney(1);f.session.gainMoney(1);});
-  assert.equal(renders,2,'同一批通知合并后只再重绘一次');
+  assert.equal(renders,0,'同一批通知合并后仍只更新文字');
 
   f.menu.show('system');renders=0;
   f.session.emit();
@@ -2202,6 +2228,55 @@ test('bag chrome is reused across rerenders and replaced when the page changes',
   assert.equal(chrome.list.length,0,'换页后旧静态层被清掉');
   f.menu.show('bag');
   assert(chrome.list.length>0,'回到背包页重新建静态图框');
+});
+
+test('prewarming builds the bag before it opens', t => {
+  const f=fixture();t.after(f.cleanup);
+  f.menu.prewarmBag();
+  assert.equal(f.menu.menuOpen,false,'预热不打开菜单');
+  assert.equal(f.internals.surface.root.visible,false);
+  assert.equal(f.internals.body.root.visible,false);
+  const dynamic=f.internals.body.root.list.find(child=>child!==f.internals.body.staticRoot);
+  let clears=0;const clear=f.internals.body.clear.bind(f.internals.body);
+  (f.internals.body as unknown as {clear:()=>void}).clear=()=>{clears+=1;clear();};
+  f.menu.show('bag');
+  assert.equal(f.menu.menuOpen,true);
+  assert.equal(clears,0,'首次打开复用预热页面');
+  assert.equal(f.internals.body.root.list.find(child=>child!==f.internals.body.staticRoot),dynamic);
+  f.menu.close();
+});
+
+test('closing the bag keeps its page and reopens without rebuilding unchanged data', t => {
+  const f=fixture();t.after(f.cleanup);
+  f.menu.show('bag');
+  const body=f.internals.body,dynamic=body.root.list.find(child=>child!==body.staticRoot);
+  let clears=0;const clear=body.clear.bind(body);
+  (body as unknown as {clear:()=>void}).clear=()=>{clears+=1;clear();};
+  f.menu.close();
+  assert.equal(f.menu.menuOpen,false);
+  assert.equal(body.root.visible,false,'关闭只隐藏整页');
+  assert.equal(clears,0,'关闭不销毁背包页');
+  f.menu.show('bag');
+  assert.equal(body.root.visible,true);
+  assert.equal(clears,0,'数据没变时重新打开只恢复显示');
+  assert.equal(body.root.list.find(child=>child!==body.staticRoot),dynamic,'页面对象原样复用');
+  const moneyText=visibleDomLabels(f).map(label=>label.text).join('|');
+  f.session.gainMoney(1);
+  f.menu.close();f.menu.show('bag');
+  assert.equal(clears,0,'数据变化只改文字，不重建背包页');
+  assert.notEqual(visibleDomLabels(f).map(label=>label.text).join('|'),moneyText,'数字已更新');
+});
+
+test('ending a session drops the cached bag page', t => {
+  const f=fixture();t.after(f.cleanup);
+  f.menu.show('bag');f.menu.close();
+  let clears=0;const clear=f.internals.body.clear.bind(f.internals.body);
+  (f.internals.body as unknown as {clear:()=>void}).clear=()=>{clears+=1;clear();};
+  f.menu.releaseSession(f.session);
+  const cached=f.internals as unknown as {bagPageCached:boolean;session:unknown};
+  assert.equal(cached.bagPageCached,false,'换会话前丢掉旧背包页');
+  assert.equal(clears,1,'旧页面节点被清掉');
+  assert.equal(cached.session,undefined);
 });
 
 test('late member previews do not rebuild the bag or replace the current member', async t => {
