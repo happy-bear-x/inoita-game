@@ -13,7 +13,8 @@ export function uiImageFileNames(files: readonly string[]): string[] {
     const name=atlasName(file);
     if(name===UI_ICON_ATLAS_DATA||name===UI_ICON_ATLAS_FILE)return Object.keys(UI_ICON_FRAMES).slice(0,1);
     const page=UI_ATLAS_PAGES.find(page=>page.file===name||page.data===name);
-    return page?Object.keys(UI_ATLAS_FRAMES).filter(key=>UI_ATLAS_FRAMES[key]!.key===page.key).slice(0,1):[name];
+    // 普通图片保留原始路径（含前导斜杠）；只有图集页换成代表帧名。
+    return page?Object.keys(UI_ATLAS_FRAMES).filter(key=>UI_ATLAS_FRAMES[key]!.key===page.key).slice(0,1):[file];
   });
 }
 export async function loadUiImages(_scene: Phaser.Scene, files: string[], progress = (_value: number) => {}, signal = new AbortController().signal): Promise<AssetLease> {

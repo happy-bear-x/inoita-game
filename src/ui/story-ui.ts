@@ -425,7 +425,7 @@ export class StoryUI {
     const signature=this.sessionDataSignature();
     if(this.bagPageCached&&signature!==undefined&&signature===this.sessionSignature)return;
     this.prewarming=true;
-    try{this.page='bag';this.renderNow();}finally{this.prewarming=false;}
+    try{this.page='bag';this.renderNow();}catch(error){globalThis.storyDiagnostics?.record('bag-prewarm-error',{error});}finally{this.prewarming=false;}
     const next=this.sessionDataSignature();if(next!==undefined)this.sessionSignature=next;
   }
   /** 调试收尾后回到设置里的调试剧情页，保留面板原来的筛选与选中任务。 */
@@ -499,7 +499,7 @@ export class StoryUI {
     const keepBag=this.page==='bag'&&this.bagPageCached;
     this.shopPanel=undefined;this.partyPanel?.destroyPreview();this.app.releasePartyPreview?.();this.craftingPanel=undefined;this.craftingActor=undefined;this.forge=undefined;this.skillBook=undefined;this.open=false;
     if(keepBag)this.bagPortrait?.visible(false);else this.bagPortrait?.destroy();
-    this.scrollNames.forEach((scroll,name)=>this.scrollOffsets.set(`${this.page}:${name}`,scroll.scrollTop));this.scrollNames.clear();
+    this.scrollNames.forEach((scroll,name)=>this.scrollOffsets.set(`${this.page}:${name}`,scroll.scrollTop));if(!keepBag)this.scrollNames.clear();
     if(!keepBag){
       this.body?.clear();this.description?.clear();
       if(this.surface&&this.body){this.surface.root.remove(this.body.root);this.surface.clear();this.surface.root.add(this.body.root);}
@@ -1680,7 +1680,7 @@ export class StoryUI {
   private updateBagPage():void{
     // 队员栏在网格之前画、层级也压在网格下面；队伍人数或顺序变了就整页重画一次，
     // 避免为了几个头像把后来的节点盖到装备和格子上。
-    if(this.bagPartyState()!==this.bagPartyKey){this.renderNow();return;}
+    if(this.bagPartyState()!==this.bagPartyKey||this.bagFilterView!==this.filter){this.renderNow();return;}
     const bag=this.session!.bag,grid=this.bagGrid!,layout=bagLayout(),cells=layout.grid;
     const {slots,slotCount}=inventoryView({all:bag.allCells,...bag.pouchCells},this.filter);
     const wasDetail=this.bagDetailOpen,describing=!!this.selectedItem&&!!bag.get(this.selectedItem);
@@ -1706,6 +1706,7 @@ export class StoryUI {
     }
     for(const view of oldItems.values())this.destroyBagSlotView(view);
     for(const view of oldCells.values())this.destroyBagSlotView(view);
+    this.body!.pruneDestroyed();
     this.bagSlots=next;
     this.addBagMoneyTexts(panelCoversBag);
     this.updateBagSelection();
@@ -1726,9 +1727,8 @@ export class StoryUI {
     }
     this.updateBagMember(memberChanged||equipmentChanged,false);
     this.bagMemberId=this.selectedMemberId;
-    const filterChanged=this.bagFilterView!==this.filter;this.bagFilterView=this.filter;
+    this.bagFilterView=this.filter;
     grid.setHeight(Math.ceil(slotCount/cells.columns)*cells.stride);
-    if(filterChanged)grid.scrollTop=0;
     this.menuText?.renderPage('bag');
     this.sync();
   }
@@ -2158,8 +2158,11 @@ export class StoryUI {
   }
   private clearBagEquipment():void{
     this.bagPortrait?.detach();
+    const drops=new Set<unknown>([...this.bagEquipment.values()].map(view=>view.drop));
     for(const view of this.bagEquipment.values())view.button.destroy();
+    this.drops=this.drops.filter(drop=>!drops.has(drop));
     this.bagEquipment.clear();this.bagPreview?.destroy();this.bagPreview=undefined;
+    this.body?.pruneDestroyed();
   }
   private renderBagEquipment():void{
     const v=this.body!,bag=this.session!.bag,panels=this.app.menuPanels,member=this.member()!,equipment=bag.equipmentFor(this.selectedMemberId);

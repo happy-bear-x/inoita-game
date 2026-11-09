@@ -35,11 +35,13 @@ export class SceneUiAssets implements UiAssetHost {
   async preloadResident(files: string[], signal: AbortSignal, progress: (value: number) => void): Promise<void> {
     signal.throwIfAborted();
     const names = uiImageFileNames(files);
-    const missing = names.filter(name => !this.residentFiles.has(name));
+    // 去重按去掉前导斜杠的路径；加载仍用原始路径，保证相对/绝对地址不被改写。
+    const key = (file: string): string => file.replace(/^\//, '');
+    const missing = names.filter(name => !this.residentFiles.has(key(name)));
     if (!missing.length) { progress(1); return; }
     const lease = await domAssets.preloadFiles(missing, signal, value => { if (!signal.aborted) progress(value); });
     if (signal.aborted) { lease.release(); signal.throwIfAborted(); }
-    for (const name of missing) this.residentFiles.add(name);
+    for (const name of missing) this.residentFiles.add(key(name));
     this.resident.push(lease);
   }
 
