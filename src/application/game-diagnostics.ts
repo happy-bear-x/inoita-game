@@ -105,17 +105,21 @@ export function installGameDiagnostics(game: Phaser.Game, snapshot: () => unknow
   let renderer: RendererFacts | undefined;
   const rendererInfo = (): RendererFacts => renderer ??= rendererFacts(game);
   let stepFps = 0, rafFps = 0, frames = 0, windowStart = performance.now(), lastSample = 0, announced = false;
-  const stepWindow = new FrameWindow(), rafWindow = new FrameWindow(), workWindow = new FrameWindow();
-  let lastStepAt = 0, lastRafAt = 0, rafHandle = 0, probing = true, stepStartedAt = 0, lastLongFrame = 0;
+  const stepWindow = new FrameWindow(), rafWindow = new FrameWindow();
+  const workWindow = new FrameWindow(), updateWindow = new FrameWindow(), renderWindow = new FrameWindow();
+  let lastStepAt = 0, lastRafAt = 0, rafHandle = 0, probing = true, stepStartedAt = 0, stepPhaseEnd = 0, lastLongFrame = 0;
   const perf = (): Record<string, unknown> => ({
     stepFps, rafFps, limit: game.loop.fpsLimit, refreshHz: currentRefreshRate(),
     stepP50: stepWindow.percentile(0.5), stepP95: stepWindow.percentile(0.95),
     rafP50: rafWindow.percentile(0.5), rafP95: rafWindow.percentile(0.95),
     // 交付间隔说明「多久出一帧」，工作耗时说明「这一帧自己跑了多久」。
     workP50: workWindow.percentile(0.5), workP95: workWindow.percentile(0.95),
+    updateP50: updateWindow.percentile(0.5), updateP95: updateWindow.percentile(0.95),
+    renderP50: renderWindow.percentile(0.5), renderP95: renderWindow.percentile(0.95),
     domNodes: typeof document === 'undefined' ? null : document.getElementsByTagName('*').length,
   });
-  collector.setSnapshot(() => ({ ...(snapshot() as Record<string, unknown> | null ?? {}), renderer: rendererInfo(), perf: perf() }));
+  // perf 放在最前面：上报超过长度上限时，state 会被截断，靠后的字段先丢。
+  collector.setSnapshot(() => ({ perf: perf(), renderer: rendererInfo(), ...(snapshot() as Record<string, unknown> | null ?? {}) }));
   // 长帧里 gapMs 大、workMs 小，说明卡顿发生在游戏这一步之外。Long Animation Frame
   // 会告诉我们是脚本、样式还是布局占了时间；老浏览器退回到 Long Tasks。
   const observers: PerformanceObserver[] = [];
@@ -142,11 +146,13 @@ export function installGameDiagnostics(game: Phaser.Game, snapshot: () => unknow
   const sawAnimationFrame = observeLongFrames('long-animation-frame', entry => {
     const duration = Number(entry.duration) || 0;
     if (duration < LONG_FRAME_MS) return;
+    // styleAndLayoutStart 和 startTime 一样是页面时间轴上的绝对时间，不是帧内偏移。
     const styleStart = Number(entry.styleAndLayoutStart) || 0;
+    const frameEnd = (Number(entry.startTime) || 0) + duration;
     const scripts = Array.isArray(entry.scripts) ? entry.scripts as Array<Record<string, unknown>> : [];
     reportTask('long-animation', {
       durationMs: Math.round(duration), blockingMs: Math.round(Number(entry.blockingDuration) || 0),
-      styleMs: styleStart ? Math.round(duration - styleStart) : null,
+      styleMs: styleStart ? Math.round(frameEnd - styleStart) : null,
       scripts: scripts.slice(0, 4).map(script => ({
         ms: Math.round(Number(script.duration) || 0),
         fn: String(script.sourceFunctionName ?? ''),
@@ -172,16 +178,18 @@ export function installGameDiagnostics(game: Phaser.Game, snapshot: () => unknow
   };
   rafHandle = requestAnimationFrame(probeFrame);
   const beforeUpdate = () => { stepStartedAt = performance.now(); collector.markFrame('update'); };
-  const beforeRender = () => collector.markFrame('render');
+  const beforeRender = () => { stepPhaseEnd = performance.now(); collector.markFrame('render'); };
   const afterRender = () => {
     collector.markFrame('idle');
     const now = performance.now();
     const workMs = stepStartedAt ? Math.max(0, now - stepStartedAt) : 0;
-    stepStartedAt = 0;
+    const updateMs = stepStartedAt && stepPhaseEnd ? Math.max(0, stepPhaseEnd - stepStartedAt) : 0;
+    const renderMs = stepPhaseEnd ? Math.max(0, now - stepPhaseEnd) : 0;
+    stepStartedAt = 0; stepPhaseEnd = 0;
     if (typeof document !== 'undefined' && document.hidden) {
       frames = 0; windowStart = now; lastStepAt = 0; return;
     }
-    workWindow.push(workMs);
+    workWindow.push(workMs); updateWindow.push(updateMs); renderWindow.push(renderMs);
     const gap = lastStepAt ? now - lastStepAt : 0;
     if (gap > 0 && gap < 1000) stepWindow.push(gap);
     lastStepAt = now;
@@ -190,6 +198,7 @@ export function installGameDiagnostics(game: Phaser.Game, snapshot: () => unknow
       lastLongFrame = now;
       collector.record('long-frame', {
         gapMs: Math.round(gap), workMs: Math.round(workMs * 10) / 10,
+        updateMs: Math.round(updateMs * 10) / 10, renderMs: Math.round(renderMs * 10) / 10,
         stepFps, rafFps, limit: game.loop.fpsLimit, refreshHz: currentRefreshRate(),
         heapMb: heapMegabytes(), canvas: [game.canvas.width, game.canvas.height],
       });
