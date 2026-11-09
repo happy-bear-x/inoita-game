@@ -2414,6 +2414,8 @@ captureStoryActors():SceneActorState[] {
     const lease=await loadSceneAssets(this.scene,needed,()=>{});
     if(this.closed||generation!==this.generation){lease.release();return;}
     this.playerAssets=lease;
+    // 结算特效素材已在共享包里；这里先把容器、精灵和动画建好，升级时只重播。
+    this.outcomes.warm();
     await this.refreshSkillAssets(this.playerSkillSignatureNow(),this.playerSkillGateNow(),[]);
     if(this.closed||generation!==this.generation)return;
     if(!this.extraSkillLeases.has('player'))throw new Error('主角战斗素材准备失败，请重试');

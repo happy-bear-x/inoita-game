@@ -160,6 +160,12 @@ export class EffectPool {
     scene.events.once(Phaser.Scenes.Events.SHUTDOWN, this.onShutdown);
   }
 
+  /** 提前建好指定片段的容器、精灵和动画并放回空闲桶；首次播放只重播，不再现建。 */
+  warm(clip: EffectClip, count = 1): void {
+    if (this.closed) return;
+    for (let index = 0; index < count; index++) this.release(this.acquire(clip, 0, 0));
+  }
+
   /** 取一个特效并立刻从第 0 帧播放；播完自动回到池里。 */
   acquire(clip: EffectClip, x: number, y: number): Phaser.GameObjects.Container {
     if (this.closed) return createEffect(this.scene, clip, x, y);
