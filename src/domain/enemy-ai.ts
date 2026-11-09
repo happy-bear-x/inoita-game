@@ -287,9 +287,10 @@ export class EnemyController {
       if(this.behavior.aggression==='active'||(this.threatCombatActive&&this.combat.selectedTargetId()!==undefined)){
         for(const candidate of this.port.candidates()){
           if(candidate.id===this.id||candidate.team===actor.team)continue;
+          // 已经记过仇恨的来源直接跳过；这一步放最前面，避免每帧重复算距离和隐身。
+          if(this.port.threat.has(candidate.id))continue;
           if(this.mapWide&&this.port.isAlive?.(candidate.id)===false)continue;
           if(!this.inAwareness(actor,candidate)||!canTargetCombatant(actor,candidate))continue;
-          if(this.port.threat.has(candidate.id))continue;
           this.port.threat.notice(candidate.id);
         }
       }
@@ -326,8 +327,7 @@ export class EnemyController {
     }
     this.idleElapsed=0;
     const distance=attackDistance(actor.position,actor.bounds,target.position,target.bounds);
-    const cooldowns=this.combat.snapshot().cooldowns;
-    const ready=this.skills.filter(skill=>!cooldowns[skill.id]&&this.combat!.canSelectSkill(skill)&&this.releaseAllowed(skill));
+    const ready=this.skills.filter(skill=>this.combat!.skillReady(skill.id)&&this.combat!.canSelectSkill(skill)&&this.releaseAllowed(skill));
     const available=this.port.threat?ready:ready.filter(skill=>!needsTarget(skill.action)||distance<=skill.action.approachDistanceUnits);
     if(available.length){
       // 原版 MONSTERAI_RunAIProc 遍历全部绑定、匹配项逐个覆盖输出，取最后一个。

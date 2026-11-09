@@ -140,6 +140,10 @@ export class PartyController {
   private destination?:Point;
   private destinationTarget?:string;
   private destinationRange?:number;
+  /** 技能表身份不变时，按优先级排好的顺序可以复用；排序本身不随冷却或法力变化。 */
+  private sortedSkillsCache?:{source:readonly EnemyPlayableSkill[];value:EnemyPlayableSkill[]};
+  /** 同一逻辑帧内候选者数组身份不变，队伍 ID 集合可以复用。 */
+  private partyIdsCache?:{source:readonly Combatant[];team:string;value:ReadonlySet<string>};
   private disposed=false;
   constructor(id:string,port:PartyPort,combat:CombatController,random= Math.random){
     this.id=id;this.port=port;this.combatController=combat;this.random=random;
@@ -237,10 +241,9 @@ export class PartyController {
   private nearestThreatTarget(actor:Combatant,leader:Combatant|undefined):Combatant|undefined {
     const targetOf=this.port.targetOf;
     if(!targetOf)return undefined;
-    const partyIds=new Set<string>();
-    for(const candidate of this.port.candidates())if(candidate.team===actor.team)partyIds.add(candidate.id);
+    const candidates=this.port.candidates(),partyIds=this.partyIds(candidates,actor.team);
     let best:Combatant|undefined,bestDistance=Infinity;
-    for(const candidate of this.port.candidates()){
+    for(const candidate of candidates){
       if(candidate.team===actor.team||!canTargetCombatant(actor,candidate))continue;
       const targetId=targetOf(candidate.id);
       if(!targetId||!partyIds.has(targetId))continue;
@@ -250,28 +253,46 @@ export class PartyController {
     }
     return best;
   }
+  /** 同一逻辑帧的候选者数组身份不变；队伍 ID 集合只随成员变化重建。 */
+  private partyIds(candidates:readonly Combatant[],team:string):ReadonlySet<string> {
+    const cached=this.partyIdsCache;
+    if(cached?.source===candidates&&cached.team===team)return cached.value;
+    const value=new Set<string>();
+    for(const candidate of candidates)if(candidate.team===team)value.add(candidate.id);
+    this.partyIdsCache={source:candidates,team,value};
+    return value;
+  }
   private trySkill(actor:Combatant,target:Combatant|undefined):boolean {
-    const cooldowns=this.combatController.snapshot().cooldowns;
-    const skills=[...this.port.skills()].sort((a,b)=>this.skillPriority(a.id)-this.skillPriority(b.id));
+    const skills=this.sortedSkills(),candidates=this.port.candidates();
     for(const skill of skills){
       const frequency=skill.frequency??1,kind=this.port.skillKind(skill.id);
-      if(!frequency||!kind||cooldowns[skill.id]||!this.combatController.canSelectSkill(skill)
+      if(!frequency||!kind||!this.combatController.skillReady(skill.id)||!this.combatController.canSelectSkill(skill)
         ||this.port.canSpendMana?.(skill.manaCost??0)===false)continue;
       if(needsTarget(skill.action)&&(!target||attackDistance(actor.position,actor.bounds,target.position,target.bounds)>skill.action.approachDistanceUnits))continue;
       const threshold=partySkillThreshold(kind,frequency,!target);
       let ready=false;
       if(kind==='heal'||kind==='emergency-heal'){
-        ready=this.port.candidates().some(ally=>{
+        ready=candidates.some(ally=>{
           const hp=this.port.vitals(ally.id);
           return ally.team===actor.team&&!!hp&&hp.health>0&&hp.health<Math.trunc(hp.maxHealth*threshold/100)
             &&targetDistance(actor.position,ally.position)<=skill.action.searchRadiusPx;
         });
       }else if(kind==='ally-combat'){
-        ready=this.port.candidates().some(ally=>ally.id!==actor.id&&ally.team===actor.team&&this.port.attacking(ally.id)&&this.roll(threshold));
+        ready=candidates.some(ally=>ally.id!==actor.id&&ally.team===actor.team&&this.port.attacking(ally.id)&&this.roll(threshold));
       }else ready=this.roll(threshold);
       if(ready&&this.combatController.request(skill,target?.id)==='started'){this.clearRoute(false);return true;}
     }
     return false;
+  }
+  /** 当前技能表按优先级排一次；技能表对象没换时直接复用上次顺序。 */
+  private sortedSkills():readonly EnemyPlayableSkill[] {
+    const source=this.port.skills();
+    if(!source.length)return source;
+    const cached=this.sortedSkillsCache;
+    if(cached?.source===source)return cached.value;
+    const value=[...source].sort((a,b)=>this.skillPriority(a.id)-this.skillPriority(b.id));
+    this.sortedSkillsCache={source,value};
+    return value;
   }
   private skillPriority(skillId:string):number {
     const kind=this.port.skillKind(skillId);

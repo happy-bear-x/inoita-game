@@ -185,6 +185,8 @@ export class CombatController {
   snapshot(): CombatSnapshot {
     return { ...(this.selectedId?{targetId:this.selectedId}:{}), state: this.state, cooldowns: this.port.cooldowns.snapshot() };
   }
+  /** 单个技能是否不在冷却中；避免调用方只判断一个技能却构造整份冷却快照。 */
+  skillReady(skillId:string):boolean {return this.port.cooldowns.isReady(skillId);}
   /** 只读动作阶段；不构造冷却快照，供每帧只判断状态的调用方使用。 */
   actionState():CombatSnapshot['state']{return this.state;}
   /** 只读当前选中的目标；语义与 `snapshot().targetId` 相同。 */
