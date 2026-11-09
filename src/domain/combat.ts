@@ -87,7 +87,7 @@ export interface CombatPort {
   selectBasicAttack?(normal:ResolvedBasicAttack, step:number):BasicAttackSelection;
   stop(): void;
   canStand(position: Point, clearanceActorId?: string): boolean;
-  /** 强制位移的整盒判定；省略时退回 `canStand` 的窄足底口径。 */
+  /** 强制位移的整盒判定；省略时拒绝位移，不退回窄足底（脚点可站不代表身体不压墙）。 */
   canPlaceBody?(position: Point, clearanceActorId?: string): boolean;
   /** 位移落点是否与施法者同处一块可站立区域；省略表示不检查。 */
   canRelocateReach?(position: Point): boolean;

@@ -24,7 +24,7 @@ function fixture(dx=24,dy=0){
   const actors=new Map([[source.id,source],[target.id,target]]);
   const log:string[]=[],moves:{x:number;y:number}[]=[],frames:{index:number;x:number;y:number;target?:string}[]=[];
   const plays:{action:ActionPlayback;frame:(index:number)=>void;complete:()=>void}[]=[];
-  let mana=100,canStand=true;
+  let mana=100,canStand=true,bodyChecks=0;
   const body={setPosition:()=>assert.fail('charge movement must not offset the body sprites')};
   const character={actor:warrior.actor,layers:[body],container:{active:true,x:320,y:192}} as unknown as CharacterVisual;
   const presenter=new CombatPresenter({} as Phaser.Scene,catalog,id=>id===source.id?character:undefined,()=>[...actors.values()]);
@@ -36,6 +36,7 @@ function fixture(dx=24,dy=0){
     canSpendMana:amount=>mana>=amount,
     spendMana:amount=>{if(mana<amount)return false;log.push('mana');mana-=amount;return true;},
     canStand:()=>{log.push('path');return canStand;},
+    canPlaceBody:()=>{bodyChecks++;return canStand;},
     relocate:position=>{
       actors.set(source.id,{...actors.get(source.id)!,position:{...position}});
       character.container.x=position.x;character.container.y=position.y;moves.push({...position});
@@ -50,7 +51,7 @@ function fixture(dx=24,dy=0){
     unit:event=>{log.push(`unit:${event.cueIndex}:${event.targetId}`);return 'success';},
   };
   const controller=new CombatController(source.id,resolveBasicAttack(catalog,warrior),port);
-  return {actors,controller,port,log,moves,frames,plays,mana:()=>mana,setBlocked:()=>{canStand=false;},
+  return {actors,controller,port,log,moves,frames,plays,mana:()=>mana,bodyChecks:()=>bodyChecks,setBlocked:()=>{canStand=false;},
     request:()=>controller.request(skill,target.id),position:()=>actors.get(source.id)!.position};
 }
 
@@ -74,7 +75,7 @@ test('failed charge planning and rejected approach or state leave resources unch
   const failed=fixture(64);failed.setBlocked();
   assert.equal(failed.request(),'no-target');assert.equal(failed.controller.snapshot().state,'idle');
   assert.equal(failed.mana(),100);assert.deepEqual(failed.controller.snapshot().cooldowns,{});
-  assert.ok(failed.log.includes('path'));assert.ok(!failed.log.includes('mana')&&!failed.log.includes('cooldown'));
+  assert.ok(failed.bodyChecks()>0);assert.ok(!failed.log.includes('mana')&&!failed.log.includes('cooldown'));
   assert.equal(failed.plays.length,0);assert.deepEqual(failed.moves,[]);
   const distant=fixture(192);assert.equal(distant.request(),'started');
   assert.equal(distant.mana(),100);assert.deepEqual(distant.controller.snapshot().cooldowns,{});

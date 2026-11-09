@@ -23,7 +23,7 @@ function setup(selected=skill){
   const enemy:Combatant={...caster,id:'enemy',team:'enemy',position:{x:40,y:0}};
   let allowed=false,checks=0,spent=0,moves=0,plays=0,stops=0,rolls=0;
   const port:EnemyPort={cooldowns:new CombatCooldownStore(()=>0).forActor(caster.id),actor:id=>[caster,enemy].find(actor=>actor.id===id),candidates:()=>[caster,enemy],facing:()=> 'east',
-    canSelectSkill:()=>{checks++;return allowed;},canStand:()=>true,relocate:()=>{},home:()=>({x:0,y:0}),
+    canSelectSkill:()=>{checks++;return allowed;},canStand:()=>true,canPlaceBody:()=>true,relocate:()=>{},home:()=>({x:0,y:0}),
     navigationBounds:()=>({x:-100,y:-100,width:1000,height:1000}),followPath:()=>{},
     moveToward:()=>{moves++;},stop:()=>{stops++;},play:()=>{plays++;return ()=>{};},frame:()=>{},clearEffects:()=>{},
     canSpendMana:()=>true,spendMana:cost=>{spent+=cost;return true;}};
