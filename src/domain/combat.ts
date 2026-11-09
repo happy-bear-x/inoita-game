@@ -358,9 +358,10 @@ export class CombatController {
               const dy=action.facing==='south'?1:action.facing==='north'?-1:0;
               for(let step=distance;step>=1;step--){
                 const lunge={x:action.charge.destination.x+dx*step,y:action.charge.destination.y+dy*step};
+                // 8 像素突进逐像素检查整盒落点，已经覆盖沿途地形、人物和内容机关；
+                // 再跑一次全路线搜索是重复工作。
                 if(this.canRelocateTo(lunge)
-                  &&(this.port.canRelocateReach?.(lunge)??true)
-                  &&(this.port.canRelocateVerify?.(lunge)??true)){this.port.relocate(lunge);break;}
+                  &&(this.port.canRelocateReach?.(lunge)??true)){this.port.relocate(lunge);break;}
               }
             }else if(next===skill.action.charge.arrivalFrame)this.port.relocate(action.charge.destination);
             live=this.port.actor(this.casterId)??live;
@@ -382,9 +383,9 @@ export class CombatController {
         }
         if(skill?.action.rearTeleport?.frame===next){
           const target=action.target;
+          // 瞬移不沿路线走：同地形连通 + 落点整盒站得住就够了，不再跑全路线搜索。
           const destination=target&&planRearTeleport(action.caster,target,point=>this.canRelocateTo(point,target.id),
-            point=>(this.port.canRelocateReach?.(point)??true)
-              &&(this.port.canRelocateVerify?.(point)??true),
+            point=>this.port.canRelocateReach?.(point)??true,
             this.port.navigationBounds?.());
           if(destination){
             this.port.relocate(destination,target.id);

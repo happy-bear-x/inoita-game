@@ -24,19 +24,21 @@ test('charge finds four grid landings, handles the close boundary, and respects 
  assert.ok(detour&&!detour.close);assert.ok(Math.abs(detour.destination.x-384)+Math.abs(detour.destination.y-192)<=24);
 });
 test('a close charge stops before the body enters a wall even when the foot point can stand',()=>{
-  let player=structuredClone(caster),onFrame:(index:number)=>void=()=>{};
+  let player=structuredClone(caster),onFrame:(index:number)=>void=()=>{},verifyCalls=0;
   const moves:number[]=[];
   const closeEnemy={...enemy,position:{x:336,y:192}};
   const port:CombatPort={canSelectSkill:()=>true,cooldowns:new CombatCooldownStore(()=>0).forActor('player'),
     actor:id=>id==='player'?player:closeEnemy,candidates:()=>[player,closeEnemy],facing:()=> 'east',
     moveToward:()=>{},stop:()=>{},canStand:()=>true,
     canPlaceBody:position=>position.x<=325,
+    canRelocateVerify:()=>{verifyCalls++;return true;},
     relocate:position=>{player={...player,position};moves.push(position.x);},
     play:(_action,frame)=>{onFrame=frame;return ()=>{};},frame:()=>{},clearEffects:()=>{}};
   const combat=new CombatController('player',resolveBasicAttack(catalog,catalog.classes[0]),port);
   combat.request(skill);
   onFrame(0);
   assert.deepEqual(moves,[325],'8px 冲刺必须停在最后一个整盒可站点，而不是脚点可站的墙里');
+  assert.equal(verifyCalls,0,'逐像素整盒检查已经覆盖沿途，不再为每步跑全路线搜索');
 });
 
 test('arrival uses the saved landing despite new occupation; cancellation preserves the paid cooldown',()=>{

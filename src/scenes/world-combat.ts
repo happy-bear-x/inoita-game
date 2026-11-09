@@ -659,10 +659,11 @@ captureStoryActors():SceneActorState[] {
           return this.movement!.navigation.sameTerrainRegion(actor.position(), position);
         },
         canRelocateVerify: position => {
-          const actor = this.movement!.actor(visual);
+          const actor = this.movement!.actor(visual), shape = actor.shape();
           return this.movement!.navigation.sameTerrainRegion(actor.position(), position)
-            && this.movement!.navigation.reachableForPlacement(
-              actor.shape(), actor.position(), position, actor, 128);
+            && canTraverse(actor.position(), position, point =>
+              this.movement!.navigation.terrainFree(point)
+              && !this.movement!.navigation.blockedByContent(shape, point, actor));
         },
         relocate: (position, clearance) => this.relocateVisual(enemy.visual, position, clearance),
         face: direction => { enemy.facing = direction; },
@@ -2106,9 +2107,10 @@ captureStoryActors():SceneActorState[] {
         return this.movement.navigation.sameTerrainRegion(actor.position(),position);
       },
       canRelocateVerify:position=>{
-        const actor=this.movement.actor(visual);
+        const actor=this.movement.actor(visual),shape=actor.shape();
         return this.movement.navigation.sameTerrainRegion(actor.position(),position)
-          &&this.movement.navigation.reachableForPlacement(actor.shape(),actor.position(),position,actor,128);
+          &&canTraverse(actor.position(),position,point=>this.movement.navigation.terrainFree(point)
+            &&!this.movement.navigation.blockedByContent(shape,point,actor));
       },
       relocate:(position,clearance)=>this.relocateVisual(visual,position,clearance),face:setFacing,
       play:(action,frame,complete)=>{setFacing(action.facing);action.getAttackSpeedRate=()=>this.conditions.attribute(id,'attackSpeedRate',1000,this.partyPassives(id));return this.playAction(presenter,action,frame,complete);},

@@ -61,13 +61,14 @@ test('第八帧先瞬移转向再结算；找位失败保留挥击与动作余�
     let player = { ...caster }, onFrame!: (index: number) => void, finish!: () => void;
     const order: string[] = [];
     const frames: number[] = [], clearanceActors: (string | undefined)[] = [];
-    let mana = 100, cancelled = false;
+    let mana = 100, cancelled = false, verifyCalls = 0;
     const port: CombatPort = {cooldowns:new CombatCooldownStore(()=>0).forActor('player'),
       actor: id => id === 'player' ? player : id === 'enemy' && targetPresent ? target : undefined,
       candidates: () => targetPresent ? [player, target] : [player], facing: () => 'east',
       moveToward: () => {}, stop: () => {},
       canStand: () => available,
       canPlaceBody: (_position, clearanceActorId) => { clearanceActors.push(clearanceActorId); return available; },
+      canRelocateVerify: () => { verifyCalls++; return true; },
       relocate: point => { player = { ...player, position: point }; order.push('relocate'); },
       face: facing => order.push(`face:${facing}`), clearEffects: () => {},
       canSpendMana: cost => mana >= cost, spendMana: cost => { mana -= cost; return true; },
@@ -91,6 +92,7 @@ test('第八帧先瞬移转向再结算；找位失败保留挥击与动作余�
     onFrame(8);
     if (scenario === 'success') assert.deepEqual(order, ['relocate', 'face:north', 'dispatch', 'hit:enemy@320,216', 'swing']);
     else assert.deepEqual(order, ['swing']);
+    assert.equal(verifyCalls, 0, '瞬移只检查同地形和落点，不再跑全路线搜索');
     assert.equal(clearanceActors.length > 0, scenario !== 'target-removed');
     assert.ok(clearanceActors.every(id => id === 'enemy'));
     assert.equal(combat.snapshot().state, 'attacking');
