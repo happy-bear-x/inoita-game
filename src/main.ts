@@ -14,6 +14,8 @@ import { storyReferenceMaps, validateStoryReferences } from './application/story
 import { ControlsScene } from './scenes/controls-scene.ts';
 import Phaser from 'phaser';
 import { StoryApp } from './app.ts';
+import { commonAssetBatches } from './application/entry-plan.ts';
+import { loadSceneAssets } from './rendering/scene-assets.ts';
 import { trustedContentNow } from './application/content-trust.ts';
 import type { Session } from './domain/session.ts';
 import { newStorySession } from './domain/story-class.ts';
@@ -38,7 +40,7 @@ import { UI_ICON_ATLAS_FILE } from './generated/icon-atlas.ts';
 import { MINIMAP_ASSETS } from './domain/story-interface.ts';
 import { GAME_FRAME_TIMING, installFrameLimitClock } from './application/game-timing.ts';
 import { displaySettings } from './application/display-settings.ts';
-import { currentRefreshRate, detectRefreshRate, resolveFrameLimit } from './application/frame-pacing.ts';
+import { currentRefreshRate, detectRefreshRate, refreshRateKnown, resolveFrameLimit } from './application/frame-pacing.ts';
 import { installDiagnosticSnapshot, installStorySkipDiagnostics } from './application/game-diagnostics.ts';
 import { storyDevMode } from './domain/dev-mode.ts';
 import { createGmActions, consoleGmActions, type ConsoleGmActions } from './debug/gm-actions.ts';
@@ -123,6 +125,8 @@ app.content.trusted = trustedContentNow() && !gmOn();
 const inspect = gmFromAddress;
 
 let modeRequest = new AbortController();
+/** 内容目录与存档无关：标题页开始预载后，职业选择、读档和进图都复用同一份。 */
+const contentRequest = new AbortController();
 /** 启动阶段上报：卡住时诊断日志里的最后一条就是现场。 */
 function recordStartPhase(phase:string,details?:Record<string,unknown>):void{
   try{globalThis.storyDiagnostics?.record('start-phase',{phase,...details});}
@@ -154,7 +158,6 @@ function startAutoSave(session:Session):void {
   saver.start();
 }
 let storyPreparation: Promise<void> | undefined;
-let storyPreparationSignal:AbortSignal|undefined;
 interface MenuPreparation {
   signal: AbortSignal;
   progress: number;
@@ -231,9 +234,11 @@ function clearMenuPreparations(): void {
   app.uiAssets?.releaseContent();
 }
 
-function prepareStory(signal: AbortSignal): Promise<void> {
+function prepareStory(_signal: AbortSignal): Promise<void> {
   if (app.campaign) return Promise.resolve();
-  if (storyPreparation&&storyPreparationSignal===signal) return storyPreparation;
+  if (storyPreparation) return storyPreparation;
+  // 内容目录是公共资源，不随某个入口的取消信号中止；调用方拿到结果后再检查自己的信号。
+  const signal = contentRequest.signal;
   const task = (async () => {
     recordStartPhase('story-fetch-start',{trusted:app.content.trusted,gm:gmOn()});
     const [world, campaign, presentation, battle, panels, items, wardrobe, statusHud, controlSkin, stats, shops, companions, crafting] = await Promise.all([
@@ -281,9 +286,58 @@ function prepareStory(signal: AbortSignal): Promise<void> {
     }
   })();
   storyPreparation = task;
-  storyPreparationSignal=signal;
   void task.catch(() => { if (storyPreparation === task) storyPreparation = undefined; });
   return task;
+}
+
+let commonPreloadTask: Promise<void> | undefined;
+let commonPreloadRequest = new AbortController();
+let commonPreloadBatches: ReturnType<typeof commonAssetBatches> | undefined;
+let commonPreloadIndex = 0;
+let commonPreloadResume = false;
+
+/** 进图前停掉后台预载；已经载完的批次保留，进图计划会直接复用。 */
+function cancelCommonPreload(): void {
+  commonPreloadResume = false;
+  commonPreloadRequest.abort();
+}
+
+/** 标题页后台预载公共素材；按小批推进，开始游戏时最多等当前一批。 */
+function prefetchCommon(): void {
+  if (commonPreloadTask) { commonPreloadResume = true; return; }
+  const request = commonPreloadRequest = new AbortController();
+  const task = preloadCommon(request.signal);
+  commonPreloadTask = task;
+  void task.finally(() => {
+    if (commonPreloadTask !== task) return;
+    commonPreloadTask = undefined;
+    if (commonPreloadResume) { commonPreloadResume = false; prefetchCommon(); }
+  });
+}
+
+async function preloadCommon(signal: AbortSignal): Promise<void> {
+  try {
+    await prepareStory(signal);
+    signal.throwIfAborted();
+    const { world, battleCatalog, wardrobe, companions, items, statusHud, controlSkin, storyInterface } = app;
+    if (!world || !battleCatalog || !wardrobe || !companions || !items || !statusHud || !controlSkin || !storyInterface) return;
+    const scene = app.game?.scene.getScene(SCENE_KEYS.formalUi) as Phaser.Scene | undefined;
+    if (!scene?.sys.isActive()) return;
+    commonPreloadBatches ??= commonAssetBatches({
+      world, battle: battleCatalog, wardrobe, companions, items, statusHud, controlSkin, storyInterface
+    });
+    while (commonPreloadIndex < commonPreloadBatches.length) {
+      signal.throwIfAborted();
+      const lease = await loadSceneAssets(scene, commonPreloadBatches[commonPreloadIndex]!, () => {}, true);
+      if (signal.aborted) { lease.release(); signal.throwIfAborted(); }
+      app.commonAssetLeases.push(lease);
+      commonPreloadIndex += 1;
+      // 让出一拍，菜单输入和动画不被连续下载占满。
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+    }
+  } catch (error) {
+    if (!signal.aborted) globalThis.storyDiagnostics?.record('common-preload-error', { error });
+  }
 }
 
 async function enterGame(slot?:number): Promise<void> {
@@ -335,6 +389,7 @@ async function finishStoryStart(classId: string): Promise<void> {
   const selected = app.storyClasses.classes.find(entry => entry.id === classId);
   if (!selected) return;
   const selection = currentScene()!;
+  cancelCommonPreload();
   app.mode = 'game'; ui.setMode('game'); ui.loading('正在开始游戏…');
   const campaign = app.campaign;
   recordStartPhase('session-install-start');
@@ -370,6 +425,7 @@ async function resumeSlot(slot:SaveSlotRef,signal?:AbortSignal):Promise<void> {
         request.throwIfAborted();return candidate;
       },
       stopCurrent:async()=>{
+        cancelCommonPreload();
         stopAutoSave();app.gm?.dispose();modeRequest.abort();app.director?.dispose();app.clearMapPrefetch();app.clearStoryPrefetch();ui.resetInput();
         const stopped=new Promise<void>(resolve=>sourceScene.events.once(Phaser.Scenes.Events.SHUTDOWN,()=>resolve()));
         game.scene.stop(sourceScene.sys.settings.key);await stopped;
@@ -606,6 +662,7 @@ function boot(): void {
   document.fonts?.ready.then(() => domUi.layout()).catch(() => {});
   app.enterGame = enterGame; app.returnToMenu = returnToMenu; app.startStory = startStory;
   app.resumeSlot = resumeSlot;
+  app.prefetchCommon = prefetchCommon;
   app.captureSaveWorld = () => app.gm?.storyDebug().autoSavePaused ? {ok:false,reason:'debug'} : worldScene()?.captureSaveWorld() ?? {ok:false,reason:'not-ready'};
   app.autoSave = () => autoSaver?.request();
   app.captureControlPreview = () => worldScene()?.getControlLayoutPreview()??[];
@@ -638,6 +695,9 @@ function boot(): void {
     scene: [], banner: false, audio: { disableWebAudio: false }
   });
   app.game = game;
+  game.events.once(Phaser.Core.Events.DESTROY, () => {
+    contentRequest.abort();cancelCommonPreload();app.releaseCommonAssets();
+  });
   let frameLimitDisposed = false;
   const applyFrameLimit = (): void => {
     if (frameLimitDisposed) return;
@@ -646,7 +706,18 @@ function boot(): void {
   const unsubscribeFrameRate = displaySettings.subscribeFrameRateLimit(applyFrameLimit);
   // 刷新率要等页面跑起来才量得到；量到之前按 60Hz 处理，60Hz 屏直接走 vsync。
   void detectRefreshRate().then(applyFrameLimit);
-  game.events.once(Phaser.Core.Events.DESTROY, () => { frameLimitDisposed = true; unsubscribeFrameRate(); });
+  // 启动时页面在后台，rAF 不跑，第一次会量不到；恢复可见后补测一次再换算限帧。
+  const remeasureRefresh = (): void => {
+    if (refreshRateKnown() || document.visibilityState !== 'visible') return;
+    void detectRefreshRate().then(applyFrameLimit);
+  };
+  document.addEventListener('visibilitychange', remeasureRefresh);
+  window.addEventListener('pageshow', remeasureRefresh);
+  game.events.once(Phaser.Core.Events.DESTROY, () => {
+    frameLimitDisposed = true; unsubscribeFrameRate();
+    document.removeEventListener('visibilitychange', remeasureRefresh);
+    window.removeEventListener('pageshow', remeasureRefresh);
+  });
   const clearDiagnosticSnapshot = installDiagnosticSnapshot(runtimeDiagnostics);
   game.events.once(Phaser.Core.Events.DESTROY, clearDiagnosticSnapshot);
   game.events.once('ready', () => {

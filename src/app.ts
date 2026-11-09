@@ -49,7 +49,7 @@ import { InputRouter } from './application/input-router.ts';
  *    `statusHud`、`controlSkin`、`shops`、`companions`、`crafting`。
  *    `storyClasses` 早一步，在 `enterGame()` 里选职业之前单独加载。
  * 3. `boot()`（Phaser 就绪）里接线：`game`、`enterGame`、`returnToMenu`、`startStory`、
- *    `prefetchStory`、`storyUI`、`syncLifecycle`。
+ *    `prefetchStory`、`prefetchCommon`、`storyUI`、`syncLifecycle`。
  * 4. `finishStoryStart()`（选定职业、进入世界）里接线：`session`、`storySignal`、`director`、
  *    `changeEquipment`、`equipmentAppearance`、`preparePartyMember`、`releasePartyPreview`、
  *    `revivePartyMember`、`openCrafting`、`openShop`。
@@ -99,6 +99,12 @@ export class StoryApp {
     this.residentCombatClassId = undefined;
     this.residentCombatReady = false;
   }
+  /** 标题页后台预载的公共素材租约；与存档无关，换会话不释放。 */
+  commonAssetLeases: AssetLease[] = [];
+  /** 释放公共素材租约；页面销毁时调用。 */
+  releaseCommonAssets(): void {
+    for (const lease of this.commonAssetLeases.splice(0)) lease.release();
+  }
   wardrobe!: WardrobeCatalog;
   /** 同一局游戏的合成外观，换地图和剧情舞台共用。 */
   outfits?: OutfitPool;
@@ -110,6 +116,8 @@ export class StoryApp {
   uiAssets?: import('./ui/phaser/ui-asset-host.ts').UiAssetHost;
   startStory?: (classId: string) => void;
   prefetchStory?: () => void;
+  /** 标题页后台预载与存档无关的公共素材；不阻塞菜单。 */
+  prefetchCommon?: () => void;
   /**
    * 这两个能力在装配完成前**抛错而不是静默什么都不做**：它们只由玩家在世界里点融合器／
    * 商人触发，没反应会被当成游戏坏了，留不下任何线索。装配点在 `main.ts` 的启动收尾。

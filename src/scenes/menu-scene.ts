@@ -155,7 +155,7 @@ export class MenuScene extends Phaser.Scene {
       });
       // 确认框打开时页面整块不响应，确认框自己也只在有确认时响应。
       this.modal.enabled=()=>this.app.ui.ready&&!this.app.ui.suspended&&this.sys.isActive()&&(this.confirmAction!==undefined||this.changelogOpen);
-      this.app.ui.menuLoaded();if(options.page==='slots')this.openSlots();else this.render();this.app.syncLifecycle?.();notifyBootReady();
+      this.app.ui.menuLoaded();if(options.page==='slots')this.openSlots();else this.render();this.app.syncLifecycle?.();notifyBootReady();this.app.prefetchCommon?.();
     },error=>{if(!controller.signal.aborted)this.app.ui.error(String(error),()=>this.scene.restart());});
   }
   /** 标题页键盘：输入框让路，确认框的 Escape 只关确认框，其余交给页面按钮。 */

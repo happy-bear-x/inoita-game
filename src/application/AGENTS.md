@@ -4,7 +4,7 @@
 
 ## 文件
 
-- 端口/场景键/事件：`ports.ts`（能力接口）、`scene-keys.ts`（场景键）、`ui-events.ts`（界面事件名）、`input-router.ts`（全局键盘作用域与优先级）、`entry-loading.ts`（入口加载与继续进度）、`entry-plan.ts`（入口计划与地图资产）、`menu-images.ts`（标题与菜单图片分组）。
+- 端口/场景键/事件：`ports.ts`（能力接口）、`scene-keys.ts`（场景键）、`ui-events.ts`（界面事件名）、`input-router.ts`（全局键盘作用域与优先级）、`entry-loading.ts`（入口加载与继续进度）、`entry-plan.ts`（入口计划、公共素材分批与地图资产）、`menu-images.ts`（标题与菜单图片分组）。
 - 内容加载与校验：`content-loader.ts`（内容加载器与生产哨兵）、`content-validation.ts`（内容字段校验器）、`content-relations.ts`（引用关系校验）、`content-hash.ts`（规范化 JSON 与内容摘要）、`content-trust.ts`（构建期信任开关）、`story-performance-validation.ts`（剧情演出校验）、`story-reference-validation.ts`（剧情引用校验）。
 - 存档/迁移/自动保存：`saved-game.ts`（存档格式与升级链）、`saved-game-loader.ts`（存档读取与取消）、`auto-save.ts`（自动保存节流与重试）、`quest-item-grants.ts`（任务物品净发放与溢出）。
 - 云存档：`cloud-save.ts`（HTTP 客户端、token 存储、续期、改密与结果化错误）、`cloud-save-sync.ts`（逐槽备份/恢复、覆盖确认与部分失败）、`endpoints.ts`（云存档/诊断服务地址解析，网页同源，宿主注入）。
@@ -18,6 +18,7 @@
 - 键盘输入只从场景桥接一次进 `input-router.ts`。作用域从高到低是 `text-input > modal > menu > dialogue > world`；处理器返回 `boolean` 表示是否消费。文本输入框有焦点、弹层或菜单打开时用 `exclusive` 独占，按键不会再落到世界层。按钮点击、滚动和拖拽继续走 Phaser 输入，router 不接指针。场景 `shutdown` 时注销自己注册的作用域。
 - 新能力先在 `ports.ts` 定义接口，由 `src/app.ts` 在启动阶段注入实现。
 - 场景通过 ports 取素材、音频和浏览器能力，加载与 API 调用留在本目录。
+- **标题页后台预载公共素材。** `commonAssetBatches` 把 HUD、掉落/任务图标、衣柜图集、全部职业与伙伴的基础动作和通用战斗反馈分成小批；标题页加载完成后由正式界面场景逐个加载。开始游戏或读档时停掉剩余批次，已载入的纹理留在全局纹理库，进图计划直接复用；技能动作、已学技能特效和召唤物仍按本次会话补齐。内容目录与会话无关，预载任务不随入口切换取消，调用方等完后各自检查自己的取消信号。
 - 4003 开发页把 `StoryDirector.onSkipProgress` 接到 `installStorySkipDiagnostics`，每次跳过只写一条 `story-skip-summary`，记录逻辑完成、世界就绪与实际解锁的耗时；选择和任务确认单独标明终点。
 - 云存档是旁路能力：客户端构造不联网，只有打开云页/点击上传下载才请求；网络、token 或存储失败都结果化返回，不能抛到菜单或游戏循环。
 - 云存档和诊断的服务地址只从 `endpoints.ts` 解析。环境根地址在 `config/endpoints.json`：网页固定同源（空值）；Android 调试指向 `adb reverse` 的 `127.0.0.1:4003`，发布和网页生产共用 `https://catgo.online:4002`。Android 壳由 `bootstrap.js` 在页面脚本前注入本地代理地址；页面里不再另写域名或读取别的地址变量。

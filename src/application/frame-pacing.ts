@@ -45,6 +45,7 @@ export function measureRefreshRate(
       if (done) return;
       done = true;
       clearTimeout(timer);
+      measuredSamples = intervals.length;
       resolve(intervals.length >= 6 ? refreshFromIntervals(intervals) : DEFAULT_REFRESH_HZ);
     };
     const timer = setTimeout(finish, FALLBACK_WAIT_MS);
@@ -66,11 +67,17 @@ export function measureRefreshRate(
 }
 
 let measuredRefreshHz = DEFAULT_REFRESH_HZ;
+let measuredSamples = 0;
 
 /** 启动后量一次；量完之前按 60Hz 处理。 */
 export async function detectRefreshRate(): Promise<number> {
   measuredRefreshHz = await measureRefreshRate();
   return measuredRefreshHz;
+}
+
+/** 样本够多才算真的量到了；页面启动时在后台会让 rAF 不跑，需要在恢复可见后补测。 */
+export function refreshRateKnown(): boolean {
+  return measuredSamples >= 6;
 }
 
 /** 最近一次测到的刷新率；没测过是 60。 */

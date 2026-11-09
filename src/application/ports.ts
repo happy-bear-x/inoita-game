@@ -149,6 +149,8 @@ export interface MenuContext {
   releaseChangelog?: () => void;
   readonly audio?:GameAudio;
   enterGame?:(slot?:number)=>Promise<void>;
+  /** 标题页后台预载与存档无关的公共素材；不阻塞菜单。 */
+  prefetchCommon?:()=>void;
   /** 标题页的「开始游戏」使用同一份存档槽。 */
   readonly saves: import('../domain/save-game.ts').SaveSlots<import('../scenes/world-scene.ts').StoryWorldViewSnapshot>;
   /** 云存档能力；缺失时云存档页只显示不可用，本机存档照常。 */
