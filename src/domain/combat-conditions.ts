@@ -239,7 +239,14 @@ export class CombatConditions {
     const state=this.states.get(actorId)?.get(id);
     if(!state||(sourceId!==undefined&&state.sourceId!==sourceId))return;
     if(state.ownerBuff)this.removeBuff(actorId,state.ownerBuff);
-    else {if(this.states.get(actorId)?.delete(id)){this.stateCount--;this.changed(actorId);}this.invalidateStateAttributes(actorId,id);}
+    else {
+      const own=this.states.get(actorId);
+      if(own?.delete(id)){
+        this.stateCount--;this.changed(actorId);
+        if(!own.size)this.states.delete(actorId);
+      }
+      this.invalidateStateAttributes(actorId,id);
+    }
   }
   update(deltaMs:number,onTick?:(tick:PeriodicTick)=>void):void {
     if(!Number.isFinite(deltaMs)||deltaMs<=0)return;
@@ -270,7 +277,13 @@ export class CombatConditions {
     for(const {actorId,own,state} of statesAtStart){
       if(this.states.get(actorId)!==own||own.get(state.id)!==state)continue;
       state.remainingMs=Math.max(0,state.remainingMs-deltaMs);
-      if(state.remainingMs<=0){if(own.delete(state.id)){this.stateCount--;this.changed(actorId);}this.invalidateStateAttributes(actorId,state.id);}
+      if(state.remainingMs<=0){
+        if(own.delete(state.id)){
+          this.stateCount--;this.changed(actorId);
+          if(!own.size)this.states.delete(actorId);
+        }
+        this.invalidateStateAttributes(actorId,state.id);
+      }
     }
     this.clockRevision++;
     this.refreshFrameRemainingTimes();
@@ -340,9 +353,14 @@ export class CombatConditions {
     const buff=this.buffs.get(actorId)?.get(id);if(!buff)return;
     this.resources?.captureResourceCapacities(actorId);
     this.invalidateBuffAttributes(actorId,buff.effect);
-    if(this.buffs.get(actorId)?.delete(id))this.changed(actorId);
+    const ownBuffs=this.buffs.get(actorId);
+    if(ownBuffs?.delete(id)){
+      this.changed(actorId);
+      if(!ownBuffs.size)this.buffs.delete(actorId);
+    }
     const own=this.states.get(actorId);
     for(const state of buff.effect.states){if(own?.delete(state))this.stateCount--;this.invalidateStateAttributes(actorId,state);}
+    if(own&&!own.size)this.states.delete(actorId);
   }
   clear():void {
     if(this.buffs.size||this.states.size)this.revisionValue++;

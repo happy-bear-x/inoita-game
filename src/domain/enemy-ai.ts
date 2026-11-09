@@ -238,14 +238,14 @@ export class EnemyController {
   }
   /** 全图交战只停止当前追近，保留已有仇恨及寻路重试截止时间。 */
   private awaitTarget():void {
-    this.heldSearch=undefined;
+    this.heldSearch=undefined;this.directView=undefined;
     if(this.combat?.actionState()==='approaching')this.combat.cancel();
     else this.combat?.clearSelection();
     this.state='idle';this.targetId=undefined;this.pendingReturn=false;
     this.path=[];this.destination=undefined;this.search=undefined;this.progressPosition=undefined;this.wanderDestination=undefined;this.idleElapsed=0;this.port.stop();
   }
   private returnHome():void{
-    this.heldSearch=undefined;
+    this.heldSearch=undefined;this.directView=undefined;
     if(this.mapWide){this.awaitTarget();return;}
     this.port.threat?.clear();this.threatCombatActive=false;
     this.combat?.cancel(true);this.state='returning';this.targetId=undefined;this.pendingReturn=false;
@@ -529,7 +529,7 @@ export class EnemyController {
   }
   private directWalkable(actor:Combatant,destination:Point,canStand:(point:Point)=>boolean):boolean{
     const cached=this.directView;
-    if(cached&&cached.fromX===actor.position.x&&cached.fromY===actor.position.y&&cached.toX===destination.x&&cached.toY===destination.y)return cached.walkable;
+    if(cached&&cached.canStand===canStand&&cached.fromX===actor.position.x&&cached.fromY===actor.position.y&&cached.toX===destination.x&&cached.toY===destination.y)return cached.walkable;
     const walkable=canTraverse(actor.position,destination,canStand);
     this.directView={canStand,fromX:actor.position.x,fromY:actor.position.y,toX:destination.x,toY:destination.y,walkable};
     return walkable;

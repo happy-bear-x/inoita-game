@@ -469,8 +469,10 @@ export class PartyController {
   /** 直线能到落点时不领寻路预算；需要绕到侧翼或前方有墙时仍走 A*。 */
   private directPursuit(actor:Combatant,destination:Point,target?:Combatant):boolean {
     if(target&&this.combatAnchor(actor,target))return false;
-    if(!canTraverse(actor.position,this.directGoal(actor,destination,target),point=>this.port.canStand(point)))return false;
-    this.path=[{...destination}];this.destination={...destination};this.flanking=false;
+    const goal=this.directGoal(actor,destination,target);
+    if(!canTraverse(actor.position,goal,point=>this.port.canStand(point)))return false;
+    // 路径终点停在目标身体前；destination 仍记完整目标位置，用于下一次重算距离。
+    this.path=[{...goal}];this.destination={...destination};this.flanking=false;
     this.nextPathAt=this.clock+PARTY_REPATH_INTERVAL_MS;
     return true;
   }
