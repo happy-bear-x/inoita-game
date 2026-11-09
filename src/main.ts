@@ -38,6 +38,7 @@ import { UI_ICON_ATLAS_FILE } from './generated/icon-atlas.ts';
 import { MINIMAP_ASSETS } from './domain/story-interface.ts';
 import { GAME_FRAME_TIMING, installFrameLimitClock } from './application/game-timing.ts';
 import { displaySettings } from './application/display-settings.ts';
+import { currentRefreshRate, detectRefreshRate, resolveFrameLimit } from './application/frame-pacing.ts';
 import { installGameDiagnostics, installStorySkipDiagnostics } from './application/game-diagnostics.ts';
 import { storyDevMode } from './domain/dev-mode.ts';
 import { createGmActions, consoleGmActions, type ConsoleGmActions } from './debug/gm-actions.ts';
@@ -626,7 +627,7 @@ function boot(): void {
   const game = new Phaser.Game({
     type: Phaser.WEBGL, parent: 'game', backgroundColor: '#101d24',
     pixelArt: true, roundPixels: true,
-    fps: { ...GAME_FRAME_TIMING, limit: displaySettings.frameRateLimit },
+    fps: { ...GAME_FRAME_TIMING, limit: resolveFrameLimit(displaySettings.frameRateLimit, currentRefreshRate()) },
     callbacks: { postBoot: game => {
       const restoreClock = installFrameLimitClock(game.loop);
       game.events.once(Phaser.Core.Events.DESTROY, restoreClock);
@@ -637,8 +638,15 @@ function boot(): void {
     scene: [], banner: false, audio: { disableWebAudio: false }
   });
   app.game = game;
-  const unsubscribeFrameRate = displaySettings.subscribeFrameRateLimit(limit => game.loop.setFPSLimit(limit));
-  game.events.once(Phaser.Core.Events.DESTROY, unsubscribeFrameRate);
+  let frameLimitDisposed = false;
+  const applyFrameLimit = (): void => {
+    if (frameLimitDisposed) return;
+    game.loop.setFPSLimit(resolveFrameLimit(displaySettings.frameRateLimit, currentRefreshRate()));
+  };
+  const unsubscribeFrameRate = displaySettings.subscribeFrameRateLimit(applyFrameLimit);
+  // 刷新率要等页面跑起来才量得到；量到之前按 60Hz 处理，60Hz 屏直接走 vsync。
+  void detectRefreshRate().then(applyFrameLimit);
+  game.events.once(Phaser.Core.Events.DESTROY, () => { frameLimitDisposed = true; unsubscribeFrameRate(); });
   installGameDiagnostics(game, runtimeDiagnostics);
   game.events.once('ready', () => {
     configureCanvas(game);

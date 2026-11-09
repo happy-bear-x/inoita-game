@@ -1,5 +1,6 @@
 import type Phaser from 'phaser';
 
+/** 逻辑目标 60，默认上限 60；实际交付上限由 `frame-pacing.ts` 按玩家选项和屏幕刷新率换算。 */
 export const GAME_FRAME_TIMING = { target: 60, limit: 60 } satisfies Phaser.Types.Core.FPSConfig;
 
 /** Phaser 负责限帧调度；游戏耗时取相邻两次交付的时间差，覆盖余量重复及低帧率启动平滑。 */
