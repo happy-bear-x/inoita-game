@@ -284,7 +284,7 @@ test('character allocation uses native arrow art and keeps points in the allocat
     assert.equal(`interface:${highlight.getData('file')}`,`interface:${panels.assets['character-step-pressed']}`);
     assert.deepEqual([face.width,face.height,face.x,face.y],[51,58,0,0]);
     assert.equal(face.flipX,flip);assert.equal(highlight.flipX,flip);
-    assert.equal((highlight as unknown as UiNode).element.style.mixBlendMode,'plus-lighter','按下图沿用原版叠加混合');
+    assert.equal((highlight as unknown as UiNode).element.style.mixBlendMode||'','','按下图直接显示原版贴图，不再叠加混合模式');
     assert.equal(button.getData('labelText'),undefined);
   }
   assert(!f.scene.canHit(minus),'未投入点数时不能减点');

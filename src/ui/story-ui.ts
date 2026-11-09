@@ -1142,7 +1142,7 @@ export class StoryUI {
         // 原版减点使用左箭头，增点翻转同图；按下叠加对应亮图，透明处露出属性行底带。
         for(const [delta,x,label,disabled] of [[-1,630,'减少',this.allocation.pending[stat]===0],[1,822,'增加',statPoints<1]] as const){
           const button=v.button('',x,index*64+70,51,58,()=>this.action(()=>this.allocation!.change(stat,delta)),{
-            image:panels.assets['character-step'],pressed:panels.assets['character-step-pressed'],native:true,pressedAdd:true,disabled,
+            image:panels.assets['character-step'],pressed:panels.assets['character-step-pressed'],native:true,disabled,
           }).setData('label',`${label}${attribute.name}`);
           button.on('pointerdown',(pointer:UiPointer)=>this.startAllocationHold(pointer,stat,delta));
           if(delta===1)for(const part of ['face','highlight']) (button.getData(part) as UiImage).setFlipX(true);
@@ -1496,7 +1496,7 @@ export class StoryUI {
     for(let slot=0;slot<SHORTCUT_SLOT_COUNT;slot++){const point=positions[`slot-${slot}` as ControlId],userScale=point.userScale;
       const slotFrame=CONTROL_SIZES.slot.width*userScale,input=80*userScale,slotBleed=(slotFrame-input)/2;
       const hit=v.button('',point.x/scale-input/2,point.y/scale-input/2,input,input,()=>this.assignShortcut(slot),
-        {bare:true,pressed:skin['slot-pressed'],pressedRect:{x:-slotBleed,y:-slotBleed,width:slotFrame,height:slotFrame},pressedAdd:true}).setData('label',`快捷位 ${slot+1}`);
+        {bare:true,pressed:skin['slot-pressed'],pressedRect:{x:-slotBleed,y:-slotBleed,width:slotFrame,height:slotFrame}}).setData('label',`快捷位 ${slot+1}`);
       hit.addAt(v.image(skin['slot-shadow'],-slotBleed,-slotBleed,slotFrame,slotFrame),0);hit.addAt(v.image(skin['slot-ring'],-slotBleed,-slotBleed,slotFrame,slotFrame),1);
       const entry=slots[slot];if(entry){const size=this.shortcutIconSize(entry)*userScale,icon=this.shortcutIcon(entry);
         if(icon)hit.addAt(v.image(icon,(input-size)/2,(input-size)/2,size,size),2);}
@@ -1505,7 +1505,7 @@ export class StoryUI {
     const swapUserScale=positions.swap.userScale,swapFrame=CONTROL_SIZES.swap.width*swapUserScale;
     const swap=v.button('',positions.swap.x/scale-swapFrame/2,positions.swap.y/scale-swapFrame/2,swapFrame,swapFrame,
       ()=>{this.shortcutEdit={...edit,page:(edit.page+1)%SHORTCUT_PAGE_COUNT};this.render();},
-      {bare:true,pressed:skin['swap-pressed'],pressedAdd:true}).setData('label','切换技能组');
+      {bare:true,pressed:skin['swap-pressed']}).setData('label','切换技能组');
     swap.addAt(v.image(skin.swap,0,0,swapFrame,swapFrame),0);
     // 待登记的对象：原版把它画在一个单独的圆框容器里，位置见 `PENDING_OFFSET`。
     const slotFrame=CONTROL_SIZES.slot.width,size=this.shortcutIconSize(edit),icon=this.shortcutIcon(edit),pending={x:anchor.x+PENDING_OFFSET.x,y:anchor.y+PENDING_OFFSET.y};

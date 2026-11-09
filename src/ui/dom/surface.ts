@@ -39,12 +39,11 @@ export class UiSurface {
   text(value:string,x:number,y:number,width=0,size=22,color='#f3deb0',parent=this.root):UiText{return new UiText(this.scene,parent,value,x,y,width,size,color);}
   rect(x:number,y:number,width:number,height:number,color=0x21190f,alpha=.95,parent=this.root):UiNode{return new UiNode(this.scene,parent).setPosition(x,y).setSize(width,height).setFillStyle(color,alpha);}
   container(x=0,y=0,parent=this.root):UiNode{return new UiNode(this.scene,parent).setPosition(x,y);}
-  button(label:string,x:number,y:number,width:number,height:number,action:()=>void,options:{image?:string;pressed?:string;fontSize?:number;disabled?:boolean;selected?:boolean;bare?:boolean;native?:boolean;pressedRect?:{x:number;y:number;width:number;height:number};pressedAdd?:boolean;parent?:UiNode;guard?:()=>boolean;hold?:{delayMs?:number;intervalMs?:number}}={}):UiNode{
+  button(label:string,x:number,y:number,width:number,height:number,action:()=>void,options:{image?:string;pressed?:string;fontSize?:number;disabled?:boolean;selected?:boolean;bare?:boolean;native?:boolean;pressedRect?:{x:number;y:number;width:number;height:number};parent?:UiNode;guard?:()=>boolean;hold?:{delayMs?:number;intervalMs?:number}}={}):UiNode{
     const parent=options.parent??this.root,result=this.container(x,y,parent).setSize(width,height),common=!options.image&&!options.bare;
     const draw=(file:string):UiImage=>{const image=this.image(file,0,0,options.native?undefined:width,options.native?undefined:height,result);if(options.native){const center=()=>image.setPosition((width-image.width)/2,(height-image.height)/2);center();image.on('loaded',center);}return image;};
     const face=options.image?draw(options.image):common?this.buttonFace(COMMON_BUTTON.image,width,height,result):undefined;
     const highlight=options.pressed?draw(options.pressed):common?this.buttonFace(COMMON_BUTTON.pressed,width,height,result):undefined;
-    if(common||options.pressedAdd)highlight?.setBlendMode('add');
     if(options.pressedRect){const area=options.pressedRect;highlight?.setPosition(area.x,area.y).setDisplaySize(area.width,area.height);}
     const text=label?this.text(label,width/2,height/2,width-12,options.fontSize??Math.min(22,height*.42),'#f3deb0',result).setOrigin(.5):undefined;
     const selected=common&&!!options.selected;highlight?.setVisible(selected);

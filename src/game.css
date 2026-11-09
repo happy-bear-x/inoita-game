@@ -33,5 +33,5 @@ body.ui-occluded .text-prompt,body.ui-occluded .cloud-credentials{display:none!i
 .cloud-credentials input:focus{border-color:var(--gold);box-shadow:0 0 0 2px rgba(226,200,141,.18)}
 
 /* 动作控件的按下图片跟随原生指针状态。 */
-.dom-control-pressed{display:none;mix-blend-mode:plus-lighter}
+.dom-control-pressed{display:none;opacity:.85}
 [data-pressed="true"] .dom-control-pressed{display:block}
