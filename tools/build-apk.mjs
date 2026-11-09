@@ -21,16 +21,16 @@ import { ensureUpdateKey } from './update-key.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const androidDir = path.join(root, 'android');
+if (process.platform === 'win32') {
+  console.error('[apk] APK 打包目前只支持 Linux/macOS；Windows 请使用 WSL。');
+  process.exit(1);
+}
 const apkOut = path.join(root, 'apk-out');
 const home = os.homedir();
 const sdk = path.resolve(process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT || path.join(home, '.local/android-sdk'));
 const javaHome = resolveJavaHome();
 assertJava25(javaHome);
 const skipWeb = process.argv.includes('--skip-web');
-if (process.platform === 'win32') {
-  console.error('[apk] APK 打包目前只支持 Linux/macOS；Windows 请使用 WSL。');
-  process.exit(1);
-}
 
 const BUILD_TOOLS = '37.0.0';
 const PLATFORM = 'android-37.0';
