@@ -8,7 +8,7 @@
  *   node tools/build-apk.mjs --channel staging   打自测包，读取 latest-staging.json
  *
  * 工具链装在用户目录（默认 ~/.local/android-sdk），首次运行会自动下载
- * cmdline-tools、Android 34 平台和 build-tools；签名 keystore 只生成一次，
+ * cmdline-tools、平台和 build-tools；签名 keystore 只生成一次，
  * 保存在仓库外，重新打包用同一把钥匙，覆盖安装不会丢存档。
  */
 import { spawnSync } from 'node:child_process';
@@ -27,12 +27,24 @@ const sdk = path.resolve(process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROO
 const javaHome = resolveJavaHome();
 assertJava25(javaHome);
 const skipWeb = process.argv.includes('--skip-web');
+// 打本机调试包：只把诊断上报改到 4003（配合 adb reverse），热更和云存档仍走发布地址。
+const debugServer = process.argv.includes('--debug-server');
+// 本机调试包专用：打开壳内 Chromium 的远程调试端口，配合 `adb forward` 用桌面 Chrome 剖析。
+const remoteDebugging = process.argv.includes('--remote-debugging');
 
 const BUILD_TOOLS = '37.0.0';
 const PLATFORM = 'android-37.0';
 const GRADLE_VERSION = '9.7.1';
-const CMDLINE_TOOLS_URL = 'https://dl.google.com/android/repository/commandlinetools-linux-16111833_latest.zip';
+const CMDLINE_TOOLS_VERSION = '15859902';
+const CMDLINE_TOOLS_URL = `https://dl.google.com/android/repository/commandlinetools-${cmdlineToolsPlatform()}-${CMDLINE_TOOLS_VERSION}_latest.zip`;
 const GRADLE_URL = `https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip`;
+
+/** 官方只放平台定制包，没有通用包：darwin 还分 arm64 和 x86_64。 */
+function cmdlineToolsPlatform() {
+  if (process.platform === 'darwin') return process.arch === 'arm64' ? 'mac_arm64' : 'mac_x86_64';
+  if (process.platform === 'win32') return 'win';
+  return 'linux';
+}
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -240,8 +252,10 @@ try {
   const buildId = checkUpdateArtifacts();
   console.log(`[apk] 热更基线: ${buildId}（${channel}）`);
 
-  console.log('[apk] Gradle assembleRelease');
-  run(gradlew, [':app:assembleRelease', '--no-daemon', `-PupdateChannel=${channel}`], {
+  console.log(`[apk] Gradle assembleRelease（诊断上报：${debugServer ? '本机 4003' : '发布地址'}）`);
+  run(gradlew, [':app:assembleRelease', '--no-daemon', `-PupdateChannel=${channel}`,
+    ...(debugServer ? ['-PdiagnosticsBase=http://127.0.0.1:4003'] : []),
+    ...(remoteDebugging ? ['-PremoteDebugging=true'] : [])], {
     cwd: androidDir,
     env: { JAVA_HOME: javaHome, ANDROID_HOME: sdk, ANDROID_SDK_ROOT: sdk },
   });
