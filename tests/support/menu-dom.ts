@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 
 /** Node 下的 DOM 边界：保留捕获、冒泡和 AbortSignal，不启动浏览器。 */
 export class MenuElement {
-  style = Object.assign({} as Record<string, any>, { setProperty(name: string, value: string) { (this as Record<string,any>)[name] = value; } });
+  style = Object.assign({} as Record<string, any>, { setProperty(name: string, value: string) { (this as Record<string,any>)[name] = value; }, removeProperty(name: string) { delete (this as Record<string,any>)[name]; } });
   dataset: Record<string,string> = {};
   children: MenuElement[] = [];
   parentElement?: MenuElement;

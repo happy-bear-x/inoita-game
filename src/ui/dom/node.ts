@@ -30,7 +30,8 @@ export function uiMount(scene:Phaser.Scene,layer='screen'):HTMLElement {
   scene.events.on('pause',hide);scene.events.on('sleep',hide);scene.events.on('resume',show);scene.events.on('wake',show);
   const input=new AbortController();
   for(const name of ['pointermove','pointerup','pointercancel'])window.addEventListener(name,event=>uiPointer(scene,event as PointerEvent),{capture:true,signal:input.signal});
-  window.addEventListener('blur',()=>{for(const pointer of pointers.get(scene)?.values()??[])pointer.isDown=false;pointers.get(scene)?.clear();},{signal:input.signal});
+  window.addEventListener('blur',()=>{for(const pointer of pointers.get(scene)?.values()??[])pointer.isDown=false;pointers.get(scene)?.clear();
+    for(const node of interactiveNodes.get(scene)??[])node.cancelPress();},{signal:input.signal});
   scene.events.once('shutdown',()=>{input.abort();pointers.delete(scene);scene.scale.off('resize',layout);for(const name of ['pause','sleep'])scene.events.off(name,hide);for(const name of ['resume','wake'])scene.events.off(name,show);element.remove();layers!.delete(layer);});
   return element;
 }
@@ -94,7 +95,6 @@ export class UiNode {
       if(this.press?.id===(event as PointerEvent).pointerId)this.cancelPress();
     },{signal});
     this.element.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();},{signal});
-    window.addEventListener('blur',()=>this.cancelPress(),{signal});
     this.paint();
   }
   cancelPress():void{const id=this.press?.id;this.press=undefined;if(id!==undefined&&this.element.hasPointerCapture(id))this.element.releasePointerCapture(id);this.emit('pointerupoutside');this.getData('cancelPress')?.();}
@@ -153,11 +153,21 @@ export class UiNode {
     if(!width&&!height&&this.list.length){const boxes=this.list.map(node=>node.getBounds());x=Math.min(...boxes.map(b=>b.x));y=Math.min(...boxes.map(b=>b.y));width=Math.max(...boxes.map(b=>b.x+b.width))-x;height=Math.max(...boxes.map(b=>b.y+b.height))-y;}
     return{x,y,width,height,contains:(px,py)=>px>=x&&px<=x+width&&py>=y&&py<=y+height};
   }
+  /** 同一个属性写第二次时直接跳过：构造节点时位置、尺寸会被写两三遍，省下的是样式重算的时间。 */
+  protected setStyle(property:string,value:string):void{
+    const cached=this.styles.get(property);if(cached===value)return;this.styles.set(property,value);
+    if(value)this.element.style.setProperty(property,value);else this.element.style.removeProperty(property);
+  }
+  private readonly styles=new Map<string,string>();
   protected paint():void{
-    Object.assign(this.element.style,{left:`${this.x}px`,top:`${this.y}px`,width:`${this.width}px`,height:`${this.height}px`,transform:`scale(${this.scaleX},${this.scaleY}) translate(${-this.originX*100}%,${-this.originY*100}%)`});
+    this.setStyle('left',`${this.x}px`);this.setStyle('top',`${this.y}px`);
+    this.setStyle('width',`${this.width}px`);this.setStyle('height',`${this.height}px`);
+    this.setStyle('transform',this.scaleX===1&&this.scaleY===1&&this.originX===0&&this.originY===0?'':`scale(${this.scaleX},${this.scaleY}) translate(${-this.originX*100}%,${-this.originY*100}%)`);
     this.paintHit();
   }
-  private paintHit():void{if(!this.hit||!this.input)return;const area=this.input.hitArea;if(this.autoHit){area.width=this.width;area.height=this.height;}Object.assign(this.hit.style,{left:`${area.x}px`,top:`${area.y}px`,width:`${area.width}px`,height:`${area.height}px`});}
+  private paintHit():void{if(!this.hit||!this.input)return;const area=this.input.hitArea;if(this.autoHit){area.width=this.width;area.height=this.height;}
+    this.hit.style.setProperty('left',`${area.x}px`);this.hit.style.setProperty('top',`${area.y}px`);
+    this.hit.style.setProperty('width',`${area.width}px`);this.hit.style.setProperty('height',`${area.height}px`);}
   destroy(_children=true):void{if(!this.active)return;this.cancelPress();this.emit('destroy');this.active=false;interactiveNodes.get(this.scene)?.delete(this);this.controller.abort();this.removeAll(true);this.parentContainer?.remove(this);this.element.remove();this.listeners.clear();this.data.clear();}
 }
 
@@ -174,14 +184,27 @@ export class UiImage extends UiNode {
     if(file)this.load(file);
   }
   load(file:string):this{this.setData('file',file);const cached=domAssets.peek(file);if(cached)this.applySource(cached);this.request?.abort();const request=this.request=new AbortController();void domAssets.acquire(file,request.signal).then(lease=>{if(!this.active||request!==this.request){lease.release();return;}this.lease?.release();this.lease=lease;this.applySource(lease.source);}).catch(error=>{if(!request.signal.aborted)console.error(error);});return this;}
-  applySource(source:DomImageSource):this{this.source=source;this.picture.src=source.url;const ratio=source.frame.width/source.frame.height;super.setSize(this.requestedWidth??(this.requestedHeight!==undefined?this.requestedHeight*ratio:source.frame.width),this.requestedHeight??(this.requestedWidth!==undefined?this.requestedWidth/ratio:source.frame.height));this.draw();this.emit('loaded');return this;}
+  private sizeFor(source:DomImageSource):{width:number;height:number}{
+    const ratio=source.frame.width/source.frame.height;
+    return {width:this.requestedWidth??(this.requestedHeight!==undefined?this.requestedHeight*ratio:source.frame.width),
+      height:this.requestedHeight??(this.requestedWidth!==undefined?this.requestedWidth/ratio:source.frame.height)};
+  }
+  applySource(source:DomImageSource):this{this.source=source;this.picture.src=source.url;const size=this.sizeFor(source);super.setSize(size.width,size.height);this.draw();this.emit('loaded');return this;}
   override setDisplaySize(width:number,height:number):this{this.requestedWidth=width;this.requestedHeight=height;super.setSize(width,height);this.draw();return this;}
-  resize(width?:number,height?:number):this{this.requestedWidth=width;this.requestedHeight=height;if(this.source)this.applySource(this.source);else super.setSize(width??this.width,height??this.height);return this;}
+  resize(width?:number,height?:number):this{this.requestedWidth=width;this.requestedHeight=height;
+    if(this.source){const size=this.sizeFor(this.source);super.setSize(size.width,size.height);this.draw();}
+    else super.setSize(width??this.width,height??this.height);return this;}
   fitting(x=.5,y=.5,mode:'cover'|'contain'='cover'):this{this.fit={x,y,mode};this.draw();return this;}
   override setFlipX(value:boolean):this{super.setFlipX(value);this.draw();return this;}
   override setFlipY(value:boolean):this{super.setFlipY(value);this.draw();return this;}
   setCrop(x:number,y:number,width:number,height:number):this{this.element.style.clipPath=`inset(${y}px ${Math.max(0,this.width-x-width)}px ${Math.max(0,this.height-y-height)}px ${x}px)`;return this;}
-  private draw():void{if(!this.source)return;const source=this.source,frame=source.frame;let sx=this.width/frame.width,sy=this.height/frame.height,left=0,top=0;if(this.fit){sx=sy=this.fit.mode==='cover'?Math.max(sx,sy):Math.min(sx,sy);left=(this.width-frame.width*sx)*this.fit.x;top=(this.height-frame.height*sy)*this.fit.y;}Object.assign(this.picture.style,{width:`${source.width*sx}px`,height:`${source.height*sy}px`,left:`${left-frame.x*sx}px`,top:`${top-frame.y*sy}px`,clipPath:`inset(${frame.y*sy}px ${(source.width-frame.x-frame.width)*sx}px ${(source.height-frame.y-frame.height)*sy}px ${frame.x*sx}px)`});this.picture.style.transform=`scale(${this.flipX?-1:1},${this.flipY?-1:1})`;this.picture.style.transformOrigin=`${this.width/2-left+frame.x*sx}px ${this.height/2-top+frame.y*sy}px`;}
+  private draw():void{if(!this.source)return;const source=this.source,frame=source.frame;let sx=this.width/frame.width,sy=this.height/frame.height,left=0,top=0;if(this.fit){sx=sy=this.fit.mode==='cover'?Math.max(sx,sy):Math.min(sx,sy);left=(this.width-frame.width*sx)*this.fit.x;top=(this.height-frame.height*sy)*this.fit.y;}
+    const style=this.picture.style;style.setProperty('width',`${source.width*sx}px`);style.setProperty('height',`${source.height*sy}px`);
+    style.setProperty('left',`${left-frame.x*sx}px`);style.setProperty('top',`${top-frame.y*sy}px`);
+    const full=frame.x===0&&frame.y===0&&frame.width===source.width&&frame.height===source.height;
+    style.clipPath=full?'':`inset(${frame.y*sy}px ${(source.width-frame.x-frame.width)*sx}px ${(source.height-frame.y-frame.height)*sy}px ${frame.x*sx}px)`;
+    style.transformOrigin=this.flipX||this.flipY?`${this.width/2-left+frame.x*sx}px ${this.height/2-top+frame.y*sy}px`:'';
+    style.transform=this.flipX||this.flipY?`scale(${this.flipX?-1:1},${this.flipY?-1:1})`:'';}
   override destroy():void{this.request?.abort();this.lease?.release();this.lease=undefined;super.destroy();}
 }
 

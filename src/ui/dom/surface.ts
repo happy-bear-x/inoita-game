@@ -33,7 +33,7 @@ export class UiSurface {
   staticLayer(key:string,draw:()=>void):void{if(this.staticKey===key)return;this.clearStatic();this.staticKey=key;draw();}
   destroy():void{this.scene.game.events.off(UI_EVENTS.cancelInput,this.cancelInput);this.clear();this.clearStatic();this.root.destroy();}
   visible(value:boolean):void{this.root.setVisible(value);this.scrolls.forEach(scroll=>scroll.syncVisibility());}
-  image(file:string,x:number,y:number,width?:number,height?:number,parent=this.root):UiImage{return new UiImage(this.scene,parent,file).setPosition(x,y).resize(width,height);}
+  image(file:string,x:number,y:number,width?:number,height?:number,parent=this.root):UiImage{return new UiImage(this.scene,parent).setPosition(x,y).resize(width,height).load(file);}
   imageCover(file:string,x:number,y:number,width:number,height:number,parent=this.root,anchorX=.5,anchorY=.5):UiImage{return this.image(file,x,y,width,height,parent).fitting(anchorX,anchorY);}
   imageContain(file:string,x:number,y:number,width:number,height:number,parent=this.root):UiImage{return this.image(file,x,y,width,height,parent).fitting(.5,.5,'contain');}
   text(value:string,x:number,y:number,width=0,size=22,color='#f3deb0',parent=this.root):UiText{return new UiText(this.scene,parent,value,x,y,width,size,color);}
