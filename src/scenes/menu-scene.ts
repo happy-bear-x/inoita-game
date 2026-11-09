@@ -383,8 +383,8 @@ export class MenuScene extends Phaser.Scene {
       menuButton('home-start','开始游戏',416,457,369,124,()=>this.openSlots());
       menuButton('home-settings','环境设置',65,472,300,92,()=>{this.page='settings';this.render();});
       menuButton('home-challenge','挑战模式',835,472,300,92,()=>{},true);
-      // 右上角：logo 的这块是透明的，按钮不会压住标题；尺寸和环境设置一致，右边和上边各留 16 像素。
-      menuButton('home-changelog','更新日志',884,16,300,92,()=>this.openChangelog());
+      // 右上角：按钮贴住画面右上，右边和上边各留 8 像素，整块落在 logo 右侧的空白上。
+      menuButton('home-changelog','更新日志',982,8,210,64,()=>this.openChangelog());
       this.addVersion(view,texts);
     }else if(this.page==='cloud'){
       texts.push(...this.drawCloudPage(view));
