@@ -150,13 +150,19 @@ export function installGameDiagnostics(game: Phaser.Game, snapshot: () => unknow
     const styleStart = Number(entry.styleAndLayoutStart) || 0;
     const frameEnd = (Number(entry.startTime) || 0) + duration;
     const scripts = Array.isArray(entry.scripts) ? entry.scripts as Array<Record<string, unknown>> : [];
+    const renderStart = Number(entry.renderStart) || 0;
+    // invoker 说明这一帧是被什么触发的（pointerdown、timer、scroll…），
+    // pos 是脚本在源文件里的字符位置，配合 sourceURL 能定位到具体模块。
     reportTask('long-animation', {
       durationMs: Math.round(duration), blockingMs: Math.round(Number(entry.blockingDuration) || 0),
       styleMs: styleStart ? Math.round(frameEnd - styleStart) : null,
+      renderPhaseMs: renderStart ? Math.round(frameEnd - renderStart) : null,
+      invoker: String(entry.invoker ?? ''), invokerType: String(entry.invokerType ?? ''),
       scripts: scripts.slice(0, 4).map(script => ({
         ms: Math.round(Number(script.duration) || 0),
         fn: String(script.sourceFunctionName ?? ''),
         src: String(script.sourceURL ?? '').replace(globalThis.location?.origin ?? '', ''),
+        pos: Number(script.sourceCharPosition) || 0,
       })),
     });
   });
