@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import type { StoryDirector } from '../domain/story-director.ts';
+import { currentRefreshRate } from './frame-pacing.ts';
 
 interface DiagnosticCollector {
   record(kind: string, details: unknown, withSnapshot?: boolean): void;
@@ -40,14 +41,27 @@ function rendererFacts(game: Phaser.Game): RendererFacts {
   return facts;
 }
 
-/** 最近一小段 rAF 间隔的均值；与 actualFps 一起看，能区分「浏览器只给 30 次回调」和「回调来了但游戏跑得慢」。 */
-function averageFrameMs(loop: Phaser.Core.TimeStep): number {
-  const history = loop.deltaHistory;
-  const count = Math.min(history.length, loop.deltaSmoothingMax || history.length);
-  if (!count) return 0;
-  let total = 0;
-  for (let index = 0; index < count; index++) total += history[index] ?? 0;
-  return Math.round(total / count * 10) / 10;
+const WINDOW_SIZE = 120;
+
+/**
+ * 固定容量的间隔窗口，上报时才排序算分位数。
+ * Phaser 的 `deltaHistory` 会被平滑并夹到目标帧长，看不出真实抖动，所以自己记原始间隔。
+ */
+class FrameWindow {
+  private readonly values: number[] = [];
+  private cursor = 0;
+
+  push(value: number): void {
+    if (this.values.length < WINDOW_SIZE) this.values.push(value);
+    else { this.values[this.cursor] = value; this.cursor = (this.cursor + 1) % WINDOW_SIZE; }
+  }
+
+  percentile(ratio: number): number {
+    if (!this.values.length) return 0;
+    const sorted = this.values.slice().sort((a, b) => a - b);
+    const index = Math.min(sorted.length - 1, Math.max(0, Math.round(ratio * (sorted.length - 1))));
+    return Math.round(sorted[index] * 10) / 10;
+  }
 }
 
 /** 每次跳过只写一条轻量摘要；阶段时间都从点击时刻开始算。 */
@@ -72,7 +86,7 @@ export function installStorySkipDiagnostics(director: Pick<StoryDirector, 'onSki
  * 使用引擎事件观察帧阶段，不替换引擎的更新函数或异常处理。
  *
  * 每秒把「浏览器给了多少次 rAF」和「游戏真正交付了多少帧」分开记；
- * 低于 50 时最多每 15 秒上报一条 `perf-sample`，带渲染器、画布尺寸和最近帧间隔。
+ * 低于 50 时最多每 15 秒上报一条 `perf-sample`，带渲染器、画布尺寸和两套分位数。
  * 这样安卓上不用连 devtools 也能判断是限帧、rAF 被压到 30，还是 WebGL 回退。
  */
 export function installGameDiagnostics(game: Phaser.Game, snapshot: () => unknown): void {
@@ -81,15 +95,40 @@ export function installGameDiagnostics(game: Phaser.Game, snapshot: () => unknow
   let renderer: RendererFacts | undefined;
   const rendererInfo = (): RendererFacts => renderer ??= rendererFacts(game);
   let stepFps = 0, rafFps = 0, frames = 0, windowStart = performance.now(), lastSample = 0, announced = false;
-  const perf = (): Record<string, unknown> => ({ stepFps, rafFps, limit: game.loop.fpsLimit, frameMs: averageFrameMs(game.loop) });
+  const stepWindow = new FrameWindow(), rafWindow = new FrameWindow();
+  let lastStepAt = 0, lastRafAt = 0, rafHandle = 0, probing = true;
+  const perf = (): Record<string, unknown> => ({
+    stepFps, rafFps, limit: game.loop.fpsLimit, refreshHz: currentRefreshRate(),
+    stepP50: stepWindow.percentile(0.5), stepP95: stepWindow.percentile(0.95),
+    rafP50: rafWindow.percentile(0.5), rafP95: rafWindow.percentile(0.95),
+  });
   collector.setSnapshot(() => ({ ...(snapshot() as Record<string, unknown> | null ?? {}), renderer: rendererInfo(), perf: perf() }));
+  // 自己数 rAF：引擎的 actualFps 是每秒一个平滑值，看不出跳帧的分布。
+  const probeFrame = (time: number): void => {
+    if (!probing) return;
+    if (lastRafAt) {
+      const gap = time - lastRafAt;
+      if (gap > 0 && gap < 250) rafWindow.push(gap);
+    }
+    lastRafAt = time;
+    rafHandle = requestAnimationFrame(probeFrame);
+  };
+  rafHandle = requestAnimationFrame(probeFrame);
   const beforeUpdate = () => collector.markFrame('update');
   const beforeRender = () => collector.markFrame('render');
   const afterRender = () => {
     collector.markFrame('idle');
-    if (typeof document !== 'undefined' && document.hidden) { frames = 0; windowStart = performance.now(); return; }
+    const now = performance.now();
+    if (typeof document !== 'undefined' && document.hidden) {
+      frames = 0; windowStart = now; lastStepAt = 0; return;
+    }
+    if (lastStepAt) {
+      const gap = now - lastStepAt;
+      if (gap > 0 && gap < 1000) stepWindow.push(gap);
+    }
+    lastStepAt = now;
     frames += 1;
-    const now = performance.now(), elapsed = now - windowStart;
+    const elapsed = now - windowStart;
     if (elapsed < 1000) return;
     // 切后台、弹系统框或长时间停顿时，这段空档不是渲染慢；丢掉这一窗，别上报 0 帧。
     if (elapsed > 3000) { frames = 0; windowStart = now; return; }
@@ -104,7 +143,7 @@ export function installGameDiagnostics(game: Phaser.Game, snapshot: () => unknow
     if ((stepFps < 50 || rafFps < 50) && now - lastSample >= 15000) {
       lastSample = now;
       collector.record('perf-sample', {
-        stepFps, rafFps, limit: game.loop.fpsLimit, frameMs: averageFrameMs(game.loop),
+        ...perf(),
         canvas: [game.canvas.width, game.canvas.height],
         css: [game.canvas.clientWidth, game.canvas.clientHeight],
         dpr: globalThis.devicePixelRatio ?? 1,
@@ -116,6 +155,8 @@ export function installGameDiagnostics(game: Phaser.Game, snapshot: () => unknow
   game.events.on(Phaser.Core.Events.POST_STEP, beforeRender);
   game.events.on(Phaser.Core.Events.POST_RENDER, afterRender);
   game.events.once(Phaser.Core.Events.DESTROY, () => {
+    probing = false;
+    cancelAnimationFrame(rafHandle);
     game.events.off(Phaser.Core.Events.PRE_STEP, beforeUpdate);
     game.events.off(Phaser.Core.Events.POST_STEP, beforeRender);
     game.events.off(Phaser.Core.Events.POST_RENDER, afterRender);
