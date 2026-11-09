@@ -20,7 +20,7 @@ const quoteForShell = (value: string): string => (isWindows && /\s/.test(value) 
 const runCommand: Execute = (command, args, options) => {
   if (!isWindows) return spawnSync(command, args, options);
   // 参数拼进命令行再交给 shell，避免 shell + args 数组触发的 DEP0190 警告。
-  return spawnSync([command, ...args.map(quoteForShell)].join(' '), { ...options, shell: true });
+  return spawnSync([quoteForShell(command), ...args.map(quoteForShell)].join(' '), { ...options, shell: true });
 };
 
 function selectTests(args: string[], root: string): string[] {

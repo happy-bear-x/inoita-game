@@ -27,6 +27,10 @@ const sdk = path.resolve(process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROO
 const javaHome = resolveJavaHome();
 assertJava25(javaHome);
 const skipWeb = process.argv.includes('--skip-web');
+if (process.platform === 'win32') {
+  console.error('[apk] APK 打包目前只支持 Linux/macOS；Windows 请使用 WSL。');
+  process.exit(1);
+}
 
 const BUILD_TOOLS = '37.0.0';
 const PLATFORM = 'android-37.0';
@@ -38,7 +42,6 @@ const GRADLE_URL = `https://services.gradle.org/distributions/gradle-${GRADLE_VE
 /** 官方只放平台定制包，没有通用包：darwin 还分 arm64 和 x86_64。 */
 function cmdlineToolsPlatform() {
   if (process.platform === 'darwin') return process.arch === 'arm64' ? 'mac_arm64' : 'mac_x86_64';
-  if (process.platform === 'win32') return 'win';
   return 'linux';
 }
 

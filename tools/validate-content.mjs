@@ -2,7 +2,7 @@ import {parseCrafting,validateCrafting} from '../src/domain/crafting.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {parseStatusHud, parseCharacterStats,validateCharacterStats,validateItemSkills,parseItemCatalog,parseWardrobe,validateWardrobe,parseMenuPanels,validateMenuClasses,parseStoryClasses,parseWorld,parseMap,parseBattle,parseCampaign,parseStoryInterface,parseControlSkin,validateStoryItems,validateStoryPortraits,parseShops,validateShops,parseCompanions,validateCompanions,parseStoryDebugCatalog} from '../src/application/content-validation.ts';
+import {parseStatusHud, parseCharacterStats,validateCharacterStats,validateItemSkills,parseItemCatalog,parseWardrobe,validateWardrobe,parseMenuPanels,validateMenuClasses,parseStoryClasses,parseWorld,parseMap,parseBattle,parseCampaign,parseStoryInterface,parseControlSkin,validateStoryItems,validateStoryPortraits,parseShops,validateShops,parseCompanions,validateCompanions,parseStoryDebugCatalog,parseChangelog} from '../src/application/content-validation.ts';
 import {validateStoryDebug} from '../src/domain/story-debug.ts';
 import {contentDigest} from '../src/application/content-hash.ts';
 import {validateDebugCatalog} from '../src/debug/catalog-validation.ts';
@@ -107,7 +107,7 @@ export function validateContent(root=fileURLToPath(new URL('../public/',import.m
  validateCharacterStats(stats,items,battle);validateCompanions(companions,world,battle,stats,campaign);
  const menu=parseMenuPanels(read('content/menu-panels.json'));validateMenuClasses(menu,battle);
  const maps=new Map();
- const documents=[crafting,companions,parseStatusHud(read('content/status-hud.json')),items,shops,drops,springs,wardrobe,menu,world,battle,campaign,storyInterface,parseStoryClasses(read('content/story-classes.json')),parseControlSkin(read('content/control-skin.json')),audio];
+ const documents=[crafting,companions,parseStatusHud(read('content/status-hud.json')),items,shops,drops,springs,wardrobe,menu,world,battle,campaign,storyInterface,parseStoryClasses(read('content/story-classes.json')),parseControlSkin(read('content/control-skin.json')),parseChangelog(read('content/changelog.json')),audio];
  const ensure=(value,message)=>{if(!value)throw new Error(message);};
  // 地图要各自读一个文件，读进来后连同其它内容一起交给跨文件规则（src/application/content-relations.ts）。
  for(const reference of world.maps){const map=parseMap(read(reference.file));maps.set(map.id,map);documents.push(map);}
