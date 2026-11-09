@@ -58,27 +58,37 @@ export function fitViewport(options?: { keepSize?: boolean }): void {
 }
 
 /**
- * 画布位图相对 CSS 尺寸的渲染倍率上限。位图按设备像素比渲染时，每个 CSS 像素
- * 对应整数个位图像素，浏览器缩放到物理屏幕不再需要插值；倍率越高像素填充量按平方增长，
- * 2 倍已是 4 倍填充，再往上肉眼收益很小，留一档给低端机。
+ * 画布位图的像素上限：3840×2160（4K）。倍率按设备像素比取，但整张位图不能无限大：
+ * 桌面大窗口按 DPR 2~3 渲染会到千万像素级，填充率撑不住。
+ * 手机上可视区 CSS 尺寸小（约 800×360），原生 3 倍也只有 2400×1080，天然落在预算内。
  */
-export const MAX_RENDER_SCALE = 2;
+const MAX_BITMAP_PIXELS = 3840 * 2160;
 
-/** 画布渲染倍率：取设备像素比并夹在 `[1, MAX_RENDER_SCALE]`，非整数 DPR 按原值使用。 */
-export function renderScale(): number {
-  const ratio=Number(globalThis.devicePixelRatio);
-  return Math.min(MAX_RENDER_SCALE,Number.isFinite(ratio)&&ratio>0?Math.max(1,ratio):1);
+/** 倍率硬上限：多数设备的设备像素比不会超过 3。 */
+export const MAX_RENDER_SCALE = 3;
+
+/**
+ * 画布渲染倍率：尽量做到「一个设备像素一个位图像素」，即取设备像素比。
+ *
+ * 以前封顶 2 倍，在 DPR 3 的手机上等于位图仍被浏览器拉伸 1.5 倍——那一步是双线性插值，
+ * 地形和角色都会发糊，只有 DOM 文字是锐利的。现在按原生倍率渲染，只在像素预算不够时回退。
+ */
+export function renderScale(cssWidth:number,cssHeight:number,dpr=Number(globalThis.devicePixelRatio)):number {
+  const device=Number.isFinite(dpr)&&dpr>0?dpr:1;
+  const budget=Math.sqrt(MAX_BITMAP_PIXELS/Math.max(1,cssWidth*cssHeight));
+  return Math.max(1,Math.min(MAX_RENDER_SCALE,device,budget));
 }
 
 /**
- * 画布位图按设备像素比渲染（上限 `MAX_RENDER_SCALE`），CSS 尺寸仍是可视区尺寸。
+ * 画布位图按设备像素比渲染（像素预算内），CSS 尺寸仍是可视区尺寸。
  * 地图镜头由 `worldZoom` 按这个比例补偿，界面按 `scale.width / CSS 宽` 换算，
  * 两处都跟着同一比值走，逻辑坐标（960×640 参考尺寸）不用改。
  */
 export function configureCanvas(game:import('phaser').Game):void {
   const bounds=element('game-frame').getBoundingClientRect();
   const cssWidth=Math.max(1,Math.round(bounds.width)),cssHeight=Math.max(1,Math.round(bounds.height));
-  const width=Math.round(cssWidth*renderScale()),height=Math.round(cssHeight*renderScale());
+  const ratio=renderScale(cssWidth,cssHeight);
+  const width=Math.round(cssWidth*ratio),height=Math.round(cssHeight*ratio);
   const resized=game.scale.width!==width||game.scale.height!==height;
   if(resized)game.scale.resize(width,height);
   // Scale.NONE 在 zoom=1 时 resize 不更新 CSS 尺寸；新尺寸就绪后由 setZoom 同步。
@@ -100,10 +110,14 @@ const WORLD_ZOOM_SCALE = 3;
 
 /**
  * 地图镜头的缩放：世界倍率 × 画框内的等比缩放 × 画布位图与 CSS 像素的比例。
- * 位图按设备像素比渲染时比例为 2，镜头同步放大，视野大小不变；改动这里会整体改变地图视野。
+ * 位图按设备像素比渲染时比例跟着变，镜头同步放大，视野大小不变。
+ *
+ * 取整数倍：最近邻采样下 2.94 倍会让相邻像素块一边 3 设备像素、一边 2，
+ * 拼在一起像蒙了一层脏东西；贴到整数才能让每块像素宽度一致。视野差不到半档，肉眼无感。
  */
 export function worldZoom(scene:import('phaser').Scene):number {
   const bounds=scene.game.canvas.getBoundingClientRect();
   const fit=Math.min(bounds.width/GAME_WIDTH,bounds.height/GAME_HEIGHT);
-  return WORLD_ZOOM_SCALE*fit*scene.scale.width/Math.max(1,bounds.width);
+  const zoom=WORLD_ZOOM_SCALE*fit*scene.scale.width/Math.max(1,bounds.width);
+  return Math.max(1,Math.round(zoom));
 }

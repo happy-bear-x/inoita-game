@@ -106,7 +106,7 @@ test('Android landscape uses the visible top edge for both browser and packaged 
  }
 });
 
-test('canvas renders at the device pixel ratio capped at 2 and keeps its CSS size',()=>{
+test('canvas renders at the device pixel ratio within the bitmap budget and keeps its CSS size',()=>{
  const globals=globalThis as unknown as Record<string,unknown>;
  const original=['document','devicePixelRatio'].map(name=>[name,Object.getOwnPropertyDescriptor(globalThis,name)] as const);
  const bounds={width:844,height:390},style={width:'',height:'',imageRendering:''};
@@ -117,16 +117,17 @@ test('canvas renders at the device pixel ratio capped at 2 and keeps its CSS siz
  };
  try{
   globals.document={getElementById:()=>({getBoundingClientRect:()=>bounds})};
-  // DPR 3 的机型按 2 倍渲染：位图翻倍，CSS 尺寸不变，多缩放的那一次由 setZoom 写回后被改回来。
+  // DPR 3 的手机按原生 3 倍渲染：位图 = 设备像素，浏览器不再拉伸（拉伸那一步才是糊的来源）。
   globals.devicePixelRatio=3;
   const game={scale,canvas:{style}} as unknown as import('phaser').Game;
   configureCanvas(game);
-  assert.deepEqual([scale.width,scale.height,style.width,style.height],[1688,780,'844px','390px']);
+  assert.deepEqual([scale.width,scale.height,style.width,style.height],[2532,1170,'844px','390px']);
   assert.ok(scale.refreshes>0,'位图与 CSS 尺寸落定后重算 displayScale，指针换算才准');
   bounds.width=960;bounds.height=640;configureCanvas(game);
-  assert.deepEqual([scale.width,scale.height,style.width,style.height],[1920,1280,'960px','640px']);
+  assert.deepEqual([scale.width,scale.height,style.width,style.height],[2880,1920,'960px','640px']);
+  // 1280×720 的 3 倍正好是 4K 预算上限，仍然给足原生倍率。
   bounds.width=1280;bounds.height=720;configureCanvas(game);
-  assert.deepEqual([scale.width,scale.height,style.width,style.height],[2560,1440,'1280px','720px']);
+  assert.deepEqual([scale.width,scale.height,style.width,style.height],[3840,2160,'1280px','720px']);
   // DPR 1 的桌面按 CSS 尺寸渲染，与改动前完全一致。
   globals.devicePixelRatio=1;
   configureCanvas(game);
@@ -136,15 +137,20 @@ test('canvas renders at the device pixel ratio capped at 2 and keeps its CSS siz
  }
 });
 
-test('render scale follows the device pixel ratio between 1 and 2',()=>{
+test('render scale follows the device pixel ratio until the bitmap budget runs out',()=>{
  const original=Object.getOwnPropertyDescriptor(globalThis,'devicePixelRatio');
  const globals=globalThis as unknown as Record<string,unknown>;
  try{
-  globals.devicePixelRatio=1;assert.equal(renderScale(),1);
-  globals.devicePixelRatio=1.5;assert.equal(renderScale(),1.5);
-  globals.devicePixelRatio=2;assert.equal(renderScale(),2);
-  globals.devicePixelRatio=3;assert.equal(renderScale(),2,'上限 2 倍，像素填充量封顶 4 倍');
-  globals.devicePixelRatio=undefined;assert.equal(renderScale(),1,'读不到设备像素比时按 CSS 尺寸渲染');
+  globals.devicePixelRatio=1;assert.equal(renderScale(800,360),1);
+  globals.devicePixelRatio=1.5;assert.equal(renderScale(800,360),1.5);
+  globals.devicePixelRatio=2;assert.equal(renderScale(800,360),2);
+  // 手机可视区 CSS 尺寸小，3 倍也只有 2400×1080，仍在预算内。
+  globals.devicePixelRatio=3;assert.equal(renderScale(800,360),3,'手机上按原生像素渲染，不再被浏览器拉伸');
+  // 1920×1080 的 3 倍是 5760×3240，超出 4K 预算，退到 2 倍。
+  assert.equal(renderScale(1920,1080),2,'超出预算时回退，不让填充率失控');
+  assert.equal(renderScale(1280,720),3,'正好等于 4K 预算时仍按原生倍率');
+  globals.devicePixelRatio=4;assert.equal(renderScale(800,360),3,'倍率硬上限 3');
+  globals.devicePixelRatio=undefined;assert.equal(renderScale(800,360),1,'读不到设备像素比时按 CSS 尺寸渲染');
  }finally{
   if(original)Object.defineProperty(globalThis,'devicePixelRatio',original);else delete globals.devicePixelRatio;
  }
