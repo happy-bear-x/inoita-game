@@ -127,6 +127,8 @@ export class WorldScene extends Phaser.Scene {
   /** 本次进图的参数。 */
   options!: SceneOptions;
   characters: Character[] = [];
+  /** 有头顶任务图标的角色；每帧只更新这一小组，不扫全图。 */
+  private readonly questMarkerCharacters = new Set<Character>();
   /** 最近的交互对象，脚底离得最近且在有效距离内的那个。 */
   near: Character | null = null;
   /** 上一次 HUD 调和写入时的状态摘要；逐帧兜底调用时用它跳过无变化的重复写入。 */
@@ -226,7 +228,7 @@ export class WorldScene extends Phaser.Scene {
     this.request.abort(); this.request = new AbortController();
     this.mapLayers?.destroy(); this.mapLayers = undefined;
     this.performing = false; this.player = undefined; this.noclipVisual = undefined; this.map = undefined;
-    this.options = options; this.characters = []; this.near = null; this.loadingWorld = true; this.destroyed = false;
+    this.options = options; this.characters = []; this.questMarkerCharacters?.clear(); this.near = null; this.loadingWorld = true; this.destroyed = false;
     this.stageOccluded = false;
     this.movement = undefined; this.lastPlayerPosition = undefined;this.combat=undefined;this.checkpointPending=!options.checkpoint;this.checkpointWaitLogged=false;
     this.shortcutPageCache=undefined;this.shortcutTick=undefined;
@@ -253,11 +255,12 @@ export class WorldScene extends Phaser.Scene {
       this.destroyed = true; this.unsubscribe?.(); this.scale.off('resize', this.resizeView, this);
       this.events.off(Phaser.Scenes.Events.POST_UPDATE, this.afterMovement, this);
       this.combat?.destroy();this.combat=undefined;
+      for(const character of this.characters)this.removeQuestMarker(character);
+      this.questMarkerCharacters?.clear();
       this.mapAssets?.release();this.mapAssets=undefined;
       for(const lease of this.storyEntityAssets)lease.release();this.storyEntityAssets.length=0;
       this.groundLootView?.destroy();this.groundLootView=undefined;
       this.pickupMessages?.destroy();this.pickupMessages=undefined;this.pickupRecipients.clear();
-      for(const character of this.characters)this.removeQuestMarker(character);
       this.movement?.destroy(); this.movement = undefined;
       this.mapLayers?.destroy(); this.mapLayers = undefined;
       this.stick?.destroy(); this.stick = undefined;
@@ -346,6 +349,7 @@ export class WorldScene extends Phaser.Scene {
     const paused = occluded || !this.canCombatControl;
     this.pickupMessages?.setPaused(paused);
     this.groundLootView?.setPaused(paused);
+    this.updateQuestMarkerPositions();
   }
 
   /** 以舞台自己的遮罩状态为准；舞台关闭或重建后这里会把遮挡解除。 */
@@ -922,11 +926,26 @@ export class WorldScene extends Phaser.Scene {
   /** 任务标记按需创建：任务可能在进图后才变为可接取，不能只在建角色时判断一次。 */
   private createQuestMarker(character: Character): void {
     if (character.marker) return;
-    character.marker = new QuestMarker(this, character);
+    character.marker = new QuestMarker(this);
+    this.questMarkerCharacters?.add(character);
+    this.syncQuestMarker(character);
   }
   private removeQuestMarker(character: Character): void {
+    this.questMarkerCharacters?.delete(character);
     character.marker?.destroy();
     character.marker = null;
+  }
+  /** 只同步有标记的角色：位置、透明度和显隐都跟着角色走，图标本身在世界高深度层。 */
+  private syncQuestMarker(character: Character): void {
+    const marker = character.marker; if (!marker) return;
+    marker.retryTexture();
+    marker.position(character.container.x, character.container.y);
+    marker.setAlpha(character.container.alpha);
+    marker.setVisible(character.container.visible && !this.stageOccluded);
+  }
+  private updateQuestMarkerPositions(): void {
+    if (!this.questMarkerCharacters?.size) return;
+    for (const character of this.questMarkerCharacters) this.syncQuestMarker(character);
   }
   setClip(character: Character, name: ClipName): void {
     setCharacterClip(this, character, name);
@@ -1106,9 +1125,11 @@ export class WorldScene extends Phaser.Scene {
       // 任务可能在进图后才变为可接取：标记缺失时按当前任务状态补建，而不是只在建角色时判断一次。
       if (character.entity.id !== 'player' && !character.marker && status && marked)
         this.createQuestMarker(character);
-      // 只换图：位置、镜头缩放、演出隐藏和舞台遮挡都由人物容器带过去。
-      if (character.marker)
+      // 只换图和同步可见性；位置由 afterMovement 只对有标记的角色更新。
+      if (character.marker) {
         character.marker.setFile(marked && status ? this.app.storyInterface.assets[`minimap-${status}`] : undefined);
+        this.syncQuestMarker(character);
+      }
       if (character.entity.id !== 'player' && character.container.visible && marked
         && status && status !== 'locked' && status !== 'completed')
         taskMarkers.push({id: character.entity.id, x: character.container.x, y: character.container.y, status});
@@ -2078,6 +2099,7 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     if (length > 0 && this.combat)this.combat.facing = Math.abs(axis.x) > Math.abs(axis.y) ? axis.x < 0 ? 'west' : 'east' : axis.y < 0 ? 'north' : 'south';
   }
   private afterMovement(): void {
+    this.updateQuestMarkerPositions();
     if (!this.player || !this.movement) return;
     const controlled=this.combat?.controlledVisual??this.player;
     const pos = this.movement.position(controlled), previous = this.lastPlayerPosition ?? pos;

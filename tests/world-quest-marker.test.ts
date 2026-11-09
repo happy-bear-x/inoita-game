@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
 import test from 'node:test';
+import type Phaser from 'phaser';
 
 const hook = registerHooks({resolve(specifier, context, next) {
   return specifier === 'phaser'
@@ -8,13 +9,36 @@ const hook = registerHooks({resolve(specifier, context, next) {
     : next(specifier, context);
 }});
 const { WorldScene } = await import('../src/scenes/world-scene.ts');
+const { QuestMarker, QUEST_MARKER_DEPTH } = await import('../src/rendering/quest-marker.ts');
 hook.deregister();
 const invoke = (host: object, name: string, ...args: unknown[]) => Reflect.get(WorldScene.prototype, name).call(host, ...args);
 
 /** 头顶标记只暴露换图和销毁两件事；位置、缩放和显隐由人物容器带过去。 */
 interface Marker {
   setFile(file: string | undefined): void;
+  retryTexture(): void;
+  position(x: number, y: number): void;
+  setAlpha(alpha: number): void;
+  setVisible(visible: boolean): void;
   destroy(): void;
+}
+
+function markerScene(textures: Record<string, boolean> = {}) {
+  const image = {
+    x: 0, y: 0, depth: 0, visible: false, alpha: 1, destroyed: false, texture: { key: '' },
+    setName() { return image; },
+    setDepth(value: number) { image.depth = value; return image; },
+    setVisible(value: boolean) { image.visible = value; return image; },
+    setPosition(x: number, y: number) { image.x = x; image.y = y; return image; },
+    setAlpha(value: number) { image.alpha = value; return image; },
+    setTexture(key: string) { image.texture = { key }; return image; },
+    destroy() { image.destroyed = true; },
+  };
+  const scene = {
+    add: { image: () => image },
+    textures: { exists: (file: string) => !!textures[file] },
+  };
+  return { image, scene: scene as unknown as Phaser.Scene };
 }
 
 test('a quest marker is created when a quest becomes available after the map is already loaded', () => {
@@ -49,7 +73,7 @@ test('a quest marker is created when a quest becomes available after the map is 
     movement: { setEnabled() {} },
     createQuestMarker(target: typeof character) {
       created.push(target);
-      target.marker = { setFile(file) { markerFile = file; }, destroy() {} };
+      target.marker = { setFile(file) { markerFile = file; }, retryTexture() {}, position() {}, setAlpha() {}, setVisible() {}, destroy() {} };
     },
   });
 
@@ -77,7 +101,7 @@ test('the minimap receives quest characters on the first refresh after it is cre
     visible: true, x: 64, y: 96, children: [] as unknown[],
     setVisible(value: boolean) { container.visible = value; },
   };
-  const marker: Marker = { setFile() {}, destroy() {} };
+  const marker: Marker = { setFile() {}, retryTexture() {}, position() {}, setAlpha() {}, setVisible() {}, destroy() {} };
   const character = {
     entity: { id: 'npc-1', actor: 'elder', characterId: 'npc-1' },
     actor: { id: 'elder' }, container, marker,
@@ -138,7 +162,7 @@ test('hidden ready deliveries do not light the overhead marker or the minimap', 
     movement: { setEnabled() {} },
     createQuestMarker(target: typeof character) {
       created.push(target);
-      target.marker = { setFile(file) { markerFile = file; }, destroy() {} };
+      target.marker = { setFile(file) { markerFile = file; }, retryTexture() {}, position() {}, setAlpha() {}, setVisible() {}, destroy() {} };
     },
   });
 
@@ -151,4 +175,63 @@ test('hidden ready deliveries do not light the overhead marker or the minimap', 
   invoke(host, 'refreshState');
   assert.equal(markerFile, undefined, '隐藏待交付不保留头顶图标');
   assert.deepEqual(taskLists.at(-1), [], '小地图也不显示隐藏待交付');
+});
+
+test('quest markers live in their own high-depth layer and follow the character', () => {
+  const f = markerScene({ 'available.png': true });
+  const marker = new QuestMarker(f.scene);
+  assert.equal(marker.depth, QUEST_MARKER_DEPTH);
+  assert.ok(marker.depth > 10000, '图标必须画在树冠之上');
+  marker.position(120, 80);
+  assert.equal(f.image.x, 120);
+  assert.equal(f.image.y, 30, '图标中心停在脚点上方 50 像素');
+  marker.setVisible(true);
+  marker.setFile('available.png');
+  assert.equal(f.image.texture.key, 'available.png');
+  assert.equal(f.image.visible, true);
+  marker.setAlpha(.4);
+  assert.equal(f.image.alpha, .4);
+  marker.setVisible(false);
+  assert.equal(f.image.visible, false);
+});
+
+test('a marker whose texture arrives later becomes visible without a quest state change', () => {
+  const textures: Record<string, boolean> = {};
+  const f = markerScene(textures);
+  const marker = new QuestMarker(f.scene);
+  marker.setVisible(true);
+  marker.setFile('ready.png');
+  assert.equal(f.image.visible, false, '纹理未到先隐藏');
+  textures['ready.png'] = true;
+  marker.retryTexture();
+  assert.equal(f.image.texture.key, 'ready.png');
+  assert.equal(f.image.visible, true);
+});
+
+test('creating a marker does not add it to the character container', () => {
+  const f = markerScene({ 'available.png': true });
+  const host = Object.assign(Object.create(WorldScene.prototype), {
+    add: f.scene.add, textures: f.scene.textures,
+    questMarkerCharacters: new Set(), stageOccluded: false,
+  });
+  const container = {
+    x: 120, y: 80, visible: true, alpha: 1, children: [] as unknown[],
+  };
+  const character = { container, marker: undefined as Marker | undefined };
+  invoke(host, 'createQuestMarker', character);
+  assert.equal(container.children.length, 0, '图标不再挂进人物容器');
+  assert.equal(f.image.depth, QUEST_MARKER_DEPTH);
+  assert.equal(f.image.x, 120);
+  assert.equal(f.image.y, 30);
+  assert.ok(host.questMarkerCharacters.has(character));
+  container.x = 140; container.alpha = .5;
+  invoke(host, 'updateQuestMarkerPositions');
+  assert.equal(f.image.x, 140);
+  assert.equal(f.image.alpha, .5);
+  host.stageOccluded = true;
+  invoke(host, 'updateQuestMarkerPositions');
+  assert.equal(f.image.visible, false, '舞台遮挡时隐藏');
+  invoke(host, 'removeQuestMarker', character);
+  assert.equal(host.questMarkerCharacters.has(character), false);
+  assert.equal(f.image.destroyed, true);
 });
