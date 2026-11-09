@@ -340,6 +340,15 @@ export class FriendlySummonController {
         if(frozen.canStand(point)&&(kind==='follow'||attackDistance(point,actorBounds,destination,bounds)<=range)){landing=point;break;}
       }
     }
+    // 落点本身直线可达时不创建搜索任务；需要绕墙或落点被挡时才走 A*。
+    if(landing&&this.canMove(actor)&&canTraverse(actor.position,landing,frozen.canStand)){
+      this.search=undefined;this.nextSearchAt=this.clock+FRIENDLY_SUMMON_AI.decisionMs;
+      if(kind==='follow'){
+        this.path=[{...landing}];this.pathTargetId=target.id;this.pathDestination={...destination};this.followDestination={...destination};
+        this.followUnreachable=false;return;
+      }
+      this.readyChoice={targetId:target.id,destination:{...destination},range,path:[{...landing}]};return;
+    }
     const isGoal=landing
       ?(point:Point)=>frozen.canStand(point)&&distance(point,landing!)<=PATH_GRID_SIZE&&canTraverse(point,landing!,frozen.canStand)
       :kind==='target'?(point:Point)=>frozen.canStand(point)&&attackDistance(point,actorBounds,destination,bounds)<=range

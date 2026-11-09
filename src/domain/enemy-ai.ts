@@ -108,6 +108,8 @@ export class EnemyController {
   private search?:{task:PathSearch;target?:Combatant;targetId?:string;destination:Point;range:number;isGoal:(point:Point)=>boolean;
     canStand:(point:Point)=>boolean;straight?:{fromX:number;fromY:number;toX:number;toY:number;walkable:boolean}};
   private heldSearch?:{task:PathSearch;origin:Point;targetId:string;range:number;reached:Map<string,Point[]>;witness?:Point;complete:boolean;retryAt:number};
+  /** 直线追击缓存：复用这次规划捕获的占位快照，端点不变就不重复扫线。 */
+  private directView?:{canStand:(point:Point)=>boolean;fromX:number;fromY:number;toX:number;toY:number;walkable:boolean};
   private readonly spentOnce=new Set<string>();
   private get mapWide():boolean{return this.behavior.engagement==='map-wide';}
 
@@ -215,13 +217,13 @@ export class EnemyController {
     this.state=this.combat?.actionState()==='attacking'?'attacking':'idle';
   }
   disable():void {
-    this.heldSearch=undefined;
+    this.heldSearch=undefined;this.directView=undefined;
     this.combat?.cancel(true,!this.port.threat);
     this.path=[];this.destination=undefined;this.search=undefined;this.progressPosition=undefined;this.wanderDestination=undefined;this.idleElapsed=0;this.port.stop();
     if(this.state!=='returning')this.state=this.targetId?'chasing':'idle';
   }
   cancel():void{
-    this.heldSearch=undefined;
+    this.heldSearch=undefined;this.directView=undefined;
     this.combat?.cancel(true);this.state='idle';this.targetId=undefined;this.pendingReturn=false;this.threatCombatActive=false;
     this.path=[];this.destination=undefined;this.search=undefined;this.progressPosition=undefined;this.accumulator=0;this.wanderDestination=undefined;this.idleElapsed=0;this.port.stop();
   }
@@ -386,13 +388,23 @@ export class EnemyController {
     if(!this.progressPosition||Math.hypot(actor.position.x-this.progressPosition.x,actor.position.y-this.progressPosition.y)>=ARRIVAL_DISTANCE_PX){
       this.progressPosition={...actor.position};this.lastProgressAt=this.clock;
     }
-    const stalled=this.path.length>0&&this.clock-this.lastProgressAt>=REPATH_INTERVAL_MS;
+    const stalled=(this.path.length>0||this.directView!==undefined)&&this.clock-this.lastProgressAt>=REPATH_INTERVAL_MS;
     const moved=!this.destination||targetDistance(this.destination,destination)>=PATH_GRID_SIZE||range!==this.destinationRange;
     const blocked=this.path.length>0&&!canTraverse(actor.position,this.path[0],point=>this.port.canStand(point));
     // 目标换了（或从追击切回回家）就丢弃旧搜索，避免把上一条路线接回来。
     if(this.search&&this.search.targetId!==target?.id)this.search=undefined;
+    // 直线能走到目标时不必再算 A*：移动交给物理层，卡住或目标绕到墙后再走搜索。
+    if(this.directView&&!this.search){
+      if(!stalled&&this.directWalkable(actor,this.directGoal(actor,destination,target),this.directView.canStand)){
+        this.path=[];this.port.moveToward(destination);return true;
+      }
+      this.directView=undefined;
+    }
     if(this.search)this.advanceSearch(actor);
-    else if(this.clock>=this.nextPathAt&&(moved||blocked||stalled||!this.path.length))this.beginSearch(actor,destination,target,range,stalled);
+    else if(this.clock>=this.nextPathAt&&(moved||blocked||stalled||!this.path.length)){
+      this.beginSearch(actor,destination,target,range,stalled);
+      if(this.directView){this.port.moveToward(destination);return true;}
+    }
     // 搜索还没出结果、手上也没有旧路线时：直线走得通就先朝目标走，被墙挡住才原地等，
     // 免得大块头 Boss 贴着墙磨、或者和迟到的路径打架。
     if(follow&&this.search&&!this.path.length){
@@ -490,8 +502,28 @@ export class EnemyController {
     this.nextPathAt=this.clock+REPATH_INTERVAL_MS;this.destination={...destination};this.destinationRange=range;
     if(stalled)this.lastProgressAt=this.clock;
     const query=this.searchQuery(actor,destination,target,range);
+    // 直线可走时不创建搜索任务，下次端点变化再用同一份快照复核。
+    if(!stalled&&this.directWalkable(actor,this.directGoal(actor,destination,target),query.canStand)){
+      this.search=undefined;this.path=[];this.nextPathAt=this.clock;this.port.moveToward(destination);return;
+    }
+    this.directView=undefined;
     this.search={task:createPathSearch(actor.position,query),target,targetId:target?.id,destination:{...destination},range,isGoal:query.isGoal,canStand:query.canStand};
     this.advanceSearch(actor);
+  }
+  private directWalkable(actor:Combatant,destination:Point,canStand:(point:Point)=>boolean):boolean{
+    const cached=this.directView;
+    if(cached&&cached.fromX===actor.position.x&&cached.fromY===actor.position.y&&cached.toX===destination.x&&cached.toY===destination.y)return cached.walkable;
+    const walkable=canTraverse(actor.position,destination,canStand);
+    this.directView={canStand,fromX:actor.position.x,fromY:actor.position.y,toX:destination.x,toY:destination.y,walkable};
+    return walkable;
+  }
+  /** 直线检查停在目标身体前，避免把目标自己的占位当成墙。 */
+  private directGoal(actor:Combatant,destination:Point,target?:Combatant):Point{
+    if(!target)return destination;
+    const dx=destination.x-actor.position.x,dy=destination.y-actor.position.y,length=Math.hypot(dx,dy);
+    const stop=Math.max(8,Math.hypot(target.bounds.width,target.bounds.height)/2+8);
+    const remaining=length-stop;
+    return remaining<=0?{...actor.position}:{x:actor.position.x+dx/length*remaining,y:actor.position.y+dy/length*remaining};
   }
   private advanceSearch(actor:Combatant):void{
     const search=this.search;if(!search)return;

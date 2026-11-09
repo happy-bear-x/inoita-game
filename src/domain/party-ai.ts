@@ -457,12 +457,30 @@ export class PartyController {
     else if(this.clock>=this.nextPathAt&&(!this.destination
       ||targetDistance(this.destination,destination)>=PARTY_REPATH_DISTANCE_PX
       ||!this.path.length||!this.nextWaypoint())){
-      const granted=this.port.pathBudget?.take(this.id,PARTY_SEARCH_SLICE)??STANDALONE_SEARCH_CAP;
-      if(granted>0)this.beginSearch(actor,destination,range,granted,target);
-      else this.nextPathAt=this.clock+LOGIC_FRAME_MS;
+      if(!this.directPursuit(actor,destination,target)){
+        const granted=this.port.pathBudget?.take(this.id,PARTY_SEARCH_SLICE)??STANDALONE_SEARCH_CAP;
+        if(granted>0)this.beginSearch(actor,destination,range,granted,target);
+        else this.nextPathAt=this.clock+LOGIC_FRAME_MS;
+      }
     }
     const next=this.nextWaypoint();
     if(next)this.port.followPath(this.nextWaypoint);else this.port.stop();
+  }
+  /** 直线能到落点时不领寻路预算；需要绕到侧翼或前方有墙时仍走 A*。 */
+  private directPursuit(actor:Combatant,destination:Point,target?:Combatant):boolean {
+    if(target&&this.combatAnchor(actor,target))return false;
+    if(!canTraverse(actor.position,this.directGoal(actor,destination,target),point=>this.port.canStand(point)))return false;
+    this.path=[{...destination}];this.destination={...destination};this.flanking=false;
+    this.nextPathAt=this.clock+PARTY_REPATH_INTERVAL_MS;
+    return true;
+  }
+  /** 直线检查停在目标身体前，避免把目标自己的占位当成墙。 */
+  private directGoal(actor:Combatant,destination:Point,target?:Combatant):Point {
+    if(!target)return destination;
+    const dx=destination.x-actor.position.x,dy=destination.y-actor.position.y,length=Math.hypot(dx,dy);
+    const stop=Math.max(8,Math.hypot(target.bounds.width,target.bounds.height)/2+8);
+    const remaining=length-stop;
+    return remaining<=0?{...actor.position}:{x:actor.position.x+dx/length*remaining,y:actor.position.y+dy/length*remaining};
   }
   private beginSearch(actor:Combatant,destination:Point,range:number,granted:number,
     target?:Combatant,flank=true):void {

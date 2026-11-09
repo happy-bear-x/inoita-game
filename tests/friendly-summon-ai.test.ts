@@ -325,7 +325,7 @@ test('beasts distinguish the 35 percent low-health ally threshold from ordinary 
 });
 
 test('friendly summons spend the shared path budget instead of stepping outside it',()=>{
-  const run=setup();run.actor.position={x:96,y:0};run.setPathBudget(()=>0);
+  const run=setup();run.actor.position={x:96,y:0};run.setBlocked(()=>true);run.setPathBudget(()=>0);
   run.advance(20,false);
   assert.ok(run.budgetRequests()>0,'召唤物应向共享预算领取节点');
   assert.equal(run.next(),undefined,'拿不到预算时不产生路线推进');

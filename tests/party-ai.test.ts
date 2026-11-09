@@ -224,6 +224,7 @@ test('no party skills fire outside combat',()=>{
 
 test('a follow search yields when the shared budget is exhausted and retries later',()=>{
   const run=setup();let grants=0;
+  run.port.canStand=()=>false;
   run.port.pathBudget={take:()=>{grants++;return 0;}};
   run.ai.update(60);
   assert.ok(grants>0);assert.equal(run.boundsCalls(),0);
@@ -234,13 +235,13 @@ test('a follow search yields when the shared budget is exhausted and retries lat
 test('a follow search resumes across frames instead of restarting',()=>{
   const run=setup();
   run.port.pathBudget={take:(_owner,limit)=>Math.min(2,limit)};
-  let snapshots=0, blocked:Point|undefined;
+  let snapshots=0, blocked:Point|undefined={x:40,y:40};
   const free=run.port.canStand;
   run.port.navigationSnapshot=()=>{
     snapshots++;
     return {bounds:run.port.navigationBounds(),canStand:free};
   };
-  run.port.canStand=point=>free(point)&&!(blocked&&point.x===blocked.x&&point.y===blocked.y);
+  run.port.canStand=point=>free(point)&&!(blocked&&Math.abs(point.x-blocked.x)<8&&Math.abs(point.y-blocked.y)<8);
   run.ai.update(60);
   assert.equal(run.boundsCalls(),1);assert.equal(run.waypoint(),undefined);
   for(let frame=0;frame<300&&!run.waypoint();frame++)run.ai.update(60);

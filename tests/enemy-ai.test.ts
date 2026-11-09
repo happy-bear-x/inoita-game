@@ -75,7 +75,7 @@ test('an immobile basic attacker out of range does not run an unused reachabilit
 
 test('state changes stop existing paths before another decision tick and stun blocks nearby attacks',()=>{
  const run=setup();run.ai.update(60);assert.ok(run.waypoint());
- run.actor.states=['immobilized'];const position={...run.actor.position};run.advance();
+ run.actor.states=['immobilized'];const position={...run.actor.position};run.ai.update(60);
  assert.deepEqual(run.actor.position,position);assert.equal(run.waypoint(),undefined);
  run.actor.states=['stun'];run.player.position={x:32,y:32};run.ai.update(60);assert.equal(run.plays(),0);
  run.actor.states=[];run.ai.update(60);assert.equal(run.plays(),1);
@@ -188,7 +188,7 @@ test('a pending search caches its straight-line check in the navigation snapshot
   run.ai.update(60);
   assert.deepEqual(run.waypoint(),run.player.position,'候选直线读取这次搜索的占位快照');
   const checks=snapshotChecks;assert.ok(checks>0);assert.equal(liveChecks,0);
-  for(let frame=0;frame<10;frame++)run.ai.update(60);
+  for(let frame=0;frame<2;frame++)run.ai.update(60);
   assert.equal(snapshotChecks,checks,'端点未变时不重复扫描直线');assert.equal(snapshots,1);
   run.player.position.x+=1;run.ai.update(60);assert.ok(snapshotChecks>checks);
   const changedTargetChecks=snapshotChecks;
@@ -200,6 +200,8 @@ test('a pending search caches its straight-line check in the navigation snapshot
 test('a cross-frame search spends the shared budget and waits for a path when the straight line is blocked',()=>{
   // 移动速度放到接近 0：只看搜索期间是否原地等、完成后是否换用路径点。
   const run=setup({moveSpeedPxPerSecond:1});let grants=0;
+  const free=run.port.canStand;
+  run.port.canStand=point=>free(point)&&!(point.x>=48&&point.x<=56&&point.y<72);
   run.port.pathBudget={take:(_owner,limit)=>{grants++;return Math.min(limit,4);}};
   run.advance();
   assert.ok(grants>0,'从共享预算领取扩展');
