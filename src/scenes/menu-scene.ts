@@ -82,6 +82,8 @@ export class MenuScene extends Phaser.Scene {
   private changelogError='';
   /** 标题图跟着场景实例活到销毁：回标题、暂停、重开都不再重新加载。 */
   private readonly titleAssets:SceneUiAssets;
+  /** 构造函数里取不到 this.events（要等场景系统注入），销毁监听改到 create 里只挂一次。 */
+  private titleAssetsBound=false;
   private page:'home'|'slots'|'settings'|'cloud'='home';
   /** 存档槽立绘的租约：每次进存档页按槽里的路径取，离开页面或关场景时释放。 */
   private slotPortraits?:AssetLease;
@@ -117,8 +119,9 @@ export class MenuScene extends Phaser.Scene {
     if(this.surface&&this.sys.isActive())this.render();
   }
   private readonly hideCredentials=():void=>{this.credentials?.hide();};
-  constructor(app:MenuContext){super(SCENE_KEYS.menu);this.app=app;this.titleAssets=new SceneUiAssets(this);this.events.once(Phaser.Scenes.Events.DESTROY,()=>this.titleAssets.releaseResident());}
+  constructor(app:MenuContext){super(SCENE_KEYS.menu);this.app=app;this.titleAssets=new SceneUiAssets(this);}
   create(options:{page?:'home'|'slots'}={}):void {
+    if(!this.titleAssetsBound){this.titleAssetsBound=true;this.events.once(Phaser.Scenes.Events.DESTROY,()=>this.titleAssets.releaseResident());}
     this.page='home';this.app.ui.setMode('menu');this.app.ui.loading('正在准备主菜单…');
     const controller=new AbortController();
     this.events.once('shutdown',()=>{this.unregisterInput?.();this.unregisterInput=undefined;controller.abort();this.cancelCloudRequest();this.settleConfirm(false,false);this.slotRequest?.abort();this.changelogRequest?.abort();this.changelogRequest=undefined;this.changelogOpen=false;this.app.releaseChangelog?.();this.prompt?.close();this.passwordPrompt?.close();this.credentials?.destroy();this.credentials=undefined;this.clearModalLabels();this.menuText?.destroy();this.menuText=undefined;this.domSpecs=[];this.slotsScroll=undefined;this.settingsList=undefined;this.cloudScroll=undefined;this.surface?.destroy();this.surface=undefined;this.modal?.destroy();this.modal=undefined;this.popupMask?.destroy();this.popupMask=undefined;this.slotPortraits?.release();this.slotPortraits=undefined;this.events.off(Phaser.Scenes.Events.RESUME,this.renderOnResume,this);this.events.off(Phaser.Scenes.Events.PAUSE,this.hideCredentials);this.scale.off('resize',this.layout,this);});
