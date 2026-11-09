@@ -19,27 +19,71 @@ export function planCharge(caster: Combatant, target: Combatant, charge: SkillCh
   const size=charge.gridSizePx;
   const start={x:Math.floor(caster.position.x/size),y:Math.floor(caster.position.y/size)};
   const goal={x:Math.floor(target.position.x/size),y:Math.floor(target.position.y/size)};
-  const distance=(p:Point)=>Math.abs(p.x-goal.x)+Math.abs(p.y-goal.y);
-  const key=(p:Point)=>`${p.x},${p.y}`;
-  const open=[{...start,cost:0}], costs=new Map([[key(start),0]]);
+  const distance=(node:{x:number;y:number})=>Math.abs(node.x-goal.x)+Math.abs(node.y-goal.y);
+  // 格子编号用整数，避免每个节点拼字符串；偏移量远大于地图尺寸，不会撞键。
+  const key=(x:number,y:number)=>(y+1_000_000)*2_000_001+(x+1_000_000);
+  const standable=new Map<number,boolean>();
+  const reachable=new Map<number,boolean>();
+  const canStandCell=(x:number,y:number)=>{
+    const cell=key(x,y);
+    let value=standable.get(cell);
+    if(value===undefined){value=canStand({x:x*size,y:y*size});standable.set(cell,value);}
+    return value;
+  };
+  const canReachCell=(x:number,y:number)=>{
+    const cell=key(x,y);
+    let value=reachable.get(cell);
+    if(value===undefined){value=canReach({x:x*size,y:y*size});reachable.set(cell,value);}
+    return value;
+  };
+  interface Node {x:number;y:number;cost:number;order:number}
+  const open:Node[]=[{...start,cost:0,order:0}];
+  let nextOrder=1;
+  const compare=(first:Node,second:Node)=>first.cost+distance(first)-(second.cost+distance(second))||first.order-second.order;
+  const push=(node:Node)=>{
+    open.push(node);
+    let index=open.length-1;
+    while(index>0){
+      const parent=(index-1)>>1;
+      if(compare(open[parent]!,node)<=0)break;
+      open[index]=open[parent]!;index=parent;
+    }
+    open[index]=node;
+  };
+  const pop=()=>{
+    const first=open[0]!;
+    const last=open.pop()!;
+    if(open.length){
+      let index=0;
+      while(index*2+1<open.length){
+        let child=index*2+1;
+        if(child+1<open.length&&compare(open[child+1]!,open[child]!)<0)child++;
+        if(compare(last,open[child]!)<=0)break;
+        open[index]=open[child]!;index=child;
+      }
+      open[index]=last;
+    }
+    return first;
+  };
+  const costs=new Map<number,number>([[key(start.x,start.y),0]]);
   let verifyAttempts=0;
   for(let visited=0;open.length&&visited<MAX_PATH_SEARCH_STEPS;visited++){
-    open.sort((a,b)=>(a.cost+distance(a))-(b.cost+distance(b)));
-    const current=open.shift()!;
-    if(current.cost!==costs.get(key(current)))continue;
+    const current=pop();
+    if(current.cost!==costs.get(key(current.x,current.y)))continue;
     const destination={x:current.x*size,y:current.y*size};
-    if(distance(current)<=charge.stoppingDistanceUnits&&canStand(destination)&&canReach(destination)){
+    if(distance(current)<=charge.stoppingDistanceUnits&&canStandCell(current.x,current.y)&&canReachCell(current.x,current.y)){
       // 搜索中即时复核：通过就用这个点，不通过就继续找下一个。
       if(verifyAttempts>=MAX_VERIFY_ATTEMPTS)break;
       verifyAttempts++;
       if(verify(destination))return {destination,close:false};
     }
-    for(const [dx,dy] of [[-1,0],[0,-1],[0,1],[1,0]]){
-      const next={x:current.x+dx,y:current.y+dy,cost:current.cost+1};
-      if(next.cost>=(costs.get(key(next))??Infinity))continue;
-      const point={x:next.x*size,y:next.y*size};
-      if(!canStand(point)||!canReach(point))continue;
-      costs.set(key(next),next.cost);open.push(next);
+    for(const [dx,dy] of [[-1,0],[0,-1],[0,1],[1,0]] as const){
+      const nextX=current.x+dx,nextY=current.y+dy,cost=current.cost+1;
+      const cell=key(nextX,nextY);
+      if(cost>=(costs.get(cell)??Infinity))continue;
+      if(!canStandCell(nextX,nextY)||!canReachCell(nextX,nextY))continue;
+      costs.set(cell,cost);
+      push({x:nextX,y:nextY,cost,order:nextOrder++});
     }
   }
   return forwardFallback(caster,target,charge,canStand);
