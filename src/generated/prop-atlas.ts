@@ -3063,5 +3063,5 @@ export const PROP_ATLAS_BY_KEY: Readonly<Record<string, { key: string; frame: st
     "frame": "assets/props/scenery-24a4db00.png"
   }
 };
-export const PROP_ATLAS_SOURCE_DIGEST = "5749b0598182affc38f72cd0c1da3890521cff3b5de2876d38e18781c4ec694c";
+export const PROP_ATLAS_SOURCE_DIGEST = "7a301e52d69ad1102000e7ee12c091924a7b2f21e7f388b29d1d66316fed1148";
 export const PROP_ATLAS_LAYOUT_DIGEST = "209efec4b126e424";

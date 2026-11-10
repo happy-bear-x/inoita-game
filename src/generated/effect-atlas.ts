@@ -29895,4 +29895,4 @@ export const EFFECT_ATLAS_BY_FILE: Readonly<Record<string, readonly EffectAtlasF
     }
   ]
 };
-export const EFFECT_ATLAS_SOURCE_DIGEST = "7b1134a6f055d59d472f3fd5a1afa5c33ef27ceec88f6ee5eef2bf36252e0700";
+export const EFFECT_ATLAS_SOURCE_DIGEST = "8880229ca162d0b48990e7db04843b316c26926c86a4f999d92f45239143f81a";

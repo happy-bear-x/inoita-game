@@ -19,11 +19,13 @@ import {uiAtlasFiles,uiAtlasSourceDigest} from './build-ui-atlas.ts';
 import {EFFECT_ATLAS_BY_FILE,EFFECT_ATLAS_PAGES,EFFECT_ATLAS_SOURCE_DIGEST} from '../src/generated/effect-atlas.ts';
 import {effectAtlasSourceDigest,effectUses} from './build-effect-atlas.ts';
 import {CHARACTER_ATLAS_BY_FILE,CHARACTER_ATLAS_PAGES,CHARACTER_ATLAS_SOURCE_DIGEST} from '../src/generated/character-atlas.ts';
+import {CHARACTER_ATLAS_ALIASES} from './character-atlas-aliases.ts';
 import {characterAtlasSourceDigest} from './build-character-atlas.ts';
 import {PROP_ATLAS_BY_KEY,PROP_ATLAS_LAYOUT_DIGEST,PROP_ATLAS_PAGES,PROP_ATLAS_SOURCE_DIGEST} from '../src/generated/prop-atlas.ts';
 import {propSourceDigest} from './build-prop-atlas.ts';
 import {residentCombatAssets} from '../src/rendering/resident-combat-assets.ts';
 import {residentCombatCoverageGaps} from '../src/rendering/combat-visual-coverage.ts';
+import {sourceAssetPath} from './asset-source.ts';
 export function validateContent(root=fileURLToPath(new URL('../public/',import.meta.url))){
  const read=file=>JSON.parse(fs.readFileSync(path.join(root,file),'utf8'));
  const world=parseWorld(read('content/world.json')),battle=parseBattle(read('content/battle.json'));
@@ -47,7 +49,7 @@ export function validateContent(root=fileURLToPath(new URL('../public/',import.m
  const propKeys=new Set();
  const propPages=new Map(PROP_ATLAS_PAGES.map(page=>[page.key,read(page.data)]));
  const hasPropFrame=(page,frame)=>!!page?.frames?.[frame];
- const pngSize=file=>{const bytes=fs.readFileSync(path.join(root,file));return {w:bytes.readUInt32BE(16),h:bytes.readUInt32BE(20)}};
+ const pngSize=file=>{const bytes=fs.readFileSync(sourceAssetPath(file));return {w:bytes.readUInt32BE(16),h:bytes.readUInt32BE(20)}};
  const propLayout={pages:PROP_ATLAS_PAGES.map(({key,file,data,frame,width,height})=>({key,file,data,frame,width,height})),
   byKey:PROP_ATLAS_BY_KEY,frames:Object.fromEntries(PROP_ATLAS_PAGES.map(page=>[page.key,propPages.get(page.key)?.frames]))};
  if(contentDigest(propLayout)!==PROP_ATLAS_LAYOUT_DIGEST)throw new Error('地图 prop 图集映射/布局摘要不一致；运行 npm run atlas:props');
@@ -148,6 +150,11 @@ export function validateContent(root=fileURLToPath(new URL('../public/',import.m
  campaign.debugStory=debug;validateStoryDebug(campaign);validateDebugCatalog({campaign,maps,catalog:debug});
  validateContentRelations({world,battle,campaign,items,wardrobe,audio,maps});
  // 以下两项需要文件系统，留在构建侧：资源存在性与图集头。
+ const propFileKeys=new Map((world.props??[]).map(prop=>[prop.file,prop.key]));
+ // 已被图集页替代的原图不在 public/dist 里，打包时只保留图集页；原图由 asset-source 归档。
+ const atlasCovered=file=>!!CHARACTER_ATLAS_BY_FILE[CHARACTER_ATLAS_ALIASES[file]??file]||!!EFFECT_ATLAS_BY_FILE[file]
+  ||!!UI_ATLAS_FRAMES[file]||!!UI_ICON_FRAMES[file]
+  ||(propFileKeys.has(file)&&!!PROP_ATLAS_BY_KEY[propFileKeys.get(file)]);
  const assets=new Set();const visit=value=>{if(typeof value==='string'&&/^(assets|content)\//.test(value))assets.add(value);else if(Array.isArray(value))value.forEach(visit);else if(value&&typeof value==='object')Object.values(value).forEach(visit);};documents.forEach(visit);
  for(const file of [UI_ICON_ATLAS_FILE,UI_ICON_ATLAS_DATA])assets.add(file);
  for(const page of UI_ATLAS_PAGES){assets.add(page.file);assets.add(page.data);}
@@ -155,12 +162,13 @@ export function validateContent(root=fileURLToPath(new URL('../public/',import.m
  for(const page of EFFECT_ATLAS_PAGES){assets.add(page.file);assets.add(page.data);}
  for(const page of CHARACTER_ATLAS_PAGES){assets.add(page.file);assets.add(page.data);}
  for(const file of titleMenuImages)assets.add(file.replace(/^\//,''));
- for(const file of assets)ensure(fs.existsSync(path.join(root,file)),`资源不存在 ${file}`);
+ for(const file of assets)if(!atlasCovered(file))ensure(fs.existsSync(path.join(root,file)),`资源不存在 ${file}`);
  const headers=new Map();
  const checkClips=value=>{
   if(Array.isArray(value))value.forEach(checkClips);
   else if(value&&typeof value==='object'){
    if(value.layers&&value.frameWidth)for(const layer of value.layers){
+    if(atlasCovered(layer.file))continue;
     if(!headers.has(layer.file)){
      const fd=fs.openSync(path.join(root,layer.file),'r');const header=Buffer.alloc(24);
      try{const length=fs.readSync(fd,header,0,24,0);headers.set(layer.file,header.subarray(0,length));}finally{fs.closeSync(fd);}
@@ -172,7 +180,12 @@ export function validateContent(root=fileURLToPath(new URL('../public/',import.m
  };documents.forEach(checkClips);
  // 玩家侧战斗资源是会话常驻包；运行时引用必须全部落在包里，否则战斗会在播放动画时缺纹理。
  const resident=residentCombatAssets({battle,wardrobe,world,companions});
- for(const asset of resident.assets)ensure(fs.existsSync(path.join(root,asset.file)),`常驻战斗资源不存在 ${asset.file}`);
+ for(const asset of resident.assets){
+  // 源内容可能还是合并前的原始路径；运行时内容构建会改写为规范路径，再由角色图集页接管。
+  const canonical=CHARACTER_ATLAS_ALIASES[asset.file]??asset.file;
+  if(asset.kind==='spritesheet'&&CHARACTER_ATLAS_BY_FILE[canonical])continue;
+  ensure(fs.existsSync(path.join(root,asset.file)),`常驻战斗资源不存在 ${asset.file}`);
+ }
  const gaps=residentCombatCoverageGaps({battle,wardrobe,world,companions});
  const uncovered=[...gaps.definitions.map(name=>`特效定义缺失 ${name}`),...gaps.effects.map(name=>`常驻包缺少特效 ${name}`),
   ...gaps.layers.map(key=>`常驻包缺少特效纹理 ${key}`),...gaps.actorLayers.map(key=>`常驻包缺少角色纹理 ${key}`),

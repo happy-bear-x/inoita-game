@@ -3,6 +3,7 @@ import path from 'node:path';
 import { walkClips } from './content-build.ts';
 import { EFFECT_ATLAS_BY_FILE, EFFECT_ATLAS_PAGES } from '../src/generated/effect-atlas.ts';
 import { CHARACTER_ATLAS_BY_FILE, CHARACTER_ATLAS_PAGES } from '../src/generated/character-atlas.ts';
+import { CHARACTER_ATLAS_ALIASES } from './character-atlas-aliases.ts';
 import { UI_ATLAS_FRAMES, UI_ATLAS_PAGES } from '../src/generated/ui-atlas.ts';
 import { UI_ICON_FRAMES, UI_ICON_ATLAS_FILE, UI_ICON_ATLAS_DATA } from '../src/generated/icon-atlas.ts';
 import { PROP_ATLAS_BY_KEY, PROP_ATLAS_PAGES } from '../src/generated/prop-atlas.ts';
@@ -166,7 +167,7 @@ export async function collectAssetKeep(contentDir: string, assetsDir: string): P
           }
           continue;
         }
-        const character = CHARACTER_ATLAS_BY_FILE[file];
+        const character = CHARACTER_ATLAS_BY_FILE[CHARACTER_ATLAS_ALIASES[file] ?? file];
         if (character) {
           covered.set(file, 'character-atlas');
           for (const pageIndex of character.pages) {
@@ -215,6 +216,20 @@ export async function collectAssetKeep(contentDir: string, assetsDir: string): P
   addPendingAssets(questMarkerAssets(storyInterface as never), addPhaser);
   for (const texture of (wardrobe.textures ?? []) as { file?: string }[]) addPhaser(texture.file);
   for (const skill of Object.values((battle.skills ?? {}) as Record<string, { icon?: string }>)) addPhaser(skill.icon);
+  // 源内容可能还保留合并前的路径；运行时内容构建会改写成规范路径，再由角色图集页接管。
+  // 这些别名不能按 spritesheet 继续常驻，否则会引用 public 里已经归档的原图。
+  for (const file of [...phaser]) {
+    const canonical = CHARACTER_ATLAS_ALIASES[file];
+    const entry = canonical ? CHARACTER_ATLAS_BY_FILE[canonical] : undefined;
+    if (!entry) continue;
+    phaser.delete(file);
+    keep.delete(file);
+    covered.set(file, 'character-atlas');
+    for (const pageIndex of entry.pages) {
+      const page = CHARACTER_ATLAS_PAGES[pageIndex];
+      if (page) addAtlasPage(page);
+    }
+  }
   // 职业选择背景由 Phaser 直接加载，不是界面图集的一帧。
   if (typeof storyClasses.background === 'string') addPhaser(storyClasses.background);
 
@@ -277,7 +292,7 @@ export async function collectAssetKeep(contentDir: string, assetsDir: string): P
   // 被图集覆盖的原图可以归档；其余引用必须保留原文件。
   const route = (file: string): void => {
     if (phaser.has(file) || covered.has(file)) return;
-    const character = CHARACTER_ATLAS_BY_FILE[file];
+    const character = CHARACTER_ATLAS_BY_FILE[CHARACTER_ATLAS_ALIASES[file] ?? file];
     if (character) {
       for (const pageIndex of character.pages) {
         const page = CHARACTER_ATLAS_PAGES[pageIndex];

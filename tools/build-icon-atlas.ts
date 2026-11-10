@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { PNG } from 'pngjs';
+import { sourceAssetPath } from './asset-source.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
@@ -48,7 +49,7 @@ export function packIcons(): AtlasBuild {
   const unique = new Map<string, { file: string; png: PNG }>();
   let sourceBytes = 0;
   for (const file of files) {
-    const bytes = fs.readFileSync(path.join(PUBLIC, file));
+    const bytes = fs.readFileSync(sourceAssetPath(file));
     sourceBytes += bytes.byteLength;
     const hash = createHash('sha256').update(bytes).digest('hex');
     hashes.set(file, hash);
@@ -106,7 +107,7 @@ export function iconSourceDigest(): string {
   for (const file of iconFiles()) {
     hash.update(file);
     hash.update('\0');
-    hash.update(fs.readFileSync(path.join(PUBLIC, file)));
+    hash.update(fs.readFileSync(sourceAssetPath(file)));
     hash.update('\0');
   }
   return hash.digest('hex');
@@ -117,7 +118,7 @@ export function writeIconAtlas(): { width: number; height: number; icons: number
   const atlas = new PNG({ width: packed.width, height: packed.height });
   atlas.data.fill(0);
   for (const [file, frame] of packed.frames) {
-    const png = PNG.sync.read(fs.readFileSync(path.join(PUBLIC, file)));
+    const png = PNG.sync.read(fs.readFileSync(sourceAssetPath(file)));
     for (let row = 0; row < frame.h; row++) {
       const from = row * frame.w * 4;
       const to = ((frame.y + row) * packed.width + frame.x) * 4;

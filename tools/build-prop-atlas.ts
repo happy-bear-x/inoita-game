@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { PNG } from 'pngjs';
+import { sourceAssetPath } from './asset-source.ts';
 import { contentDigest } from '../src/application/content-hash.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -57,7 +58,7 @@ export function propSourceDigest(): string {
     hash.update('\0');
     hash.update(prop.file);
     hash.update('\0');
-    hash.update(fs.readFileSync(path.join(PUBLIC, prop.file)));
+    hash.update(fs.readFileSync(sourceAssetPath(prop.file)));
     hash.update('\0');
   }
   return hash.digest('hex');
@@ -95,7 +96,7 @@ export function packPropAtlas(): PropAtlas {
   const props = propFiles();
   const unique = new Map<string, Entry>();
   for (const prop of props) {
-    const bytes = fs.readFileSync(path.join(PUBLIC, prop.file));
+    const bytes = fs.readFileSync(sourceAssetPath(prop.file));
     const hash = createHash('sha256').update(bytes).digest('hex');
     if (!unique.has(hash)) {
       const png = PNG.sync.read(bytes);
@@ -171,7 +172,7 @@ export function packPropAtlas(): PropAtlas {
   const canonical = new Map<string, string>();
   for (const entry of unique.values()) canonical.set(entry.hash, entry.file);
   for (const prop of props) {
-    const hash = createHash('sha256').update(fs.readFileSync(path.join(PUBLIC, prop.file))).digest('hex');
+    const hash = createHash('sha256').update(fs.readFileSync(sourceAssetPath(prop.file))).digest('hex');
     const frame = canonical.get(hash)!;
     const page = framePage.get(frame)!;
     byKey[prop.key] = { key: pages[page.page]!.key, frame };

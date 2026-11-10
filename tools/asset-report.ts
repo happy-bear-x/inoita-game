@@ -92,7 +92,7 @@ function filesUnder(directory: string, relative = ''): { relative: string; absol
  * 构建期资产归因：按文件内容 SHA-256 分组，再按图片尺寸估算解码后的 RGBA 字节。
  * 只看磁盘内容，不依赖业务代码，因此不会因为内容/加载策略调整而失真。
  */
-export async function reportAssets(root = path.resolve('public')): Promise<AssetReport> {
+export async function reportAssets(root = path.resolve('asset-source')): Promise<AssetReport> {
   const files = filesUnder(path.join(root, 'assets'));
   const groups = new Map<string, AssetDuplicateGroup & { decodedBytes: number }>();
   const index = new Map<string, { hash: string; decodedBytes: number }>();

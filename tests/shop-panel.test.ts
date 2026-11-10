@@ -13,6 +13,7 @@ import { INVENTORY_LABELS, INVENTORY_SIDE_FILTERS } from '../src/domain/inventor
 import { splitMoney } from '../src/domain/money.ts';
 import { ShopPanel } from '../src/ui/phaser/shop-panel.ts';
 import { centerModal } from '../src/ui/phaser/modal-placement.ts';
+import { SOURCE_ASSETS, sourceAssetPath } from '../tools/asset-source.ts';
 
 const read=<T>(name:string):T=>JSON.parse(fs.readFileSync(new URL(`../public/content/${name}.json`,import.meta.url),'utf8')) as T;
 const items=read<ItemCatalog>('items'),stats=read<CharacterStatsCatalog>('character-stats'),shops=parseShops(read('shops'));
@@ -217,21 +218,21 @@ test('shop assets keep their native pixel sizes',()=>{
   for(const [file,width,height] of [['gold',44,40],['silver',44,40],['copper',44,40],['slot',74,74],['selection',84,84],
       ['merchant-title',288,82],['text-plate-left',9,34],['text-plate-right',9,34],
       ['count-left',51,58],['count-left-pressed',51,58],['count-right',51,58],['count-right-pressed',51,58]] as const){
-    const png=fs.readFileSync(new URL(`../public/assets/ui/shop/${file}.png`,import.meta.url));
+    const png=fs.readFileSync(sourceAssetPath(`assets/ui/shop/${file}.png`));
     assert.equal(png.readUInt32BE(16),width,`${file} 宽度`);assert.equal(png.readUInt32BE(20),height,`${file} 高度`);
   }
   for(const [file,width,height] of [['category-cap-top',103,24],['category-cap-bottom',103,24],['category-divider',14,411]] as const){
-    const png=fs.readFileSync(new URL(`../public/assets/ui/shop/${file}.png`,import.meta.url));
+    const png=fs.readFileSync(sourceAssetPath(`assets/ui/shop/${file}.png`));
     assert.equal(png.readUInt32BE(16),width,`${file} 宽度`);assert.equal(png.readUInt32BE(20),height,`${file} 高度`);
   }
   // 弹层图框来自图组 19：四角 81×81、横条 380×81、竖条 81×304。
   for(const [file,width,height] of [['popup-corner-nw',81,81],['popup-corner-ne',81,81],['popup-corner-sw',81,81],['popup-corner-se',81,81],
       ['popup-edge-horizontal',380,81],['popup-edge-vertical',81,304]] as const){
-    const png=fs.readFileSync(new URL(`../public/assets/ui/menus/${file}.png`,import.meta.url));
+    const png=fs.readFileSync(sourceAssetPath(`assets/ui/menus/${file}.png`));
     assert.equal(png.readUInt32BE(16),width,`${file} 宽度`);assert.equal(png.readUInt32BE(20),height,`${file} 高度`);
   }
-  for(const file of fs.readdirSync(new URL('../public/assets/ui/shop/',import.meta.url)).filter(name=>/^(dagger|bow|cloth|hat)\.png$/.test(name))){
-    const png=fs.readFileSync(new URL(`../public/assets/ui/shop/${file}`,import.meta.url));
+  for(const file of fs.readdirSync(`${SOURCE_ASSETS}/assets/ui/shop`).filter(name=>/^(dagger|bow|cloth|hat)\.png$/.test(name))){
+    const png=fs.readFileSync(sourceAssetPath(`assets/ui/shop/${file}`));
     assert.equal(png.readUInt32BE(16),88,`${file} 宽度`);assert.equal(png.readUInt32BE(20),69,`${file} 高度`);
   }
 });

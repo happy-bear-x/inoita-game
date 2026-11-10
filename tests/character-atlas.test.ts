@@ -6,6 +6,7 @@ import { registerHooks } from 'node:module';
 import test from 'node:test';
 import type Phaser from 'phaser';
 import type { ActorDefinition, AnimationClip } from '../src/domain/content.ts';
+import { sourceAssetPath } from '../tools/asset-source.ts';
 import {
   CHARACTER_ATLAS_BY_FILE, CHARACTER_ATLAS_PAGES, CHARACTER_ATLAS_SOURCE_DIGEST
 } from '../src/generated/character-atlas.ts';
@@ -98,7 +99,7 @@ test('运行时引用的角色文件都有映射，每个动作的帧数都被�
     const entry = characterAtlasEntry(file);
     assert.ok(entry, `文件没有映射：${file}`);
     assert.equal(entry.prefix,
-      createHash('sha256').update(readFileSync(new URL(`../public/${file}`, import.meta.url))).digest('hex').slice(0, 10),
+      createHash('sha256').update(readFileSync(sourceAssetPath(file))).digest('hex').slice(0, 10),
       `帧名前缀与文件内容不一致：${file}`);
     assert.ok(entry.pages.length > 0, `文件没有帧：${file}`);
     for (const page of entry.pages) assert.ok(CHARACTER_ATLAS_PAGES[page], `${file}: 页 ${page} 不存在`);

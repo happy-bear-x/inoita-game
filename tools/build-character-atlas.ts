@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { PNG } from 'pngjs';
 import { packAtlasBlocks, type AtlasPackBlock, type AtlasPackingItem } from './atlas-pack.ts';
+import { sourceAssetPath } from './asset-source.ts';
 import { walkClips } from './content-build.ts';
 
 /**
@@ -25,6 +26,8 @@ const PUBLIC = path.join(ROOT, 'public');
 const CONTENT = path.join(PUBLIC, 'content');
 const ATLAS_DIR = 'assets/character-atlas';
 const GENERATED = path.join(ROOT, 'src', 'generated', 'character-atlas.ts');
+/** 只给工具做源路径覆盖判断；运行时不导入，避免把别名表打进游戏包。 */
+const TOOL_ALIASES = path.join(ROOT, 'tools', 'character-atlas-aliases.ts');
 const PAGE_KEY_PREFIX = 'characters-atlas:';
 /**
  * 角色页用 1024：2048 页会让一个小怪也拉起整页几十 MB 的解码纹理。
@@ -93,6 +96,8 @@ export interface CharacterAtlasSource {
   actors: CharacterAtlasActorSource[];
   /** 规范文件路径 → 分组 id。 */
   byFile: Readonly<Record<string, string>>;
+  /** 原始路径 → 规范路径；只给工具做覆盖判断，不进入运行时映射。 */
+  aliases: Readonly<Record<string, string>>;
 }
 
 export interface CharacterAtlasWriteResult {
@@ -126,7 +131,7 @@ function createHashFile(): HashFile {
     if (cached !== undefined) return cached;
     let hash = '';
     try {
-      hash = createHash('sha256').update(fs.readFileSync(path.join(PUBLIC, file))).digest('hex');
+      hash = createHash('sha256').update(fs.readFileSync(sourceAssetPath(file))).digest('hex');
     } catch {
       hash = '';
     }
@@ -139,7 +144,9 @@ function createHashFile(): HashFile {
  * 与 `content-build.ts` 的 `dedupeClipLayers` 同一套合并规则，同步版本。
  * 返回已经改写为规范键/路径的 world 与 battle 文档。
  */
-function canonicalDocuments(hashFile: HashFile): { world: WorldLike; battle: BattleLike } {
+function canonicalDocuments(hashFile: HashFile): {
+  world: WorldLike; battle: BattleLike; aliases: Map<string, string>;
+} {
   const documents = new Map<string, unknown>();
   for (const name of ['battle.json', 'world.json'])
     documents.set(name, JSON.parse(fs.readFileSync(path.join(CONTENT, name), 'utf8')));
@@ -159,6 +166,7 @@ function canonicalDocuments(hashFile: HashFile): { world: WorldLike; battle: Bat
   }
   const keyOwners = new Map<string, string>();
   const canonical = new Map<string, { key: string; file: string }>();
+  const aliases = new Map<string, string>();
   for (const [group, entries] of groups) {
     const ordered = [...entries].sort((a, b) => a.file.localeCompare(b.file) || a.key.localeCompare(b.key));
     const chosen = { key: ordered[0]!.key, file: ordered[0]!.file };
@@ -174,10 +182,11 @@ function canonicalDocuments(hashFile: HashFile): { world: WorldLike; battle: Bat
     const group = [hash, record.clip.frameWidth, record.clip.frameHeight, record.clip.frames, kind].join('|');
     const chosen = canonical.get(group);
     if (!chosen) continue;
+    aliases.set(record.layer.file, chosen.file);
     record.layer.key = chosen.key;
     record.layer.file = chosen.file;
   }
-  return { world: documents.get('world.json') as WorldLike, battle: documents.get('battle.json') as BattleLike };
+  return { world: documents.get('world.json') as WorldLike, battle: documents.get('battle.json') as BattleLike, aliases };
 }
 
 /** world 的全部 actor，加上职业和敌人内嵌的 actor；同 id 合并成一份。 */
@@ -201,7 +210,7 @@ function sourceActors(world: WorldLike, battle: BattleLike): ActorLike[] {
  */
 export function collectCharacterAtlasSource(): CharacterAtlasSource {
   const hashFile = createHashFile();
-  const { world, battle } = canonicalDocuments(hashFile);
+  const { world, battle, aliases } = canonicalDocuments(hashFile);
   const actors = sourceActors(world, battle);
   const groups = new Map<string, {
     hash: string; prefix: string; paths: Set<string>; frameWidth: number; frameHeight: number;
@@ -244,7 +253,7 @@ export function collectCharacterAtlasSource(): CharacterAtlasSource {
   const sources: GroupSource[] = [];
   for (const [id, group] of [...groups].sort(([a], [b]) => compareText(a, b))) {
     const file = [...group.paths].sort(compareText)[0]!;
-    const bytes = fs.readFileSync(path.join(PUBLIC, file));
+    const bytes = fs.readFileSync(sourceAssetPath(file));
     if (bytes.length < 24 || bytes.readUInt32BE(0) !== 0x89504e47)
       throw new Error(`角色图集素材不是有效的 PNG：${file}`);
     const width = bytes.readUInt32BE(16), height = bytes.readUInt32BE(20);
@@ -271,7 +280,9 @@ export function collectCharacterAtlasSource(): CharacterAtlasSource {
     }
     return { id: actor.id, groups: [...ids].sort(compareText), groupFrames };
   });
-  return { groups: sources, actors: actorSources, byFile: Object.fromEntries([...byFile].sort(([a], [b]) => compareText(a, b))) };
+  return { groups: sources, actors: actorSources,
+    byFile: Object.fromEntries([...byFile].sort(([a], [b]) => compareText(a, b))),
+    aliases: Object.fromEntries([...aliases].sort(([a], [b]) => compareText(a, b))) };
 }
 
 function groupItems(group: GroupSource): FrameItem[] {
@@ -331,7 +342,7 @@ function writePages(source: CharacterAtlasSource, pages: PackedFrameItem[][]): W
     for (const [groupId, groupItemsOnPage] of byGroup) {
       const group = groupById.get(groupId);
       if (!group) throw new Error(`角色图集分组缺失：${groupId}`);
-      const pngSource = PNG.sync.read(fs.readFileSync(path.join(PUBLIC, group.paths[0]!)));
+      const pngSource = PNG.sync.read(fs.readFileSync(sourceAssetPath(group.paths[0]!)));
       const columns = Math.floor(pngSource.width / group.frameWidth);
       for (const item of groupItemsOnPage) {
         if (item.index < 0 || item.index >= group.frames || item.index >= columns * Math.floor(pngSource.height / group.frameHeight))
@@ -378,6 +389,8 @@ function digestSource(source: CharacterAtlasSource): string {
   for (const group of source.groups)
     hash.update(`group\0${group.id}\0${group.hash}\0${group.frameWidth}\0${group.frameHeight}\0` +
       `${group.frames}\0${group.width}\0${group.height}\0${group.paths.join(',')}\0${group.owners.join(',')}\0`);
+  for (const [from, to] of Object.entries(source.aliases).sort(([a], [b]) => compareText(a, b)))
+    hash.update(`alias\0${from}\0${to}\0`);
   return hash.digest('hex');
 }
 
@@ -428,6 +441,10 @@ export const CHARACTER_ATLAS_PAGES: readonly CharacterAtlasPage[] = ${JSON.strin
 export interface CharacterAtlasEntry { pages: readonly number[]; prefix: string }
 export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntry>> = ${JSON.stringify(sortedEntries, null, 2)};
 export const CHARACTER_ATLAS_SOURCE_DIGEST = ${JSON.stringify(digest)};
+`);
+  fs.writeFileSync(TOOL_ALIASES, `// 由 npm run atlas:characters 生成，勿手改。
+// 源路径 → 规范路径；仅用于内容构建前的素材覆盖判断，不进入运行时包。
+export const CHARACTER_ATLAS_ALIASES: Readonly<Record<string, string>> = ${JSON.stringify(source.aliases, null, 2)};
 `);
   // 构建期报告：单个角色实际会拉起的页并集面积。页越大，小角色被整页拖累越明显。
   const groupById = new Map(source.groups.map(group => [group.id, group]));

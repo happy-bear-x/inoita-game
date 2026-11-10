@@ -7,6 +7,7 @@ import { compileSkillDisplay } from '../src/domain/skill-display.ts';
 import { compileSkillAction } from '../src/domain/skill-action-compiler.ts';
 import { wardrobePoseRelativeFile, type WardrobeCatalog } from '../src/domain/wardrobe.ts';
 import type { SkillAction, SkillDisplayRow, SkillRank } from '../src/domain/battle.ts';
+import { sourceAssetPath } from './asset-source.ts';
 
 interface ContentBuildStats {
   files: number;
@@ -83,7 +84,7 @@ export function walkClips(value: unknown, visit: (clip: ClipLike, name: string) 
  * 只处理 battle.json / world.json 的 `clips`，因为地图 JSON 用 prop 键、不在 debug
  * 来源哈希里；这两份文件不在调试现场表的来源哈希中，合并不会让现场表过期。
  */
-async function dedupeClipLayers(sourceDir: string, files: SourceFile[]): Promise<ClipDedupe> {
+async function dedupeClipLayers(_sourceDir: string, files: SourceFile[]): Promise<ClipDedupe> {
   const docs = new Map<string, unknown>();
   for (const relative of ['battle.json', 'world.json']) {
     const source = files.find(file => file.relative === relative);
@@ -96,13 +97,12 @@ async function dedupeClipLayers(sourceDir: string, files: SourceFile[]): Promise
     });
   }
   const hashes = new Map<string, string>();
-  const assetRoot = path.resolve(sourceDir, '..');
   const hashFile = async (file: string): Promise<string | undefined> => {
     const cached = hashes.get(file);
     if (cached !== undefined) return cached || undefined;
     if (!file.startsWith('assets/')) return undefined;
     try {
-      const bytes = await fs.readFile(path.join(assetRoot, file));
+      const bytes = await fs.readFile(sourceAssetPath(file));
       const decoded = PNG.sync.read(bytes);
       const hash = createHash('sha256').update(`${decoded.width}x${decoded.height}:`).update(decoded.data).digest('hex');
       hashes.set(file, hash);

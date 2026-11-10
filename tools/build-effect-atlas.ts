@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { PNG } from 'pngjs';
 import { packAtlasBlocks, type AtlasPackBlock, type AtlasPackingItem, type AtlasPackedPage } from './atlas-pack.ts';
+import { sourceAssetPath } from './asset-source.ts';
 
 /**
  * 把战斗特效的每一帧裁到非透明包围盒，再按特效分块装箱成图集。
@@ -156,7 +157,7 @@ function collectUniqueFiles(uses: readonly FileUse[]): { unique: Map<string, Uni
   for (const use of uses) {
     let hash = hashes.get(use.file);
     if (!hash) {
-      const bytes = fs.readFileSync(path.join(PUBLIC, use.file));
+      const bytes = fs.readFileSync(sourceAssetPath(use.file));
       hash = createHash('sha256').update(bytes).digest('hex');
       hashes.set(use.file, hash);
       contents.set(hash, bytes);
@@ -182,7 +183,7 @@ function collectUniqueFiles(uses: readonly FileUse[]): { unique: Map<string, Uni
 
 /** 逐帧找非透明包围盒；整帧透明时用 1×1 空帧占位，sourceSize 仍是原帧尺寸。 */
 function trimFrames(file: UniqueFile): TrimmedFrame[] {
-  const png = PNG.sync.read(fs.readFileSync(path.join(PUBLIC, file.file)));
+  const png = PNG.sync.read(fs.readFileSync(sourceAssetPath(file.file)));
   const columns = Math.floor(png.width / file.frameWidth);
   const rows = Math.floor(png.height / file.frameHeight);
   if (columns * rows < file.frames)

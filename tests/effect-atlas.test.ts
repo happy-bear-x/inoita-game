@@ -9,6 +9,7 @@ import { effectAtlasSourceDigest, EFFECT_ATLAS_TARGETS, STORY_EFFECT_TARGETS } f
 import { effectAssets } from '../src/rendering/combat-asset-descriptors.ts';
 import { releaseEffectAnimations, rememberEffectAnimation } from '../src/rendering/effect-animations.ts';
 import type { BattleCatalog } from '../src/domain/battle.ts';
+import { sourceAssetPath } from '../tools/asset-source.ts';
 import type { EffectClip } from '../src/domain/content.ts';
 import type Phaser from 'phaser';
 
@@ -122,7 +123,7 @@ test('内容相同的共用文件只装一次，所有路径映射到同一批�
   const pathsByHash = new Map<string, string[]>();
   for (const file of Object.keys(EFFECT_ATLAS_BY_FILE)) {
     const hash = createHash('sha256')
-      .update(readFileSync(new URL(`../public/${file}`, import.meta.url)))
+      .update(readFileSync(sourceAssetPath(file)))
       .digest('hex');
     const paths = pathsByHash.get(hash) ?? [];
     paths.push(file);

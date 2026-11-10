@@ -7,6 +7,7 @@ import { gameMenuImageGroups, TITLE_MESSAGE_ASSETS, titleMenuImages } from '../s
 import { COMMON_BUTTON_IMAGES } from '../src/ui/common-button.ts';
 import { MINIMAP_ASSETS } from '../src/domain/story-interface.ts';
 import { UI_ICON_FRAMES } from '../src/generated/icon-atlas.ts';
+import { sourceAssetPath } from './asset-source.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
@@ -20,7 +21,7 @@ const read = (file: string): any => JSON.parse(fs.readFileSync(path.join(CONTENT
 
 interface PngInfo { w: number; h: number; hash: string; bytes: Buffer }
 function pngInfo(file: string): PngInfo {
-  const bytes = fs.readFileSync(path.join(PUBLIC, file));
+  const bytes = fs.readFileSync(sourceAssetPath(file));
   if (bytes.toString('ascii', 1, 4) !== 'PNG') throw new Error(`UI 图集只接受 PNG：${file}`);
   return { w: bytes.readUInt32BE(16), h: bytes.readUInt32BE(20),
     hash: createHash('sha256').update(bytes).digest('hex'), bytes };
@@ -175,7 +176,7 @@ export function uiAtlasSourceDigest(): string {
   for (const file of uiAtlasFiles()) {
     hash.update(file);
     hash.update('\0');
-    hash.update(fs.readFileSync(path.join(PUBLIC, file)));
+    hash.update(fs.readFileSync(sourceAssetPath(file)));
     hash.update('\0');
   }
   return hash.digest('hex');
@@ -212,7 +213,7 @@ export function packUiAtlas(): AtlasBuild {
     // 每批从新页开始；职业选择页的界面图不会和对白立绘混在同一页。
     for (const batch of group.batches) {
       const entries = batch.map(file => {
-        const bytes = fs.readFileSync(path.join(PUBLIC, file));
+        const bytes = fs.readFileSync(sourceAssetPath(file));
         return { file, png: PNG.sync.read(bytes), bytes: bytes.byteLength };
       }).sort((a, b) =>
         b.png.height - a.png.height || b.png.width - a.png.width || a.file.localeCompare(b.file));
@@ -268,7 +269,7 @@ export function writeUiAtlas(): UiAtlasWriteResult {
     const atlas = new PNG({ width: page.width, height: page.height });
     atlas.data.fill(0);
     for (const [file, frame] of page.frames) {
-      const png = PNG.sync.read(fs.readFileSync(path.join(PUBLIC, file)));
+      const png = PNG.sync.read(fs.readFileSync(sourceAssetPath(file)));
       for (let row = 0; row < frame.h; row++) {
         const from = row * frame.w * 4;
         const to = ((frame.y + row) * page.width + frame.x) * 4;

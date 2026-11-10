@@ -6,11 +6,12 @@ import { contentDigest } from '../src/application/content-hash.ts';
 import { PROP_ATLAS_BY_KEY, PROP_ATLAS_LAYOUT_DIGEST, PROP_ATLAS_PAGES, PROP_ATLAS_SOURCE_DIGEST } from '../src/generated/prop-atlas.ts';
 import { propAtlasAssets, propRef } from '../src/rendering/prop-atlas.ts';
 import { packPropAtlas, propFiles, propSourceDigest } from '../tools/build-prop-atlas.ts';
+import { sourceAssetPath } from '../tools/asset-source.ts';
 
 const read = (file: string): any => JSON.parse(fs.readFileSync(new URL(`../public/${file}`, import.meta.url), 'utf8'));
-const pngSize = (file: string) => {
-  const bytes = fs.readFileSync(new URL(`../public/${file}`, import.meta.url));
-  assert.equal(bytes.toString('ascii', 1, 4), 'PNG', file);
+const pngSize = (file: string | URL) => {
+  const bytes = fs.readFileSync(file);
+  assert.equal(bytes.toString('ascii', 1, 4), 'PNG', String(file));
   return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
 };
 const props = propFiles();
@@ -34,7 +35,7 @@ test('every map prop and feature resolves to a complete, untrimmed atlas frame',
   assert.equal(contentDigest(layout), PROP_ATLAS_LAYOUT_DIGEST);
   for (const page of PROP_ATLAS_PAGES) {
     const atlas = pages.get(page.key)!;
-    const size = pngSize(page.file);
+    const size = pngSize(new URL(`../public/${page.file}`, import.meta.url));
     assert.deepEqual(atlas.meta.size, { w: size.width, h: size.height });
     assert.ok(size.width <= 2048 && size.height <= 2048);
     assert.ok(atlas.frames[page.frame], `missing sample frame ${page.frame}`);
@@ -46,7 +47,7 @@ test('every map prop and feature resolves to a complete, untrimmed atlas frame',
         `overlapping frames ${a.name} / ${b.name}`);
     }
     for (const [name, value] of Object.entries(atlas.frames) as [string, any][]) {
-      const source = PNG.sync.read(fs.readFileSync(new URL(`../public/${name}`, import.meta.url)));
+      const source = PNG.sync.read(fs.readFileSync(sourceAssetPath(name)));
       assert.deepEqual({ w: value.frame.w, h: value.frame.h }, { w: source.width, h: source.height });
       for (let row = 0; row < value.frame.h; row++) {
         const from = row * value.frame.w * 4;
@@ -65,7 +66,7 @@ test('every map prop and feature resolves to a complete, untrimmed atlas frame',
     assert.ok(frame, `missing frame ${entry.frame}`);
     assert.equal(frame.trimmed, false);
     assert.equal(frame.rotated, false);
-    const source = pngSize(entry.frame);
+    const source = pngSize(sourceAssetPath(entry.frame));
     assert.deepEqual(frame.sourceSize, { w: source.width, h: source.height });
     assert.deepEqual({ w: frame.frame.w, h: frame.frame.h }, { w: source.width, h: source.height });
     assert.ok(frame.frame.x >= 0 && frame.frame.y >= 0);

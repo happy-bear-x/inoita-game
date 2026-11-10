@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
+import { sourceAssetPath } from './asset-source.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SOURCE = 'assets/ui/menus/inventory-slot.png';
@@ -41,7 +42,7 @@ function recolorFrame(source: PNG, color: [number, number, number]): PNG {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const source = PNG.sync.read(fs.readFileSync(path.join(ROOT, 'public', SOURCE)));
+  const source = PNG.sync.read(fs.readFileSync(sourceAssetPath(SOURCE)));
   for (const frame of FRAMES) {
     const file = path.join(ROOT, 'public/assets/ui/menus', frame.file);
     fs.writeFileSync(file, PNG.sync.write(recolorFrame(source, frame.color)));
