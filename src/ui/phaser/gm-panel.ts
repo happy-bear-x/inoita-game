@@ -46,7 +46,7 @@ interface GmReferences {
 
 type GmPage = 'status' | 'character' | 'items' | 'story';
 const PAGES: readonly [GmPage, string][] = [
-  ['status', '状态'], ['character', '人物'], ['items', '道具'], ['story', '剧情'],
+  ['status', '状态'], ['character', '人物'], ['items', '道具'],
 ];
 /** 道具页：每页 40 格，按背包同款底图与选中框显示。 */
 const ITEM_FILTERS: readonly GmItemFilter[] = ['all', 'equipment', 'consumable', 'material', 'quest'];
@@ -160,7 +160,8 @@ export class GmPanel {
   render(body: UiSurface, writer?: MenuTextWriter): void {
     this.writer = writer;
     this.textSerial = 0;
-    // 四个页签必须落在 960 宽的 body 内：536 + 3×108 + 104 = 964，右端贴到内容区边。
+    // 剧情页不再从面板进入；若外部流程仍把页面切到 story，回落到状态页。
+    if (!PAGES.some(([page]) => page === this.page)) this.page = 'status';
     PAGES.forEach(([page, label], index) =>
       this.button(body, label, 532 + index * 108, 8, 104, 46, () => { this.page = page; this.result = ''; this.hooks.render(); },
         { selected: this.page === page, fontSize: 20 }, `调试页 ${label}`));
