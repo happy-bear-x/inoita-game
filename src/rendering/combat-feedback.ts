@@ -1,19 +1,34 @@
 import Phaser from 'phaser';
 import type { BattleCatalog } from '../domain/battle.ts';
+import type { EffectLayer } from '../domain/content.ts';
 import { damageDigits, digitSequence, feedbackPlan, reusableDigit, type CombatHitFeedback, type CombatFeedbackSelection } from '../domain/combat-feedback.ts';
 import type { CharacterVisual } from './characters.ts';
 import { EffectPool } from './effects.ts';
 import { rememberEffectAnimation } from './effect-animations.ts';
+import { EFFECT_ATLAS_BY_FILE, EFFECT_ATLAS_PAGES } from '../generated/effect-atlas.ts';
 
 interface Digit {effect:Phaser.GameObjects.Container;sequence:number[]}
 
 /**
  * 数字序列动画按「贴图 + 帧序列 + 帧率」只建一次。
  * 之前每个数字精灵都往动画表写一条同名 `damage`，命中越密写得越多。
+ * 数字文件进了图集时，序列里是源帧序号，必须换成图集页键和帧名；
+ * 直接拿页纹理配数字帧会找不到帧，Phaser 会把整页图集当一张图显示。
  */
-function playDigitAnimation(sprite:Phaser.GameObjects.Sprite,sequence:number[],frameRate:number,delayMs:number):void {
-  const anims=sprite.scene.anims,textureKey=sprite.texture.key;
-  const key=`damage:${textureKey}:${frameRate}:${sequence.join('.')}`;
+export function playDigitAnimation(sprite:Phaser.GameObjects.Sprite,layer:EffectLayer|undefined,sequence:number[],
+  frameRate:number,delayMs:number):void {
+  const atlas=layer?.file?EFFECT_ATLAS_BY_FILE[layer.file]:undefined;
+  let frames:{key:string;frame:string|number}[];
+  if(atlas){
+    frames=sequence.map(index=>{
+      const ref=atlas[index],page=ref?EFFECT_ATLAS_PAGES[ref.page]:undefined;
+      if(!ref||!page)throw new Error(`伤害数字图集缺少帧：${layer!.file} 第 ${index} 帧`);
+      return {key:page.key,frame:ref.frame};
+    });
+  }else frames=sequence.map(frame=>({key:sprite.texture.key,frame}));
+  const textureKeys=[...new Set(frames.map(frame=>frame.key))];
+  const key=`damage:${layer?.file||sprite.texture.key}:${textureKeys.join('+')}:${frameRate}:${sequence.join('.')}`;
+  const anims=sprite.scene.anims;
   const existing=anims.exists(key)?anims.get(key):undefined;
   // 贴图在上一次地图关闭时被释放后，帧会失效；重建而不是播旧动画。
   const stale=!!existing?.frames.some(frame=>{
@@ -22,8 +37,8 @@ function playDigitAnimation(sprite:Phaser.GameObjects.Sprite,sequence:number[],f
   });
   if(existing&&(!existing.frames.length||stale))anims.remove(key);
   if(!anims.exists(key)){
-    anims.create({key,frames:sequence.map(frame=>({key:textureKey,frame})),frameRate});
-    rememberEffectAnimation(sprite.scene,key,[textureKey]);
+    anims.create({key,frames,frameRate});
+    rememberEffectAnimation(sprite.scene,key,textureKeys);
   }
   sprite.anims.stop();
   sprite.play({key,delay:delayMs,showOnStart:true});
@@ -79,9 +94,9 @@ export class CombatFeedback {
         this.digits[slot]={effect,sequence};
         const drop=():void=>{if(this.digits[slot]?.effect===effect)this.digits[slot]=undefined;};
         effect.once('effect-recycle',drop);effect.once('destroy',drop);
-        for(const sprite of effect.list as Phaser.GameObjects.Sprite[]){
+        for(const [index,sprite] of (effect.list as Phaser.GameObjects.Sprite[]).entries()){
           sprite.setVisible(false);
-          playDigitAnimation(sprite,sequence,clip.frameRate,digit.delayMs);
+          playDigitAnimation(sprite,clip.layers[index],sequence,clip.frameRate,digit.delayMs);
         }
         this.track(effect);
       }
