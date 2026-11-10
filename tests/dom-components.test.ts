@@ -119,22 +119,22 @@ test('DOM wheel dispatches skills and items, respects cooldowns and cancels held
     ]);
     wheel.visible(true);
     const buttons = (wheel.element as unknown as Element).children;
-    pointer(buttons[1] as unknown as HTMLElement, 'pointerdown', 1);
-    pointer(buttons[2] as unknown as HTMLElement, 'pointerdown', 2);
+    pointer(buttons[2] as unknown as HTMLElement, 'pointerdown', 1);
+    pointer(buttons[3] as unknown as HTMLElement, 'pointerdown', 2);
     assert.deepEqual(calls, ['skill']);
     wheel.visible(false); wheel.visible(true);
-    pointer(buttons[2] as unknown as HTMLElement, 'pointerdown', 2);
+    pointer(buttons[3] as unknown as HTMLElement, 'pointerdown', 2);
     assert.deepEqual(calls, ['skill', 'potion']);
-    pointer(buttons[2] as unknown as HTMLElement, 'pointerup', 2);
+    pointer(buttons[3] as unknown as HTMLElement, 'pointerup', 2);
     wheel.setCooldowns({ skill: { durationMs: 1000, remainingMs: 500 } });
-    pointer(buttons[1] as unknown as HTMLElement, 'pointerdown', 3);
+    pointer(buttons[2] as unknown as HTMLElement, 'pointerdown', 3);
     assert.equal(calls.length, 2);
     assert.equal(wheel.snapshot()[0].cooldown?.remainingMs, 500);
     wheel.setCooldowns({});
-    pointer(buttons[1] as unknown as HTMLElement, 'pointerdown', 4);
+    pointer(buttons[2] as unknown as HTMLElement, 'pointerdown', 4);
     assert.equal(calls.length, 3);
     wheel.setCooldowns({ skill: { durationMs: 1000, remainingMs: 900 } });
-    pointer(buttons[2] as unknown as HTMLElement, 'pointerdown', 5);
+    pointer(buttons[3] as unknown as HTMLElement, 'pointerdown', 5);
     assert.equal(calls.length, 3, '技能进入冷却后，按住它的手指仍拥有动作互斥');
     wheel.destroy();
     await new Promise(resolve => setTimeout(resolve, 0));
@@ -150,7 +150,7 @@ test('wheel cooldown stays aligned with the current shortcut icon when its size 
     const errors: unknown[] = [];
     const wheel = new DomActionControls(h.parent, skin, { attack: () => {}, skill: () => {}, item: () => {}, swap: () => {} }, error => errors.push(error), assets);
     wheel.layout({ width: 1200, height: 700, insets: { left: 12, right: 8, top: 0, bottom: 6 } }, { 'slot-0': { x: .7, y: .5, scale: 1.4 } });
-    const face = (wheel.element as unknown as Element).children[1].children[1];
+    const face = (wheel.element as unknown as Element).children[2].children[1];
     const icon = face.children[2], overlay = icon.children[1];
     const aligned = (size: string) => {
       assert.equal(overlay.hidden, false);
@@ -171,6 +171,24 @@ test('wheel cooldown stays aligned with the current shortcut icon when its size 
     aligned('64px');
     wheel.destroy(); await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(assets.size, 0); assert.deepEqual(errors, []);
+  } finally { h.restore(); }
+});
+
+test('the wheel shield covers the gaps between action buttons', () => {
+  const h = harness();
+  try {
+    const assets = new DomAssets({ image: async () => ({ width: 94, height: 94 }), atlas: async () => ({ frames: {} }) });
+    const skin = Object.fromEntries(CONTROL_PARTS.map(part => [part, `${part}.png`])) as ControlSkin;
+    const wheel = new DomActionControls(h.parent, skin, { attack: () => {}, skill: () => {}, item: () => {}, swap: () => {} }, () => {}, assets);
+    wheel.layout({ width: 1200, height: 700, insets: { left: 12, right: 8, top: 0, bottom: 6 } });
+    const root = wheel.element as unknown as Element, shield = root.children[0], attack = root.children[1];
+    assert.equal(shield.style.pointerEvents, 'auto', '空白处由挡板接收，不再落到地图');
+    assert.equal(shield.getAttribute('aria-hidden'), 'true');
+    assert.ok(Number.parseFloat(shield.style.width) > Number.parseFloat(attack.style.width));
+    assert.ok(Number.parseFloat(shield.style.height) > Number.parseFloat(attack.style.height));
+    assert.ok(Number.parseFloat(shield.style.left) < Number.parseFloat(attack.style.left),
+      '挡板从最左的快捷位包到攻击键，按钮之间的空隙也在里面');
+    wheel.destroy();
   } finally { h.restore(); }
 });
 

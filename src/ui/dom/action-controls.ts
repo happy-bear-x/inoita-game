@@ -28,6 +28,8 @@ export class DomActionControls extends DomComponent {
   private readonly slots: Control[] = [];
   private readonly attack: Control;
   private readonly swap: Control;
+  /** 按钮之间的透明挡板：让轮盘范围内的空白也先于地图接收输入。 */
+  private readonly shield: DomComponent;
   private page: readonly ShortcutSlot[] = [];
   private cooldowns: Readonly<Record<string, Cooldown>> = {};
   private readonly skin: ControlSkin;
@@ -36,6 +38,10 @@ export class DomActionControls extends DomComponent {
   constructor(parent: HTMLElement, skin: ControlSkin, handlers: ActionControlsHandlers, failed: (error: unknown) => void, assets = domAssets) {
     super(parent); this.skin = skin; this.handlers = handlers; this.failed = failed; this.assets = assets;
     Object.assign(this.element.style, { inset: '0', width: '100%', height: '100%' });
+    // 挡板先建，按钮后建并叠在它上面；空白处由挡板接住，按钮本体仍走自己的圆形热区。
+    this.shield = new DomComponent(this);
+    Object.assign(this.shield.element.style, { pointerEvents: 'auto', touchAction: 'none' });
+    this.shield.element.setAttribute('aria-hidden', 'true');
     this.attack = this.control(CONTROL_SIZES.attack.width, [skin.button], skin['button-pressed'], () => handlers.attack(), CONTROL_SIZES.attack.height);
     for (let index = 0; index < SHORTCUT_SLOT_COUNT; index++) {
       this.slots.push(this.control(CONTROL_SIZES.slot.width, [skin['slot-shadow'], skin['slot-ring']], skin['slot-pressed'], () => this.activate(index)));
@@ -115,6 +121,18 @@ export class DomActionControls extends DomComponent {
   }
   layout(viewport: ControlViewport, overrides?: ControlLayoutOverrides): void {
     const points = resolveControlLayout(viewport, overrides);
+    // 挡板覆盖整组动作按钮的外接矩形，按钮之间的空隙也不会再落给地图。
+    const shielded: ControlId[] = ['attack', 'swap',
+      ...Array.from({ length: SHORTCUT_SLOT_COUNT }, (_, index) => `slot-${index}` as ControlId)];
+    let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+    for (const id of shielded) {
+      const point = points[id];
+      left = Math.min(left, point.x - point.width / 2); top = Math.min(top, point.y - point.height / 2);
+      right = Math.max(right, point.x + point.width / 2); bottom = Math.max(bottom, point.y + point.height / 2);
+    }
+    const padding = 8;
+    this.shield.rect({ x: left - padding, y: top - padding,
+      width: right - left + padding * 2, height: bottom - top + padding * 2 });
     const place = (control: Control, id: ControlId) => {
       const point = points[id], factor = point.scale * point.userScale;
       control.button.element.style.left = `${point.x}px`; control.button.element.style.top = `${point.y}px`;

@@ -60,6 +60,11 @@ export class DomUi {
       this.layers.set(name, layer);
       this.visible.set(name, true);
     }
+    // Phaser 默认还会在 window 上处理画布外的 mousedown/touchstart；HUD 控件是 DOM，
+    // 在这里截住冒泡，点按钮、摇杆和控件之间的空隙才不会再命中背后的地图对象。
+    const hudLayer = this.layers.get('hud');
+    if (hudLayer) for (const name of ['pointerdown', 'mousedown', 'touchstart'])
+      hudLayer.addEventListener(name, event => event.stopPropagation());
     frame.appendChild(root);
     this.root = root;
     this.layout();

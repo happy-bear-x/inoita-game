@@ -17,6 +17,18 @@ test('text follows translated viewports and anchor changes without recreating la
   layer.destroy();
 });
 
+test('HUD controls stop pointer starts before they reach the game window listeners',()=>{
+  const dom=new DomUi(),hud=dom.layer('hud')!,button=document.createElement('button');
+  hud.appendChild(button);
+  let handled=0,windowed=0;button.addEventListener('mousedown',()=>handled++);
+  const onWindow=()=>windowed++;window.addEventListener('mousedown',onWindow);
+  button.dispatchEvent(new Event('mousedown',{bubbles:true}));
+  button.dispatchEvent(new Event('touchstart',{bubbles:true}));
+  window.removeEventListener('mousedown',onWindow);
+  assert.equal(handled,1,'控件自己的按下处理照常执行');
+  assert.equal(windowed,0,'不再冒泡到 Phaser 的 window 监听');
+});
+
 test('reused menu text updates and clears its contrast background',()=>{
   const dom=new DomUi(),labels:ReturnType<DomUi['label']>[]=[];
   const layer=new MenuTextLayer({label:(...args)=>{const label=dom.label(...args);labels.push(label);return label;}},(x,y)=>({x,y,scale:1}),()=>0);
