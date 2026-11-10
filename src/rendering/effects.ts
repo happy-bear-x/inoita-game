@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import type { EffectClip } from '../domain/content.ts';
+import type { EffectClip, EffectLayer } from '../domain/content.ts';
 import { EFFECT_ATLAS_BY_FILE, EFFECT_ATLAS_PAGES } from '../generated/effect-atlas.ts';
 import { backdropApproximation, layerDraw } from './effect-colors.ts';
 import { blendModeOf } from './blend-modes.ts';
@@ -21,6 +21,14 @@ const effectLeases=new WeakMap<Phaser.GameObjects.Container,AssetLease>();
  * 素材描述符由 `combat-asset-descriptors.ts` 提供，运行时预载和构建期校验共用。
  */
 export { effectAssets } from './combat-asset-descriptors.ts';
+
+/**
+ * 图集特效动画的身份：文件、页和帧参数都参与，避免同一个 layer key 在不同内容里
+ * 指向不同文件或帧数时静默复用旧动画。未映射的层仍直接使用 `layer.key`。
+ */
+export function effectAtlasAnimationKey(layer: EffectLayer, clip: EffectClip, pages: readonly string[]): string {
+  return `${layer.file}#${pages.join('+')}#clip:${clip.frames}:${clip.frameRate}`;
+}
 
 export function createEffect(scene: Phaser.Scene, clip: EffectClip, x: number, y: number, loop = false): Phaser.GameObjects.Container {
   const effect = scene.add.container(x, y).setDepth(y + 1);
@@ -79,7 +87,7 @@ function buildEffectLayers(
     const textureKey = frameRefs?.length ? EFFECT_ATLAS_PAGES[frameRefs[0]!.page]!.key : layer.key;
     const sprite = scene.add.sprite(0, 0, textureKey, frameRefs?.[0]?.frame).setOrigin(clip.originX, clip.originY)
       .setScale(clip.mirrorX ? -1 : 1, 1);
-    const animationKey = frameRefs?.length ? `${layer.key}@atlas` : layer.key;
+    const animationKey = frameRefs?.length ? effectAtlasAnimationKey(layer, clip, pages) : layer.key;
     // 页纹理可能在上一次地图关闭时被释放，而动画还留在全局表里；帧已失效就重建，不能直接播放。
     const existing = typeof scene.anims?.get === 'function' && scene.anims.exists(animationKey)
       ? scene.anims.get(animationKey) : undefined;

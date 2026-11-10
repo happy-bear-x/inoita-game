@@ -6,20 +6,37 @@ import {registerHooks} from 'node:module';
 import test from 'node:test';
 import type Phaser from 'phaser';
 import type {BattleCatalog} from '../src/domain/battle.ts';
-import type {ActorDefinition,AnimationClip} from '../src/domain/content.ts';
+import type {ActorDefinition,AnimationClip,EffectClip,EffectLayer} from '../src/domain/content.ts';
 import {CombatController,type ActionPlayback,type Combatant,type CombatPort} from '../src/domain/combat.ts';
 import {CombatCooldownStore} from '../src/domain/combat-cooldowns.ts';
 import {CombatConditions} from '../src/domain/combat-conditions.ts';
 import type {CharacterVisual} from '../src/rendering/characters.ts';
 import {loadSceneAssets,type PendingAsset} from '../src/rendering/scene-assets.ts';
-import {EFFECT_ATLAS_BY_FILE} from '../src/generated/effect-atlas.ts';
+import {EFFECT_ATLAS_BY_FILE,EFFECT_ATLAS_PAGES} from '../src/generated/effect-atlas.ts';
 const hook=registerHooks({resolve(specifier,context,next){return specifier==='phaser'
   ?{url:'data:text/javascript,export default {BlendModes:{NORMAL:0,SCREEN:1,ADD:2,MULTIPLY:3},Scene:class{},Physics:{Arcade:{Body:class{}}}}',shortCircuit:true}:next(specifier,context);}});
 const {CombatPresenter}=await import('../src/rendering/combat-presenter.ts');
 const {CombatEffects}=await import('../src/rendering/combat-effects.ts');
 const {WorldCombat}=await import('../src/scenes/world-combat.ts');
-const {createEffect,effectAssets}=await import('../src/rendering/effects.ts');hook.deregister();
+const {createEffect,effectAssets,effectAtlasAnimationKey}=await import('../src/rendering/effects.ts');hook.deregister();
 const catalog=JSON.parse(readFileSync(new URL('../public/content/battle.json',import.meta.url),'utf8')) as BattleCatalog;
+const effectLayers=(name:string,clipNames?:readonly string[])=>Object.entries(catalog.attackEffects[name]!.clips)
+  .filter(([clipName])=>!clipNames||clipNames.includes(clipName))
+  .flatMap(([,clip])=>clip.layers.map(layer=>({clip,layer})));
+/** 一个特效实际持有的纹理键：图集化后是页 key，未映射的旧层才用图层 key。 */
+const effectTextureKeys=(name:string,clipNames?:readonly string[]):string[]=>[...new Set(effectLayers(name,clipNames).flatMap(({clip,layer})=>{
+  const refs=EFFECT_ATLAS_BY_FILE[layer.file];
+  return refs?.length?refs.slice(0,clip.frames).map(ref=>EFFECT_ATLAS_PAGES[ref.page]!.key):[layer.key];
+}))];
+/** 图集层的动画键跟 effects.ts 一致：文件、页和帧参数共同确定身份。 */
+const atlasAnimationKey=(layer:EffectLayer,clip:EffectClip):string=>{
+  const refs=EFFECT_ATLAS_BY_FILE[layer.file];
+  if(!refs?.length)return layer.key;
+  const pages=[...new Set(refs.slice(0,clip.frames).map(ref=>EFFECT_ATLAS_PAGES[ref.page]!.key))];
+  return effectAtlasAnimationKey(layer,clip,pages);
+};
+/** 一个特效实际创建的动画键：图集层带文件与帧参数，未映射的旧层用图层 key。 */
+const effectAnimationKeys=(name:string,clipNames?:readonly string[]):string[]=>[...new Set(effectLayers(name,clipNames).map(({clip,layer})=>atlasAnimationKey(layer,clip)))];
 
 interface Animation {key:string;frames:unknown[];frameRate:number;repeat?:number}
 class Display extends EventEmitter {
@@ -41,11 +58,8 @@ class Display extends EventEmitter {
 
 function setup(){
   const nodes:Display[]=[],animations=new Map<string,Animation>(),textures=new Map<string,Set<number>>(),removed:string[]=[],queued:PendingAsset[]=[];
-  // 战斗视觉资源是会话常驻包：夹具按真实内容预置全部特效纹理与完整帧。
-  for(const effect of Object.values(catalog.attackEffects))
-    for(const clip of Object.values(effect.clips))
-      for(const layer of clip.layers)
-        textures.set(layer.key,new Set(Array.from({length:clip.frames},(_,index)=>index)));
+  // 战斗视觉资源是会话常驻包：夹具按真实内容预置全部特效图集页。
+  for(const page of EFFECT_ATLAS_PAGES)textures.set(page.key,new Set<number>());
   const make=(x=0,y=0)=>{const value=new Display();value.x=x;value.y=y;nodes.push(value);return value;};
   const load=Object.assign(new EventEmitter(),{
     spritesheet:(key:string,file:string,config:Phaser.Types.Loader.FileTypes.ImageFrameConfig)=>queued.push({kind:'spritesheet',key,file,config}),
@@ -132,14 +146,22 @@ test('world effects retain actual scene asset leases until their own animation f
   const presenter=new CombatPresenter(f.scene,catalog,()=>visual,()=>[caster],world);
   dispatchFrame(presenter,{caster,facing:'east',basicAttack:null,skill:{id:'swirling-storm',action:catalog.skills['swirling-storm'].action!,level:1}},0);
   dispatchFrame(presenter,{caster,facing:'east',basicAttack:null,skill:{id:'weapon-hitback',action:catalog.skills['weapon-hitback'].action!,level:1}},2);
-  const ringKeys=catalog.attackEffects['swirl-ring'].clips.default.layers.map(layer=>layer.key);
-  const waveKeys=[...new Set(['east','default'].flatMap(variant=>catalog.attackEffects['hitback-wave'].clips[variant].layers.map(layer=>layer.key)))];
+  const variants=['east','default'] as const;
+  const ringTextures=effectTextureKeys('swirl-ring');
+  const waveTextures=effectTextureKeys('hitback-wave',variants);
+  const ringAnimations=effectAnimationKeys('swirl-ring');
+  const waveAnimations=effectAnimationKeys('hitback-wave',variants);
   presenter.clear();actorLease.release();
-  for(const key of [...ringKeys,...waveKeys]){assert.equal(f.textures.has(key),true,key);assert.equal(f.animations.has(key),true,key);}
+  for(const key of [...ringTextures,...waveTextures])assert.equal(f.textures.has(key),true,key);
+  for(const key of [...ringAnimations,...waveAnimations])assert.equal(f.animations.has(key),true,key);
   f.advance(5);
-  for(const key of waveKeys){assert.equal(f.textures.has(key),false,key);assert.equal(f.animations.has(key),false,key);}
-  for(const key of ringKeys)assert.equal(f.textures.has(key),true,key);
-  world.clear();for(const key of ringKeys){assert.equal(f.textures.has(key),false,key);assert.equal(f.animations.has(key),false,key);}
+  for(const key of waveTextures)assert.equal(f.textures.has(key),false,key);
+  for(const key of waveAnimations)assert.equal(f.animations.has(key),false,key);
+  for(const key of ringTextures)assert.equal(f.textures.has(key),true,key);
+  for(const key of ringAnimations)assert.equal(f.animations.has(key),true,key);
+  world.clear();
+  for(const key of ringTextures)assert.equal(f.textures.has(key),false,key);
+  for(const key of ringAnimations)assert.equal(f.animations.has(key),false,key);
   assert.equal(new Set(f.removed).size,f.removed.length,'leases release each texture exactly once');
 });
 
@@ -152,7 +174,7 @@ test('图集页释放后，另一个场景创建的特效动画会被清理并�
   // 加载贴图的场景和创建特效的场景不同，但 Phaser 的 anims/textures 是全游戏共用的。
   const otherScene={...f.scene} as unknown as Phaser.Scene;
   const first=createEffect(otherScene,clip,0,0,true);
-  const keys=clip.layers.filter(layer=>EFFECT_ATLAS_BY_FILE[layer.file]).map(layer=>`${layer.key}@atlas`);
+  const keys=clip.layers.filter(layer=>EFFECT_ATLAS_BY_FILE[layer.file]).map(layer=>atlasAnimationKey(layer,clip));
   assert.ok(keys.length,'用例需要至少一层图集特效');
   for(const key of keys)assert.ok(f.animations.has(key),key);
   const before=new Map(keys.map(key=>[key,f.animations.get(key)]));
@@ -171,7 +193,7 @@ test('帧已经失效的特效动画在播放前会被重建',async()=>{
   const effect=catalog.attackEffects['rampage-burst']!;
   const clip=effect.clips.default!;
   const layer=clip.layers.find(value=>EFFECT_ATLAS_BY_FILE[value.file])!;
-  const key=`${layer.key}@atlas`;
+  const key=atlasAnimationKey(layer,clip);
   const lease=await loadSceneAssets(f.scene,effectAssets({'rampage-burst':effect}),()=>{});
   const stale={key,frames:[{frame:{texture:null}}],frameRate:1} as unknown as Animation;
   f.animations.set(key,stale);
