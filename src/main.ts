@@ -124,6 +124,9 @@ app.content.trusted = trustedContentNow() && !gmOn();
 
 const inspect = gmFromAddress;
 
+/** 进图/读档完成后的刷新率补测；由 boot() 装配，场景就绪时调用。 */
+let remeasureRefreshAfterStart: (() => void) | undefined;
+
 let modeRequest = new AbortController();
 /** 内容目录与存档无关：标题页开始预载后，职业选择、读档和进图都复用同一份。 */
 const contentRequest = new AbortController();
@@ -395,7 +398,8 @@ async function finishStoryStart(classId: string): Promise<void> {
   recordStartPhase('session-install-start');
   installSession(newStorySession(campaign, app.world.actors[campaign.start.actor], selected, app.items,app.characterStats,app.battleCatalog,app.companions));
   recordStartPhase('session-installed');
-  selection.scene.start(SCENE_KEYS.world, { ...app.campaign.start, initialEntry: true, onReady: () => app.storyUI?.prewarmBag() });
+  selection.scene.start(SCENE_KEYS.world, { ...app.campaign.start, initialEntry: true,
+    onReady: () => { app.storyUI?.prewarmBag(); remeasureRefreshAfterStart?.(); } });
   recordStartPhase('world-scene-start');
 }
 
@@ -441,6 +445,7 @@ async function resumeSlot(slot:SaveSlotRef,signal?:AbortSignal):Promise<void> {
           initialEntry:true,suppressEntry:true,resumeStory:true,signal:lifetime.signal,checkpoint:world.world,generatedEntities:world.generatedEntities,preparedScene:world.scene,
           onReady:()=>{
             if(lifetime.signal.aborted)return;
+            remeasureRefreshAfterStart?.();
             if(world.audio)app.audio?.restoreStoryAudio(world.audio);
             window.setTimeout(()=>{if(!lifetime.signal.aborted)globalThis.storyDiagnostics?.record('load-audio-ready',{map:location.map});},4000);
           }});
@@ -704,19 +709,33 @@ function boot(): void {
     game.loop.setFPSLimit(resolveFrameLimit(displaySettings.frameRateLimit, currentRefreshRate()));
   };
   const unsubscribeFrameRate = displaySettings.subscribeFrameRateLimit(applyFrameLimit);
+  const remeasureNow = (): void => {
+    if (document.visibilityState === 'visible') void detectRefreshRate().then(applyFrameLimit);
+  };
   // 刷新率要等页面跑起来才量得到；量到之前按 60Hz 处理，60Hz 屏直接走 vsync。
   void detectRefreshRate().then(applyFrameLimit);
-  // 启动时页面在后台，rAF 不跑，第一次会量不到；恢复可见后补测一次再换算限帧。
-  const remeasureRefresh = (): void => {
+  // 启动初期浏览器可能还没按高刷回调，量到的值会偏低；3 秒后补测一次。
+  const settleRefreshTimer = window.setTimeout(remeasureNow, 3000);
+  // 进图/读档完成时加载压力已经结束，此时再量一次，拿到的才是屏幕真实节奏。
+  let startRefreshTimer = 0;
+  remeasureRefreshAfterStart = () => {
+    window.clearTimeout(startRefreshTimer);
+    startRefreshTimer = window.setTimeout(remeasureNow, 1200);
+  };
+  // 页面在后台启动时 rAF 不跑，第一次会量不到；恢复可见后补测一次再换算限帧。
+  const remeasureWhenVisible = (): void => {
     if (refreshRateKnown() || document.visibilityState !== 'visible') return;
     void detectRefreshRate().then(applyFrameLimit);
   };
-  document.addEventListener('visibilitychange', remeasureRefresh);
-  window.addEventListener('pageshow', remeasureRefresh);
+  document.addEventListener('visibilitychange', remeasureWhenVisible);
+  window.addEventListener('pageshow', remeasureWhenVisible);
   game.events.once(Phaser.Core.Events.DESTROY, () => {
     frameLimitDisposed = true; unsubscribeFrameRate();
-    document.removeEventListener('visibilitychange', remeasureRefresh);
-    window.removeEventListener('pageshow', remeasureRefresh);
+    window.clearTimeout(settleRefreshTimer);
+    window.clearTimeout(startRefreshTimer);
+    remeasureRefreshAfterStart = undefined;
+    document.removeEventListener('visibilitychange', remeasureWhenVisible);
+    window.removeEventListener('pageshow', remeasureWhenVisible);
   });
   const clearDiagnosticSnapshot = installDiagnosticSnapshot(runtimeDiagnostics);
   game.events.once(Phaser.Core.Events.DESTROY, clearDiagnosticSnapshot);
