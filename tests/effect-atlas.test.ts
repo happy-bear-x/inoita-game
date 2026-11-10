@@ -115,6 +115,16 @@ test('所有战斗特效的每个图层都进入图集，映射覆盖各自的�
   for (const effect of Object.values(world.storyEffects ?? {}))
     for (const clip of Object.values(effect.clips))
       for (const layer of clip.layers) if (layer.file) sourceFiles.add(layer.file);
+  // 掉落拾取特效来自 items.json；第一次掉落时才播放，漏收不会在进图时暴露。
+  const items = read<{ items: Record<string, { pickup?: { hitDrop?: { directions?: { clip: EffectClip }[] } } }> }>('content/items.json');
+  for (const item of Object.values(items.items))
+    for (const direction of item.pickup?.hitDrop?.directions ?? [])
+      for (const layer of direction.clip.layers) if (layer.file) {
+        sourceFiles.add(layer.file);
+        const frames = EFFECT_ATLAS_BY_FILE[layer.file];
+        assert.ok(frames, `掉落特效进入图集：${layer.file}`);
+        assert.ok(frames.length >= direction.clip.frames, `${layer.file} 映射帧数覆盖掉落动画`);
+      }
   assert.deepEqual(Object.keys(EFFECT_ATLAS_BY_FILE).sort(), [...sourceFiles].sort(), '映射覆盖所有特效图层文件，且没有多余文件');
   assert.equal(effectAtlasSourceDigest(), EFFECT_ATLAS_SOURCE_DIGEST, '图集不是旧文件');
 });

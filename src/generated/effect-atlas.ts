@@ -29893,6 +29893,158 @@ export const EFFECT_ATLAS_BY_FILE: Readonly<Record<string, readonly EffectAtlasF
       "page": 17,
       "frame": "35ddfce53d07-4"
     }
+  ],
+  "assets/battle-effects/mana-gem-drop/southeast-.png": [
+    {
+      "page": 24,
+      "frame": "3d1b09fc6991-0"
+    },
+    {
+      "page": 24,
+      "frame": "3d1b09fc6991-1"
+    },
+    {
+      "page": 24,
+      "frame": "3d1b09fc6991-2"
+    },
+    {
+      "page": 24,
+      "frame": "3d1b09fc6991-3"
+    },
+    {
+      "page": 24,
+      "frame": "3d1b09fc6991-4"
+    },
+    {
+      "page": 24,
+      "frame": "3d1b09fc6991-5"
+    },
+    {
+      "page": 24,
+      "frame": "3d1b09fc6991-6"
+    },
+    {
+      "page": 24,
+      "frame": "3d1b09fc6991-7"
+    },
+    {
+      "page": 24,
+      "frame": "3d1b09fc6991-8"
+    }
+  ],
+  "assets/battle-effects/mana-gem-drop/southwest-.png": [
+    {
+      "page": 24,
+      "frame": "e672e61790c8-0"
+    },
+    {
+      "page": 24,
+      "frame": "e672e61790c8-1"
+    },
+    {
+      "page": 24,
+      "frame": "e672e61790c8-2"
+    },
+    {
+      "page": 24,
+      "frame": "e672e61790c8-3"
+    },
+    {
+      "page": 24,
+      "frame": "e672e61790c8-4"
+    },
+    {
+      "page": 24,
+      "frame": "e672e61790c8-5"
+    },
+    {
+      "page": 24,
+      "frame": "e672e61790c8-6"
+    },
+    {
+      "page": 24,
+      "frame": "e672e61790c8-7"
+    },
+    {
+      "page": 24,
+      "frame": "e672e61790c8-8"
+    }
+  ],
+  "assets/battle-effects/mana-gem-drop/northwest-.png": [
+    {
+      "page": 24,
+      "frame": "dc8985875409-0"
+    },
+    {
+      "page": 24,
+      "frame": "dc8985875409-1"
+    },
+    {
+      "page": 24,
+      "frame": "dc8985875409-2"
+    },
+    {
+      "page": 24,
+      "frame": "dc8985875409-3"
+    },
+    {
+      "page": 24,
+      "frame": "dc8985875409-4"
+    },
+    {
+      "page": 24,
+      "frame": "dc8985875409-5"
+    },
+    {
+      "page": 24,
+      "frame": "dc8985875409-6"
+    },
+    {
+      "page": 24,
+      "frame": "dc8985875409-7"
+    },
+    {
+      "page": 24,
+      "frame": "dc8985875409-8"
+    }
+  ],
+  "assets/battle-effects/mana-gem-drop/northeast-.png": [
+    {
+      "page": 24,
+      "frame": "672930323e82-0"
+    },
+    {
+      "page": 24,
+      "frame": "672930323e82-1"
+    },
+    {
+      "page": 24,
+      "frame": "672930323e82-2"
+    },
+    {
+      "page": 24,
+      "frame": "672930323e82-3"
+    },
+    {
+      "page": 24,
+      "frame": "672930323e82-4"
+    },
+    {
+      "page": 24,
+      "frame": "672930323e82-5"
+    },
+    {
+      "page": 24,
+      "frame": "672930323e82-6"
+    },
+    {
+      "page": 24,
+      "frame": "672930323e82-7"
+    },
+    {
+      "page": 24,
+      "frame": "672930323e82-8"
+    }
   ]
 };
-export const EFFECT_ATLAS_SOURCE_DIGEST = "8880229ca162d0b48990e7db04843b316c26926c86a4f999d92f45239143f81a";
+export const EFFECT_ATLAS_SOURCE_DIGEST = "1bce7caa7b3ee32724783dce1f410f05c6d89d4c0e34c3cf43626ce7d373726d";

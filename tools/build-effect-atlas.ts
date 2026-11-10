@@ -30,6 +30,8 @@ interface AttackEffect { clips: Record<string, EffectClip> }
 interface Battle { attackEffects: Record<string, AttackEffect> }
 interface StoryEffect { clips: Record<string, EffectClip> }
 interface WorldCatalog { storyEffects?: Record<string, StoryEffect> }
+interface PickupDrop { name: string; clip: EffectClip }
+interface ItemsCatalog { items?: Record<string, { pickup?: { hitDrop?: { directions?: PickupDrop[] } } | null }> }
 
 /** 一个特效或剧情效果；`id` 带来源前缀，避免同名时分块和共用判断混淆。 */
 interface EffectTarget {
@@ -127,6 +129,15 @@ function effectTargets(): EffectTarget[] {
     const effect = storyEffects?.[name];
     if (!effect) throw new Error(`剧情特效图集目标不存在：${name}`);
     targets.push({ id: `story:${name}`, clips: effect.clips });
+  }
+  // 掉落拾取特效（目前是蓝宝石）来自 items.json，不在 battle/world 里；
+  // 漏掉时运行时会在第一次掉落时找不到文件映射并抛错。
+  const items = read('items.json') as ItemsCatalog;
+  for (const [id, item] of Object.entries(items.items ?? {})) {
+    const directions = item.pickup?.hitDrop?.directions;
+    if (!directions?.length) continue;
+    targets.push({ id: `pickup:${id}`,
+      clips: Object.fromEntries(directions.map(direction => [direction.name, direction.clip])) });
   }
   return targets;
 }
