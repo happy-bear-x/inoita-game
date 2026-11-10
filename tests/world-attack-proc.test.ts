@@ -23,7 +23,7 @@ function fixture(count=1){
   const states=new Map(actors.slice(1).map(value=>[value.id,{health:10000,maxHealth:10000,level:1}]));
   const enemies=actors.slice(1).map(value=>({key:value.id,definition:{acceptsBuffs:true},visual:{container:{active:true}}}));
   let current:string|undefined='enemy-0';
-  const host=Object.setPrototypeOf({hero,conditions,arena:enemies,app:{battleCatalog:catalog,session:{}},
+  const host=Object.setPrototypeOf({hero,conditions,arena:enemies,app:{battleCatalog:catalog,session:{isOneHitKill:()=>false}},
     pendingDefeats:new PendingEnemyDefeats(),hitResolution:new CombatHitResolution(),
     partyControllers:new Map([['player',{snapshot:()=>({targetId:current}),selectedTargetId:()=>current,
       actionState:()=> 'idle',setReactionTarget:(id:string)=>{current=id;}}]]),

@@ -17,10 +17,12 @@ const method=(name:string)=>Reflect.get(WorldCombat.prototype,name);
 function fixture(){
   const hero=new BattleCharacter('warrior',stats,items),ally=new BattleCharacter('warrior',stats,items);
   let rank=0,allyRank=1;
-  const configuration=(value:()=>number)=>({draft:()=>({levels:{'revenge-incarnate':value()}})});
+  const configuration=(value:()=>number)=>({get version(){return value();},draft:()=>({levels:{'revenge-incarnate':value()}})});
   Object.assign(ally,{skills:configuration(()=>allyRank)});
   const conditions=new CombatConditions(),order:string[]=[];
   const host=Object.setPrototypeOf({hero,conditions,hitResolution:new CombatHitResolution(),arena:[],allies:[],
+    passivesCache:new Map(),skillTableCache:new Map(),equipmentRecoveryCache:new Map(),combatProcsCache:new Map(),
+    aiSkillCostCache:new Map(),
     pendingDefeats:new Set(),fallen:new Set(),
     app:{battleCatalog:catalog,items,session:{skills:configuration(()=>rank),
       party:{activeIds:['player','ally'],groupModifiers:()=>({})}}},

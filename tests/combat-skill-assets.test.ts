@@ -9,17 +9,26 @@ const battle = JSON.parse(readFileSync(new URL('../public/content/battle.json', 
 const darkKnight = battle.classes.find(character => character.id === 'dark-knight')!;
 const attack = resolveBasicAttack(battle, { actor: darkKnight.actor, basicAttack: darkKnight.basicAttack });
 
-function effectKeys(learned: readonly string[]): Set<string> {
-  return new Set(effectAssets(classEffects(battle, darkKnight, attack, undefined, new Set(learned))).map(asset => asset.key));
+function effectFrames(learned: readonly string[]): Map<string, Set<string>> {
+  const assets = effectAssets(classEffects(battle, darkKnight, attack, undefined, new Set(learned)));
+  return new Map(assets.map(asset => [asset.key, new Set(asset.kind === 'atlas' ? asset.frames ?? [] : [])]));
+}
+
+function gainedFrames(base: Map<string, Set<string>>, extended: Map<string, Set<string>>): number {
+  let gained = 0;
+  for (const [key, frames] of extended)
+    for (const frame of frames) if (!base.get(key)?.has(frame)) gained++;
+  return gained;
 }
 
 test('a newly learned skill contributes its effects to the combat asset plan',()=>{
-  assert.equal(effectKeys(['dark-strike']).has('spell-impact-default-0-'),false);
-  const withGuardian = effectKeys(['dark-strike', 'guardian-of-darkness']);
-  assert.ok(withGuardian.has('spell-impact-default-0-'),'守护黑暗的 spell-impact 必须进入素材计划');
-  assert.ok(withGuardian.has('spell-impact-default-0-screen'));
+  const base = effectFrames(['dark-strike']);
+  const withGuardian = effectFrames(['dark-strike', 'guardian-of-darkness']);
+  assert.equal(base.has('effects-atlas:22'), false);
+  assert.ok(withGuardian.has('effects-atlas:22'), '守护黑暗的特效必须进入素材计划');
+  assert.ok(gainedFrames(base, withGuardian) > 0, '守护黑暗必须带来新的图集帧');
 
-  const withArmor = effectKeys(['dark-strike', 'molten-armor']);
-  assert.ok(withArmor.has('molten-armor-aura-default-screen'),'熔岩护甲的光环必须进入素材计划');
-  assert.ok(withArmor.has('shadow-veil-default-0-add'),'熔岩护甲的暗影帷幕必须进入素材计划');
+  const withArmor = effectFrames(['dark-strike', 'molten-armor']);
+  assert.ok(withArmor.has('effects-atlas:22'), '熔岩护甲的特效必须进入素材计划');
+  assert.ok(gainedFrames(base, withArmor) > 0, '熔岩护甲必须带来新的图集帧');
 });

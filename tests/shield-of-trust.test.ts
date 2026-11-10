@@ -41,11 +41,14 @@ test('both physical blocks hand the party a layer while misses and magic blocks 
 });
 
 function fixture(rank=1){
-  const conditions=new CombatConditions(),sent:string[]=[];
+  const conditions=new CombatConditions(),sent:string[]=[];let revision=0;
   const member=(id:string)=>({classId:'priest',player:{health:id==='third'?0:100,maxHealth:100,mana:0,maxMana:0},
-    skills:{draft:()=>({levels:{'shield-of-trust':rank}})}});
+    bag:{revision:0,equipmentFor:()=>({}),get:()=>undefined},
+    skills:{get version(){return revision;},draft:()=>({levels:{'shield-of-trust':rank}})}});
   const host=Object.setPrototypeOf({app:{battleCatalog:catalog,session:{skills:member('player').skills}},
     conditions,arena:[],activeParty:['player','ally','third','extra'],fallen:new Set(['fallen-one']),
+    passivesCache:new Map(),skillTableCache:new Map(),equipmentRecoveryCache:new Map(),combatProcsCache:new Map(),
+    aiSkillCostCache:new Map(),
     pendingDefeats:new Set(),
     // 第三名同链角色血量 0 但还没结算完，仍算 active；第四名不在固定三槽里。
     memberOf:(id:string)=>id==='fallen-one'?undefined:member(id),
@@ -59,7 +62,7 @@ function fixture(rank=1){
   const hit=(damageKind:'physical'|'magic',kind:'hit'|'miss'|'weapon-block'|'shield-block')=>
     Reflect.get(WorldCombat.prototype,'resolveHitReactions').call(host,{casterId:'attacker',targetId:'player'},
       {kind,damage:0},damageKind,'basic-attack',{});
-  return {conditions,hit,sent,setRank:(value:number)=>rank=value};
+  return {conditions,hit,sent,setRank:(value:number)=>{rank=value;revision++;}};
 }
 
 test('a block gives each of the three slots a layer, at any distance and including an un-settled zero-HP member',()=>{

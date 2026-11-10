@@ -23,16 +23,18 @@ const empty=(modifiers:BattleBuffEffect['modifiers']):BattleBuffEffect=>({durati
 function fixture(){
   const conditions=new CombatConditions(),hitResolution=new CombatHitResolution(),order:string[]=[],effects:string[]=[],hits:{event:AttackContact;hit:PhysicalHit}[]=[];
   let rank=1,lifeDrain=0;
-  const config={draft:()=>({levels:{'armor-penetration':rank}})};
+  const config={get version(){return rank;},draft:()=>({levels:{'armor-penetration':rank}})};
   const base={level:10,physicalAttack:100,magicAttack:0,baseDefense:100,defense:150,defenseRate:500,
     maxHealth:1000,maxMana:100,hitBase:100,hitBonus:1000,evasionBase:0,evasionBonus:0,
     criticalRate:0,criticalResistance:0,criticalDamage:0,criticalDamageResistance:0,weaponBlock:0,shieldBlock:0,
     physicalResistance:0,magicResistance:0,attributes:{strength:0,dexterity:0,vitality:0,intelligence:0,mentality:0}};
   const member=(classId:string)=>({classId,level:10,panel:{...base},player:{health:500,maxHealth:1000,mana:100,maxMana:100},
-    bag:{equipmentFor:()=>({}),get:()=>undefined},skills:{draft:()=>({levels:{}})}});
+    bag:{revision:0,equipmentFor:()=>({}),get:()=>undefined},skills:{draft:()=>({levels:{}})}});
   const player=member('warrior'),target=member('dark-knight'),members=new Map([['player',player],['target',target]]);
   const host=Object.setPrototypeOf({hero:player,app:{battleCatalog:catalog,session:{skills:config}},
     conditions,hitResolution,pendingDefeats:new Set(),arena:[],allies:[],
+    passivesCache:new Map(),skillTableCache:new Map(),equipmentRecoveryCache:new Map(),combatProcsCache:new Map(),
+    aiSkillCostCache:new Map(),
     memberOf:(id:string)=>members.get(id),partyPassives:()=>[],
     syncCombatResourceLimits:()=>{},applyStateConsequences:()=>{},
     equipmentRecovery:()=>({lifeDrainPerThousand:lifeDrain}),

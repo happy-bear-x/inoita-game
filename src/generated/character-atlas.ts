@@ -958,48 +958,48 @@ export const CHARACTER_ATLAS_PAGES: readonly CharacterAtlasPage[] = [
     "file": "assets/character-atlas/characters-119.png",
     "data": "assets/character-atlas/characters-119.json",
     "frame": "2f7518f994-000",
-    "width": 1022,
-    "height": 989
+    "width": 1021,
+    "height": 997
   },
   {
     "key": "characters-atlas:120",
     "file": "assets/character-atlas/characters-120.png",
     "data": "assets/character-atlas/characters-120.json",
-    "frame": "9cf9609e76-000",
+    "frame": "0cc1f3495e-000",
     "width": 1022,
-    "height": 1011
+    "height": 1021
   },
   {
     "key": "characters-atlas:121",
     "file": "assets/character-atlas/characters-121.png",
     "data": "assets/character-atlas/characters-121.json",
-    "frame": "3a20b38814-000",
-    "width": 1021,
-    "height": 1007
+    "frame": "24ea0aa16a-000",
+    "width": 1022,
+    "height": 978
   },
   {
     "key": "characters-atlas:122",
     "file": "assets/character-atlas/characters-122.png",
     "data": "assets/character-atlas/characters-122.json",
-    "frame": "bc9167b64a-000",
-    "width": 1022,
-    "height": 1013
+    "frame": "9cc1efb11a-000",
+    "width": 1021,
+    "height": 1015
   },
   {
     "key": "characters-atlas:123",
     "file": "assets/character-atlas/characters-123.png",
     "data": "assets/character-atlas/characters-123.json",
-    "frame": "6285b8add2-000",
-    "width": 1021,
-    "height": 943
+    "frame": "e6cebe1300-000",
+    "width": 1022,
+    "height": 1019
   },
   {
     "key": "characters-atlas:124",
     "file": "assets/character-atlas/characters-124.png",
     "data": "assets/character-atlas/characters-124.json",
-    "frame": "299defb886-000",
-    "width": 1020,
-    "height": 361
+    "frame": "b11e668a6a-000",
+    "width": 1021,
+    "height": 471
   }
 ];
 export interface CharacterAtlasEntry { pages: readonly number[]; prefix: string }
@@ -1083,20 +1083,20 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/armor-trader-58d99f9d/idle-south-normal.png": {
     "pages": [
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123
     ],
     "prefix": "e6cebe1300"
   },
@@ -5047,28 +5047,28 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/carp-sage-7311190b/idle-south-normal.png": {
     "pages": [
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121
     ],
     "prefix": "7ee17b6d88"
   },
@@ -5080,20 +5080,20 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/claude-654192ed/idle-south-normal.png": {
     "pages": [
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123
     ],
     "prefix": "dbed2bd3dc"
   },
@@ -5367,23 +5367,23 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/dark-sorcerer-kane-369ccd17/idle-south-normal.png": {
     "pages": [
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121
     ],
     "prefix": "89e226d19a"
   },
@@ -7613,27 +7613,27 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/enemy-berkel-dispatch-soldier-1/walk-east-normal.png": {
     "pages": [
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122
     ],
     "prefix": "c89e3179c1"
   },
   "assets/characters/enemy-berkel-dispatch-soldier-1/walk-north-normal.png": {
     "pages": [
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122
     ],
     "prefix": "b2ead5e415"
   },
@@ -9547,31 +9547,31 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/enemy-blue-wingslime-1/attack-east-normal.png": {
     "pages": [
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120
     ],
     "prefix": "5aee65fa13"
   },
   "assets/characters/enemy-blue-wingslime-1/attack-north-normal.png": {
     "pages": [
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120
     ],
     "prefix": "f4b4ea361a"
   },
@@ -9613,29 +9613,29 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/enemy-blue-wingslime-1/walk-east-normal.png": {
     "pages": [
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120
     ],
     "prefix": "81febaedec"
   },
   "assets/characters/enemy-blue-wingslime-1/walk-north-normal.png": {
     "pages": [
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120
     ],
     "prefix": "e3ee0dd9a5"
   },
@@ -12418,27 +12418,27 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/enemy-dark-archer-1/walk-east-normal.png": {
     "pages": [
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121
     ],
     "prefix": "fe9ac0f9cf"
   },
   "assets/characters/enemy-dark-archer-1/walk-north-normal.png": {
     "pages": [
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121
     ],
     "prefix": "24ea0aa16a"
   },
@@ -16479,33 +16479,33 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/enemy-etherin-the-wing-slime-1/idle-east-normal.png": {
     "pages": [
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123
     ],
     "prefix": "0f8edcdfea"
   },
   "assets/characters/enemy-etherin-the-wing-slime-1/idle-north-normal.png": {
     "pages": [
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123
     ],
     "prefix": "b08009588e"
   },
@@ -17468,25 +17468,25 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/enemy-goblin-swordsman-magnatue-1/attack-east-normal.png": {
     "pages": [
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122
     ],
     "prefix": "a509ca3277"
   },
   "assets/characters/enemy-goblin-swordsman-magnatue-1/attack-north-normal.png": {
     "pages": [
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122
     ],
     "prefix": "b8a8ab75d2"
   },
@@ -17774,37 +17774,37 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/enemy-gray-mouse-1/idle-east-normal.png": {
     "pages": [
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123
     ],
     "prefix": "9f76755d68"
   },
   "assets/characters/enemy-gray-mouse-1/idle-north-normal.png": {
     "pages": [
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123
     ],
     "prefix": "b36e37fd74"
   },
@@ -17950,37 +17950,37 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/enemy-greedy-mimic-1/idle-east-normal.png": {
     "pages": [
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122
     ],
     "prefix": "769f947a0a"
   },
   "assets/characters/enemy-greedy-mimic-1/idle-north-normal.png": {
     "pages": [
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122
     ],
     "prefix": "793ebd70d8"
   },
@@ -19076,37 +19076,37 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/enemy-infected-mouse-in-a-box-1/idle-east-normal.png": {
     "pages": [
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123
     ],
     "prefix": "6e1ab37718"
   },
   "assets/characters/enemy-infected-mouse-in-a-box-1/idle-north-normal.png": {
     "pages": [
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123
     ],
     "prefix": "f51a581fbe"
   },
@@ -19754,41 +19754,41 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/enemy-knife-needled-mosquitoes-1/idle-east-normal.png": {
     "pages": [
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123
     ],
     "prefix": "667ad6283c"
   },
   "assets/characters/enemy-knife-needled-mosquitoes-1/idle-north-normal.png": {
     "pages": [
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123
     ],
     "prefix": "eaca3302dc"
   },
@@ -20434,33 +20434,33 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/enemy-mad-ghostfire-1/idle-east-screen.png": {
     "pages": [
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121
     ],
     "prefix": "fffb3fe4fb"
   },
   "assets/characters/enemy-mad-ghostfire-1/idle-north-screen.png": {
     "pages": [
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121
     ],
     "prefix": "850eba4c83"
   },
@@ -20920,41 +20920,41 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/enemy-mosquito-1/idle-east-normal.png": {
     "pages": [
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123
     ],
     "prefix": "cf1480ac74"
   },
   "assets/characters/enemy-mosquito-1/idle-north-normal.png": {
     "pages": [
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123
     ],
     "prefix": "96af3e0cd0"
   },
@@ -21584,37 +21584,37 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/enemy-nibbler-mimics-1/idle-east-normal.png": {
     "pages": [
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122
     ],
     "prefix": "238262e9d4"
   },
   "assets/characters/enemy-nibbler-mimics-1/idle-north-normal.png": {
     "pages": [
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122
     ],
     "prefix": "b8b36ad0b4"
   },
@@ -22351,37 +22351,37 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/enemy-principle-guardian-1/idle-east-screen.png": {
     "pages": [
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120
     ],
     "prefix": "0cc1f3495e"
   },
   "assets/characters/enemy-principle-guardian-1/idle-north-screen.png": {
     "pages": [
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120
     ],
     "prefix": "541e926c0f"
   },
@@ -23255,26 +23255,26 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/enemy-red-flower-cactus-1/idle-east-normal.png": {
     "pages": [
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123
     ],
     "prefix": "1f747cb93f"
   },
@@ -24269,37 +24269,37 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/enemy-savage-rat-1/idle-east-normal.png": {
     "pages": [
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123
     ],
     "prefix": "66b9cb95cb"
   },
   "assets/characters/enemy-savage-rat-1/idle-north-normal.png": {
     "pages": [
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123
     ],
     "prefix": "841156a703"
   },
@@ -25646,37 +25646,37 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/enemy-sly-mimic-1/idle-east-normal.png": {
     "pages": [
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122
     ],
     "prefix": "4d970952a5"
   },
   "assets/characters/enemy-sly-mimic-1/idle-north-normal.png": {
     "pages": [
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122
     ],
     "prefix": "7adb6c0d06"
   },
@@ -27578,37 +27578,37 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/enemy-white-head-goblin-1/idle-east-normal.png": {
     "pages": [
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121
     ],
     "prefix": "078c276e47"
   },
   "assets/characters/enemy-white-head-goblin-1/idle-north-normal.png": {
     "pages": [
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121
     ],
     "prefix": "dec12a114f"
   },
@@ -28014,33 +28014,33 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/enemy-wolrang-1/idle-east-normal.png": {
     "pages": [
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121
     ],
     "prefix": "a4777f31ee"
   },
   "assets/characters/enemy-wolrang-1/idle-north-normal.png": {
     "pages": [
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121
     ],
     "prefix": "3c3c750200"
   },
@@ -28154,33 +28154,33 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/enemy-zealot-manson-1/idle-east-normal.png": {
     "pages": [
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121
     ],
     "prefix": "286aa4c2be"
   },
   "assets/characters/enemy-zealot-manson-1/idle-north-normal.png": {
     "pages": [
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120,
-      120
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121,
+      121
     ],
     "prefix": "cd556b74db"
   },
@@ -28301,14 +28301,14 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/goblin-miller-a1aeb5aa/idle-north-normal.png": {
     "pages": [
-      123,
-      123,
-      123,
-      123,
-      123,
-      123,
-      123,
-      123
+      124,
+      124,
+      124,
+      124,
+      124,
+      124,
+      124,
+      124
     ],
     "prefix": "d5d7c61872"
   },
@@ -28396,20 +28396,20 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/guard-turnak-e46028d1/idle-south-normal.png": {
     "pages": [
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119,
-      119
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120
     ],
     "prefix": "f06ef04d43"
   },
@@ -29029,17 +29029,17 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/map-exit-38b4014e/idle-south-screen.png": {
     "pages": [
-      123,
-      123,
-      123,
-      123,
-      123,
-      123,
-      123,
-      123,
-      123,
-      123,
-      123
+      124,
+      124,
+      124,
+      124,
+      124,
+      124,
+      124,
+      124,
+      124,
+      124,
+      124
     ],
     "prefix": "eb0469d454"
   },
@@ -34278,7 +34278,7 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/sealed-dungeon-barrier-eaae1bdd/idle-south-screen.png": {
     "pages": [
-      123
+      124
     ],
     "prefix": "78190b2f42"
   },
@@ -34983,27 +34983,27 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/story-ben-s-men-61d2f618/idle-east-normal.png": {
     "pages": [
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122
     ],
     "prefix": "5ae214ad0f"
   },
   "assets/characters/story-ben-s-men-61d2f618/idle-north-normal.png": {
     "pages": [
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122
     ],
     "prefix": "38869d13ab"
   },
@@ -35015,16 +35015,16 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/story-bizarre-flying-book-0a44c5d6/idle-east-normal.png": {
     "pages": [
-      123,
-      123,
-      123,
-      123,
-      123,
-      123,
-      123,
-      123,
-      123,
-      123
+      124,
+      124,
+      124,
+      124,
+      124,
+      124,
+      124,
+      124,
+      124,
+      124
     ],
     "prefix": "b11e668a6a"
   },
@@ -35127,16 +35127,16 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/story-book-of-evil-darkness-28ebb8e8/idle-east-normal.png": {
     "pages": [
-      123,
-      123,
-      123,
-      123,
-      123,
-      123,
-      123,
-      123,
-      123,
-      123
+      124,
+      124,
+      124,
+      124,
+      124,
+      124,
+      124,
+      124,
+      124,
+      124
     ],
     "prefix": "ebb0e94472"
   },
@@ -36050,6 +36050,19 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/story-goblin-cave-4448315c/idle-north-normal.png": {
     "pages": [
+      124,
+      124,
+      124,
+      124,
+      124,
+      124,
+      124,
+      124
+    ],
+    "prefix": "03a6e7f301"
+  },
+  "assets/characters/story-goblin-guard-9e6831cf/idle-east-normal.png": {
+    "pages": [
       123,
       123,
       123,
@@ -36059,31 +36072,18 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
       123,
       123
     ],
-    "prefix": "03a6e7f301"
-  },
-  "assets/characters/story-goblin-guard-9e6831cf/idle-east-normal.png": {
-    "pages": [
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122
-    ],
     "prefix": "b1a5999494"
   },
   "assets/characters/story-goblin-guard-9e6831cf/idle-north-normal.png": {
     "pages": [
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123
     ],
     "prefix": "3ef5682c05"
   },
@@ -36251,16 +36251,16 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/story-hell-s-pawn-3595041a/idle-north-screen.png": {
     "pages": [
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122
     ],
     "prefix": "ea8737ed94"
   },
@@ -36508,20 +36508,20 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/story-leiden-the-alchemist-599a73ef/cry-east-normal.png": {
     "pages": [
-      122
+      123
     ],
     "prefix": "fb6c209788"
   },
   "assets/characters/story-leiden-the-alchemist-599a73ef/cry-north-normal.png": {
     "pages": [
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122,
-      122
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123,
+      123
     ],
     "prefix": "198921c1e5"
   },
@@ -36922,29 +36922,143 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/story-pope-erasmus-6425bd68/idle-east-normal.png": {
     "pages": [
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122
     ],
     "prefix": "812efce27f"
   },
   "assets/characters/story-pope-erasmus-6425bd68/idle-north-normal.png": {
     "pages": [
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122
     ],
     "prefix": "9cc1efb11a"
+  },
+  "assets/characters/story-preview-assassin/idle-south-normal.png": {
+    "pages": [
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120
+    ],
+    "prefix": "661a21cb56"
+  },
+  "assets/characters/story-preview-dark-knight/idle-south-normal.png": {
+    "pages": [
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120
+    ],
+    "prefix": "ed0b7cf2ae"
+  },
+  "assets/characters/story-preview-priest/idle-south-normal.png": {
+    "pages": [
+      119,
+      119,
+      119,
+      119,
+      119,
+      119,
+      119,
+      119,
+      119,
+      119,
+      119,
+      119,
+      119,
+      119
+    ],
+    "prefix": "09b946d8cb"
+  },
+  "assets/characters/story-preview-ranger/idle-south-normal.png": {
+    "pages": [
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120
+    ],
+    "prefix": "79f9d149f5"
+  },
+  "assets/characters/story-preview-warlock/idle-south-normal.png": {
+    "pages": [
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120
+    ],
+    "prefix": "98d15b7966"
+  },
+  "assets/characters/story-preview-warrior/idle-south-normal.png": {
+    "pages": [
+      119,
+      119,
+      119,
+      119,
+      119,
+      119,
+      119,
+      119,
+      119,
+      119,
+      119,
+      119,
+      119,
+      119
+    ],
+    "prefix": "21a6aceadb"
   },
   "assets/characters/story-red-flower-cactus-b8b1567d/idle-east-normal.png": {
     "pages": [
@@ -37030,27 +37144,27 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/story-scorpion-a750189d/idle-east-normal.png": {
     "pages": [
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122
     ],
     "prefix": "13c083c202"
   },
   "assets/characters/story-scorpion-a750189d/idle-north-normal.png": {
     "pages": [
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121,
-      121
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122,
+      122
     ],
     "prefix": "5b1dd5c904"
   },
@@ -37161,16 +37275,16 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
   },
   "assets/characters/story-veteran-eaf2cb52/idle-south-normal.png": {
     "pages": [
-      123,
-      123,
-      123,
-      123,
-      123,
-      123,
-      123,
-      123,
-      123,
-      123
+      124,
+      124,
+      124,
+      124,
+      124,
+      124,
+      124,
+      124,
+      124,
+      124
     ],
     "prefix": "52655a40e7"
   },
@@ -37574,4 +37688,4 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
     "prefix": "8dfa733f8d"
   }
 };
-export const CHARACTER_ATLAS_SOURCE_DIGEST = "912488005432c54298d9bd5ffdb9c003778c0c10cb5e1073f0e804a6894f2c09";
+export const CHARACTER_ATLAS_SOURCE_DIGEST = "1f804a14926096752d6a09ac2621ca173d94f82ff884f63831bd649b07754a1d";

@@ -4,6 +4,7 @@ import test from 'node:test';
 import type {BattleCatalog} from '../src/domain/battle.ts';
 import {parseBattle} from '../src/application/content-validation.ts';
 import {skillReactionEffects} from '../src/domain/skill-reactions.ts';
+import {sourceAssetPath} from '../tools/asset-source.ts';
 
 const data=JSON.parse(readFileSync(new URL('../public/content/battle.json',import.meta.url),'utf8')) as BattleCatalog;
 const skill=data.skills['armor-penetration'];
@@ -37,7 +38,7 @@ test('Armor Break application uses the five-frame source effect and both exporte
   const clip=data.attackEffects['armor-break-impact'].clips.default;
   assert.equal(clip.frames,5);assert.equal(clip.layers.length,2);
   for(const layer of clip.layers){
-    const bytes=readFileSync(new URL('../public/'+layer.file,import.meta.url));
+    const bytes=readFileSync(sourceAssetPath(layer.file));
     assert.equal(bytes.toString('hex',0,8),'89504e470d0a1a0a');
     assert.equal(bytes.readUInt32BE(16),clip.frameWidth*clip.frames);
     assert.equal(bytes.readUInt32BE(20),clip.frameHeight);

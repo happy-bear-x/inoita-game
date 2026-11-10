@@ -12,6 +12,8 @@ export function uiImageFileNames(files: readonly string[]): string[] {
   return [...new Set([...files, ...COMMON_BUTTON_IMAGES])].flatMap(file => {
     const name=atlasName(file);
     if(name===UI_ICON_ATLAS_DATA||name===UI_ICON_ATLAS_FILE)return Object.keys(UI_ICON_FRAMES).slice(0,1);
+    const ui=UI_ATLAS_FRAMES[name];
+    if(ui&&!UI_ATLAS_PAGES[ui.page])throw new Error(`界面图集缺页：${file} 映射到第 ${ui.page} 页，但该页不存在`);
     const page=UI_ATLAS_PAGES.find(page=>page.file===name||page.data===name);
     // 普通图片保留原始路径（含前导斜杠）；只有图集页换成代表帧名。
     return page?Object.keys(UI_ATLAS_FRAMES).filter(key=>UI_ATLAS_FRAMES[key]!.key===page.key).slice(0,1):[file];

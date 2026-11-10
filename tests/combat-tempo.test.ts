@@ -19,6 +19,9 @@ const phaser=registerHooks({resolve(specifier,context,next){
 const {CombatPresenter}=await import('../src/rendering/combat-presenter.ts');phaser.deregister();
 const catalog:BattleCatalog=JSON.parse(readFileSync(new URL('../public/content/battle.json',import.meta.url),'utf8'));
 const knight=catalog.classes.find(character=>character.id==='dark-knight')!;
+/** 用例自己伪造动作帧数；动态贴图（file 为空）是唯一允许脱离图集帧数的播放路径。 */
+const dynamicKnight=structuredClone(knight.actor);
+for(const clip of Object.values(dynamicKnight.clips))for(const layer of clip!.layers)layer.file='';
 const caster:Combatant={id:'knight',team:'party',position:{x:0,y:0},bounds:{x:0,y:0,width:16,height:16}};
 
 class Sprite extends FakeSprite {
@@ -32,7 +35,7 @@ class Sprite extends FakeSprite {
 function playback(skillId?:string,onFrame?:(index:number)=>void,basicOverrides?:Partial<ResolvedBasicAttack>){
   let speed=1000,completed=0;
   const definition=skillId?catalog.skills[skillId]:undefined;
-  const character={actor:knight.actor,entity:{id:'knight',actor:knight.actor.id},layers:[],clipName:null,
+  const character={actor:dynamicKnight,entity:{id:'knight',actor:dynamicKnight.id},layers:[],clipName:null,
     container:{active:true,x:0,y:0,addAt:()=>{}}} as unknown as CharacterVisual;
   const timers:{delay:number;callback:()=>void;removed:boolean;remove:()=>void}[]=[];
   const scene={events:new EventEmitter(),add:{sprite:()=>new Sprite()},anims:{exists:()=>false,create:()=>{},generateFrameNumbers:()=>[]},

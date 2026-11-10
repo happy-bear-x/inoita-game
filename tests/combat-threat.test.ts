@@ -149,17 +149,18 @@ test('selection switches at the truncated 110 percent boundary and otherwise kee
   assert.equal(ledger.select('empty',undefined,()=>true),undefined);
 });
 
-test('equal maximum uses compacted order while host target eligibility leaves invisible entries in the ledger',()=>{
+test('equal maximum follows the owner index order while host target eligibility leaves invisible entries in the ledger',()=>{
   const ledger=new ThreatLedger();
   ledger.add('enemy','leaving',100,1);ledger.add('enemy','hero',100,1);ledger.add('enemy','ally',100,1);
   assert.equal(ledger.select('enemy',undefined,()=>true),'leaving');
   ledger.removeActor('leaving');
-  assert.equal(ledger.select('enemy',undefined,()=>true),'ally');
+  // 同分时按 owner 索引的插入顺序取第一个；删除 leaving 不会把 ally 提到前面。
+  assert.equal(ledger.select('enemy',undefined,()=>true),'hero');
   const before=ledger.captureState();
   assert.equal(ledger.select('enemy',undefined,source=>source!=='ally'),'hero');
   assert.equal(ledger.select('enemy',undefined,()=>false),undefined);
   assert.deepEqual(ledger.captureState(),before);
-  assert.equal(ledger.select('enemy',undefined,()=>true),'ally');
+  assert.equal(ledger.select('enemy',undefined,()=>true),'hero');
 });
 
 test('taunt clamps only same-faction competitors after the caster entry exists without changing timestamps',()=>{

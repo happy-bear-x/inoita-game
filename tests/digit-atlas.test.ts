@@ -63,6 +63,19 @@ test('图集伤害数字按页键和帧名创建动画，不再把源帧序号�
     sequence.map(index => mapping[index]!.frame), '序列下标映射到正确的源帧');
 });
 
+test('数字图集缺少文件映射或帧时直接失败', () => {
+  const animations = new Map<string, Animation>();
+  const sprite = spriteFor('plain-digit-sheet', animations) as unknown as import('phaser').GameObjects.Sprite;
+
+  const unmapped = { key: 'digit', file: 'assets/missing/digit.png', blend: 'screen' as const, operations: [] };
+  assert.throws(() => playDigitAnimation(sprite, unmapped, [0], 30, 0), /伤害数字图集缺少文件映射/);
+
+  const file = 'assets/battle-effects/damage-enemy-0/0-.png';
+  const mapping = EFFECT_ATLAS_BY_FILE[file]!;
+  const mapped = { key: 'digit', file, blend: 'screen' as const, operations: [] };
+  assert.throws(() => playDigitAnimation(sprite, mapped, [mapping.length], 30, 0), /伤害数字图集缺少帧/);
+});
+
 test('未进图集的数字仍按原纹理和数字帧播放', () => {
   const animations = new Map<string, Animation>();
   const sprite = spriteFor('plain-digit-sheet', animations);

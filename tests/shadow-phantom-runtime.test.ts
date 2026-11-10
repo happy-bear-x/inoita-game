@@ -22,16 +22,18 @@ const base={level:10,physicalAttack:100,magicAttack:100,baseDefense:0,defense:0,
   physicalResistance:0,magicResistance:0,baseMagicResistance:0,attributes:primary};
 function fixture(){
   const ranks={player:1,ally:8};
-  const configuration=(id:'player'|'ally')=>({draft:()=>({levels:{'shadow-phantom':ranks[id]}})});
+  const configuration=(id:'player'|'ally')=>({get version(){return ranks[id];},draft:()=>({levels:{'shadow-phantom':ranks[id]}})});
   const member=(id:'player'|'ally')=>({classId:'assassin',level:10,panel:structuredClone(base),skills:configuration(id),
     player:{health:10000,maxHealth:10000,mana:100,maxMana:100},
-    bag:{equipmentFor:()=>({}),equipmentItems:()=>({}),get:()=>undefined}});
+    bag:{revision:0,equipmentFor:()=>({}),equipmentItems:()=>({}),get:()=>undefined}});
   const player=member('player'),ally=member('ally'),members=new Map([['player',player],['ally',ally]]);
   const stats={...structuredClone(base),health:10000,mana:100};
   const actors=new Map(['player','ally','target'].map((id,index):[string,Combatant]=>[id,
     {id,team:id==='target'?'enemy':'party',position:{x:index*8,y:0},bounds:{x:-4,y:-4,width:8,height:8}}]));
   const conditions=new CombatConditions(),hits:PhysicalHit[]=[];
   const host=Object.setPrototypeOf({hero:player,conditions,hitResolution:new CombatHitResolution(),
+    passivesCache:new Map(),skillTableCache:new Map(),equipmentRecoveryCache:new Map(),combatProcsCache:new Map(),
+    aiSkillCostCache:new Map(),
     pendingDefeats:new Set<string>(),fallen:new Set<string>(),allies:[],arena:[{key:'target',definition:catalog.enemies[0]}],
     app:{battleCatalog:catalog,items:{items:{}},session:{skills:configuration('player'),party:{controlledId:'player',groupModifiers:()=>({})}},audio:{effect:()=>{}}},
     scene:{events:{emit:()=>{}}},memberOf:(id:string)=>members.get(id),

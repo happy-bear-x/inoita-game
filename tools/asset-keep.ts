@@ -120,6 +120,17 @@ function mapDocument(
 }
 
 /**
+ * UI 图集帧的路由结果：页存在、缺页，或该路径根本不是 UI 图集帧。
+ * 缺页时不能再退回原文件，构建必须把它当成素材引用缺失。
+ */
+export function uiAtlasFrameRoute(file: string): { page: (typeof UI_ATLAS_PAGES)[number] } | 'missing' | undefined {
+  const ui = UI_ATLAS_FRAMES[file];
+  if (!ui) return undefined;
+  const page = UI_ATLAS_PAGES[ui.page];
+  return page ? { page } : 'missing';
+}
+
+/**
  * 按运行时真正会读取的路径计算保留名单。
  *
  * 三类来源：
@@ -307,14 +318,16 @@ export async function collectAssetKeep(contentDir: string, assetsDir: string): P
       keep.add(UI_ICON_ATLAS_DATA);
       return;
     }
-    const ui = UI_ATLAS_FRAMES[file];
+    const ui = uiAtlasFrameRoute(file);
+    if (ui === 'missing') {
+      // 图集帧指向不存在的页：原文件已经被图集流程接管，不能悄悄退回单文件。
+      missing.push(file);
+      return;
+    }
     if (ui) {
-      const page = UI_ATLAS_PAGES[ui.page];
-      if (page) {
-        addAtlasPage(page);
-        covered.set(file, 'ui-atlas');
-        return;
-      }
+      addAtlasPage(ui.page);
+      covered.set(file, 'ui-atlas');
+      return;
     }
     keep.add(file);
   };

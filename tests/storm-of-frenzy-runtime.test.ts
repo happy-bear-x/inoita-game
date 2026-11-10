@@ -28,7 +28,7 @@ function fixture(){
     ['body',{id:'body',item:body,enhancement:0} as ItemInstance],
   ]);
   const equipment:Record<string,string>={'main-hand':'main','off-hand':'offhand',body:'body'};
-  const bag={equipmentFor:()=>equipment,get:(id:string)=>entries.get(id),
+  const bag={revision:0,equipmentFor:()=>equipment,get:(id:string)=>entries.get(id),
     equipmentItems:(keys:Record<string,string>)=>Object.fromEntries(Object.entries(keys).map(([slot,id])=>[slot,entries.get(id)!.item]))};
   const base={level:10,physicalAttack:100,magicAttack:50,baseDefense:0,defense:0,defenseRate:0,maxHealth:1000,maxMana:100,
     hitBase:100,hitBonus:1000,evasionBase:0,evasionBonus:0,criticalRate:0,criticalResistance:0,criticalDamage:0,
@@ -44,6 +44,8 @@ function fixture(){
   const ids=['player','near','far','fourth'];
   const host=Object.setPrototypeOf({hero:player,app:{battleCatalog:catalog,items,wardrobe,characterStats:read('character-stats'),
     session:{skills,party:{activeIds:ids,controlledId:'player'}}},conditions,hitResolution,fallen:new Set(),pendingDefeats:new Set(),arena:[],allies:[],
+    passivesCache:new Map(),skillTableCache:new Map(),equipmentRecoveryCache:new Map(),combatProcsCache:new Map(),
+    aiSkillCostCache:new Map(),
     scene:{events:{emit:()=>{}}},memberOf:(id:string)=>members.get(id),partyPassives:()=>[],syncCombatResourceLimits:()=>{},applyStateConsequences:()=>{},
     equipmentRecovery:()=>({lifeDrainPerThousand:0}),showBuffApplication:()=>assert.fail('these buffs have no application effect'),
     presenter:{showEffects:(_id:string,effects:{effect:string}[])=>effects.forEach(effect=>order.push(effect.effect))},

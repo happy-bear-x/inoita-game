@@ -108,7 +108,9 @@ function fixture(){
   const host=Object.setPrototypeOf({runtime,
     hero:defender,app:{battleCatalog:{...catalog,basicAttacks:{...catalog.basicAttacks,
       [enemyDefinition.basicAttack!.profileId]:{...catalog.basicAttacks[enemyDefinition.basicAttack!.profileId],damage}}},
-      audio:{monsterDeath:()=>order.push('death-sound')},session:{isOneHitKill:()=>false}},
+      audio:{monsterDeath:()=>order.push('death-sound')},session:{isOneHitKill:()=>false,questDropRequirements:()=>[]}},
+    passivesCache:new Map(),skillTableCache:new Map(),equipmentRecoveryCache:new Map(),combatProcsCache:new Map(),
+    aiSkillCostCache:new Map(),drops:{enemies:{},questItems:{}},
     conditions,arena:enemies,allies:[],partyControllers:new Map([['player',controller]]),
     pendingDefeats:new PendingEnemyDefeats(),hitResolution:new CombatHitResolution(),
     memberOf:(id:string)=>id==='player'?defender:undefined,partyPassives:()=>[],equipmentRecovery:()=>({lifeDrainPerThousand:0}),
@@ -196,20 +198,21 @@ test('accepted reflection and splash notify monster AI without recursively enter
   run.notifications.length=0;run.set('player','defense',0);run.contact();assert.equal(run.notifications.length,0);
 });
 
-test('positive direct armor damage reaches companion and uncontrolled hero reaction ports only when accepted',()=>{
+test('positive direct armor damage applies to party targets only when accepted',()=>{
   const run=fixture();Reflect.set(run.host,'enemiesRunning',true);
   Reflect.set(run.host,'memberOf',(id:string)=>id==='player'||id==='ally'?run.defender:undefined);
-  Reflect.set(run.host,'allies',[{id:'ally',ai:{onContact:(event:AttackContact)=>run.notifications.push(event)}}]);
-  Reflect.set(run.host,'heroAi',{onContact:(event:AttackContact)=>run.notifications.push(event)});
   for(const targetId of ['ally','player']){
-    Reflect.set(run.host.app,'session',{party:{controlledId:targetId==='player'?'ally':'player'}});
     const event={casterId:'attacker',targetId};
+    run.defender.player.health=1000;
     run.call('moltenDirectDamage',event,1,run.defender);
-    assert.deepEqual(run.notifications.at(-1),event);
-    const count=run.notifications.length;
+    assert.equal(run.defender.player.health,999,targetId);
+    const health=run.defender.player.health;
     run.call('moltenDirectDamage',event,0,run.defender);
-    run.conditions.applyState(targetId,'damage-immune',1000);run.call('moltenDirectDamage',event,1,run.defender);
-    assert.equal(run.notifications.length,count);
+    assert.equal(run.defender.player.health,health,'零伤害不结算');
+    run.conditions.applyState(targetId,'damage-immune',1000);
+    run.call('moltenDirectDamage',event,1,run.defender);
+    assert.equal(run.defender.player.health,health,'免疫状态不结算');
+    run.conditions.clear();
   }
   assert.equal(run.events.length,0);
 });

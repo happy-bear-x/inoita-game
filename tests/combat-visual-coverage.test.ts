@@ -178,14 +178,20 @@ test('enemy summons are expanded recursively with a cycle guard', () => {
 test('no texture key is described with two different frame layouts', () => {
   const pack = residentCombatAssets({ battle, wardrobe, world, companions });
   const inputs = assetInputs();
-  const seen = new Map(pack.assets.map(asset => [asset.key, JSON.stringify(asset)]));
+  // 图集页的 frames 是各计划实际用到的帧集合，合并后本来就会不同；布局冲突只看其余字段。
+  const layout = (asset: unknown): string => {
+    const rest = { ...(asset as Record<string, unknown>) };
+    delete rest.frames;
+    return JSON.stringify(rest);
+  };
+  const seen = new Map(pack.assets.map(asset => [asset.key, layout(asset)]));
   const conflicts: string[] = [];
   for (const reference of world.maps) {
     const map = read<WorldMap>(reference.file.replace('content/', '').replace(/\.json$/, ''));
     for (const asset of planMapCombat(map, inputs, { scripts: [] })) {
       const previous = seen.get(asset.key);
-      if (previous && previous !== JSON.stringify(asset)) conflicts.push(asset.key);
-      else seen.set(asset.key, JSON.stringify(asset));
+      if (previous && previous !== layout(asset)) conflicts.push(asset.key);
+      else seen.set(asset.key, layout(asset));
     }
   }
   assert.deepEqual([...new Set(conflicts)].slice(0, 20), []);

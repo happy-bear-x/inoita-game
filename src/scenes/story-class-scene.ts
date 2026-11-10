@@ -75,12 +75,14 @@ export class StoryClassScene extends Phaser.Scene {
   };
   private async open(signal:AbortSignal):Promise<void>{
     const catalog=this.app.storyClasses;
+    // 预览角色可能由角色图集页承载，也可能仍是独立长条图；用同一份加载描述取真实纹理键。
+    const previewAssets=catalog.classes.flatMap(entry=>characterAssets(entry.previewActor));
     await Promise.all([
       loadUiImages(this,[...Object.values(catalog.assets),...catalog.classes.map(entry=>entry.icon),'/assets/ui/menus/close.png','/assets/ui/menus/close-pressed.png'],value=>{if(!signal.aborted)this.app.ui.loading('正在准备职业…',value);}).then(lease=>{if(signal.aborted){lease.release();signal.throwIfAborted();}this.events.once('shutdown',()=>lease.release());}),
-      loadSceneAssets(this,[{kind:'image',key:`class-background:${catalog.background}`,file:catalog.background},...catalog.classes.flatMap(entry=>characterAssets(entry.previewActor))],()=>{})
+      loadSceneAssets(this,[{kind:'image',key:`class-background:${catalog.background}`,file:catalog.background},...previewAssets],()=>{})
     ]);
     signal.throwIfAborted();
-    for(const entry of catalog.classes)for(const layer of entry.previewActor.clips['idle-south']!.layers)this.textures.get(layer.key).setFilter(Phaser.Textures.FilterMode.NEAREST);
+    for(const key of new Set(previewAssets.map(asset=>asset.key)))this.textures.get(key).setFilter(Phaser.Textures.FilterMode.NEAREST);
     this.background=this.add.image(0,0,`class-background:${catalog.background}`).setOrigin(0).setScrollFactor(0).setDepth(0);
     this.surface=new UiSurface(this,960,640);
     this.preview=new LiveCharacterPreview(this,()=>{},actor=>createCharacter(this,actor,{id:'class-preview',actor:actor.id,x:0,y:0}),null);

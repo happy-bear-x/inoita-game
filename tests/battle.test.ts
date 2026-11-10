@@ -6,6 +6,7 @@ import type { BattleCatalog } from '../src/domain/battle.ts';
 import type { ClipName } from '../src/domain/content.ts';
 import { needsTarget, skillEffectNames, skillEvents } from '../src/domain/skill-action.ts';
 import { parseBattle } from '../src/application/content-validation.ts';
+import { sourceAssetPath } from '../tools/asset-source.ts';
 const publicRoot = new URL('../public/', import.meta.url);
 const catalog: BattleCatalog = JSON.parse(readFileSync(new URL('content/battle.json', publicRoot), 'utf8'));
 
@@ -16,18 +17,19 @@ test('six complete classes, legal ranks, original assets and independent actor a
   for (const character of catalog.classes) {
     assert.equal(character.skills.length, 15);
     assert.equal(character.skills.filter(id => catalog.skills[id].kind === 'active').length, 9);
-    assert.ok(character.description); assert.ok(existsSync(new URL(character.preview, publicRoot)));
+    assert.ok(character.description); assert.ok(existsSync(sourceAssetPath(character.preview)));
     const active = character.skills.filter(id => catalog.skills[id].kind === 'active');
     assert.ok(character.actor.collision);
-    // 站立、行走、普攻各四向，再加每个主动技能的四个朝向。
-    assert.equal(Object.keys(character.actor.clips).length, 12 + active.length * 4);
+    const comboSteps = catalog.basicAttacks[character.basicAttack.profileId]!.combo?.length ?? 0;
+    // 站立、行走、普攻各四向，近战连段后续各四向，再加每个主动技能的四个朝向。
+    assert.equal(Object.keys(character.actor.clips).length, 12 + comboSteps * 4 + active.length * 4);
     for (const clip of Object.values(character.actor.clips)) {
       assert.ok(clip);
       assert.equal(clip.frameRate, 1000 / 60);
-      for (const layer of clip.layers) assert.ok(existsSync(new URL(layer.file, publicRoot)));
+      for (const layer of clip.layers) assert.ok(existsSync(sourceAssetPath(layer.file)));
     }
     for (const id of character.skills) {
-      const skill = catalog.skills[id]; assert.ok(skill.name && skill.description); assert.ok(existsSync(new URL(skill.icon, publicRoot)));
+      const skill = catalog.skills[id]; assert.ok(skill.name && skill.description); assert.ok(existsSync(sourceAssetPath(skill.icon)));
       assert.deepEqual(skill.ranks.map(r => r.level), [1,2,3,4,5,6,7,8]);
       for (const rank of skill.ranks) {
         assert.ok(rank.details!.length > 0);
@@ -60,7 +62,7 @@ test('every active skill carries its action timeline, effect assets and target r
         const clip = character.actor.clips[`skill-${id}-${facing}` as ClipName];
         assert.ok(clip, `${id}/${facing}`);
         assert.equal(clip.frames, frameCount, `${id}/${facing}`);  // 末帧停留已展开
-        for (const layer of clip.layers) assert.ok(existsSync(new URL(layer.file, publicRoot)), layer.file);
+        for (const layer of clip.layers) assert.ok(existsSync(sourceAssetPath(layer.file)), layer.file);
       }
       // 挥击槽按朝向取变体，飞行的投射物按十六向取变体，其余只有一版。
       const flight = action.transition?.kind === 'trace' ? action.transition.effect : null;
@@ -73,7 +75,7 @@ test('every active skill carries its action timeline, effect assets and target r
           : name === flight ? ['heading-0','heading-90','heading-180','heading-270'] : ['default'];
         assert.ok(wanted.every(variant => effect.clips[variant]), `${id}: ${name}`);
         for (const clip of Object.values(effect.clips))
-          for (const layer of clip.layers) assert.ok(existsSync(new URL(layer.file, publicRoot)), layer.file);
+          for (const layer of clip.layers) assert.ok(existsSync(sourceAssetPath(layer.file)), layer.file);
       }
       // 每一个事件都必须真的能被某一帧触发，否则动画播完也不会有效果。
       const fired = new Set<number>();
@@ -147,7 +149,7 @@ test('complete enemy catalog preserves variants and shares valid animation resou
     assert.ok(clip.frames > 0 && Number.isInteger(clip.frames));
     assert.equal(clip.frameRate, 1000 / 60);
     assert.ok(clip.layers.length > 0);
-    for (const layer of clip.layers) assert.ok(existsSync(new URL(layer.file, publicRoot)));
+    for (const layer of clip.layers) assert.ok(existsSync(sourceAssetPath(layer.file)));
     assert.ok(enemy.actor.collision!.width > 0 && enemy.actor.collision!.height > 0);
   }
 });

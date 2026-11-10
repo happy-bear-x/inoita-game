@@ -7,6 +7,9 @@ import type Phaser from 'phaser';
 import {resolveBasicAttack} from '../src/domain/basic-attack.ts';
 import type {BattleCatalog} from '../src/domain/battle.ts';
 import type {Combatant} from '../src/domain/combat.ts';
+import type {ActorDefinition} from '../src/domain/content.ts';
+import {characterFrameList} from '../src/rendering/character-atlas.ts';
+import {CHARACTER_ATLAS_ALIASES} from '../tools/character-atlas-aliases.ts';
 
 const hook=registerHooks({resolve(specifier,context,next){return specifier==='phaser'
   ?{url:'data:text/javascript,export default {BlendModes:{NORMAL:0,SCREEN:1,ADD:2,MULTIPLY:3}}',shortCircuit:true}:next(specifier,context);}});
@@ -17,8 +20,15 @@ hook.deregister();
 const catalog=JSON.parse(readFileSync(new URL('../public/content/battle.json',import.meta.url),'utf8')) as BattleCatalog;
 /** 用户实际卡死的那个敌人：四向攻击素材 7 帧，普攻周期 15 帧。 */
 const soldier=catalog.enemies.find(enemy=>enemy.id==='enemy-berkel-soldier-4')!;
+/** 内容构建会把原始路径改写为图集规范路径，运行时按规范路径取页。 */
+const actor: ActorDefinition = (() => {
+  const copy=structuredClone(soldier.actor);
+  for(const clip of Object.values(copy.clips))for(const layer of clip!.layers)
+    if(layer.file)layer.file=CHARACTER_ATLAS_ALIASES[layer.file]??layer.file;
+  return copy;
+})();
 const caster:Combatant={id:'soldier',team:'hostile',position:{x:0,y:0},bounds:{x:-4,y:-4,width:8,height:8}};
-const attack=()=>resolveBasicAttack(catalog,{actor:soldier.actor,basicAttack:soldier.basicAttack});
+const attack=()=>resolveBasicAttack(catalog,{actor,basicAttack:soldier.basicAttack});
 /** 替身独有的字段（停播次数、贴图键、当前帧号）不在 Phaser 类型里，断言时按替身读。 */
 const asDisplay=(layers:readonly Phaser.GameObjects.Sprite[])=>layers as unknown as Display[];
 
@@ -39,7 +49,7 @@ class State {
  */
 class Display extends EventEmitter {
   scene: object | undefined = {};
-  active=true;visible=true;alpha=1;key:string;frame:number|undefined;
+  active=true;visible=true;alpha=1;key:string;frame:string|number|undefined;
   anims:State|undefined=new State();
   constructor(key:string){super();this.key=key;}
   setDepth(){return this;}setOrigin(){return this;}setBlendMode(){return this;}setScale(){return this;}setPosition(){return this;}
@@ -61,7 +71,7 @@ function setup(){
     anims:{exists:(key:string)=>animations.has(key),create:(definition:Definition)=>new State().create(definition),
       generateFrameNumbers:(_key:string,{start,end}:{start:number;end:number})=>Array.from({length:end-start+1},(_,i)=>i+start)},
   } as unknown as Phaser.Scene;
-  const character=createCharacter(scene,soldier.actor,{id:'story-located-enemy-berkel-soldier-4',actor:soldier.actor.id,x:0,y:0});
+  const character=createCharacter(scene,actor,{id:'story-located-enemy-berkel-soldier-4',actor:actor.id,x:0,y:0});
   const presenter=new CombatPresenter(scene,catalog,id=>id===caster.id?character:undefined,()=>[caster]);
   return {scene,character,presenter};
 }
@@ -114,10 +124,14 @@ test('素材播完后画面交给待机，动作动画不再写回攻击素材',
   // 计数达到素材帧数：画面交给待机，动作动画必须停下，否则它会按自己的节奏写回攻击末帧。
   showIdlePose(character,'south',sourceFrames,sourceFrames);
   assert.ok(layers.every((layer,index)=>!layer.anims!.isPlaying&&layer.anims!.stops===stops[index]+1));
-  assert.ok(layers.every(layer=>layer.key==='enemy-berkel-soldier-1-idle-south-normal'&&layer.frame===sourceFrames%idleFrames));
+  const idleMapping=characterFrameList(character.actor.clips['idle-south']!.layers[0]!.file,idleFrames);
+  assert.equal(idleMapping.length,idleFrames,'待机素材全部映射到图集');
+  const firstIdle=idleMapping[sourceFrames%idleFrames]!;
+  assert.ok(layers.every(layer=>layer.key===firstIdle.key&&layer.frame===firstIdle.frame));
 
   // 后续逻辑帧继续换待机画面，不再重复停播。
   showIdlePose(character,'south',sourceFrames+1,sourceFrames);
-  assert.ok(layers.every((layer,index)=>layer.anims!.stops===stops[index]+1&&layer.frame===(sourceFrames+1)%idleFrames));
+  const nextIdle=idleMapping[(sourceFrames+1)%idleFrames]!;
+  assert.ok(layers.every((layer,index)=>layer.anims!.stops===stops[index]+1&&layer.key===nextIdle.key&&layer.frame===nextIdle.frame));
   assert.ok(cycleFrames>sourceFrames,'这条用例依赖末帧补位把周期撑得比素材长');
 });

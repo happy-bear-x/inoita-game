@@ -115,14 +115,17 @@ test('healer choices cancel cleanly and repeated confirmation cannot double-char
   const director=new StoryDirector(campaign,session,ui,locked=>ui.lock(locked));
   const quote=healerRevivalQuote(session),revive=()=>{reviveAtHealer(session);};
   const first=director.visitHealer(actor,revive);
+  await Promise.resolve();
   assert.equal(ui.locked,true);assert.match(ui.choices!.description,new RegExp(String(quote.cost)));
   ui.choices!.choose(ui.choices!.options[1]);assert.equal(await first,true);
   assert.equal(session.money,100);assert.equal(member.alive,false);assert.equal(ui.locked,false);
-  const second=director.visitHealer(actor,revive),choice=ui.choices!;
+  const second=director.visitHealer(actor,revive);
+  await Promise.resolve();
+  const choice=ui.choices!;
   choice.choose(choice.options[0]);choice.choose(choice.options[0]);assert.equal(await second,true);
   assert.equal(session.money,100-quote.cost);assert.equal(member.alive,true);assert.equal(ui.locked,false);
   member.setHealth(0);const cancelled=director.visitHealer(actor,revive);
-  director.cancel();assert.equal(await cancelled,false);assert.equal(session.money,100-quote.cost);
+  await Promise.resolve();director.cancel();assert.equal(await cancelled,false);assert.equal(session.money,100-quote.cost);
   assert.equal(member.alive,false);assert.equal(ui.choices,undefined);
 });
 

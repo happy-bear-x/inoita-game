@@ -5,7 +5,7 @@ import { idlePoseFrame } from '../domain/basic-attack.ts';
 import { blendModeOf } from './blend-modes.ts';
 import { applyCharacterVisibility } from './character-visibility.ts';
 import { rememberEffectAnimation } from './effect-animations.ts';
-import { characterFrame, characterFrameList } from './character-atlas.ts';
+import { characterAtlasEntry, characterFrame, characterFrameList } from './character-atlas.ts';
 
 import type { AssetLease } from '../application/assets.ts';
 import { retainLoadedSceneAssets } from './scene-assets.ts';
@@ -46,9 +46,15 @@ function releaseCharacterSequence(sprite: Phaser.GameObjects.Sprite): void {
   cached.lease?.release();
 }
 
-/** 逻辑帧号 → 实际纹理键和帧名；图集层取页和帧名，动态外观继续用原纹理。 */
+/** 逻辑帧号 → 实际纹理键和帧名；只有动态外观（`file` 为空）继续用原纹理和数字帧。 */
 function layerFrame(layer: { key: string; file?: string }, index: number): { key: string; frame: string | number } {
-  return characterFrame(layer.file, index) ?? { key: layer.key, frame: index };
+  if (!layer.file) return { key: layer.key, frame: index };
+  const frame = characterFrame(layer.file, index);
+  if (frame) return frame;
+  const mapped = characterAtlasEntry(layer.file)?.pages.length ?? 0;
+  throw new Error(mapped
+    ? `角色图集帧不足：${layer.file} 需要第 ${index} 帧，只映射了 ${mapped} 帧`
+    : `角色图集缺少文件映射：${layer.file}`);
 }
 
 /** 每个 Sprite 只保留最近一套动作序列；待机期间保留，换外观或销毁时释放。 */
@@ -191,7 +197,13 @@ export function setCharacterClip(scene: Phaser.Scene, character: CharacterVisual
       || STORY_POSE_NAMES.some(pose => name.startsWith(`${pose}-`));
     clip.layers.forEach((layer, index) => {
       // 图集层的帧分散在页纹理里，动画键要带上实际页；同一页的不同长条图靠文件路径区分。
-      const atlasFrames = characterFrameList(layer.file, clip.frames);
+      const atlasFrames = layer.file ? characterFrameList(layer.file, clip.frames) : [];
+      if (layer.file && atlasFrames.length !== clip.frames) {
+        const mapped = characterAtlasEntry(layer.file)?.pages.length ?? 0;
+        throw new Error(mapped
+          ? `角色图集帧不足：${layer.file} 需要 ${clip.frames} 帧，只映射了 ${mapped} 帧`
+          : `角色图集缺少文件映射：${layer.file}`);
+      }
       const useAtlas = atlasFrames.length === clip.frames;
       const textureKeys = useAtlas ? [...new Set(atlasFrames.map(frame => frame.key))] : [layer.key];
       const animationKey = `${layer.file || layer.key}#${textureKeys.join('+') || layer.key}` +

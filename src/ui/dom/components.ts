@@ -70,11 +70,23 @@ export class DomImage extends DomComponent {
     this.signal.throwIfAborted();
     this.request?.abort();
     const request = this.request = new AbortController();
-    const lease = await assets.acquire(file, request.signal);
-    if (this.signal.aborted || this.request !== request) { lease.release(); return; }
-    this.lease?.release(); this.lease = lease; this.source = lease.source;
-    this.picture.src = lease.source.url;
-    this.layout();
+    try {
+      const lease = await assets.acquire(file, request.signal);
+      if (this.signal.aborted || this.request !== request) { lease.release(); return; }
+      this.lease?.release(); this.lease = lease; this.source = lease.source;
+      this.picture.hidden = false;
+      this.picture.src = lease.source.url;
+      this.layout();
+    } catch (error) {
+      if (this.request === request && !request.signal.aborted) this.clear();
+      throw error;
+    }
+  }
+  /** 加载失败时不能继续显示上一张图；释放旧租约并清掉画面。 */
+  private clear(): void {
+    this.lease?.release(); this.lease = undefined; this.source = undefined;
+    this.picture.hidden = true;
+    if (typeof this.picture.removeAttribute === 'function') this.picture.removeAttribute('src');
   }
   private layout(): void {
     if (!this.source) return;

@@ -15,7 +15,7 @@ test('buildContent minifies JSON without changing parsed content', async () => {
     const campaign = { version: 2, title: '中文', nested: { list: [1, 2, 3], empty: {} } };
     await fs.writeFile(path.join(source, 'campaign.json'), JSON.stringify(campaign, null, 2) + '\n');
     await fs.writeFile(path.join(source, 'maps', 'shadow.json'), '{\n  "id": "shadow",\n  "cells": [1, 2]\n}\n');
-    const stats = await buildContent(source, output);
+    const stats = await buildContent(source, output, root);
     assert.equal(stats.files, 2);
     assert.ok(stats.outputBytes < stats.sourceBytes);
     const minified = await fs.readFile(path.join(output, 'campaign.json'), 'utf8');
@@ -39,7 +39,7 @@ test('buildContent splits wardrobe poses into per-pose files', async () => {
       poses: { 'pose-a': pose, 'pose-b': pose }, stances: { 'unarmed:empty': { 'idle-south': 'pose-a' } },
       skills: { 'skill-a': { 'skill-a-south': 'pose-b' } }
     }));
-    const stats = await buildContent(source, output);
+    const stats = await buildContent(source, output, root);
     assert.equal(stats.wardrobePoses, 2);
     const core = JSON.parse(await fs.readFile(path.join(output, 'wardrobe.json'), 'utf8'));
     assert.deepEqual(core.poses, {});
@@ -70,7 +70,7 @@ test('buildContent merges identical clip layers into one texture key', async () 
       } } }]
     }));
     const output = path.join(root, 'out');
-    const stats = await buildContent(source, output);
+    const stats = await buildContent(source, output, root);
     assert.equal(stats.dedupedLayers, 1);
     assert.equal(stats.clipKeysBefore, 2);
     assert.equal(stats.clipKeysAfter, 1);
@@ -93,7 +93,7 @@ test('buildContent rejects malformed JSON', async () => {
     const source = path.join(root, 'source');
     await fs.mkdir(source, { recursive: true });
     await fs.writeFile(path.join(source, 'broken.json'), '{ nope');
-    await assert.rejects(buildContent(source, path.join(root, 'output')));
+    await assert.rejects(buildContent(source, path.join(root, 'output'), root));
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }

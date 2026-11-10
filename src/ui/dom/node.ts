@@ -199,13 +199,15 @@ export class UiImage extends UiNode {
     Object.assign(this.picture.style,{position:'absolute',maxWidth:'none',pointerEvents:'none'});this.element.appendChild(this.picture);
     if(file)this.load(file);
   }
-  load(file:string):this{this.setData('file',file);const cached=domAssets.peek(file);if(cached)this.applySource(cached);this.request?.abort();const request=this.request=new AbortController();void domAssets.acquire(file,request.signal).then(lease=>{if(!this.active||request!==this.request){lease.release();return;}this.lease?.release();this.lease=lease;this.applySource(lease.source);}).catch(error=>{if(!request.signal.aborted)console.error(error);});return this;}
+  load(file:string):this{this.setData('file',file);const cached=domAssets.peek(file);if(cached)this.applySource(cached);this.request?.abort();const request=this.request=new AbortController();void domAssets.acquire(file,request.signal).then(lease=>{if(!this.active||request!==this.request){lease.release();return;}this.lease?.release();this.lease=lease;this.applySource(lease.source);}).catch(error=>{if(request.signal.aborted)return;console.error(error);if(this.request===request)this.clearSource();});return this;}
+  /** 加载失败时不能继续显示上一张图；释放旧租约并清掉画面。 */
+  private clearSource():void{this.lease?.release();this.lease=undefined;this.source=undefined;this.picture.hidden=true;if(typeof this.picture.removeAttribute==='function')this.picture.removeAttribute('src');}
   private sizeFor(source:DomImageSource):{width:number;height:number}{
     const ratio=source.frame.width/source.frame.height;
     return {width:this.requestedWidth??(this.requestedHeight!==undefined?this.requestedHeight*ratio:source.frame.width),
       height:this.requestedHeight??(this.requestedWidth!==undefined?this.requestedWidth/ratio:source.frame.height)};
   }
-  applySource(source:DomImageSource):this{this.source=source;this.picture.src=source.url;const size=this.sizeFor(source);super.setSize(size.width,size.height);this.draw();this.emit('loaded');return this;}
+  applySource(source:DomImageSource):this{this.source=source;this.picture.hidden=false;this.picture.src=source.url;const size=this.sizeFor(source);super.setSize(size.width,size.height);this.draw();this.emit('loaded');return this;}
   override setDisplaySize(width:number,height:number):this{this.requestedWidth=width;this.requestedHeight=height;super.setSize(width,height);this.draw();return this;}
   resize(width?:number,height?:number):this{this.requestedWidth=width;this.requestedHeight=height;
     if(this.source){const size=this.sizeFor(this.source);super.setSize(size.width,size.height);this.draw();}

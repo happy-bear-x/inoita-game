@@ -9,6 +9,8 @@ import { UiNode } from '../src/ui/dom/node.ts';
 import { UiSurface } from '../src/ui/dom/surface.ts';
 import { installMenuDom, MenuElement } from './support/menu-dom.ts';
 import { domAssets } from '../src/ui/dom/assets.ts';
+import { characterAtlasPageKeys } from '../src/rendering/character-atlas.ts';
+import { CHARACTER_ATLAS_BY_FILE } from '../src/generated/character-atlas.ts';
 
 // 只替换 Phaser 的运行边界；场景的键盘判断跑真实代码。
 const hook = registerHooks({ resolve(specifier, context, next) {
@@ -33,6 +35,14 @@ test('class selection plays live previews and retains the page when changing cla
   const restore=installMenuDom();t.after(restore);
   t.mock.method(domAssets,'preloadFiles',async()=>({release(){}}));
   const catalog=JSON.parse(readFileSync(new URL('../public/content/story-classes.json',import.meta.url),'utf8'));
+  // 职业预览图目前没有进角色图集；用同等帧数的图集文件做替身，验证页面使用真实页纹理。
+  for(const entry of catalog.classes)for(const clip of Object.values(entry.previewActor.clips) as any[])
+    for(const layer of clip.layers){
+      if(!layer.file||CHARACTER_ATLAS_BY_FILE[layer.file])continue;
+      const replacement=Object.entries(CHARACTER_ATLAS_BY_FILE).find(([,value])=>value.pages.length>=clip.frames);
+      assert.ok(replacement,`没有覆盖 ${clip.frames} 帧的图集文件`);
+      layer.file=replacement[0];
+    }
   const app={storyClasses:catalog,ui:{ready:true,loading(){},loaded(){},error(){}},suspended:false};
   const scene=new StoryClassScene(app as never) as any;
   scene.events=new EventEmitter();scene.scale=Object.assign(new EventEmitter(),{width:1024,height:640});
@@ -54,7 +64,14 @@ test('class selection plays live previews and retains the page when changing cla
     setOrigin(){return this;},setBlendMode(){return this;},setScale(){return this;},play(config:{key:string}){played.push(config.key);return this;}})};
   await scene.open(new AbortController().signal);
   const page=[...scene.surface.root.list],preview=scene.preview,first=containers[0];
-  assert.equal(filters.length,catalog.classes.length,'每个职业的动画使用清晰像素');
+  const expectedPreviewTextures=new Set<string>();
+  for(const entry of catalog.classes)for(const clip of Object.values(entry.previewActor.clips))
+    for(const layer of (clip as any).layers){
+      const pages=characterAtlasPageKeys(layer.file);
+      if(pages.length)for(const key of pages)expectedPreviewTextures.add(key);
+      else expectedPreviewTextures.add(layer.key);
+    }
+  assert.deepEqual([...new Set(filters)].sort(),[...expectedPreviewTextures].sort(),'每个职业的动画使用真实纹理并保持清晰像素');
   assert.equal(played.length,1);assert.equal(animations.get(played[0]).repeat,-1);
   scene.choose(catalog.classes.find((entry:any)=>entry.id===catalog.defaultClass));
   assert.equal(containers.length,1,'重复选择当前职业不重建角色');
@@ -64,8 +81,10 @@ test('class selection plays live previews and retains the page when changing cla
     assert.equal(scene.preview,preview);assert.equal(scene.selections[index].visible,true);
     assert.equal(scene.selections.filter((selection:any)=>selection.visible).length,1);
     const clip=entry.previewActor.clips['idle-south'];
+    const layer=clip.layers[0];
     assert.equal(containers.at(-1).scale,3*scene.surface.root.scaleX);
-    assert.ok(played.at(-1)!.startsWith(clip.layers[0].key));
+    assert.ok(played.at(-1)!.startsWith(`${layer.file||layer.key}#`),'预览播放该职业动作图集');
+    assert.ok(played.at(-1)!.includes(`#clip:${clip.frames}:${clip.frameRate}:`),'动画键保留动作帧数与帧率');
   }
   assert.equal(first.destroyed,true,'切换职业释放旧角色');
   app.suspended=true;scene.update();assert.equal(containers.at(-1).visible,false);

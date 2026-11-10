@@ -12,6 +12,8 @@ import { StoryWorldState } from '../src/domain/story-world.ts';
 import type { Campaign } from '../src/domain/campaign.ts';
 import type {ChoiceAction, ClipName, DialogueLine, WorldIndex, WorldMap} from '../src/domain/content.ts';
 import { PROP_ATLAS_BY_KEY } from '../src/generated/prop-atlas.ts';
+import { UI_ATLAS_FRAMES } from '../src/generated/ui-atlas.ts';
+import { sourceAssetPath } from '../tools/asset-source.ts';
 
 
 function navigationFor(map: WorldMap, entities = map.entities): NavigationWorld {
@@ -44,7 +46,8 @@ test('dialogue portraits resolve to exported files and player identity is separa
  for(const actor of ['story-kiyan-815ba0f7','story-eara-0079206d','story-lying-kiyan-75e14e3d','story-the-channel-df7b0415'])assert.equal(world.actors[actor].portrait,null,actor);
  assert.deepEqual(world.portraits.olaf,{file:'assets/portraits/olaf.png',width:508,height:508});
  assert.equal(storyInterface.portraits.olaf,'assets/ui/story/portrait-olaf.png');
- for(const file of [world.portraits.olaf.file,storyInterface.portraits.olaf])assert.ok(fs.existsSync(path.join(root,file)),file);
+ for(const file of [world.portraits.olaf.file])assert.ok(fs.existsSync(path.join(root,file)),file);
+ assert.ok(UI_ATLAS_FRAMES[storyInterface.portraits.olaf],storyInterface.portraits.olaf);
  for(const portrait of Object.values(world.portraits)) {
   assert.ok(fs.existsSync(path.join(root,portrait.file)),portrait.file);
  }
@@ -110,9 +113,9 @@ test('character clips resolve to valid assets inside the game project',()=>{
  for(const actor of Object.values(world.actors))for(const clip of Object.values(actor.clips)) {
   assert.ok(clip);
   assert.ok(clip.frameWidth>0&&clip.frameHeight>0&&clip.frames>0);
-  for(const layer of clip.layers)assert.ok(fs.existsSync(path.join(root,layer.file)),layer.file);
+  for(const layer of clip.layers)assert.ok(fs.existsSync(sourceAssetPath(layer.file)),layer.file);
  }
- for(const prop of world.props){assert.ok(fs.existsSync(path.join(root,prop.file)),prop.file);assert.ok(PROP_ATLAS_BY_KEY[prop.key],`prop atlas frame missing: ${prop.key}`);}
+ for(const prop of world.props){assert.ok(fs.existsSync(sourceAssetPath(prop.file)),prop.file);assert.ok(PROP_ATLAS_BY_KEY[prop.key],`prop atlas frame missing: ${prop.key}`);}
 });
 test('characters, chest variants and springs retain foot bounds while passage markers stay traversable',()=>{
  const expected={x:-8,y:-8,width:16,height:16};

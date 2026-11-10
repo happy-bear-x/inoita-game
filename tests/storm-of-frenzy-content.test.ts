@@ -4,6 +4,7 @@ import test from 'node:test';
 import type {BattleCatalog} from '../src/domain/battle.ts';
 import type {WardrobeCatalog} from '../src/domain/wardrobe.ts';
 import {parseBattle,parseWardrobe} from '../src/application/content-validation.ts';
+import {sourceAssetPath} from '../tools/asset-source.ts';
 
 const battle=JSON.parse(readFileSync(new URL('../public/content/battle.json',import.meta.url),'utf8')) as BattleCatalog;
 const wardrobe=JSON.parse(readFileSync(new URL('../public/content/wardrobe.json',import.meta.url),'utf8')) as WardrobeCatalog;
@@ -54,7 +55,7 @@ test('Dual-wield costume recipes retain first-strike cycle bounds and two distin
   for(const [name,frames]of [['dual-dagger-swing',4],['dual-blade-swing',6]] as const)
     for(const clip of Object.values(battle.attackEffects[name].clips)){
       assert.equal(clip.frames,frames);
-      for(const layer of clip.layers){const bytes=readFileSync(new URL('../public/'+layer.file,import.meta.url));
+      for(const layer of clip.layers){const bytes=readFileSync(sourceAssetPath(layer.file));
         assert.equal(bytes.readUInt32BE(16),clip.frameWidth*frames);assert.equal(bytes.readUInt32BE(20),clip.frameHeight);}
     }
 });
@@ -86,7 +87,7 @@ test('Every eligible companion has both actual static dual-wield animation bindi
         assert.ok(clip,`${definition.actor}/${profile.clips[facing]}`);assert.equal(clip.frames,frames);
         assert.equal(clip.mirrorX,facing==='east');
         for(const layer of clip.layers){
-          const bytes=readFileSync(new URL('../public/'+layer.file,import.meta.url));
+          const bytes=readFileSync(sourceAssetPath(layer.file));
           assert.equal(bytes.readUInt32BE(16),clip.frameWidth*frames);assert.equal(bytes.readUInt32BE(20),clip.frameHeight);
         }
       }

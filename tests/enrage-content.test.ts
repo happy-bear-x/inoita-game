@@ -4,6 +4,7 @@ import test from 'node:test';
 import type {BattleCatalog} from '../src/domain/battle.ts';
 import {needsTarget} from '../src/domain/skill-action.ts';
 import {parseBattle} from '../src/application/content-validation.ts';
+import {sourceAssetPath} from '../tools/asset-source.ts';
 
 const battle=JSON.parse(readFileSync(new URL('../public/content/battle.json',import.meta.url),'utf8')) as BattleCatalog;
 const skill=battle.skills.enrage;
@@ -37,7 +38,7 @@ test('Enrage preserves its existing cast, actor frames, red cycle and dispatch f
   for(const facing of ['south','north','west','east'] as const)assert.equal(actor.clips[`skill-enrage-${facing}`]!.frames,23);
   for(const [name,frames]of [['armor-ember',17],['aura-ring',8]] as const){
     const clip=battle.attackEffects[name].clips.default;assert.equal(clip.frames,frames);
-    for(const layer of clip.layers){const png=readFileSync(new URL('../public/'+layer.file,import.meta.url));
+    for(const layer of clip.layers){const png=readFileSync(sourceAssetPath(layer.file));
       assert.equal(png.readUInt32BE(16),clip.frameWidth*frames);assert.equal(png.readUInt32BE(20),clip.frameHeight);}
   }
 });

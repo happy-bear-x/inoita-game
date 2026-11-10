@@ -126,7 +126,7 @@ test('shared world visuals survive real member death and controller clears while
 
 test('the 24-frame actor playback completes while its independent 26-frame world ring keeps playing',()=>{
   const f=setup(),world=new CombatEffects(f.scene),visual=f.character('player'),caster=f.actor('player');
-  const clip={frameWidth:8,frameHeight:8,frames:24,frameRate:1000/60,originX:.5,originY:1,layers:[{key:'actor-spin',file:'actor.png',blend:'normal'}]} as AnimationClip;
+  const clip={frameWidth:8,frameHeight:8,frames:24,frameRate:1000/60,originX:.5,originY:1,layers:[{key:'actor-spin',file:'',blend:'normal'}]} as AnimationClip;
   visual.actor={...visual.actor,clips:{'skill-swirling-storm-east':clip}} as ActorDefinition;
   const presenter=new CombatPresenter(f.scene,catalog,()=>visual,()=>[caster],world);
   const playback:ActionPlayback={caster,facing:'east',basicAttack:null,skill:{id:'swirling-storm',action:catalog.skills['swirling-storm'].action!,level:1}};

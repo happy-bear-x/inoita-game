@@ -17,8 +17,9 @@ const { StoryStageScene } = await import('../src/scenes/story-stage-scene.ts');
 const { MovementWorld } = await import('../src/rendering/movement-world.ts');
 hook.deregister();
 
+// 假演员没有图集映射；空 file 走运行时动态纹理，按图层 key 取图。
 const clip = (key: string) => ({ frameWidth: 8, frameHeight: 8, frames: 1, originX: 0, originY: 0,
-  frameRate: 10, mirrorX: false, layers: [{ key, file: `${key}.png`, blend: 'normal' as const }] });
+  frameRate: 10, mirrorX: false, layers: [{ key, file: '', blend: 'normal' as const }] });
 const actor = (id: string, clips: Record<string, ReturnType<typeof clip>>) =>
   ({ id, name: id, description: '', portrait: null, clips } as unknown as ActorDefinition);
 

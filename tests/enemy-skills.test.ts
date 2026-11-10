@@ -119,10 +119,15 @@ test('A* approaches the usable skill range and does not consume cooldown before 
   run.target.position.x=120;run.ai.update(60);
   assert.equal(run.plays.length,0);assert.ok(run.move());assert.deepEqual(run.ai.snapshot().cooldowns,{});
   for(let i=0;i<30&&!run.plays.length;i++){
-    const point=run.move();if(point)run.caster.position={...point};run.ai.update(60);
+    const point=run.move();
+    // 真实移动会被占位挡住；夹具按 canStand 把落点收在目标身体边缘，不直接走进目标中心。
+    if(point)run.caster.position=run.port.canStand(point)?{...point}:{x:Math.min(point.x,run.target.position.x-16),y:point.y};
+    run.ai.update(60);
   }
   assert.equal(run.plays[0].skill?.id,'long');
-  assert.ok(run.caster.position.x<run.target.position.x-16,'does not walk to the occupied target center');
+  // canStand 允许身体边缘刚好贴住目标；停在 16px 间距不等于走进目标中心。
+  assert.ok(run.caster.position.x<=run.target.position.x-16,
+    `does not walk to the occupied target center: caster=${run.caster.position.x} target=${run.target.position.x}`);
 });
 
 test('fixed monsters respect skill distance; self skills still require combat activation',()=>{

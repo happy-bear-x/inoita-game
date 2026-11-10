@@ -7,7 +7,7 @@ import { BasicAttackRepeat } from '../src/domain/basic-attack-repeat.ts';
 import type { Campaign } from '../src/domain/campaign.ts';
 import { BattleCharacter, type CharacterStatsCatalog } from '../src/domain/character-stats.ts';
 import { CHEST_OPEN_MS, nearInteractable } from '../src/domain/chests.ts';
-import type { ActorDefinition, EntityPlacement, Facing, WorldIndex, WorldMap } from '../src/domain/content.ts';
+import type { ActorDefinition, ClipName, EntityPlacement, Facing, WorldIndex, WorldMap } from '../src/domain/content.ts';
 import { rollChestLoot, type DropCatalog } from '../src/domain/drops.ts';
 import { groundLootFor } from '../src/domain/ground-loot.ts';
 import type { ItemCatalog } from '../src/domain/items.ts';
@@ -47,6 +47,17 @@ phaser.deregister();
 
 const read=<T>(file:string):T=>JSON.parse(readFileSync(new URL(`../public/${file}`,import.meta.url),'utf8')) as T;
 const world=read<WorldIndex>('content/world.json'),campaign=read<Campaign>('content/campaign.json');
+/** 夹具里的假角色没有进入图集；空 file 走运行时动态纹理，避免误用生产图集严格检查。 */
+function dynamicActor(actor:ActorDefinition):ActorDefinition {
+  const clips:ActorDefinition['clips']={};
+  for(const name of Object.keys(actor.clips) as ClipName[]) {
+    const clip=actor.clips[name];
+    if(clip)clips[name]={...clip,layers:clip.layers.map(layer=>({...layer,file:''}))};
+  }
+  return {...actor,clips};
+}
+const visualWorld:WorldIndex={...world,actors:Object.fromEntries(
+  Object.entries(world.actors).map(([id,actor])=>[id,dynamicActor(actor)]))};
 const items=read<ItemCatalog>('content/items.json'),stats=read<CharacterStatsCatalog>('content/character-stats.json');
 const drops=read<DropCatalog>('content/drops.json');
 const maps=world.maps.map(reference=>read<WorldMap>(reference.file));
@@ -76,7 +87,7 @@ function fixture(map:WorldMap,entity:EntityPlacement,session=new Session(campaig
     syncChestEnemies:()=>calls.push('enemies'),hasHostileTarget:()=>true,
     attack:()=>calls.push('attack'),setPerformanceActive() {}};
   const state={
-    app:{world,items,session,campaign:{quests:[]},locked:false,suspended:false,characterStats:stats,
+    app:{world:visualWorld,items,session,campaign:{quests:[]},locked:false,suspended:false,characterStats:stats,
       ui:{ready:true,controlLayoutEditing:false},audio:{ui:(sound:string)=>calls.push(sound)}},
     map,dropCatalog:drops,player:{container:new Display()},characters:[] as Character[],near:null as Character|null,
     questStatuses:new Map(),questStatusVersion:undefined,

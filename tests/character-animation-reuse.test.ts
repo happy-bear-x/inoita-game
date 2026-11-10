@@ -5,6 +5,9 @@ import {createRequire,registerHooks} from 'node:module';
 import {readFileSync} from 'node:fs';
 import type Phaser from 'phaser';
 import type {ActorDefinition} from '../src/domain/content.ts';
+import {CHARACTER_ATLAS_BY_FILE,CHARACTER_ATLAS_PAGES} from '../src/generated/character-atlas.ts';
+import {characterFrameList} from '../src/rendering/character-atlas.ts';
+import {CHARACTER_ATLAS_ALIASES} from '../tools/character-atlas-aliases.ts';
 
 const hook=registerHooks({resolve(specifier,context,next){return specifier==='phaser'
   ?{url:'data:text/javascript,export default {BlendModes:{NORMAL:0,SCREEN:1,ADD:2,MULTIPLY:3}}',shortCircuit:true}:next(specifier,context);}});
@@ -16,13 +19,43 @@ const require=createRequire(import.meta.url);
 const AnimationState=require('../node_modules/phaser/src/animations/AnimationState.js');
 const Animation=require('../node_modules/phaser/src/animations/Animation.js');
 const battle=JSON.parse(readFileSync(new URL('../public/content/battle.json',import.meta.url),'utf8'));
-const goblin=battle.enemies.find((enemy:{id:string})=>enemy.id==='enemy-goblin-1').actor as ActorDefinition;
-const classes=JSON.parse(readFileSync(new URL('../public/content/story-classes.json',import.meta.url),'utf8')).classes as {id:string;previewActor:ActorDefinition}[];
+/** 原始内容里的路径由内容构建改写成规范路径；运行时只认规范路径的图集映射。 */
+function canonicalActor(actor:ActorDefinition):ActorDefinition{
+  const copy=structuredClone(actor);
+  for(const clip of Object.values(copy.clips))for(const layer of clip!.layers)
+    if(layer.file)layer.file=CHARACTER_ATLAS_ALIASES[layer.file]??layer.file;
+  return copy;
+}
+const goblin=canonicalActor(battle.enemies.find((enemy:{id:string})=>enemy.id==='enemy-goblin-1').actor as ActorDefinition);
+/**
+ * 职业预览图目前没有进角色图集；用同等帧数的图集文件做替身，
+ * 继续验证六个职业的预览待机都会循环播放。
+ */
+function mappedPreviewActor(actor:ActorDefinition):ActorDefinition{
+  const copy=canonicalActor(actor);
+  for(const clip of Object.values(copy.clips))for(const layer of clip!.layers){
+    if(!layer.file||CHARACTER_ATLAS_BY_FILE[layer.file])continue;
+    const replacement=Object.entries(CHARACTER_ATLAS_BY_FILE).find(([,entry])=>entry.pages.length>=clip!.frames);
+    assert.ok(replacement,`没有覆盖 ${clip!.frames} 帧的图集文件`);
+    layer.file=replacement[0];
+  }
+  return copy;
+}
+const classes=(JSON.parse(readFileSync(new URL('../public/content/story-classes.json',import.meta.url),'utf8')).classes as {id:string;previewActor:ActorDefinition}[])
+  .map(entry=>({...entry,previewActor:mappedPreviewActor(entry.previewActor)}));
 
 function setup(actor:ActorDefinition=structuredClone(goblin)){
   const counts={sprites:0,destroyed:0,localAnimations:0};
   const textureMap=new Map<string,{key:string}>(),removed:string[]=[];
-  for(const clip of Object.values(actor.clips))for(const layer of clip!.layers)textureMap.set(layer.key,{key:layer.key});
+  for(const clip of Object.values(actor.clips))for(const layer of clip!.layers){
+    if(!layer.file){textureMap.set(layer.key,{key:layer.key});continue;}
+    const entry=CHARACTER_ATLAS_BY_FILE[layer.file];
+    if(!entry)throw new Error(`测试素材没有图集映射：${layer.file}`);
+    for(const page of new Set(entry.pages.slice(0,clip!.frames))){
+      const key=CHARACTER_ATLAS_PAGES[page]!.key;
+      textureMap.set(key,{key});
+    }
+  }
   const textures=Object.assign(new EventEmitter(),{exists:(key:string)=>textureMap.has(key),get:(key:string)=>textureMap.get(key),
     remove:(key:string)=>{removed.push(key);textureMap.delete(key);}});
   const definitions=new Map<string,Phaser.Animations.Animation>();
@@ -98,17 +131,22 @@ test('local Phaser sequences change with timing and frames, keep their texture a
   const owner=retainLoadedSceneAssets(f.scene,keys);
   playCharacterSequence(f.scene,f.character,'attack-south',[0,1,2],60);
   const sprite=f.sprite(),first=sprite.anims!.currentAnim!;
-  owner.release();const attackKey=f.actor.clips['attack-south']!.layers[0].key;
-  assert.ok(f.textureMap.has(attackKey),'local cached frames retain their source texture');
+  owner.release();
+  const attackFrames=characterFrameList(f.actor.clips['attack-south']!.layers[0]!.file,3);
+  const attackKeys=[...new Set(attackFrames.map(frame=>frame.key))];
+  assert.ok(attackKeys.length,'攻击素材使用图集页');
+  for(const key of attackKeys)assert.ok(f.textureMap.has(key),'local cached frames retain their source texture');
   playCharacterSequence(f.scene,f.character,'attack-south',[0,2,1],30);
   const second=sprite.anims!.currentAnim!;
   assert.notEqual(second,first);assert.equal(first.frames.length,0);
   assert.equal(sprite.anims!.get('character-action'),second);
-  assert.deepEqual(second.frames.map(frame=>frame.textureFrame),[0,2,1]);assert.equal(second.frameRate,1000/30);
+  assert.deepEqual(second.frames.map(frame=>frame.textureFrame),
+    [attackFrames[0]!.frame,attackFrames[2]!.frame,attackFrames[1]!.frame]);assert.equal(second.frameRate,1000/30);
   playCharacterSequence(f.scene,f.character,'attack-south',[0,2,1],30);
-  assert.equal(f.counts.localAnimations,2);assert.ok(f.textureMap.has(attackKey));
+  assert.equal(f.counts.localAnimations,2);for(const key of attackKeys)assert.ok(f.textureMap.has(key));
   assert.doesNotThrow(()=>sprite.destroy());assert.equal(second.frames.length,0);
-  assert.equal(f.removed.filter(key=>key===attackKey).length,1);assert.equal(f.textureMap.has(attackKey),false);
+  for(const key of attackKeys)assert.equal(f.removed.filter(value=>value===key).length,1);
+  for(const key of attackKeys)assert.equal(f.textureMap.has(key),false);
 });
 
 test('dynamic outfit textures keep their OutfitPool ownership when cached local animations end',()=>{

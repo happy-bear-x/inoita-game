@@ -27,7 +27,13 @@ test('runtime resident resources only retain common combat feedback', () => {
 
 test('scoped resident packs keep only the active class and owned companion appearances', () => {
   const full = residentCombatAssets({ battle, wardrobe, world, companions });
-  const fullByKey = new Map(full.assets.map(asset => [asset.key, JSON.stringify(asset)]));
+  // 同一图集页在不同范围里会合并不同的帧集合；冲突检查只比较文件、页和帧布局。
+  const layout = (asset: unknown): string => {
+    const rest = { ...(asset as Record<string, unknown>) };
+    delete rest.frames;
+    return JSON.stringify(rest);
+  };
+  const fullByKey = new Map(full.assets.map(asset => [asset.key, layout(asset)]));
   const allCompanionActors = new Set(Object.values(companions.definitions).map(definition => definition.actor));
   assert.equal(allCompanionActors.size, 41);
   for (const actor of allCompanionActors) assert.ok(full.actorIds.has(actor), `全量包缺少伙伴 ${actor}`);
@@ -48,7 +54,7 @@ test('scoped resident packs keep only the active class and owned companion appea
     for (const other of battle.classes) if (other.id !== character.id)
       assert.equal(scoped.actorIds.has(other.actor.id), false, `${character.id} leaked ${other.id}`);
     for (const asset of scoped.assets) {
-      assert.equal(fullByKey.get(asset.key), JSON.stringify(asset), `${character.id}: ${asset.key}`);
+      assert.equal(fullByKey.get(asset.key), layout(asset), `${character.id}: ${asset.key}`);
     }
     for (const effect of scoped.effectNames) assert.ok(full.effectNames.has(effect), `${character.id}: ${effect}`);
     assert.ok(scoped.effectNames.size < full.effectNames.size, `${character.id} did not narrow effects`);

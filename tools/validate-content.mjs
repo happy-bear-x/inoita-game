@@ -44,6 +44,10 @@ export function validateContent(root=fileURLToPath(new URL('../public/',import.m
   if(UI_ICON_FRAMES[file])throw new Error(`菜单 UI 图同时出现在两个图集：${file}`);
   if(!UI_ATLAS_FRAMES[file])throw new Error(`菜单 UI 图未进入图集：${file}；运行 npm run atlas:ui`);
  }
+ for(const [file,entry] of Object.entries(UI_ATLAS_FRAMES)){
+  const page=uiPages.get(entry.key);
+  if(!page?.frames?.[entry.frame])throw new Error(`菜单 UI 图集缺少帧：${file} → ${entry.key}/${entry.frame}；运行 npm run atlas:ui`);
+ }
  if(uiAtlasSourceDigest()!==UI_ATLAS_SOURCE_DIGEST)throw new Error('菜单 UI 图集已过期；运行 npm run atlas:ui');
  // 地图 prop 图集：内容里的每个 prop/feature 都必须有帧，且图集不能是旧文件。
  const propKeys=new Set();
@@ -114,6 +118,17 @@ export function validateContent(root=fileURLToPath(new URL('../public/',import.m
     if(entry.pages.length<clip.frames)
      throw new Error(`角色图集帧数不足：${actor.id}/${clipName}（${entry.pages.length} < ${clip.frames}）；运行 npm run atlas:characters`);
    }
+  }
+ }
+ // 图集帧必须逐帧存在；Phaser 找不到帧名时会静默退回页首帧，显示成同页另一张图。
+ for(const [file,entry] of Object.entries(CHARACTER_ATLAS_BY_FILE)){
+  for(let index=0;index<entry.pages.length;index++){
+   const page=CHARACTER_ATLAS_PAGES[entry.pages[index]];
+   if(!page)throw new Error(`角色图集页索引悬空：${file} 第 ${index} 帧；运行 npm run atlas:characters`);
+   const data=characterPages.get(page.key);
+   const frame=`${entry.prefix}-${String(index).padStart(3,'0')}`;
+   if(!data?.frames?.[frame])
+    throw new Error(`角色图集缺少帧：${file} 第 ${index} 帧（${frame}）；运行 npm run atlas:characters`);
   }
  }
  const storyInterface=parseStoryInterface(read('content/story-interface.json'));
@@ -192,10 +207,17 @@ export function validateContent(root=fileURLToPath(new URL('../public/',import.m
   ...gaps.companions.map(id=>`佣兵外观无法按需加载 ${id}`)];
  ensure(!uncovered.length,`战斗常驻资源不完整：\n${uncovered.slice(0,20).join('\n')}`);
  // 运行时只常驻当前职业 + 已拥有伙伴外观 + 共享特效；每个职业都必须能单独形成完整子集。
- const fullAssets=new Map(resident.assets.map(asset=>[asset.key,JSON.stringify(asset)]));
+ const fullAssets=new Map(resident.assets.map(asset=>[asset.key,asset]));
  for(const character of battle.classes){
   const scoped=residentCombatAssets({battle,wardrobe,world,companions,classIds:[character.id]});
-  for(const asset of scoped.assets)ensure(fullAssets.get(asset.key)===JSON.stringify(asset),`职业 ${character.id} 的常驻资源与全量包不一致：${asset.key}`);
+  for(const asset of scoped.assets){
+   const previous=fullAssets.get(asset.key);
+   ensure(!!previous,`职业 ${character.id} 的常驻资源不在全量包：${asset.key}`);
+   // 同一图集页在不同职业包里需要的帧集合可以不同，页文件和数据文件必须一致。
+   if(previous.kind==='atlas'&&asset.kind==='atlas')
+    ensure(previous.file===asset.file&&previous.atlas===asset.atlas,`职业 ${character.id} 的常驻资源与全量包不一致：${asset.key}`);
+   else ensure(JSON.stringify(previous)===JSON.stringify(asset),`职业 ${character.id} 的常驻资源与全量包不一致：${asset.key}`);
+  }
   const scopedGaps=residentCombatCoverageGaps({battle,wardrobe,world,companions,classIds:[character.id]});
   const missing=[...scopedGaps.definitions.map(name=>`特效定义缺失 ${name}`),...scopedGaps.effects.map(name=>`常驻包缺少特效 ${name}`),
    ...scopedGaps.layers.map(key=>`常驻包缺少特效纹理 ${key}`),...scopedGaps.actorLayers.map(key=>`常驻包缺少角色纹理 ${key}`),

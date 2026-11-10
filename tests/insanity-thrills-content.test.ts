@@ -7,6 +7,7 @@ import type {ItemCatalog} from '../src/domain/items.ts';
 import type {CompanionCatalog} from '../src/domain/party.ts';
 import type {WardrobeCatalog} from '../src/domain/wardrobe.ts';
 import {passiveModifiers} from '../src/domain/passive-skills.ts';
+import {sourceAssetPath} from '../tools/asset-source.ts';
 
 const read=(name:string)=>JSON.parse(readFileSync(new URL(`../public/content/${name}.json`,import.meta.url),'utf8'));
 const battle=read('battle') as BattleCatalog,wardrobe=read('wardrobe') as WardrobeCatalog;
@@ -70,7 +71,7 @@ test('every actual warrior companion has all four frenzy poses with valid source
     const clip=world.actors[id].clips[`${prefix}-${facing}` as ClipName];assert.ok(clip,`${id}:${prefix}:${facing}`);
     assert.equal(clip.frames,expected.frames);assert.ok(clip.layers.length);
     for(const layer of clip.layers){
-      const bytes=readFileSync(new URL(`../public/${layer.file}`,import.meta.url));
+      const bytes=readFileSync(sourceAssetPath(layer.file));
       assert.equal(bytes.subarray(1,4).toString(),'PNG');
       const width=bytes.readUInt32BE(16),height=bytes.readUInt32BE(20);
       assert.equal(width%clip.frameWidth,0);assert.equal(height%clip.frameHeight,0);

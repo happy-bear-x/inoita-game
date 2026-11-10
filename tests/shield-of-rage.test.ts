@@ -14,8 +14,11 @@ const catalog=JSON.parse(readFileSync(new URL('../public/content/battle.json',im
 
 function fixture(){
   const conditions=new CombatConditions();let rank=1;
-  const defender={classId:'dark-knight',player:{health:100},skills:{draft:()=>({levels:{'shield-of-rage':rank}})}};
+  const defender={classId:'dark-knight',player:{health:100},skills:{draft:()=>({levels:{'shield-of-rage':rank}})},
+    bag:{revision:0,equipmentFor:()=>({}),get:()=>undefined}};
   const host=Object.setPrototypeOf({app:{battleCatalog:catalog,session:{skills:defender.skills}},conditions,arena:[],
+    passivesCache:new Map(),skillTableCache:new Map(),equipmentRecoveryCache:new Map(),combatProcsCache:new Map(),
+    aiSkillCostCache:new Map(),
     memberOf:(id:string)=>id==='player'?defender:undefined,equipmentRecovery:()=>({lifeDrainPerThousand:0}),
     actorAttribute:()=>0,attackProc:()=>{},syncCombatResourceLimits:()=>{},interruptDisabled:()=>{},applyStateConsequences:()=>{}},WorldCombat.prototype);
   const hit=(damageKind:'physical'|'magic',kind:'hit'|'miss'|'weapon-block'|'shield-block')=>

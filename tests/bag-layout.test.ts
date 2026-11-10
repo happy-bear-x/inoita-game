@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { bagLayout, DESCRIPTION_PANEL, descriptionActionLayout, descriptionPanel } from '../src/ui/bag-layout.ts';
 import { EQUIPMENT_SLOT_ORDER } from '../src/domain/items.ts';
+import { sourceAssetPath } from '../tools/asset-source.ts';
 
 const menuPanels = JSON.parse(fs.readFileSync(
   new URL('../public/content/menu-panels.json', import.meta.url), 'utf8')) as {
@@ -29,7 +30,7 @@ test('bag slots draw at the native icon and selection offsets', () => {
   const { slot } = bagLayout();
   assert.deepEqual(slot, { size:74, icon:{ x:5, y:5, size:64 }, selection:{ x:-5, y:-5, size:84 } });
   for (const key of ['inventory-slot', 'inventory-selected']) {
-    const png = fs.readFileSync(new URL(`../public/${menuPanels.assets[key]}`, import.meta.url));
+    const png = fs.readFileSync(sourceAssetPath(menuPanels.assets[key]));
     const [width, height] = [png.readUInt32BE(16), png.readUInt32BE(20)];
     assert.deepEqual([width, height], key === 'inventory-slot' ? [74, 74] : [84, 84], `${key} 原尺寸`);
   }

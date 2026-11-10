@@ -4,6 +4,7 @@ import test from 'node:test';
 import type {BattleCatalog} from '../src/domain/battle.ts';
 import {parseBattle} from '../src/application/content-validation.ts';
 import {skillReactionEffects} from '../src/domain/skill-reactions.ts';
+import {sourceAssetPath} from '../tools/asset-source.ts';
 
 const catalog=JSON.parse(readFileSync(new URL('../public/content/battle.json',import.meta.url),'utf8')) as BattleCatalog;
 const skill=catalog.skills['blood-thirst'];
@@ -35,7 +36,7 @@ test('Blood Thirst preloads both original recovery palettes and every thirteen-f
   assert.deepEqual([mana.frameWidth,mana.frameHeight,mana.originX,mana.originY],
     [life.frameWidth,life.frameHeight,life.originX,life.originY]);
   for(const layer of mana.layers){
-    const png=readFileSync(new URL('../public/'+layer.file,import.meta.url));
+    const png=readFileSync(sourceAssetPath(layer.file));
     assert.equal(png.toString('hex',0,8),'89504e470d0a1a0a');
     assert.equal(png.readUInt32BE(16),mana.frameWidth*mana.frames);
     assert.equal(png.readUInt32BE(20),mana.frameHeight);

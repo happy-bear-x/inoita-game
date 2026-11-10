@@ -106,8 +106,8 @@ test('all exported direct states and state buffs carry independent frame profile
     for(const entry of Object.values(object))visit(entry);
   }
   // 两种成长各有 40 个公共技能状态及 8 个召唤命令状态。
-  // 状态增益：两种成长各 40 个技能定义，另有 51 个怪物定义和 3 个属性攻击定义。
-  visit(catalog);assert.equal(direct,2*(40+8));assert.equal(buffs,2*40+51+3);
+  // 状态增益：两种成长各 40 个技能定义，另有 51 个怪物定义和 6 个属性攻击定义。
+  visit(catalog);assert.equal(direct,2*(40+8));assert.equal(buffs,2*40+51+6);
   assert.equal(catalog.enemies.filter(enemy=>enemy.acceptsBuffs===false).length,3);
   assert.equal(catalog.enemies.filter(enemy=>enemy.stateRules?.durationScale===0.5).length,31);
 });

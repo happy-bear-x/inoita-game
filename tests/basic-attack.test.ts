@@ -13,6 +13,7 @@ import type { ItemCatalog } from '../src/domain/items.ts';
 import type { WardrobeCatalog } from '../src/domain/wardrobe.ts';
 import { equipmentAttackFor } from '../src/rendering/combat-assets.ts';
 import { basicAttackEffects } from '../src/rendering/combat-asset-descriptors.ts';
+import { sourceAssetPath } from '../tools/asset-source.ts';
 const publicRoot=new URL('../public/',import.meta.url);
 const catalog:BattleCatalog=JSON.parse(readFileSync(new URL('content/battle.json',publicRoot),'utf8'));
 const wardrobe:WardrobeCatalog=JSON.parse(readFileSync(new URL('content/wardrobe.json',publicRoot),'utf8'));
@@ -274,7 +275,7 @@ test('all classes have complete one-shot attacks with reachable event frames',()
       assert.ok(index===null||index<attack.effectiveCycleFrames,`${character.id}: ${index}`);
     for (const key of [...attack.swings,...attack.impacts,...(attack.projectile?[attack.projectile.effect]:[])]) {
       for (const clip of Object.values(catalog.attackEffects[key].clips))
-        for (const layer of clip.layers) assert.ok(existsSync(new URL(layer.file,publicRoot)));
+        for (const layer of clip.layers) assert.ok(existsSync(sourceAssetPath(layer.file)));
     }
   }
 });

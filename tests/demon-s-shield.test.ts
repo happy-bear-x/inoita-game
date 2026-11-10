@@ -27,6 +27,7 @@ function fixture(){
   const makeMember=(health:number)=>{
     const player={level:1,health,maxHealth:1000,mana:0,maxMana:100};
     return {level:1,player,panel:{maxHealth:1000,maxMana:100},
+      bag:{revision:0,equipmentFor:()=>({}),get:()=>undefined},
       setHealth:(value:number)=>{player.health=Math.max(0,Math.min(player.maxHealth,value));},
       setMana:(value:number)=>{player.mana=Math.max(0,Math.min(player.maxMana,value));},
       setCombatResourceCapacity(key:'maxHealth'|'maxMana',value:number){this.player[key]=value;},
@@ -38,8 +39,11 @@ function fixture(){
   const host=Object.setPrototypeOf({conditions,hero:defender,app:{battleCatalog:catalog,session:{
     // 资源脉冲会读持续回复（再生药水）的剩余时间；没有它就当作没有生效中的持续回复。
     recovery:{activeRegeneration:undefined} as unknown as Session['recovery'],
+    recoveryPulseDue:true,advanceRecoveryClock:()=>{},
     recoverCombatResources:(actors:Parameters<CombatResourceRecovery['advanceToFrame']>[1])=>clock.advanceToFrame(frames.currentFrame,actors)}},activeParty:[...members.keys()],
     arena:[],pendingDefeats:new Set(),fallen:new Set(),closed:false,defeated:false,
+    passivesCache:new Map(),skillTableCache:new Map(),equipmentRecoveryCache:new Map(),combatProcsCache:new Map(),
+    aiSkillCostCache:new Map(),
     memberOf:(id:string)=>members.get(id),partyPassives:()=>[],partyFighter:()=>({}),
     equipmentRecovery:()=>({manaRecoveryPerPulse:equipmentManaRecovery,manaCostReductionRate:0,lifeDrainPerThousand:0}),
     interruptDisabled:()=>{},

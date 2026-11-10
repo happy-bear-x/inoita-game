@@ -33,8 +33,10 @@ function fixture(failOnKey?: string, atlas?: { key: string; frame: string; width
       exists: (key: string) => textures.has(key),
       get: (key: string) => {
         const source = textures.get(key)!;
+        const frames = new Set(['__BASE', ...(atlas && key === atlas.key ? [atlas.frame] : [])]);
         return {
           getSourceImage: () => source,
+          has: (frame: string) => frames.has(frame),
           get: (frame = '__BASE') => ({
             source: { image: { ...source, frame } },
             cutX: atlas && key === atlas.key ? 7 : 0,
@@ -77,6 +79,10 @@ function fixture(failOnKey?: string, atlas?: { key: string; frame: string; width
 }
 
 const map = (features: WorldMap['features']) => ({ id: 'map', ground: 'ground.png', canopy: 'canopy.png', features } as unknown as WorldMap);
+// 绘制路径只接受已进图集的 prop；夹具用真实映射里的两个 key。
+const PROP_A = Object.keys(PROP_ATLAS_BY_KEY)[0]!;
+const PROP_B = Object.keys(PROP_ATLAS_BY_KEY)[1]!;
+const propEntry = (key: string) => PROP_ATLAS_BY_KEY[key]!;
 
 test('map surface assets keep ground, canopy and feature props together', () => {
   const assets = mapSurfaceAssets(map([{ texture: 'prop-a' } as WorldMap['features'][number]]), [
@@ -96,10 +102,13 @@ test('dodge pixel preserves zero background and saturates a full foreground', ()
 test('static layers keep feature offsets, flip, blend and depth', () => {
   const run = fixture();
   const layers = drawMapLayers(run.scene, map([
-    { texture: 'prop-a', x: 10, y: 20, offsetX: 3, offsetY: 4, width: 8, flip: true, blend: 'multiply' },
-    { texture: 'prop-b', x: 30, y: 40, offsetX: 1, offsetY: 2, width: 6, flip: false, blend: 'add' }
+    { texture: PROP_A, x: 10, y: 20, offsetX: 3, offsetY: 4, width: 8, flip: true, blend: 'multiply' },
+    { texture: PROP_B, x: 30, y: 40, offsetX: 1, offsetY: 2, width: 6, flip: false, blend: 'add' }
   ]), { keyPrefix: 'test-dodge' });
-  assert.deepEqual(run.images.map(image => image.key), ['map-ground', 'prop-a', 'prop-b', 'map-canopy']);
+  assert.deepEqual(run.images.map(image => image.key),
+    ['map-ground', propEntry(PROP_A).key, propEntry(PROP_B).key, 'map-canopy']);
+  assert.deepEqual(run.images.slice(1, 3).map(image => image.frame),
+    [propEntry(PROP_A).frame, propEntry(PROP_B).frame], '静态层保留图集帧');
   assert.deepEqual(run.images.map(image => image.depth), [-10000, 20, 40, 10000]);
   assert.deepEqual([run.images[1]!.x, run.images[1]!.y, run.images[1]!.flipped, run.images[1]!.blend], [5, 16, true, 2]);
   assert.deepEqual([run.images[2]!.x, run.images[2]!.y, run.images[2]!.flipped, run.images[2]!.blend], [29, 38, false, 1]);
@@ -109,7 +118,7 @@ test('static layers keep feature offsets, flip, blend and depth', () => {
 });
 
 test('color dodge creates its own texture and does not flip or blend the image again', () => {
-  const run = fixture();
+  const run = fixture(undefined, { key: propEntry(PROP_A).key, frame: propEntry(PROP_A).frame, width: 8, height: 8 });
   const previous = (globalThis as { document?: unknown }).document;
   (globalThis as { document?: unknown }).document = {
     createElement: () => {
@@ -125,7 +134,7 @@ test('color dodge creates its own texture and does not flip or blend the image a
   };
   try {
     const layers = drawMapLayers(run.scene, map([
-      { texture: 'prop-a', x: 10, y: 20, offsetX: 3, offsetY: 4, width: 8, flip: true, blend: 'color-dodge' }
+      { texture: PROP_A, x: 10, y: 20, offsetX: 3, offsetY: 4, width: 8, flip: true, blend: 'color-dodge' }
     ]), { keyPrefix: 'test-dodge' });
     const feature = run.images[1]!;
     assert.match(feature.key, /^test-dodge-\d+$/);
@@ -207,7 +216,7 @@ test('real maps load one atlas page only when they have features', () => {
 test('a failed layer construction rolls back images and composite textures', () => {
   const run = fixture('map-canopy');
   assert.throws(() => drawMapLayers(run.scene, map([
-    { texture: 'prop-a', x: 1, y: 2, offsetX: 0, offsetY: 0, width: 8, flip: false, blend: 'normal' }
+    { texture: PROP_A, x: 1, y: 2, offsetX: 0, offsetY: 0, width: 8, flip: false, blend: 'normal' }
   ]), { keyPrefix: 'test-dodge' }), /绘制失败/);
   assert(run.images.every(image => image.destroyed), '已画出的 ground/features 必须销毁');
 });

@@ -45,6 +45,13 @@ interface RuntimeAssetReport {
   residualDuplicateDecodedBytes: number;
 }
 
+interface AssetReportRoots {
+  /** 源素材归档根目录，下面直接包含 assets/。默认仓库根目录的 asset-source。 */
+  sourceRoot?: string;
+  /** 编译后的内容目录，直接包含 world.json / battle.json。默认 public/content。 */
+  contentRoot?: string;
+}
+
 interface ImageSize { width: number; height: number }
 
 /** 只读 IHDR / SOF / VP8X；读不出尺寸的格式按 0 计，不阻塞报告。 */
@@ -92,8 +99,10 @@ function filesUnder(directory: string, relative = ''): { relative: string; absol
  * 构建期资产归因：按文件内容 SHA-256 分组，再按图片尺寸估算解码后的 RGBA 字节。
  * 只看磁盘内容，不依赖业务代码，因此不会因为内容/加载策略调整而失真。
  */
-export async function reportAssets(root = path.resolve('asset-source')): Promise<AssetReport> {
-  const files = filesUnder(path.join(root, 'assets'));
+export async function reportAssets(roots: AssetReportRoots = {}): Promise<AssetReport> {
+  const sourceRoot = roots.sourceRoot ?? path.resolve('asset-source');
+  const contentRoot = roots.contentRoot ?? path.resolve('public/content');
+  const files = filesUnder(path.join(sourceRoot, 'assets'));
   const groups = new Map<string, AssetDuplicateGroup & { decodedBytes: number }>();
   const index = new Map<string, { hash: string; decodedBytes: number }>();
   let bytes = 0, decodedBytes = 0;
@@ -133,7 +142,7 @@ export async function reportAssets(root = path.resolve('asset-source')): Promise
     .sort((a, b) => b.decodedBytes * (b.count - 1) - a.decodedBytes * (a.count - 1))
     .slice(0, 20)
     .map(({ hash, count, bytes, decodedBytes, width, height, files }) => ({ hash, count, bytes, decodedBytes, width, height, files }));
-  const runtime = await runtimeReport(root, index);
+  const runtime = await runtimeReport(sourceRoot, contentRoot, index);
   return {
     files: files.length, bytes, decodedBytes,
     uniqueFiles: groups.size, uniqueBytes, uniqueDecodedBytes,
@@ -169,13 +178,13 @@ function runtimeFiles(docs: ReadonlyMap<string, unknown>): string[] {
  * 没有内容文件时返回 undefined，让报告仍可只统计纯素材目录。
  */
 async function runtimeReport(
-  root: string,
+  sourceRoot: string,
+  contentRoot: string,
   index: ReadonlyMap<string, { hash: string; decodedBytes: number }>
 ): Promise<RuntimeAssetReport | undefined> {
-  const contentDir = path.join(root, 'content');
-  if (!fs.existsSync(path.join(contentDir, 'world.json')) && !fs.existsSync(path.join(contentDir, 'battle.json')))
+  if (!fs.existsSync(path.join(contentRoot, 'world.json')) && !fs.existsSync(path.join(contentRoot, 'battle.json')))
     return undefined;
-  const dedupe = await planClipDedupe(contentDir);
+  const dedupe = await planClipDedupe(contentRoot, sourceRoot);
   let referencedFiles = 0, referencedDecodedBytes = 0;
   const byHash = new Map<string, { decodedBytes: number; count: number }>();
   for (const file of runtimeFiles(dedupe.docs)) {
@@ -208,7 +217,10 @@ async function runtimeReport(
 
 const mb = (value: number): string => `${(value / 1024 / 1024).toFixed(1)} MB`;
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const report = await reportAssets(process.argv[2] ? path.resolve(process.argv[2]) : undefined);
+  const report = await reportAssets({
+    sourceRoot: process.argv[2] ? path.resolve(process.argv[2]) : undefined,
+    contentRoot: process.argv[3] ? path.resolve(process.argv[3]) : undefined
+  });
   console.log(`资产：${report.files} 个文件 / ${mb(report.bytes)}；唯一内容 ${report.uniqueFiles} 个 / ${mb(report.uniqueBytes)}`);
   console.log(`重复：${report.duplicateGroups} 组，${report.duplicateFiles} 个多余文件，磁盘 ${mb(report.duplicateBytes)}，解码约 ${mb(report.duplicateDecodedBytes)}`);
   for (const group of report.topDuplicateGroups) {

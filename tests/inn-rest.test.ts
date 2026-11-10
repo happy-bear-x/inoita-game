@@ -53,10 +53,12 @@ test('innkeeper confirmation charges once and cancellation changes nothing',asyn
   const actor=world.actors['innkeeper-ad05fa66'];
   const rest=()=>payForInnRest(session,quote);
   const cancelled=director.visitInnkeeper(actor,quote,rest);
+  await Promise.resolve();
   assert.equal(ui.locked,true);assert.match(ui.choices!.description,new RegExp(`休息费用：${moneyText(quote.cost)}`));
   ui.choices!.choose(ui.choices!.options[1]);assert.equal(await cancelled,true);
   assert.equal(session.money,quote.cost);assert.equal(hero.player.health,1);assert.equal(ui.locked,false);
   const confirmed=director.visitInnkeeper(actor,quote,rest);
+  await Promise.resolve();
   ui.choices!.choose(ui.choices!.options[0]);assert.equal(await confirmed,true);
   assert.equal(session.money,0);assert.equal(hero.player.health,hero.player.maxHealth);assert.equal(member.player.health,member.player.maxHealth);
   assert.equal(ui.locked,false);

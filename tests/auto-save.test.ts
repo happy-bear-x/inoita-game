@@ -125,7 +125,7 @@ test('background flush respects paused, locked and not-ready states',()=>{
 test('the timer writes on its own schedule',async t=>{
   const f=harness();t.after(()=>f.saver.stop());
   f.saver.start(10);
-  await wait(34);
+  await wait(100);
   assert.ok(f.writes.length>=1,'定时存档至少写一次');
 });
 

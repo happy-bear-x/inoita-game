@@ -265,6 +265,32 @@ test('特效播放走图集帧：每层用页纹理，动画帧按映射顺序�
   }
 });
 
+test('静态特效图层缺少映射、帧数不足或页纹理未加载时直接失败', () => {
+  const scene=(textures:Set<string>)=>{
+    const animations=new Map<string,{key:string;frames:{key:string;frame:string}[];frameRate:number}>();
+    return {
+      textures:{exists:(key:string)=>textures.has(key)},
+      anims:{exists:(key:string)=>animations.has(key),get:(key:string)=>animations.get(key),
+        create:(value:{key:string;frames:{key:string;frame:string}[];frameRate:number})=>{animations.set(value.key,value);return value;},
+        remove:(key:string)=>{animations.delete(key);}},
+      add:{container:()=>new Node(),sprite:()=>new Node()},
+      time:{delayedCall:()=>({remove(){}})}
+    } as unknown as Phaser.Scene;
+  };
+  const base=battle.attackEffects['rampage-burst']!.clips.default!;
+  const allPages=new Set(EFFECT_ATLAS_PAGES.map(page=>page.key));
+
+  const unmapped={...base,layers:base.layers.map(layer=>({...layer,file:'assets/missing/effect.png'}))};
+  assert.throws(()=>createEffect(scene(allPages),unmapped,0,0),/特效图集缺少文件映射：assets\/missing\/effect\.png/);
+
+  const [file,mapping]=Object.entries(EFFECT_ATLAS_BY_FILE).find(([,refs])=>refs.length>=base.frames)!;
+  const layers=base.layers.map(layer=>({...layer,file}));
+  assert.throws(()=>createEffect(scene(allPages),{...base,frames:mapping.length+1,layers},0,0),/特效图集帧不足/);
+
+  const missing=new Set(allPages);missing.delete(EFFECT_ATLAS_PAGES[mapping[0]!.page]!.key);
+  assert.throws(()=>createEffect(scene(missing),{...base,layers},0,0),/特效图集页纹理未加载/);
+});
+
 test('图集动画键包含文件与帧参数，同一图层键不会复用到别的文件', () => {
   const clip = battle.attackEffects['rampage-burst']!.clips.default!;
   const layer = clip.layers[0]!;

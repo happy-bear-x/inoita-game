@@ -33,7 +33,7 @@ function fixture(targets:Combatant[]=[]){
   const stats=new Map(targets.map(value=>[value.id,{...base,health:10000,mana:100}]));
   const order:string[]=[],attempts:SkillUnitHit[]=[],hits:{event:SkillUnitHit;hit:PhysicalHit}[]=[];
   const member={classId:'warrior',level:10,panel:structuredClone(base),
-    skills:{draft:()=>({levels:{}})},bag:{equipmentFor:()=>({}),equipmentItems:()=>({}),get:()=>undefined},
+    skills:{draft:()=>({levels:{}})},bag:{revision:0,equipmentFor:()=>({}),equipmentItems:()=>({}),get:()=>undefined},
     player:{health:10000,maxHealth:10000,mana:100,maxMana:100},
     setCombatResourceCapacity(key:'maxHealth'|'maxMana',value:number){this.player[key]=value;},
     setHealth(value:number){this.player.health=Math.max(0,Math.min(this.player.maxHealth,value));}};
@@ -41,8 +41,11 @@ function fixture(targets:Combatant[]=[]){
     layers:[{setAlpha:()=>{}}]}]));
   let afterHit:(event:SkillUnitHit,hit:PhysicalHit)=>void=()=>{};
   const host=Object.setPrototypeOf({hero:member,conditions,hitResolution:resolution,fallen,pendingDefeats:new Set<string>(),
+    passivesCache:new Map(),skillTableCache:new Map(),equipmentRecoveryCache:new Map(),combatProcsCache:new Map(),
+    aiSkillCostCache:new Map(),drops:{enemies:{},questItems:{}},
     arena:targets.filter(value=>value.team==='enemy').map(value=>({key:value.id,definition:enemyDefinition})),
-    app:{battleCatalog:catalog,session:{party:{controlledId:'player'}},audio:{effect:(name:string)=>order.push(`sound:${name}`)}},
+    app:{battleCatalog:catalog,session:{combatTick:0,party:{controlledId:'player'},isOneHitKill:()=>false,questDropRequirements:()=>[]},
+      audio:{effect:(name:string)=>order.push(`sound:${name}`)}},
     scene:{events:{emit:()=>{}}},memberOf:(id:string)=>id==='player'?member:undefined,partyPassives:()=>[],
     combatant:(id:string)=>{const value=actors.get(id);return value&&!fallen.has(id)?{...value,states:conditions.activeStates(id)}:undefined;},
     visualOf:(id:string)=>visuals.get(id),

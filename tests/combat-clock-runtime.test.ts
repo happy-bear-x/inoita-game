@@ -19,9 +19,10 @@ function fixture(){
   const visual=()=>({layers:[],container:{active:true,y:0,setDepth:()=>{}}});
   const player=visual(),ally=visual();
   const host={runtime:new CombatRuntime(()=>session.combatTick),setPaused:()=>{},closed:false,defeated:false,player,allies:[{id:'ally',visual:ally,ai:{step:()=>record('ally')}}],
-    arena:[{key:'enemy-a',visual:visual(),controller:{step:()=>record('enemy-a')}},
-      {key:'enemy-b',visual:visual(),controller:{step:()=>record('enemy-b')}}],
+    arena:[{key:'enemy-a',visual:visual(),controller:{needsFrame:()=>true,step:()=>record('enemy-a')}},
+      {key:'enemy-b',visual:visual(),controller:{needsFrame:()=>true,step:()=>record('enemy-b')}}],
     app:{session},conditions,deathTweens:new Map(),pendingDefeats:new Set(),fallen:new Set(),
+    flowFields:{reset:()=>{}},
     outcomes:{setPaused:()=>{}},feedback:{setPaused:()=>{}},statusColors:{paint:()=>{}},
     scene:{canCombatControl:true,time:{now:0},events:{emit:()=>{}},refreshShortcutPage:()=>{},refreshCombatTarget:()=>{},refreshSkillCooldowns:(value:unknown)=>shown.push(value)},
     get cooldowns(){return session.cooldowns.forActor('player').snapshot();},
@@ -39,9 +40,12 @@ function fixture(){
 }
 
 test('the actual scene advances every actor once on the shared frame and recovers resources after them',()=>{
-  const long=fixture(),split=fixture();long.update(239);
-  for(const delta of [59,1,60,119])split.update(delta);
-  const expected=[1,2,3].flatMap(frame=>['player','ally','enemy-a','enemy-b','summon-awareness','recovery'].map(kind=>`${frame}:${kind}`));
+  const long=fixture(),split=fixture();long.update(960);
+  // 长帧和碎帧必须落在同一批逻辑帧上；兜底观察名单每 16 逻辑帧扫一次。
+  for(const delta of [59,1,60,119,120,121,120,120,120,120])split.update(delta);
+  const expected=Array.from({length:16},(_,index)=>index+1).flatMap(frame=>
+    ['player','ally','enemy-a','enemy-b',...(frame%16===0?['summon-awareness']:[]),'recovery']
+      .map(kind=>`${frame}:${kind}`));
   assert.deepEqual(long.events,expected);assert.deepEqual(split.events,expected);
   assert.deepEqual(long.session.captureState().combatClock,split.session.captureState().combatClock);
   const before=long.session.captureState().combatClock;long.update(600,false);

@@ -106,6 +106,23 @@ test('cover cropping retains source pixels and releases its asset on destruction
   } finally { h.restore(); }
 });
 
+test('a reused DOM image clears its old picture when the next load fails',async()=>{
+  const h=harness();
+  try{
+    let fail=false;
+    const assets=new DomAssets({image:async()=>{if(fail)throw new Error('load failed');return {width:10,height:10};},atlas:async()=>({frames:{}})});
+    const image=new DomImage(h.parent).rect({x:0,y:0,width:10,height:10});
+    await image.load(assets,'first.png');
+    const picture=(image.element as unknown as Element).children[0];
+    assert.equal(picture.hidden,false);assert.ok(picture.src.includes('first.png'));
+    fail=true;
+    await assert.rejects(image.load(assets,'broken.png'),/load failed/);
+    assert.equal(picture.hidden,true,'加载失败不能继续显示上一张图');
+    assert.equal(assets.size,0,'失败后释放旧图片');
+    image.destroy();
+  }finally{h.restore();}
+});
+
 test('DOM wheel dispatches skills and items, respects cooldowns and cancels held actions when hidden', async () => {
   const h = harness();
   try {

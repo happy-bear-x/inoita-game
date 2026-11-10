@@ -15,7 +15,7 @@ import { skillEffectNames } from '../domain/skill-action.ts';
 import { skillReactionEffects } from '../domain/skill-reactions.ts';
 import type { WardrobeCatalog } from '../domain/wardrobe.ts';
 import { EFFECT_ATLAS_BY_FILE, EFFECT_ATLAS_PAGES } from '../generated/effect-atlas.ts';
-import { characterAtlasEntry, characterAtlasPageAsset } from './character-atlas.ts';
+import { characterAtlasEntry, characterAtlasPageAsset, characterFrame } from './character-atlas.ts';
 import type { PendingAsset } from './scene-assets.ts';
 
 /**
@@ -42,6 +42,7 @@ export function stateMarkerEffects(catalog: BattleCatalog): EffectMap {
 export function characterAssets(actor: ActorDefinition, clipNames?: Iterable<ClipName>): PendingAsset[] {
   const clips = clipNames ? [...clipNames].map(name => actor.clips[name]) : Object.values(actor.clips);
   const assets = new Map<string, PendingAsset>();
+  const pages = new Map<string, { asset: PendingAsset; frames: Set<string> }>();
   for (const clip of clips) {
     if (!clip) continue;
     for (const layer of clip.layers) {
@@ -50,12 +51,14 @@ export function characterAssets(actor: ActorDefinition, clipNames?: Iterable<Cli
       const atlas = characterAtlasEntry(layer.file);
       if (atlas) {
         // 只加载这个动作实际用到的帧所在页；长条图跨页时不会多带后面的页。
-        for (const pageIndex of new Set(atlas.pages.slice(0, clip.frames))) {
+        for (let index = 0; index < clip.frames; index++) {
+          const frame = characterFrame(layer.file, index);
+          if (!frame) throw new Error(`角色图集缺少帧：${layer.file} 第 ${index} 帧`);
+          const pageIndex = atlas.pages[index]!;
           const asset = characterAtlasPageAsset(pageIndex);
-          const previous = assets.get(asset.key);
-          if (previous && JSON.stringify(previous) !== JSON.stringify(asset))
-            throw new Error(`角色图集页指向不同资源：${asset.key}`);
-          assets.set(asset.key, asset);
+          const entry = pages.get(asset.key) ?? { asset, frames: new Set<string>() };
+          entry.frames.add(frame.frame);
+          pages.set(asset.key, entry);
         }
         continue;
       }
@@ -69,7 +72,10 @@ export function characterAssets(actor: ActorDefinition, clipNames?: Iterable<Cli
       assets.set(asset.key, asset);
     }
   }
-  return [...assets.values()];
+  return [
+    ...assets.values(),
+    ...[...pages.values()].map(({ asset, frames }) => ({ ...asset, frames: [...frames].sort() }))
+  ];
 }
 
 /** 地图和对白先准备站立、行走与快照里正在保持的动作。 */
@@ -108,6 +114,7 @@ export function effectLayerTextureKeys(clip: EffectClip): string[] {
 
 export function effectAssets(effects: Readonly<Record<string, EffectClipSet | undefined>>): PendingAsset[] {
   const assets = new Map<string, PendingAsset>();
+  const pages = new Map<string, { asset: PendingAsset; frames: Set<string> }>();
   const add = (asset: PendingAsset): void => {
     const previous = assets.get(asset.key);
     if (previous && JSON.stringify(previous) !== JSON.stringify(asset))
@@ -122,7 +129,12 @@ export function effectAssets(effects: Readonly<Record<string, EffectClipSet | un
         if (atlas) {
           const frames = atlas.slice(0, clip.frames);
           if (!frames.length) throw new Error(`特效图集没有帧：${layer.file}`);
-          for (const frame of frames) add(effectPageAsset(frame.page));
+          for (const frame of frames) {
+            const asset = effectPageAsset(frame.page);
+            const entry = pages.get(asset.key) ?? { asset, frames: new Set<string>() };
+            entry.frames.add(frame.frame);
+            pages.set(asset.key, entry);
+          }
           continue;
         }
         add({ kind: 'spritesheet', key: layer.key, file: layer.file,
@@ -130,7 +142,10 @@ export function effectAssets(effects: Readonly<Record<string, EffectClipSet | un
       }
     }
   }
-  return [...assets.values()];
+  return [
+    ...assets.values(),
+    ...[...pages.values()].map(({ asset, frames }) => ({ ...asset, frames: [...frames].sort() }))
+  ];
 }
 
 /** 玩家和怪物共用的普攻资源收集。 */

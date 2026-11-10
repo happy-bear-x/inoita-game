@@ -11,8 +11,9 @@ const hook = registerHooks({ resolve(specifier, context, next) { return specifie
 const { setCharacterClip } = await import('../src/rendering/characters.ts');
 hook.deregister();
 
+// 这里只验证动作的重复规则；`file` 为空表示动态贴图，是唯一不需要图集映射的路径。
 const clip = (key: string, mirrorX = false) => ({ frameWidth: 1, frameHeight: 1, frames: 3, originX: 0, originY: 0,
-  frameRate: 10, mirrorX, layers: [{ key, file: 'unused.png', blend: 'normal' }] });
+  frameRate: 10, mirrorX, layers: [{ key, file: '', blend: 'normal' }] });
 
 test('story poses play once so the completion event can settle them', () => {
   const created: { key: string; repeat: number }[] = [];
@@ -35,8 +36,10 @@ test('story poses play once so the completion event can settle them', () => {
   // 剧情姿态和其它动作类动画一样播一次（`repeat: 0`），这样播完才会来 `animationcomplete`——
   // 呈现端按演出动作的 `hold` 决定那时停在末帧还是回待机。待机与行走继续循环。
   assert.deepEqual(created, [
-    { key: 'cry-south#clip:3:10:0', repeat: 0 }, { key: 'look-around-south#clip:3:10:0', repeat: 0 },
-    { key: 'idle-south#clip:3:10:-1', repeat: -1 }, { key: 'walk-south#clip:3:10:-1', repeat: -1 },
+    { key: 'cry-south#cry-south#clip:3:10:0', repeat: 0 },
+    { key: 'look-around-south#look-around-south#clip:3:10:0', repeat: 0 },
+    { key: 'idle-south#idle-south#clip:3:10:-1', repeat: -1 },
+    { key: 'walk-south#walk-south#clip:3:10:-1', repeat: -1 },
   ]);
 });
 

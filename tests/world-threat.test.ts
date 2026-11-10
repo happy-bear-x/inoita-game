@@ -148,6 +148,7 @@ test('world actor records classify player, member, summon and enemy roles',()=>{
 test('positive physical and magical success wakes sleep while misses and nonpositive hits retain it',()=>{
   const conditions=new CombatConditions(),host={conditions,reactToBuff:()=>{},react:()=>{},partySide:()=>false,
     summonOwnerReactions:()=>{},disturbanceReaction:()=>{},equipmentRecovery:()=>({}),actorAttribute:()=>0,attackProc:()=>{},
+    physicalSuccessEquipmentProcs:()=>{},instantRecoveryOnMiss:()=>{},
     holySacrificeTransfer:Reflect.get(WorldCombat.prototype,'holySacrificeTransfer')};
   for(const kind of ['physical','magic'])for(const [outcome,damage,wakes]of [['hit',1,true],['miss',1,false],['hit',0,false]] as const){
     conditions.applyState('target','sleep',1000);

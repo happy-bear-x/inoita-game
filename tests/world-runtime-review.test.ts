@@ -246,7 +246,7 @@ test('a spring that has already been drunk is no longer an interaction target',(
 });
 
 test('drinking replaces the spring visuals with the waterless well',()=>{
-  const clip=(key:string)=>({frameWidth:43,frameHeight:34,frames:1,originX:.5,originY:1,frameRate:10,mirrorX:false,layers:[{key,file:key+'.png',blend:'normal'}]});
+  const clip=(key:string)=>({frameWidth:43,frameHeight:34,frames:1,originX:.5,originY:1,frameRate:10,mirrorX:false,layers:[{key,file:'',blend:'normal'}]});
   const world={actors:{'clear-springs-f6f095b4':{clips:{'idle-south':clip('clear-springs-f6f095b4-idle-south-normal')}},
     'well-7abb1f76':{clips:{'idle-south':clip('well-7abb1f76-idle-south-normal')}}}};
   const drawn:string[]=[];

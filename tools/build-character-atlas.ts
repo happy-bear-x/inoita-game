@@ -66,6 +66,7 @@ interface BattleLike {
   classes?: { actor?: ActorLike }[];
   enemies?: { actor?: ActorLike }[];
 }
+interface StoryClassesLike { classes?: { previewActor?: ActorLike }[] }
 
 /** 一个内容哈希 + 帧尺寸组合；同一份图在结构上只解一次。 */
 interface GroupSource {
@@ -189,7 +190,7 @@ function canonicalDocuments(hashFile: HashFile): {
   return { world: documents.get('world.json') as WorldLike, battle: documents.get('battle.json') as BattleLike, aliases };
 }
 
-/** world 的全部 actor，加上职业和敌人内嵌的 actor；同 id 合并成一份。 */
+/** world 的全部 actor，加上职业/敌人内嵌 actor 和职业选择预览 actor；同 id 合并。 */
 function sourceActors(world: WorldLike, battle: BattleLike): ActorLike[] {
   const actors = new Map<string, ActorLike>();
   const add = (actor: ActorLike | undefined): void => {
@@ -202,6 +203,8 @@ function sourceActors(world: WorldLike, battle: BattleLike): ActorLike[] {
   for (const actor of Object.values(world.actors ?? {})) add(actor);
   for (const character of battle.classes ?? []) add(character.actor);
   for (const enemy of battle.enemies ?? []) add(enemy.actor);
+  const storyClasses = JSON.parse(fs.readFileSync(path.join(CONTENT, 'story-classes.json'), 'utf8')) as StoryClassesLike;
+  for (const entry of storyClasses.classes ?? []) add(entry.previewActor);
   return [...actors.values()].sort((a, b) => compareText(a.id, b.id));
 }
 
@@ -389,9 +392,16 @@ function digestSource(source: CharacterAtlasSource): string {
   for (const group of source.groups)
     hash.update(`group\0${group.id}\0${group.hash}\0${group.frameWidth}\0${group.frameHeight}\0` +
       `${group.frames}\0${group.width}\0${group.height}\0${group.paths.join(',')}\0${group.owners.join(',')}\0`);
-  for (const [from, to] of Object.entries(source.aliases).sort(([a], [b]) => compareText(a, b)))
+  for (const [from, to] of Object.entries(characterAliases(source)))
     hash.update(`alias\0${from}\0${to}\0`);
   return hash.digest('hex');
+}
+
+/** 只保留角色图集真正接管的别名；特效/剧情路径由特效图集自己映射。 */
+function characterAliases(source: CharacterAtlasSource): Readonly<Record<string, string>> {
+  return Object.fromEntries(Object.entries(source.aliases)
+    .filter(([, canonical]) => Object.hasOwn(source.byFile, canonical))
+    .sort(([a], [b]) => compareText(a, b)));
 }
 
 export function characterAtlasSourceDigest(source: CharacterAtlasSource = collectCharacterAtlasSource()): string {
@@ -444,7 +454,7 @@ export const CHARACTER_ATLAS_SOURCE_DIGEST = ${JSON.stringify(digest)};
 `);
   fs.writeFileSync(TOOL_ALIASES, `// 由 npm run atlas:characters 生成，勿手改。
 // 源路径 → 规范路径；仅用于内容构建前的素材覆盖判断，不进入运行时包。
-export const CHARACTER_ATLAS_ALIASES: Readonly<Record<string, string>> = ${JSON.stringify(source.aliases, null, 2)};
+export const CHARACTER_ATLAS_ALIASES: Readonly<Record<string, string>> = ${JSON.stringify(characterAliases(source), null, 2)};
 `);
   // 构建期报告：单个角色实际会拉起的页并集面积。页越大，小角色被整页拖累越明显。
   const groupById = new Map(source.groups.map(group => [group.id, group]));

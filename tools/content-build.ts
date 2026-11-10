@@ -7,7 +7,7 @@ import { compileSkillDisplay } from '../src/domain/skill-display.ts';
 import { compileSkillAction } from '../src/domain/skill-action-compiler.ts';
 import { wardrobePoseRelativeFile, type WardrobeCatalog } from '../src/domain/wardrobe.ts';
 import type { SkillAction, SkillDisplayRow, SkillRank } from '../src/domain/battle.ts';
-import { sourceAssetPath } from './asset-source.ts';
+import { SOURCE_ASSETS } from './asset-source.ts';
 
 interface ContentBuildStats {
   files: number;
@@ -84,7 +84,7 @@ export function walkClips(value: unknown, visit: (clip: ClipLike, name: string) 
  * 只处理 battle.json / world.json 的 `clips`，因为地图 JSON 用 prop 键、不在 debug
  * 来源哈希里；这两份文件不在调试现场表的来源哈希中，合并不会让现场表过期。
  */
-async function dedupeClipLayers(_sourceDir: string, files: SourceFile[]): Promise<ClipDedupe> {
+async function dedupeClipLayers(_sourceDir: string, files: SourceFile[], assetRoot = SOURCE_ASSETS): Promise<ClipDedupe> {
   const docs = new Map<string, unknown>();
   for (const relative of ['battle.json', 'world.json']) {
     const source = files.find(file => file.relative === relative);
@@ -102,7 +102,7 @@ async function dedupeClipLayers(_sourceDir: string, files: SourceFile[]): Promis
     if (cached !== undefined) return cached || undefined;
     if (!file.startsWith('assets/')) return undefined;
     try {
-      const bytes = await fs.readFile(sourceAssetPath(file));
+      const bytes = await fs.readFile(path.join(assetRoot, file.replace(/^\/+/, '')));
       const decoded = PNG.sync.read(bytes);
       const hash = createHash('sha256').update(`${decoded.width}x${decoded.height}:`).update(decoded.data).digest('hex');
       hashes.set(file, hash);
@@ -153,8 +153,8 @@ async function dedupeClipLayers(_sourceDir: string, files: SourceFile[]): Promis
 }
 
 /** 只读磁盘内容，按生产构建同一套规则计算动画图层合并结果。 */
-export async function planClipDedupe(sourceDir: string): Promise<ClipDedupe> {
-  return dedupeClipLayers(sourceDir, await filesUnder(sourceDir));
+export async function planClipDedupe(sourceDir: string, assetRoot = SOURCE_ASSETS): Promise<ClipDedupe> {
+  return dedupeClipLayers(sourceDir, await filesUnder(sourceDir), assetRoot);
 }
 
 async function filesUnder(directory: string, relative = ''): Promise<SourceFile[]> {
@@ -177,9 +177,9 @@ async function filesUnder(directory: string, relative = ''): Promise<SourceFile[
  *   display（模板） + 每级 displayValues（数值），并删除重复的格式化字符串；
  * - 所有变换都必须通过 compileSkillDisplay 的逐字还原检查。
  */
-export async function buildContent(sourceDir: string, outputDir: string): Promise<ContentBuildStats> {
+export async function buildContent(sourceDir: string, outputDir: string, assetRoot = SOURCE_ASSETS): Promise<ContentBuildStats> {
   const files = await filesUnder(sourceDir);
-  const dedupe = await dedupeClipLayers(sourceDir, files);
+  const dedupe = await dedupeClipLayers(sourceDir, files, assetRoot);
   let sourceBytes = 0, outputBytes = 0, skillProfiles = 0, displayRows = 0, irSkills = 0, wardrobePoses = 0;
   for (const file of files) {
     const target = path.join(outputDir, file.relative);

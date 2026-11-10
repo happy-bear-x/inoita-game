@@ -48,6 +48,8 @@ test('flares pulse six times from the next shared frame and read the source dama
     settleHit:(event:{casterId:string;targetId:string},hit:{damage:number},_hero:unknown,_enemy:unknown,presentation:{periodic:boolean})=>{
       assert.deepEqual(event,{casterId:'owner',targetId:'victim'});assert.equal(presentation.periodic,true);amounts.push(hit.damage);
     },restoreHealth:()=>assert.fail('burning must not heal')},WorldCombat.prototype);
+  // 空的状态表会让 update 提前返回、不推进共享帧余量；放一条长寿增益让时钟保持推进。
+  conditions.applyBuff('clock','attack-stun',1,{durationMs:60000,tickMs:0,states:[],modifiers:[],periodic:[]});
   conditions.update(50);
   const buff=reaction(1).buff;
   conditions.applyBuff('victim',buff.key,buff.rankPriority,buff.effect,'owner');
@@ -74,11 +76,14 @@ test('accepted flares refresh source and first pulse while a weaker application 
 test('both armored combatants ignite each other through the actual physical hit phases even with zero reflection damage',t=>{
   t.mock.method(Math,'random',()=>0);
   const conditions=new CombatConditions(),members=new Map(['attacker','defender'].map(id=>[id,{
-    classId:'dark-knight',skills:{draft:()=>({levels:{'flares-of-pain':8}})}}]));
+    classId:'dark-knight',skills:{draft:()=>({levels:{'flares-of-pain':8}})},
+    bag:{revision:0,equipmentFor:()=>({}),get:()=>undefined}}]));
   const armor=catalog.skills['molten-armor'].action!.combatUnits!.find(value=>value.effect==='buff')!;
   assert.equal(armor.effect,'buff');if(armor.effect!=='buff')return;
   for(const id of members.keys())conditions.applyBuff(id,armor.buff,armor.ranks[0].strength,armor.ranks[0].effect,id);
   const host=Object.setPrototypeOf({app:{battleCatalog:catalog},arena:[],conditions,
+    passivesCache:new Map(),skillTableCache:new Map(),equipmentRecoveryCache:new Map(),combatProcsCache:new Map(),
+    aiSkillCostCache:new Map(),
     memberOf:(id:string)=>members.get(id),equipmentRecovery:()=>({lifeDrainPerThousand:0}),
     actorAttribute:(id:string,key:BattleStatKey)=>conditions.attribute(id,key,0),
     combatant:()=>undefined,attackProc:()=>{},syncCombatResourceLimits:()=>{},interruptDisabled:()=>{}},WorldCombat.prototype);

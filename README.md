@@ -46,9 +46,11 @@ src/                游戏源码
   scenes/           地图、剧情舞台、菜单与调试场景
   ui/               菜单、HUD、对话、DOM 组件与界面逻辑
   debug/            GM 调试动作层
-public/             随游戏发布的静态资源
+public/             随游戏发布的运行时静态资源
   content/          剧情、任务、地图、战斗、物品等内容 JSON
-  assets/           地图、角色、UI、特效、音频等素材
+  assets/           运行时图集页、地图、音频和未进图集的例外图片
+asset-source/       图集生成与内容去重的源图（进 Git，不随游戏发布）
+asset-archive/      构建裁剪出的运行时旧图副本（不进 Git）
 tests/              单元测试与独立构建验收
 tools/              构建、校验、静态服务、APK 打包
 docs/               架构、剧情创作、部署、热更新、调试与诊断说明
@@ -60,7 +62,8 @@ android/            Android 自带 Chromium 156 的壳（可选打包层）
 
 - `public/content/campaign.json` 是剧情、任务、事件与角色摆放的源文件。
 - `public/content/world.json`、`public/content/maps/`、`public/content/battle.json` 等保存地图与战斗数据。
-- `public/assets/` 保存图片与音频，路径由内容 JSON 引用。
+- `public/assets/` 保存运行时加载的图集页、地图、音频和未进图集的例外图片，路径由内容 JSON 或图集映射引用。
+- `asset-source/` 保存被图集替代的角色、特效、界面、道具和图标源图；图集生成、内容去重和逐像素测试只从这里读，不随游戏发布。
 - 内容字段的写法和校验规则见 [剧情与任务创作](docs/story-content.md)。
 - 改动内容、校验器或素材引用后运行 `npm run validate:content`；构建时也会再校验一次。
 
@@ -121,7 +124,7 @@ GM 面板包含状态、人物、道具和剧情四个子页；浏览器里也�
 
 本仓库的源代码（`src/`、`tests/`、`tools/` 等）采用 [MIT License](LICENSE)。
 
-`public/assets/` 中的图片、音频等素材，以及 `public/content/` 中派生自原版游戏的剧情、任务和文本，版权归原权利方所有，不包含在 MIT 许可范围内，仅用于学习与研究。
+`public/assets/` 与 `asset-source/` 中的图片、音频等素材，以及 `public/content/` 中派生自原版游戏的剧情、任务和文本，版权归原权利方所有，不包含在 MIT 许可范围内，仅用于学习与研究。
 
 ## 版权
 

@@ -8,7 +8,7 @@ export type PendingAsset =
   | { kind: 'image'; key: string; file: string }
   | { kind: 'spritesheet'; key: string; file: string; config: Phaser.Types.Loader.FileTypes.ImageFrameConfig }
   /** 打包后的图集：图片和 JSON 必须成对加载，纹理键下会注册所有帧。 */
-  | { kind: 'atlas'; key: string; file: string; atlas: string; frame?: string };
+  | { kind: 'atlas'; key: string; file: string; atlas: string; frame?: string; frames?: readonly string[] };
 const pools = new WeakMap<Phaser.Textures.TextureManager, AssetPool>();
 /** 队列按纹理管理器排队：同一份纹理库只有一个 loader 能写，跨场景并发会重复注册同一纹理键。 */
 const textureQueues = new WeakMap<Phaser.Textures.TextureManager, Promise<void>>();
@@ -100,18 +100,33 @@ async function inTextureQueue<T>(scene: Phaser.Scene, work: () => Promise<T>): P
   finally { release(); }
 }
 
-type AssetGap = 'texture' | `frame:${number}`;
+type AssetGap = 'texture' | `frame:${string}`;
 
 /** 纹理存在且 spritesheet 帧完整才算就绪；预检、加载、验收共用这一判据。 */
 function assetGap(scene: Phaser.Scene, asset: PendingAsset): AssetGap | undefined {
   if (!scene.textures.exists(asset.key)) return 'texture';
   const texture = scene.textures.get(asset.key);
-  if (asset.kind === 'atlas') return asset.frame && !texture.has(asset.frame) ? 'frame:0' : undefined;
+  if (asset.kind === 'atlas') {
+    if (asset.frame && !texture.has(asset.frame)) return `frame:${asset.frame}`;
+    for (const frame of asset.frames ?? []) if (!texture.has(frame)) return `frame:${frame}`;
+    return undefined;
+  }
   if (asset.kind !== 'spritesheet') return undefined;
   const end = asset.config.endFrame ?? -1;
   const count = end < 0 ? 1 : end - (asset.config.startFrame ?? 0) + 1;
   for (let frame = 0; frame < count; frame++) if (!texture.has(String(frame))) return `frame:${frame}`;
   return undefined;
+}
+
+/** 同一纹理键的图集页可能被不同动作引用不同帧；合并帧集合，其他字段必须一致。 */
+export function mergePendingAsset(previous: PendingAsset, next: PendingAsset): PendingAsset {
+  if (previous.kind === 'atlas' && next.kind === 'atlas' && previous.file === next.file && previous.atlas === next.atlas) {
+    const frames = [...new Set([...(previous.frames ?? []), ...(next.frames ?? [])])].sort();
+    return { ...previous, frames };
+  }
+  if (JSON.stringify(previous) !== JSON.stringify(next))
+    throw new Error(`贴图键指向不同资源：${next.key}`);
+  return previous;
 }
 
 /** 纹理和 spritesheet 帧都不缺才算已加载；用于静默重建前的 preflight。 */
@@ -140,7 +155,7 @@ export async function loadSceneAssets(scene: Phaser.Scene, assets: PendingAsset[
   const byKey = new Map<string, PendingAsset>();
   for (const asset of assets) {
     const previous = byKey.get(asset.key);
-    if (previous && JSON.stringify(previous) !== JSON.stringify(asset)) throw new Error(`贴图键指向不同资源：${asset.key}`);
+    if (previous) { byKey.set(asset.key, mergePendingAsset(previous, asset)); continue; }
     byKey.set(asset.key, asset);
   }
   const unique = [...byKey.values()];

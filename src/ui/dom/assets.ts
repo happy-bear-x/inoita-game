@@ -25,13 +25,22 @@ interface ImageEntry {
   sources:Map<string,DomImageSource>;
 }
 
+function missingUiAtlasPage(file: string, page: number): Error {
+  return new Error(`界面图集缺页：${file} 映射到第 ${page} 页，但该页不存在`);
+}
+
 /** 图片与数据请求按资源共享，调用者取消只释放自己的持有权。 */
 export class DomAssets {
   private readonly entries = new Map<string, ImageEntry>();
   private readonly loader: DomImageLoader;
   constructor(loader: DomImageLoader = browserImageLoader) { this.loader = loader; }
   get size(): number { return this.entries.size; }
-  peek(file:string):DomImageSource|undefined{const name=file.replace(/^\//,''),ui=UI_ATLAS_FRAMES[name],key=(UI_ICON_FRAMES[name]?UI_ICON_ATLAS_FILE:ui?UI_ATLAS_PAGES[ui.page]!.file:file).replace(/^\//,'');return this.entries.get(key)?.sources.get(name);}
+  peek(file:string):DomImageSource|undefined{
+    const name=file.replace(/^\//,''),icon=UI_ICON_FRAMES[name],ui=UI_ATLAS_FRAMES[name];
+    if(ui&&!UI_ATLAS_PAGES[ui.page])throw missingUiAtlasPage(name,ui.page);
+    const key=(icon?UI_ICON_ATLAS_FILE:ui?UI_ATLAS_PAGES[ui.page]!.file:file).replace(/^\//,'');
+    return this.entries.get(key)?.sources.get(name);
+  }
 
   async acquire(file: string, signal: AbortSignal): Promise<AssetLease & { source: DomImageSource }> {
     signal.throwIfAborted();
@@ -39,7 +48,8 @@ export class DomAssets {
     const icon = UI_ICON_FRAMES[name];
     const ui = UI_ATLAS_FRAMES[name];
     const page = ui ? UI_ATLAS_PAGES[ui.page] : undefined;
-    const imageFile = icon ? UI_ICON_ATLAS_FILE : page?.file ?? file;
+    if (ui && !page) throw missingUiAtlasPage(name, ui.page);
+    const imageFile = icon ? UI_ICON_ATLAS_FILE : page ? page.file : file;
     const dataFile = icon ? UI_ICON_ATLAS_DATA : page?.data;
     const frameName = icon ?? ui?.frame;
     const key = imageFile.replace(/^\//, '');

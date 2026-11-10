@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
 import test, {after} from 'node:test';
 import { EventEmitter } from 'node:events';
+import { readFileSync } from 'node:fs';
 import type Phaser from 'phaser';
 import { UiNode, UiImage, uiMount } from '../src/ui/dom/node.ts';
 import { QuestPopup } from '../src/ui/phaser/quest-popup.ts';
 import type { GameUI } from '../src/ui/game-ui.ts';
 import { UiSurface } from '../src/ui/dom/surface.ts';
 import { LiveCharacterPreview } from '../src/ui/phaser/live-character-preview.ts';
+import { characterAtlasPageKeys } from '../src/rendering/character-atlas.ts';
 import { domAssets } from '../src/ui/dom/assets.ts';
 import { SceneUiAssets } from '../src/ui/phaser/ui-asset-host.ts';
 import type { ActorDefinition } from '../src/domain/content.ts';
@@ -113,6 +115,39 @@ test('contained atlas images keep their proportions and remain inside the previe
   assert.equal(picture.style.clipPath,'inset(30px 260px 120px 40px)','留白不能露出图集里的相邻图片');
   image.fitting(.5,.5,'cover');
   assert.deepEqual([picture.style.width,picture.style.height,picture.style.left,picture.style.top],['800px','400px','-130px','-60px']);
+});
+
+test('a reused menu image hides the previous picture when the next load fails',async t=>{
+  const f=fixture();t.after(f.cleanup);
+  t.mock.method(console,'error',()=>{});
+  let fail=false;
+  t.mock.method(domAssets,'acquire',async()=>{
+    if(fail)throw new Error('load failed');
+    return {source:{url:'/assets/first.png',width:10,height:10,frame:{x:0,y:0,width:10,height:10}},release(){}};
+  });
+  const image=new UiImage(f.scene,f.surface.root).load('first.png');
+  await new Promise(resolve=>setTimeout(resolve,0));
+  const picture=(image.element as unknown as MenuElement).children[0];
+  assert.equal(picture.hidden,false);assert.ok(picture.src.includes('first.png'));
+  fail=true;image.load('broken.png');
+  await new Promise(resolve=>setTimeout(resolve,0));
+  assert.equal(picture.hidden,true,'加载失败不能继续显示上一张图');
+  image.destroy();
+});
+
+test('live character previews follow character atlas pages instead of stale spritesheets',()=>{
+  const battle=JSON.parse(readFileSync(new URL('../public/content/battle.json',import.meta.url),'utf8')) as {
+    classes:{actor:{clips:Record<string,{frames:number;layers:{key:string;file?:string}[]}>}}[]
+  };
+  const actor=battle.classes[0]!.actor;
+  const layer=actor.clips['idle-south']!.layers[0]!;
+  const pages=characterAtlasPageKeys(layer.file);
+  assert.ok(pages.length>0);
+  const available=(exists:(key:string)=>boolean)=>LiveCharacterPreview.available(
+    {add:{},textures:{exists}} as unknown as Phaser.Scene,actor as never);
+  assert.equal(available(key=>pages.includes(key)),true);
+  assert.equal(available(key=>key!==pages[0]),false,'缺一页也不能退回静态外观');
+  assert.equal(available(key=>key===layer.key),false,'旧单文件纹理存在不代表图集可用');
 });
 
 test('live character preview reuses the visual and tracks menu layout and visibility',t=>{

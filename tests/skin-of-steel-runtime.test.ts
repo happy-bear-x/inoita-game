@@ -21,10 +21,12 @@ function fixture(magicResistance=200){
   hero.bag.receiveDrop({...item,numbers:{...item.numbers!,modifiers:[{stat:'magicResistance',value:magicResistance}],gemModifiers:[]}});
   hero.bag.equip(hero.bag.entries.find(entry=>!held.has(entry.id))!.id,'main-hand');
   let rank=1,allyRank=0;
-  const configuration=(value:()=>number)=>({draft:()=>({levels:{'skin-of-steel':value()}})});
+  const configuration=(value:()=>number)=>({get version(){return value();},draft:()=>({levels:{'skin-of-steel':value()}})});
   Object.assign(ally,{skills:configuration(()=>allyRank)});
   const conditions=new CombatConditions();let hit:PhysicalHit|undefined;
   const host=Object.setPrototypeOf({hero,conditions,hitResolution:new CombatHitResolution(),arena:[],pendingDefeats:new Set(),fallen:new Set(),
+    passivesCache:new Map(),skillTableCache:new Map(),equipmentRecoveryCache:new Map(),combatProcsCache:new Map(),
+    aiSkillCostCache:new Map(),
     app:{battleCatalog:catalog,items,session:{skills:configuration(()=>rank),party:{groupModifiers:()=>({})}}},memberOf:(id:string)=>id==='player'?hero:ally,
     combatant:(id:string)=>({id,position:{x:0,y:0},bounds:{x:-4,y:-4,width:8,height:8}}),
     resolveHitReactions:()=>{},settleHit:(_event:unknown,value:PhysicalHit)=>{hit=value;},dropMana:()=>{},showHit:()=>{},

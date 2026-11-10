@@ -47,7 +47,8 @@ const unit:NumericCombatUnit={effect:'physical',source:'physicalAttack',attribut
 
 function fixture(){
   const order:string[]=[],conditions=new CombatConditions(),fallen=new Set<string>();
-  const member=(health:number)=>({level:1,panel:{attributes:primary,maxHealth:1000,maxMana:0},player:{health,maxHealth:1000,maxMana:0},setCombatResourceCapacity(key:'maxHealth'|'maxMana',value:number){this.player[key]=value;},setHealth(value:number){
+  const member=(health:number)=>({level:1,panel:{attributes:primary,maxHealth:1000,maxMana:0},player:{health,maxHealth:1000,maxMana:0},
+    bag:{revision:0,equipmentFor:()=>({}),get:()=>undefined},setCombatResourceCapacity(key:'maxHealth'|'maxMana',value:number){this.player[key]=value;},setHealth(value:number){
     this.player.health=Math.max(0,Math.min(this.player.maxHealth,value));
   }});
   const members=new Map([['player',member(30)],['ally',member(500)]]);
@@ -69,7 +70,9 @@ function fixture(){
       magicDamageRate:0,stealthDamageRate:0,primaryAttributes:primary}),
     movement:{position:()=>({x:0,y:0}),actor:()=>({shape:()=>({collision:{}})}),stop:()=>{},setEnabled:()=>{}},
     scene:{facing:'south',events:{emit:()=>order.push('contact')},map:{id:'test'},refreshCombatTarget:()=>{}},
-    app:{audio:{monsterDeath:()=>order.push('enemy-death-sound')},session:{enemyVitals:()=>({})}},
+    app:{audio:{monsterDeath:()=>order.push('enemy-death-sound')},session:{enemyVitals:()=>({}),isOneHitKill:()=>false,questDropRequirements:()=>[]}},
+    passivesCache:new Map(),skillTableCache:new Map(),equipmentRecoveryCache:new Map(),combatProcsCache:new Map(),
+    aiSkillCostCache:new Map(),drops:{enemies:{},questItems:{}},
     roster:{enemySnapshot:()=>({...enemyState}),setEnemyHealth:(_id:string,value:number)=>{enemyState.health=Math.max(0,Math.min(100,value));},source:()=>undefined,
       refresh:()=>({added:[],removed:[]})},
     outcomes:{cancelDeath:()=>{},vanish:(_id:string,_visual:unknown,finish:()=>void)=>finish()},
@@ -90,7 +93,7 @@ function fixture(){
 test('a capture conversion removes the source enemy instead of leaving a one-HP corpse',()=>{
   const run=fixture();let healthWrites=0;
   Object.assign(run.host.app,{director:{healthChanged:()=>true},
-    session:{enemyVitals:()=>({capture:{map:'test',visit:0}})}});
+    session:{enemyVitals:()=>({capture:{map:'test',visit:0}}),isOneHitKill:()=>false,questDropRequirements:()=>[]}});
   run.host.roster.setEnemyHealth=()=>{healthWrites++;};
   run.direct('enemy',500);
   assert.ok(run.order.includes('enemy-removed'),'捕捉后源怪立刻退场');
@@ -99,7 +102,7 @@ test('a capture conversion removes the source enemy instead of leaving a one-HP 
 
 test('a story event interruption still leaves the enemy at one HP for the cutscene',()=>{
   const run=fixture();const writes:number[]=[];
-  Object.assign(run.host.app,{director:{healthChanged:()=>true},session:{enemyVitals:()=>({})}});
+  Object.assign(run.host.app,{director:{healthChanged:()=>true},session:{enemyVitals:()=>({}),isOneHitKill:()=>false,questDropRequirements:()=>[]}});
   run.host.roster.setEnemyHealth=(_id:string,value:number)=>{writes.push(value);};
   run.direct('enemy',500);
   assert.deepEqual(writes,[1]);

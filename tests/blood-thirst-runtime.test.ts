@@ -26,13 +26,15 @@ function fixture(){
     criticalRate:0,criticalResistance:0,criticalDamage:0,criticalDamageResistance:0,weaponBlock:0,shieldBlock:0,
     physicalResistance:0,magicResistance:0,attributes:{strength:0,dexterity:0,vitality:0,intelligence:0,mentality:0}};
   const member=(classId:string)=>({classId,level:10,panel:{...base},player:{health:500,maxHealth:1000,mana:50,maxMana:100},
-    bag:{equipmentFor:()=>({}),get:()=>undefined},skills:{draft:()=>({levels:{}})},
+    bag:{revision:0,equipmentFor:()=>({}),get:()=>undefined},skills:{draft:()=>({levels:{}})},
     setCombatResourceCapacity(key:'maxHealth'|'maxMana',value:number){this.player[key]=value;},
     setHealth(value:number){order.push(`health:${value-this.player.health}`);this.player.health=Math.max(0,Math.min(this.player.maxHealth,value));},
     setMana(value:number){order.push(`mana:${value-this.player.mana}`);this.player.mana=Math.max(0,Math.min(this.player.maxMana,value));}});
   const player=member('warrior'),target=member('dark-knight'),members=new Map([['player',player],['target',target]]);
   const host=Object.setPrototypeOf({hero:player,app:{battleCatalog:catalog,session:{skills:config,party:{controlledId:'player'}},
     audio:{effect:(name:string)=>order.push(`sound:${name}`)}},conditions,hitResolution,pendingDefeats:new Set(),arena:[],allies:[],
+    passivesCache:new Map(),skillTableCache:new Map(),equipmentRecoveryCache:new Map(),combatProcsCache:new Map(),
+    aiSkillCostCache:new Map(),
     memberOf:(id:string)=>members.get(id),partyPassives:()=>[],syncCombatResourceLimits:()=>{},applyStateConsequences:()=>{},
     equipmentRecovery:()=>({lifeDrainPerThousand:lifeDrain}),
     showBuffApplication:(_source:string,_target:string,effect:string)=>order.push(effect),

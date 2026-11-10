@@ -11,6 +11,7 @@ import {
   sharedCombatEffectMap, type EffectMap
 } from './combat-asset-descriptors.ts';
 import type { PendingAsset } from './scene-assets.ts';
+import { mergePendingAsset } from './scene-assets.ts';
 
 export interface ResidentCombatInput {
   battle: BattleCatalog;
@@ -67,7 +68,7 @@ export function residentCombatAssets(input: ResidentCombatInput): CombatAssetPac
     for (const asset of list) {
       const previous = assets.get(asset.key);
       if (previous) {
-        if (JSON.stringify(previous) !== JSON.stringify(asset)) throw new Error(`贴图键指向不同资源：${asset.key}`);
+        assets.set(asset.key, mergePendingAsset(previous, asset));
         continue;
       }
       assets.set(asset.key, asset);

@@ -9,6 +9,8 @@ import type Phaser from 'phaser';
 import type {BattleCatalog} from '../src/domain/battle.ts';
 import type {ActionPlayback} from '../src/domain/combat.ts';
 import type {CharacterVisual} from '../src/rendering/characters.ts';
+import {characterFrameList} from '../src/rendering/character-atlas.ts';
+import {CHARACTER_ATLAS_ALIASES} from '../tools/character-atlas-aliases.ts';
 
 // 使用项目安装版本的真实 AnimationState；场景只替换贴图和渲染对象。
 const require=createRequire(import.meta.url);
@@ -21,7 +23,7 @@ const catalog=JSON.parse(readFileSync(new URL('../public/content/battle.json',im
 
 class Sprite extends FakeSprite {
   scene:unknown;anims:Phaser.Animations.AnimationState;scaleX=1;originX=0;originY=0;
-  frame:{texture:{key:string};name:number}|undefined;
+  frame:{texture:{key:string};name:string|number}|undefined;
   constructor(scene:unknown){super();this.scene=scene;this.anims=new AnimationState(this);}
   override setOrigin(x:number,y:number){this.originX=x;this.originY=y;return this;}
   override setScale(x:number){this.scaleX=x;return this;}
@@ -31,6 +33,9 @@ class Sprite extends FakeSprite {
 
 function setup(){
   const actor=structuredClone(catalog.classes.find(character=>character.id==='ranger')!.actor);
+  // 内容构建把原始路径改写成图集规范路径；运行时只认规范路径。
+  for(const clip of Object.values(actor.clips))for(const layer of clip!.layers)
+    if(layer.file)layer.file=CHARACTER_ATLAS_ALIASES[layer.file]??layer.file;
   // 原默认图集合成一层；换装版身体/武器分层，夹具为每向增加独立武器层。
   for(const direction of ['north','south','east','west'] as const){
     const clip=actor.clips[`skill-multiple-shot-${direction}`]!;
@@ -68,16 +73,27 @@ test('real Phaser animation changes body and weapon direction while preserving p
   assert.deepEqual(f.frames,[1,2,3]);assert.equal(f.character.clipName,'skill-multiple-shot-north');
   for(const [index,layer]of f.layers.entries()){
     assert.equal(layer,originalLayers[index]);assert.equal(layer.anims.currentFrame!.index,4);
-    assertPhase(layer.anims.accumulator,10);assert.equal(layer.frame!.name,0);
-    assert.equal(layer.frame!.texture.key,f.character.actor.clips['skill-multiple-shot-north']!.layers[index].key);
+    assertPhase(layer.anims.accumulator,10);
+    const northClip=f.character.actor.clips['skill-multiple-shot-north']!;
+    const northFrame=characterFrameList(northClip.layers[index]!.file,northClip.frames)[0]!;
+    assert.equal(layer.frame!.name,northFrame.frame);
+    assert.equal(layer.frame!.texture.key,northFrame.key);
     assert.equal(layer.scaleX,1);
   }
   f.advance(60);
-  for(const layer of f.layers){assert.equal(layer.anims.currentFrame!.index,5);assert.equal(layer.frame!.name,1);}
+  for(const [index,layer]of f.layers.entries()){
+    const northClip=f.character.actor.clips['skill-multiple-shot-north']!;
+    const northFrame=characterFrameList(northClip.layers[index]!.file,northClip.frames)[1]!;
+    assert.equal(layer.anims.currentFrame!.index,5);
+    assert.equal(layer.frame!.name,northFrame.frame);assert.equal(layer.frame!.texture.key,northFrame.key);
+  }
   f.advance(120);assert.equal(f.character.clipName,'skill-multiple-shot-west');
   for(const [index,layer]of f.layers.entries()){
     const clip=f.character.actor.clips['skill-multiple-shot-west']!;
-    assert.equal(layer.anims.currentFrame!.index,7);assert.equal(layer.frame!.texture.key,clip.layers[index].key);
+    const westFrames=characterFrameList(clip.layers[index]!.file,clip.frames);
+    assert.equal(layer.anims.currentFrame!.index,7);
+    assert.ok(westFrames.some(frame=>frame.key===layer.frame!.texture.key&&frame.frame===layer.frame!.name),
+      '当前贴图仍是这一层的图集帧');
     assert.equal(layer.originX,clip.originX);assert.equal(layer.originY,clip.originY);assert.equal(layer.scaleX,1);
   }
   for(let i=0;i<13;i++)f.advance(60);

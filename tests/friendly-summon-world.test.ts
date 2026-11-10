@@ -5,6 +5,7 @@ import test from 'node:test';
 import type {BattleCatalog} from '../src/domain/battle.ts';
 import type {ActiveCombatAction,Combatant} from '../src/domain/combat.ts';
 import {CombatRuntime} from '../src/domain/combat-runtime.ts';
+import {EnemyController} from '../src/domain/enemy-ai.ts';
 import {SummonCombatAwareness} from '../src/domain/summon-tactics.ts';
 import {NavigationWorld,type NavigationActor} from '../src/domain/navigation-world.ts';
 import {canTraverse} from '../src/domain/pathfinding.ts';
@@ -69,6 +70,8 @@ function fixture(walledColumn?:number){
   let canAct=true,canMove=true;
   const state={app:{session},scene:{movement,performing:false,map:{exits:[] as {x:number;y:number;width:number;height:number}[],entities:[] as Point[]}},
     arena,partyControllers,combatRuntime,summonAwareness:awareness,partyActionsSuspended:false,
+    // observeSummonCombat 复用实例上的观察数组；绕过构造函数的替身要补上这个缓存字段。
+    summonObservations:[],
     conditions:{canAct:()=>canAct,canMove:()=>canMove},
     combatant:(id:string)=>actors.get(id),combatants:()=>[...actors.values()],isActorAlive:(id:string)=>actors.has(id)&&!dead.has(id),
     visualOf:(id:string)=>[...positions.keys()].find(value=>value.id===id),
@@ -77,9 +80,12 @@ function fixture(walledColumn?:number){
   const method=(name:string)=>Reflect.get(WorldCombat.prototype,name).bind(world) as (...args:unknown[])=>unknown;
   function hostile(id:string,point:Point,range=8):TestEnemy {
     const visual=addActor(id,'hostile',point);stateByEnemy.set(id,{state:'idle'});
-    const enemy:TestEnemy={key:id,visual,definition:{behavior:{awarenessRangeUnits:range}},
-      controller:{snapshot:()=>stateByEnemy.get(id)!,actionState:()=>stateByEnemy.get(id)!.state,
-        currentTargetId:()=>stateByEnemy.get(id)!.targetId,combatController:{activeAction:()=>actions.get(id)}}};
+    const controller={snapshot:()=>stateByEnemy.get(id)!,actionState:()=>stateByEnemy.get(id)!.state,
+      currentTargetId:()=>stateByEnemy.get(id)!.targetId,combatController:{activeAction:()=>actions.get(id)},
+      // observeSummonCombat 只收真正的 EnemyController；替身补上原型和“需要逐帧观察”的判定。
+      needsFrame:()=>true};
+    Object.setPrototypeOf(controller,EnemyController.prototype);
+    const enemy:TestEnemy={key:id,visual,definition:{behavior:{awarenessRangeUnits:range}},controller};
     arena.push(enemy);return enemy;
   }
   return {world,state,session,terrain,navigation,positions,bodies,actors,dead,actions,selected,awareness,combatRuntime,

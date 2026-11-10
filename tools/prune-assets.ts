@@ -107,7 +107,7 @@ export function archiveUnkeptFiles(options: ArchiveOptions): ArchiveResult {
     fs.writeFileSync(path.join(archiveDir, 'report.json'), JSON.stringify({
       schema: 1,
       generatedAt: new Date().toISOString(),
-      note: '构建产物里没有被运行时引用的素材。源文件仍在 public/assets，这里只保留本次裁剪的副本。',
+      note: '构建产物里没有被运行时引用的素材。源图在 asset-source/，这里只保留本次裁剪的运行时副本。',
       source: { files: files.length, bytes: totalBytes },
       kept: { files: keptFiles, bytes: keptBytes },
       archived: { files: archivedFiles, bytes: archivedBytes },

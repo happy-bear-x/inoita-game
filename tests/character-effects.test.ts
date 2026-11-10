@@ -37,15 +37,27 @@ class Display extends EventEmitter {
 }
 
 function setup(){
-  const nodes:Display[]=[],animations=new Map<string,Animation>(),textures=new Map<string,Set<number>>(),removed:string[]=[],queued:PendingAsset[]=[];
+  const nodes:Display[]=[],animations=new Map<string,Animation>(),textures=new Map<string,Set<string|number>>(),removed:string[]=[],queued:PendingAsset[]=[];
   const make=(x=0,y=0)=>{const value=new Display();value.x=x;value.y=y;nodes.push(value);return value;};
   const load=Object.assign(new EventEmitter(),{
     spritesheet:(key:string,file:string,config:Phaser.Types.Loader.FileTypes.ImageFrameConfig)=>queued.push({kind:'spritesheet',key,file,config}),
     image:(key:string,file:string)=>queued.push({kind:'image',key,file}),
-    start:()=>queueMicrotask(()=>{for(const asset of queued.splice(0))textures.set(asset.key,new Set(Array.from({length:asset.kind==='spritesheet'?Number(asset.config.endFrame)+1:1},(_,i)=>i)));load.emit('complete');}),
+    atlas:(key:string,file:string,atlas:string)=>queued.push({kind:'atlas',key,file,atlas}),
+    start:()=>queueMicrotask(()=>{
+      for(const asset of queued.splice(0)) {
+        // 真实 loader 会把图集 JSON 里的帧全部注册进纹理；假 loader 从同一份文件取帧名。
+        const frames:(string|number)[]=asset.kind==='atlas'
+          ?Object.keys(JSON.parse(readFileSync(new URL(`../public/${asset.atlas.split('?')[0]}`,import.meta.url),'utf8')).frames)
+          :asset.kind==='spritesheet'?Array.from({length:Number(asset.config.endFrame)+1},(_,i)=>i):[0];
+        textures.set(asset.key,new Set(frames));
+      }
+      load.emit('complete');
+    }),
   });
   const scene={events:new EventEmitter(),load,
-    textures:{exists:(key:string)=>textures.has(key),get:(key:string)=>({has:(frame:string)=>textures.get(key)!.has(Number(frame))}),remove:(key:string)=>{removed.push(key);textures.delete(key);}},
+    textures:{exists:(key:string)=>textures.has(key),get:(key:string)=>({
+      has:(frame:string|number)=>textures.get(key)!.has(frame)||textures.get(key)!.has(Number(frame))
+    }),remove:(key:string)=>{removed.push(key);textures.delete(key);}},
     anims:{exists:(key:string)=>animations.has(key),create:(value:Animation)=>{animations.set(value.key,value);return value;},
       generateFrameNumbers:(_key:string,{start,end}:{start:number;end:number})=>Array.from({length:end-start+1},(_,i)=>i+start),
       remove:(key:string)=>animations.delete(key)},

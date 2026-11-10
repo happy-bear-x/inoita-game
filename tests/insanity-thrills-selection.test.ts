@@ -17,19 +17,22 @@ const catalog=read('battle') as BattleCatalog,items=read('items') as ItemCatalog
 const actor=Object.values((read('world') as WorldIndex).actors).find(actor=>actor.clips['frenzy-blade-south'])!;
 const method=(name:string)=>Reflect.get(WorldCombat.prototype,name);
 function fixture(memory=new FrenzyAnimationMemory()){
-  let rank=1;
+  let rank=1,revision=0;
   const equipment:Record<string,string>={},allyEquipment:Record<string,string>={};
   const equip=(kind:string,slot='main-hand',target=equipment)=>{
     target[slot]=Object.keys(items.items).find(id=>items.items[id].kind===kind&&items.items[id].equipment)!;
+    revision++;
     assert.ok(target[slot]);
   };
   equip('longsword');
-  const skills={draft:()=>({levels:{'insanity-thrills':rank}})};
+  const skills={get version(){return rank;},draft:()=>({levels:{'insanity-thrills':rank}})};
   const member=(gear:Record<string,string>)=>({classId:'warrior',level:10,panel:{},
     player:{health:100,maxHealth:100,mana:100,maxMana:100},skills,
-    bag:{equipmentFor:()=>gear,equipmentItems:(gear:Record<string,string>)=>gear,get:()=>undefined}});
+    bag:{get revision(){return revision;},equipmentFor:()=>gear,equipmentItems:(gear:Record<string,string>)=>gear,get:()=>undefined}});
   const hero=member(equipment),ally=member(allyEquipment),conditions=new CombatConditions();
   const host=Object.setPrototypeOf({hero,conditions,arena:[],partyControllers:new Map(),
+    passivesCache:new Map(),skillTableCache:new Map(),equipmentRecoveryCache:new Map(),combatProcsCache:new Map(),
+    aiSkillCostCache:new Map(),
     app:{battleCatalog:catalog,items,wardrobe,session:{skills,frenzyAnimations:memory,party:{groupModifiers:()=>({})}}},
     memberOf:(id:string)=>id==='player'?hero:id==='ally'?ally:undefined},WorldCombat.prototype);
   const call=(name:string,...args:unknown[])=>method(name).call(host,...args);

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DomAssets, type DomImageLoader } from '../src/ui/dom/assets.ts';
+import { UI_ATLAS_FRAMES } from '../src/generated/ui-atlas.ts';
 
 test('shared image loading survives one owner cancelling and releases on the last owner', async () => {
   let finish!: (size: { width: number; height: number }) => void;
@@ -75,4 +76,21 @@ test('a leased image keeps its decoded element available to the menu', async () 
   assert.equal(lease.source.image, image);
   lease.release();
   assert.equal(assets.size, 0);
+});
+
+test('an atlas frame pointing at a missing page fails instead of loading the raw file', async () => {
+  const file = Object.keys(UI_ATLAS_FRAMES)[0]!;
+  const entry = UI_ATLAS_FRAMES[file]!;
+  const page = entry.page;
+  entry.page = 9999;
+  try {
+    const assets = new DomAssets({
+      image: async () => { throw new Error('不应加载原文件'); },
+      atlas: async () => ({ frames: {} })
+    });
+    assert.throws(() => assets.peek(file), /界面图集缺页/);
+    await assert.rejects(assets.acquire(file, new AbortController().signal), /界面图集缺页/);
+  } finally {
+    entry.page = page;
+  }
 });

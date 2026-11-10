@@ -72,14 +72,14 @@ test('a failed story batch that joins a companion leaves the real bag and party 
 });
 
 test('one defeat does not run a second quest plan for the notification it publishes', (t) => {
-  // 沙盒收尾时已经算过一遍，提交后紧跟的 `emit → refresh` 应当直接复用那次结果。
+  // 提交命令时只规划一次；提交后紧跟的 `emit → refresh` 复用已认领的投影，不再规划。
   const { session } = fixture([quest('hunt', { completion: 'all', goals: [{ id: 'g', kind: 'defeat', target: 'wolf', quantity: 2 }] })]);
   session.accept('hunt');
   let plans = 0;
   const original = session.questBook.plan.bind(session.questBook);
   t.mock.method(session.questBook, 'plan', (command: Parameters<typeof original>[0]) => { plans++; return original(command); });
   session.enemyDefeated({ id: 'wolf-1', enemyId: 'wolf', x: 0, y: 0 });
-  assert.equal(plans, 0);
+  assert.equal(plans, 1, '提交击杀事实时规划一次，通知刷新不重复规划');
   assert.equal(session.questBook.state('hunt')!.goals.g, 1);
   // 真的改了任务输入时仍然要重算：认领的投影是缓存，不是一次性结论。
   session.bag.add('healing-potion-s', 1);

@@ -38,19 +38,21 @@ test('only a successful physical summon hit draws the chance and resets the owne
 test('the owner reaction runs after the summon taunt and uses the owners learned rank',t=>{
   t.mock.method(Math,'random',()=>0);
   const order:string[]=[];
+  let version=0,draft:()=>{levels:Record<string,number>}=()=>({levels:{'clever-fellow':1}});
+  const skills={get version(){return version;},draft:()=>draft()};
   const host=Object.setPrototypeOf({
     arena:[{key:'beast',summonedBy:'player',summonTauntChance:1000}],
     threat:{taunt:(source:string,target:string)=>order.push(`taunt:${source}->${target}`)},
     enemyTarget:()=>'ally',
     memberOf:(id:string)=>id==='player'?{classId:'ranger'}:undefined,
     resetActorCooldowns:(id:string)=>order.push(`cooldowns:${id}`),
-    app:{battleCatalog:catalog,session:{skills:{draft:()=>({levels:{'clever-fellow':1}})}}},
+    app:{battleCatalog:catalog,session:{skills}},
   },WorldCombat.prototype);
   method('summonOwnerReactions').call(host,{casterId:'beast',targetId:'enemy'},{kind:'hit',damage:5},'physical');
   assert.deepEqual(order,['taunt:beast->enemy','cooldowns:player']);
 
   order.length=0;
-  host.app.session.skills.draft=()=>({levels:{}});
+  draft=()=>({levels:{}});version++;
   method('summonOwnerReactions').call(host,{casterId:'beast',targetId:'enemy'},{kind:'hit',damage:5},'physical');
   assert.deepEqual(order,['taunt:beast->enemy'],'没学就不清冷却');
 });

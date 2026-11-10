@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -16,17 +15,4 @@ export const SOURCE_ASSETS = path.join(ROOT, 'asset-source');
 /** 源素材的固定路径；调用方不再去 public 找同名文件。 */
 export function sourceAssetPath(file: string): string {
   return path.join(SOURCE_ASSETS, file.replace(/^\/+/, ''));
-}
-
-export function sourceAssetExists(file: string): boolean {
-  return fs.existsSync(sourceAssetPath(file));
-}
-
-/** 某类源素材是否至少存在一份；归档缺失时图集脚本不会假装有源可读。 */
-export function sourceAssetGroupExists(directory: string): boolean {
-  try {
-    return fs.readdirSync(path.join(SOURCE_ASSETS, directory)).length > 0;
-  } catch {
-    return false;
-  }
 }

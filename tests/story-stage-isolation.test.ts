@@ -619,7 +619,7 @@ test('on-demand object assets retain the original and override textures and disc
 test('scene reconstruction restores held animation frames on every character layer',async()=>{
   const {drawStoryCharacters}=await import('../src/rendering/story-map-view.ts');
   const clip={frameWidth:8,frameHeight:8,frames:4,originX:0,originY:0,frameRate:10,mirrorX:false,
-    layers:[{key:'body',file:'body.png',blend:'normal'},{key:'weapon',file:'weapon.png',blend:'normal'}]};
+    layers:[{key:'body',file:'',blend:'normal'},{key:'weapon',file:'',blend:'normal'}]};
   const appearance={id:'hero',clips:{'idle-south':clip,'die-south':clip}} as ActorDefinition;
   const scene={anims:{exists:()=>true},add:{
     container(x:number,y:number){return {x,y,scene:{},setDepth(){return this;},setVisible(){return this;},setAlpha(){return this;},addAt(){},destroy(){}};},
@@ -666,7 +666,7 @@ test('normal and skipped poses settle on identical held or idle animation frames
   const {drawStoryCharacters}=await import('../src/rendering/story-map-view.ts');
   const run=async(skip:boolean,hold:boolean)=>{
     const clip={frameWidth:8,frameHeight:8,frames:4,originX:0,originY:0,frameRate:10,mirrorX:false,
-      layers:[{key:'body',file:'body.png',blend:'normal'}]};
+      layers:[{key:'body',file:'',blend:'normal'}]};
     const appearance={id:'guard',clips:{'idle-south':clip,'fall-down-south':clip}} as ActorDefinition;
     const scene={prepareClipAssets:async()=>{},anims:{exists:()=>true},add:{
       container(x:number,y:number){return {x,y,scene:{},setDepth(){return this;},setVisible(){return this;},setAlpha(){return this;},addAt(){},destroy(){}};},

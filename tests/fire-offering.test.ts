@@ -50,6 +50,8 @@ test('烧伤保留普通DOT年龄0首跳，90帧末跳后到下一帧才移除',
 
 test('烧伤随公共逻辑帧相位开始，弱施加保持旧年龄，同强刷新重新从年龄0起',()=>{
   const conditions=new CombatConditions(),strong=buff('hero',8),weak=buff('companion',8);
+  // 空的状态表会让 update 提前返回、不推进共享帧余量；放一条长寿增益让时钟保持推进。
+  conditions.applyBuff('clock','attack-stun',1,{durationMs:60000,tickMs:0,states:[],modifiers:[],periodic:[]});
   conditions.update(30);
   conditions.applyBuff('enemy','fire-offering',strong.strength,strong.effect,'caster');
   let ticks=0;const tick=()=>{ticks++;};

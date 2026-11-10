@@ -30,13 +30,16 @@ function fixture(){
   const panel={baseDefense:100,defenseRate:500,physicalAttack:100,magicAttack:0,maxHealth:100,
     hitBase:100,hitBonus:0,evasionBase:0,evasionBonus:0,criticalRate:0,criticalResistance:0,
     criticalDamage:0,criticalDamageResistance:0,weaponBlock:0,shieldBlock:0,physicalResistance:0,magicResistance:0};
-  const members=new Map(['player','caster','third'].map(id=>[id,{level:10,player:{health:100},panel,clearCombatResourceLimits:()=>{}}]));
+  const members=new Map(['player','caster','third'].map(id=>[id,{level:10,player:{health:100},panel,
+    bag:{revision:0,equipmentFor:()=>({}),get:()=>undefined},clearCombatResourceLimits:()=>{}}]));
   const visuals=new Map(['player','caster','third','summon'].map(id=>[id,{
     container:{active:true,x:0,y:0,setVisible:()=>{}},actor:{collision,clips:{}},layers:[],
   }]));
   const party={activeIds:['player','caster','third'],get:(id:string)=>members.get(id)};
   const order:string[]=[],attempts:SkillUnitHit[]=[];let passives:PassiveModifier[]=[];
-  const host=Object.setPrototypeOf({app:{session:{party}},hero:members.get('player'),conditions,hitResolution,
+  const host=Object.setPrototypeOf({app:{session:{party,combatTick:0}},hero:members.get('player'),conditions,hitResolution,
+    passivesCache:new Map(),skillTableCache:new Map(),equipmentRecoveryCache:new Map(),combatProcsCache:new Map(),
+    aiSkillCostCache:new Map(),
     scene:{facing:'east',tweens:{add:()=>({})}},pendingDefeats:new Set(),fallen:new Set(),
     partyControllers:new Map(),deathTweens:new Map(),
     allies:[{id:'caster',facing:'east',ai:{disable:()=>{}}},{id:'third',facing:'east',ai:{disable:()=>{}}}],

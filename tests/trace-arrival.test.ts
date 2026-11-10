@@ -12,6 +12,7 @@ import type {Combatant} from '../src/domain/combat.ts';
 import type {Point} from '../src/domain/navigation.ts';
 import type {CharacterVisual} from '../src/rendering/characters.ts';
 import {resolveBasicAttack} from '../src/domain/basic-attack.ts';
+import {CHARACTER_ATLAS_ALIASES} from '../tools/character-atlas-aliases.ts';
 
 const hook=registerHooks({resolve(specifier,context,next){return specifier==='phaser'
   ?{url:'data:text/javascript,export default {BlendModes:{NORMAL:0,MULTIPLY:1,SCREEN:2,ADD:3}}',shortCircuit:true}
@@ -39,7 +40,10 @@ function fixture(distance=11){
   const timers:{delay:number;callback:()=>void;removed:boolean;remove:()=>void}[]=[];
   const target:Combatant={id:'enemy',team:'hostile',position:{x:distance,y:0},bounds:{x:0,y:0,width:16,height:16}};
   const container={x:distance,y:0,active:true};let present=true,paused=false;
-  const actor=catalog.classes.find(character=>character.id==='ranger')!.actor;
+  const actor=structuredClone(catalog.classes.find(character=>character.id==='ranger')!.actor);
+  // 内容构建把原始路径改写成图集规范路径；运行时只认规范路径。
+  for(const clip of Object.values(actor.clips))for(const layer of clip!.layers)
+    if(layer.file)layer.file=CHARACTER_ATLAS_ALIASES[layer.file]??layer.file;
   const character={actor,entity:{id:'player',actor:actor.id},layers:[],clipName:null,
     container:{active:true,x:0,y:0,addAt:()=>{}}} as unknown as CharacterVisual;
   const scene={events:new EventEmitter(),

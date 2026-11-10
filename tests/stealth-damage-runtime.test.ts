@@ -43,7 +43,7 @@ function resolved(definition:BasicAttackDefinition):ResolvedBasicAttack {
 function fixture(){
   const member=(physicalAttack:number,magicAttack:number)=>({classId:'warrior',level:10,
     panel:{...structuredClone(base),physicalAttack,magicAttack},player:{health:10000,maxHealth:10000,mana:100,maxMana:100},
-    bag:{equipmentFor:()=>({}),get:()=>undefined}});
+    bag:{revision:0,equipmentFor:()=>({}),get:()=>undefined}});
   const player=member(100,0),ally=member(40,90),members=new Map([['player',player],['ally',ally]]);
   const stats=new Map([['monster',{...structuredClone(base),physicalAttack:70,magicAttack:60,health:10000,mana:100}],
     ['target',{...structuredClone(base),health:10000,mana:100}]]);
@@ -51,6 +51,8 @@ function fixture(){
     {id,team:members.has(id)?'party':'enemy',position:{x:index*8,y:0},bounds:{x:-4,y:-4,width:8,height:8}}]));
   const conditions=new CombatConditions(),hits:{event:AttackContact;hit:PhysicalHit}[]=[],order:string[]=[];
   const host=Object.setPrototypeOf({hero:player,conditions,hitResolution:new CombatHitResolution(),
+    passivesCache:new Map(),skillTableCache:new Map(),equipmentRecoveryCache:new Map(),combatProcsCache:new Map(),
+    aiSkillCostCache:new Map(),
     pendingDefeats:new Set<string>(),fallen:new Set<string>(),allies:[],
     arena:[...stats.keys()].map(key=>({key,definition:catalog.enemies[0]})),
     app:{battleCatalog:catalog,session:{party:{controlledId:'player'}},audio:{effect:(name:string)=>order.push(`sound:${name}`)}},

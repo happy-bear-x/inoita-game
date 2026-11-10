@@ -6,6 +6,7 @@ import type Phaser from 'phaser';
 import type {BattleCatalog} from '../src/domain/battle.ts';
 import type {EffectClip} from '../src/domain/content.ts';
 import type {CharacterVisual} from '../src/rendering/characters.ts';
+import {EFFECT_ATLAS_BY_FILE,EFFECT_ATLAS_PAGES} from '../src/generated/effect-atlas.ts';
 
 const hook=registerHooks({resolve(specifier,context,next){return specifier==='phaser'
   ?{url:'data:text/javascript,export default {BlendModes:{NORMAL:0,SCREEN:1,ADD:2,MULTIPLY:3},Scenes:{Events:{SHUTDOWN:"shutdown"}}}',shortCircuit:true}
@@ -16,6 +17,11 @@ const {CombatOutcomes}=await import('../src/rendering/combat-outcomes.ts');
 hook.deregister();
 
 interface Play {key:string;startFrame?:number;repeat?:number;delay?:number}
+
+/** 特效层必须引用真实图集文件；两个不同的长条图用于验证两层各建一条动画。 */
+const mappedFiles=Object.keys(EFFECT_ATLAS_BY_FILE);
+const firstFile=mappedFiles.find(file=>EFFECT_ATLAS_BY_FILE[file]!.length>=10)!;
+const secondFile=mappedFiles.find(file=>file!==firstFile&&EFFECT_ATLAS_BY_FILE[file]!.length>=10)!;
 
 /** 被测代码只看 Phaser 的公开面，测试里换成同名替身。 */
 const view=(value:Phaser.GameObjects.Container)=>value as unknown as Display;
@@ -59,8 +65,8 @@ function fixture(){
     time:{delayedCall:()=>({remove:()=>{}})},
   } as unknown as Phaser.Scene;
   const clip=(frames=3):EffectClip=>({version:1,frameWidth:16,frameHeight:16,frames,originX:.5,originY:.5,
-    frameRate:10,mirrorX:false,layers:[{key:'test-effect',file:'test-effect.png',blend:'normal',operations:[]},
-      {key:'test-effect-add',file:'test-effect-add.png',blend:'add',operations:[]}]});
+    frameRate:10,mirrorX:false,layers:[{key:'test-effect',file:firstFile,blend:'normal',operations:[]},
+      {key:'test-effect-add',file:secondFile,blend:'add',operations:[]}]});
   /** 让第一个精灵动画跑完，和 Phaser 的 animationcomplete 一致。 */
   const complete=(effect:Display)=>effect.list[0]!.emit('animationcomplete');
   return {scene,containers,created,clip,complete};
@@ -150,7 +156,7 @@ test('数字动画按序列只建一次，重复命中复用同一个数字容�
   const f=fixture();
   const clips:Record<string,EffectClip>={default:f.clip()};
   for(let digit=0;digit<10;digit++)clips[String(digit)]={...f.clip(10),
-    layers:[{key:`digit-${digit}`,file:`digit-${digit}.png`,blend:'normal',operations:[]}]};
+    layers:[{key:`digit-${digit}`,file:firstFile,blend:'normal',operations:[]}]};
   const catalog={attackEffects:{enemy:{clips}},feedback:{shakeOffsets:[]}} as unknown as BattleCatalog;
   const target={layers:[],actor:{effectAnchor:{x:0,y:0}},container:new Display('player')} as unknown as CharacterVisual;
   const feedback=new CombatFeedback(f.scene,catalog);
@@ -160,7 +166,9 @@ test('数字动画按序列只建一次，重复命中复用同一个数字容�
   const digits=()=>f.containers.filter(value=>value.list.some(sprite=>sprite.plays.some(play=>play.key.startsWith('damage:'))));
   const digit=digits()[0]!;
   assert.equal(digit.list.length,1,'一个数字一个精灵');
-  assert.match(digit.list[0]!.plays.at(-1)!.key,/^damage:digit-7:10:/,'按贴图与帧序列取动画键');
+  const digitPages=[...new Set(EFFECT_ATLAS_BY_FILE[firstFile]!.slice(0,10).map(ref=>EFFECT_ATLAS_PAGES[ref.page]!.key))];
+  assert.equal(digit.list[0]!.plays.at(-1)!.key,
+    `damage:${firstFile}:${digitPages.join('+')}:10:0.1.2.3.4.5.6.7.8.9`,'按文件、图集页与帧序列取动画键');
   const createdOnce=f.created.filter(value=>value.key.startsWith('damage:')).length;
   assert.equal(createdOnce,1);
   f.complete(digit);

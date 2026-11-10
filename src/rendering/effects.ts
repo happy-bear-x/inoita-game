@@ -4,7 +4,6 @@ import { EFFECT_ATLAS_BY_FILE, EFFECT_ATLAS_PAGES } from '../generated/effect-at
 import { backdropApproximation, layerDraw } from './effect-colors.ts';
 import { blendModeOf } from './blend-modes.ts';
 import { rememberEffectAnimation } from './effect-animations.ts';
-import {effectLayerTextureKeys} from './combat-asset-descriptors.ts';
 import {retainLoadedSceneAssets} from './scene-assets.ts';
 import type {AssetLease} from '../application/assets.ts';
 
@@ -24,10 +23,25 @@ export { effectAssets } from './combat-asset-descriptors.ts';
 
 /**
  * 图集特效动画的身份：文件、页和帧参数都参与，避免同一个 layer key 在不同内容里
- * 指向不同文件或帧数时静默复用旧动画。未映射的层仍直接使用 `layer.key`。
+ * 指向不同文件或帧数时静默复用旧动画。
  */
 export function effectAtlasAnimationKey(layer: EffectLayer, clip: EffectClip, pages: readonly string[]): string {
   return `${layer.file}#${pages.join('+')}#clip:${clip.frames}:${clip.frameRate}`;
+}
+
+/** 一个静态特效层在 clip 帧数内用到的图集页；映射或页缺失时直接失败。 */
+function effectLayerPages(layer: EffectLayer, clip: EffectClip): { frameRefs: readonly { page: number; frame: string }[]; pages: string[] } {
+  const atlas = EFFECT_ATLAS_BY_FILE[layer.file];
+  if (!atlas) throw new Error(`特效图集缺少文件映射：${layer.file}`);
+  const frameRefs = atlas.slice(0, clip.frames);
+  if (frameRefs.length !== clip.frames)
+    throw new Error(`特效图集帧不足：${layer.file} 需要 ${clip.frames} 帧，只映射了 ${frameRefs.length} 帧`);
+  const pages = [...new Set(frameRefs.map(ref => {
+    const page = EFFECT_ATLAS_PAGES[ref.page];
+    if (!page) throw new Error(`特效图集页缺失：${ref.page}（${layer.file}）`);
+    return page.key;
+  }))];
+  return { frameRefs, pages };
 }
 
 export function createEffect(scene: Phaser.Scene, clip: EffectClip, x: number, y: number, loop = false): Phaser.GameObjects.Container {
@@ -47,7 +61,10 @@ export function setEffectClip(scene: Phaser.Scene, effect: Phaser.GameObjects.Co
 
 function leaseEffect(scene: Phaser.Scene, effect: Phaser.GameObjects.Container, clip: EffectClip): void {
   if(!scene.textures)return;
-  const keys=effectLayerTextureKeys(clip).filter(key=>scene.textures.exists(key));
+  // 页纹理缺失不能静默跳过：缺页的层不会播放，留下的画面就不再是这个特效。
+  const keys = clip.layers.flatMap(layer => effectLayerPages(layer, clip).pages);
+  const missing = keys.find(key => !scene.textures.exists(key));
+  if (missing) throw new Error(`特效图集页纹理未加载：${missing}`);
   const lease=retainLoadedSceneAssets(scene,keys);
   const old=effectLeases.get(effect);
   effectLeases.set(effect,lease);
@@ -68,26 +85,18 @@ function buildEffectLayers(
   effect.removeAll(true);
   const animations: string[] = [];
   for (const layer of clip.layers) {
-    const atlas = EFFECT_ATLAS_BY_FILE[layer.file];
-    const frameRefs = atlas?.slice(0, clip.frames);
-    const pages = frameRefs?.length
-      ? [...new Set(frameRefs.map(ref => {
-          const page = EFFECT_ATLAS_PAGES[ref.page];
-          if (!page) throw new Error(`特效图集页缺失：${ref.page}`);
-          return page.key;
-        }))]
-      : [layer.key];
+    const { frameRefs, pages } = effectLayerPages(layer, clip);
     if (scene.textures) {
       const missing = pages.find(key => !scene.textures.exists(key));
       if (missing) {
         globalThis.storyDiagnostics?.record('effect-texture-missing', { key: missing, file: layer.file });
-        continue;
+        throw new Error(`特效图集页纹理未加载：${missing}（${layer.file}）`);
       }
     }
-    const textureKey = frameRefs?.length ? EFFECT_ATLAS_PAGES[frameRefs[0]!.page]!.key : layer.key;
-    const sprite = scene.add.sprite(0, 0, textureKey, frameRefs?.[0]?.frame).setOrigin(clip.originX, clip.originY)
+    const textureKey = EFFECT_ATLAS_PAGES[frameRefs[0]!.page]!.key;
+    const sprite = scene.add.sprite(0, 0, textureKey, frameRefs[0]!.frame).setOrigin(clip.originX, clip.originY)
       .setScale(clip.mirrorX ? -1 : 1, 1);
-    const animationKey = frameRefs?.length ? effectAtlasAnimationKey(layer, clip, pages) : layer.key;
+    const animationKey = effectAtlasAnimationKey(layer, clip, pages);
     // 页纹理可能在上一次地图关闭时被释放，而动画还留在全局表里；帧已失效就重建，不能直接播放。
     const existing = typeof scene.anims?.get === 'function' && scene.anims.exists(animationKey)
       ? scene.anims.get(animationKey) : undefined;
@@ -100,17 +109,10 @@ function buildEffectLayers(
       scene.anims.remove(animationKey);
     }
     if (!scene.anims.exists(animationKey)) {
-      const frames = frameRefs?.length
-        ? frameRefs.map(ref => ({ key: EFFECT_ATLAS_PAGES[ref.page]!.key, frame: ref.frame }))
-        : scene.anims.generateFrameNumbers(textureKey, { start: 0, end: clip.frames - 1 });
-      if (scene.textures && (!frames || !frames.length)) {
-        globalThis.storyDiagnostics?.record('effect-frames-empty', { key: textureKey, frames: clip.frames });
-        sprite.destroy();
-        continue;
-      }
+      const frames = frameRefs.map(ref => ({ key: EFFECT_ATLAS_PAGES[ref.page]!.key, frame: ref.frame }));
       scene.anims.create({ key: animationKey, frames, frameRate: clip.frameRate });
     }
-    if (frameRefs?.length) rememberEffectAnimation(scene, animationKey, pages);
+    rememberEffectAnimation(scene, animationKey, pages);
     const draw = layerDraw(layer);
     sprite.setBlendMode(blendModeOf(draw.kind === 'backdrop' ? backdropApproximation(layer.operations) : draw.blend));
     effect.add(sprite);

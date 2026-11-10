@@ -17,7 +17,7 @@ test('asset report groups identical files and estimates decoded bytes', async ()
       fs.writeFile(path.join(root, 'assets', 'b', 'two.png'), png),
       fs.writeFile(path.join(root, 'assets', 'b', 'other.png'), Buffer.concat([png, Buffer.from('x')]))
     ]);
-    const report = await reportAssets(root);
+    const report = await reportAssets({ sourceRoot: root, contentRoot: path.join(root, 'content') });
     assert.equal(report.files, 3);
     assert.equal(report.uniqueFiles, 2);
     assert.equal(report.duplicateGroups, 1);
@@ -60,7 +60,7 @@ test('runtime report merges identical clips with the same frame layout', async (
         }
       }]
     }));
-    const report = await reportAssets(root);
+    const report = await reportAssets({ sourceRoot: root, contentRoot: path.join(root, 'content') });
     assert.equal(report.runtime?.clipKeysBefore, 2);
     assert.equal(report.runtime?.clipKeysAfter, 1);
     assert.equal(report.runtime?.dedupedLayers, 1);
@@ -84,7 +84,7 @@ test('runtime report keeps clips whose frame counts differ and counts the residu
         }
       }]
     }));
-    const report = await reportAssets(root);
+    const report = await reportAssets({ sourceRoot: root, contentRoot: path.join(root, 'content') });
     assert.equal(report.runtime?.clipKeysAfter, 2);
     assert.equal(report.runtime?.referencedFiles, 2);
     assert.equal(report.runtime?.referencedDecodedBytes, 8);

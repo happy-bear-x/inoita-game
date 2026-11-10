@@ -14,8 +14,11 @@ const catalog=JSON.parse(readFileSync(new URL('../public/content/battle.json',im
 test('wrath of darkness uses each rank chance and immediately stacks on physical receipt even at zero damage',t=>{
   t.mock.method(Math,'random',()=>0);
   const conditions=new CombatConditions();let rank=1;
-  const defender={classId:'dark-knight',skills:{draft:()=>({levels:{'wrath-of-darkness':rank}})}};
+  const defender={classId:'dark-knight',skills:{draft:()=>({levels:{'wrath-of-darkness':rank}})},
+    bag:{revision:0,equipmentFor:()=>({}),get:()=>undefined}};
   const host=Object.setPrototypeOf({app:{battleCatalog:catalog},conditions,arena:[],
+    passivesCache:new Map(),skillTableCache:new Map(),equipmentRecoveryCache:new Map(),combatProcsCache:new Map(),
+    aiSkillCostCache:new Map(),
     memberOf:(id:string)=>id==='defender'?defender:undefined,equipmentRecovery:()=>({lifeDrainPerThousand:0}),
     actorAttribute:()=>0,attackProc:()=>{},syncCombatResourceLimits:()=>{},interruptDisabled:()=>{},applyStateConsequences:()=>{}},WorldCombat.prototype);
   const hit=(damageKind:'physical'|'magic',kind:'hit'|'miss'|'critical'|'weapon-block'|'shield-block')=>

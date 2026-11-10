@@ -79,13 +79,14 @@ test('every map prop and feature resolves to a complete, untrimmed atlas frame',
   }
 });
 
-test('atlas assets collapse one page and unknown props keep the single-image fallback', () => {
+test('atlas assets collapse one page and unknown props fail instead of drawing a wrong texture', () => {
   const assets = propAtlasAssets(Object.keys(PROP_ATLAS_BY_KEY), props);
   assert.equal(assets.length, PROP_ATLAS_PAGES.length);
   for (const asset of assets) assert.equal(asset.kind, 'atlas');
   const first = props[0]!;
   assert.deepEqual(propRef(first.key), { texture: PROP_ATLAS_BY_KEY[first.key]!.key, frame: PROP_ATLAS_BY_KEY[first.key]!.frame });
-  assert.deepEqual(propRef('not-a-prop'), { texture: 'not-a-prop' });
+  assert.throws(() => propRef('not-a-prop'), /地图物件未进入图集/);
+  // 显式的单文件例外仍可由地图素材计划加载；绘制时不会退回用 prop key 当纹理键。
   const fallback = propAtlasAssets(['not-a-prop'], [{ key: 'not-a-prop', file: 'assets/props/not-a-prop.png' }]);
   assert.deepEqual(fallback, [{ kind: 'image', key: 'not-a-prop', file: 'assets/props/not-a-prop.png' }]);
 });

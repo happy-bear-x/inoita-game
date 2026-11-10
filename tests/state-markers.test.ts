@@ -6,6 +6,7 @@ import type Phaser from 'phaser';
 import type {BattleCatalog} from '../src/domain/battle.ts';
 import type {CharacterVisual} from '../src/rendering/characters.ts';
 import {CombatConditions} from '../src/domain/combat-conditions.ts';
+import {EFFECT_ATLAS_BY_FILE,EFFECT_ATLAS_PAGES} from '../src/generated/effect-atlas.ts';
 
 const hook=registerHooks({resolve(specifier,context,next){return specifier==='phaser'
   ?{url:'data:text/javascript,export default {BlendModes:{NORMAL:0,MULTIPLY:1,SCREEN:2,ADD:3},Scenes:{Events:{UPDATE:"update"}}}',shortCircuit:true}
@@ -64,7 +65,12 @@ function fixture(){
   const sync=(visible=true)=>markers.sync('actor',visual,conditions.activeStates('actor'),visible);
   const marker=(name:string)=>container.list.find(child=>child instanceof Container&&child.name===name) as Container|undefined;
   const clip=(name:string)=>catalog.attackEffects[name]!.clips.default;
-  return {container,visual,conditions,markers,sync,marker,clip};
+  /** 标记层实际使用的图集页纹理键。 */
+  const textureKey=(name:string)=>{
+    const layer=clip(name).layers[0]!;
+    return EFFECT_ATLAS_PAGES[EFFECT_ATLAS_BY_FILE[layer.file]![0]!.page]!.key;
+  };
+  return {container,visual,conditions,markers,sync,marker,clip,textureKey};
 }
 
 test('applying sleep creates one looping state-sleep effect attached to the character',()=>{
@@ -78,7 +84,7 @@ test('applying sleep creates one looping state-sleep effect attached to the char
   assert.ok(marker,'睡眠状态缺少标记');
   assert.equal(marker.length,1);
   const sprite=marker.list[0] as Sprite;
-  assert.equal(sprite.key,f.clip('state-sleep').layers[0]!.key,'睡眠标记应播放 state-sleep 的素材');
+  assert.equal(sprite.key,f.textureKey('state-sleep'),'睡眠标记应播放 state-sleep 的素材');
   assert.equal(sprite.repeat,-1,'状态特效应循环播放');
   assert.deepEqual([marker.x,marker.y],[0,0],'标记挂在角色容器里，随角色移动');
   f.sync();
@@ -121,7 +127,7 @@ test('stun creates a looping state-stun effect and follows the performance visib
   const marker=f.marker('state-marker:stun');
   assert.ok(marker,'眩晕状态缺少标记');
   const sprite=marker.list[0] as Sprite;
-  assert.equal(sprite.key,f.clip('state-stun').layers[0]!.key,'眩晕标记应播放 state-stun 的素材');
+  assert.equal(sprite.key,f.textureKey('state-stun'),'眩晕标记应播放 state-stun 的素材');
   assert.equal(sprite.repeat,-1,'状态特效应循环播放');
   assert.equal(marker.visible,true);
   f.sync(false);

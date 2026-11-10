@@ -265,6 +265,28 @@ test('角色动作播放取到图集页纹理和帧名', () => {
   character.container.destroy();
 });
 
+test('动态外观（file 为空）继续按图层键和数字帧播放', () => {
+  const { scene } = setupScene();
+  const dynamic = actorFor('', 4);
+  const character = createCharacter(scene, dynamic, { id: 'test', actor: dynamic.id, x: 0, y: 0 });
+  const sprite = character.layers[0] as unknown as Sprite;
+  assert.equal(sprite.texture!.key, 'test-idle-south');
+  assert.equal(sprite.frame!.name, 0);
+  character.container.destroy();
+});
+
+test('静态角色图层缺少图集映射或帧数不足时直接失败', () => {
+  const { scene } = setupScene();
+  const unmapped = actorFor('assets/characters/__unmapped__.png', 4);
+  assert.throws(() => createCharacter(scene, unmapped, { id: 'test', actor: unmapped.id, x: 0, y: 0 }),
+    /角色图集缺少文件映射：assets\/characters\/__unmapped__\.png/);
+
+  const [file, entry] = Object.entries(CHARACTER_ATLAS_BY_FILE)[0]!;
+  const short = actorFor(file, entry.pages.length + 1);
+  assert.throws(() => createCharacter(scene, short, { id: 'test', actor: short.id, x: 0, y: 0 }),
+    /角色图集帧不足/);
+});
+
 test('同一文件跨页时动画帧和待机帧各自指向正确的页', () => {
   const found = Object.entries(CHARACTER_ATLAS_BY_FILE).find(([, entry]) => new Set(entry.pages).size > 1);
   assert.ok(found, '至少有一个文件跨页');

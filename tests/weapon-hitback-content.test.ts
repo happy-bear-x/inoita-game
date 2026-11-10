@@ -4,6 +4,7 @@ import test from 'node:test';
 import type {BattleCatalog} from '../src/domain/battle.ts';
 import {actionDamage} from '../src/domain/action-damage.ts';
 import type {WardrobeCatalog} from '../src/domain/wardrobe.ts';
+import {sourceAssetPath} from '../tools/asset-source.ts';
 
 const read=(name:string)=>JSON.parse(readFileSync(new URL(`../public/content/${name}.json`,import.meta.url),'utf8'));
 const battle=read('battle') as BattleCatalog,wardrobe=read('wardrobe') as WardrobeCatalog;
@@ -56,7 +57,7 @@ test('all existing weapon stances share the thirteen-frame pose and original fiv
   for(const clip of Object.values(battle.attackEffects['hitback-wave'].clips)){
     assert.equal(clip.frames,5);assert.equal(clip.frameRate,1000/60);
     for(const layer of clip.layers){
-      const png=readFileSync(new URL('../public/'+layer.file,import.meta.url));
+      const png=readFileSync(sourceAssetPath(layer.file));
       assert.equal(png.readUInt32BE(16),clip.frameWidth*clip.frames);assert.equal(png.readUInt32BE(20),clip.frameHeight);
     }
   }

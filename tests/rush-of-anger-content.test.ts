@@ -5,6 +5,7 @@ import type {BattleCatalog} from '../src/domain/battle.ts';
 import {actionDamage} from '../src/domain/action-damage.ts';
 import type {ItemCatalog} from '../src/domain/items.ts';
 import {costumeRecipe,type WardrobeCatalog} from '../src/domain/wardrobe.ts';
+import {sourceAssetPath} from '../tools/asset-source.ts';
 
 const read=(name:string)=>JSON.parse(readFileSync(new URL(`../public/content/${name}.json`,import.meta.url),'utf8'));
 const battle=read('battle') as BattleCatalog,items=read('items') as ItemCatalog,wardrobe=read('wardrobe') as WardrobeCatalog;
@@ -63,7 +64,7 @@ test('Rush of Anger keeps its successful-target aura and one post-Direct feedbac
     ['normal',[]],['multiply',['hard-light']],['add',['hard-light']],
   ]);
   for(const layer of clip.layers){
-    const png=readFileSync(new URL('../public/'+layer.file,import.meta.url));
+    const png=readFileSync(sourceAssetPath(layer.file));
     assert.deepEqual([...png.subarray(0,8)],[137,80,78,71,13,10,26,10]);
     assert.equal(png.readUInt32BE(16),clip.frameWidth*clip.frames);assert.equal(png.readUInt32BE(20),clip.frameHeight);
   }

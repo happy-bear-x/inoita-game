@@ -4,6 +4,7 @@ import test from 'node:test';
 import type {BattleCatalog,SkillAction} from '../src/domain/battle.ts';
 import {actionDamage} from '../src/domain/action-damage.ts';
 import type {WardrobeCatalog} from '../src/domain/wardrobe.ts';
+import {sourceAssetPath} from '../tools/asset-source.ts';
 
 const read=(name:string)=>JSON.parse(readFileSync(new URL(`../public/content/${name}.json`,import.meta.url),'utf8'));
 const battle=read('battle') as BattleCatalog,wardrobe=read('wardrobe') as WardrobeCatalog;
@@ -57,7 +58,7 @@ test('the sole frame-zero Swirling Storm world effect keeps its independent twen
   assert.equal(clip.frames,26);assert.equal(clip.frameRate,1000/60);
   assert.ok(clip.frames>24);
   for(const layer of clip.layers){
-    const png=readFileSync(new URL('../public/'+layer.file,import.meta.url));
+    const png=readFileSync(sourceAssetPath(layer.file));
     const width=png.readUInt32BE(16),height=png.readUInt32BE(20);
     assert.equal(width%clip.frameWidth,0);assert.equal(height%clip.frameHeight,0);
     const columns=width/clip.frameWidth,rows=height/clip.frameHeight;

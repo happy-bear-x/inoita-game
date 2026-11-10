@@ -30,16 +30,18 @@ function fixture(){
   const ranks:Record<MemberId,number>={player:1,ally:8,target:0};
   const equipment:Record<MemberId,Record<string,string>>={player:{},ally:{},target:{}};
   const entries=new Map<string,ItemInstance>();
+  let bagRevision=0;
   const item=(kind:string)=>Object.keys(items.items).find(id=>items.items[id].kind===kind&&items.items[id].equipment)!;
   const equip=(id:MemberId,slot:'main-hand'|'off-hand'|'body',kind:string|undefined,power=0)=>{
+    bagRevision++;
     if(!kind){delete equipment[id][slot];return;}
     const key=`${id}:${slot}`;equipment[id][slot]=key;
     entries.set(key,{id:key,item:item(kind),enhancement:0,numbers:{baseAttack:power,modifiers:[],gemModifiers:[]}} as unknown as ItemInstance);
   };
   for(const id of ['player','ally'] as const){equip(id,'main-hand','longsword',60);equip(id,'off-hand','dagger',40);equip(id,'body','leather');}
-  const bag={equipmentFor:(id:MemberId)=>equipment[id],get:(id:string)=>entries.get(id),
+  const bag={get revision(){return bagRevision;},equipmentFor:(id:MemberId)=>equipment[id],get:(id:string)=>entries.get(id),
     equipmentItems:(value:Record<string,string>)=>Object.fromEntries(Object.entries(value).map(([slot,id])=>[slot,entries.get(id)!.item]))};
-  const configuration=(id:MemberId)=>({draft:()=>({levels:{'twin-blade':ranks[id]}})});
+  const configuration=(id:MemberId)=>({get version(){return ranks[id];},draft:()=>({levels:{'twin-blade':ranks[id]}})});
   const member=(id:MemberId)=>({classId:id==='target'?'dark-knight':'assassin',level:10,catalog:stats,bag,skills:configuration(id),
     panel:{level:10,physicalAttack:101,magicAttack:50,baseDefense:0,defense:0,defenseRate:0,maxHealth:1000,maxMana:100,
       hitBase:100,hitBonus:1000,evasionBase:0,evasionBonus:0,criticalRate:0,criticalResistance:0,criticalDamage:500,
@@ -48,7 +50,9 @@ function fixture(){
     player:{health:1000,maxHealth:1000,mana:100,maxMana:100}});
   const members={player:member('player'),ally:member('ally'),target:member('target')};
   const host=Object.setPrototypeOf({hero:members.player,conditions,hitResolution:new CombatHitResolution(),arena:[],allies:[],
-    fallen:new Set(),pendingDefeats:new Set(),app:{battleCatalog:catalog,items,wardrobe,characterStats:stats,
+    fallen:new Set(),pendingDefeats:new Set(),passivesCache:new Map(),skillTableCache:new Map(),
+    equipmentRecoveryCache:new Map(),combatProcsCache:new Map(),aiSkillCostCache:new Map(),
+    app:{battleCatalog:catalog,items,wardrobe,characterStats:stats,
       session:{skills:configuration('player'),party:{activeIds:['player','ally'],controlledId:'player',groupModifiers:()=>({})}}},
     memberOf:(id:string)=>members[id as MemberId],visualOf:()=>undefined,
     combatant:(id:string)=>members[id as MemberId]?{id,team:id==='target'?'enemy':'party',position:{x:0,y:0},bounds:{x:0,y:0,width:8,height:8}}:undefined,

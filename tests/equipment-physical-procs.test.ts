@@ -13,17 +13,19 @@ const catalog=JSON.parse(readFileSync(new URL('../public/content/battle.json',im
 
 function fixture(){
   const conditions=new CombatConditions(),heals:{id:string;amount:number}[]=[],buffs:{targetId:string;key:string;sourceId:string}[]=[],order:string[]=[];
-  const equipment={numbers:{modifiers:[] as {stat:string;value:number}[],gemModifiers:[]}};
-  const allyEquipment={numbers:{modifiers:[] as {stat:string;value:number}[],gemModifiers:[]}};
-  type GearNumbers={numbers:{modifiers:{stat:string;value:number}[];gemModifiers:{stat:string;value:number}[]}};
+  const equipment={revision:0,numbers:{modifiers:[] as {stat:string;value:number}[],gemModifiers:[]}};
+  const allyEquipment={revision:0,numbers:{modifiers:[] as {stat:string;value:number}[],gemModifiers:[]}};
+  type GearNumbers={revision:number;numbers:{modifiers:{stat:string;value:number}[];gemModifiers:{stat:string;value:number}[]}};
   const makeMember=(gears:GearNumbers)=>({classId:'dark-knight',level:10,
-    bag:{equipmentFor:()=>({body:'armor'}),get:()=>gears},
+    bag:{get revision(){return gears.revision;},equipmentFor:()=>({body:'armor'}),get:()=>gears},
     panel:{physicalAttack:100,magicAttack:0,maxHealth:1000,maxMana:0},player:{health:500,maxHealth:1000,maxMana:0}});
   const hero=makeMember(equipment),ally=makeMember(allyEquipment);
   const members=new Map([['player',hero],['ally',ally]]);
   const enemies=[{key:'enemy-0',definition:{acceptsBuffs:true},visual:{container:{active:true}}}];
   const host=Object.setPrototypeOf({
     hero,conditions,arena:enemies,app:{battleCatalog:catalog,session:{}},
+    passivesCache:new Map(),skillTableCache:new Map(),equipmentRecoveryCache:new Map(),combatProcsCache:new Map(),
+    aiSkillCostCache:new Map(),
     memberOf:(id:string)=>members.get(id),
     partyPassives:()=>[],applyStateConsequences:(_id:string,states:readonly string[])=>{for(const state of states)order.push(state);},
     applyActorBuff:(targetId:string,key:string,_priority:number,_effect:unknown,sourceId:string)=>{
@@ -51,7 +53,7 @@ test('pendulum chance zero does not roll and chance one never succeeds',(t)=>{
   assert.equal(f.conditions.hasState('enemy-0','stun'),false);
   t.mock.restoreAll();
   t.mock.method(Math,'random',()=>0);
-  f.equipment.numbers.modifiers=[{stat:'pendulum',value:1}];
+  f.equipment.numbers.modifiers=[{stat:'pendulum',value:1}];f.equipment.revision++;
   f.call('physicalSuccessEquipmentProcs',f.event,f.hit);
   assert.equal(f.conditions.hasState('enemy-0','stun'),false);
 });
@@ -84,7 +86,7 @@ test('instant recovery heals the missed target without dice and ignores rates be
   const f=fixture();f.equipment.numbers.modifiers=[{stat:'instantRecovery',value:30}];
   f.call('instantRecoveryOnMiss',{casterId:'enemy-0',targetId:'player'});
   assert.deepEqual(f.heals,[{id:'player',amount:30}]);
-  f.equipment.numbers.modifiers=[{stat:'instantRecovery',value:0}];
+  f.equipment.numbers.modifiers=[{stat:'instantRecovery',value:0}];f.equipment.revision++;
   f.call('instantRecoveryOnMiss',{casterId:'enemy-0',targetId:'player'});
   assert.equal(f.heals.length,1);
 });

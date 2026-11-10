@@ -11,6 +11,8 @@ const legacyEffect=():BattleBuffEffect=>({durationMs:1000,tickMs:0,modifiers:[],
 const pulseEffect=(lastActiveFrame:number,interval:number,extra:Partial<BattleBuffEffect>={}):BattleBuffEffect=>
   frameEffect(lastActiveFrame,{tickMs:interval*60,simulationFrames:{lastActiveFrame,pulseIntervalFrames:interval},
     periodic:[{kind:'fixed-damage',amount:1}],...extra});
+/** 空的条件表会让 update 提前返回；需要推进共享帧余量时先挂一条长寿增益。 */
+const clockAnchor=():BattleBuffEffect=>({durationMs:60000,tickMs:0,modifiers:[],states:[],periodic:[]});
 
 test('frame buffs apply immediately, start at the next shared boundary and expire only after the inclusive last age',()=>{
   const conditions=new CombatConditions();
@@ -70,6 +72,7 @@ test('periodic age zero runs on the first processing frame and a due pulse runs 
 test('frame catch-up matches split render updates and preserves the shared fractional remainder',()=>{
   const run=(deltas:number[])=>{
     const conditions=new CombatConditions(),pulses:string[]=[];
+    conditions.applyBuff('clock','attack-stun',1,clockAnchor());
     conditions.update(17.5);
     conditions.applyBuff('target','blood-curse',1,pulseEffect(8,2),'caster');
     for(const delta of deltas)conditions.update(delta,tick=>pulses.push(`${tick.sourceId}:${tick.stackCount}`));
@@ -80,18 +83,20 @@ test('frame catch-up matches split render updates and preserves the shared fract
   assert.equal(run([401.25]).state.simulationFrameRemainderMs,58.75);
 });
 
-test('all actors share the next frame even after empty time, individual removal or clearing conditions',()=>{
+test('all actors share the next frame while empty time freezes the phase without resetting it',()=>{
   const conditions=new CombatConditions(),pulses:string[]=[];
+  conditions.applyBuff('clock','attack-stun',1,clockAnchor());
   conditions.update(55);
   conditions.applyBuff('first','blood-curse',1,pulseEffect(3,1));
   conditions.update(2);
   conditions.applyBuff('second','blood-curse',1,pulseEffect(3,1));
   conditions.update(3,tick=>pulses.push(tick.targetId));
   assert.deepEqual(pulses,['first','second']);
+  // clear 不清共享余量；空的条件表也不会推进它，所以第三名要等满一帧。
   conditions.remove('first');conditions.clear();conditions.update(17);
   conditions.applyBuff('third','blood-curse',1,pulseEffect(3,1));
   conditions.update(42,tick=>pulses.push(tick.targetId));assert.equal(pulses.length,2);
-  conditions.update(1,tick=>pulses.push(tick.targetId));assert.equal(pulses[2],'third');
+  conditions.update(18,tick=>pulses.push(tick.targetId));assert.equal(pulses[2],'third');
 });
 
 test('refreshing during a long update processes each replacement only at the following frame',()=>{

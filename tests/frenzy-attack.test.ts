@@ -29,7 +29,12 @@ const enemy:Combatant={...caster,id:'enemy',team:'enemy',position:{x:8,y:0}};
 
 function profile(frames=5,strike=2,swing:number|null=2){
   const actor=structuredClone(knight.actor);
-  for(const facing of FACINGS)actor.clips[normal.clips[facing]]!.frames=frames;
+  // 用例自己伪造动作帧数；动态贴图（file 为空）是唯一允许脱离图集帧数的播放路径。
+  for(const facing of FACINGS){
+    const clip=actor.clips[normal.clips[facing]]!;
+    clip.frames=frames;
+    for(const layer of clip.layers)layer.file='';
+  }
   const definition:BasicAttackDefinition={...catalog.basicAttacks[knight.basicAttack!.profileId],
     timing:'fixed-animation',cycleFrames:frames,strikeFrame:strike,swingFrame:swing,
     swingOrder:'after-strike',swings:swing===null?[]:['dagger-swing'],strikes:undefined,
@@ -193,10 +198,13 @@ test('cancelling an unavailable animation restores body layers and cancels its o
 });
 
 test('fixed area profile validation checks source length and rejects conflicting strike delivery modes',()=>{
-  const run=profile(),stance=Object.fromEntries(FACINGS.map(facing=>[normal.clips[facing],'pose']));
+  const run=profile(),attack=catalog.basicAttacks[knight.basicAttack!.profileId];
+  // 校验器会检查普攻连击每一段的人物动作，替身要把主段与连击段都登记到同一姿势。
+  const stance=Object.fromEntries(FACINGS.flatMap(facing=>[
+    normal.clips[facing],...(attack.combo??[]).map(step=>step.clips[facing])].map(name=>[name,'pose'])));
   const wardrobe={textures:[],sprites:{},variants:{},defaults:{},equipment:{},
     poses:{pose:{mirrorX:false,frameRate:1000/60,frames:Array.from({length:5},()=>[])}},
-    stances:{stance},skills:{},attacks:{stance:catalog.basicAttacks[knight.basicAttack!.profileId]},
+    stances:{stance},skills:{},attacks:{stance:attack},
     frenzyAttacks:{stance:{...run.definition,clips:normal.clips}},skillStances:{}};
   assert.ok(parseWardrobe(wardrobe).frenzyAttacks?.stance);
   for(const change of [{strikeFrame:5},{swingFrame:5},{cycleFrames:6},{strikes:[{frame:2,hand:'main-hand'}]},

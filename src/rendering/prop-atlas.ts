@@ -16,7 +16,8 @@ interface PropFrameSource {
 /** 地图 feature 的 prop key 只在绘制/取像素时解析成图集页 + frame。 */
 export function propRef(key: string): PropRef {
   const entry = PROP_ATLAS_BY_KEY[key];
-  return entry ? { texture: entry.key, frame: entry.frame } : { texture: key };
+  if (!entry) throw new Error(`地图物件未进入图集：${key}`);
+  return { texture: entry.key, frame: entry.frame };
 }
 
 const pageAssets = new Map<string, PendingAsset>();
@@ -35,27 +36,37 @@ function propAtlasPageAsset(key: string): PendingAsset {
 
 /**
  * 地图表面要加载的 prop 资源：已进图集的 prop 按页合并，每页只出现一次；
- * 未映射的 prop（测试替身或未来被排除的超大图）继续按单图加载。
+ * 页描述符带上本次实际用到的帧，加载验收会逐帧核对，缺帧不会显示页首帧。
  */
 export function propAtlasAssets(keys: Iterable<string>, props: readonly PropDefinition[]): PendingAsset[] {
   const byKey = new Map(props.map(prop => [prop.key, prop]));
-  const pages = new Set<string>();
+  const pages = new Map<string, Set<string>>();
   const images = new Map<string, PendingAsset>();
   for (const key of keys) {
     const entry = PROP_ATLAS_BY_KEY[key];
-    if (entry) { pages.add(entry.key); continue; }
+    if (entry) {
+      const frames = pages.get(entry.key) ?? new Set<string>();
+      frames.add(entry.frame);
+      pages.set(entry.key, frames);
+      continue;
+    }
     const prop = byKey.get(key);
     if (!prop) throw new Error(`场景物件缺少资源：${key}`);
     images.set(prop.key, { kind: 'image', key: prop.key, file: prop.file });
   }
-  return [...[...pages].map(propAtlasPageAsset), ...images.values()];
+  return [
+    ...[...pages].map(([key, frames]) => ({ ...propAtlasPageAsset(key), frames: [...frames].sort() })),
+    ...images.values()
+  ];
 }
 
 /** color-dodge 合成需要的原始帧区域；不能对图集页使用整张 getSourceImage。 */
 export function propFrameSource(scene: Phaser.Scene, key: string): PropFrameSource {
   const ref = propRef(key);
+  if (!scene.textures.exists(ref.texture)) throw new Error(`地图物件图集页未加载：${ref.texture}`);
   const texture = scene.textures.get(ref.texture);
   const frame = texture.get(ref.frame ?? '__BASE');
+  if (!texture.has(ref.frame ?? '__BASE')) throw new Error(`地图物件图集缺少帧：${key} / ${ref.frame}`);
   return { image: frame.source.image as CanvasImageSource, x: frame.cutX, y: frame.cutY,
     width: frame.cutWidth, height: frame.cutHeight };
 }

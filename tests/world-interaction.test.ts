@@ -46,6 +46,21 @@ phaser.deregister();
 
 const read=<T>(file:string):T=>JSON.parse(readFileSync(new URL(`../public/${file}`,import.meta.url),'utf8')) as T;
 const world=read<WorldIndex>('content/world.json'),campaign=read<Campaign>('content/campaign.json');
+
+/** 交互测试不检查角色画面；把静态图集图层换成动态图层，夹具就不依赖图集映射。 */
+function dynamicWorld(source:WorldIndex):WorldIndex {
+  const actors:WorldIndex['actors']={};
+  for(const [id,actor] of Object.entries(source.actors)){
+    const clips={...actor.clips};
+    for(const name of Object.keys(clips) as (keyof typeof clips)[]){
+      const clip=clips[name];
+      if(!clip)continue;
+      clips[name]={...clip,layers:clip.layers.map(layer=>({...layer,file:''}))};
+    }
+    actors[id]={...actor,clips};
+  }
+  return {...source,actors};
+}
 const items=read<ItemCatalog>('content/items.json'),stats=read<CharacterStatsCatalog>('content/character-stats.json');
 const drops=read<DropCatalog>('content/drops.json'),shops=read<ShopCatalog>('content/shops.json');
 
@@ -87,7 +102,7 @@ function pressAttack(mapId:string,current=new Session(campaign,undefined,undefin
     facing,cannotAct:false,playerCannotAct:()=>false,hasHostileTarget:()=>false,
     attack:()=>calls.push('attack'),setPerformanceActive(){},syncChestEnemies(){}};
   const state={
-    app:{world,items,session:current,campaign,locked:false,suspended:false,characterStats:stats,
+    app:{world:dynamicWorld(world),items,session:current,campaign,locked:false,suspended:false,characterStats:stats,
       autoSave:()=>calls.push('autosave'),
       ui:{ready:true,controlLayoutEditing:false,showInstant:(message:string)=>calls.push(`instant:${message}`)},
       audio:{ui:(sound:string)=>calls.push(sound),effect:(sound:string)=>calls.push(`effect:${sound}`)},shops,

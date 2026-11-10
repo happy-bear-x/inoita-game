@@ -17,21 +17,24 @@ const read=(file:string)=>JSON.parse(readFileSync(new URL(`../public/content/${f
 const catalog=read('battle') as BattleCatalog,items=read('items') as ItemCatalog;
 const method=(name:string)=>Reflect.get(WorldCombat.prototype,name);
 function fixture(){
-  let rank=1,allyRank=0,revengeRank=0;
+  let rank=1,allyRank=0,revengeRank=0,revision=0;
   const equipment:Record<string,string>={};
-  const equip=(kind:string,slot='main-hand')=>{equipment[slot]=Object.keys(items.items).find(id=>items.items[id].kind===kind&&items.items[id].equipment)!;assert.ok(equipment[slot]);};
+  const equip=(kind:string,slot='main-hand')=>{equipment[slot]=Object.keys(items.items).find(id=>items.items[id].kind===kind&&items.items[id].equipment)!;revision++;assert.ok(equipment[slot]);};
   equip('longsword');
-  const configuration=(value:()=>number,revenge=()=>0)=>({draft:()=>({levels:{'warrior-s-instinct':value(),'revenge-incarnate':revenge()}})});
+  const configuration=(value:()=>number,revenge=()=>0)=>({get version(){return value()*100+revenge();},
+    draft:()=>({levels:{'warrior-s-instinct':value(),'revenge-incarnate':revenge()}})});
   const member=(value:()=>number,revenge?:()=>number)=>({classId:'warrior',level:10,
     panel:{physicalAttack:100,magicAttack:50,maxHealth:1000,maxMana:100},
     player:{health:500,maxHealth:1000,mana:100,maxMana:100},skills:configuration(value,revenge),
-    bag:{equipmentFor:()=>equipment,equipmentItems:(value:Record<string,string>)=>value,get:()=>undefined},
+    bag:{get revision(){return revision;},equipmentFor:()=>equipment,equipmentItems:(value:Record<string,string>)=>value,get:()=>undefined},
   });
   const hero=member(()=>rank),ally=member(()=>allyRank,()=>revengeRank);
   const conditions=new CombatConditions(),cooldowns=new CombatCooldownStore(()=>25),recovery=new CombatResourceRecovery();
   recovery.advanceToFrame(25,[]);
   const host=Object.setPrototypeOf({hero,conditions,hitResolution:new CombatHitResolution(),arena:[],allies:[],
     partyControllers:new Map<string,CombatController>(),pendingDefeats:new Set(),fallen:new Set(),
+    passivesCache:new Map(),skillTableCache:new Map(),equipmentRecoveryCache:new Map(),combatProcsCache:new Map(),
+    aiSkillCostCache:new Map(),
     app:{battleCatalog:catalog,items,session:{skills:configuration(()=>rank),cooldowns,resourceRecovery:recovery,
       party:{groupModifiers:()=>({})}}},memberOf:(id:string)=>id==='player'?hero:id==='ally'?ally:undefined,
     attackProc:()=>{},syncCombatResourceLimits:()=>{},applyStateConsequences:()=>{},

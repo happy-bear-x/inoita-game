@@ -5,8 +5,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { collectAssetKeep, normalizeAssetPath } from '../tools/asset-keep.ts';
+import { collectAssetKeep, normalizeAssetPath, uiAtlasFrameRoute } from '../tools/asset-keep.ts';
 import { archiveUnkeptFiles } from '../tools/prune-assets.ts';
+import { UI_ATLAS_FRAMES, UI_ATLAS_PAGES } from '../src/generated/ui-atlas.ts';
+import { titleMenuImages } from '../src/application/menu-images.ts';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const contentDir = path.join(root, 'public/content');
@@ -82,6 +84,20 @@ test('collectAssetKeep keeps every runtime reference it can resolve', async () =
     const file = normalizeAssetPath(url);
     assert.ok(file && report.keep.has(file), `入口文件引用了未保留的素材：${url}`);
   }
+});
+
+test('a UI atlas frame without its page is reported missing instead of keeping the old file', () => {
+  const file = titleMenuImages.map(name => name.replace(/^\//, '')).find(name => UI_ATLAS_FRAMES[name]);
+  assert.ok(file, '标题菜单需要至少一张图集图片');
+  const entry = UI_ATLAS_FRAMES[file]!;
+  const page = entry.page;
+  entry.page = 9999;
+  try {
+    assert.equal(uiAtlasFrameRoute(file), 'missing');
+  } finally {
+    entry.page = page;
+  }
+  assert.deepEqual(uiAtlasFrameRoute(file), { page: UI_ATLAS_PAGES[page] });
 });
 
 test('archiveUnkeptFiles moves unkept assets and records the reason', async () => {

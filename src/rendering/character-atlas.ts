@@ -47,7 +47,7 @@ export function characterFrame(file: string | undefined, index: number): Charact
   return { key: page.key, frame: `${entry.prefix}-${String(index).padStart(3, '0')}` };
 }
 
-/** 一个动作需要的前 count 帧；调用方在返回不足时退回原 spritesheet。 */
+/** 一个动作需要的前 count 帧；静态文件映射不足时由调用方明确失败，不回退单文件。 */
 export function characterFrameList(file: string | undefined, count: number): CharacterAtlasFrameRef[] {
   const entry = characterAtlasEntry(file);
   if (!entry) return [];

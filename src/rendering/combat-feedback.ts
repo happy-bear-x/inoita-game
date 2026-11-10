@@ -17,17 +17,19 @@ interface Digit {effect:Phaser.GameObjects.Container;sequence:number[]}
  */
 export function playDigitAnimation(sprite:Phaser.GameObjects.Sprite,layer:EffectLayer|undefined,sequence:number[],
   frameRate:number,delayMs:number):void {
-  const atlas=layer?.file?EFFECT_ATLAS_BY_FILE[layer.file]:undefined;
+  const file=layer?.file;
   let frames:{key:string;frame:string|number}[];
-  if(atlas){
+  if(file){
+    const atlas=EFFECT_ATLAS_BY_FILE[file];
+    if(!atlas)throw new Error(`伤害数字图集缺少文件映射：${file}`);
     frames=sequence.map(index=>{
       const ref=atlas[index],page=ref?EFFECT_ATLAS_PAGES[ref.page]:undefined;
-      if(!ref||!page)throw new Error(`伤害数字图集缺少帧：${layer!.file} 第 ${index} 帧`);
+      if(!ref||!page)throw new Error(`伤害数字图集缺少帧：${file} 第 ${index} 帧`);
       return {key:page.key,frame:ref.frame};
     });
   }else frames=sequence.map(frame=>({key:sprite.texture.key,frame}));
   const textureKeys=[...new Set(frames.map(frame=>frame.key))];
-  const key=`damage:${layer?.file||sprite.texture.key}:${textureKeys.join('+')}:${frameRate}:${sequence.join('.')}`;
+  const key=`damage:${file||sprite.texture.key}:${textureKeys.join('+')}:${frameRate}:${sequence.join('.')}`;
   const anims=sprite.scene.anims;
   const existing=anims.exists(key)?anims.get(key):undefined;
   // 贴图在上一次地图关闭时被释放后，帧会失效；重建而不是播旧动画。

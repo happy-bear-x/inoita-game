@@ -16,14 +16,18 @@ const catalog=read('battle') as BattleCatalog,items=read('items') as ItemCatalog
 const method=(name:string)=>Reflect.get(WorldCombat.prototype,name);
 function fixture(){
   const hero=new BattleCharacter('warrior',stats,items),ally=new BattleCharacter('warrior',stats,items);
-  let rank=1,allyRank=8;
-  const configuration=(value:()=>number)=>({draft:()=>({levels:{'soul-s-thirst':value(),'blood-thirst':1}})});
-  Object.assign(ally,{skills:configuration(()=>allyRank)});
+  let rank=1,allyRank=8,rankVersion=0,allyRankVersion=0;
+  // 技能配置的版本随等级变化，和正式 SkillConfiguration 一样让被动与反应缓存失效。
+  const configuration=(value:()=>number,version:()=>number)=>({get version(){return version();},
+    draft:()=>({levels:{'soul-s-thirst':value(),'blood-thirst':1}})});
+  Object.assign(ally,{skills:configuration(()=>allyRank,()=>allyRankVersion)});
   const conditions=new CombatConditions(),order:string[]=[];
   const presenter={showEffects:(_id:string,entries:{effect:string}[])=>{for(const entry of entries)order.push(entry.effect);}};
   const host=Object.setPrototypeOf({hero,conditions,hitResolution:new CombatHitResolution(),arena:[],
     pendingDefeats:new Set(),fallen:new Set(),allies:[{id:'ally',presenter}],presenter,
-    app:{battleCatalog:catalog,items,session:{skills:configuration(()=>rank),party:{groupModifiers:()=>({})}}},
+    passivesCache:new Map(),skillTableCache:new Map(),equipmentRecoveryCache:new Map(),combatProcsCache:new Map(),
+    aiSkillCostCache:new Map(),
+    app:{battleCatalog:catalog,items,session:{skills:configuration(()=>rank,()=>rankVersion),party:{groupModifiers:()=>({})}}},
     memberOf:(id:string)=>id==='player'?hero:ally,attackProc:()=>{},
   },WorldCombat.prototype);
   const call=(name:string,...args:unknown[])=>method(name).call(host,...args);
@@ -37,7 +41,7 @@ function fixture(){
   const reset=()=>{hero.setHealth(1);hero.setMana(0);ally.setHealth(1);ally.setMana(0);order.length=0;};
   reset();
   return {host,hero,ally,conditions,order,presenter,call,cast,contact,reset,
-    learn:(value:number)=>{rank=value;},learnAlly:(value:number)=>{allyRank=value;}};
+    learn:(value:number)=>{rank=value;rankVersion++;},learnAlly:(value:number)=>{allyRank=value;allyRankVersion++;}};
 }
 const chances=[50,70,90,120,130,140,150,160],mana=[7,9,11,14,15,16,17,18];
 

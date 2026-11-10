@@ -40,6 +40,8 @@ function fixture(rank:number){
   const controllers=new Map([['ally',{resetSkillCooldowns:()=>reset.push('ally')}]]);
   const host=Object.setPrototypeOf({hero:members.get('player'),conditions,hitResolution:new CombatHitResolution(),
     pendingDefeats:new Set<string>(),fallen:new Set<string>(),allies:[],arena:[],partyControllers:controllers,
+    passivesCache:new Map(),skillTableCache:new Map(),equipmentRecoveryCache:new Map(),combatProcsCache:new Map(),
+    aiSkillCostCache:new Map(),
     app:{battleCatalog:catalog,items:{items:{}},
       session:{skills:{draft:()=>({levels:{}})},party:{activeIds:['player','ally'],controlledId:'player',groupModifiers:()=>({})},
         cooldowns:{resetActor:(id:string)=>reset.push(`session:${id}`)}}},

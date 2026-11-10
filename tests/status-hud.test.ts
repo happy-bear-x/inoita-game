@@ -10,8 +10,25 @@ import { Session } from '../src/domain/session.ts';
 import type Phaser from 'phaser';
 import type { CharacterVisual } from '../src/rendering/characters.ts';
 import { OverheadStatus } from '../src/rendering/overhead-status.ts';
+import { UI_ATLAS_FRAMES, UI_ATLAS_PAGES } from '../src/generated/ui-atlas.ts';
+import { sourceAssetPath } from '../tools/asset-source.ts';
 const read=(name:string)=>JSON.parse(fs.readFileSync(new URL(`../public/content/${name}.json`,import.meta.url),'utf8'));
 const skin=parseStatusHud(read('status-hud')),battle=parseBattle(read('battle'));
+
+const atlasFrames = new Map<string, Record<string, unknown>>();
+function uiAtlasFrame(file: string): boolean {
+  const entry = UI_ATLAS_FRAMES[file];
+  const page = entry && UI_ATLAS_PAGES[entry.page];
+  if (!entry || !page) return false;
+  let frames = atlasFrames.get(page.data);
+  if (!frames) {
+    frames = (JSON.parse(fs.readFileSync(new URL(`../public/${page.data}`, import.meta.url), 'utf8')) as { frames: Record<string, unknown> }).frames;
+    atlasFrames.set(page.data, frames);
+  }
+  return Boolean(frames[entry.frame]);
+}
+/** 状态栏图片要么作为单文件留在 public，要么已经在界面图集里。 */
+const shippedImage = (file: string) => fs.existsSync(new URL(`../public/${file}`, import.meta.url)) || uiAtlasFrame(file);
 
 test('native gauge crops full, half, subpixel and empty health without stretching',()=>{
   for(const width of [16,40,212]){
@@ -21,7 +38,7 @@ test('native gauge crops full, half, subpixel and empty health without stretchin
   }
   assert.equal(boundedHealth(99.9,100),99);assert.equal(boundedHealth(-1,100),0);assert.equal(boundedHealth(999,100),100);
   for(const value of [NaN,Infinity,-Infinity])assert.throws(()=>boundedHealth(value,100));
-  for(const part of Object.values(skin.assets))assert.ok(fs.existsSync(new URL(`../public/${part}`,import.meta.url)));
+  for(const part of Object.values(skin.assets))assert.ok(shippedImage(part),part);
   const missing=structuredClone(skin);delete (missing.assets as Partial<typeof skin.assets>)['target-fill'];assert.throws(()=>parseStatusHud(missing),/target-fill/);
   const bad=structuredClone(skin);bad.target.gauge.fillWidth=1000;assert.throws(()=>parseStatusHud(bad),/超出/);
 });
@@ -30,7 +47,7 @@ test('overhead bars retain native world-pixel layout, colours and player head an
   assert.deepEqual(skin.overhead.health,{x:-8,y:-19,width:16,height:2,color:'#28c000'});
   assert.deepEqual(skin.overhead.mana,{x:-8,y:-16,width:16,height:2,color:'#0f7cf9'});
   for(const kind of ['frame','leader'] as const){
-    const rect=skin.overhead[kind],png=fs.readFileSync(new URL(`../public/${skin.assets[`overhead-${kind}`]}`,import.meta.url));
+    const rect=skin.overhead[kind],png=fs.readFileSync(sourceAssetPath(skin.assets[`overhead-${kind}`]));
     assert.equal(png.readUInt32BE(16),rect.width);assert.equal(png.readUInt32BE(20),rect.height);
   }
   for(const entry of battle.classes)assert.deepEqual(entry.actor.headAnchor,{x:0,y:-22});
@@ -93,7 +110,7 @@ test('target special mark is centred under the health bar on the native panel',(
   assert.equal(mark.width,77);assert.equal(mark.height,37);
   const barBottom=skin.target.gauge.y+skin.target.gauge.height;
   assert.equal(mark.centerY-mark.height/2-barBottom,5.5,'星星上沿紧贴血条下方');
-  const png=fs.readFileSync(new URL(`../public/${skin.assets['target-frame']}`,import.meta.url));
+  const png=fs.readFileSync(sourceAssetPath(skin.assets['target-frame']));
   assert.equal(png.readUInt32BE(16),skin.target.width);
   assert.equal(png.readUInt32BE(20),skin.target.height);
   const off=structuredClone(skin);off.target.specialMark!.centerY=500;
@@ -186,7 +203,7 @@ test('buff icons straddle the panel bottom-left corner and blink only inside the
     'bard-of-destruction','dark-sense','deep-breath','magic-insight','ordination-prayer',
     'shield-of-trust','sniping','storm-of-frenzy-power'])assert.ok(icons.catalog[name],name);
   assert.ok(Object.values(icons.catalog).every(file=>file.startsWith('assets/ui/status/buff-')));
-  for(const [name,file] of Object.entries(icons.catalog))assert.ok(fs.existsSync(new URL(`../public/${file}`,import.meta.url)),name);
+  for(const [name,file] of Object.entries(icons.catalog))assert.ok(shippedImage(file),name);
   assert.equal(buffIconBlinking(31,0),false);assert.equal(buffIconBlinking(30,0),false);
   assert.equal(buffIconBlinking(30,4),true);assert.equal(buffIconBlinking(30,8),false);
   assert.equal(buffIconBlinking(0,4),true);

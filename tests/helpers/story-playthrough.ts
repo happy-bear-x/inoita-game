@@ -550,7 +550,6 @@ export function playthrough(saved?:SessionState){
       // 生成点拾取后会进入刷新计时，地面会空一段时间；等一轮再看，连续三轮没有才报错。
       if(!drop){if(++stalled>=3)assert.fail(`地面物品 ${item} 三轮没有刷新，停在 ${received}/${quantity}`);
         await wait(60_000);continue;}
-      stalled=0;
       await walk(point=>Math.abs(point.x-drop.x)<=12&&Math.abs(point.y-drop.y)<=12,'拾取 '+item);
       const point=session.storyWorld.currentLocation!;
       const picked=store.collectNearby(map.id,point.x,point.y,reward=>{
@@ -561,8 +560,10 @@ export function playthrough(saved?:SessionState){
       session.questItemGenerators.collected(picked.map(drop=>drop.id),session.combatTick);
       const gained=picked.reduce((sum,drop)=>sum+(drop.reward.kind==='item'&&drop.reward.item===item?drop.reward.quantity:0),0);
       received+=gained;
-      // 捡到的东西不是目标物品时数量不会涨。这里必须限次，否则会一直转下去。
-      if(gained===0&&++stalled>=3)assert.fail(`拾取 ${item} 三轮没有进展，停在 ${received}/${quantity}`);
+      // 捡到的东西不是目标物品时数量不会涨；只有连续三轮都没有进展才报错，
+      // 找到目标后必须清零，否则残留的停滞计数会误伤下一轮正常拾取。
+      if(gained===0){if(++stalled>=3)assert.fail(`拾取 ${item} 三轮没有进展，停在 ${received}/${quantity}`);}
+      else stalled=0;
       session.emit();await idle();
     }
   };

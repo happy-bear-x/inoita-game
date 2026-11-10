@@ -24,10 +24,10 @@ const base={level:10,physicalAttack:100,magicAttack:0,maxHealth:1000,maxMana:100
 
 function fixture(id='player',rank=1){
   const conditions=new CombatConditions(),order:string[]=[],forgot:string[]=[],attempts:SkillUnitHit[]=[],outcomes:unknown[]=[];
-  const ranks={player:rank,ally:rank},configuration=(owner:'player'|'ally')=>({draft:()=>({levels:{whist:ranks[owner]}})});
+  const ranks={player:rank,ally:rank},configuration=(owner:'player'|'ally')=>({get version(){return ranks[owner];},draft:()=>({levels:{whist:ranks[owner]}})});
   const member=(owner:'player'|'ally')=>({classId:'assassin',level:10,panel:structuredClone(base),skills:configuration(owner),
     player:{health:1000,maxHealth:1000,mana:100,maxMana:100},
-    bag:{equipmentFor:()=>({}),equipmentItems:()=>({}),get:()=>undefined}});
+    bag:{revision:0,equipmentFor:()=>({}),equipmentItems:()=>({}),get:()=>undefined}});
   const player=member('player'),ally=member('ally'),members=new Map([['player',player],['ally',ally]]);
   const actor=(key:string,team='party'):Combatant=>({id:key,team,position:{x:24,y:40},bounds:{x:-4,y:-4,width:8,height:8}});
   const actors=new Map([actor('player'),actor('ally')].map(value=>[value.id,value]));
@@ -35,6 +35,8 @@ function fixture(id='player',rank=1){
     layers:[{alpha:1,setAlpha(value:number){this.alpha=value;return this;}}]});
   const visuals=new Map([['player',visual()],['ally',visual()]]),controllers=new Map<string,CombatController>();
   const host=Object.setPrototypeOf({hero:player,conditions,hitResolution:new CombatHitResolution(),
+    passivesCache:new Map(),skillTableCache:new Map(),equipmentRecoveryCache:new Map(),combatProcsCache:new Map(),
+    aiSkillCostCache:new Map(),
     pendingDefeats:new Set<string>(),fallen:new Set<string>(),arena:[],allies:[{id:'ally',ai:{disable:()=>{},targetRemoved:()=>forgot.push('ally')}}],
     partyControllers:controllers,heroAi:{disable:()=>{},targetRemoved:()=>forgot.push('player')},
     app:{battleCatalog:catalog,items:{items:{}},session:{skills:configuration('player'),party:{controlledId:'player',groupModifiers:()=>({})}},

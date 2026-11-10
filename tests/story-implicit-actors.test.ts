@@ -75,7 +75,13 @@ test('the presenter never moves an unpositioned actor into the map, including sk
   const movement={position(){return {x:2048,y:2048};},placeAll(values:unknown[]){placements.push(...values);},place(){throw new Error('offstage walk must not place');},
     walkTo(){throw new Error('offstage walk must not navigate');}};
   const presenter=new StoryPresenter({} as never,()=>({} as never),()=>({movement} as never));
-  Object.assign(presenter,{actors:new Map([['entity:ivan',performer]]),state:{bindings:[['ivan','entity:ivan']]}});
+  // 逻辑舞台必须同时带主角和绑定的伊万；只有 bindings 时同步场景无法完成。
+  Object.assign(presenter,{actors:new Map([['entity:ivan',performer]]),state:{
+    bindings:[['player','player'],['ivan','entity:ivan']],
+    scene:{actors:[{id:'player',actor:'hero',x:0,y:0,facing:'south',visible:true},
+      {id:'entity:ivan',actor:'ivan',x:2048,y:2048,facing:'south',visible:false,unpositioned:true}]},
+    cast:[]
+  }});
   const signal=new AbortController().signal,skip=new AbortController();skip.abort();
   const action={type:'walk' as const,target:'ivan',x:216,y:184,speedPxPerSecond:100};
   await presenter.execute(action,{signal,skipSignal:signal});

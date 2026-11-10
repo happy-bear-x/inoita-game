@@ -64,6 +64,8 @@ function worldFixture(){
   const rank=unit.ranks[0];
   const apply=(id:string)=>conditions.applyBuff(id,unit.buff,rank.strength,rank.effect,'roar-caster');
   const host=Object.setPrototypeOf({conditions,threat:f.threat,hero:{},app:{session:{skills:{draft:()=>({levels:{}})}}},
+    passivesCache:new Map(),skillTableCache:new Map(),equipmentRecoveryCache:new Map(),combatProcsCache:new Map(),
+    aiSkillCostCache:new Map(),
     actorAttribute:(_id:string,key:string)=>key==='moltenReflectionPerThousand'?1:0,
     equipmentRecovery:()=>({lifeDrainPerThousand:0}),
     react:(event:{kind:string})=>f.events.push(event.kind),

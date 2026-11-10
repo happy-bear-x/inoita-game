@@ -16,15 +16,18 @@ const catalog=read('battle') as BattleCatalog,items=read('items') as ItemCatalog
 const method=(name:string)=>Reflect.get(WorldCombat.prototype,name);
 function fixture(){
   const equipment:Record<string,string>={};
-  const equip=(slot:string,kind:string)=>{equipment[slot]=Object.keys(items.items).find(key=>items.items[key].kind===kind&&items.items[key].equipment)!;assert.ok(equipment[slot],kind);};
+  let bagRevision=0;
+  const equip=(slot:string,kind:string)=>{bagRevision++;equipment[slot]=Object.keys(items.items).find(key=>items.items[key].kind===kind&&items.items[key].equipment)!;assert.ok(equipment[slot],kind);};
   equip('main-hand','longsword');equip('off-hand','dagger');equip('body','leather');
   let heroRank=1,allyRank=8;
-  const configuration=(rank:()=>number)=>({draft:()=>({levels:{'weapon-specializing':rank()}})});
+  const configuration=(rank:()=>number)=>({get version(){return rank();},draft:()=>({levels:{'weapon-specializing':rank()}})});
   const member=(rank:()=>number)=>({classId:'warrior',level:10,panel:{physicalAttack:100,magicAttack:50,maxHealth:1000,maxMana:100},
     player:{health:500,maxHealth:1000,mana:100,maxMana:100},skills:configuration(rank),
-    bag:{equipmentFor:()=>equipment,equipmentItems:(keys:Record<string,string>)=>keys}});
+    bag:{get revision(){return bagRevision;},equipmentFor:()=>equipment,get:()=>undefined,equipmentItems:(keys:Record<string,string>)=>keys}});
   const hero=member(()=>heroRank),ally=member(()=>allyRank),conditions=new CombatConditions();
-  const host=Object.setPrototypeOf({hero,conditions,arena:[],app:{battleCatalog:catalog,items,wardrobe,
+  const host=Object.setPrototypeOf({hero,conditions,arena:[],passivesCache:new Map(),skillTableCache:new Map(),
+    equipmentRecoveryCache:new Map(),combatProcsCache:new Map(),aiSkillCostCache:new Map(),
+    app:{battleCatalog:catalog,items,wardrobe,
     session:{skills:configuration(()=>heroRank),party:{groupModifiers:()=>({})}}},memberOf:(id:string)=>id==='player'?hero:ally},WorldCombat.prototype);
   const call=(name:string,...args:unknown[])=>method(name).call(host,...args);
   const attribute=(key:string,id='player')=>call('actorAttribute',id,key) as number;

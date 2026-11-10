@@ -6,8 +6,13 @@ import type {BattleBuffEffect} from '../src/domain/battle.ts';
 const pulse:BattleBuffEffect={durationMs:600,tickMs:60,simulationFrames:{lastActiveFrame:9,pulseIntervalFrames:1},
   states:[],modifiers:[],periodic:[{kind:'fixed-damage',amount:1}]};
 
+// 空的增益/状态表会让 update 直接返回、不推进共享余量；用一条长寿命增益让时钟保持推进。
+const clockAnchor={durationMs:60000,tickMs:0,states:[],modifiers:[],periodic:[]};
+
 test('standalone state frames begin at the shared next boundary and keep inclusive age zero',()=>{
-  const conditions=new CombatConditions();conditions.update(17.5);
+  const conditions=new CombatConditions();
+  conditions.applyBuff('clock','blood-curse',1,clockAnchor);
+  conditions.update(17.5);
   assert.equal(conditions.applyStateFrames('target','stun',0,'source'),true);
   assert.equal(conditions.snapshot('target')[0].remainingMs,102.5);
   const before=conditions.captureState();
@@ -59,6 +64,7 @@ test('callbacks create legacy states without consuming the entire current render
 
 test('state snapshots preserve independent ages, source ownership and the shared remainder',()=>{
   const original=new CombatConditions(),restored=new CombatConditions();
+  original.applyBuff('clock','blood-curse',1,clockAnchor);
   original.update(13.25);
   original.applyBuff('target','attack-stun',1,{...pulse,states:['stun']},'source',()=>({lastActiveFrame:4}));
   original.applyState('target','sleep',1000,'other');original.update(129.5);
