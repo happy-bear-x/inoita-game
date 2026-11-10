@@ -84,6 +84,9 @@ export class MenuScene extends Phaser.Scene {
   private titleAssetsBound=false;
   private page:'home'|'slots'|'settings'|'cloud'='home';
   private slotRequest?:AbortController;
+  /** 挑战模式的隐藏入口：连续 5 次点击后进入压测，2 秒内没有新点击就清零。 */
+  private challengeClicks=0;
+  private challengeTimer?:ReturnType<typeof setTimeout>;
   /** 改名输入与通用确认：标题页的存档管理与云存档覆盖确认共用。 */
   private renameRef?:SaveSlotRef;
   private prompt?:TextPrompt;
@@ -120,7 +123,7 @@ export class MenuScene extends Phaser.Scene {
     if(!this.titleAssetsBound){this.titleAssetsBound=true;this.events.once(Phaser.Scenes.Events.DESTROY,()=>this.titleAssets.releaseResident());}
     this.page='home';this.app.ui.setMode('menu');this.app.ui.loading('正在准备主菜单…');
     const controller=new AbortController();
-    this.events.once('shutdown',()=>{this.unregisterInput?.();this.unregisterInput=undefined;controller.abort();this.cancelCloudRequest();this.settleConfirm(false,false);this.slotRequest?.abort();this.changelogRequest?.abort();this.changelogRequest=undefined;this.changelogOpen=false;this.app.releaseChangelog?.();this.prompt?.close();this.passwordPrompt?.close();this.credentials?.destroy();this.credentials=undefined;this.clearModalLabels();this.menuText?.destroy();this.menuText=undefined;this.domSpecs=[];this.slotsScroll=undefined;this.settingsList=undefined;this.cloudScroll=undefined;this.surface?.destroy();this.surface=undefined;this.modal?.destroy();this.modal=undefined;this.popupMask?.destroy();this.popupMask=undefined;this.events.off(Phaser.Scenes.Events.RESUME,this.renderOnResume,this);this.events.off(Phaser.Scenes.Events.PAUSE,this.hideCredentials);this.scale.off('resize',this.layout,this);});
+    this.events.once('shutdown',()=>{this.resetChallengeClicks();this.unregisterInput?.();this.unregisterInput=undefined;controller.abort();this.cancelCloudRequest();this.settleConfirm(false,false);this.slotRequest?.abort();this.changelogRequest?.abort();this.changelogRequest=undefined;this.changelogOpen=false;this.app.releaseChangelog?.();this.prompt?.close();this.passwordPrompt?.close();this.credentials?.destroy();this.credentials=undefined;this.clearModalLabels();this.menuText?.destroy();this.menuText=undefined;this.domSpecs=[];this.slotsScroll=undefined;this.settingsList=undefined;this.cloudScroll=undefined;this.surface?.destroy();this.surface=undefined;this.modal?.destroy();this.modal=undefined;this.popupMask?.destroy();this.popupMask=undefined;this.events.off(Phaser.Scenes.Events.RESUME,this.renderOnResume,this);this.events.off(Phaser.Scenes.Events.PAUSE,this.hideCredentials);this.scale.off('resize',this.layout,this);});
     // 标题页整屏独占键盘；原始事件由正式界面场景那一处桥接进 router。
     this.unregisterInput?.();this.unregisterInput=this.app.inputRouter.register('menu',this.routeKey,{exclusive:()=>true});
     this.events.on(Phaser.Scenes.Events.RESUME,this.renderOnResume,this);
@@ -168,6 +171,24 @@ export class MenuScene extends Phaser.Scene {
     if(event.key==='Escape'&&this.page!=='home'){event.preventDefault();this.back();return true;}
     return this.surface?.key(event)??false;
   };
+  /** 挑战模式不显示可用状态，只叠一层透明热区接收连续点击。 */
+  private countChallengeClick():void{
+    if(!this.app.ui.ready||this.app.ui.suspended||!this.sys.isActive())return;
+    if(this.page!=='home'||this.confirmAction!==undefined||this.changelogOpen||this.renameRef!==undefined
+      ||this.prompt?.active||this.passwordPrompt?.active||this.credentials?.focused)return;
+    if(this.challengeTimer){clearTimeout(this.challengeTimer);this.challengeTimer=undefined;}
+    this.challengeClicks++;
+    if(this.challengeClicks>=5){
+      this.challengeClicks=0;
+      void this.app.startPressureTest?.();
+      return;
+    }
+    this.challengeTimer=setTimeout(()=>{this.challengeTimer=undefined;this.challengeClicks=0;},2000);
+  }
+  private resetChallengeClicks():void{
+    if(this.challengeTimer){clearTimeout(this.challengeTimer);this.challengeTimer=undefined;}
+    this.challengeClicks=0;
+  }
   /**
    * 右下角版本号；点击它切换 GM 调试模式。
    *
@@ -382,8 +403,12 @@ export class MenuScene extends Phaser.Scene {
         buttonText(key,label,x,y,width,height,fontSize,disabled?'rgba(243,222,176,.4)':GOLD);
       };
       menuButton('home-start','开始游戏',416,457,369,124,()=>this.openSlots());
-      menuButton('home-settings','环境设置',65,472,300,92,()=>{this.page='settings';this.render();});
+      menuButton('home-settings','环境设置',65,472,300,92,()=>{this.resetChallengeClicks();this.page='settings';this.render();});
       menuButton('home-challenge','挑战模式',835,472,300,92,()=>{},true);
+      // 按钮本身保持禁用外观和键盘不可聚焦；透明热区只用于隐藏的连续点击。
+      const challengeZone=view.rect(835,472,300,92,0,0).setInteractive();
+      view.root.add(challengeZone);
+      challengeZone.on('pointerdown',()=>this.countChallengeClick());
       // 右上角：按钮贴住画面右上，右边和上边各留 8 像素，整块落在 logo 右侧的空白上。
       menuButton('home-changelog','更新日志',982,8,210,64,()=>this.openChangelog(),false,28);
       this.addVersion(view,texts);
@@ -596,6 +621,7 @@ export class MenuScene extends Phaser.Scene {
     this.cloudStatus=undefined;
   }
   private openCloud():void{
+    this.resetChallengeClicks();
     this.closeDialogs();
     this.slotRequest?.abort();
     
@@ -867,6 +893,7 @@ export class MenuScene extends Phaser.Scene {
   }
   /** 存档槽直接读摘要里的截图 data URL 绘制；没有截图的旧档左侧留空。 */
   private openSlots():void{
+    this.resetChallengeClicks();
     this.slotRequest?.abort();
     this.cancelCloudRequest();
     this.closeDialogs();

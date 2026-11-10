@@ -159,7 +159,7 @@ function startAutoSave(session:Session):void {
   const generation=autoSaveGeneration;
   const saver=new AutoSaver<StoryWorldViewSnapshot>({
     // 调试现场不写玩家存档：focus 存在时自动存档整个停掉，结束调试后由 GM 动作恢复。
-    enabled:()=>app.mode==='game'&&!app.suspended&&!!app.session&&!app.session.debugFocusQuest&&!app.gm?.storyDebug().autoSavePaused,
+    enabled:()=>app.mode==='game'&&!app.suspended&&!!app.session&&!app.pressureMode&&!app.session.debugFocusQuest&&!app.gm?.storyDebug().autoSavePaused,
     // 演出与菜单锁着时不抢写：等解锁后再写，免得存到一半的状态。
     locked:()=>app.locked||!!app.director?.busy,
     capture:()=>{const captured=app.storyUI.captureSaveRecord(lastSaveThumbnail);return captured.ok?captured.record:undefined;},
@@ -388,6 +388,51 @@ function startStory(classId: string): void {
   if (!selected) return;
   void finishStoryStart(classId);
 }
+/** 压测场地：全图可站、无实体、无出口、无剧情引用的竞技场。 */
+const PRESSURE_MAP = 'arena-map2-aa7923cc';
+const PRESSURE_START = { x: 280, y: 200 } as const;
+
+/**
+ * 挑战模式连点 5 次的隐藏入口：新建 1 级角色进竞技场，之后由世界场景持续刷怪。
+ * 压测不读也不写任何存档槽；退出后正式存档保持原样。
+ */
+async function startPressureTest(): Promise<void> {
+  if (app.pressureMode) return;
+  if (app.mode !== 'menu' || app.suspended || !ui.ready || !app.game?.scene.isActive(SCENE_KEYS.menu)
+    || savedGameLoader.busy) return;
+  modeRequest.abort(); modeRequest = new AbortController();
+  const signal = modeRequest.signal;
+  app.pressureMode = true;
+  ui.loading('正在准备压测…');
+  const fail = (error: unknown): void => {
+    // 取消或失败都要清掉压测标记，否则自动存档会一直停着，入口也进不去。
+    app.pressureMode = false;
+    if (signal.aborted) return;
+    console.error(error);
+    app.mode = 'menu';
+    ui.error(error instanceof Error ? error.message : String(error), () => { void startPressureTest(); });
+  };
+  try {
+    app.storyClasses = await app.content.storyClasses(signal);
+    signal.throwIfAborted();
+    await prepareStory(signal);
+    signal.throwIfAborted();
+    await prepareMenuCore(signal);
+    signal.throwIfAborted();
+  } catch (error) { fail(error); return; }
+  const selected = app.storyClasses.classes.find(entry => entry.id === app.storyClasses.defaultClass);
+  if (!selected) { fail(new Error('压测缺少默认职业')); return; }
+  cancelCommonPreload();
+  app.mode = 'game'; ui.setMode('game'); ui.loading('正在进入压测战场…');
+  installSession(newStorySession(app.campaign, app.world.actors[app.campaign.start.actor], selected,
+    app.items, app.characterStats, app.battleCatalog, app.companions));
+  app.saveSlot = undefined;
+  const menu = app.game!.scene.getScene(SCENE_KEYS.menu);
+  menu.scene.start(SCENE_KEYS.world, { map: PRESSURE_MAP, x: PRESSURE_START.x, y: PRESSURE_START.y,
+    facing: 'south', initialEntry: true,
+    onReady: () => { app.storyUI?.prewarmBag(); worldScene()?.startPressureSpawner(); } });
+}
+
 async function finishStoryStart(classId: string): Promise<void> {
   if (app.mode !== 'class-select' || !app.game?.scene.isActive('story-class-select')) return;
   const signal = modeRequest.signal;
@@ -425,6 +470,8 @@ async function finishStoryStart(classId: string): Promise<void> {
 
 /** 标题与游戏内设置共用读档：准备失败保留入口，旧场景关闭后才替换会话。 */
 async function resumeSlot(slot:SaveSlotRef,signal?:AbortSignal):Promise<void> {
+  // 压测不读写存档；要读档先返回标题，避免把压测会话和存档会话混在一起。
+  if(app.pressureMode)return;
   const game=app.game,sourceMode=app.mode,sourceScene=currentScene(),sourceSession=app.session,sourceLifetime=modeRequest;
   if(!game||(sourceMode!=='menu'&&sourceMode!=='game')||app.suspended||!ui.ready||savedGameLoader.busy||
     !sourceScene?.sys.isActive()||sourceMode==='game'&&worldScene()?.loadingWorld)return;
@@ -629,6 +676,7 @@ function installSession(session: Session): void {
 function returnToMenu(): void {
   if (!ui.canReturn) return;
   if (app.mode === 'game' && worldScene()?.loadingWorld && !ui.failed) return;
+  app.pressureMode = false;
   const returnPage=app.mode==='class-select'?'slots':'home';
   const departedSession = app.session;
   savedGameLoader.cancel();stopAutoSave();app.gm?.dispose();modeRequest.abort();modeRequest=new AbortController();clearMenuPreparations(); app.director?.dispose(); app.clearMapPrefetch(); app.clearStoryPrefetch(); ui.resetInput();
@@ -686,9 +734,11 @@ function boot(): void {
   domUi.setOccluded(uiOcclusion(ui));
   document.fonts?.ready.then(() => domUi.layout()).catch(() => {});
   app.enterGame = enterGame; app.returnToMenu = returnToMenu; app.startStory = startStory;
+  app.startPressureTest = startPressureTest;
   app.resumeSlot = resumeSlot;
   app.prefetchCommon = prefetchCommon;
-  app.captureSaveWorld = () => app.gm?.storyDebug().autoSavePaused ? {ok:false,reason:'debug'} : worldScene()?.captureSaveWorld() ?? {ok:false,reason:'not-ready'};
+  app.captureSaveWorld = () => app.pressureMode ? {ok:false,reason:'pressure'}
+    : app.gm?.storyDebug().autoSavePaused ? {ok:false,reason:'debug'} : worldScene()?.captureSaveWorld() ?? {ok:false,reason:'not-ready'};
   // 只读 Phaser 画布，存档页和其他 DOM 界面不在快照里。
   app.captureSaveThumbnail = () => captureSaveThumbnail(app.game)
     .then(screenshot => { if (screenshot) lastSaveThumbnail = screenshot; return screenshot; });

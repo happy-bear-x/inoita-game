@@ -161,6 +161,13 @@ export function enemyTapRect(actor:ActorDefinition):{x:number;y:number;width:num
 /** 所有 AI 每渲染帧共享的寻路扩展预算；一次扩展约几微秒，512 约 2–4 ms。 */
 const PATH_BUDGET_PER_RENDER_FRAME=512;
 
+/** 压测模式：只刷地图原生资源已加载的史莱姆，限制总量和玩家周围的生成距离。 */
+const PRESSURE_ENEMY_ID='enemy-slime-1';
+const PRESSURE_MAX_ENEMIES=40;
+const PRESSURE_SPAWN_MIN_DISTANCE=96;
+const PRESSURE_SPAWN_MAX_DISTANCE=240;
+const PRESSURE_REVIVE_FRAME_INTERVAL=10;
+
 /** 正式地图的战斗结算与角色表现装配。 */
 export class WorldCombat {
   private readonly manualOffensiveSkills = new WeakMap<NonNullable<ActionPlayback['skill']>,number>();
@@ -724,6 +731,8 @@ captureStoryActors():SceneActorState[] {
     };
   }
   private destroyEnemy(enemy: MapEnemy,preserveCooldown=false,keepSummonState=false): void {
+    // 压测敌人不在任何地图生成点里，死亡记录不会再有刷新入口，用完就丢掉。
+    if(this.app.pressureMode&&!enemy.summonedBy)this.app.session.forgetEnemyVitals(enemy.key);
     // 召唤物只存在于这次战斗：移除或销毁时丢掉它在会话里的血量/法力条目，避免存档越攒越多。
     // 检查点恢复会重建同一批召唤物，那条路径保留会话状态（`keepSummonState`）。
     if(releasesSummonVitals(enemy.summonedBy,keepSummonState))this.app.session.forgetEnemyVitals(enemy.key);
@@ -2904,6 +2913,8 @@ captureStoryActors():SceneActorState[] {
   }
   private playerDefeated():void{
     if(this.defeated||this.closed)return;
+    // 压测模式不打开阵亡面板：全灭后立即补满，继续刷怪。
+    if(this.app.pressureMode){this.reviveFallenForPressure();return;}
     this.defeated=true;this.wipeoutPending=false;
     // 全灭已确认：不再等剩余死亡演出，一次收尾，避免暂停后留下半截角色。
     for(const [id,tween] of this.deathTweens){
@@ -2915,6 +2926,41 @@ captureStoryActors():SceneActorState[] {
     for(const controller of this.partyControllers.values())controller.cancel(true);
     this.stopEnemies();this.movement.stop(this.controlledVisual);
     this.scene.handleCombatDefeat();
+  }
+  /**
+   * 压测刷怪：在玩家周围找一个整个碰撞盒都站得下的随机点，按正式实例路径生成敌人。
+   * 找不到合法点时返回 false，让下一次刷怪再试，不把敌人塞进墙里或人堆里。
+   */
+  spawnPressureEnemy(enemyId=PRESSURE_ENEMY_ID):boolean {
+    if(this.closed||this.defeated||!this.movement)return false;
+    if(this.pressureEnemyCount()>=PRESSURE_MAX_ENEMIES)return false;
+    const definition=this.app.battleCatalog.enemies.find(enemy=>enemy.id===enemyId);
+    const collision=definition?.actor.collision;
+    if(!definition||!collision)return false;
+    const center=this.movement.position(this.controlledVisual);
+    for(let attempt=0;attempt<16;attempt++){
+      const angle=Math.random()*Math.PI*2;
+      const distance=PRESSURE_SPAWN_MIN_DISTANCE
+        +Math.random()*(PRESSURE_SPAWN_MAX_DISTANCE-PRESSURE_SPAWN_MIN_DISTANCE);
+      const point={x:center.x+Math.cos(angle)*distance,y:center.y+Math.sin(angle)*distance};
+      if(!this.movement.navigation.canPlaceBody({collision},point))continue;
+      const placed=this.roster.placeEnemy(enemyId,point.x,point.y);
+      const enemy=this.buildEnemy(placed,definition);
+      this.arena.push(enemy);refreshCombatActors(this.arena);
+      return true;
+    }
+    return false;
+  }
+  private pressureEnemyCount():number {
+    return this.arena.filter(enemy=>!enemy.summonedBy&&!this.pendingDefeats.has(enemy.key)).length;
+  }
+  /** 压测阵亡不结束：把倒下的上阵成员补满生命和法力，继续留在场上。 */
+  reviveFallenForPressure():void {
+    const ids=this.app.session.party?.activeIds??['player'];
+    for(const id of ids){
+      if((this.memberOf(id)?.player.health??0)>0)continue;
+      this.scene.reviveMember(id);
+    }
   }
   reviveMember(id:string,origin=this.movement.position(this.controlledVisual)):void {
     const visual=this.visualOf(id),member=this.memberOf(id);if(!member?.player.health)return;
@@ -3036,6 +3082,9 @@ captureStoryActors():SceneActorState[] {
         if(this.memberOf(id)?.player.health){if(this.fallen.has(id))this.reviveMember(id);}
         else this.memberDefeated(id);
       }
+      // 压测低频补满倒下的成员，不进入阵亡流程。
+      if(this.app.pressureMode&&this.app.session.combatTick%PRESSURE_REVIVE_FRAME_INTERVAL===0)
+        this.reviveFallenForPressure();
       for(const id of this.activeParty)this.syncCombatResourceLimits(id);
       this.combat?.update();
       for(const id of this.activeParty){if(id===this.controlledId||!this.memberOf(id)?.player.health)continue;

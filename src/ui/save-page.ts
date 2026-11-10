@@ -15,9 +15,11 @@ import { TextPrompt } from './text-prompt.ts';
 /** 存档结果与「不能存取」的提示文本，原版取文本表 35331／35332／35342 条。 */
 const SAVE_DONE = '保存成功', SAVE_FAILED = '保存失败', SAVE_UNAVAILABLE = '在当前的地图中无法进行存档。';
 const SAVE_UNAVAILABLE_DEBUG = '调试现场不能存档，请先在调试面板点「结束本次调试」。';
+const SAVE_UNAVAILABLE_PRESSURE = '压测模式不能存档。';
 const SAVE_UNAVAILABLE_LOADING = '地图正在载入，请稍后再存档。';
 const SAVE_UNAVAILABLE_NO_SURVIVORS = '队伍已经全员阵亡，无法存档。';
 const saveUnavailableNotice = (reason: SaveWorldReason): string => reason === 'debug' ? SAVE_UNAVAILABLE_DEBUG
+  : reason === 'pressure' ? SAVE_UNAVAILABLE_PRESSURE
   : reason === 'loading' ? SAVE_UNAVAILABLE_LOADING
   : reason === 'no-survivors' ? SAVE_UNAVAILABLE_NO_SURVIVORS : SAVE_UNAVAILABLE;
 

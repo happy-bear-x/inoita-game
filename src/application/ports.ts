@@ -37,6 +37,8 @@ export interface StoryClassContext {
 type SceneUI = Pick<GameUI,'ready'|'locked'|'mode'|'loading'|'loaded'|'error'|'toast'|'showInstant'|'resetInput'|'setMode'|'showDefeat'|'closeDefeat'|'controlLayoutEditing'|'keyBindingEditing'|'preloadPortraits'|'setWorldRebuildCover'>;
 export interface StoryContext {
   readonly gm?: Pick<import('../debug/gm-actions.ts').GmActions, 'storyDebug'>;
+  /** 压测模式：不写存档/检查点，世界持续刷怪并自动复活队伍。 */
+  readonly pressureMode?: boolean;
   readonly inputRouter: InputRouter;
   readonly domUi?: DomUi;
   readonly controlLayout:ControlLayoutPreferences;
@@ -153,6 +155,8 @@ export interface MenuContext {
   enterGame?:(slot?:number)=>Promise<void>;
   /** 标题页后台预载与存档无关的公共素材；不阻塞菜单。 */
   prefetchCommon?:()=>void;
+  /** 挑战模式连点 5 次后进入压测战斗。 */
+  startPressureTest?:()=>Promise<void>;
   /** 标题页的「开始游戏」使用同一份存档槽。 */
   readonly saves: import('../domain/save-game.ts').SaveSlots<import('../scenes/world-scene.ts').StoryWorldViewSnapshot>;
   /** 云存档能力；缺失时云存档页只显示不可用，本机存档照常。 */

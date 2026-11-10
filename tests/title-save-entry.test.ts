@@ -96,6 +96,7 @@ function fixture(gmMode?:MenuContext['gmMode'],cloud?:CloudSavePort){
   const state={app,surface:view,modal,page:'home',cloudSerial:0,cloudBusy:false,cloudAccountInput:'',cloudPassword:'',
     cloudStatus:undefined,cloudCount:undefined,cloudRequest:undefined,confirmAction:undefined,confirmResolve:undefined,
     renameRef:undefined,slotRequest:undefined,slotPortraits:undefined,prompt:undefined,settingsScroll:0,backdrop:undefined,
+    challengeClicks:0,challengeTimer:undefined,
     domSpecs:[] as MenuTextSpec[],menuText:undefined as MenuTextLayer|undefined,modalLabels:[] as FakeDomLabel[],
     changelogOpen:false,changelogState:'idle',changelogEntries:[] as string[],changelogHeights:[] as number[],
     changelogOffsets:[] as number[],changelogSpecs:[] as MenuTextSpec[],changelogScroll:undefined as FakeScroll|undefined,
@@ -295,6 +296,18 @@ test('challenge mode is disabled and is excluded from native keyboard focus',()=
   const focus=UiSurface.prototype.focusables.call(f.view as unknown as InstanceType<typeof UiSurface>);
   assert.deepEqual(focus.map(button=>button.getData('label')),['开始游戏','环境设置','更新日志']);
   f.key('Tab');f.key('Enter');assert.deepEqual(f.events,[]);assert(f.view.buttons.some(button=>button.getData('label')==='存档槽 1'));
+});
+
+test('challenge mode needs five hidden clicks before starting the pressure test',()=>{
+  const f=fixture();let starts=0;
+  f.app.startPressureTest=async()=>{starts++;};
+  const click=()=>{const handler=f.view.zones[0]!.handlers.get('pointerdown');assert.ok(handler);handler();};
+  for(let index=0;index<4;index++)click();
+  assert.equal(starts,0,'前四次只计数');
+  click();
+  assert.equal(starts,1,'第五次点击才进入压测');
+  click();
+  assert.equal(starts,1,'触发后计数归零，不会连续进入');
 });
 
 test('the version number sits bottom-right at menu-button size and toggles GM',()=>{

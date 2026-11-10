@@ -169,6 +169,9 @@ export class StoryApp {
   controlSkin!: ControlSkin;
   storyInterface!: StoryInterface;
   enterGame?: (slot?:number) => Promise<void>;
+  /** 压测模式：不写自动存档/检查点/手动存档，退出时清掉。 */
+  pressureMode?: boolean;
+  startPressureTest?: () => Promise<void>;
   returnToMenu?: () => void;
   syncLifecycle?: () => void;
   /** 标题页与游戏内设置共用的读档入口，装配点在 `main.ts`。 */

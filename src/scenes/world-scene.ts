@@ -95,7 +95,7 @@ export interface SceneOptions {
 /** 旧存档没有 `scene`，读档时按 `location` 与剧情世界状态重新投影；新存档始终写入。 */
 export interface StoryWorldViewSnapshot {location:TravelDestination;world?:WorldCombatState;generatedEntities:EntityPlacement[];scene?:SceneSnapshot;audio?:StoryAudioState}
 /** 存档捕获失败的原因；界面据此给出具体提示，而不是一律说“当前地图不能存档”。 */
-export type SaveWorldReason = 'debug' | 'loading' | 'not-ready' | 'no-survivors';
+export type SaveWorldReason = 'debug' | 'pressure' | 'loading' | 'not-ready' | 'no-survivors';
 export type SaveWorldResult =
   | { ok: true; map: { id: string; name: string }; world: StoryWorldViewSnapshot }
   | { ok: false; reason: SaveWorldReason };
@@ -207,6 +207,8 @@ export class WorldScene extends Phaser.Scene {
   /** 上次同步给掉落视图的 store revision。 */
   private groundLootRevision=-1;
   private pickupMessages?:PickupMessages;
+  /** 压测刷怪计时器；离开场景时停掉，避免退出后继续生成。 */
+  private pressureSpawner?:Phaser.Time.TimerEvent;
   private readonly pickupRecipients=new Map<string,CharacterVisual>();
   /** 任务完成提示的上次状态；按任务簿版本对比，不在每次会话通知里扫全部任务。 */
   private questStatuses=new Map<string,QuestStatus>();
@@ -255,6 +257,7 @@ export class WorldScene extends Phaser.Scene {
       this.request.abort();
       this.destroyed = true; this.unsubscribe?.(); this.scale.off('resize', this.resizeView, this);
       this.events.off(Phaser.Scenes.Events.POST_UPDATE, this.afterMovement, this);
+      this.pressureSpawner?.remove(false);this.pressureSpawner=undefined;
       this.combat?.destroy();this.combat=undefined;
       for(const character of this.characters)this.removeQuestMarker(character);
       this.questMarkerCharacters?.clear();
@@ -1691,9 +1694,16 @@ export class WorldScene extends Phaser.Scene {
     this.controls?.setCooldowns(cooldowns);
     this.skillHud?.setCooldowns(cooldowns);
   }
+  /** 压测入口：世界就绪后每 0.9 秒尝试补一只敌人，上限由 WorldCombat 控制。 */
+  startPressureSpawner():void {
+    if(!this.app.pressureMode||this.pressureSpawner||!this.combat)return;
+    this.pressureSpawner=this.time.addEvent({delay:900,loop:true,callback:()=>{
+      if(this.app.pressureMode)this.combat?.spawnPressureEnemy();
+    }});
+  }
   private captureCheckpoint():boolean {
-    // 调试现场不是玩家进度：不覆盖检查点，否则死亡/重开会把 GM 现场带回正常流程。
-    if(this.app.session.debugFocusQuest||this.app.gm?.storyDebug().autoSavePaused)return false;
+    // 调试现场和压测现场都不是玩家进度：不覆盖检查点。
+    if(this.app.pressureMode||this.app.session.debugFocusQuest||this.app.gm?.storyDebug().autoSavePaused)return false;
     // 遭遇正在等待战斗结果时，已有检查点就保留：死亡回滚才不会直接落回同一场战斗。
     // 没有检查点时必须记一次兜底：读档会清空内存检查点，而读档可能正落在等待战斗的现场，
     // 这时再拒绝就会让整场战斗没有可回退的检查点。
@@ -1755,7 +1765,8 @@ captureStoryScene():SceneSnapshot {
    * 返回带原因的失败结果让界面给出准确提示；调试现场也走同一条失败分支。
    */
   captureSaveWorld(): SaveWorldResult {
-    // 调试现场禁手动存档：存档摘要会读到这里，返回失败由界面报「调试现场不能存档」。
+    // 调试现场和压测现场禁手动存档，返回失败由界面给具体提示。
+    if(this.app.pressureMode)return {ok:false,reason:'pressure'};
     if(this.app.session.debugFocusQuest||this.app.gm?.storyDebug().autoSavePaused)return {ok:false,reason:'debug'};
     if(!this.map||!this.player||!this.movement)return {ok:false,reason:'not-ready'};
     if(this.loadingWorld)return {ok:false,reason:'loading'};
