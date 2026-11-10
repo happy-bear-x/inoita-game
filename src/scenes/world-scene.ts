@@ -179,7 +179,8 @@ export class WorldScene extends Phaser.Scene {
   private nextMinimapEnemyUpdate = 0;
   private fpsReadout?: { dom?: DomLabel; lastValue?: number; lastLimit?: number; lastVisible?: boolean };
   /** 真实游戏步进计数：只在场景 update 里自增，不受 120Hz 屏幕的 RAF 回调次数影响。 */
-  private fpsFrames = 0;
+  /** rAF 累计帧数的上次读数；用它算每秒浏览器叫了几次。 */
+  private fpsFrameBase = 0;
   private fpsWindowStart = 0;
   private request = new AbortController();
   private mapAssets?: AssetLease;
@@ -1168,30 +1169,32 @@ export class WorldScene extends Phaser.Scene {
     const visible = displaySettings.fps;
     if (readout.lastVisible !== visible) {
       readout.lastVisible = visible;
-      this.fpsFrames = 0; this.fpsWindowStart = 0;
+      this.fpsFrameBase = this.game.loop.frame; this.fpsWindowStart = 0;
       readout.dom.setVisible(visible);
     }
     if (!visible) return;
     const limit = displaySettings.frameRateLimit;
     if (readout.lastValue !== undefined && readout.lastLimit !== limit) {
       readout.lastLimit = limit;
-      readout.dom.setText(`实际 ${readout.lastValue} / 上限 ${limit} 帧`);
+      readout.dom.setText(`rAF ${readout.lastValue} / 上限 ${limit} 帧`);
     }
-    // updateFps 每个真实游戏步进只调用一次；不用 loop.actualFps，因为那个值按 RAF
-    // 回调计数，120Hz 屏幕会显示约 120，而游戏实际只更新、渲染约 60 次。
+    // 数浏览器的 requestAnimationFrame 调用次数，不是游戏更新次数：
+    // 限帧后游戏每秒只更新 60 次，浏览器仍可能按屏幕刷新率叫 120 次。
     const now = performance.now();
-    if (!this.fpsWindowStart) this.fpsWindowStart = now;
-    this.fpsFrames++;
+    if (!this.fpsWindowStart) {
+      this.fpsWindowStart = now;
+      this.fpsFrameBase = this.game.loop.frame;
+    }
     const elapsed = now - this.fpsWindowStart;
-    // 挂起、演出遮挡等长时间不更新后，先以当前帧重新开窗，避免把停顿算成一次超低帧率。
-    if (elapsed > 2000) { this.fpsFrames = 1; this.fpsWindowStart = now; return; }
+    // 挂起、演出遮挡等长时间不更新后，先以当前帧重新开窗，避免把停顿算成一次超低值。
+    if (elapsed > 2000) { this.fpsWindowStart = now; this.fpsFrameBase = this.game.loop.frame; return; }
     if (elapsed < 1000) return;
-    const value = Math.round(this.fpsFrames * 1000 / elapsed);
-    this.fpsFrames = 0; this.fpsWindowStart = now;
+    const value = Math.round(Math.max(0, this.game.loop.frame - this.fpsFrameBase) * 1000 / elapsed);
+    this.fpsFrameBase = this.game.loop.frame; this.fpsWindowStart = now;
     if (readout.lastValue !== value || readout.lastLimit !== limit) {
       readout.lastValue = value;
       readout.lastLimit = limit;
-      readout.dom.setText(`实际 ${value} / 上限 ${limit} 帧`);
+      readout.dom.setText(`rAF ${value} / 上限 ${limit} 帧`);
     }
   }
   private layoutHud(): void {
