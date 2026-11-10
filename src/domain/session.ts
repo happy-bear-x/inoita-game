@@ -330,6 +330,8 @@ export class Session {
   private questSlotProjection?: { version: number; focus?: string; values: Map<string, CampaignQuest | undefined> };
   /** 角色头顶的任务标记按任务簿版本缓存；版本不变时交互候选不必重扫全部任务。 */
   private markerActorProjection?: { version: number; focus?: string; values: Map<string, boolean> };
+  /** 进行中任务的 talk/interact 目标标记；任务目标完成后失效。 */
+  private goalMarkerProjection?: { version: number; focus?: string; values: Map<string, boolean> };
   /** GM 任务调试的焦点；任务面板据此只列出当前任务。 */
   get debugFocusQuest():string|undefined { return this.debugFocusQuestValue; }
   focusDebugQuest(id:string|undefined):void { this.debugFocusQuestValue=id; this.emit(); }
@@ -1025,13 +1027,16 @@ export class Session {
       &&this.status(quest.id)==='ready'&&this.matchesQuestActor(quest,actor,characterId,true)
       &&!this.questBook.visible(quest.id));
   }
-  marker(actor:string,characterId?:string):QuestStatus|null {const quest=this.npcQuestSlot(actor,characterId);return quest?this.status(quest.id):null;}
+  marker(actor:string,characterId?:string):QuestStatus|null {
+    const quest=this.npcQuestSlot(actor,characterId);
+    return quest?this.status(quest.id):(this.activeGoalMarker(actor,characterId)?'active':null);
+  }
   /**
    * 头顶和小地图该不该给这个角色／物件挂标记。
    *
    * 隐藏任务只表示不进任务日志，不是彩蛋任务；它们和可见任务共用同一套场景标记，
-   * 可接、进行中、待交付都要提示。不要再用 `questBook.visible()` 过滤一次。
-   * 调试焦点只看焦点任务：前置任务的人物不挂标记。
+   * 可接、进行中、待交付都要提示；进行中任务的 `talk` / `interact` 目标也算。
+   * 不要再用 `questBook.visible()` 过滤一次。调试焦点只看焦点任务：前置任务的人物不挂标记。
    */
   markerActor(actor:string,characterId?:string):boolean {
     const version=this.questBook.version,focus=this.debugFocusQuestValue,cached=this.markerActorProjection;
@@ -1043,6 +1048,25 @@ export class Session {
         if(!['available','active','ready'].includes(status))return false;
         return (!focus||quest.id===focus)
           &&this.matchesQuestActor(quest,actor,characterId,status!=='available');
+      }));
+    }
+    return values.get(key)!||this.activeGoalMarker(actor,characterId);
+  }
+  /**
+   * 进行中任务的 `talk` / `interact` 目标也要在场景里提示。
+   * 只标记还没记满的目标；目标完成后图标消失。隐藏任务同样参与，不按任务日志可见性过滤。
+   */
+  private activeGoalMarker(actor:string,characterId?:string):boolean {
+    const version=this.questBook.version,focus=this.debugFocusQuestValue,cached=this.goalMarkerProjection;
+    if(!cached||cached.version!==version||cached.focus!==focus)this.goalMarkerProjection={version,focus,values:new Map()};
+    const values=this.goalMarkerProjection!.values,key=actor+'\0'+(characterId??'');
+    if(!values.has(key)){
+      values.set(key,this.campaign.quests.some(quest=>{
+        if(this.status(quest.id)!=='active'||(focus&&quest.id!==focus))return false;
+        const progress=this.questBook.state(quest.id)?.goals;
+        return quest.goals.some(goal=>(goal.kind==='talk'||goal.kind==='interact')
+          &&(characterId!==undefined&&goal.characterId!==undefined?goal.characterId===characterId:goal.target===actor)
+          &&(progress?.[goal.id]??0)<goal.quantity);
       }));
     }
     return values.get(key)!;

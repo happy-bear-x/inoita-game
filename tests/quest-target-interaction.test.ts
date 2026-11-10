@@ -80,6 +80,8 @@ test('an interact goal completes on the target NPC even though it is not the que
   assert.equal(h.session.canInteract(goals[0].target, placements[0].id), false, '任务没进行时它不是额外的可交互对象');
   admit(h.session, quest, prerequisites);
   assert.deepEqual(h.session.forActor(goals[0].target), [], '它不是发布者，走的是目标记账，不是交付');
+  assert.equal(h.session.marker(goals[0].target, goals[0].characterId), 'active', '进行中的交互目标也挂场景标记');
+  assert.equal(h.session.markerActor(goals[0].target, goals[0].characterId), true);
   // 这条任务有几个同类目标就逐个走完：整条任务达成的前提是全部目标都记上。
   for (const [index, goal] of goals.entries()) {
     const placement = placements[index];

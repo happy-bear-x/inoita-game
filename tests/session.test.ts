@@ -7,7 +7,7 @@ import { StoryDirector } from '../src/domain/story-director.ts';
 import type { StoryUI } from '../src/domain/story-director.ts';
 import { canStandOnTerrain, ExitTrigger } from '../src/domain/navigation.ts';
 import { NavigationWorld } from '../src/domain/navigation-world.ts';
-import type { Campaign } from '../src/domain/campaign.ts';
+import type { Campaign, CampaignQuest } from '../src/domain/campaign.ts';
 const campaign=JSON.parse(fs.readFileSync(new URL('../public/content/campaign.json',import.meta.url),'utf8')) as Campaign;
 
 test('nested atomic joins the outer rollback and restores subsystems declared by the inner call',()=>{
@@ -47,6 +47,29 @@ test('hidden quests keep scene markers because hidden only hides the journal',()
  assert.equal(session.status('quest-381'),'ready');
  assert.equal(session.marker('barricade-a1eb664e','npc-120'),'ready');
  assert.equal(session.markerActor('barricade-a1eb664e','npc-120'),true,'隐藏待交付仍要挂头顶标记');
+});
+
+test('hidden active goal targets keep scene markers until the goal is done',()=>{
+ const session=new Session(campaign);
+ // 山寨开关是隐藏任务 quest-150 的交互目标；目标没完成前也要看见。
+ assert.equal(session.accept('quest-150'),true);
+ assert.equal(session.status('quest-150'),'active');
+ assert.equal(session.marker('switch-81c1a471','npc-297'),'active');
+ assert.equal(session.markerActor('switch-81c1a471','npc-297'),true);
+});
+
+test('talk and interact goal markers disappear once the goal is complete',()=>{
+ const rules:CampaignQuest={id:'goal-marker',title:'目标标记',description:'',giver:'giver',delivery:'delivery',
+   guidance:{available:'接取',active:'进行中'},completion:'all',
+   goals:[{id:'talk',kind:'talk',target:'target',quantity:1}],progressText:'',completeText:''};
+ const session=new Session({...campaign,quests:[rules],placements:[],questGroups:[],events:[]} as Campaign);
+ assert.equal(session.accept('goal-marker'),true);
+ assert.equal(session.status('goal-marker'),'active');
+ assert.equal(session.marker('target','target-instance'),'active');
+ assert.equal(session.markerActor('target','target-instance'),true);
+ session.interact('target','target-instance');
+ assert.equal(session.marker('target','target-instance'),null,'目标完成后不挂标记');
+ assert.equal(session.markerActor('target','target-instance'),false);
 });
 
 test('a GM focus restricts quest projections to the focused task',()=>{
