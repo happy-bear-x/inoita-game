@@ -103,6 +103,8 @@ export class StoryUI {
   private debugOpenToken=0;
   private debugStoryOnOpen=false;
   private debugStoryMessage='';
+  /** 等菜单解锁后再打开调试页的重试定时器；关闭菜单或释放会话时要清掉。 */
+  private debugStoryTimer?:ReturnType<typeof setTimeout>;
   private minimapHeight=132;
   private scene?:Phaser.Scene;private surface?:UiSurface;private body?:UiSurface;private hudButtons?:UiSurface;private modal?:UiSurface;private description?:UiSurface;
   /** 菜单页文字走 DOM；图框、按钮、滑条热区和滚动仍由 Phaser 画。 */
@@ -343,7 +345,7 @@ export class StoryUI {
     this.questPanel=new QuestPanel(session,world,this.app.menuPanels,()=>this.render(),
       (view,name,x,y,width,height)=>this.scroll(name,x,y,width,height,view),
       ()=>this.menuText?.refresh(),()=>this.menuText?.renderPage('quests'));
-    this.partyPanel?.destroyPreview();
+    this.partyPanel?.close();this.partyPanel?.destroyPreview();
     this.partyPanel=new PartyPanel(session,world,this.app,()=>this.render(),(id,page)=>this.selectMember(id,page),
       (view,name,x,y,width,height)=>this.scroll(name,x,y,width,height,view),()=>this.menuText?.refresh(),this.bagPortrait,
       ()=>this.menuText?.renderPage('party'),scroll=>{for(const [name,value] of this.scrollNames)if(value===scroll)this.scrollNames.delete(name);scroll.destroy();const index=this.body!.scrolls.indexOf(scroll);if(index>=0)this.body!.scrolls.splice(index,1);});
@@ -432,10 +434,15 @@ export class StoryUI {
   openDebugStory():void{
     if(!this.app.gm)return;
     // 收尾可能刚好还在释放导演锁；菜单关着时稍后再试，避免这次回页被 quietly 丢掉。
-    if(!this.open&&this.app.ui.locked){setTimeout(()=>this.openDebugStory(),100);return;}
+    if(!this.open&&this.app.ui.locked){
+      if(this.debugStoryTimer===undefined)
+        this.debugStoryTimer=setTimeout(()=>{this.debugStoryTimer=undefined;this.openDebugStory();},100);
+      return;
+    }
     this.openDebugStoryWithMessage('');
   }
   private openDebugStoryWithMessage(message:string):void{
+    if(this.debugStoryTimer){clearTimeout(this.debugStoryTimer);this.debugStoryTimer=undefined;}
     this.debugStoryOnOpen=true;this.debugStoryMessage=message;this.show('debug');
     if(this.gmPanel){this.debugStoryOnOpen=false;this.gmPanel.showStoryPage(message);this.debugStoryMessage='';}
   }
@@ -493,8 +500,15 @@ export class StoryUI {
   }
   close():void{
     if(this.open&&this.requestAllocationExit(()=>this.close()))return;
+    if(this.debugStoryTimer){clearTimeout(this.debugStoryTimer);this.debugStoryTimer=undefined;}
     this.debugOpenToken++;this.debugStoryOnOpen=false;this.debugStoryMessage='';
-    if(!this.open)return;if(this.page==='debug')this.releaseDebugPanel();this.controlEditor?.close();this.app.ui.setControlLayoutEditing(false);
+    if(!this.open){
+      // 关闭态也可能已经创建了商店/合成/强化等子面板（例如 show() 的早退路径），一并丢掉。
+      this.shopPanel=undefined;this.craftingPanel=undefined;this.craftingActor=undefined;this.forge=undefined;this.skillBook=undefined;
+      this.partyPanel?.destroyPreview();this.app.releasePartyPreview?.();
+      return;
+    }
+    if(this.page==='debug')this.releaseDebugPanel();this.controlEditor?.close();this.app.ui.setControlLayoutEditing(false);
     this.keyBindingEditor?.close();this.app.ui.setKeyBindingEditing(false);this.cancelOperation();this.modalActive=false;this.shortcutEdit=undefined;this.shortcutScreen?.clear();this.backTab?.clear();
     const keepBag=this.page==='bag'&&this.bagPageCached;
     this.shopPanel=undefined;this.partyPanel?.destroyPreview();this.app.releasePartyPreview?.();this.craftingPanel=undefined;this.craftingActor=undefined;this.forge=undefined;this.skillBook=undefined;this.open=false;
@@ -517,6 +531,13 @@ export class StoryUI {
     if(this.session!==expected)return;
     this.close();this.discardBagPage();this.releaseDebugPanel();this.unsubscribe?.();this.unsubscribe=undefined;
     this.questPanel=undefined;this.partyPanel?.destroyPreview();this.partyPanel=undefined;
+    // 页面节点已经随 close/discardBagPage 销毁，清掉包装引用，别让旧会话的 DOM 留到下一次渲染。
+    this.bagSlots=[];this.drops=[];this.bagEquipment.clear();this.bagPreview=undefined;this.bagSelection=undefined;
+    this.bagPartyNodes=[];this.bagPartyKey='';
+    // 遮罩片挂在常驻 backdrop 下，不随 body 清理；换会话时先销毁再丢引用。
+    for(const piece of this.backdropPieces)piece.destroy();
+    this.backdropPieces=[];
+    this.statusRightNodes=[];this.statusResources.clear();this.skillContentNodes=[];this.skillTabs.clear();
     this.session=undefined;this.world=undefined;this.content=undefined;
   }
   /** 会话结束时丢掉缓存的背包页，避免下一位存档的角色和物品沿用旧页面。 */
@@ -1080,8 +1101,8 @@ export class StoryUI {
     return label as unknown as UiText;
   }
   /** 摘要与快照的唯一捕获口：手动保存与自动存档共用。 */
-  captureSaveRecord():{ok:true;record:SaveGame<StoryWorldViewSnapshot>}|{ok:false;reason:SaveWorldReason}{
-    return this.savePage.captureSaveRecord();
+  captureSaveRecord(screenshot?:string):{ok:true;record:SaveGame<StoryWorldViewSnapshot>}|{ok:false;reason:SaveWorldReason}{
+    return this.savePage.captureSaveRecord(screenshot);
   }
   private renderStatus():void{
     this.statusTextSpecs=[];this.statusResources.clear();

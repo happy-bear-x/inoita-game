@@ -47,8 +47,11 @@ export const SAVE_BOARD_LAYOUT = {
 
 /** 空槽上画的是原版「EMPTY」图（图组 88 项 3，173×68），不是文字。 */
 const EMPTY_WIDTH = 173, EMPTY_HEIGHT = 68;
-/** 槽位里立绘的高度：原版槽位立绘约 196×138（`UI_TITLESLOT_01` 图组 88 的 5/6/7 项）。 */
+/** 左侧缩略图区域：高度沿用原版槽位立绘，截图按 16:9 完整放进框里。 */
 const PORTRAIT_HEIGHT = 126;
+const SHOT_X = 20, SHOT_WIDTH = 180, SHOT_HEIGHT = 101;
+/** 右侧文字从缩略图之后开始；宽度给右侧改名/删除控件留出空间。 */
+const TEXT_X = 216, TEXT_WIDTH = 300;
 /** 槽位文字颜色：原版 `UIMainMenu_DrawSaveSlotButtons` 先算 RGB(0xe6,0xd9,0xa0) 再画全部文字。 */
 const SAVE_SLOT_TEXT = '#e6d9a0';
 const SAVE_SLOT_TIME_TEXT = '#b9ad86';
@@ -133,13 +136,16 @@ export function drawSaveBoardRow(
   };
   if(row.reading.kind==='ok'){
     const summary=row.reading.summary;
-    // 立绘只给高度，宽度按原图比例：人物页立绘是竖幅的胸像。
-    view.image(summary.portrait,left+20,bottom+12,undefined,PORTRAIT_HEIGHT,parent);
-    text('title',row.title,left+170,bottom+14,340,24,SAVE_SLOT_TEXT);
-    text('map',summary.mapName,left+170,bottom+48,340,20,SAVE_SLOT_TEXT);
-    text('level',`LV.${summary.level} · ${summary.className}`,left+170,bottom+78,340,18,SAVE_SLOT_TEXT);
+    // 只画保存时截下的游戏画面；旧存档没有截图时左侧留空，不拿立绘顶替。
+    if(summary.screenshot){
+      const shotY=bottom+12+Math.round((PORTRAIT_HEIGHT-SHOT_HEIGHT)/2);
+      view.imageContain(summary.screenshot,left+SHOT_X,shotY,SHOT_WIDTH,SHOT_HEIGHT,parent);
+    }
+    text('title',row.title,left+TEXT_X,bottom+14,TEXT_WIDTH,24,SAVE_SLOT_TEXT);
+    text('map',summary.mapName,left+TEXT_X,bottom+48,TEXT_WIDTH,20,SAVE_SLOT_TEXT);
+    text('level',`LV.${summary.level} · ${summary.className}`,left+TEXT_X,bottom+78,TEXT_WIDTH,18,SAVE_SLOT_TEXT);
     const savedAt=formatSavedAt(summary.savedAt);
-    if(savedAt)text('time',savedAt,left+170,bottom+106,340,18,SAVE_SLOT_TIME_TEXT);
+    if(savedAt)text('time',savedAt,left+TEXT_X,bottom+106,TEXT_WIDTH,18,SAVE_SLOT_TIME_TEXT);
   }else{
     view.image(assets.empty,origin.x+Math.round((SAVE_BOARD.panelWidth-EMPTY_WIDTH)/2),top+Math.round((SAVE_BOARD.frameHeight-EMPTY_HEIGHT)/2),EMPTY_WIDTH,EMPTY_HEIGHT,parent);
     // 空槽由 EMPTY 图本身表示；只有自动槽还需要名字，手动槽不再重复写「存档槽 N」。

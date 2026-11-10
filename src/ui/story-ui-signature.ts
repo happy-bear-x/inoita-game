@@ -136,7 +136,8 @@ function slotsShape(read: ((slot: SaveSlotRef) => SlotSummaryReading) | undefine
     if (reading.kind === 'empty') return 'empty';
     if (reading.kind === 'unreadable') return `unreadable:${reading.reason}`;
     const summary = reading.summary;
-    return `ok:${summary.name ?? ''}:${summary.level}:${summary.className}:${summary.mapName}:${summary.savedAt ?? ''}:${summary.portrait}`;
+    // 截图是长 data URL，只把有无和长度放进签名；保存动作本身会触发重绘。
+    return `ok:${summary.name ?? ''}:${summary.level}:${summary.className}:${summary.mapName}:${summary.savedAt ?? ''}:${summary.portrait}:${summary.screenshot?.length ?? 0}`;
   }).join('|');
 }
 

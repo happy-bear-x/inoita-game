@@ -57,6 +57,23 @@ test('a save slot round-trips the whole session and the world view into a fresh 
   assert.equal(again.kind==='ok'&&again.game.session.money,before.money);
 });
 
+test('save summary carries the captured screenshot while old saves simply omit it',()=>{
+  const slots=new SaveSlots<World>(memory()),session=createSession();
+  const current=record(session);
+  current.summary.screenshot='data:image/jpeg;base64,AAAA';
+  slots.write(2,current);
+  const reading=slots.peek(2);
+  assert.equal(reading.kind,'ok');
+  assert.equal(reading.kind==='ok'&&reading.summary.screenshot,'data:image/jpeg;base64,AAAA');
+
+  // 旧档没有截图字段时照常读取；界面据此不画图片。
+  const legacy=record(session);legacy.format=SAVE_FORMAT-1;
+  slots.write(3,legacy);
+  const old=slots.inspect(3);
+  assert.equal(old.kind,'ok');
+  assert.equal(old.kind==='ok'&&old.game.summary.screenshot,undefined);
+});
+
 test('an old save with repeat-quest receipt history loads only the latest receipt per quest',()=>{
   const session=createSession();
   const settle=()=>{

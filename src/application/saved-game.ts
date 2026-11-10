@@ -147,6 +147,10 @@ const SAVE_UPGRADES:Record<number,SaveUpgrade>={
     if(world)delete world.damageCount;
     game.format=42;
   },
+  /** 42 → 43：摘要增加可选的存档截图；旧档没有截图，存档页不画图片。 */
+  42:game=>{
+    game.format=43;
+  },
 };
 function upgradeSavedGame(game:SaveGame<StoryWorldViewSnapshot>):SaveGame<StoryWorldViewSnapshot>{
   if(game.format===SAVE_FORMAT)return game;

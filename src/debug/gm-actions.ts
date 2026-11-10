@@ -277,10 +277,12 @@ export function createGmActions(ports: GmPorts): GmActions {
       const debugSession = session.captureState();
       const debugWorld = ports.debugWorld?.capture();
       const restore = async (): Promise<GmEndDebugResult> => {
+        if (disposed) return { ok: false, reason: '调试已关闭' };
         session.restoreState(run.origin);
         session.focusDebugQuest(undefined);
         if (ports.debugWorld && run.world !== undefined) {
-          const restored = await ports.debugWorld.restore(run.world);
+          const restored = await ports.debugWorld.restore(run.world, lifetime.signal);
+          if (disposed) return { ok: false, reason: '调试已关闭' };
           if (!restored.ok) return { ok: false, reason: restored.reason ?? '恢复调试前地图失败' };
         }
         return { ok: true, focus: run.quest };
@@ -291,6 +293,8 @@ export function createGmActions(ports: GmPorts): GmActions {
       } catch (error) {
         result = { ok: false, reason: `恢复调试前状态失败：${error instanceof Error ? error.message : String(error)}` };
       }
+      // 收尾期间回标题或读了别的档：旧会话/旧世界已经不该再写回任何地方。
+      if (disposed) return { ok: false, reason: '调试已关闭' };
       if (result.ok) {
         debugRun = undefined;
         try {
@@ -302,8 +306,11 @@ export function createGmActions(ports: GmPorts): GmActions {
         return result;
       }
       // 恢复失败时不要把半恢复的会话留在正常存档里：退回调试现场，继续暂停自动存档。
+      // 收尾期间会话已经销毁时，旧现场也不能再装回去。
+      if (disposed) return result;
       try { session.restoreState(debugSession); } catch { /* 保留当前可用的诊断信息 */ }
-      try { if (ports.debugWorld && debugWorld !== undefined) await ports.debugWorld.restore(debugWorld); } catch { /* 同上 */ }
+      try { if (ports.debugWorld && debugWorld !== undefined) await ports.debugWorld.restore(debugWorld, lifetime.signal); } catch { /* 同上 */ }
+      if (disposed) return result;
       run.finishing = undefined;
       debugRun = run;
       if (!run.unsubscribe) watchDebugRun(run);

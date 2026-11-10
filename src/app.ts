@@ -175,6 +175,8 @@ export class StoryApp {
   resumeSlot?: (slot:import('./domain/save-game.ts').SaveSlotRef,signal?:AbortSignal) => Promise<void>;
   /** 取当前地图与世界的存档快照；地图、战斗还没就绪时返回 undefined。 */
   captureSaveWorld?: () => SaveWorldResult;
+  /** 保存时截当前游戏画面作为存档缩略图。 */
+  captureSaveThumbnail?: () => Promise<string | undefined>;
   /** 游戏世界目录，进入剧情时加载。 */
   world!: WorldIndex;
   /** 本次体验版的剧情编排。 */

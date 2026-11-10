@@ -50,6 +50,10 @@ export interface SavePageHost {
  * 页面自己的确认框、改名输入和读档请求都在这里；菜单只负责路由和整页重绘。
  */
 export class SavePage {
+  /** 一次只处理一个保存请求：截图要等下一帧，期间重复点击不能写两次。 */
+  private saving = false;
+  /** 保存请求代次；关页、切页或新请求让迟到的截图结果失效。 */
+  private saveSerial = 0;
   private saveConfirm?: SaveSlotRef;
   private loadConfirm?: SaveSlotRef;
   private deleteConfirm?: SaveSlotRef;
@@ -103,7 +107,7 @@ export class SavePage {
       const slot = this.saveConfirm;
       this.host.beginModal(1024, 640);
       drawNativeMessage(this.host.modal(), app.menuPanels.assets, '这个存档槽里已经有存档，确定覆盖？',
-        () => { this.saveConfirm = undefined; this.saveToSlot(slot); },
+        () => { this.saveConfirm = undefined; void this.saveToSlot(slot); },
         () => { this.saveConfirm = undefined; this.host.render(); }, this.host.modalWriter());
     }
     if (this.deleteConfirm !== undefined) {
@@ -130,8 +134,10 @@ export class SavePage {
     return false;
   }
 
-  /** 切换页面或关闭菜单时清掉确认框和改名输入。 */
+  /** 切换页面或关闭菜单时清掉确认框和改名输入，并让在途保存结果失效。 */
   cancelPending(): void {
+    this.saveSerial++;
+    this.saving = false;
     this.saveConfirm = undefined;
     this.loadConfirm = undefined;
     this.deleteConfirm = undefined;
@@ -151,12 +157,12 @@ export class SavePage {
   }
 
   /** 摘要与快照的唯一捕获口：手动保存与自动存档共用。 */
-  captureSaveRecord(): { ok: true; record: SaveGame<StoryWorldViewSnapshot> } | { ok: false; reason: SaveWorldReason } {
+  captureSaveRecord(screenshot?: string): { ok: true; record: SaveGame<StoryWorldViewSnapshot> } | { ok: false; reason: SaveWorldReason } {
     const session = this.host.session();
     if (!session) return { ok: false, reason: 'not-ready' };
     const capture = this.host.app.captureSaveWorld?.();
     if (!capture || !capture.ok) return { ok: false, reason: capture?.reason ?? 'not-ready' };
-    return { ok: true, record: captureSaveGame(session, capture.world, this.saveSummaryOf(session, capture.map)) };
+    return { ok: true, record: captureSaveGame(session, capture.world, this.saveSummaryOf(session, capture.map, screenshot)) };
   }
 
   /** 一行存档的读数、动作与行内控件；自动槽在存档页没有动作。 */
@@ -195,17 +201,33 @@ export class SavePage {
 
   /** 点一个手动槽：空槽直接存，已有存档先问一次再覆盖（原版对不可逆操作用是／否确认）。 */
   private requestSave(ref: SaveSlotRef): void {
-    if (ref === AUTO_SAVE_SLOT) return;
-    if (this.host.app.saves.peek(ref).kind === 'empty') { this.saveToSlot(ref); return; }
+    if (ref === AUTO_SAVE_SLOT || this.saving) return;
+    if (this.host.app.saves.peek(ref).kind === 'empty') { void this.saveToSlot(ref); return; }
     this.saveConfirm = ref; this.host.render();
   }
 
   private saveToSlot(ref: SaveSlotRef): void {
-    if (ref === AUTO_SAVE_SLOT) return;
+    if (ref === AUTO_SAVE_SLOT || this.saving) return;
     const captured = this.captureSaveRecord();
     if (!captured.ok) { this.host.setItemNotice(saveUnavailableNotice(captured.reason)); this.host.render(); return; }
+    // 没有截图能力时保持同步写档；有截图能力时等下一帧截完再写，失败仍写无图存档。
+    if (!this.host.app.captureSaveThumbnail) { this.writeSlot(ref, captured.record); return; }
+    this.saving = true;
+    const serial = ++this.saveSerial;
+    const screenshot = this.host.app.captureSaveThumbnail();
+    void screenshot.then(url => {
+      if (url) captured.record.summary.screenshot = url;
+    }).catch(() => undefined).finally(() => {
+      // 关页、切页或发起了新的保存时，迟到的截图结果不能再写旧槽。
+      if (serial !== this.saveSerial) return;
+      this.saving = false;
+      this.writeSlot(ref, captured.record);
+    });
+  }
+
+  private writeSlot(ref: number, record: SaveGame<StoryWorldViewSnapshot>): void {
     try {
-      this.host.app.saves.write(ref, captured.record);
+      this.host.app.saves.write(ref, record);
       this.host.app.saveSlot = ref;
       this.host.app.audio?.ui('select');
       this.host.setItemNotice(SAVE_DONE);
@@ -254,11 +276,11 @@ export class SavePage {
     if (!this.prompt.active) { this.renameRef = undefined; this.host.render(); this.host.sync(); }
   }
 
-  /** 摘要里的职业名与立绘在存档时就展开，标题页读档不必再加载职业目录。 */
-  private saveSummaryOf(session: Session, map: { id: string; name: string }) {
+  /** 摘要里的职业名和缩略图在存档时就展开，标题页读档不必再加载职业目录。 */
+  private saveSummaryOf(session: Session, map: { id: string; name: string }, screenshot?: string) {
     const app = this.host.app;
     const classId = sessionClassId(session) ?? '';
-    return saveSummary(session, map, { name: app.storyClasses.classes.find(value => value.id === classId)?.name ?? classId, portrait: this.playerPortrait().image });
+    return saveSummary(session, map, { name: app.storyClasses.classes.find(value => value.id === classId)?.name ?? classId, portrait: this.playerPortrait().image }, screenshot);
   }
 
   /** 主角的立绘：存档槽里画的是他，与菜单当前选中的队员无关。 */

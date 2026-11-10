@@ -78,6 +78,9 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
   private measureCanvas?:HTMLCanvasElement;
   /** 场景键盘只做一次桥接：原始事件交给全局 router，自己不再按页面各订阅一份。 */
   private readonly bridgeKey=(event:KeyboardEvent):void=>{this.app.inputRouter.dispatch(event);};
+  private readonly resizeView=():void=>{
+    this.signature='';this.layoutDomText();this.sync(this.app.ui);this.app.ui.reflowDialogue();
+  };
   private unregisterInput?:()=>void;
   constructor(app:StoryApp){super(SCENE_KEYS.formalUi);this.app=app;}
   create():void{
@@ -107,7 +110,7 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     }
     this.questPopup=new QuestPopup(this,()=>this.app.ui.ready&&!this.app.ui.suspended,this.app.domUi);
     this.surface.enabled=()=>!this.app.ui.suspended;
-    this.scale.on('resize',()=>{this.signature='';this.layoutDomText();this.sync(this.app.ui);this.app.ui.reflowDialogue();});
+    this.scale.on('resize',this.resizeView);
     // 场景里只保留这一份键盘监听：它只把原始事件交给 router，由作用域决定消费者。
     window.addEventListener('keydown',this.bridgeKey);
     this.unregisterInput=this.app.inputRouter.register('modal',this.routeKey,{
@@ -117,7 +120,7 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
         ||!!this.app.ui.quest||!!this.app.ui.loadingState||!!this.app.ui.choices
     });
     this.game.canvas.addEventListener('pointercancel',this.cancelInput);this.game.events.once('destroy',()=>this.game.canvas.removeEventListener('pointercancel',this.cancelInput));
-    this.events.once('shutdown',()=>{this.unregisterInput?.();this.unregisterInput=undefined;window.removeEventListener('keydown',this.bridgeKey);this.uiAssets.releaseContent();this.surface.destroy();this.questPopup.destroy();this.baseLease?.release();this.domInstant?.remove();this.domInstant=undefined;this.domToast?.remove();this.domToast=undefined;this.domSpeaker?.remove();this.domSpeaker=undefined;for(const label of [this.domLoadingTitle,this.domLoading,this.domLoadingAction,this.domLoadingMenu,this.domPortraitIcon,this.domPortraitTitle,this.domPortraitHint,this.domDefeatTitle,this.domDefeatMessage,this.domDefeatCancel,this.domDefeatConfirm,this.domDefeatCheckpoint,this.domDefeatLoad])label?.remove();this.domLoadingTitle=undefined;this.domLoading=undefined;this.domLoadingAction=undefined;this.domLoadingMenu=undefined;this.domPortraitIcon=undefined;this.domPortraitTitle=undefined;this.domPortraitHint=undefined;this.domDefeatTitle=undefined;this.domDefeatMessage=undefined;this.domDefeatCancel=undefined;this.domDefeatConfirm=undefined;this.domDefeatCheckpoint=undefined;this.domDefeatLoad=undefined;for(const run of this.dialogueDomRuns)run.remove();this.dialogueDomRuns.length=0;this.removeChoiceDom();});
+    this.events.once('shutdown',()=>{this.scale.off('resize',this.resizeView);this.unregisterInput?.();this.unregisterInput=undefined;window.removeEventListener('keydown',this.bridgeKey);this.uiAssets.releaseContent();this.surface.destroy();this.questPopup.destroy();this.baseLease?.release();this.domInstant?.remove();this.domInstant=undefined;this.domToast?.remove();this.domToast=undefined;this.domSpeaker?.remove();this.domSpeaker=undefined;for(const label of [this.domLoadingTitle,this.domLoading,this.domLoadingAction,this.domLoadingMenu,this.domPortraitIcon,this.domPortraitTitle,this.domPortraitHint,this.domDefeatTitle,this.domDefeatMessage,this.domDefeatCancel,this.domDefeatConfirm,this.domDefeatCheckpoint,this.domDefeatLoad])label?.remove();this.domLoadingTitle=undefined;this.domLoading=undefined;this.domLoadingAction=undefined;this.domLoadingMenu=undefined;this.domPortraitIcon=undefined;this.domPortraitTitle=undefined;this.domPortraitHint=undefined;this.domDefeatTitle=undefined;this.domDefeatMessage=undefined;this.domDefeatCancel=undefined;this.domDefeatConfirm=undefined;this.domDefeatCheckpoint=undefined;this.domDefeatLoad=undefined;for(const run of this.dialogueDomRuns)run.remove();this.dialogueDomRuns.length=0;this.removeChoiceDom();});
     void loadUiImages(this,['/assets/ui/loading-background.webp']).then(lease=>{this.baseLease=lease;this.signature='';this.sync(this.app.ui);}).catch(console.error);
     this.app.storyUI.attach(this,actor=>createCharacter(this,actor,{id:'menu-preview',actor:actor.id,x:0,y:0}));this.sync(this.app.ui);
   }

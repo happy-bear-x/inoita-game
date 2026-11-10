@@ -108,6 +108,8 @@ export interface StoryUIContext {
   saveSlot?:number;
   /** 当前地图与世界的存档快照；地图或战斗还没就绪时没有可存的东西。摘要由界面按菜单内容补上。 */
   captureSaveWorld?: () => SaveWorldResult;
+  /** 保存时截当前游戏画面作为存档缩略图；失败或环境不支持时返回 undefined。 */
+  captureSaveThumbnail?: () => Promise<string | undefined>;
   changeEquipment?: (entry: string | undefined, slot: EquipmentSlot, signal?: AbortSignal, memberId?:string) => Promise<void>;
   equipmentAppearance?:(memberId:string)=>import('../domain/content.ts').ActorDefinition|undefined;
   readonly battleCatalog: BattleCatalog;

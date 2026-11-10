@@ -1925,7 +1925,7 @@ test('the GM story page lists tasks and enters the selected one without exposing
   const gm=createGmActions({session:f.session,campaign,report:async()=>true});
   gm.previewStory=async target=>({ok:true,preview:{quest:target.quest,phase:'available',location:campaign.start}});
   Object.defineProperty(f.app,'gm',{value:gm,configurable:true});
-  f.menu.show('debug');f.scene.click(f.scene.button('调试页 剧情'));
+  f.menu.show('debug');f.menu.openDebugStory();
   assert.equal(f.scene.buttons('分类 全部').length,0,'不再提供混合全部栏');
   assert.ok(f.scene.button('分类 主线')&&f.scene.button('分类 支线'));
   const texts=()=>visibleDomLabels(f).map(label=>label.text).join(' ');
@@ -1962,7 +1962,7 @@ test('openDebugStory returns to the story tab without opening a completion dialo
   gm.previewStory=async target=>({ok:true,preview:{quest:target.quest,phase:'available',location:campaign.start}});
   Object.defineProperty(f.app,'gm',{value:gm,configurable:true});
   f.menu.show('debug');f.scene.click(f.scene.button('调试页 人物'));
-  assert.ok(f.scene.button('调试页 剧情'));
+  assert.equal(f.scene.buttons('调试页 剧情').length,0,'剧情页签保持隐藏');
   f.menu.openDebugStory();
   const texts=()=>visibleDomLabels(f).map(label=>label.text).join(' ');
   assert.ok(f.scene.button('分类 主线'),'应回到剧情页');
@@ -1977,7 +1977,7 @@ test('task previews keep late results on their own selection and disable unprepa
   const requests:{target:{quest:string};resolve:(result:Awaited<ReturnType<typeof gm.previewStory>>)=>void}[]=[];
   gm.previewStory=target=>new Promise(resolve=>requests.push({target,resolve}));
   Object.defineProperty(f.app,'gm',{value:gm,configurable:true});
-  f.menu.show('debug');f.scene.click(f.scene.button('调试页 剧情'));
+  f.menu.show('debug');f.menu.openDebugStory();
   const taskButtons=()=>f.scene.nodes.filter(node=>node.shown&&node.getData('uiAction')&&String(node.getData('label')).startsWith('任务 '));
   assert.equal(requests.length,1,'选中第一个任务时只准备这一个现场');
   assert.equal(f.scene.button('进入任务').input?.enabled,false);
@@ -2010,7 +2010,7 @@ test('closing the debug page releases its catalog, text and stale preview; reope
   Object.defineProperty(f.app,'acquireDebugCatalog',{configurable:true,value:async()=>{acquired++;return ()=>{released++;};}});
   Object.defineProperty(f.app,'releaseDebugCatalog',{configurable:true,value:()=>{requested++;}});
   f.menu.show('debug');await new Promise(resolve=>setImmediate(resolve));
-  f.scene.click(f.scene.button('调试页 剧情'));
+  f.menu.openDebugStory();
   assert.equal(acquired,1);assert(visibleDomLabels(f).length>0);
   f.menu.close();
   assert.equal(released,1);assert.equal(requested,1);
@@ -2019,7 +2019,7 @@ test('closing the debug page releases its catalog, text and stale preview; reope
   finish({ok:false,reason:'迟到的预览'});await new Promise(resolve=>setImmediate(resolve));
   assert.equal(visibleDomLabels(f).length,0,'迟到结果不能重新显示已经关闭的界面');
   f.menu.show('debug');await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(acquired,2);assert.ok(f.scene.button('调试页 剧情'));
+  assert.equal(acquired,2);assert.equal(f.scene.buttons('调试页 剧情').length,0,'剧情页签保持隐藏');
   f.menu.releaseSession(f.session);
   assert.equal(released,2);
   assert.equal((f.menu as unknown as {session?:unknown}).session,undefined,'回标题释放旧会话引用');
@@ -2047,7 +2047,7 @@ test('a failed story jump reacquires the catalog before showing its error',async
   Object.defineProperty(f.app,'acquireDebugCatalog',{configurable:true,value:async()=>{acquired++;return ()=>{released++;};}});
   Object.defineProperty(f.app,'releaseDebugCatalog',{configurable:true,value:()=>{}});
   f.menu.show('debug');await new Promise(resolve=>setImmediate(resolve));
-  f.scene.click(f.scene.button('调试页 剧情'));await new Promise(resolve=>setImmediate(resolve));
+  f.menu.openDebugStory();await new Promise(resolve=>setImmediate(resolve));
   f.scene.click(f.scene.button('进入任务'));await new Promise(resolve=>setImmediate(resolve));
   assert.equal(released,1);assert.equal(acquired,2);
   assert.ok(visibleDomLabels(f).some(label=>label.text.includes('未能进入任务：当前会话还没有装配剧情导演')));
@@ -2067,7 +2067,7 @@ test('the GM character page levels, heals and toggles the debug switches', async
   Object.defineProperty(f.app, 'gm', { value: gm, configurable: true });
   f.menu.show('system'); f.scene.click(f.scene.button('调试'));
 
-  for (const label of ['状态', '人物', '道具', '剧情']) {
+  for (const label of ['状态', '人物', '道具']) {
     const button = f.scene.button(`调试页 ${label}`);
     assert.ok(button.x >= 0 && button.x + button.input!.hitArea.width <= 960, `页签 ${label} 不越界`);
   }

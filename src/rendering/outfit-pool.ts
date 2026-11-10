@@ -4,6 +4,7 @@ import type { ActorDefinition, AnimationClip, ClipName } from '../domain/content
 import type { EquipmentSlot, ItemCatalog } from '../domain/items.ts';
 import { costumeRecipe, type CostumePart, type CostumePiece, type CostumePose, type WardrobeCatalog } from '../domain/wardrobe.ts';
 import { retainLoadedSceneAssets } from './scene-assets.ts';
+import { releaseEffectAnimations } from './effect-animations.ts';
 import { onWebGLRestore } from './webgl-recovery.ts';
 
 export interface Outfit {
@@ -126,7 +127,8 @@ export class OutfitPool {
   private readonly sources = new WeakMap<Outfit, AssetLease>();
   private dispose(outfit: Outfit): void {
     for (const key of outfit.textures) {
-      if (this.host.anims.exists(key)) this.host.anims.remove(key);
+      // 合成外观的动画 key 是 `${key}#...`，不是纹理 key；按全局账本删掉引用它的动画。
+      releaseEffectAnimations(this.host.anims, key);
       if (this.host.textures.exists(key)) this.host.textures.remove(key);
     }
     this.sources.get(outfit)?.release(); this.sources.delete(outfit);

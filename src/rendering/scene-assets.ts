@@ -212,7 +212,9 @@ export async function loadSceneAssets(scene: Phaser.Scene, assets: PendingAsset[
   }catch(error){
     // 中止只结束 JS 这边的等待；Phaser 的在途文件仍可能晚到并写进纹理库。
     // 先记账再释放：晚到的纹理如果没有新租约接管，就在 addtexture 时删掉。
-    if(controller.signal.aborted)markAbandonedTextures(scene.textures,keys);
+    // 已经在纹理库里的 key 不会再触发 addtexture，不该记成待对账的无主纹理。
+    if(controller.signal.aborted)markAbandonedTextures(scene.textures,
+      keys.filter(key=>!scene.textures.exists(key)));
     else globalThis.storyDiagnostics?.record('asset-load-error',
       {error,files:unique.map(asset=>({key:asset.key,file:asset.file}))});
     scene.events.off('shutdown',shutdown);lease.release();throw error;

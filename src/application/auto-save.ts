@@ -4,8 +4,10 @@ import type { Session } from '../domain/session.ts';
 interface AutoSavePorts<World = unknown> {
   /** 世界还没就绪（换图、未进图）时返回 undefined，这一次就不写。 */
   capture(): SaveGame<World> | undefined;
-  /** 写自动槽。失败只记日志——自动存档不该打断游戏。 */
+  /** 同步写自动槽；页面即将隐藏等不能等下一帧的路径用它。 */
   write(game: SaveGame<World>): void;
+  /** 常规写自动槽：允许先截存档缩略图再写；不提供时退回同步 `write`。 */
+  writeAsync?(game: SaveGame<World>): Promise<void>;
   /** 只在游戏进行中启用；标题页和职业选择页没有可存的世界。 */
   enabled(): boolean;
   /** 演出或菜单锁着时不抢写，等解锁后再写。 */
@@ -72,6 +74,10 @@ export class AutoSaver<World = unknown> {
     if(!game){ this.retry(); return; }
     this.waiting=false;
     this.lastWrite=now;
+    if(this.ports.writeAsync){
+      void this.ports.writeAsync(game).catch(error=>console.warn('自动存档写入失败',error));
+      return;
+    }
     try { this.ports.write(game); }
     catch(error){ console.warn('自动存档写入失败',error); }
   }

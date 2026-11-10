@@ -64,7 +64,10 @@ export class CombatFeedback {
   }
   private track(effect:Phaser.GameObjects.Container):void {
     this.effects.add(effect);effect.setVisible(this.visible);
-    const drop=():void=>{this.effects.delete(effect);};
+    const drop=():void=>{
+      this.effects.delete(effect);
+      effect.off('effect-recycle',drop);effect.off('destroy',drop);
+    };
     effect.once('effect-recycle',drop);effect.once('destroy',drop);
     if(this.paused)for(const sprite of effect.list as Phaser.GameObjects.Sprite[])sprite.anims.pause();
   }
@@ -94,7 +97,10 @@ export class CombatFeedback {
         const effect=this.pool.acquire(clip,target.container.x+digit.x,target.container.y+digit.y).setDepth(Number.MAX_SAFE_INTEGER);
         const sequence=digitSequence(clip.frames,digit.holdFrames);
         this.digits[slot]={effect,sequence};
-        const drop=():void=>{if(this.digits[slot]?.effect===effect)this.digits[slot]=undefined;};
+        const drop=():void=>{
+          if(this.digits[slot]?.effect===effect)this.digits[slot]=undefined;
+          effect.off('effect-recycle',drop);effect.off('destroy',drop);
+        };
         effect.once('effect-recycle',drop);effect.once('destroy',drop);
         for(const [index,sprite] of (effect.list as Phaser.GameObjects.Sprite[]).entries()){
           sprite.setVisible(false);

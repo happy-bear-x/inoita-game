@@ -1,4 +1,3 @@
-import { domAssets } from '../ui/dom/assets.ts';
 import { UiNode, UiImage, type UiText } from '../ui/dom/node.ts';
 import { SCENE_KEYS } from '../application/scene-keys.ts';
 import { displaySettings } from '../application/display-settings.ts';
@@ -7,7 +6,7 @@ import { fullscreenActive, fullscreenStatus, onFullscreenChange, setFullscreen }
 import Phaser from 'phaser';
 import type { MenuContext } from '../application/ports.ts';
 import { TITLE_MESSAGE_ASSETS, titleMenuImages } from '../application/menu-images.ts';
-import { GOLD, UiSurface, loadUiImages, type ScrollArea } from '../ui/phaser/widgets.ts';
+import { GOLD, UiSurface, type ScrollArea } from '../ui/phaser/widgets.ts';
 import { SceneUiAssets } from '../ui/phaser/ui-asset-host.ts';
 import { SAVE_BOARD, SAVE_BOARD_LAYOUT, drawSaveBoardRow, newestFirstSlots, saveBoardOrigin, saveRowTitle, setSaveBoardTextSink, type SaveBoardControl, type SaveBoardTextSpec } from '../ui/phaser/save-board.ts';
 import { MenuTextLayer, type MenuTextClip, type MenuTextPoint, type MenuTextSpec, type MenuTextWriter } from '../ui/dom/menu-text.ts';
@@ -19,7 +18,6 @@ import { TextPrompt } from '../ui/text-prompt.ts';
 import { PasswordChangePrompt } from '../ui/password-change-prompt.ts';
 import { CloudCredentialsInput, type CredentialInputRect } from '../ui/cloud-credentials-input.ts';
 import { AUTO_SAVE_SLOT, MANUAL_SAVE_SLOT_COUNT, saveSlotLabel, type SaveSlotRef, type SlotSummaryReading } from '../domain/save-game.ts';
-import type { AssetLease } from '../application/assets.ts';
 import { CLOUD_PAGE, type CloudPageActions, type CloudPageState, type CloudPageStatus } from '../ui/cloud-save-layout.ts';
 import { drawCloudSavePage } from '../ui/phaser/cloud-save-panel.ts';
 import {
@@ -85,8 +83,6 @@ export class MenuScene extends Phaser.Scene {
   /** 构造函数里取不到 this.events（要等场景系统注入），销毁监听改到 create 里只挂一次。 */
   private titleAssetsBound=false;
   private page:'home'|'slots'|'settings'|'cloud'='home';
-  /** 存档槽立绘的租约：每次进存档页按槽里的路径取，离开页面或关场景时释放。 */
-  private slotPortraits?:AssetLease;
   private slotRequest?:AbortController;
   /** 改名输入与通用确认：标题页的存档管理与云存档覆盖确认共用。 */
   private renameRef?:SaveSlotRef;
@@ -124,7 +120,7 @@ export class MenuScene extends Phaser.Scene {
     if(!this.titleAssetsBound){this.titleAssetsBound=true;this.events.once(Phaser.Scenes.Events.DESTROY,()=>this.titleAssets.releaseResident());}
     this.page='home';this.app.ui.setMode('menu');this.app.ui.loading('正在准备主菜单…');
     const controller=new AbortController();
-    this.events.once('shutdown',()=>{this.unregisterInput?.();this.unregisterInput=undefined;controller.abort();this.cancelCloudRequest();this.settleConfirm(false,false);this.slotRequest?.abort();this.changelogRequest?.abort();this.changelogRequest=undefined;this.changelogOpen=false;this.app.releaseChangelog?.();this.prompt?.close();this.passwordPrompt?.close();this.credentials?.destroy();this.credentials=undefined;this.clearModalLabels();this.menuText?.destroy();this.menuText=undefined;this.domSpecs=[];this.slotsScroll=undefined;this.settingsList=undefined;this.cloudScroll=undefined;this.surface?.destroy();this.surface=undefined;this.modal?.destroy();this.modal=undefined;this.popupMask?.destroy();this.popupMask=undefined;this.slotPortraits?.release();this.slotPortraits=undefined;this.events.off(Phaser.Scenes.Events.RESUME,this.renderOnResume,this);this.events.off(Phaser.Scenes.Events.PAUSE,this.hideCredentials);this.scale.off('resize',this.layout,this);});
+    this.events.once('shutdown',()=>{this.unregisterInput?.();this.unregisterInput=undefined;controller.abort();this.cancelCloudRequest();this.settleConfirm(false,false);this.slotRequest?.abort();this.changelogRequest?.abort();this.changelogRequest=undefined;this.changelogOpen=false;this.app.releaseChangelog?.();this.prompt?.close();this.passwordPrompt?.close();this.credentials?.destroy();this.credentials=undefined;this.clearModalLabels();this.menuText?.destroy();this.menuText=undefined;this.domSpecs=[];this.slotsScroll=undefined;this.settingsList=undefined;this.cloudScroll=undefined;this.surface?.destroy();this.surface=undefined;this.modal?.destroy();this.modal=undefined;this.popupMask?.destroy();this.popupMask=undefined;this.events.off(Phaser.Scenes.Events.RESUME,this.renderOnResume,this);this.events.off(Phaser.Scenes.Events.PAUSE,this.hideCredentials);this.scale.off('resize',this.layout,this);});
     // 标题页整屏独占键盘；原始事件由正式界面场景那一处桥接进 router。
     this.unregisterInput?.();this.unregisterInput=this.app.inputRouter.register('menu',this.routeKey,{exclusive:()=>true});
     this.events.on(Phaser.Scenes.Events.RESUME,this.renderOnResume,this);
@@ -602,7 +598,7 @@ export class MenuScene extends Phaser.Scene {
   private openCloud():void{
     this.closeDialogs();
     this.slotRequest?.abort();
-    this.slotPortraits?.release();this.slotPortraits=undefined;
+    
     this.cancelCloudRequest();
     const request=new AbortController();this.cloudRequest=request;
     const serial=++this.cloudSerial;
@@ -869,27 +865,13 @@ export class MenuScene extends Phaser.Scene {
     const summary=`${verb}成功 ${result.completed} 个`;
     return details?`${summary}，${result.failures.length} 个失败（${details}）`:`${summary}。`;
   }
-  /**
-   * 存档页要按槽里的立绘路径补加载图片。先画出文字行，立绘到位后再画一次：
-   * 立绘是随存档记录走的路径，旧档引用的图没了也只是少一张画，不该让标题页失败。
-   */
+  /** 存档槽直接读摘要里的截图 data URL 绘制；没有截图的旧档左侧留空。 */
   private openSlots():void{
-    this.slotRequest?.abort();this.slotPortraits?.release();this.slotPortraits=undefined;
+    this.slotRequest?.abort();
     this.cancelCloudRequest();
     this.closeDialogs();
-    const request=new AbortController();this.slotRequest=request;
+    this.slotRequest=new AbortController();
     this.page='slots';this.render();
-    const refs:SaveSlotRef[]=[AUTO_SAVE_SLOT,...Array.from({length:MANUAL_SAVE_SLOT_COUNT},(_,slot)=>slot)];
-    const portraits=[...new Set(refs.map(ref=>{
-      const reading=this.app.saves.peek(ref);
-      return reading.kind==='ok'?reading.summary.portrait:undefined;
-    }).filter((file):file is string=>!!file&&!domAssets.peek(file)))];
-    if(!portraits.length)return;
-    void loadUiImages(this,portraits,undefined,request.signal).then(lease=>{
-      if(request.signal.aborted||this.slotRequest!==request||!this.sys.isActive()){lease.release();return;}
-      this.slotPortraits?.release();this.slotPortraits=lease;
-      if(this.page==='slots')this.render();
-    },()=>{});
   }
   private resume(slot:SaveSlotRef):void{
     const resume=this.app.resumeSlot;if(!resume)return;
@@ -903,7 +885,7 @@ export class MenuScene extends Phaser.Scene {
   private back():void {if(this.page==='cloud')this.openSlots();else this.showHome();}
   private showHome():void {
     this.cancelCloudRequest();
-    this.closeDialogs();this.slotRequest?.abort();this.slotPortraits?.release();this.slotPortraits=undefined;
+    this.closeDialogs();this.slotRequest?.abort();
     this.page='home';this.render();
   }
   /** 离开页面或重进时收掉确认框、改名输入和密码输入，免得残留状态一直挡住输入。 */

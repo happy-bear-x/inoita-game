@@ -32,6 +32,7 @@ import { AudioScene } from './scenes/audio-scene.ts';
 import { WorldScene } from './scenes/world-scene.ts';
 import { GameUI, uiOcclusion } from './ui/game-ui.ts';
 import { StoryUI } from './ui/story-ui.ts';
+import { captureSaveThumbnail } from './ui/phaser/game-thumbnail.ts';
 import { validateCharacterStats, validateMenuClasses, validateItemSkills, validateStoryItems, validateStoryPortraits, validateWardrobe, validateShops, validateCompanions } from './application/content-validation.ts';
 
 import { GAME_HEIGHT, GAME_WIDTH, fitViewport, configureCanvas } from './ui/viewport.ts';
@@ -141,20 +142,39 @@ const savedGameLoader=new SavedGameLoader();
  * 会话装上之后才创建，回到主菜单时停掉。
  */
 let autoSaver:AutoSaver<StoryWorldViewSnapshot>|undefined;
+/** 最近一张成功截下的存档缩略图；背景写出或截图失败时沿用上一张。 */
+let lastSaveThumbnail:string|undefined;
+/** 自动存档代次：停止后旧的异步写入即使截图才落地也不能再写。 */
+let autoSaveGeneration=0;
 let unsubscribeAutoSaveQuests:(()=>void)|undefined;
 function stopAutoSave():void {
+  autoSaveGeneration++;
   unsubscribeAutoSaveQuests?.();unsubscribeAutoSaveQuests=undefined;
   autoSaver?.stop();autoSaver=undefined;
+  // 上一局的截图不能跟着新的自动存档写进新会话。
+  lastSaveThumbnail=undefined;
 }
 function startAutoSave(session:Session):void {
   stopAutoSave();
+  const generation=autoSaveGeneration;
   const saver=new AutoSaver<StoryWorldViewSnapshot>({
     // 调试现场不写玩家存档：focus 存在时自动存档整个停掉，结束调试后由 GM 动作恢复。
     enabled:()=>app.mode==='game'&&!app.suspended&&!!app.session&&!app.session.debugFocusQuest&&!app.gm?.storyDebug().autoSavePaused,
     // 演出与菜单锁着时不抢写：等解锁后再写，免得存到一半的状态。
     locked:()=>app.locked||!!app.director?.busy,
-    capture:()=>{const captured=app.storyUI.captureSaveRecord();return captured.ok?captured.record:undefined;},
-    write:game=>app.saves.write(AUTO_SAVE_SLOT,game),
+    capture:()=>{const captured=app.storyUI.captureSaveRecord(lastSaveThumbnail);return captured.ok?captured.record:undefined;},
+    write:game=>{
+      if(generation===autoSaveGeneration&&app.session===session&&app.mode==='game')
+        app.saves.write(AUTO_SAVE_SLOT,game);
+    },
+    // 常规自动存档先截一张当前画面；页面即将隐藏时仍走同步 write，保留上一张截图。
+    writeAsync:async game=>{
+      const screenshot=await app.captureSaveThumbnail?.();
+      // 等截图期间回标题、读档或换了会话时，不能把旧快照写进新的自动槽。
+      if(generation!==autoSaveGeneration||app.session!==session||app.mode!=='game')return;
+      if(screenshot)game.summary.screenshot=screenshot;
+      app.saves.write(AUTO_SAVE_SLOT,game);
+    },
   });
   autoSaver=saver;
   unsubscribeAutoSaveQuests=saver.watchQuests(session);
@@ -669,6 +689,9 @@ function boot(): void {
   app.resumeSlot = resumeSlot;
   app.prefetchCommon = prefetchCommon;
   app.captureSaveWorld = () => app.gm?.storyDebug().autoSavePaused ? {ok:false,reason:'debug'} : worldScene()?.captureSaveWorld() ?? {ok:false,reason:'not-ready'};
+  // 只读 Phaser 画布，存档页和其他 DOM 界面不在快照里。
+  app.captureSaveThumbnail = () => captureSaveThumbnail(app.game)
+    .then(screenshot => { if (screenshot) lastSaveThumbnail = screenshot; return screenshot; });
   app.autoSave = () => autoSaver?.request();
   app.captureControlPreview = () => worldScene()?.getControlLayoutPreview()??[];
   app.prefetchStory = () => afterFirstPaint(() => {
