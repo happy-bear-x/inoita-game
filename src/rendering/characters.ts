@@ -5,6 +5,7 @@ import { idlePoseFrame } from '../domain/basic-attack.ts';
 import { blendModeOf } from './blend-modes.ts';
 import { applyCharacterVisibility } from './character-visibility.ts';
 import { rememberEffectAnimation } from './effect-animations.ts';
+import { characterFrame, characterFrameList } from './character-atlas.ts';
 
 import type { AssetLease } from '../application/assets.ts';
 import { retainLoadedSceneAssets } from './scene-assets.ts';
@@ -25,6 +26,8 @@ interface CharacterSequence {
   actor: ActorDefinition;
   texture: Phaser.Textures.Texture | undefined;
   textureKey: string;
+  /** 规范文件路径；同一页可能有多张长条图，光看纹理键分不清。 */
+  file: string;
   frames: readonly number[];
   frameDurationMs: number;
   animation: Phaser.Animations.Animation;
@@ -43,24 +46,34 @@ function releaseCharacterSequence(sprite: Phaser.GameObjects.Sprite): void {
   cached.lease?.release();
 }
 
+/** 逻辑帧号 → 实际纹理键和帧名；图集层取页和帧名，动态外观继续用原纹理。 */
+function layerFrame(layer: { key: string; file?: string }, index: number): { key: string; frame: string | number } {
+  return characterFrame(layer.file, index) ?? { key: layer.key, frame: index };
+}
+
 /** 每个 Sprite 只保留最近一套动作序列；待机期间保留，换外观或销毁时释放。 */
 export function playCharacterLayerSequence(scene: Phaser.Scene, character: CharacterVisual,
   sprite: Phaser.GameObjects.Sprite, layer: AnimationClip['layers'][number], sequence: readonly number[],
   frameDurationMs: number, startFrame = 0): void {
-  const texture = scene.textures?.get(layer.key);
+  const frames = sequence.map(index => layerFrame(layer, index));
+  const textureKeys = [...new Set(frames.map(frame => frame.key))];
+  const textureKey = textureKeys[0] ?? layer.key;
+  const texture = scene.textures?.get(textureKey);
+  const file = layer.file ?? '';
   let cached = characterSequences.get(sprite);
-  const same = cached?.actor === character.actor && cached.texture === texture && cached.textureKey === layer.key
-    && cached.frameDurationMs === frameDurationMs && cached.frames.length === sequence.length
+  const same = cached?.actor === character.actor && cached.texture === texture && cached.textureKey === textureKey
+    && cached.file === file && cached.frameDurationMs === frameDurationMs && cached.frames.length === sequence.length
     && sequence.every((frame, index) => cached!.frames[index] === frame);
   if (!same) {
-    // 合成外观由 OutfitPool 持有；普通源纹理由 AssetPool 保留到局部动画释放。
-    const lease = layer.file && scene.textures ? retainLoadedSceneAssets(scene, [layer.key]) : undefined;
+    // 合成外观由 OutfitPool 持有；普通源纹理或图集页由 AssetPool 保留到局部动画释放。
+    const lease = layer.file && scene.textures ? retainLoadedSceneAssets(scene, textureKeys) : undefined;
     try {
       releaseCharacterSequence(sprite);
       const animation = sprite.anims.create({ key: CHARACTER_SEQUENCE_KEY,
-        frames: sequence.map(frame => ({ key: layer.key, frame })), frameRate: 1000 / frameDurationMs, repeat: 0 });
+        frames, frameRate: 1000 / frameDurationMs, repeat: 0 });
       if (!animation) throw new Error(`角色动作序列创建失败：${layer.key}`);
-      cached = { actor: character.actor, texture, textureKey: layer.key, frames: [...sequence], frameDurationMs, animation, lease };
+      cached = { actor: character.actor, texture, textureKey, file, frames: [...sequence],
+        frameDurationMs, animation, lease };
       characterSequences.set(sprite, cached);
     } catch (error) { lease?.release(); throw error; }
     if (!sequenceCleanupInstalled.has(sprite)) {
@@ -129,15 +142,16 @@ function replaceLayers(scene: Phaser.Scene, character: CharacterVisual, name: Cl
   for (let index = 0; index < clip.layers.length; index++) {
     const layer = clip.layers[index];
     let sprite = previous[index];
+    const first = layerFrame(layer, 0);
     if (sprite?.scene && sprite.anims) {
       if (characterSequences.get(sprite)?.actor !== character.actor) releaseCharacterSequence(sprite);
       sprite.removeAllListeners('animationcomplete');
       sprite.anims.stop();
-      sprite.setTexture(layer.key, 0).setPosition(0, 0).setVisible(true);
+      sprite.setTexture(first.key, first.frame).setPosition(0, 0).setVisible(true);
       if (character.container.getIndex(sprite) !== index) character.container.moveTo(sprite, index);
     } else {
       sprite?.destroy();
-      sprite = scene.add.sprite(0, 0, layer.key);
+      sprite = scene.add.sprite(0, 0, first.key, first.frame);
       character.container.addAt(sprite, index);
     }
     // 按共同的脚底锚点镜像，而不是贴图中心；透明度由潜行状态继续维护。
@@ -176,15 +190,26 @@ export function setCharacterClip(scene: Phaser.Scene, character: CharacterVisual
     const single = name.startsWith('attack-') || name.startsWith('skill-') || name.startsWith('die-')
       || STORY_POSE_NAMES.some(pose => name.startsWith(`${pose}-`));
     clip.layers.forEach((layer, index) => {
-      const animationKey = `${layer.key}#clip:${clip.frames}:${clip.frameRate}:${single ? 0 : -1}`;
-      if (typeof scene.anims?.get === 'function' && scene.anims.exists(animationKey) && !(scene.anims.get(animationKey)?.frames?.length)) {
-        scene.anims.remove(animationKey);
-      }
+      // 图集层的帧分散在页纹理里，动画键要带上实际页；同一页的不同长条图靠文件路径区分。
+      const atlasFrames = characterFrameList(layer.file, clip.frames);
+      const useAtlas = atlasFrames.length === clip.frames;
+      const textureKeys = useAtlas ? [...new Set(atlasFrames.map(frame => frame.key))] : [layer.key];
+      const animationKey = `${layer.file || layer.key}#${textureKeys.join('+') || layer.key}` +
+        `#clip:${clip.frames}:${clip.frameRate}:${single ? 0 : -1}`;
+      // 页纹理可能在上一次地图关闭时被释放，而动画还留在全局表里；帧已失效就重建，不能直接播放。
+      const existing = typeof scene.anims?.get === 'function' && scene.anims.exists(animationKey)
+        ? scene.anims.get(animationKey) : undefined;
+      const stale = !!existing?.frames.some(frame => {
+        const textureFrame = (frame as unknown as { frame?: { texture?: unknown } }).frame;
+        return !!textureFrame && typeof textureFrame === 'object' && !textureFrame.texture;
+      });
+      if (existing && (!existing.frames.length || stale)) scene.anims.remove(animationKey);
       if (!scene.anims.exists(animationKey)) {
-        const frames = scene.anims.generateFrameNumbers(layer.key, { start: 0, end: clip.frames - 1 });
+        const frames = useAtlas ? atlasFrames
+          : scene.anims.generateFrameNumbers(layer.key, { start: 0, end: clip.frames - 1 });
         if (!scene.textures || frames?.length) {
           scene.anims.create({ key: animationKey, frames, frameRate: clip.frameRate, repeat: single ? 0 : -1 });
-          rememberEffectAnimation(scene, animationKey, [layer.key]);
+          rememberEffectAnimation(scene, animationKey, textureKeys);
         }
       }
       const sprite = character.layers[index];
@@ -237,7 +262,8 @@ export function showIdlePose(character: CharacterVisual, facing: Facing, frameIn
     if (sprite.anims.isPlaying) sprite.anims.stop();
     const source = clip.layers[index];
     if (!source) { sprite.setVisible(false); return; }
-    sprite.setVisible(true).setTexture(source.key, frame)
+    const texture = layerFrame(source, frame);
+    sprite.setVisible(true).setTexture(texture.key, texture.frame)
       .setOrigin(clip.originX, clip.originY).setScale(flipped ? -1 : 1, 1);
   });
 }

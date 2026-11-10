@@ -15,6 +15,7 @@ import { skillEffectNames } from '../domain/skill-action.ts';
 import { skillReactionEffects } from '../domain/skill-reactions.ts';
 import type { WardrobeCatalog } from '../domain/wardrobe.ts';
 import { EFFECT_ATLAS_BY_FILE, EFFECT_ATLAS_PAGES } from '../generated/effect-atlas.ts';
+import { characterAtlasEntry, characterAtlasPageAsset } from './character-atlas.ts';
 import type { PendingAsset } from './scene-assets.ts';
 
 /**
@@ -40,13 +41,35 @@ export function stateMarkerEffects(catalog: BattleCatalog): EffectMap {
 
 export function characterAssets(actor: ActorDefinition, clipNames?: Iterable<ClipName>): PendingAsset[] {
   const clips = clipNames ? [...clipNames].map(name => actor.clips[name]) : Object.values(actor.clips);
-  return clips.flatMap(clip => clip ? clip.layers
-    // 空文件是运行时由 Wardrobe 生成的动态纹理，不能交给 loader。
-    .filter(layer => !!layer.file)
-    .map(layer => ({
-      kind: 'spritesheet' as const, key: layer.key, file: layer.file,
-      config: { frameWidth: clip.frameWidth, frameHeight: clip.frameHeight, endFrame: clip.frames - 1 }
-    })) : []);
+  const assets = new Map<string, PendingAsset>();
+  for (const clip of clips) {
+    if (!clip) continue;
+    for (const layer of clip.layers) {
+      // 空文件是运行时由 Wardrobe 生成的动态纹理，不能交给 loader。
+      if (!layer.file) continue;
+      const atlas = characterAtlasEntry(layer.file);
+      if (atlas) {
+        // 只加载这个动作实际用到的帧所在页；长条图跨页时不会多带后面的页。
+        for (const pageIndex of new Set(atlas.pages.slice(0, clip.frames))) {
+          const asset = characterAtlasPageAsset(pageIndex);
+          const previous = assets.get(asset.key);
+          if (previous && JSON.stringify(previous) !== JSON.stringify(asset))
+            throw new Error(`角色图集页指向不同资源：${asset.key}`);
+          assets.set(asset.key, asset);
+        }
+        continue;
+      }
+      const asset: PendingAsset = {
+        kind: 'spritesheet', key: layer.key, file: layer.file,
+        config: { frameWidth: clip.frameWidth, frameHeight: clip.frameHeight, endFrame: clip.frames - 1 }
+      };
+      const previous = assets.get(asset.key);
+      if (previous && JSON.stringify(previous) !== JSON.stringify(asset))
+        throw new Error(`角色贴图键指向不同资源：${asset.key}`);
+      assets.set(asset.key, asset);
+    }
+  }
+  return [...assets.values()];
 }
 
 /** 地图和对白先准备站立、行走与快照里正在保持的动作。 */

@@ -11,6 +11,8 @@ import { basicAttackEffects, characterAssets, stateMarkerEffects } from './comba
 import { classSummonEnemyIds, enemyCombatAssets, partyMemberCombatAssets } from './combat-assets.ts';
 import { residentCombatAssets, type ResidentCombatInput } from './resident-combat-assets.ts';
 import { EFFECT_ATLAS_BY_FILE, EFFECT_ATLAS_PAGES } from '../generated/effect-atlas.ts';
+import { CHARACTER_ATLAS_PAGES } from '../generated/character-atlas.ts';
+import { characterAtlasEntry } from './character-atlas.ts';
 
 interface CoverageInput extends ResidentCombatInput {
   battle: BattleCatalog;
@@ -40,7 +42,6 @@ export function residentCombatCoverageGaps(input: CoverageInput): CoverageGaps {
   const { battle, wardrobe, world, companions } = input;
   const pack = residentCombatAssets(input);
   const assetKeys = new Set(pack.assets.map(asset => asset.key));
-  const actorLayerKeys = new Set(pack.assets.filter(asset => asset.kind === 'spritesheet').map(asset => asset.key));
   const classIds = input.classIds === undefined ? undefined : new Set(input.classIds);
   const classes = classIds ? battle.classes.filter(character => classIds.has(character.id)) : battle.classes;
   const learnedSkills = input.learnedSkillIds === undefined ? undefined : new Set(input.learnedSkillIds);
@@ -96,8 +97,19 @@ export function residentCombatCoverageGaps(input: CoverageInput): CoverageGaps {
   const missingActorLayers: string[] = [];
   const addActorLayers = (actor: ActorDefinition): void => {
     for (const clip of Object.values(actor.clips)) if (clip)
-      for (const layer of clip.layers)
-        if (layer.file && !actorLayerKeys.has(layer.key)) missingActorLayers.push(layer.key);
+      for (const layer of clip.layers) {
+        if (!layer.file) continue;
+        const atlas = characterAtlasEntry(layer.file);
+        if (!atlas) {
+          if (!assetKeys.has(layer.key)) missingActorLayers.push(layer.key);
+          continue;
+        }
+        for (const pageIndex of new Set(atlas.pages.slice(0, clip.frames))) {
+          const page = CHARACTER_ATLAS_PAGES[pageIndex];
+          const key = page?.key ?? `characters-atlas:${pageIndex}`;
+          if (!assetKeys.has(key)) missingActorLayers.push(key);
+        }
+      }
   };
   // 职业 actor 不在 world.actors 里，必须直接检查 battle.classes[].actor；
   // 伙伴外观只核对已拥有的成员，未拥有的走按需路径。
@@ -126,7 +138,7 @@ export function residentCombatCoverageGaps(input: CoverageInput): CoverageGaps {
     if (!definition) { definitions.add(`summon:${id}`); continue; }
     for (const asset of enemyCombatAssets(battle, definition)) {
       if (assetKeys.has(asset.key)) continue;
-      if (asset.kind === 'spritesheet') missingActorLayers.push(asset.key);
+      if (asset.kind === 'spritesheet' || asset.key.startsWith('characters-atlas:')) missingActorLayers.push(asset.key);
       else missingLayers.push(asset.key);
     }
   }

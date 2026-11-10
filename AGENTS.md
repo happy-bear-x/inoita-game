@@ -119,6 +119,7 @@ npm test -- tests/combat.test.ts   # 类型检查 + 指定用例
 npm run typecheck                  # 只做类型检查
 npm run validate:content           # 内容、校验器或素材引用变化时
 npm run audit:assets               # 只检查素材保留集，不裁剪
+npm run atlas:all                  # 重新生成图标/道具/界面/特效/角色全部图集
 npm run test:content-build         # 真实内容编译后跑最小战斗与剧情节点
 npm run debug-start                # 内容改动后重新生成 GM 任务现场表
 npm run debug-start:check          # 只检查 GM 任务现场表是否过期

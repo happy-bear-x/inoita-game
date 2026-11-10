@@ -5,7 +5,7 @@ import type { BattleCatalog } from '../src/domain/battle.ts';
 import type { ClipName, WorldIndex } from '../src/domain/content.ts';
 import type { CompanionCatalog } from '../src/domain/party.ts';
 import type { WardrobeCatalog } from '../src/domain/wardrobe.ts';
-import { characterAssets } from '../src/rendering/combat-asset-descriptors.ts';
+import { characterAssets, effectAssets } from '../src/rendering/combat-asset-descriptors.ts';
 import { partyMemberCombatAssets } from '../src/rendering/combat-assets.ts';
 import { residentCombatAssets } from '../src/rendering/resident-combat-assets.ts';
 
@@ -20,8 +20,8 @@ test('all companion base appearances are resident; skill clips load with their u
   assert.equal(keys.size,pack.assets.length,'贴图键需要去重');
   for(const definition of mercenaries){
     const actor=world.actors[definition.actor]!;
-    for(const layer of actor.clips['idle-south']!.layers)
-      assert.ok(keys.has(layer.key),`伙伴 ${definition.id} 的基础待机图层应在常驻包中`);
+    for(const asset of characterAssets(actor,['idle-south']))
+      assert.ok(keys.has(asset.key),`伙伴 ${definition.id} 的基础待机素材应在常驻包中：${asset.key}`);
     const baseClips=(Object.keys(actor.clips) as ClipName[]).filter(name=>!name.startsWith('skill-'));
     const baseKeys=new Set(characterAssets(actor,baseClips).map(asset=>asset.key));
     const skillOnly=characterAssets(actor,(Object.keys(actor.clips) as ClipName[]).filter(name=>name.startsWith('skill-')))
@@ -50,7 +50,10 @@ test('party member combat assets only include learned skill stances',()=>{
   const definition=companions.definitions['mercenary-black-knight']!;
   const actor=world.actors[definition.actor]!;
   const keys=(learned:string[])=>new Set(partyMemberCombatAssets(battle,wardrobe,definition.classId,actor,new Set(learned)).map(asset=>asset.key));
-  const effectKey='firestorm-swing-default-screen';
-  assert.equal(keys(['dark-strike']).has(effectKey),false,'未学 firestorm 时不加载它的姿态特效');
-  assert.equal(keys(['dark-strike','firestorm']).has(effectKey),true,'学会 firestorm 后下一场战斗能加载到');
+  // 特效也走图集页，不能再用单个纹理键判断；比较 firestorm 实际需要的页/纹理。
+  const firestorm=effectAssets({'firestorm-swing':battle.attackEffects['firestorm-swing']}).map(asset=>asset.key);
+  const without=keys(['dark-strike']),withFirestorm=keys(['dark-strike','firestorm']);
+  const firestormOnly=firestorm.filter(key=>!without.has(key));
+  assert.ok(firestormOnly.length>0,'未学 firestorm 时不加载它的姿态特效');
+  for(const key of firestormOnly)assert.ok(withFirestorm.has(key),`学会 firestorm 后下一场战斗能加载到 ${key}`);
 });

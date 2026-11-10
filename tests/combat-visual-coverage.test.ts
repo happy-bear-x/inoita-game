@@ -10,6 +10,7 @@ import type { ItemCatalog } from '../src/domain/items.ts';
 import type { CompanionCatalog } from '../src/domain/party.ts';
 import type { WardrobeCatalog } from '../src/domain/wardrobe.ts';
 import { classSummonEnemyIds, enemyCombatAssets, partyMemberCombatAssets } from '../src/rendering/combat-assets.ts';
+import { characterAssets, effectAssets } from '../src/rendering/combat-asset-descriptors.ts';
 import { residentCombatCoverageGaps } from '../src/rendering/combat-visual-coverage.ts';
 import { residentCombatAssets } from '../src/rendering/resident-combat-assets.ts';
 import type { WorldAssetInputs } from '../src/rendering/map-assets.ts';
@@ -71,12 +72,16 @@ test('the map combat plan follows the hero learned skills', () => {
   const starter = character.skills[0]!;
   const levels: Record<string, number> = Object.fromEntries(character.skills.map(id => [id, id === starter ? 1 : 0]));
   const scoped = { ...inputs, heroSkills: { draft: () => ({ levels }) } } as unknown as WorldAssetInputs;
-  const effectKey = 'firestorm-swing-default-screen';
+  // 特效也会进图集页，按 firestorm 实际需要的页/纹理判断，而不是单个纹理键。
+  const firestorm = effectAssets({ 'firestorm-swing': battle.attackEffects['firestorm-swing'] }).map(asset => asset.key);
   const planKeys = (value: WorldAssetInputs) => new Set(planMapCombat(map, value, { scripts: [] }).map(asset => asset.key));
-  assert.ok(planKeys(inputs).has(effectKey), '全量规划包含姿态特效');
-  assert.equal(planKeys(scoped).has(effectKey), false, '未学技能不进入进图计划');
+  const full = planKeys(inputs), without = planKeys(scoped);
+  for (const key of firestorm) assert.ok(full.has(key), `全量规划包含姿态特效 ${key}`);
+  const firestormOnly = firestorm.filter(key => !without.has(key));
+  assert.ok(firestormOnly.length > 0, '未学技能不进入进图计划');
   levels.firestorm = 1;
-  assert.ok(planKeys(scoped).has(effectKey), '学会新技能后进图计划补上');
+  const learned = planKeys(scoped);
+  for (const key of firestormOnly) assert.ok(learned.has(key), `学会新技能后进图计划补上 ${key}`);
 });
 
 test('party actor textures follow learned skills while preserving basic actions', () => {
@@ -110,7 +115,7 @@ test('enemy plans preserve custom skill and command clips while skipping unrelat
   assert.ok(keys.has('command-action'));
   assert.equal(keys.has('unrelated-action'), false);
   for (const name of Object.values(enemy.basicAttack!.clips))
-    for (const layer of enemy.actor.clips[name]!.layers) assert.ok(keys.has(layer.key));
+    for (const asset of characterAssets(enemy.actor, [name])) assert.ok(keys.has(asset.key), `${name}: ${asset.key}`);
 });
 
 test('class summon preparation includes companion growth and passive follow-up actions', () => {

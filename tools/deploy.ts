@@ -22,7 +22,11 @@ export function compareBuild(local: BuildMeta, remote: BuildMeta): { ok: boolean
 }
 
 function run(command: string, args: string[]): void {
-  const result = spawnSync(command, args, { cwd: ROOT, stdio: 'inherit' });
+  // Windows 不能直接用 CreateProcess 启动 .cmd，必须经过 shell；否则 npm.cmd 返回 EINVAL。
+  const result = spawnSync(command, args, {
+    cwd: ROOT, stdio: 'inherit', shell: process.platform === 'win32' && /\.cmd$/i.test(command)
+  });
+  if (result.error) throw new Error(`命令启动失败：${path.basename(command)} ${args.join(' ')}（${result.error.message}）`);
   if (result.status !== 0) throw new Error(`命令失败：${path.basename(command)} ${args.join(' ')}`);
 }
 
@@ -137,7 +141,8 @@ async function main(): Promise<number> {
   if (!skipBuild) {
     try {
       run(process.execPath, [path.join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc'), '--noEmit']);
-      run(process.execPath, [path.join(ROOT, 'tools', 'build.mjs')]);
+      // 走 npm run build，确保 prebuild 的图集生成先执行；直接调 build.mjs 会跳过它。
+      run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build']);
     } catch (error) {
       console.error(error instanceof Error ? error.message : String(error));
       return 1;

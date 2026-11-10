@@ -87,10 +87,14 @@ test('base-only class scope keeps base actions and excludes skill clips and icon
   const keys = new Set(pack.assets.map(asset => asset.key));
   const baseClips = (Object.keys(character.actor.clips) as ClipName[]).filter(name => !name.startsWith('skill-'));
   const skillClips = (Object.keys(character.actor.clips) as ClipName[]).filter(name => name.startsWith('skill-'));
-  for (const clip of baseClips) for (const layer of character.actor.clips[clip]!.layers)
-    if (layer.file) assert.ok(keys.has(layer.key), `${clip}: ${layer.key}`);
-  for (const clip of skillClips) for (const layer of character.actor.clips[clip]!.layers)
-    if (layer.file) assert.equal(keys.has(layer.key), false, `${clip}: ${layer.key}`);
+  // 图集按页共享：基础动作的页必须都在，技能动作不能额外带进只在技能里出现的页。
+  const clipKeys = (names: ClipName[]): Set<string> =>
+    new Set(characterAssets(character.actor, names).map(asset => asset.key));
+  const baseKeys = clipKeys(baseClips), skillKeys = clipKeys(skillClips);
+  for (const key of baseKeys) assert.ok(keys.has(key), `基础动作缺少 ${key}`);
+  const skillOnly = [...skillKeys].filter(key => !baseKeys.has(key));
+  assert.ok(skillOnly.length > 0, '至少有一个技能页不属于基础动作');
+  for (const key of skillOnly) assert.equal(keys.has(key), false, `技能动作不应常驻 ${key}`);
   for (const skillId of character.skills)
     assert.equal(keys.has(battle.skills[skillId].icon), false, `icon ${skillId}`);
 });

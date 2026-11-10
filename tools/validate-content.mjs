@@ -18,6 +18,8 @@ import {UI_ATLAS_FRAMES,UI_ATLAS_PAGES,UI_ATLAS_SOURCE_DIGEST} from '../src/gene
 import {uiAtlasFiles,uiAtlasSourceDigest} from './build-ui-atlas.ts';
 import {EFFECT_ATLAS_BY_FILE,EFFECT_ATLAS_PAGES,EFFECT_ATLAS_SOURCE_DIGEST} from '../src/generated/effect-atlas.ts';
 import {effectAtlasSourceDigest,effectUses} from './build-effect-atlas.ts';
+import {CHARACTER_ATLAS_BY_FILE,CHARACTER_ATLAS_PAGES,CHARACTER_ATLAS_SOURCE_DIGEST} from '../src/generated/character-atlas.ts';
+import {characterAtlasSourceDigest} from './build-character-atlas.ts';
 import {PROP_ATLAS_BY_KEY,PROP_ATLAS_LAYOUT_DIGEST,PROP_ATLAS_PAGES,PROP_ATLAS_SOURCE_DIGEST} from '../src/generated/prop-atlas.ts';
 import {propSourceDigest} from './build-prop-atlas.ts';
 import {residentCombatAssets} from '../src/rendering/resident-combat-assets.ts';
@@ -90,6 +92,28 @@ export function validateContent(root=fileURLToPath(new URL('../public/',import.m
  for(const use of effectUses())if(!EFFECT_ATLAS_BY_FILE[use.file])
   throw new Error(`特效文件未进入图集：${use.file}；运行 npm run atlas:effects`);
  if(effectAtlasSourceDigest()!==EFFECT_ATLAS_SOURCE_DIGEST)throw new Error('技能特效图集已过期；运行 npm run atlas:effects');
+ const characterPages=new Map(CHARACTER_ATLAS_PAGES.map(page=>[page.key,read(page.data)]));
+ for(const page of CHARACTER_ATLAS_PAGES)if(!characterPages.get(page.key)?.frames?.[page.frame])
+  throw new Error(`角色图集哨兵帧缺失：${page.frame}；运行 npm run atlas:characters`);
+ if(characterAtlasSourceDigest()!==CHARACTER_ATLAS_SOURCE_DIGEST)throw new Error('角色图集已过期；运行 npm run atlas:characters');
+ // 编译后内容已经合并到规范路径；逐 actor 核对映射，能抓住去重规则变化导致的漂移。
+ // 源内容仍保留重复路径，不能套用同一判据。
+ if(fs.existsSync(path.join(root,'content-manifest.json'))){
+  const actors=new Map();
+  for(const actor of Object.values(world.actors??{}))if(actor?.id)actors.set(actor.id,actor);
+  for(const character of battle.classes??[])if(character.actor?.id)actors.set(character.actor.id,character.actor);
+  for(const enemy of battle.enemies??[])if(enemy.actor?.id)actors.set(enemy.actor.id,enemy.actor);
+  for(const actor of actors.values())for(const [clipName,clip] of Object.entries(actor.clips??{})){
+   if(!clip)continue;
+   for(const layer of clip.layers??[]){
+    if(!layer.file)continue;
+    const entry=CHARACTER_ATLAS_BY_FILE[layer.file];
+    if(!entry)throw new Error(`角色图集缺少映射：${actor.id}/${clipName} → ${layer.file}；运行 npm run atlas:characters`);
+    if(entry.pages.length<clip.frames)
+     throw new Error(`角色图集帧数不足：${actor.id}/${clipName}（${entry.pages.length} < ${clip.frames}）；运行 npm run atlas:characters`);
+   }
+  }
+ }
  const storyInterface=parseStoryInterface(read('content/story-interface.json'));
  // 生产包把人物动作拆成单文件；校验前先按索引合回来，规则保持和源内容一致。
  const wardrobeJson=read('content/wardrobe.json');
@@ -129,6 +153,7 @@ export function validateContent(root=fileURLToPath(new URL('../public/',import.m
  for(const page of UI_ATLAS_PAGES){assets.add(page.file);assets.add(page.data);}
  for(const page of PROP_ATLAS_PAGES){assets.add(page.file);assets.add(page.data);}
  for(const page of EFFECT_ATLAS_PAGES){assets.add(page.file);assets.add(page.data);}
+ for(const page of CHARACTER_ATLAS_PAGES){assets.add(page.file);assets.add(page.data);}
  for(const file of titleMenuImages)assets.add(file.replace(/^\//,''));
  for(const file of assets)ensure(fs.existsSync(path.join(root,file)),`资源不存在 ${file}`);
  const headers=new Map();

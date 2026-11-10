@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { walkClips } from './content-build.ts';
 import { EFFECT_ATLAS_BY_FILE, EFFECT_ATLAS_PAGES } from '../src/generated/effect-atlas.ts';
+import { CHARACTER_ATLAS_BY_FILE, CHARACTER_ATLAS_PAGES } from '../src/generated/character-atlas.ts';
 import { UI_ATLAS_FRAMES, UI_ATLAS_PAGES } from '../src/generated/ui-atlas.ts';
 import { UI_ICON_FRAMES, UI_ICON_ATLAS_FILE, UI_ICON_ATLAS_DATA } from '../src/generated/icon-atlas.ts';
 import { PROP_ATLAS_BY_KEY, PROP_ATLAS_PAGES } from '../src/generated/prop-atlas.ts';
@@ -17,7 +18,7 @@ import { residentCombatAssets } from '../src/rendering/resident-combat-assets.ts
 import type { PendingAsset } from '../src/rendering/scene-assets.ts';
 
 /** 素材被哪张图集替代；归档时用于说明原因。 */
-export type AssetAtlasKind = 'ui-atlas' | 'icon-atlas' | 'effect-atlas' | 'prop-atlas';
+export type AssetAtlasKind = 'ui-atlas' | 'icon-atlas' | 'effect-atlas' | 'prop-atlas' | 'character-atlas';
 
 export interface AssetKeepResult {
   /** 需要保留的路径，统一写成 `assets/...`。 */
@@ -150,7 +151,7 @@ export async function collectAssetKeep(contentDir: string, assetsDir: string): P
     keep.add(page.data);
   };
 
-  // 所有内容里的动画图层：被特效图集替代的原图记入 covered，其余由 Phaser 直接加载。
+  // 所有内容里的动画图层：被特效/角色图集替代的原图记入 covered，其余由 Phaser 直接加载。
   for (const value of documents.values()) {
     walkClips(value, clip => {
       for (const layer of clip.layers) {
@@ -165,13 +166,22 @@ export async function collectAssetKeep(contentDir: string, assetsDir: string): P
           }
           continue;
         }
+        const character = CHARACTER_ATLAS_BY_FILE[file];
+        if (character) {
+          covered.set(file, 'character-atlas');
+          for (const pageIndex of character.pages) {
+            const page = CHARACTER_ATLAS_PAGES[pageIndex];
+            if (page) addAtlasPage(page);
+          }
+          continue;
+        }
         addPhaser(file);
       }
     });
   }
 
   // 图集页本身始终保留；它们的体量很小，缺失一张就会让整页帧全部失效。
-  for (const page of [...UI_ATLAS_PAGES, ...EFFECT_ATLAS_PAGES, ...PROP_ATLAS_PAGES]) addAtlasPage(page);
+  for (const page of [...UI_ATLAS_PAGES, ...EFFECT_ATLAS_PAGES, ...PROP_ATLAS_PAGES, ...CHARACTER_ATLAS_PAGES]) addAtlasPage(page);
   keep.add(UI_ICON_ATLAS_FILE);
   keep.add(UI_ICON_ATLAS_DATA);
 
@@ -267,6 +277,15 @@ export async function collectAssetKeep(contentDir: string, assetsDir: string): P
   // 被图集覆盖的原图可以归档；其余引用必须保留原文件。
   const route = (file: string): void => {
     if (phaser.has(file) || covered.has(file)) return;
+    const character = CHARACTER_ATLAS_BY_FILE[file];
+    if (character) {
+      for (const pageIndex of character.pages) {
+        const page = CHARACTER_ATLAS_PAGES[pageIndex];
+        if (page) addAtlasPage(page);
+      }
+      covered.set(file, 'character-atlas');
+      return;
+    }
     if (UI_ICON_FRAMES[file]) {
       covered.set(file, 'icon-atlas');
       keep.add(UI_ICON_ATLAS_FILE);
