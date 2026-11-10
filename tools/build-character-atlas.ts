@@ -66,7 +66,7 @@ interface BattleLike {
   classes?: { actor?: ActorLike }[];
   enemies?: { actor?: ActorLike }[];
 }
-interface StoryClassesLike { classes?: { previewActor?: ActorLike }[] }
+interface StoryClassesLike { classes?: { previewActor?: ActorLike; playerActor?: ActorLike }[] }
 
 /** 一个内容哈希 + 帧尺寸组合；同一份图在结构上只解一次。 */
 interface GroupSource {
@@ -146,10 +146,10 @@ function createHashFile(): HashFile {
  * 返回已经改写为规范键/路径的 world 与 battle 文档。
  */
 function canonicalDocuments(hashFile: HashFile): {
-  world: WorldLike; battle: BattleLike; aliases: Map<string, string>;
+  world: WorldLike; battle: BattleLike; storyClasses: StoryClassesLike; aliases: Map<string, string>;
 } {
   const documents = new Map<string, unknown>();
-  for (const name of ['battle.json', 'world.json'])
+  for (const name of ['battle.json', 'world.json', 'story-classes.json'])
     documents.set(name, JSON.parse(fs.readFileSync(path.join(CONTENT, name), 'utf8')));
   const records: { clip: ClipLike; layer: ClipLayerLike }[] = [];
   for (const document of documents.values())
@@ -187,11 +187,16 @@ function canonicalDocuments(hashFile: HashFile): {
     record.layer.key = chosen.key;
     record.layer.file = chosen.file;
   }
-  return { world: documents.get('world.json') as WorldLike, battle: documents.get('battle.json') as BattleLike, aliases };
+  return { world: documents.get('world.json') as WorldLike,
+    battle: documents.get('battle.json') as BattleLike,
+    storyClasses: documents.get('story-classes.json') as StoryClassesLike, aliases };
 }
 
-/** world 的全部 actor，加上职业/敌人内嵌 actor 和职业选择预览 actor；同 id 合并。 */
-function sourceActors(world: WorldLike, battle: BattleLike): ActorLike[] {
+/**
+ * world 的全部 actor，加上职业/敌人内嵌 actor 和职业选择的预览、玩家 actor；同 id 合并。
+ * story-classes 与 battle/world 走同一套去重，`playerActor` 的重复方向才能落到规范路径。
+ */
+function sourceActors(world: WorldLike, battle: BattleLike, storyClasses: StoryClassesLike): ActorLike[] {
   const actors = new Map<string, ActorLike>();
   const add = (actor: ActorLike | undefined): void => {
     if (!actor?.id) return;
@@ -203,8 +208,7 @@ function sourceActors(world: WorldLike, battle: BattleLike): ActorLike[] {
   for (const actor of Object.values(world.actors ?? {})) add(actor);
   for (const character of battle.classes ?? []) add(character.actor);
   for (const enemy of battle.enemies ?? []) add(enemy.actor);
-  const storyClasses = JSON.parse(fs.readFileSync(path.join(CONTENT, 'story-classes.json'), 'utf8')) as StoryClassesLike;
-  for (const entry of storyClasses.classes ?? []) add(entry.previewActor);
+  for (const entry of storyClasses.classes ?? []) { add(entry.previewActor); add(entry.playerActor); }
   return [...actors.values()].sort((a, b) => compareText(a.id, b.id));
 }
 
@@ -213,8 +217,8 @@ function sourceActors(world: WorldLike, battle: BattleLike): ActorLike[] {
  */
 export function collectCharacterAtlasSource(): CharacterAtlasSource {
   const hashFile = createHashFile();
-  const { world, battle, aliases } = canonicalDocuments(hashFile);
-  const actors = sourceActors(world, battle);
+  const { world, battle, storyClasses, aliases } = canonicalDocuments(hashFile);
+  const actors = sourceActors(world, battle, storyClasses);
   const groups = new Map<string, {
     hash: string; prefix: string; paths: Set<string>; frameWidth: number; frameHeight: number;
     frames: number; owners: Set<string>;

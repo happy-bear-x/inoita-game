@@ -105,18 +105,25 @@ export function validateContent(root=fileURLToPath(new URL('../public/',import.m
  // 编译后内容已经合并到规范路径；逐 actor 核对映射，能抓住去重规则变化导致的漂移。
  // 源内容仍保留重复路径，不能套用同一判据。
  if(fs.existsSync(path.join(root,'content-manifest.json'))){
-  const actors=new Map();
-  for(const actor of Object.values(world.actors??{}))if(actor?.id)actors.set(actor.id,actor);
-  for(const character of battle.classes??[])if(character.actor?.id)actors.set(character.actor.id,character.actor);
-  for(const enemy of battle.enemies??[])if(enemy.actor?.id)actors.set(enemy.actor.id,enemy.actor);
-  for(const actor of actors.values())for(const [clipName,clip] of Object.entries(actor.clips??{})){
-   if(!clip)continue;
-   for(const layer of clip.layers??[]){
-    if(!layer.file)continue;
-    const entry=CHARACTER_ATLAS_BY_FILE[layer.file];
-    if(!entry)throw new Error(`角色图集缺少映射：${actor.id}/${clipName} → ${layer.file}；运行 npm run atlas:characters`);
-    if(entry.pages.length<clip.frames)
-     throw new Error(`角色图集帧数不足：${actor.id}/${clipName}（${entry.pages.length} < ${clip.frames}）；运行 npm run atlas:characters`);
+  const actors=[];
+  for(const actor of Object.values(world.actors??{}))actors.push(actor);
+  for(const character of battle.classes??[])actors.push(character.actor);
+  for(const enemy of battle.enemies??[])actors.push(enemy.actor);
+  // 职业选择的 playerActor 开局后合并进英雄动作；它与 battle 里的职业 actor 同 id，
+  // 不能按 id 去重，否则会漏掉它自己保留的动作路径。
+  const storyClassJson=JSON.parse(fs.readFileSync(path.join(root,'content/story-classes.json'),'utf8'));
+  for(const entry of storyClassJson.classes??[])actors.push(entry.playerActor,entry.previewActor);
+  for(const actor of actors){
+   if(!actor?.id)continue;
+   for(const [clipName,clip] of Object.entries(actor.clips??{})){
+    if(!clip)continue;
+    for(const layer of clip.layers??[]){
+     if(!layer.file)continue;
+     const entry=CHARACTER_ATLAS_BY_FILE[layer.file];
+     if(!entry)throw new Error(`角色图集缺少映射：${actor.id}/${clipName} → ${layer.file}；运行 npm run atlas:characters`);
+     if(entry.pages.length<clip.frames)
+      throw new Error(`角色图集帧数不足：${actor.id}/${clipName}（${entry.pages.length} < ${clip.frames}）；运行 npm run atlas:characters`);
+    }
    }
   }
  }

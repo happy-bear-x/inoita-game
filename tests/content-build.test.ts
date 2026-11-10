@@ -87,6 +87,44 @@ test('buildContent merges identical clip layers into one texture key', async () 
   }
 });
 
+test('buildContent dedupes story-class player and preview actors with battle clips', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'content-build-story-dedupe-'));
+  const source = path.join(root, 'source');
+  try {
+    await fs.mkdir(source, { recursive: true });
+    await fs.mkdir(path.join(root, 'assets', 'characters'), { recursive: true });
+    const pixels = new PNG({ width: 4, height: 2 }); pixels.data.fill(255);
+    await fs.writeFile(path.join(root, 'assets', 'characters', 'a.png'), PNG.sync.write(pixels, { deflateLevel: 0 }));
+    await fs.writeFile(path.join(root, 'assets', 'characters', 'b.png'), PNG.sync.write(pixels, { deflateLevel: 9 }));
+    const clip = (key: string, file: string) => ({ frameWidth: 2, frameHeight: 2, frames: 2,
+      frameRate: 10, mirrorX: false, originX: 0.5, originY: 0.5,
+      layers: [{ key, file, blend: 'normal' }] });
+    await fs.writeFile(path.join(source, 'story-classes.json'), JSON.stringify({
+      classes: [{
+        id: 'dark-knight',
+        playerActor: { id: 'battle-dark-knight', clips: {
+          'attack-east': clip('attack-east-key', 'assets/characters/a.png'),
+          'attack-west': clip('attack-west-key', 'assets/characters/b.png')
+        } },
+        previewActor: { id: 'story-preview-dark-knight', clips: {
+          'idle-south': clip('preview-idle-key', 'assets/characters/b.png')
+        } }
+      }]
+    }));
+    const output = path.join(root, 'out');
+    const stats = await buildContent(source, output, root);
+    assert.equal(stats.dedupedLayers, 2);
+    const story = JSON.parse(await fs.readFile(path.join(output, 'story-classes.json'), 'utf8'));
+    const west = story.classes[0].playerActor.clips['attack-west'].layers[0];
+    const preview = story.classes[0].previewActor.clips['idle-south'].layers[0];
+    // 运行时开局会把 playerActor 的动作合并进英雄；这些路径必须一起落到规范文件。
+    assert.deepEqual(west, { key: 'attack-east-key', file: 'assets/characters/a.png', blend: 'normal' });
+    assert.deepEqual(preview, { key: 'attack-east-key', file: 'assets/characters/a.png', blend: 'normal' });
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
 test('buildContent rejects malformed JSON', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'content-build-bad-'));
   try {

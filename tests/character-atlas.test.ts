@@ -16,6 +16,7 @@ import {
 } from '../src/rendering/character-atlas.ts';
 import { retainLoadedSceneAssets } from '../src/rendering/scene-assets.ts';
 import { characterAtlasSourceDigest, collectCharacterAtlasSource } from '../tools/build-character-atlas.ts';
+import { CHARACTER_ATLAS_ALIASES } from '../tools/character-atlas-aliases.ts';
 
 const hook = registerHooks({ resolve(specifier, context, next) {
   return specifier === 'phaser'
@@ -111,6 +112,22 @@ test('运行时引用的角色文件都有映射，每个动作的帧数都被�
     assert.ok(mapped.has(file), `${file}: 未写入 CHARACTER_ATLAS_BY_FILE`);
   }
   for (const file of mapped) assert.ok(source.byFile[file], `图集里有内容不再引用的文件：${file}`);
+});
+
+test('职业选择的 playerActor 和 previewActor 动作都有角色图集映射', () => {
+  const catalog = JSON.parse(readFileSync(
+    new URL('../public/content/story-classes.json', import.meta.url), 'utf8')) as {
+    classes: { playerActor: ActorDefinition; previewActor: ActorDefinition }[];
+  };
+  const mapped = new Set(Object.keys(CHARACTER_ATLAS_BY_FILE));
+  for (const entry of catalog.classes)
+    for (const actor of [entry.playerActor, entry.previewActor])
+      for (const [clipName, clip] of Object.entries(actor.clips))
+        for (const layer of (clip as AnimationClip).layers) {
+          if (!layer.file) continue;
+          const canonical = CHARACTER_ATLAS_ALIASES[layer.file] ?? layer.file;
+          assert.ok(mapped.has(canonical), `${actor.id}/${clipName} → ${layer.file}`);
+        }
 });
 
 test('characterAssets 对已映射文件只返回图集页，动态外观不返回资源', () => {

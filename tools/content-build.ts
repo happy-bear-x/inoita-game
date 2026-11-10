@@ -81,12 +81,14 @@ export function walkClips(value: unknown, visit: (clip: ClipLike, name: string) 
  * 多个方向/多个角色共用同一个纹理键。运行时 Phaser 只解码、上传一份；`mirrorX`
  * 与帧率、循环类型仍留在各自的 clip 上，动画与图片分别共享。
  *
- * 只处理 battle.json / world.json 的 `clips`，因为地图 JSON 用 prop 键、不在 debug
- * 来源哈希里；这两份文件不在调试现场表的来源哈希中，合并不会让现场表过期。
+ * 处理所有会在运行时成为角色动作的文档：battle.json、world.json 和
+ * story-classes.json。职业选择页的 `playerActor` 开局后会合并进英雄动作，
+ * 漏掉它就会让角色请求已归档的原图。去重只改编译输出，不改源文件，
+ * 调试现场表的来源哈希不受影响；地图 JSON 用 prop 键，不在这里处理。
  */
 async function dedupeClipLayers(_sourceDir: string, files: SourceFile[], assetRoot = SOURCE_ASSETS): Promise<ClipDedupe> {
   const docs = new Map<string, unknown>();
-  for (const relative of ['battle.json', 'world.json']) {
+  for (const relative of ['battle.json', 'world.json', 'story-classes.json']) {
     const source = files.find(file => file.relative === relative);
     if (source) docs.set(relative, JSON.parse(await fs.readFile(source.absolute, 'utf8')));
   }

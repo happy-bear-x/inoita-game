@@ -37688,4 +37688,4 @@ export const CHARACTER_ATLAS_BY_FILE: Readonly<Record<string, CharacterAtlasEntr
     "prefix": "8dfa733f8d"
   }
 };
-export const CHARACTER_ATLAS_SOURCE_DIGEST = "1f804a14926096752d6a09ac2621ca173d94f82ff884f63831bd649b07754a1d";
+export const CHARACTER_ATLAS_SOURCE_DIGEST = "847d01b962f903cbe0f748d4ca4b59132e1b26f2af67256a0e32d81de6b56d11";
