@@ -9,7 +9,7 @@ import type { ChoiceOption } from '../src/domain/content.ts';
 import { parseCampaign, parseControlSkin } from '../src/application/content-validation.ts';
 
 const campaign = parseCampaign(JSON.parse(fs.readFileSync(new URL('../public/content/campaign.json', import.meta.url), 'utf8')));
-function harness(content: Campaign = campaign) {
+function harness(content: Campaign = campaign, overrides: Partial<StoryUI> = {}) {
   const session = new Session(content), lines: string[] = [], locks: boolean[] = [];
   let finish: (() => void) | undefined, choose: ((option: ChoiceOption) => void) | undefined;
   let cancel: (() => void) | undefined, flushes = 0;
@@ -23,7 +23,7 @@ function harness(content: Campaign = campaign) {
     }),
     choice: () => new Promise(resolve => { choose = resolve; }),
     async questPopup() {},
-    skipDialogue: () => finish?.(), closeDialogue: () => cancel?.(), toast() {}
+    skipDialogue: () => finish?.(), closeDialogue: () => cancel?.(), toast() {}, ...overrides
   };
   const director = new StoryDirector(content, session, ui, value => locks.push(value), { begin() {}, async execute() {}, async finish() {}, async flushStage() { flushes++; } });
   return { director, session, lines, locks, flushes: () => flushes, finish: () => finish?.(), choose: (option: ChoiceOption) => choose!(option) };
@@ -62,6 +62,23 @@ test('shared control skin rejects missing or external images', () => {
   const skin = JSON.parse(fs.readFileSync(new URL('../public/content/control-skin.json', import.meta.url), 'utf8'));
   parseControlSkin(skin); delete skin['skip-pressed']; assert.throws(() => parseControlSkin(skin), /skip-pressed/);
   skin['skip-pressed'] = 'https://example.com/icon.png'; assert.throws(() => parseControlSkin(skin), /内部资源/);
+});
+
+test('跳过落在界面建立对白等待之前时，导演仍会结束这一句并解锁', async () => {
+  const h = harness({ ...campaign, scripts: { ...campaign.scripts, demo: compileScript('demo', [
+    { type: 'dialogue', speaker: '', actor: null, text: '一句' },
+    { type: 'dialogue', speaker: '', actor: null, text: '两句' }
+  ]) } }, {
+    // 模拟按钮按下时界面还在准备立绘：等待尚未建立，skipDialogue 结束时无处可放。
+    dialogue: (_line, signal) => new Promise<void>((_resolve, reject) => {
+      signal?.addEventListener('abort', () => reject(new DOMException('cancelled', 'AbortError')), { once: true });
+    }),
+    skipDialogue: () => {}
+  });
+  const playing = h.director.trigger({ id: 'skip-before-pending', script: 'demo' });
+  await tick(); h.director.skip();
+  assert.equal(await playing, true);
+  assert.deepEqual(h.locks, [true, false]);
 });
 
 test('skip progress marks the final commit and actual input unlock in order', async () => {

@@ -352,7 +352,21 @@ export class StoryDirector {
     await this.project(signal);
   }
   private async dialogue(line: DialogueLine, signal = this.context?.signal ?? this.manual.signal): Promise<void> {
-    signal.throwIfAborted(); if (!this.skipping) await this.ui.dialogue(line, signal);
+    signal.throwIfAborted(); if (this.skipping) return;
+    const skip = this.skipRequest.signal;
+    if (skip.aborted) return;
+    // 跳过按钮可能落在对白等待还没交给界面的间隙里；这一句同时听跳过信号，
+    // 界面来不及结束时也不会把整段剧情挂住。
+    const controller = new AbortController();
+    const abort = () => controller.abort(signal.aborted ? signal.reason : skip.reason);
+    signal.addEventListener('abort', abort, { once: true }); skip.addEventListener('abort', abort, { once: true });
+    try { await this.ui.dialogue(line, controller.signal); }
+    catch (error) {
+      signal.throwIfAborted();
+      if (!skip.aborted) throw error;
+      this.ui.closeDialogue();
+    }
+    finally { signal.removeEventListener('abort', abort); skip.removeEventListener('abort', abort); }
   }
   private async choice(prompt: string, options: ChoiceOption[], description?: string, signal = this.context?.signal ?? this.manual.signal): Promise<ChoiceOption> {
     signal.throwIfAborted(); this.skipping = false; this.skipRequest = new AbortController(); this.choosing = true;
