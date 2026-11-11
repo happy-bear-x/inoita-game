@@ -429,7 +429,7 @@ async function startPressureTest(): Promise<void> {
   app.saveSlot = undefined;
   const menu = app.game!.scene.getScene(SCENE_KEYS.menu);
   menu.scene.start(SCENE_KEYS.world, { map: PRESSURE_MAP, x: PRESSURE_START.x, y: PRESSURE_START.y,
-    facing: 'south', initialEntry: true,
+    facing: 'south', initialEntry: true, suppressEntry: true,
     onReady: () => { app.storyUI?.prewarmBag(); void worldScene()?.startPressureSpawner(); } });
 }
 
