@@ -925,7 +925,7 @@ export class Session {
       const after=this.questBook.state(entry.quest.id)?.goals[entry.goal.id]??0;
       if(after<=(before.get(progressKey(entry.quest,entry.goal))??0))continue;
       advanced=true;
-      // 日志外任务照常计数，但和任务面板、场景标记一样不在玩家眼前提示。
+      // 日志外任务照常计数，但不在玩家交互时弹出目标提示。
       if(entry.quest.journal===false||!entry.goal.feedbackText||feedback.includes(entry.goal.feedbackText))continue;
       feedback.push(entry.goal.feedbackText);
     }
