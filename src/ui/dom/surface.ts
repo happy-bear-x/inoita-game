@@ -17,7 +17,7 @@ export class UiSurface {
   private cancelInput=()=>{for(const button of this.buttons)if(button.active)button.cancelPress();for(const scroll of this.scrolls)scroll.cancelGesture();};
   constructor(scene:Phaser.Scene,width:number,height:number,depth=100,layer='screen'){
     this.scene=scene;this.width=width;this.height=height;this.depth=depth;
-    this.mount=uiMount(scene,layer);this.root=new UiNode(scene,this.mount).setDepth(depth);this.staticRoot=new UiNode(scene,this.root);
+    this.mount=uiMount(scene,layer);this.root=new UiNode(scene,this.mount).setDepth(depth).setSize(width,height);this.staticRoot=new UiNode(scene,this.root);
     scene.game.events.on(UI_EVENTS.cancelInput,this.cancelInput);
   }
   layout(padding=12):void{
