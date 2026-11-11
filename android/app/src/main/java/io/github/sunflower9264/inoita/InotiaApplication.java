@@ -34,6 +34,11 @@ public class InotiaApplication extends Application {
         if (browserProcess) {
             PathUtils.setPrivateDataDirectorySuffix("cefrium");
             ApplicationStatus.initialize(this);
+            // 这些开关必须在引擎启动前设置。SDK 的 CefriumInitProvider 在本方法返回后
+            // 就会读取库预读开关，放到 onCreate 已经太晚。
+            Cefrium.setGpuProcessEnabled(true);
+            Cefrium.setLibraryPrefetchEnabled(false);
+            Cefrium.setComponentUpdatesEnabled(false);
         }
         // 让 SDK 自己的 CefriumInitProvider 不要再跑一遍：它在 Application 之后执行，
         // 重复设置 LibraryLoader 可能会在原生库已经加载后报错。
@@ -47,9 +52,6 @@ public class InotiaApplication extends Application {
         CrashLog.deviceInfo(this, "app-start");
         if (isChildProcess()) return;
         try {
-            // 离线游戏不需要 Chromium 的组件更新和预取；先关掉，避免启动时和原生库加载抢线程。
-            Cefrium.setLibraryPrefetchEnabled(false);
-            Cefrium.setComponentUpdatesEnabled(false);
             boolean initialized = Cefrium.initialize(this);
             if (!initialized) {
                 initializeError = "Cefrium.initialize 返回 false";

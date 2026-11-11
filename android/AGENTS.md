@@ -24,6 +24,7 @@
 - `index.html` 由本地服务在 `<head>` 最前面注入 `/__native/bootstrap.js`。这个脚本必须在模块脚本之前定义 `__inoitaEndpoints`、`__inoitaBuildInfo`、`window.InotiaNative` 和一次性存档迁移；不要改成只在 `loadUrl` 后注入。
 - `window.InotiaNative` 只是兼容层：`report()` 走 `/__native/report`，`markBootOk()` 走 `/__native/boot-ok`，`buildInfo()` 读 `__inoitaBuildInfo`，`setFrameRate(rate)` 走 `/__native/frame-rate`。页面代码继续按原接口调用。
 - **按玩家帧率选显示模式。** 壳收到 30/60/120 后，选一个刷新率是目标帧率整数倍的最低显示模式（30→60/90/120，60→60/120，120→120），写 `preferredDisplayModeId`；Android 11+ 再给 Surface 设同一个帧率。选好后把真实刷新率写进 `window.__inoitaDisplayHz` 并派发 `inoita-display-rate`，页面直接采用。整数倍保证每个游戏帧占整数个屏幕节拍；60 帧在 90Hz 上会反复在 1 个和 2 个节拍之间跳，所以不要固定请求最高刷新率。
+- `Cefrium.setGpuProcessEnabled(true)`、`setLibraryPrefetchEnabled(false)`、`setComponentUpdatesEnabled(false)` 都在 `attachBaseContext` 里、`Cefrium.setupProcess` 之前设置；SDK 的 `CefriumInitProvider` 在本方法返回后就会读预读开关，放到 `onCreate` 已经太晚。GPU 独立进程实测多约 21% 内存，没有帧率收益就回退。
 - `__inoitaEndpoints` 在 APK 内指向本地代理：`cloudBase = http://127.0.0.1:47653/__cloud`，`diagnosticsReport = http://127.0.0.1:47653/__diagnostics/report`；代理再转到 `config/endpoints.json` 派生地址，页面不写域名，也不受 CORS 影响。
 - **存档迁移只做一次**：旧 origin 是 `https://appassets.androidplatform.net`，新 origin 是本地地址。`SaveMigration` 先导出旧 `localStorage` 到 `filesDir/migration-localstorage.json`，`bootstrap.js` 写入后调用 `/__native/migration-done`，之后不再注入，避免覆盖新存档。
 - **热更只换网页层**。`UpdateManager.initialize()` 先读清单、发布不可变路径快照，再启动本地服务与浏览器；加载地址带 `?v=<buildId>`。清单不可用时降级为只读 APK 资源。
