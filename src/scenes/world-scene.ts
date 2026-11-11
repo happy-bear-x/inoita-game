@@ -1694,9 +1694,11 @@ export class WorldScene extends Phaser.Scene {
     this.controls?.setCooldowns(cooldowns);
     this.skillHud?.setCooldowns(cooldowns);
   }
-  /** 压测入口：世界就绪后每 0.9 秒尝试补一只敌人，上限由 WorldCombat 控制。 */
-  startPressureSpawner():void {
+  /** 压测入口：先补载刷怪用的敌人资源，再每 0.9 秒尝试生成一只。 */
+  async startPressureSpawner():Promise<void> {
     if(!this.app.pressureMode||this.pressureSpawner||!this.combat)return;
+    const ready=await this.combat.preparePressureEnemy(undefined,this.request.signal);
+    if(!ready||this.destroyed||!this.app.pressureMode||this.pressureSpawner)return;
     this.pressureSpawner=this.time.addEvent({delay:900,loop:true,callback:()=>{
       if(this.app.pressureMode)this.combat?.spawnPressureEnemy();
     }});

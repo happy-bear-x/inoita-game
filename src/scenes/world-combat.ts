@@ -161,8 +161,8 @@ export function enemyTapRect(actor:ActorDefinition):{x:number;y:number;width:num
 /** 所有 AI 每渲染帧共享的寻路扩展预算；一次扩展约几微秒，512 约 2–4 ms。 */
 const PATH_BUDGET_PER_RENDER_FRAME=512;
 
-/** 压测模式：只刷地图原生资源已加载的史莱姆，限制总量和玩家周围的生成距离。 */
-const PRESSURE_ENEMY_ID='enemy-slime-1';
+/** 压测模式：刷一个会主动放技能、无召唤/全屏技能的普通怪。 */
+const PRESSURE_ENEMY_ID='enemy-red-snake-1';
 const PRESSURE_MAX_ENEMIES=40;
 const PRESSURE_SPAWN_MIN_DISTANCE=96;
 const PRESSURE_SPAWN_MAX_DISTANCE=240;
@@ -251,6 +251,8 @@ export class WorldCombat {
   private playerAssets?:AssetLease;
   private restoredAssets?:AssetLease;
   private storyAssets?:AssetLease;
+  /** 压测敌人的角色图集与技能特效；只加载一次，保留到战斗销毁。 */
+  private pressureAssets?:AssetLease;
   /** 玩家/伙伴补载的增量素材租约，按 owner 分组；直到关闭地图才释放。 */
   private readonly extraSkillLeases=new Map<string,AssetLease[]>();
   private readonly preparedSkillIds=new Map<string,ReadonlySet<string>>();
@@ -2927,6 +2929,18 @@ captureStoryActors():SceneActorState[] {
     this.stopEnemies();this.movement.stop(this.controlledVisual);
     this.scene.handleCombatDefeat();
   }
+  /** 压测开始前加载刷怪用的敌人资源；缺图时直接失败，不启动刷怪。 */
+  async preparePressureEnemy(enemyId=PRESSURE_ENEMY_ID,signal?:AbortSignal):Promise<boolean> {
+    if(this.closed)return false;
+    const definition=this.app.battleCatalog.enemies.find(enemy=>enemy.id===enemyId);
+    if(!definition)return false;
+    const lease=await loadSceneAssets(this.scene,this.enemyAssets(definition),()=>{},true);
+    if(this.closed||signal?.aborted){lease.release();return false;}
+    this.pressureAssets?.release();this.pressureAssets=lease;
+    // 音效不参与等待；缺声音不影响刷怪。
+    void this.app.audio?.prepareCombat([],[],{enemyIds:[enemyId]}).catch(()=>{});
+    return true;
+  }
   /**
    * 压测刷怪：在玩家周围找一个整个碰撞盒都站得下的随机点，按正式实例路径生成敌人。
    * 找不到合法点时返回 false，让下一次刷怪再试，不把敌人塞进墙里或人堆里。
@@ -3173,6 +3187,7 @@ captureStoryActors():SceneActorState[] {
     this.allySkillGates.clear();this.skillAssetFailures.clear();
     this.restoredAssets?.release();this.restoredAssets=undefined;
     this.storyAssets?.release();this.storyAssets=undefined;
+    this.pressureAssets?.release();this.pressureAssets=undefined;
   }
 
 }
