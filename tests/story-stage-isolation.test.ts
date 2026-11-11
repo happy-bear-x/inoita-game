@@ -52,6 +52,18 @@ test('the initial curtain is drawn during create before readiness and survives m
   assert.deepEqual(occlusions, [false, false], 'shutdown 后正式世界恢复可见');
 });
 
+test('create failure reaches the caller waiting for the stage', () => {
+  const events = new EventEmitter(), errors: unknown[] = [];
+  const scene = new StoryStageScene({} as StoryContext);
+  Object.assign(scene, { events, scale: Object.assign(new EventEmitter(), { width: 320, height: 200 }),
+    cameras: { main: { setBackgroundColor() {} } }, input: {},
+    scene: { get: () => ({ setStageOccluded() {} }) },
+    add: { rectangle() { throw new Error('rectangle failed'); } }
+  });
+  assert.throws(() => scene.create({ initialCurtain: { opacity: 1, color: 0 }, onReady() {}, onError: error => errors.push(error) }), /rectangle failed/);
+  assert.equal(errors.length, 1, '启动失败必须结算等待者');
+});
+
 test('the stage backdrop turns opaque only after a map is drawn and transparent on release', async () => {
   const colors: string[] = [];
   const map = { id: 'small', name: 'Small', width: 256, height: 448, columns: 16, rows: 28,
@@ -781,6 +793,18 @@ test('skipping stage startup returns before CREATE and a choice reuses the pendi
   const choice = run.presenter.flushStage(signal); await new Promise(resolve => setImmediate(resolve));
   assert.equal(launches, 1, '选项补画复用正在启动的舞台'); active = true; created(); await choice;
   assert.equal(run.rendered(), 1); await run.presenter.release();
+});
+
+test('stage startup failure settles the waiting begin and release', async () => {
+  const run = harness(), signal = new AbortController().signal;
+  run.stage.sys.isActive = () => false;
+  run.world.scene.launch = (_key, options: { onError: (error: unknown) => void }) => {
+    options.onError(new Error('stage create failed'));
+    return run.world.scene;
+  };
+  run.world.scene.moveAbove = () => run.world.scene;
+  await assert.rejects(run.presenter.begin(signal), /stage create failed/);
+  await run.presenter.release();
 });
 
 test('skipping on-demand actor preparation still commits its logical placement', async () => {

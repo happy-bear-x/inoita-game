@@ -34,7 +34,7 @@ Phaser 场景层：驱动生命周期、转发输入，把 domain、rendering、
 - `WorldScene.interact()` 把附近目标、任务槽和商店状态交给 `domain/interaction.ts` 的 `resolveInteraction`；选目标的 `updateInteractionTarget` 先按距离挑最近的一个，距离相同时再比交互档位：推进任务目标或待交付为 0，头顶有任务标记为 1，普通可交互对象为 2。任务 NPC 不能因为同格普通 NPC 排在人物数组前面而失去交互。交互前场景把角色转向目标，朝向不参与能否交互的判定。
 - 有商店的 NPC 无论有没有招呼语，都算可交互目标；交互优先级仍由 `resolveInteraction` 决定。
 - 掉落落点用 `lootLanding` 避开地图进出口；不要把物品图标落在门洞上。
-- 舞台 `CREATE` 完成时始终交付 `onReady` 生命周期通知；等待画面的请求可独立取消，补画和收尾复用同一次启动。舞台衣柜准备接收画面取消信号，共用合成只在最后一个请求取消后中止。
+- 舞台 `CREATE` 完成时始终交付 `onReady` 生命周期通知；启动过程抛错或在就绪前关闭时交付 `onError`，等待者不会悬空。等待画面的请求可独立取消，补画和收尾复用同一次启动。舞台衣柜准备接收画面取消信号，共用合成只在最后一个请求取消后中止。
 - 世界与舞台的 `Wardrobe` 使用 `StoryContext.outfits` 共用合成外观；场景关闭只释放自己的使用权，跨图不重复生成同一套动作。
 - 剧情舞台只先准备待机、行走与恢复快照中的当前动作；`prepareClipAssets` 和 `prepareEffectAssets` 在实际动作前取得资源，重复动作复用本舞台持有的清单，取消或换幕只释放对应旧请求。
 - **伙伴基础动作常驻（标题页先预载，进图快速复用），技能动作按使用者加载。** 队伍面板预览只准备 `idle-south`，招募确认后调用 `preparePartyMember(...,{full:true,pin:true})` 预拼整套并 pin（最多两套），上阵/进战斗直接复用。技能动作和特效按成员已学技能装载，学新技能后由 `scheduleSkillAssetRefresh` 补，并在素材就绪后重拼整套外观。

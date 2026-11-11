@@ -126,7 +126,7 @@ export class StoryPresenter implements StoryPresentationPort {
     // 实际 CREATE 只登记一次；跳过取消等待后，补画与收尾仍能等待同一个启动结果。
     const opening = new Promise<void>((resolve, reject) => {
       try {
-        this.world().scene.launch(SCENE_KEYS.storyStage, { signal, onReady: resolve, initialCurtain });
+        this.world().scene.launch(SCENE_KEYS.storyStage, { signal, onReady: resolve, onError: reject, initialCurtain });
         this.world().scene.moveAbove('world', 'story-stage');
       } catch (error) { reject(error); }
     });

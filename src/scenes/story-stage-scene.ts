@@ -58,22 +58,33 @@ export class StoryStageScene extends Phaser.Scene {
     super({ key: SCENE_KEYS.storyStage, physics: { default: 'arcade', arcade: { gravity: { x: 0, y: 0 }, debug: false } } });
     this.app = app;
   }
-  create(options?: { signal?: AbortSignal; onReady?: () => void; initialCurtain?: StoryCurtain }): void {
-    // 首幕/淡入阶段舞台还没有地图，保持透明让正式世界可见；
-    // 第一次成功画出舞台地图后由 showStage 切换为不透明。
-    this.setWorldCovered(false);
-    this.input.enabled = false;
-    if (options?.initialCurtain && !options.signal?.aborted) this.showInitialCurtain(options.initialCurtain);
-    this.scale.on('resize', this.resizeView, this);
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      this.revision++;
-      this.scale.off('resize', this.resizeView, this);
-      this.releaseStage();
-      this.wardrobes.clear();
-    });
-    this.events.once(Phaser.Scenes.Events.CREATE, () => {
-      options?.onReady?.();
-    });
+  create(options?: { signal?: AbortSignal; onReady?: () => void; onError?: (error: unknown) => void; initialCurtain?: StoryCurtain }): void {
+    // 等待舞台启动的调用方靠 onReady 结算；启动中途失败或就绪前关闭也必须结算，
+    // 否则收尾会一直等一个永远不会来的 CREATE。
+    let ready = false;
+    const fail = (error: unknown) => { if (!ready) options?.onError?.(error); };
+    try {
+      // 首幕/淡入阶段舞台还没有地图，保持透明让正式世界可见；
+      // 第一次成功画出舞台地图后由 showStage 切换为不透明。
+      this.setWorldCovered(false);
+      this.input.enabled = false;
+      if (options?.initialCurtain && !options.signal?.aborted) this.showInitialCurtain(options.initialCurtain);
+      this.scale.on('resize', this.resizeView, this);
+      this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+        this.revision++;
+        this.scale.off('resize', this.resizeView, this);
+        this.releaseStage();
+        this.wardrobes.clear();
+        fail(new Error('剧情舞台在就绪前关闭'));
+      });
+      this.events.once(Phaser.Scenes.Events.CREATE, () => {
+        ready = true;
+        options?.onReady?.();
+      });
+    } catch (error) {
+      fail(error);
+      throw error;
+    }
   }
   showInitialCurtain(curtain: StoryCurtain): void {
     this.clearEarlyCurtain();
