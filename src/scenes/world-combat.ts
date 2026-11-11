@@ -3097,7 +3097,7 @@ captureStoryActors():SceneActorState[] {
     this.feedback.setPaused(!enabled||this.defeated);
     this.syncStateMarkers(enabled&&!this.performanceHidden&&!this.defeated);
     this.setPaused(!enabled||this.defeated);
-    this.syncFocusRings(enabled&&!this.performanceHidden&&!this.defeated);
+    this.syncFocusRings(enabled&&!this.performanceHidden&&!this.defeated,delta);
     if(!enabled||this.defeated){
       this.syncBuffLoops();
       // 队伍已全灭但死亡演出被暂停或重建清掉时，结算不能一直等下去。
@@ -3143,7 +3143,7 @@ captureStoryActors():SceneActorState[] {
     if(tickBefore!==this.app.session.combatTick)this.scene.refreshSkillCooldowns(this.cooldowns);
     this.syncBuffLoops();
   }
-  private syncFocusRings(shown:boolean):void{
+  private syncFocusRings(shown:boolean,delta:number):void{
     const rings=this.focusRings;if(!rings)return;
     const controlled=this.controlledVisual;
     const alive=(this.memberOf(this.controlledId)?.player.health??0)>0;
@@ -3152,7 +3152,7 @@ captureStoryActors():SceneActorState[] {
     const targetId=controller?controller.selectedTargetId():this.targetId;
     const target=targetId&&!this.pendingDefeats.has(targetId)?this.visualOf(targetId):undefined;
     const targetPoint=shown&&target?.container.active?this.movement.displayPosition(target):undefined;
-    rings.update(player,targetPoint,targetPoint?targetId:undefined,shown);
+    rings.update(player,targetPoint,targetPoint?targetId:undefined,shown,delta);
   }
   /** 规则状态统一在这里变成只读表现：眩晕用金色星星，睡眠用 Zzz；都不参与结算。 */
   private syncStateMarkers(shown:boolean):void{

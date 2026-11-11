@@ -16,7 +16,7 @@
 - 本目录只读取 `domain` 状态并绘制，规则变化和存档写入留在 `domain` 与 `application`。
 - `Hud.watchVisibility` 将所属场景的暂停、睡眠与恢复状态传给 DOM 状态栏；组件关闭时注销监听，场景销毁时统一隐藏。
 - 拾取提示是画布外的 DOM 元素，每帧按当前镜头投影定位。
-- **脚下选中圈常驻。** `TargetFocus` 的绿圈跟当前受控角色，红圈跟该角色的当前目标；换目标后按原版 17 帧做 80%..130% 缩放脉冲，之后常亮。位置用 `displayPosition` 的脚点，深度取 `y - 0.5`，画在角色脚下；两张 24×18 小图不进 UI 图集，按原始路径走公共常驻包，切图与战斗结束都不释放。
+- **脚下选中圈常驻。** `TargetFocus` 的绿圈跟当前受控角色，红圈跟该角色的当前目标；换目标后按原版 17 帧（30fps，约 567ms）做 80%..130% 缩放脉冲，之后常亮；脉冲按真实耗时推进，120/144Hz 屏不会播得更快。位置用 `displayPosition` 的脚点，深度取 `y - 0.5`，画在角色脚下；两张 24×18 小图不进 UI 图集，按原始路径走公共常驻包，切图与战斗结束都不释放。
 - **头顶任务图标画在独立高深度层。** `quest-marker.ts` 的 `QuestMarker` 是世界场景自己的图片，深度 `10001`，高于树冠 `10000` 和前景物件；位置由 `WorldScene` 只对有标记的角色更新，舞台遮挡和人物显隐同步到图标。只有任务状态变化时换图，不逐帧扫全图。三张状态图进共享入口素材，小地图那份 DOM 图片另由资源池持有。
 - 屏幕状态栏与小地图的图片由 DOM 资源池持有；地图贴图计划只为头顶血条保留 `overhead-frame` 和 `overhead-leader`。
 - **职业与伙伴基础动作在标题页预载，技能动作按已学技能补齐。** `residentCombatAssets` 的 `baseOnlyClasses`/`baseOnlyCompanions` 只装非 `skill-` 动作；标题页公共预载所有职业与伙伴的基础动作。进图常驻包只传主角与已拥有成员的 `classIds`，这些职业的完整动作整套常驻；未拥有成员的技能动作不常驻，已学技能特效、召唤物和图标按技能配置补齐。构建期省略这些过滤，保留全量覆盖校验。
@@ -54,7 +54,7 @@
 - `npm test -- tests/buff-loop-renderer.test.ts`：状态图标循环表现。
 - `npm test -- tests/movement-content-recovery.test.ts`：内容机关压住队伍单位后的自愈。
 - `npm test -- tests/state-markers.test.ts`：眩晕/睡眠状态标记的创建与销毁。
-- `npm test -- tests/target-focus-pulse.test.ts`：脚下选中圈换目标后的 17 帧缩放脉冲。
+- `npm test -- tests/target-focus-pulse.test.ts`：脚下选中圈换目标后的 17 帧（30fps）缩放脉冲与按耗时推进。
 - `npm test -- tests/story-skip.test.ts tests/story-stage-isolation.test.ts`：跳过剧情不重建舞台，选择与任务弹窗前按逻辑快照补画。
 
 - 特效容器持有当前动画贴图到销毁；转向飞弹另持有全部方向。循环效果缺图时保留逻辑状态，素材到齐后重建，按当前帧龄显示。
