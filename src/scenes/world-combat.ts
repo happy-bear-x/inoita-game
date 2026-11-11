@@ -1969,7 +1969,8 @@ captureStoryActors():SceneActorState[] {
       if(hit.kind==='shield-block'&&this.memberOf(event.targetId)&&this.claimHitFeedback(event.casterId,'shield'))this.app.audio?.shieldBlock();
     }
     if(hit.damage>0){
-      if(caster&&this.claimHitFeedback(event.casterId,'attack'))this.app.audio?.monsterAttack(caster.definition.id);
+      // 持续伤害只是跳伤，不是怪物挥击；挥击声只在真正的攻击命中时响。
+      if(!options.periodic&&caster&&this.claimHitFeedback(event.casterId,'attack'))this.app.audio?.monsterAttack(caster.definition.id);
       if(options.periodic&&target&&this.claimHitFeedback(event.casterId,'periodic'))this.app.audio?.periodicDamage();
     }
   }
