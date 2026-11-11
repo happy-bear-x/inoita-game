@@ -3149,7 +3149,12 @@ captureStoryActors():SceneActorState[] {
     const alive=(this.memberOf(this.controlledId)?.player.health??0)>0;
     const player=shown&&alive?this.movement.displayPosition(controlled):undefined;
     const controller=this.partyControllers.get(this.controlledId);
-    const targetId=controller?controller.selectedTargetId():this.targetId;
+    // 摇杆移动会清掉受控角色的选中目标，但正在进行的动作和队友的攻击目标可能还在。
+    // 红圈优先跟着实际动作目标，其次跟队友正在打的目标，避免佣兵还在打却看不到圈。
+    const targetId=controller?.activeAction()?.targetId
+      ??controller?.selectedTargetId()
+      ??this.partyTarget()
+      ??this.focusTargetId;
     const target=targetId&&!this.pendingDefeats.has(targetId)?this.visualOf(targetId):undefined;
     const targetPoint=shown&&target?.container.active?this.movement.displayPosition(target):undefined;
     rings.update(player,targetPoint,targetPoint?targetId:undefined,shown,delta);
