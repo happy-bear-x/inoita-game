@@ -50,6 +50,19 @@ test('format 41 saves with the removed counterattack settings still restore',()=
   assert.deepEqual(saved,before,'升级不改写槽里的原件');
 });
 
+test('format 43 saves drop quests removed from the campaign',()=>{
+  const saved=record(),removed=['quest-8','quest-19','quest-20','quest-101','quest-451','quest-488','quest-504','quest-505','quest-506'];
+  saved.format=43;
+  for(const id of removed)saved.session.questBook.quests.push([id,{status:'locked',cycle:0,completedCycles:0,goals:{}}]);
+  saved.session.trackedQuest=removed[0];
+  saved.session.receipts.push({quest:removed[1],cycle:1,reward:{experience:0,money:0,items:[]}});
+  const before=structuredClone(saved),candidate=prepareSavedGame(saved,content),state=candidate.session.captureState();
+  assert.equal(state.questBook.quests.some(([id])=>removed.includes(id)),false,'旧档里的已删任务不再恢复');
+  assert.equal(state.trackedQuest,undefined,'追踪到已删任务的旧档清除追踪');
+  assert.equal(state.receipts.some(receipt=>removed.includes(receipt.quest)),false,'已删任务的结算回执一并清除');
+  assert.deepEqual(saved,before,'升级不改写槽里的原件');
+});
+
 test('each class restores into a fresh candidate and retains its destination, resources and inventory',()=>{
   for(let index=0;index<content.storyClasses.classes.length;index++){
     const saved=record(index),before=structuredClone(saved),candidate=prepareSavedGame(saved,content);

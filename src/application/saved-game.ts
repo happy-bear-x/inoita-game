@@ -24,6 +24,8 @@ const CURSED_GHOST_ENEMY='enemy-cursed-ghost-1';
 const CURSED_GHOST_SPAWNS=new Set(Array.from({length:7},(_,index)=>
   `${NOXIOUS_HALL_MAP}-spawn-${String(index+1).padStart(3,'0')}`));
 const absentEnemyFlag=(map:string,enemyId:string)=>JSON.stringify(['absent-enemy',map,enemyId]);
+/** 43 版之前所有任务都会写进存档；这些日志外废案删除后，旧档升级时一并清掉。 */
+const REMOVED_QUESTS=new Set(['quest-8','quest-19','quest-20','quest-101','quest-451','quest-488','quest-504','quest-505','quest-506']);
 interface SavedStoryRuntime {runs?:{eventId?:string;status?:string}[];completedEvents?:string[]}
 /** 事件已结束或从未开始时不压制；只有它正在演出或等待战斗时才保留清场标记。 */
 function eventInProgress(runtime:SavedStoryRuntime|undefined,eventId:string):boolean {
@@ -150,6 +152,15 @@ const SAVE_UPGRADES:Record<number,SaveUpgrade>={
   /** 42 → 43：摘要增加可选的存档截图；旧档没有截图，存档页不画图片。 */
   42:game=>{
     game.format=43;
+  },
+  /** 43 → 44：删除 9 条日志外废案；旧档的任务簿、运行池、回执与追踪一并清理。 */
+  43:game=>{
+    const session=game.session;
+    session.questBook.quests=session.questBook.quests.filter(([id])=>!REMOVED_QUESTS.has(id));
+    session.questBook.runningQuestIds=session.questBook.runningQuestIds.filter(id=>!REMOVED_QUESTS.has(id));
+    session.receipts=session.receipts.filter(receipt=>!REMOVED_QUESTS.has(receipt.quest));
+    if(session.trackedQuest&&REMOVED_QUESTS.has(session.trackedQuest))delete session.trackedQuest;
+    game.format=44;
   },
 };
 function upgradeSavedGame(game:SaveGame<StoryWorldViewSnapshot>):SaveGame<StoryWorldViewSnapshot>{

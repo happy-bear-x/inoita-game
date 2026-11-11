@@ -280483,35 +280483,6 @@
           ],
           "commands": [],
           "exit": {
-            "type": "branch",
-            "condition": {
-              "type": "quest",
-              "quest": "quest-504",
-              "status": "completed"
-            },
-            "then": {
-              "script": "event-596",
-              "node": "scene-3"
-            },
-            "otherwise": {
-              "script": "event-596",
-              "node": "scene-2"
-            }
-          }
-        },
-        {
-          "id": "scene-2",
-          "presentation": [],
-          "commands": [
-            {
-              "type": "quest",
-              "command": {
-                "type": "script-complete",
-                "quest": "quest-504"
-              }
-            }
-          ],
-          "exit": {
             "type": "next",
             "target": {
               "script": "event-596",
@@ -280704,35 +280675,6 @@
             }
           ],
           "commands": [],
-          "exit": {
-            "type": "branch",
-            "condition": {
-              "type": "quest",
-              "quest": "quest-505",
-              "status": "completed"
-            },
-            "then": {
-              "script": "event-598",
-              "node": "scene-3"
-            },
-            "otherwise": {
-              "script": "event-598",
-              "node": "scene-2"
-            }
-          }
-        },
-        {
-          "id": "scene-2",
-          "presentation": [],
-          "commands": [
-            {
-              "type": "quest",
-              "command": {
-                "type": "script-complete",
-                "quest": "quest-505"
-              }
-            }
-          ],
           "exit": {
             "type": "next",
             "target": {
@@ -280927,35 +280869,6 @@
           ],
           "commands": [],
           "exit": {
-            "type": "branch",
-            "condition": {
-              "type": "quest",
-              "quest": "quest-506",
-              "status": "completed"
-            },
-            "then": {
-              "script": "event-600",
-              "node": "scene-3"
-            },
-            "otherwise": {
-              "script": "event-600",
-              "node": "scene-2"
-            }
-          }
-        },
-        {
-          "id": "scene-2",
-          "presentation": [],
-          "commands": [
-            {
-              "type": "quest",
-              "command": {
-                "type": "script-complete",
-                "quest": "quest-506"
-              }
-            }
-          ],
-          "exit": {
             "type": "next",
             "target": {
               "script": "event-600",
@@ -281050,28 +280963,8 @@
       ]
     },
     "event-601": {
-      "entry": "scene-1",
+      "entry": "scene-2",
       "nodes": [
-        {
-          "id": "scene-1",
-          "presentation": [],
-          "commands": [
-            {
-              "type": "quest",
-              "command": {
-                "type": "reset",
-                "quest": "quest-504"
-              }
-            }
-          ],
-          "exit": {
-            "type": "next",
-            "target": {
-              "script": "event-601",
-              "node": "scene-2"
-            }
-          }
-        },
         {
           "id": "scene-2",
           "presentation": [],
@@ -281144,26 +281037,6 @@
             "type": "next",
             "target": {
               "script": "event-602",
-              "node": "scene-2"
-            }
-          }
-        },
-        {
-          "id": "scene-2",
-          "presentation": [],
-          "commands": [
-            {
-              "type": "quest",
-              "command": {
-                "type": "reset",
-                "quest": "quest-505"
-              }
-            }
-          ],
-          "exit": {
-            "type": "next",
-            "target": {
-              "script": "event-602",
               "node": "scene-3"
             }
           }
@@ -281213,26 +281086,6 @@
               "command": {
                 "type": "reset",
                 "quest": "quest-503"
-              }
-            }
-          ],
-          "exit": {
-            "type": "next",
-            "target": {
-              "script": "event-603",
-              "node": "scene-2"
-            }
-          }
-        },
-        {
-          "id": "scene-2",
-          "presentation": [],
-          "commands": [
-            {
-              "type": "quest",
-              "command": {
-                "type": "reset",
-                "quest": "quest-506"
               }
             }
           ],
@@ -296171,22 +296024,9 @@
       "source": "near",
       "script": "event-595",
       "condition": {
-        "type": "all",
-        "conditions": [
-          {
-            "type": "quest",
-            "quest": "quest-492",
-            "status": "completed"
-          },
-          {
-            "type": "not",
-            "condition": {
-              "type": "quest",
-              "quest": "quest-504",
-              "status": "accepted"
-            }
-          }
-        ]
+        "type": "quest",
+        "quest": "quest-492",
+        "status": "completed"
       },
       "near": "robbins-76d09f5c",
       "nearCharacterId": "npc-362",
@@ -296224,22 +296064,9 @@
       "source": "near",
       "script": "event-597",
       "condition": {
-        "type": "all",
-        "conditions": [
-          {
-            "type": "quest",
-            "quest": "quest-494",
-            "status": "completed"
-          },
-          {
-            "type": "not",
-            "condition": {
-              "type": "quest",
-              "quest": "quest-505",
-              "status": "accepted"
-            }
-          }
-        ]
+        "type": "quest",
+        "quest": "quest-494",
+        "status": "completed"
       },
       "near": "milriah-2e303d53",
       "nearCharacterId": "npc-363",
@@ -296277,22 +296104,9 @@
       "source": "near",
       "script": "event-599",
       "condition": {
-        "type": "all",
-        "conditions": [
-          {
-            "type": "quest",
-            "quest": "quest-498",
-            "status": "completed"
-          },
-          {
-            "type": "not",
-            "condition": {
-              "type": "quest",
-              "quest": "quest-506",
-              "status": "accepted"
-            }
-          }
-        ]
+        "type": "quest",
+        "quest": "quest-498",
+        "status": "completed"
       },
       "near": "dark-sorcerer-kane-369ccd17",
       "nearCharacterId": "npc-364",
@@ -297045,55 +296859,6 @@
       }
     },
     {
-      "id": "quest-8",
-      "title": "贝勒塞骑士团的铠甲",
-      "description": "贝勒塞骑士团的铠甲",
-      "guidance": {
-        "available": "贝勒塞骑士团的铠甲",
-        "active": "贝勒塞骑士团的铠甲"
-      },
-      "completion": "internal",
-      "journal": false,
-      "repeat": false,
-      "goals": [],
-      "onAcceptItems": [],
-      "itemCompletion": "all",
-      "availableWhen": {
-        "type": "all",
-        "conditions": [
-          {
-            "type": "quest",
-            "quest": "knight-uniform",
-            "status": "completed"
-          }
-        ]
-      },
-      "handoverItems": [],
-      "rewards": {
-        "experience": 0,
-        "money": 0,
-        "items": []
-      },
-      "offerScript": null,
-      "completeScript": null,
-      "progressText": "贝勒塞骑士团的铠甲",
-      "completeText": "贝勒塞骑士团的铠甲",
-      "places": {
-        "available": {
-          "type": "unavailable",
-          "reason": "原版未找到接取入口：没有接取人物或接取指令"
-        },
-        "active": {
-          "type": "unavailable",
-          "reason": "原版没有把这个任务推进过任何状态"
-        },
-        "ready": {
-          "type": "unavailable",
-          "reason": "原版没有把这个任务推进过任何状态"
-        }
-      }
-    },
-    {
       "id": "quest-9",
       "title": "汇合圣女救援队",
       "description": "为了加入圣女救援队，需要把$R贝伦多的推荐书$B送给$R哈怒恩丛林1$B里的$S莱曼$B。$R哈怒恩丛林1$B就在$R帝国首都$B的$R东南边$B。",
@@ -297717,716 +297482,6 @@
           "x": 104,
           "y": 488,
           "source": "quest-delivery"
-        }
-      }
-    },
-    {
-      "id": "quest-19",
-      "title": "导入战斗01任务",
-      "description": "导入战斗01任务",
-      "guidance": {
-        "available": "导入战斗01任务",
-        "active": "导入战斗01任务"
-      },
-      "completion": "all",
-      "journal": false,
-      "repeat": false,
-      "goals": [
-        {
-          "id": "objective",
-          "kind": "defeat",
-          "target": "enemy-berkel-soldier-3",
-          "quantity": 1,
-          "label": "贝勒塞士兵"
-        },
-        {
-          "id": "objective-1",
-          "kind": "defeat",
-          "target": "enemy-berkel-soldier-4",
-          "quantity": 1,
-          "label": "贝勒塞士兵"
-        },
-        {
-          "id": "objective-2",
-          "kind": "defeat",
-          "target": "enemy-berkel-soldier-5",
-          "quantity": 1,
-          "label": "贝勒塞士兵"
-        }
-      ],
-      "onAcceptItems": [],
-      "itemCompletion": "all",
-      "availableWhen": {
-        "type": "all",
-        "conditions": []
-      },
-      "handoverItems": [],
-      "rewards": {
-        "experience": 0,
-        "money": 0,
-        "items": []
-      },
-      "offerScript": null,
-      "completeScript": null,
-      "progressText": "导入战斗01任务",
-      "completeText": "导入战斗01任务",
-      "places": {
-        "available": {
-          "type": "unavailable",
-          "reason": "原版未找到接取入口：没有接取人物或接取指令"
-        },
-        "active": {
-          "type": "alternatives",
-          "spots": [
-            {
-              "map": "berkel-capital",
-              "x": 408,
-              "y": 184,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "berkel-church-monastery-1-16c1f7e2",
-              "x": 408,
-              "y": 184,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "blackhoods-hideout-86afa206",
-              "x": 392,
-              "y": 216,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "drow-fortress-1-b648f447",
-              "x": 408,
-              "y": 152,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "drow-fortress-3-ed91ddeb",
-              "x": 376,
-              "y": 168,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "drow-s-soul-district-1-0a15bce1",
-              "x": 408,
-              "y": 184,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "fort-of-screams-floor-3-c78c50b3",
-              "x": 408,
-              "y": 168,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "goblin-s-lair-2-49c1710f",
-              "x": 408,
-              "y": 184,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "mayor-s-house-basement-1-474a8755",
-              "x": 408,
-              "y": 184,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "oogle-habitat-3-85b56ac1",
-              "x": 408,
-              "y": 152,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "sealed-dungeon-1-1-78024c9d",
-              "x": 408,
-              "y": 184,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "sealed-dungeon-1-2-c824bb14",
-              "x": 408,
-              "y": 184,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "shadow-forest-east",
-              "x": 408,
-              "y": 184,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "shadow-forest-west",
-              "x": 456,
-              "y": 440,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "shadow-forest-west",
-              "x": 504,
-              "y": 408,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "shadow-forest-west",
-              "x": 504,
-              "y": 488,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "shadow-forest-west",
-              "x": 552,
-              "y": 440,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "silent-cave-depths",
-              "x": 152,
-              "y": 200,
-              "source": "enemy-spawn"
-            }
-          ]
-        },
-        "ready": {
-          "type": "alternatives",
-          "spots": [
-            {
-              "map": "berkel-capital",
-              "x": 408,
-              "y": 184,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "berkel-church-monastery-1-16c1f7e2",
-              "x": 408,
-              "y": 184,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "blackhoods-hideout-86afa206",
-              "x": 392,
-              "y": 216,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "drow-fortress-1-b648f447",
-              "x": 408,
-              "y": 152,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "drow-fortress-3-ed91ddeb",
-              "x": 376,
-              "y": 168,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "drow-s-soul-district-1-0a15bce1",
-              "x": 408,
-              "y": 184,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "fort-of-screams-floor-3-c78c50b3",
-              "x": 408,
-              "y": 168,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "goblin-s-lair-2-49c1710f",
-              "x": 408,
-              "y": 184,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "mayor-s-house-basement-1-474a8755",
-              "x": 408,
-              "y": 184,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "oogle-habitat-3-85b56ac1",
-              "x": 408,
-              "y": 152,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "sealed-dungeon-1-1-78024c9d",
-              "x": 408,
-              "y": 184,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "sealed-dungeon-1-2-c824bb14",
-              "x": 408,
-              "y": 184,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "shadow-forest-east",
-              "x": 408,
-              "y": 184,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "shadow-forest-west",
-              "x": 456,
-              "y": 440,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "shadow-forest-west",
-              "x": 504,
-              "y": 408,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "shadow-forest-west",
-              "x": 504,
-              "y": 488,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "shadow-forest-west",
-              "x": 552,
-              "y": 440,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "silent-cave-depths",
-              "x": 152,
-              "y": 200,
-              "source": "quest-ready-nearby"
-            }
-          ]
-        }
-      }
-    },
-    {
-      "id": "quest-20",
-      "title": "导入战斗02任务",
-      "description": "导入战斗02任务",
-      "guidance": {
-        "available": "导入战斗02任务",
-        "active": "导入战斗02任务"
-      },
-      "completion": "all",
-      "journal": false,
-      "repeat": false,
-      "goals": [
-        {
-          "id": "objective",
-          "kind": "defeat",
-          "target": "enemy-berkel-soldier-2",
-          "quantity": 1,
-          "label": "贝勒塞士兵"
-        },
-        {
-          "id": "objective-1",
-          "kind": "defeat",
-          "target": "enemy-berkel-soldier-3",
-          "quantity": 1,
-          "label": "贝勒塞士兵"
-        },
-        {
-          "id": "objective-2",
-          "kind": "defeat",
-          "target": "enemy-berkel-soldier-4",
-          "quantity": 1,
-          "label": "贝勒塞士兵"
-        }
-      ],
-      "onAcceptItems": [],
-      "itemCompletion": "all",
-      "availableWhen": {
-        "type": "all",
-        "conditions": []
-      },
-      "handoverItems": [],
-      "rewards": {
-        "experience": 0,
-        "money": 0,
-        "items": []
-      },
-      "offerScript": null,
-      "completeScript": null,
-      "progressText": "导入战斗02任务",
-      "completeText": "导入战斗02任务",
-      "places": {
-        "available": {
-          "type": "unavailable",
-          "reason": "原版未找到接取入口：没有接取人物或接取指令"
-        },
-        "active": {
-          "type": "alternatives",
-          "spots": [
-            {
-              "map": "berkel-capital",
-              "x": 408,
-              "y": 184,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "berkel-capital",
-              "x": 472,
-              "y": 120,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "berkel-church-monastery-1-16c1f7e2",
-              "x": 408,
-              "y": 184,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "berkel-church-monastery-1-16c1f7e2",
-              "x": 472,
-              "y": 120,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "blackhoods-hideout-86afa206",
-              "x": 392,
-              "y": 216,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "drow-fortress-1-b648f447",
-              "x": 408,
-              "y": 152,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "drow-fortress-1-b648f447",
-              "x": 472,
-              "y": 120,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "drow-fortress-3-ed91ddeb",
-              "x": 376,
-              "y": 136,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "drow-fortress-3-ed91ddeb",
-              "x": 376,
-              "y": 168,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "drow-s-soul-district-1-0a15bce1",
-              "x": 408,
-              "y": 184,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "drow-s-soul-district-1-0a15bce1",
-              "x": 472,
-              "y": 120,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "fort-of-screams-floor-3-c78c50b3",
-              "x": 408,
-              "y": 168,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "fort-of-screams-floor-3-c78c50b3",
-              "x": 456,
-              "y": 120,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "goblin-s-lair-2-49c1710f",
-              "x": 408,
-              "y": 184,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "goblin-s-lair-2-49c1710f",
-              "x": 472,
-              "y": 120,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "mayor-s-house-basement-1-474a8755",
-              "x": 408,
-              "y": 184,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "mayor-s-house-basement-1-474a8755",
-              "x": 472,
-              "y": 120,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "oogle-habitat-3-85b56ac1",
-              "x": 408,
-              "y": 152,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "oogle-habitat-3-85b56ac1",
-              "x": 504,
-              "y": 136,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "sealed-dungeon-1-1-78024c9d",
-              "x": 408,
-              "y": 184,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "sealed-dungeon-1-1-78024c9d",
-              "x": 472,
-              "y": 120,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "sealed-dungeon-1-2-c824bb14",
-              "x": 408,
-              "y": 184,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "sealed-dungeon-1-2-c824bb14",
-              "x": 472,
-              "y": 120,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "shadow-forest-east",
-              "x": 408,
-              "y": 184,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "shadow-forest-east",
-              "x": 472,
-              "y": 120,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "shadow-forest-west",
-              "x": 456,
-              "y": 440,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "shadow-forest-west",
-              "x": 504,
-              "y": 408,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "shadow-forest-west",
-              "x": 504,
-              "y": 488,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "silent-cave-depths",
-              "x": 152,
-              "y": 152,
-              "source": "enemy-spawn"
-            },
-            {
-              "map": "silent-cave-depths",
-              "x": 152,
-              "y": 200,
-              "source": "enemy-spawn"
-            }
-          ]
-        },
-        "ready": {
-          "type": "alternatives",
-          "spots": [
-            {
-              "map": "berkel-capital",
-              "x": 408,
-              "y": 184,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "berkel-capital",
-              "x": 472,
-              "y": 120,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "berkel-church-monastery-1-16c1f7e2",
-              "x": 408,
-              "y": 184,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "berkel-church-monastery-1-16c1f7e2",
-              "x": 472,
-              "y": 120,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "blackhoods-hideout-86afa206",
-              "x": 392,
-              "y": 216,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "drow-fortress-1-b648f447",
-              "x": 408,
-              "y": 152,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "drow-fortress-1-b648f447",
-              "x": 472,
-              "y": 120,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "drow-fortress-3-ed91ddeb",
-              "x": 376,
-              "y": 136,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "drow-fortress-3-ed91ddeb",
-              "x": 376,
-              "y": 168,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "drow-s-soul-district-1-0a15bce1",
-              "x": 408,
-              "y": 184,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "drow-s-soul-district-1-0a15bce1",
-              "x": 472,
-              "y": 120,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "fort-of-screams-floor-3-c78c50b3",
-              "x": 408,
-              "y": 168,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "fort-of-screams-floor-3-c78c50b3",
-              "x": 456,
-              "y": 120,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "goblin-s-lair-2-49c1710f",
-              "x": 408,
-              "y": 184,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "goblin-s-lair-2-49c1710f",
-              "x": 472,
-              "y": 120,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "mayor-s-house-basement-1-474a8755",
-              "x": 408,
-              "y": 184,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "mayor-s-house-basement-1-474a8755",
-              "x": 472,
-              "y": 120,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "oogle-habitat-3-85b56ac1",
-              "x": 408,
-              "y": 152,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "oogle-habitat-3-85b56ac1",
-              "x": 504,
-              "y": 136,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "sealed-dungeon-1-1-78024c9d",
-              "x": 408,
-              "y": 184,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "sealed-dungeon-1-1-78024c9d",
-              "x": 472,
-              "y": 120,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "sealed-dungeon-1-2-c824bb14",
-              "x": 408,
-              "y": 184,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "sealed-dungeon-1-2-c824bb14",
-              "x": 472,
-              "y": 120,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "shadow-forest-east",
-              "x": 408,
-              "y": 184,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "shadow-forest-east",
-              "x": 472,
-              "y": 120,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "shadow-forest-west",
-              "x": 456,
-              "y": 440,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "shadow-forest-west",
-              "x": 504,
-              "y": 408,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "shadow-forest-west",
-              "x": 504,
-              "y": 488,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "silent-cave-depths",
-              "x": 152,
-              "y": 152,
-              "source": "quest-ready-nearby"
-            },
-            {
-              "map": "silent-cave-depths",
-              "x": 152,
-              "y": 200,
-              "source": "quest-ready-nearby"
-            }
-          ]
         }
       }
     },
@@ -306079,49 +305134,6 @@
         }
       },
       "descriptionTargets": []
-    },
-    {
-      "id": "quest-101",
-      "title": "追击队队长_战斗",
-      "description": "追击队队长_战斗",
-      "guidance": {
-        "available": "追击队队长_战斗",
-        "active": "追击队队长_战斗"
-      },
-      "completion": "story",
-      "journal": false,
-      "repeat": false,
-      "goals": [],
-      "onAcceptItems": [],
-      "itemCompletion": "all",
-      "availableWhen": {
-        "type": "all",
-        "conditions": []
-      },
-      "handoverItems": [],
-      "rewards": {
-        "experience": 100,
-        "money": 0,
-        "items": []
-      },
-      "offerScript": null,
-      "completeScript": null,
-      "progressText": "追击队队长_战斗",
-      "completeText": "追击队队长_战斗",
-      "places": {
-        "available": {
-          "type": "unavailable",
-          "reason": "原版未找到接取入口：没有接取人物或接取指令"
-        },
-        "active": {
-          "type": "unavailable",
-          "reason": "原版没有把这个任务推进过任何状态"
-        },
-        "ready": {
-          "type": "unavailable",
-          "reason": "原版没有把这个任务推进过任何状态"
-        }
-      }
     },
     {
       "id": "quest-102",
@@ -343114,49 +342126,6 @@
       }
     },
     {
-      "id": "quest-451",
-      "title": "记忆5层选择地",
-      "description": "记忆5层选择地",
-      "guidance": {
-        "available": "记忆5层选择地",
-        "active": "记忆5层选择地"
-      },
-      "completion": "story",
-      "journal": false,
-      "repeat": false,
-      "goals": [],
-      "onAcceptItems": [],
-      "itemCompletion": "all",
-      "availableWhen": {
-        "type": "all",
-        "conditions": []
-      },
-      "handoverItems": [],
-      "rewards": {
-        "experience": 0,
-        "money": 0,
-        "items": []
-      },
-      "offerScript": null,
-      "completeScript": null,
-      "progressText": "记忆5层选择地",
-      "completeText": "记忆5层选择地",
-      "places": {
-        "available": {
-          "type": "unavailable",
-          "reason": "原版未找到接取入口：没有接取人物或接取指令"
-        },
-        "active": {
-          "type": "unavailable",
-          "reason": "原版没有把这个任务推进过任何状态"
-        },
-        "ready": {
-          "type": "unavailable",
-          "reason": "原版没有把这个任务推进过任何状态"
-        }
-      }
-    },
-    {
       "id": "quest-452",
       "title": "保留5",
       "description": "保留5",
@@ -347675,49 +346644,6 @@
       }
     },
     {
-      "id": "quest-488",
-      "title": "旧宅问答4",
-      "description": "旧宅问答4",
-      "guidance": {
-        "available": "旧宅问答4",
-        "active": "旧宅问答4"
-      },
-      "completion": "story",
-      "journal": false,
-      "repeat": false,
-      "goals": [],
-      "onAcceptItems": [],
-      "itemCompletion": "all",
-      "availableWhen": {
-        "type": "all",
-        "conditions": []
-      },
-      "handoverItems": [],
-      "rewards": {
-        "experience": 0,
-        "money": 0,
-        "items": []
-      },
-      "offerScript": null,
-      "completeScript": null,
-      "progressText": "旧宅问答4",
-      "completeText": "旧宅问答4",
-      "places": {
-        "available": {
-          "type": "unavailable",
-          "reason": "原版未找到接取入口：没有接取人物或接取指令"
-        },
-        "active": {
-          "type": "unavailable",
-          "reason": "原版没有把这个任务推进过任何状态"
-        },
-        "ready": {
-          "type": "unavailable",
-          "reason": "原版没有把这个任务推进过任何状态"
-        }
-      }
-    },
-    {
       "id": "quest-489",
       "title": "亲~我需要你的评论~",
       "description": "嗨~我叫$S露娜$B~这是基于艾诺迪亚4的$R同人作品$B，不是官方游戏。我的B站网名是$S夏日的晚风踩着云朵$B，欢迎来聊聊你的评价~",
@@ -350015,144 +348941,6 @@
           "source": "quest-delivery"
         }
       }
-    },
-    {
-      "id": "quest-504",
-      "title": "보류_베스킨의 목걸이",
-      "description": "보류_베스킨의 목걸이",
-      "guidance": {
-        "available": "보류_베스킨의 목걸이",
-        "active": "보류_베스킨의 목걸이"
-      },
-      "completion": "story",
-      "journal": false,
-      "repeat": false,
-      "goals": [],
-      "onAcceptItems": [],
-      "itemCompletion": "all",
-      "availableWhen": {
-        "type": "all",
-        "conditions": []
-      },
-      "handoverItems": [],
-      "rewards": {
-        "experience": 0,
-        "money": 0,
-        "items": []
-      },
-      "offerScript": null,
-      "completeScript": null,
-      "progressText": "보류_베스킨의 목걸이",
-      "completeText": "보류_베스킨의 목걸이",
-      "places": {
-        "available": {
-          "type": "unavailable",
-          "reason": "原版未找到接取入口：没有接取人物或接取指令"
-        },
-        "active": {
-          "type": "unavailable",
-          "reason": "任务没有目标，相关事件也没有地点"
-        },
-        "ready": {
-          "type": "fixed",
-          "map": "berkel-capital",
-          "x": 520,
-          "y": 216,
-          "source": "quest-ready-event"
-        }
-      }
-    },
-    {
-      "id": "quest-505",
-      "title": "보류_뒷골목의 무법자들",
-      "description": "보류_뒷골목의 무법자들",
-      "guidance": {
-        "available": "보류_뒷골목의 무법자들",
-        "active": "보류_뒷골목의 무법자들"
-      },
-      "completion": "story",
-      "journal": false,
-      "repeat": false,
-      "goals": [],
-      "onAcceptItems": [],
-      "itemCompletion": "all",
-      "availableWhen": {
-        "type": "all",
-        "conditions": []
-      },
-      "handoverItems": [],
-      "rewards": {
-        "experience": 0,
-        "money": 0,
-        "items": []
-      },
-      "offerScript": null,
-      "completeScript": null,
-      "progressText": "보류_뒷골목의 무법자들",
-      "completeText": "보류_뒷골목의 무법자들",
-      "places": {
-        "available": {
-          "type": "unavailable",
-          "reason": "原版未找到接取入口：没有接取人物或接取指令"
-        },
-        "active": {
-          "type": "unavailable",
-          "reason": "任务没有目标，相关事件也没有地点"
-        },
-        "ready": {
-          "type": "fixed",
-          "map": "berkel-capital",
-          "x": 520,
-          "y": 216,
-          "source": "quest-ready-event"
-        }
-      }
-    },
-    {
-      "id": "quest-506",
-      "title": "보류_위험한 연구",
-      "description": "보류_위험한 연구",
-      "guidance": {
-        "available": "보류_위험한 연구",
-        "active": "보류_위험한 연구"
-      },
-      "completion": "story",
-      "journal": false,
-      "repeat": false,
-      "goals": [],
-      "onAcceptItems": [],
-      "itemCompletion": "all",
-      "availableWhen": {
-        "type": "all",
-        "conditions": []
-      },
-      "handoverItems": [],
-      "rewards": {
-        "experience": 0,
-        "money": 0,
-        "items": []
-      },
-      "offerScript": null,
-      "completeScript": null,
-      "progressText": "보류_위험한 연구",
-      "completeText": "보류_위험한 연구",
-      "places": {
-        "available": {
-          "type": "unavailable",
-          "reason": "原版未找到接取入口：没有接取人物或接取指令"
-        },
-        "active": {
-          "type": "unavailable",
-          "reason": "任务没有目标，相关事件也没有地点"
-        },
-        "ready": {
-          "type": "fixed",
-          "map": "shadow-hall",
-          "x": 440,
-          "y": 184,
-          "source": "quest-ready-event"
-        }
-      }
     }
   ],
   "questGroups": [
@@ -350421,8 +349209,6 @@
       "title": "序幕_战斗任务",
       "kind": "side",
       "questIds": [
-        "quest-19",
-        "quest-20",
         "quest-21",
         "quest-22",
         "quest-381"
@@ -351174,7 +349960,6 @@
       "title": "记忆5层",
       "kind": "main",
       "questIds": [
-        "quest-451",
         "quest-452",
         "quest-454",
         "quest-455",
@@ -351290,8 +350075,7 @@
         "quest-484",
         "quest-485",
         "quest-486",
-        "quest-487",
-        "quest-488"
+        "quest-487"
       ]
     },
     {
@@ -351560,8 +350344,7 @@
       "title": "巴斯金的项链2",
       "kind": "main",
       "questIds": [
-        "quest-499",
-        "quest-504"
+        "quest-499"
       ]
     },
     {
@@ -351570,8 +350353,7 @@
       "kind": "main",
       "questIds": [
         "quest-500",
-        "quest-501",
-        "quest-505"
+        "quest-501"
       ]
     },
     {
@@ -351580,8 +350362,7 @@
       "kind": "main",
       "questIds": [
         "quest-502",
-        "quest-503",
-        "quest-506"
+        "quest-503"
       ]
     },
     {
@@ -351684,14 +350465,6 @@
       ]
     },
     {
-      "id": "native-group-35",
-      "title": "追击队队长_战斗",
-      "kind": "main",
-      "questIds": [
-        "quest-101"
-      ]
-    },
-    {
       "id": "native-group-36",
       "title": "孤立的训练兵",
       "kind": "main",
@@ -351743,7 +350516,6 @@
         "cardinal-summons",
         "meet-portia",
         "knight-uniform",
-        "quest-8",
         "quest-9",
         "quest-180"
       ]
