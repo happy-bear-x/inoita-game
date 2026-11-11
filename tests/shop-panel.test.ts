@@ -317,7 +317,7 @@ test('both shops keep the bag category column on the right of the bag frame',()=
 });
 
 test('picking an item first opens the description panel on the opposite column',()=>{
-  const {surface,description,session,draw,texts}=open('merchandise-dealer-b09d9585');
+  const {store,surface,description,session,draw,texts}=open('merchandise-dealer-b09d9585');
   session.gainMoney(1_000_000);
   const general=shopLayout(false),potion=item('恢复药水（小）');
   // 买入：原版把买入记成 mode 1，说明面板因此落背包那一栏（点选来源的对面）。
@@ -354,9 +354,29 @@ test('picking an item first opens the description panel on the opposite column',
   assert.deepEqual([scroll.x,scroll.y,scroll.width,scroll.height],
     [left+panel.scroll.x,panel.y+panel.scroll.y,panel.scroll.width,panel.scroll.height]);
   assert.deepEqual([buy.width,buy.height],[panel.menu.button.width,panel.menu.button.height]);
+  // 面板盖背包栏时，底下的金币与角标 DOM 文字必须让位，否则会压在「购买」上。
+  assert.equal(texts.page.some(spec=>String(spec.key).startsWith('shop-money-')),false,'被面板盖住的金币行不再输出');
+  assert.equal(texts.page.some(spec=>String(spec.key).startsWith('shop-badge-')),false,'被面板盖住的角标不再输出');
+  assert.equal(texts.page.some(spec=>spec.key==='shop-title'),true,'面板外的店名照常显示');
+  assert.ok(texts.page.some(spec=>String(spec.key).startsWith('shop-filter-')),'面板外的分类按钮文字照常显示');
+  // 单价画在正文与按钮之间的空带上：左边「价格」，右边三个币位，数字与钱包同一套字号和间距。
+  const priceY=panel.y+panel.scroll.y+panel.scroll.height+2,priceX=left+panel.scroll.x;
+  const priceCoins=description.images.filter(call=>/(gold|silver|copper)\.png$/.test(String(call.file)));
+  const offer=store.offers.find(value=>!value.sold&&session.bag.catalog.items[value.instance.item].name===potion.name)!;
+  const buyPrice=splitMoney(store.buyPrice(offer.id));
+  assert.deepEqual(priceCoins.map(call=>[call.x,call.y,call.width,call.height]),
+    [[priceX+46,priceY,44,40],[priceX+46+103,priceY,44,40],[priceX+46+206,priceY,44,40]]);
+  for(const unit of ['gold','silver','copper'] as const){
+    const digit=texts.page.find(spec=>spec.key===`shop-detail-price-${unit}`)! as {text:string;x:number;y:number};
+    assert.equal(digit.text,String(buyPrice[unit]),`${unit} 单价`);
+    assert.deepEqual([digit.x,digit.y],[priceX+46+['gold','silver','copper'].indexOf(unit)*103+44,priceY+6]);
+  }
+  const label=texts.page.find(spec=>spec.key==='shop-detail-price-label')! as {x:number;y:number;style:{size:number}};
+  assert.deepEqual([label.x,label.y,label.style.size],[priceX,priceY+20,18]);
   // 关闭按钮把面板撤掉，回到只有货架与背包的商店界面。
   (close.action as ()=>void)();draw();
   assert.equal(textSpecs(texts,potion.description).length,0);
+  assert.equal(texts.page.some(spec=>String(spec.key).startsWith('shop-money-')),true,'关闭面板后金币行恢复');
   // 卖出：mode 0 落货架那一栏，底部改挂"出售"，堆叠物品补一行持有数量。
   press(surface,'出售 恢复药水（小）');draw();
   const sell=boxButton(description,'出售');
@@ -364,6 +384,14 @@ test('picking an item first opens the description panel on the opposite column',
   assert.deepEqual([sell.x,sell.y],[general.leftFrame.x+shelfPanel.menu.x+shelfPanel.menu.offsets[1],panel.y+shelfPanel.menu.y]);
   assert.equal(shelfPanel.width,general.leftFrame.width,'卖出时与货架栏同宽');
   assert.equal(description.descriptionBorders.at(-1)!.x,general.leftFrame.x,'卖出时面板落在货架那一栏');
+  assert.ok(texts.page.some(spec=>String(spec.key).startsWith('shop-money-')),'卖出面板盖货架栏，金币行照常显示');
+  assert.equal(texts.page.some(spec=>spec.key==='shop-title'),false,'被面板盖住的店名让位');
+  const potionEntry=session.bag.entries.find(entry=>session.bag.catalog.items[entry.item].name===potion.name)!;
+  const sellPrice=splitMoney(store.sellPrice(potionEntry));
+  for(const unit of ['gold','silver','copper'] as const){
+    const digit=texts.page.find(spec=>spec.key===`shop-detail-price-${unit}`)! as {text:string};
+    assert.equal(digit.text,String(sellPrice[unit]),`卖出 ${unit} 单价`);
+  }
   assert.equal(textSpecs(texts,`数量：${session.bag.get(session.bag.entries[0].id)!.quantity}`).length,0,'数量显示在物品格角标中');
   // 不可出售的物品跳过说明面板，仍按原样直接提示。
   session.bag.add('skills-reset-spell');draw();

@@ -49,6 +49,8 @@ export class ShopPanel {
   /** 这一轮绘制收集的文字；弹层打开时只输出后者。 */
   private pageText:MenuTextSpec[]=[];
   private modalText:MenuTextSpec[]=[];
+  /** 说明面板自己的文字：面板打开时叠在页面文字之上，页面里被面板盖住的部分不输出。 */
+  private detailText:MenuTextSpec[]=[];
   private text?:ShopTextTarget;
 
   private bagOffset=0;
@@ -183,10 +185,17 @@ export class ShopPanel {
     anchorX=0,anchorY=0,style:Partial<MenuTextSpec['style']>={}):void{
     this.modalText.push({key,text,x,y,style:{size,color,anchorX,anchorY,...style}});
   }
+  private addDetail(key:string,text:string,x:number,y:number,size:number,color?:string,
+    anchorX=0,anchorY=0,style:Partial<MenuTextSpec['style']>={},extras:Pick<MenuTextSpec,'scroll'|'clip'>={}):void{
+    this.detailText.push(this.pageTextSpec(key,text,x,y,size,color,anchorX,anchorY,style,extras));
+  }
   private buttonText(key:string,label:string,x:number,y:number,width:number,height:number,
     modal=false,size=Math.min(22,height*.42),extras:Pick<MenuTextSpec,'scroll'|'clip'>={}):void{
     if(modal)this.addModal(key,label,x+width/2,y+height/2,size,undefined,.5,.5);
     else this.addPage(key,label,x+width/2,y+height/2,size,undefined,.5,.5,{},extras);
+  }
+  private detailButtonText(key:string,label:string,x:number,y:number,width:number,height:number):void{
+    this.addDetail(key,label,x+width/2,y+height/2,Math.min(22,height*.42),undefined,.5,.5);
   }
   /** 页面与弹层共用的金币数字；`prefix` 区分主界面、数量框和确认框三份。 */
   private money(v:UiSurface,amount:number,x:number,y:number,prefix:string,modal=false):void{
@@ -198,14 +207,29 @@ export class ShopPanel {
       else this.addPage(key,String(value[unit]),x+index*stride+digit.x,y+digit.y,21,color);
     });
   }
+  /** 说明面板在当前这一步盖住的矩形；面板没开时返回 undefined。 */
+  private descriptionCovered():{x:number;y:number;width:number;height:number}|undefined{
+    const selection=this.selection;
+    if(!selection||selection.step!=='description')return;
+    const covered=selection.kind==='buy'?this.layout.bagFrame:this.layout.leftFrame;
+    const panel=descriptionPanel(selection.kind==='buy'?BAG_DESCRIPTION_WIDTH:covered.width);
+    return{x:covered.x,y:panel.y,width:panel.width,height:panel.height};
+  }
   /** 页面文字交给 `StoryUI` 的 DOM 层；弹层坐标仍是弹层本地坐标。 */
-  renderText(writer:MenuTextWriter):void{for(const spec of this.pageText)writer.add(spec);}
+  renderText(writer:MenuTextWriter):void{
+    // DOM 文字在画布之上，说明面板的黑底挡不住底下的金额和角标：面板矩形内的页面文字先让位，
+    // 再换上面板自己的文字；店名、分类列这些面板外的东西照常显示。
+    const covered=this.descriptionCovered();
+    for(const spec of this.pageText)
+      if(!covered||spec.x<covered.x||spec.x>covered.x+covered.width||spec.y<covered.y||spec.y>covered.y+covered.height)writer.add(spec);
+    for(const spec of this.detailText)writer.add(spec);
+  }
   renderModalText(writer:MenuTextWriter):void{for(const spec of this.modalText)writer.add(spec);}
   private scrollAt(surface:UiSurface,name:string,x:number,y:number,width:number,height:number):ScrollArea{
     return this.text?.scroll(name,x,y,width,height,surface)??surface.scroll(x,y,width,height);
   }
   render(v:UiSurface,modal:UiSurface,placeModal?:PlaceModal,description?:UiSurface,text?:ShopTextTarget):void{
-    this.placeModal=placeModal;this.pageText=[];this.modalText=[];this.text=text;
+    this.placeModal=placeModal;this.pageText=[];this.modalText=[];this.detailText=[];this.text=text;
     const {store,session,catalog}=this,classified=store.shop.categories.length>0;
     const layout=this.layout=shopLayout(classified),{leftFrame,bagFrame,title,shelf,bag,slot,category}=layout;
     // 两栏内容区保留透明背景，背包侧栏使用共用图框和底色。
@@ -324,7 +348,7 @@ export class ShopPanel {
     const member=this.viewedMember();
     const body=itemDescriptionBody({item,entry,numbers:this.store.characterStats.equipment[entry.item],catalog:this.store.characterStats,
       grades:this.catalog.grades,member,classNames:this.classNames,gemNames:entry.gems.map(id=>this.session.bag.catalog.items[id]?.name),skill:entry.skill?this.session.bag.catalog.skillDescriptions?.[entry.skill]:undefined,concealed:offer?.concealed});
-    const writer:MenuTextWriter={add:spec=>this.pageText.push(spec)};
+    const writer:MenuTextWriter={add:spec=>this.detailText.push(spec)};
     drawDescriptionTitle(body.title,left,top,panel.width,body.color,{writer,keyPrefix:'shop-detail-title'});
     const detail=this.scrollAt(v,'shop-detail',left+panel.scroll.x,top+panel.scroll.y,panel.scroll.width,panel.scroll.height);
     detail.onScroll=()=>this.text?.refresh();
@@ -334,10 +358,19 @@ export class ShopPanel {
         clip:{top:top+panel.scroll.y,bottom:top+panel.scroll.y+panel.scroll.height}});
     detail.setHeight(y);
     drawDescriptionClose(v,this.frames,panel,left,top,()=>this.cancel());
+    // 面板盖住背包栏时，底下的金币行让位；单价改在滚动区与按钮之间的空带里重画，
+    // 玩家开面板就能看到这件东西多少钱，不用先点「购买」再退回确认框。
+    const priceY=top+panel.scroll.y+panel.scroll.height+2,priceX=left+panel.scroll.x,
+      coinX=priceX+46,coinValue=splitMoney(this.price(selection)),{stride,coin,digit,color}=this.layout.money;
+    this.addDetail('shop-detail-price-label','价格',priceX,priceY+20,18,AREA_COLOR,0,.5);
+    MONEY_UNITS.forEach((unit,index)=>{
+      v.image(this.catalog.assets[unit],coinX+index*stride,priceY,coin.width,coin.height);
+      this.addDetail(`shop-detail-price-${unit}`,String(coinValue[unit]),coinX+index*stride+digit.x,priceY+digit.y,21,color);
+    });
     const actionX=left+panel.menu.x+panel.menu.offsets[1],actionY=top+panel.menu.y;
     v.button('',actionX,actionY,panel.menu.button.width,panel.menu.button.height,()=>this.beginTrade())
       .setData('label',actionLabel);
-    this.buttonText('shop-detail-action',actionLabel,actionX,actionY,panel.menu.button.width,panel.menu.button.height);
+    this.detailButtonText('shop-detail-action',actionLabel,actionX,actionY,panel.menu.button.width,panel.menu.button.height);
   }
   private renderModal(v:UiSurface):void{
     const selection=this.selection!;
