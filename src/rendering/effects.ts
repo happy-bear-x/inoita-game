@@ -180,12 +180,15 @@ export class EffectPool {
   /** 提前建好指定片段的容器、精灵和动画并放回空闲桶；首次播放只重播，不再现建。 */
   warm(clip: EffectClip, count = 1): void {
     if (this.closed) return;
+    const effects: Phaser.GameObjects.Container[] = [];
+    // 先全部取出来再统一回收；边取边还会让下一轮又拿到同一个容器。
     for (let index = 0; index < count; index++) {
       const effect = this.acquire(clip, 0, 0);
       // 一层都没建起来的片段会在下一拍自行回收；不要提前放进池里，否则回收回调可能命中刚被复用的容器。
       if (!pooledEffects.get(effect)?.animations.length) { effect.destroy(); continue; }
-      this.release(effect);
+      effects.push(effect);
     }
+    for (const effect of effects) this.release(effect);
   }
 
   /** 取一个特效并立刻从第 0 帧播放；播完自动回到池里。 */

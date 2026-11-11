@@ -117,14 +117,14 @@ test('同片段空闲容器有上限，超出的直接销毁',()=>{
 
 test('预热先建好容器和动画，首次播放不再现建',()=>{
   const f=fixture(),pool=new EffectPool(f.scene),clip=f.clip();
-  pool.warm(clip);
-  assert.equal(f.containers.length,1,'预热建一个容器');
-  assert.equal(f.containers[0]!.visible,false,'预热后先隐藏');
+  pool.warm(clip,2);
+  assert.equal(f.containers.length,2,'预热按数量建好两个容器');
+  assert.ok(f.containers.every(value=>!value.visible),'预热后先隐藏');
   const animations=f.created.length;
   assert.equal(animations,2,'两层动画都已建好');
   const effect=view(pool.acquire(clip,30,40));
-  assert.equal(effect,f.containers[0],'首次播放复用预热容器');
-  assert.equal(f.containers.length,1,'没有再建容器');
+  assert.equal(effect,f.containers[1],'首次播放复用预热容器');
+  assert.equal(f.containers.length,2,'没有再建容器');
   assert.equal(f.created.length,animations,'没有再建动画');
   assert.deepEqual([effect.x,effect.y,effect.visible],[30,40,true]);
   pool.destroy();
@@ -192,21 +192,44 @@ test('镜头外的目标不再生成命中特效和数字',()=>{
   feedback.destroy();
 });
 
-test('同一帧的暴击装饰有上限，下一帧恢复额度',()=>{
+test('同一帧的暴击装饰有上限，主体冲击和下一帧不受影响',()=>{
   const f=fixture();
-  const catalog={attackEffects:{ring:{clips:{default:f.clip()}},burst:{clips:{default:f.clip()}}},
-    feedback:{shakeOffsets:[],criticalRing:'ring'}} as unknown as BattleCatalog;
+  const catalog={attackEffects:{critical:{clips:{default:f.clip()}},ring:{clips:{default:f.clip()}},
+    burst:{clips:{default:f.clip()}}},feedback:{shakeOffsets:[],criticalRing:'ring'}} as unknown as BattleCatalog;
   const target={layers:[],actor:{effectAnchor:{x:0,y:0}},container:new Display('player')} as unknown as CharacterVisual;
   const feedback=new CombatFeedback(f.scene,catalog);
   const event={hit:{kind:'hit',damage:1},style:'weapon',periodic:false,casterControlled:false,
     targetFriendly:false,targetParty:false,involvesControlled:true} as const;
-  const show=()=>feedback.show(event,target,{impacts:[{name:'ring',attached:true},{name:'burst',attached:false}]});
+  const show=()=>feedback.show(event,target,{impacts:[
+    {name:'critical',attached:true},{name:'ring',attached:true},{name:'burst',attached:false}]});
   for(let index=0;index<6;index++)show();
-  assert.equal(f.containers.length,8,'同一帧只放 8 个装饰');
+  assert.equal(f.containers.length,14,'六次命中只放 8 个装饰，主体冲击每次都出现');
+  feedback.show(event,target,{impacts:[{name:'critical',attached:true}]});
+  assert.equal(f.containers.length,15,'装饰额度用完后主体冲击仍然生成');
   (f.scene as unknown as {game:{loop:{frame:number}}}).game.loop.frame=1;
   show();
-  assert.equal(f.containers.length,10,'下一帧重新给额度');
+  assert.equal(f.containers.length,18,'下一帧重新给装饰额度');
   feedback.destroy();
+});
+
+test('命中反馈预热建好命中特效和数字容器，重复调用不再新建',()=>{
+  const f=fixture();
+  const clips:Record<string,EffectClip>={default:f.clip()};
+  for(let digit=0;digit<10;digit++)clips[String(digit)]={...f.clip(10),
+    layers:[{key:`digit-${digit}`,file:firstFile,blend:'normal',operations:[]}]};
+  const definition={digits:{enemy:['enemy'],enemyCritical:['enemy'],party:['enemy'],partyCritical:['enemy'],miss:['enemy']},
+    normalImpacts:[],skillImpact:'enemy',criticalImpact:'enemy',criticalRing:'enemy',criticalBursts:[],missEffect:'enemy',shakeOffsets:[]};
+  const catalog={attackEffects:{enemy:{clips}},feedback:definition} as unknown as BattleCatalog;
+  const feedback=new CombatFeedback(f.scene,catalog);
+  feedback.warm();
+  const impactContainers=2,numberSlots=16;
+  assert.equal(f.containers.length,impactContainers+numberSlots,'命中特效和数字容器一次建好');
+  assert.ok(f.containers.every(value=>!value.visible),'预热后全部隐藏');
+  assert.ok(f.containers.reduce((sum,value)=>sum+value.list.length,0)>=numberSlots*6,'数字槽位建好六位精灵');
+  feedback.warm();
+  assert.equal(f.containers.length,impactContainers+numberSlots,'重复预热不再新建');
+  feedback.destroy();
+  assert.equal(f.containers.filter(value=>value.active).length,0,'销毁时清掉');
 });
 
 test('数字动画按序列只建一次，重复命中复用同一个数字容器',()=>{

@@ -82,8 +82,8 @@ interface NumberSlot {
 }
 
 const NUMBER_SLOT_LIMIT=32;
-const WARM_NUMBER_SLOTS=8;
-const WARMED_SPRITES_PER_SLOT=4;
+const WARM_NUMBER_SLOTS=16;
+const WARMED_SPRITES_PER_SLOT=6;
 /** 目标离镜头超过这么远时，命中特效和数字已经完全看不见，不再生成。 */
 const CULL_MARGIN=520;
 /** 同一帧最多生成多少个暴击装饰（光环和爆闪）；主体冲击与伤害数字不受限。 */
@@ -198,7 +198,9 @@ export class CombatFeedback {
       const sequence=digitSequence(clip.frames,digit.holdFrames),duration=digit.delayMs+sequence.length/clip.frameRate*1000;
       for(const layer of clip.layers){
         const sprite=this.numberSprite(slot,spriteIndex++,layer);
-        sprite.setPosition(digit.x,digit.y).setVisible(true)
+        // 有延迟的位数先藏起来，等动画真正开始时由 showOnStart 显示；
+        // 否则延迟期间会露出上一次复用留下的旧字形。
+        sprite.setPosition(digit.x,digit.y).setVisible(false)
           .setOrigin(clip.originX,clip.originY).setScale(clip.mirrorX?-1:1,1)
           .setBlendMode(effectLayerBlendMode(layer));
         playDigitAnimation(sprite,layer,sequence,clip.frameRate,digit.delayMs);
@@ -249,7 +251,11 @@ export class CombatFeedback {
   }
   show(event:CombatHitFeedback,target:CharacterVisual,selection:CombatFeedbackSelection,
     plan:ReturnType<typeof feedbackPlan>=feedbackPlan(event)):void {
-    if(this.offscreen(target))return;
+    if(this.offscreen(target)){
+      // 震屏属于出手者自己的反馈，不跟目标是否在镜头里走。
+      if(plan.shake&&this.visible)this.startShake();
+      return;
+    }
     for(const effect of selection.impacts){
       const decoration=!effect.attached||effect.name===this.catalog.feedback.criticalRing;
       if(decoration&&!this.takeDecorationBudget())continue;
