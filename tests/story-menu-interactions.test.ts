@@ -470,7 +470,8 @@ test('system exposes load alongside save while settings keeps the working displa
   displaySettings.setCriticalDecorations(true);
   displaySettings.setFrameRateLimit(60);
   displaySettings.setTextureBatching('auto');
-  t.after(()=>{displaySettings.setCriticalDecorations(true);displaySettings.setFrameRateLimit(60);displaySettings.setTextureBatching('auto');});
+  displaySettings.setRenderScale(1);
+  t.after(()=>{displaySettings.setCriticalDecorations(true);displaySettings.setFrameRateLimit(60);displaySettings.setTextureBatching('auto');displaySettings.setRenderScale(1);});
   const f=fixture();t.after(f.cleanup);
   const audio={settings:{music:1,effects:1},setVolume(channel:'music'|'effects',value:number){this.settings[channel]=value;}};
   Object.defineProperty(f.app,'audio',{value:audio});
@@ -490,7 +491,7 @@ test('system exposes load alongside save while settings keeps the working displa
   assert.deepEqual(sliders.map(slider=>slider.label),['music','effects']);
   assert.equal(sliders[0]!.value,1);assert.equal(sliders[1]!.value,1);
   const toggle=(y:number)=>f.scene.buttons('开启').concat(f.scene.buttons('关闭')).find(node=>node.y===y)!;
-  const rows={fps:260,critical:530} as const;
+  const rows={fps:260,critical:620} as const;
   assert(toggle(rows.fps));assert(toggle(rows.critical));
   const batching=()=>f.scene.nodes.find(node=>node.shown&&String(node.getData('label')).startsWith('纹理批次：'))!;
   assert.equal(batching().getData('label'),'纹理批次：自动');
@@ -516,6 +517,16 @@ test('system exposes load alongside save while settings keeps the working displa
   f.scene.click(f.scene.button('60 帧'));
   assert.equal(displaySettings.frameRateLimit,60);
   assert.equal(f.scene.button('60 帧').getData('selected'),true);
+  assert(f.domLabels.some(label=>label.text==='画面精度'),'画面精度有独立行标签');
+  const scaleButtons=['1×','2×','3×'];
+  assert.deepEqual(scaleButtons.filter(label=>f.scene.button(label)).sort(),scaleButtons,'设置页并列三个画面精度按钮');
+  assert.equal(f.scene.button('1×').getData('selected'),true);
+  f.scene.click(f.scene.button('2×'));
+  assert.equal(displaySettings.renderScale,2);
+  assert.equal(f.scene.button('2×').getData('selected'),true);
+  assert.equal(f.scene.button('1×').getData('selected'),false);
+  f.scene.click(f.scene.button('1×'));
+  assert.equal(displaySettings.renderScale,1);
   // 设置项按 90 行距排，谁也盖不住谁；操作方式位于滚动内容末尾，不要求在首屏视口内。
   const control=f.scene.nodes.find(node=>node.shown&&node.getData('uiAction')&&String(node.getData('label')).startsWith('操作方式：'))!,criticalToggle=toggle(rows.critical);
   assert(control.y>=criticalToggle.y+criticalToggle.input!.hitArea.height,'操作方式排在暴击光效下方');
