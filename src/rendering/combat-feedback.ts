@@ -164,7 +164,8 @@ export class CombatFeedback {
   private stopNumber(slot:NumberSlot):void {
     if(slot.finishSprite&&slot.finishListener)slot.finishSprite.off('animationcomplete',slot.finishListener);
     slot.finishSprite=undefined;slot.finishListener=undefined;
-    for(const sprite of slot.sprites)sprite.anims.stop();
+    // 场景 shutdown 时 Phaser 先销毁显示对象，精灵的动画组件随之移除；只停还活着的精灵。
+    for(const sprite of slot.sprites)sprite.anims?.stop();
   }
   /** 没有可播的精灵时直接归还，避免槽位等不到结束回调。 */
   private releaseSlot(slot:NumberSlot):void {

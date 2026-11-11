@@ -178,6 +178,23 @@ test('多位伤害数字共用一个容器，位数只增加精灵',()=>{
   feedback.destroy();
 });
 
+test('场景先销毁显示对象时，战斗反馈销毁不再访问已移除的动画组件',()=>{
+  const f=fixture();
+  const clips:Record<string,EffectClip>={default:f.clip()};
+  for(let digit=0;digit<10;digit++)clips[String(digit)]={...f.clip(10),
+    layers:[{key:`digit-${digit}`,file:firstFile,blend:'normal',operations:[]}]};
+  const definition={digits:{enemy:['enemy'],enemyCritical:['enemy'],party:['enemy'],partyCritical:['enemy'],miss:['enemy']},
+    normalImpacts:[],skillImpact:'enemy',criticalImpact:'enemy',criticalRing:'enemy',criticalBursts:[],missEffect:'enemy',shakeOffsets:[]};
+  const catalog={attackEffects:{enemy:{clips}},feedback:definition} as unknown as BattleCatalog;
+  const feedback=new CombatFeedback(f.scene,catalog);
+  feedback.warm();
+  // 场景 shutdown 时 Phaser 的显示列表先清理子对象，Sprite 的 anims 组件被移除；
+  // 随后 WorldCombat.destroy 仍会调用 feedback.destroy。
+  for(const container of f.containers)for(const sprite of container.list)(sprite as unknown as {anims:unknown}).anims=undefined;
+  assert.doesNotThrow(()=>feedback.destroy());
+  assert.ok(f.containers.every(value=>!value.active),'销毁时仍清掉容器');
+});
+
 test('镜头外的目标不再生成命中特效和数字',()=>{
   const f=fixture();
   const catalog={attackEffects:{ring:{clips:{default:f.clip()}}},
