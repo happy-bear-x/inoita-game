@@ -3,6 +3,7 @@ package io.github.sunflower9264.inoita;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.ProgressDialog;
+import android.hardware.display.DisplayManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -49,16 +50,26 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
     private long lastBackPressed;
     private boolean pageReady;
     private String migrationJson;
-    /** 页面最近一次要求的显示帧率；Surface 建好后要按它设一次。 */
+    /** 当前显示模式实际生效的刷新率；Surface 建好后要按它设一次。 */
     private float surfaceFrameRate;
     private int surfaceRateRetries;
+    private DisplayManager displayManager;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    /** 显示模式切换完成后系统会回调；用实际生效的刷新率通知页面。 */
+    private final DisplayManager.DisplayListener displayListener = new DisplayManager.DisplayListener() {
+        @Override public void onDisplayAdded(int displayId) {}
+        @Override public void onDisplayRemoved(int displayId) {}
+        @Override public void onDisplayChanged(int displayId) {
+            if (displayId == Display.DEFAULT_DISPLAY) applyActualDisplayRate();
+        }
+    };
     private final Runnable createBrowserTask = this::createBrowser;
     private final Runnable pauseBrowserTask = () -> {
         if (browser != null) browser.onPause();
     };
     private final Runnable bootWatchdog = this::onBootWatchdog;
+    private final Runnable applyDisplayRateTask = this::applyActualDisplayRate;
 
     private AlertDialog updateDialog;
     private AlertDialog checkFailedDialog;
@@ -82,6 +93,10 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
         root = new FrameLayout(this);
         root.setBackgroundColor(getColor(R.color.background));
         setContentView(root);
+        displayManager = getSystemService(DisplayManager.class);
+        if (displayManager != null) {
+            displayManager.registerDisplayListener(displayListener, mainHandler);
+        }
         CrashLog.deviceInfo(this, "activity-start");
 
         if (!Cefrium.isInitialized()) {
@@ -189,12 +204,25 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
             attrs.preferredDisplayModeId = best.getModeId();
             getWindow().setAttributes(attrs);
         }
-        surfaceFrameRate = best.getRefreshRate();
-        surfaceRateRetries = 0;
-        applySurfaceFrameRate(surfaceFrameRate);
-        notifyPageDisplayRate(surfaceFrameRate);
-        Log.i(TAG, "frame-rate " + rate + " -> " + best.getRefreshRate()
+        // 切换是异步的，而且 preferredDisplayModeId 只是建议；稍后读实际生效的值。
+        mainHandler.removeCallbacks(applyDisplayRateTask);
+        mainHandler.postDelayed(applyDisplayRateTask, 800);
+        Log.i(TAG, "frame-rate " + rate + " -> request " + best.getRefreshRate()
                 + "Hz (mode " + best.getModeId() + ")");
+    }
+
+    /** 等系统真正切完模式后，把实际刷新率告诉页面和 Surface。 */
+    private void applyActualDisplayRate() {
+        if (isFinishing() || isDestroyed()) return;
+        Display display = getWindowManager().getDefaultDisplay();
+        Display.Mode mode = display.getMode();
+        float hz = mode != null ? mode.getRefreshRate() : display.getRefreshRate();
+        if (hz <= 0) hz = display.getRefreshRate();
+        surfaceFrameRate = hz;
+        surfaceRateRetries = 0;
+        applySurfaceFrameRate(hz);
+        notifyPageDisplayRate(hz);
+        Log.i(TAG, "display-rate actual " + hz + "Hz");
     }
 
     /** 把壳选定的刷新率写进页面，页面直接采用，不再靠 rAF 重测。 */
@@ -582,9 +610,11 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
 
     @Override
     protected void onDestroy() {
+        if (displayManager != null) displayManager.unregisterDisplayListener(displayListener);
         mainHandler.removeCallbacks(bootWatchdog);
         mainHandler.removeCallbacks(createBrowserTask);
         mainHandler.removeCallbacks(pauseBrowserTask);
+        mainHandler.removeCallbacks(applyDisplayRateTask);
         dismissUpdateDialog();
         dismissCheckFailedDialog();
         dismissProgressDialog();
