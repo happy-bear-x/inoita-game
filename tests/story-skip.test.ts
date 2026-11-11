@@ -5,6 +5,7 @@ import { StoryDirector, type StoryUI, type StoryWorldPort, type StorySkipPhase }
 import { Session } from '../src/domain/session.ts';
 import { compileScript } from './support/story-fixtures.ts';
 import type { Campaign } from '../src/domain/campaign.ts';
+import type { StoryScript } from '../src/domain/story-graph.ts';
 import type { ChoiceOption } from '../src/domain/content.ts';
 import { parseCampaign, parseControlSkin } from '../src/application/content-validation.ts';
 
@@ -78,6 +79,30 @@ test('跳过落在界面建立对白等待之前时，导演仍会结束这一�
   const playing = h.director.trigger({ id: 'skip-before-pending', script: 'demo' });
   await tick(); h.director.skip();
   assert.equal(await playing, true);
+  assert.deepEqual(h.locks, [true, false]);
+});
+
+test('跳过时仍发起后续节点的世界预取，但不等待加载完成', async () => {
+  const script: StoryScript = { entry: 'one', nodes: [
+    { id: 'one', presentation: [{ type: 'dialogue', speaker: '', actor: null, text: '一句' }], commands: [],
+      exit: { type: 'next', target: { script: 'demo', node: 'two' } } },
+    { id: 'two', presentation: [{ type: 'dialogue', speaker: '', actor: null, text: '两句' }], commands: [],
+      exit: { type: 'end' } }
+  ] };
+  let preparations = 0, finishSecond!: () => void;
+  const h = harness({ ...campaign, scripts: { ...campaign.scripts, demo: script } }, {}, {
+    capture: () => undefined, restore: async () => {}, project: async () => {}, checkpoint: () => {},
+    normalize: async () => {}, settle: async () => {}, prefetch: async () => {},
+    prepare: () => {
+      preparations++;
+      return preparations === 1 ? Promise.resolve() : new Promise<void>(resolve => { finishSecond = resolve; });
+    }
+  });
+  const playing = h.director.trigger({ id: 'skip-prepare', script: 'demo' });
+  await tick(); h.director.skip();
+  assert.equal(await playing, true);
+  assert.equal(preparations, 2, '跳过后的节点仍发起预取');
+  finishSecond();
   assert.deepEqual(h.locks, [true, false]);
 });
 

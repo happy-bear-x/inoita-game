@@ -330,8 +330,13 @@ export class StoryDirector {
     }
     await this.recover(context.signal);
     await this.world?.normalize?.(context.signal);
-    // 跳过时不再为不会画出来的舞台地图预取整图素材；需要画面时由补画或世界投影按需加载。
-    if (!this.skipping) await this.world?.prepare?.(node.commands, context.signal, context.stage, script);
+    // 跨图预取在跳过时也要发起：逻辑跳过后马上要投影到目标图，提前加载能缩短解锁前的等待。
+    // 跳过只结束等待，已经发起的预取继续在后台完成；同图舞台由 world.prepare 自己跳过。
+    const preparation = this.world?.prepare?.(node.commands, context.signal, context.stage, script);
+    if (preparation) {
+      if (this.skipping) void preparation.catch(() => {});
+      else await preparation;
+    }
     if (context.stage && (node.stage || !this.presenting)) {
       await this.presentation?.begin(context.signal, context.stage, undefined, false, this.skipRequest.signal); this.presenting = !!this.presentation;
       // `begin` 已经把这一幕画出来了；进图加载页到这里就可以收。
