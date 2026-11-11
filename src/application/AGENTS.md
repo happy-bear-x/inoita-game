@@ -24,7 +24,7 @@
 - 云存档和诊断的服务地址只从 `endpoints.ts` 解析。环境根地址在 `config/endpoints.json`：网页固定同源（空值）；Android 调试指向 `adb reverse` 的 `127.0.0.1:4003`，发布和网页生产共用 `https://catgo.online:4002`。Android 壳由 `bootstrap.js` 在页面脚本前注入本地代理地址；页面里不再另写域名或读取别的地址变量。
 - 只有 `game-audio.ts`、`game-timing.ts` import Phaser，其余文件保持纯 TypeScript。
 - 整页缩放和长按选择由 `page-interaction-guard.ts` 在入口统一拦截；viewport 声明和 `game.css` 的 `touch-action` 是第一道，Safari 的 gesture 事件、桌面 Ctrl/⌘ 缩放和右键/选择事件是兜底。输入框保留原生粘贴和选择菜单，不要在输入框上拦截。
-- 画面偏好保存在本机：帧率上限只接受 30 或 60，缺省为 60；游戏启动读取偏好，设置变化立即调整 Phaser 限帧，销毁时取消订阅。纹理批次默认自动：安卓单纹理，iOS 和桌面多纹理；单纹理/多纹理可手动覆盖，启动和设置变化时更新 `setMaxParallelTextureUnits`。帧时钟继续使用相邻交付时刻计算真实耗时。
+- 画面偏好保存在本机：帧率上限只接受 30 或 60，缺省为 60；游戏启动读取偏好，设置变化立即调整 Phaser 限帧，销毁时取消订阅。纹理批次默认自动：安卓单纹理，iOS 和桌面多纹理；单纹理/多纹理可手动覆盖，启动和设置变化时更新 `setMaxParallelTextureUnits`。画面精度接受 1/2/3 三档，缺省 1；实际倍率取档位与本机设备像素比的较小值，切档立即重配画布，不重启。帧时钟继续使用相邻交付时刻计算真实耗时。
 - 限帧阈值不等于玩家选项：选的帧率离屏幕刷新率不到 2Hz 时交给 vsync（`fps.limit = 0`），只有明显低于刷新率的档位才按数值限帧。60Hz 屏上把上限设成 60 会踩进 Phaser 限帧器的临界区，实测刷新 54 次只交付 34 帧。刷新率用连续 rAF 间隔的中位数测量；高刷屏在启动初期可能仍按 60Hz 回调，所以进图/读档就绪后要补测，并且只采纳样本足够且更高的结果。否则 120Hz 屏上的 60 上限会被误判成「不限帧」，实际跑到 70～80 帧。
 - 玩家选的帧率通过 `window.InotiaNative.setFrameRate` 告诉安卓壳（`native-frame-rate.ts`）。壳选一个刷新率是目标帧率整数倍的显示模式：30 选 60/90/120，60 选 60/120。整数倍保证每个游戏帧占整数个屏幕节拍；60 帧跑在 90Hz 上会反复在 1 个和 2 个节拍之间跳。壳选好后把真实刷新率写回 `window.__inoitaDisplayHz` 并派发 `inoita-display-rate`，页面用 `setRefreshRate` 直接采用，不再靠 rAF 重测。网页版没有原生桥时静默跳过。
 - 改存档结构或校验口径时，把 `src/domain/save-game.ts` 的 `SAVE_FORMAT` 加一，并在 `saved-game.ts` 的升级链补旧版到新版的迁移和旧档测试。

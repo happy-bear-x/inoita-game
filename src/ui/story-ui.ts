@@ -599,7 +599,9 @@ export class StoryUI {
     this.body?.scrolls.forEach(scroll=>scroll.layout());this.description?.scrolls.forEach(scroll=>scroll.layout());this.modal?.scrolls.forEach(scroll=>scroll.layout());
     if(this.hudButtons&&this.scene){
       const v=this.hudButtons,viewport=controlViewport(this.scene),scale=uiUnitScale(viewport.width,viewport.height);
-      v.root.setScale(scale).setPosition(viewport.insets.left+12,viewport.insets.top);
+      // 12 是界面里的固定留白；贴安全区时也要跟着画布倍率换成游戏单位。
+      const unit=this.scene.scale.width/Math.max(1,this.scene.game.canvas.getBoundingClientRect().width);
+      v.root.setScale(scale).setPosition(viewport.insets.left+12*unit,viewport.insets.top);
       let index=0;
       for(const button of v.root.list){
         if(button===v.staticRoot)continue;
@@ -775,7 +777,7 @@ export class StoryUI {
       slotReading:ref=>this.app.saves.peek(ref),
       settings:()=>({
         music:this.app.audio?.settings.music??0,effects:this.app.audio?.settings.effects??0,
-        fps:displaySettings.fps,frameRateLimit:displaySettings.frameRateLimit,textureBatching:displaySettings.textureBatching,criticalDecorations:displaySettings.criticalDecorations,
+        fps:displaySettings.fps,frameRateLimit:displaySettings.frameRateLimit,renderScale:displaySettings.renderScale,textureBatching:displaySettings.textureBatching,criticalDecorations:displaySettings.criticalDecorations,
         fullscreen:fullscreenStatus(),fullscreenActive:fullscreenActive(),controlMode:controlSettings.mode
       }),
       learn:()=>this.skillBook?.viewModel??{entryId:'',message:''},
@@ -955,21 +957,29 @@ export class StoryUI {
         this.render();
       },{parent:content,selected:frameRateLimit===limit}).setData('label',`${limit} 帧`);
     }
+    // 画面精度：实际倍率不会超过本机 DPR；默认 1×，高分屏可手动开 2×/3×。
+    const renderScale=displaySettings.renderScale;
+    for(const scale of ([1,2,3] as const)){
+      v.button('',485+(scale-1)*140,440,120,66,()=>{
+        displaySettings.setRenderScale(scale);
+        this.render();
+      },{parent:content,selected:renderScale===scale}).setData('label',`${scale}×`);
+    }
     // 纹理批次：自动时安卓单纹理，iOS 和桌面多纹理；单纹理更保守。
     const batching=displaySettings.textureBatching;
     const batchingLabel={auto:'自动',multi:'多纹理',single:'单纹理'}[batching];
-    v.button('',485,440,260,66,()=>{
+    v.button('',485,530,260,66,()=>{
       displaySettings.setTextureBatching(batching==='auto'?'multi':batching==='multi'?'single':'auto');
       this.render();
     },{parent:content}).setData('label',`纹理批次：${batchingLabel}`);
     // 暴击光环和爆闪只影响画面，默认开启；不影响暴击冲击、数字、震屏或音效。
     const decorations=displaySettings.criticalDecorations;
-    v.button('',485,530,220,66,()=>{
+    v.button('',485,620,220,66,()=>{
       displaySettings.setCriticalDecorations(!decorations);
       this.render();
     },{parent:content}).setData('label',decorations?'开启':'关闭');
     // 全屏是浏览器能力；不支持的环境显示为不可用，APK 壳已经隐藏系统栏，显示为已全屏。
-    let rowTop=620;
+    let rowTop=710;
     const fullscreen=fullscreenStatus();
     if(fullscreen==='available'){
       const active=fullscreenActive();
@@ -1014,12 +1024,15 @@ export class StoryUI {
     add('frame-rate-label','帧率上限',260,365,25);
     add('frame-rate-30','30 帧',595,383,22,.5,.5);
     add('frame-rate-60','60 帧',825,383,22,.5,.5);
+    add('render-scale-label','画面精度',260,455,25);
+    for(const scale of ([1,2,3] as const))add(`render-scale-${scale}`,`${scale}×`,545+(scale-1)*140,473,22,.5,.5);
+    add('render-scale-hint','数字越大越清晰，最高到屏幕',260,490,16);
     const batchingLabel={auto:'自动',multi:'多纹理',single:'单纹理'}[displaySettings.textureBatching];
-    add('texture-batching-label','纹理批次',260,455,25);
-    add('texture-batching-toggle',batchingLabel,615,473,22,.5,.5);
-    add('critical-label','暴击光效',260,545,25);
-    add('critical-toggle',displaySettings.criticalDecorations?'开启':'关闭',595,563,22,.5,.5);
-    let rowTop=620;
+    add('texture-batching-label','纹理批次',260,545,25);
+    add('texture-batching-toggle',batchingLabel,615,563,22,.5,.5);
+    add('critical-label','暴击光效',260,635,25);
+    add('critical-toggle',displaySettings.criticalDecorations?'开启':'关闭',595,653,22,.5,.5);
+    let rowTop=710;
     add('fullscreen-label','全屏',260,rowTop+15,25);
     const fullscreen=fullscreenStatus();
     add('fullscreen-toggle',fullscreen==='available'?(fullscreenActive()?'开启':'关闭'):(fullscreen==='packaged'?'已全屏':'不支持'),

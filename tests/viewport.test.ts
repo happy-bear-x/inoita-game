@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {fitViewport,configureCanvas,readSafeArea} from '../src/ui/viewport.ts';
-import {controlViewport} from '../src/ui/phaser/control-layout-viewport.ts';
+import {fitViewport,configureCanvas,canvasCssScale,readSafeArea} from '../src/ui/viewport.ts';
+import {controlViewport,controlViewportCss} from '../src/ui/phaser/control-layout-viewport.ts';
 
 /** 假窗口对象：测试只需要 `fitViewport` 读的 `visualViewport`。 */
 interface FakeWindow {
@@ -93,6 +93,8 @@ test('Android landscape uses the visible top edge for both browser and packaged 
   assert.deepEqual(readSafeArea(),{left:24,right:8,top:0,bottom:12},'安卓浏览器横屏保留其他方向的安全边距');
   const scene={scale:{width:802,height:360},game:{canvas:{getBoundingClientRect:()=>({width:802,height:360})}}} as unknown as import('phaser').Scene;
   assert.deepEqual(controlViewport(scene).insets,{left:24,right:8,top:0,bottom:12},'地图和状态栏共用的坐标从画面顶边开始');
+  const cssScene={scale:{width:1604,height:720},game:{canvas:{getBoundingClientRect:()=>({width:802,height:360})}}} as unknown as import('phaser').Scene;
+  assert.deepEqual(controlViewportCss(cssScene),{width:802,height:360,insets:{left:24,right:8,top:0,bottom:12}},'DOM HUD 用 CSS 宽高和安全区');
   Object.defineProperty(globalThis,'navigator',{configurable:true,value:{userAgent:'test'}});
   globals.InotiaNative={};fitViewport();
   assert.deepEqual(readSafeArea(),{left:24,right:8,top:0,bottom:12},'安装包横屏同样贴近顶边');
@@ -106,7 +108,15 @@ test('Android landscape uses the visible top edge for both browser and packaged 
  }
 });
 
-test('canvas keeps CSS size and ignores the device pixel ratio',()=>{
+test('canvas pixel width converts back to frame CSS pixels',()=>{
+ const scene=(zoom:number)=>({scale:{zoom}}) as unknown as import('phaser').Scene;
+ assert.equal(canvasCssScale(scene(1)),1);
+ assert.equal(canvasCssScale(scene(.999)),1);
+ assert.equal(canvasCssScale(scene(.5)),.5);
+ assert.ok(Math.abs(canvasCssScale(scene(1/3))-1/3)<1e-9);
+});
+
+test('canvas follows the chosen render scale without exceeding the device pixel ratio',()=>{
  const globals=globalThis as unknown as Record<string,unknown>;
  const original=['window','document'].map(name=>[name,Object.getOwnPropertyDescriptor(globalThis,name)] as const);
  const bounds={width:844,height:390},style={width:'',height:'',imageRendering:''};
@@ -117,13 +127,27 @@ test('canvas keeps CSS size and ignores the device pixel ratio',()=>{
  try{
   globals.document={getElementById:()=>({getBoundingClientRect:()=>bounds})};
   globals.window={devicePixelRatio:3};
-  const game={scale,canvas:{style}} as unknown as import('phaser').Game;
-  configureCanvas(game);
-  assert.deepEqual([scale.width,scale.height,style.width,style.height],[844,390,'844px','390px']);
-  bounds.width=960;bounds.height=640;configureCanvas(game);
-  assert.deepEqual([scale.width,scale.height,style.width,style.height],[960,640,'960px','640px']);
-  bounds.width=1280;bounds.height=720;configureCanvas(game);
-  assert.deepEqual([scale.width,scale.height,style.width,style.height],[1280,720,'1280px','720px']);
+  const game={scale,canvas:{style,getBoundingClientRect:()=>bounds}} as unknown as import('phaser').Game;
+  (game as unknown as {game:unknown}).game=game;
+  // 1× 保持 CSS 尺寸；2×/3× 放大画布像素，再用 zoom 缩回 CSS 尺寸。
+  configureCanvas(game,1);
+  assert.deepEqual([scale.width,scale.height,scale.zoom,style.width,style.height],[844,390,1,'844px','390px']);
+  configureCanvas(game,2);
+  assert.deepEqual([scale.width,scale.height,scale.zoom,style.width,style.height],[1688,780,.5,'844px','390px']);
+  configureCanvas(game,3);
+  assert.deepEqual([scale.width,scale.height,style.width,style.height],[2532,1170,'844px','390px']);
+  assert.ok(Math.abs(scale.zoom-1/3)<1e-9);
+  // 档位不超过本机 DPR：2× 屏上 3× 仍按 2× 画；1× 屏上 2× 仍按 1× 画。
+  scale.width=960;scale.height=640;scale.zoom=1;
+  globals.window={devicePixelRatio:2};configureCanvas(game,3);
+  assert.deepEqual([scale.width,scale.height,scale.zoom,style.width,style.height],[1688,780,.5,'844px','390px']);
+  scale.width=960;scale.height=640;scale.zoom=1;
+  globals.window={devicePixelRatio:1};configureCanvas(game,2);
+  assert.deepEqual([scale.width,scale.height,scale.zoom,style.width,style.height],[844,390,1,'844px','390px']);
+  // 画框尺寸变化后按当前档位重算，CSS 尺寸始终贴合画框。
+  bounds.width=960;bounds.height=640;
+  globals.window={devicePixelRatio:3};configureCanvas(game,2);
+  assert.deepEqual([scale.width,scale.height,scale.zoom,style.width,style.height],[1920,1280,.5,'960px','640px']);
  }finally{
   for(const[name,descriptor]of original){if(descriptor)Object.defineProperty(globalThis,name,descriptor);else delete globals[name];}
  }

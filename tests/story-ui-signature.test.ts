@@ -43,7 +43,7 @@ function fixture() {
   const readings = new Map<number | 'auto', SlotSummaryReading>([
     ['auto', { kind: 'ok', summary: { classId: 'dark-knight', className: '暗骑士', portrait: 'a.png', level: 5, mapId: 'map', mapName: '地图', savedAt: 10 } }]
   ]);
-  const settings: StoryMenuSettingsView = { music: 0.5, effects: 0.8, fps: true, frameRateLimit: 60, textureBatching: 'auto', criticalDecorations: true,
+  const settings: StoryMenuSettingsView = { music: 0.5, effects: 0.8, fps: true, frameRateLimit: 60, renderScale: 1, textureBatching: 'auto', criticalDecorations: true,
     fullscreen: 'available', fullscreenActive: false, controlMode: 'stick' };
   const learn = { entryId: 'book-1', selected: 'fireball', message: '' };
   const forge = { targetId: 'sword', tab: 'enchant', confirming: false };

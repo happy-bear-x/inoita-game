@@ -97,7 +97,7 @@ const scheduleLayout = () => {
     // 键盘弹出时可视区变矮：画布保持尺寸、只跟随位置偏移，菜单不会被重排。
     // 键盘收起（输入框已经失焦）后的下一次布局再按恢复后的可视区重算尺寸。
     fitViewport({ keepSize: editingText() });
-    if(app.game)configureCanvas(app.game);
+    if(app.game)configureCanvas(app.game,displaySettings.renderScale);
     app.game?.scale.getParentBounds();
     app.game?.scale.refresh();
     ui.resetInput();
@@ -757,7 +757,7 @@ function boot(): void {
   app.storyUI = new StoryUI(app);
   app.openCrafting=actorId=>app.storyUI.openCrafting(actorId);
   app.openShop=(shopId,mapId)=>app.storyUI.openShop(shopId,mapId);
-  ui.onStateChange = () => { if(app.game)configureCanvas(app.game); app.storyUI.sync(); worldScene()?.syncHud(); domUi.setOccluded(uiOcclusion(ui)); };
+  ui.onStateChange = () => { if(app.game)configureCanvas(app.game,displaySettings.renderScale); app.storyUI.sync(); worldScene()?.syncHud(); domUi.setOccluded(uiOcclusion(ui)); };
   ui.onMenu = returnToMenu;
   ui.onResetInput = () => { worldScene()?.resetInput(); };
   const game = new Phaser.Game({
@@ -786,6 +786,10 @@ function boot(): void {
   game.events.once(Phaser.Core.Events.DESTROY, () => {
     contentRequest.abort();cancelCommonPreload();app.releaseCommonAssets();
   });
+  const unsubscribeRenderScale = displaySettings.subscribeRenderScale(() => {
+    if (app.game) configureCanvas(app.game, displaySettings.renderScale);
+  });
+  game.events.once(Phaser.Core.Events.DESTROY, unsubscribeRenderScale);
   let frameLimitDisposed = false;
   const applyFrameLimit = (): void => {
     if (frameLimitDisposed) return;
@@ -844,7 +848,7 @@ function boot(): void {
   const clearDiagnosticSnapshot = installDiagnosticSnapshot(runtimeDiagnostics);
   game.events.once(Phaser.Core.Events.DESTROY, clearDiagnosticSnapshot);
   game.events.once('ready', () => {
-    configureCanvas(game);
+    configureCanvas(game,displaySettings.renderScale);
     // iOS 弹出系统键盘会让窗口短暂失焦。Phaser 把这次失焦当成页面切走：暂停游戏
     // 循环并挂起音频，键盘收起后不一定恢复。输入框聚焦期间的失焦交给输入框自己
     // 处理；真正的页面切走仍由 lifecycle 的 visibilitychange 驱动。ready 先于

@@ -1,5 +1,5 @@
 /**
- * 画面偏好：帧率上限、帧率显示、暴击装饰和纹理批次。
+ * 画面偏好：帧率上限、帧率显示、暴击装饰、纹理批次和画布采样倍率。
  *
  * 和音频开关一样存在 localStorage：属于本机偏好，不进存档，也不随存档回退。
  */
@@ -8,7 +8,9 @@ const STORAGE_KEY = 'inotia4.display.v1';
 export type FrameRateLimit = 30 | 60;
 /** 自动：安卓单纹理，其余平台多纹理；多纹理每批可绑多张图集页；单纹理只绑一张。 */
 export type TextureBatching = 'auto' | 'multi' | 'single';
-interface DisplayPreferences { fps: boolean; criticalDecorations: boolean; frameRateLimit: FrameRateLimit; textureBatching: TextureBatching }
+/** 画布采样倍率；实际倍率取本机 DPR 和该值的较小者。 */
+export type RenderScale = 1 | 2 | 3;
+interface DisplayPreferences { fps: boolean; criticalDecorations: boolean; frameRateLimit: FrameRateLimit; textureBatching: TextureBatching; renderScale: RenderScale }
 
 /** 把玩家的纹理批次偏好换算成 Phaser 的并行纹理单元上限。 */
 export function parallelTextureUnits(mode: TextureBatching, android: boolean, maxTextures: number): number {
@@ -20,13 +22,15 @@ function preferences(): DisplayPreferences {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}');
     return { fps: saved.fps !== false, criticalDecorations: saved.criticalDecorations !== false,
       frameRateLimit: saved.frameRateLimit === 30 ? 30 : 60,
-      textureBatching: saved.textureBatching === 'multi' || saved.textureBatching === 'single' ? saved.textureBatching : 'auto' };
-  } catch { return { fps: true, criticalDecorations: true, frameRateLimit: 60, textureBatching: 'auto' }; }
+      textureBatching: saved.textureBatching === 'multi' || saved.textureBatching === 'single' ? saved.textureBatching : 'auto',
+      renderScale: saved.renderScale === 2 || saved.renderScale === 3 ? saved.renderScale : 1 };
+  } catch { return { fps: true, criticalDecorations: true, frameRateLimit: 60, textureBatching: 'auto', renderScale: 1 }; }
 }
 
 const settings = preferences();
 const frameRateListeners = new Set<(limit: FrameRateLimit) => void>();
 const textureBatchingListeners = new Set<(mode: TextureBatching) => void>();
+const renderScaleListeners = new Set<(scale: RenderScale) => void>();
 
 export const displaySettings = {
   /** 帧率显示默认开启。 */
@@ -36,6 +40,18 @@ export const displaySettings = {
   get frameRateLimit(): FrameRateLimit { return settings.frameRateLimit; },
   /** 纹理批次默认自动：安卓单纹理，iOS 和桌面多纹理。 */
   get textureBatching(): TextureBatching { return settings.textureBatching; },
+  /** 画布采样倍率默认 1×；实际倍率不会超过本机 DPR。 */
+  get renderScale(): RenderScale { return settings.renderScale; },
+  setRenderScale(scale: RenderScale): void {
+    if (settings.renderScale === scale) return;
+    settings.renderScale = scale;
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(settings)); } catch { /* 本次会话内仍然生效 */ }
+    for (const listener of renderScaleListeners) listener(scale);
+  },
+  subscribeRenderScale(listener: (scale: RenderScale) => void): () => void {
+    renderScaleListeners.add(listener);
+    return () => { renderScaleListeners.delete(listener); };
+  },
   setFrameRateLimit(limit: FrameRateLimit): void {
     if (settings.frameRateLimit === limit) return;
     settings.frameRateLimit = limit;

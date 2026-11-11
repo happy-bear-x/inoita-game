@@ -32,6 +32,7 @@ test('display settings default both switches on and upgrade an old fps-only reco
   assert.equal(settings.fps,true);
   assert.equal(settings.criticalDecorations,true);
   assert.equal(settings.frameRateLimit,60);
+  assert.equal(settings.renderScale,1);
   assert.equal(settings.textureBatching,'auto');
 
   installStorage({[KEY]:JSON.stringify({fps:false})});
@@ -39,6 +40,7 @@ test('display settings default both switches on and upgrade an old fps-only reco
   assert.equal(settings.fps,false);
   assert.equal(settings.criticalDecorations,true,'旧记录没有新字段时默认开启');
   assert.equal(settings.frameRateLimit,60);
+  assert.equal(settings.renderScale,1,'旧记录没有画面精度时默认 1×');
   assert.equal(settings.textureBatching,'auto','旧记录没有纹理批次时默认自动');
 });
 
@@ -48,9 +50,9 @@ test('critical decorations persist without dropping the fps preference',async t=
   const {displaySettings}=await freshSettings();
   displaySettings.setCriticalDecorations(false);
   assert.equal(displaySettings.criticalDecorations,false);
-  assert.deepEqual(JSON.parse(entries.get(KEY)!),{fps:true,criticalDecorations:false,frameRateLimit:60,textureBatching:'auto'});
+  assert.deepEqual(JSON.parse(entries.get(KEY)!),{fps:true,criticalDecorations:false,frameRateLimit:60,renderScale:1,textureBatching:'auto'});
   displaySettings.setFps(false);
-  assert.deepEqual(JSON.parse(entries.get(KEY)!),{fps:false,criticalDecorations:false,frameRateLimit:60,textureBatching:'auto'});
+  assert.deepEqual(JSON.parse(entries.get(KEY)!),{fps:false,criticalDecorations:false,frameRateLimit:60,renderScale:1,textureBatching:'auto'});
 });
 
 test('frame rate preference persists, notifies immediately, and rejects invalid stored values',async t=>{
@@ -78,6 +80,29 @@ test('frame rate preference persists, notifies immediately, and rejects invalid 
     entries.set(KEY,JSON.stringify({frameRateLimit:invalid}));
     settings=(await freshSettings()).displaySettings;
     assert.equal(settings.frameRateLimit,60,`${invalid} 回 60`);
+  }
+});
+
+test('render scale persists, notifies once, and falls back to 1x',async t=>{
+  t.after(restoreStorage);
+  const entries=installStorage();
+  let settings=(await freshSettings()).displaySettings;
+  assert.equal(settings.renderScale,1);
+  const changes:number[]=[];
+  const unsubscribe=settings.subscribeRenderScale(scale=>changes.push(scale));
+  settings.setRenderScale(2);
+  settings.setRenderScale(2);
+  assert.deepEqual(changes,[2]);
+  assert.equal(JSON.parse(entries.get(KEY)!).renderScale,2);
+  settings.setRenderScale(3);
+  assert.deepEqual(changes,[2,3]);
+  unsubscribe();settings.setRenderScale(1);
+  assert.deepEqual(changes,[2,3]);
+  assert.equal((await freshSettings()).displaySettings.renderScale,1,'退订只停通知，不影响写盘');
+  for(const invalid of [0,4,2.5,'3']){
+    entries.set(KEY,JSON.stringify({renderScale:invalid}));
+    settings=(await freshSettings()).displaySettings;
+    assert.equal(settings.renderScale,1,`${invalid} 回 1`);
   }
 });
 
@@ -119,4 +144,6 @@ test('broken storage falls back to defaults and write failures keep the in-memor
   assert.equal(settings.criticalDecorations,false,'写盘失败时本次会话仍生效');
   settings.setFrameRateLimit(30);
   assert.equal(settings.frameRateLimit,30);
+  settings.setRenderScale(3);
+  assert.equal(settings.renderScale,3,'写盘失败时画面精度仍生效');
 });

@@ -1,3 +1,5 @@
+import type { RenderScale } from '../application/display-settings.ts';
+
 function element(id: string): HTMLElement {
   const node = document.getElementById(id);
   if (!node) throw new Error(`缺少界面元素：${id}`);
@@ -21,9 +23,8 @@ export function uiUnitScale(width: number, height: number): number {
 
 /** 画布像素换算到画框 CSS 像素；1× 渲染时正好是 1。 */
 export function canvasCssScale(scene: import('phaser').Scene): number {
-  const bounds = scene.game.canvas.getBoundingClientRect();
-  const ratio = bounds.width / Math.max(1, scene.scale.width);
-  return Math.abs(ratio - 1) < 0.002 ? 1 : ratio;
+  const zoom = scene.scale.zoom;
+  return zoom > 0 && Math.abs(zoom - 1) >= 0.002 ? zoom : 1;
 }
 
 let safeAreaRevision = 0;
@@ -64,15 +65,21 @@ export function fitViewport(options?: { keepSize?: boolean }): void {
   Object.assign(frame.style, { width: `${width}px`, height: `${height}px` });
 }
 
-/** 画布按 CSS 尺寸渲染，不按设备像素比放大；地图镜头同步换算，视野仍按参考尺寸展开。 */
-export function configureCanvas(game:import('phaser').Game):void {
-  const bounds=element('game-frame').getBoundingClientRect();
-  const width=Math.round(bounds.width),height=Math.round(bounds.height);
-  const resized=game.scale.width!==width||game.scale.height!==height;
-  if(resized)game.scale.resize(width,height);
-  // Scale.NONE 在 zoom=1 时 resize 不更新 CSS 尺寸；新尺寸就绪后由 setZoom 同步。
-  if(resized||game.scale.zoom!==1)game.scale.setZoom(1);
-  game.canvas.style.imageRendering='auto';
+/**
+ * 按画面精度放大画布内部像素，再用 zoom 缩回画框 CSS 尺寸；地图镜头同步换算，
+ * 视野仍按参考尺寸展开。实际倍率不超过本机 DPR。
+ */
+export function configureCanvas(game: import('phaser').Game, renderScale: RenderScale = 1): void {
+  const bounds = element('game-frame').getBoundingClientRect();
+  const density = Math.min(renderScale, Math.max(1, window.devicePixelRatio || 1));
+  const width = Math.max(1, Math.round(bounds.width * density));
+  const height = Math.max(1, Math.round(bounds.height * density));
+  const resized = game.scale.width !== width || game.scale.height !== height;
+  if (resized) game.scale.resize(width, height);
+  // resize 后画布 CSS 尺寸仍按旧 zoom 算；再用新 zoom 精确压回画框宽高。
+  const zoom = bounds.width / width;
+  if (resized || game.scale.zoom !== zoom) game.scale.setZoom(zoom);
+  game.canvas.style.imageRendering = 'auto';
 }
 /**
  * 世界相对界面的倍率。逻辑尺寸 960×640（3:2）是本版按用户选择固定的，镜头倍率取 3；
@@ -82,7 +89,7 @@ const WORLD_ZOOM_SCALE = 3;
 
 /**
  * 地图镜头的缩放：世界倍率 × 画框内的等比缩放 × 画布像素与 CSS 像素的比例。
- * 画布按 CSS 尺寸渲染时比例为 1；改动这里会整体改变地图视野大小。
+ * 画面精度提高后画布像素多于 CSS 像素，比例大于 1；镜头倍率相应放大，视野仍按画框 CSS 尺寸展开。
  */
 export function worldZoom(scene:import('phaser').Scene):number {
   const bounds=scene.game.canvas.getBoundingClientRect();
