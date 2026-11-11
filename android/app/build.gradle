@@ -49,7 +49,7 @@ android {
         minSdk 29
         targetSdk 34
         versionCode 14
-        versionName '2.0.0'
+        versionName '2.0.1'
         buildConfigField 'String', 'BASELINE_BUILD_ID', "\"${baselineBuildId}\""
         buildConfigField 'String', 'BASELINE_BUILT_AT', "\"${baselineBuiltAt}\""
         ndk {
