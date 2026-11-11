@@ -19,7 +19,7 @@ export function sideQuestIds(groups: readonly QuestGroupDefinition[]): ReadonlyS
 /**
  * 任务定义本身要不要出现在玩家眼前：日志外任务与内部任务都不出现。
  * 与有没有进度无关——`QuestBook.journalVisible` 与任务日志的过滤都从这里取这一条。
- * 日志外任务不是彩蛋：它们照常接取、计数、交付和显示场景标记，只是不写进任务日志。
+ * 日志外任务照常接取、计数、交付和显示场景标记，只是不写进任务日志。
  */
 export function questInJournal(definition: QuestRules): boolean {
   return definition.journal !== false && definition.completion !== 'internal';
