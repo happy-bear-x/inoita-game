@@ -5,7 +5,7 @@ import type { StatusHudSkin, TargetStatus } from '../../domain/status-hud.ts';
 import type { PartyActiveSnapshot } from '../../domain/party.ts';
 import type { DomUi } from '../dom/dom-ui.ts';
 import { DomStatusHud, type MemberValues } from '../dom/status-hud.ts';
-import { controlViewport } from './control-layout-viewport.ts';
+import { controlViewportCss } from './control-layout-viewport.ts';
 
 /** 状态栏的场景生命周期接线；所有显示和点击由 DOM 组件持有。 */
 export class StatusHud {
@@ -25,7 +25,7 @@ export class StatusHud {
     this.unwatch = hud.watchVisibility(active => { this.active = active; this.view.setVisible(this.requested && active); });
     this.layout();
   }
-  layout(): void { this.view.layout(controlViewport(this.hud.scene)); }
+  layout(): void { this.view.layout(controlViewportCss(this.hud.scene)); }
   update(tick: number): void { this.view.update(tick); }
   setTarget(target: TargetStatus | undefined): void { this.view.setTarget(target); }
   setVisible(visible: boolean): void { this.requested = visible; this.view.setVisible(visible && this.active); }

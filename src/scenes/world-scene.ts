@@ -1206,9 +1206,9 @@ export class WorldScene extends Phaser.Scene {
   }
   private layoutHud(): void {
     this.hud?.layout(this.scale.width, this.scale.height);
-    this.stick?.layout(this.scale.height);
-    this.controls?.layout(this.scale.width, this.scale.height);
-    this.skillHud?.layout(this.scale.width, this.scale.height);
+    this.stick?.layout();
+    this.controls?.layout();
+    this.skillHud?.layout();
     this.nameBanner?.layout();
     this.minimap?.layout();
     this.layoutFps();

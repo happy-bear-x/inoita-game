@@ -15,7 +15,7 @@ import { layoutChoicePanel } from '../ui/choice-layout.ts';
 import { SceneUiAssets } from '../ui/phaser/ui-asset-host.ts';
 import { QuestPopup } from '../ui/phaser/quest-popup.ts';
 import { screenCoverage } from '../ui/phaser/modal-placement.ts';
-import { readSafeArea } from '../ui/viewport.ts';
+import { canvasCssScale, readSafeArea } from '../ui/viewport.ts';
 import type { AssetLease } from '../application/assets.ts';
 import type { DomLabel } from '../ui/dom/dom-ui.ts';
 
@@ -152,11 +152,11 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     if(!this.domInstant)return;
     this.domInstant.setVisible(!hidden);
     if(hidden)return;
-    const point=instantMessagePoint(this.scale.width,this.scale.height);
+    const css=canvasCssScale(this),point=instantMessagePoint(this.scale.width*css,this.scale.height*css);
     this.domInstant.setText(message!);this.domInstant.setPosition(point.x,point.y);this.domInstant.setStyle({opacity:String(ui.instant.alpha)});
   }
   private layoutDomText():void{
-    const scale=this.surface.root.scaleX||1;
+    const scale=this.surfacePoint(0,0).scale;
     this.domInstant?.setStyle({fontSize:`${Math.max(12,24*scale)}px`,color:GOLD,textShadow:'0 1px 2px rgba(0,0,0,.7)'});
     this.domToast?.setStyle({fontSize:`${Math.max(12,24*scale)}px`,width:`${600*scale}px`,minHeight:`${90*scale}px`,
       padding:`${14*scale}px ${20*scale}px 0`,background:'rgba(16,29,36,.95)',color:'#f5f0df',textAlign:'center',whiteSpace:'pre-wrap'});
@@ -224,8 +224,8 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
    * Phaser 的每个 Text 都有自己的画布纹理；翻页时销毁再新建几十个是演出卡顿的主因。
    */
   private surfacePoint(x:number,y:number):{x:number;y:number;scale:number}{
-    const m=this.surface.root.getWorldTransformMatrix();
-    return{x:m.tx+x*m.scaleX,y:m.ty+y*m.scaleY,scale:m.scaleX};
+    const m=this.surface.root.getWorldTransformMatrix(),css=canvasCssScale(this);
+    return{x:(m.tx+x*m.scaleX)*css,y:(m.ty+y*m.scaleY)*css,scale:m.scaleX*css};
   }
   /**
    * 选项的 DOM 文字容器：滚动区各包一层 `overflow:hidden`，里面的标签只按
@@ -443,8 +443,8 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     const toastVisible=!!ui.toastMessage&&!portrait&&!cover&&!ui.loadingState&&!ui.defeated&&!ui.suspended;
     this.domToast?.setVisible(toastVisible);
     if(this.domToast&&toastVisible){
-      const scale=this.surface.root.scaleX||1,m=this.surface.root.getWorldTransformMatrix();
-      this.domToast.setText(ui.toastMessage!);this.domToast.setPosition(m.tx+480*scale,m.ty+164*scale);
+      const point=this.surfacePoint(480,164);
+      this.domToast.setText(ui.toastMessage!);this.domToast.setPosition(point.x,point.y);
     }
     this.dialogueBodySignature=bodySignature;
     if(uiOcclusion(ui)){this.hideDialogueDom();this.hideChoiceDom();}
@@ -458,7 +458,7 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     this.domPortraitTitle?.setVisible(portrait);
     this.domPortraitHint?.setVisible(portrait);
     if(!portrait)return;
-    const scale=this.surface.root.scaleX||1;
+    const scale=this.surfacePoint(0,0).scale;
     const icon=this.surfacePoint(480,160),title=this.surfacePoint(480,310),hint=this.surfacePoint(480,370);
     this.domPortraitIcon?.setText('↻').setPosition(icon.x,icon.y)
       .setStyle({fontSize:`${Math.max(16,90*scale)}px`,color:GOLD});
@@ -473,7 +473,7 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     const labels=[this.domDefeatTitle,this.domDefeatMessage,this.domDefeatCancel,this.domDefeatConfirm,
       this.domDefeatCheckpoint,this.domDefeatLoad];
     if(!defeat||portrait||cover||ui.loadingState){for(const label of labels)label?.setVisible(false);return;}
-    const scale=this.surface.root.scaleX||1;
+    const scale=this.surfacePoint(0,0).scale;
     const title=this.surfacePoint(480,172);
     this.domDefeatTitle?.setText('队伍全员阵亡').setPosition(title.x,title.y)
       .setStyle({fontSize:`${34*scale}px`,color:'#e4c58b'}).setVisible(true);
@@ -516,7 +516,7 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     this.domLoadingAction?.setVisible(show&&!!state?.retry);
     this.domLoadingMenu?.setVisible(show&&!!state?.retry&&ui.canReturn);
     if(!show||!state)return;
-    const scale=this.surface.root.scaleX||1,title=this.surfacePoint(480,410),label=this.surfacePoint(480,476);
+    const scale=this.surfacePoint(0,0).scale,title=this.surfacePoint(480,410),label=this.surfacePoint(480,476);
     this.domLoadingTitle?.setText('艾诺迪亚').setPosition(title.x,title.y)
       .setStyle({fontSize:`${42*scale}px`,color:GOLD});
     this.domLoading?.setText(state.label).setPosition(label.x,label.y)

@@ -5,7 +5,7 @@ import type { Cooldown } from '../../domain/combat.ts';
 import type { ShortcutSlot } from '../shortcut-view.ts';
 import type { DomUi } from '../dom/dom-ui.ts';
 import { DomComputerSkillHud } from '../dom/computer-skill-hud.ts';
-import { controlViewport } from './control-layout-viewport.ts';
+import { controlViewportCss } from './control-layout-viewport.ts';
 
 /** 电脑技能行的场景显隐接线。 */
 export class ComputerSkillHud {
@@ -23,7 +23,7 @@ export class ComputerSkillHud {
   }
   setPage(slots: readonly ShortcutSlot[]): void { this.view.setPage(slots); }
   setCooldowns(cooldowns: Readonly<Record<string, Cooldown>>): void { this.view.setCooldowns(cooldowns); }
-  layout(width: number, height: number): void { this.view.layout(controlViewport(this.hud.scene, width, height)); }
+  layout(): void { this.view.layout(controlViewportCss(this.hud.scene)); }
   setVisible(visible: boolean): void { this.requested = visible; this.view.visible(visible && this.active); }
   destroy(): void { this.unwatch(); this.view.destroy(); }
 }

@@ -10,6 +10,7 @@ import { SceneUiAssets } from '../ui/phaser/ui-asset-host.ts';
 import { SAVE_BOARD, SAVE_BOARD_LAYOUT, drawSaveBoardRow, newestFirstSlots, saveBoardOrigin, saveRowTitle, setSaveBoardTextSink, type SaveBoardControl, type SaveBoardTextSpec } from '../ui/phaser/save-board.ts';
 import { MenuTextLayer, type MenuTextClip, type MenuTextPoint, type MenuTextSpec, type MenuTextWriter } from '../ui/dom/menu-text.ts';
 import type { DomLabel, DomUi } from '../ui/dom/dom-ui.ts';
+import { canvasCssScale } from '../ui/viewport.ts';
 import { drawNativeMessage } from '../ui/phaser/native-message.ts';
 import { centerModal } from '../ui/phaser/modal-placement.ts';
 import { CHANGELOG_LAYOUT, changelogMetrics, changelogVisibleRange } from '../ui/changelog-layout.ts';
@@ -308,8 +309,8 @@ export class MenuScene extends Phaser.Scene {
   private menuTextPoint(x:number,y:number):MenuTextPoint {
     const root=this.surface?.root;
     if(!root)return{x,y,scale:1};
-    const matrix=root.getWorldTransformMatrix(),point=matrix.transformPoint(x,y);
-    return{x:point.x,y:point.y,scale:matrix.scaleX};
+    const matrix=root.getWorldTransformMatrix(),point=matrix.transformPoint(x,y),css=canvasCssScale(this);
+    return{x:point.x*css,y:point.y*css,scale:matrix.scaleX*css};
   }
   /**
    * 弹层本地坐标 → 画框 CSS 坐标。弹层和页面是同一屏幕层上的两个根节点，
@@ -319,8 +320,8 @@ export class MenuScene extends Phaser.Scene {
   private modalTextPoint(x:number,y:number):MenuTextPoint {
     const modal=this.modal;
     if(!modal)return this.menuTextPoint(x,y);
-    const matrix=modal.root.getWorldTransformMatrix(),point=matrix.transformPoint(x,y);
-    return{x:point.x,y:point.y,scale:matrix.scaleX};
+    const matrix=modal.root.getWorldTransformMatrix(),point=matrix.transformPoint(x,y),css=canvasCssScale(this);
+    return{x:point.x*css,y:point.y*css,scale:matrix.scaleX*css};
   }
   /** 滚动文字按当前偏移重算；每次整页重画后指向新的滚动区。 */
   private menuScrollTop(page:string):number|undefined {

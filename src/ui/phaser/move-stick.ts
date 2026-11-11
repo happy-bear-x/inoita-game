@@ -7,7 +7,7 @@ import type { InputRouter } from '../../application/input-router.ts';
 import { UI_EVENTS } from '../../application/ui-events.ts';
 import type { DomUi } from '../dom/dom-ui.ts';
 import { DomMoveStick } from '../dom/move-stick.ts';
-import { controlViewport } from './control-layout-viewport.ts';
+import { controlViewportCss } from './control-layout-viewport.ts';
 export { STICK_KNOB_RADIUS, DPAD_BASE_RADIUS, DPAD_RUNE_ALPHA, DPAD_ARROW_OFFSET, DPAD_ARROW_SCALE_NORM } from '../dom/move-stick.ts';
 
 /** 移动控件的场景与键盘接线。 */
@@ -19,7 +19,6 @@ export class MoveStick {
   private readonly cleanup: (() => void)[] = [];
   private requested = false;
   private active = true;
-  private height?: number;
   constructor(owner: Phaser.Scene, hud: Hud, skin: ControlSkin, preferences?: ControlLayoutPreferences,
     bindings: KeyBindingPreferences = defaultKeyBindings, router?: InputRouter, domUi?: DomUi) {
     const parent = domUi?.layer('hud');
@@ -37,10 +36,10 @@ export class MoveStick {
     owner.game.events.on(UI_EVENTS.cancelInput, this.reset);
     this.cleanup.push(() => owner.game.events.off(UI_EVENTS.cancelInput, this.reset));
     this.cleanup.push(bindings.subscribe(this.reset));
-    if (preferences) this.cleanup.push(preferences.subscribe(() => { if (this.height !== undefined) this.layout(this.height); }));
+    if (preferences) this.cleanup.push(preferences.subscribe(() => this.layout()));
   }
   readonly reset = (): void => { this.view.reset(); };
-  layout(height: number): void { this.height = height; this.view.layout(controlViewport(this.hud.scene, this.hud.scene.scale.width, height), this.preferences?.snapshot()); }
+  layout(): void { this.view.layout(controlViewportCss(this.hud.scene), this.preferences?.snapshot()); }
   setVisible(visible: boolean): void { this.requested = visible; this.view.setVisible(visible && this.active); }
   destroy(): void { for (const dispose of this.cleanup.splice(0)) dispose(); this.view.destroy(); }
 }

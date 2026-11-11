@@ -12,6 +12,7 @@ import { DPAD_ARROW_OFFSET, DPAD_ARROW_SCALE_NORM, DPAD_BASE_RADIUS, DPAD_RUNE_A
 import { controlSettings } from '../../application/control-settings.ts';
 import type { DomLabel, DomUi } from '../dom/dom-ui.ts';
 import { controlViewport } from './control-layout-viewport.ts';
+import { canvasCssScale } from '../viewport.ts';
 import { GOLD, UiSurface } from './widgets.ts';
 
 /** 白色选中框离控件边缘的距离（屏幕像素）。 */
@@ -169,9 +170,9 @@ export class ControlLayoutEditor {
       seen.add(key);
       let label=this.toolbarLabels.get(key);
       if(!label){label=dom.label('screen','dom-control-toolbar',{x:.5,y:.5});this.toolbarLabels.set(key,label);}
-      const matrix=button.getWorldTransformMatrix(),point=matrix.transformPoint(width/2,TOOLBAR_HEIGHT/2);
-      label.setText(text).setPosition(point.x,point.y)
-        .setStyle({fontSize:`${Math.max(1,font*matrix.scaleX)}px`,color:GOLD}).setVisible(shown);
+      const matrix=button.getWorldTransformMatrix(),point=matrix.transformPoint(width/2,TOOLBAR_HEIGHT/2),css=canvasCssScale(this.scene);
+      label.setText(text).setPosition(point.x*css,point.y*css)
+        .setStyle({fontSize:`${Math.max(1,font*matrix.scaleX*css)}px`,color:GOLD}).setVisible(shown);
     }
     for(const [key,label] of this.toolbarLabels){if(seen.has(key))continue;label.remove();this.toolbarLabels.delete(key);}
   }
@@ -185,9 +186,9 @@ export class ControlLayoutEditor {
       seen.add(quantity.id);
       let label=this.quantityLabels.get(quantity.id);
       if(!label){label=dom.label('screen','dom-control-quantity',{x:.5,y:.5});this.quantityLabels.set(quantity.id,label);}
-      const matrix=object.getWorldTransformMatrix(),point=matrix.transformPoint(32,23);
-      label.setText(quantity.text).setAnchor(.5,.5).setPosition(point.x,point.y)
-        .setStyle({fontSize:`${Math.max(1,18*matrix.scaleX*quantity.fit)}px`,color:'#ffffff'}).setVisible(shown);
+      const matrix=object.getWorldTransformMatrix(),point=matrix.transformPoint(32,23),css=canvasCssScale(this.scene);
+      label.setText(quantity.text).setAnchor(.5,.5).setPosition(point.x*css,point.y*css)
+        .setStyle({fontSize:`${Math.max(1,18*matrix.scaleX*css*quantity.fit)}px`,color:'#ffffff'}).setVisible(shown);
     }
     for(const [id,label] of this.quantityLabels){if(seen.has(id))continue;label.remove();this.quantityLabels.delete(id);}
   }

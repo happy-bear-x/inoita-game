@@ -19,6 +19,13 @@ export function uiUnitScale(width: number, height: number): number {
   return Math.min(width / UI_UNIT_WIDTH, height / UI_UNIT_HEIGHT);
 }
 
+/** 画布像素换算到画框 CSS 像素；1× 渲染时正好是 1。 */
+export function canvasCssScale(scene: import('phaser').Scene): number {
+  const bounds = scene.game.canvas.getBoundingClientRect();
+  const ratio = bounds.width / Math.max(1, scene.scale.width);
+  return Math.abs(ratio - 1) < 0.002 ? 1 : ratio;
+}
+
 let safeAreaRevision = 0;
 let safeAreaCache: { revision: number; value: { left: number; right: number; top: number; bottom: number } } | undefined;
 

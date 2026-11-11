@@ -6,7 +6,8 @@ import type { Point } from '../domain/navigation.ts';
 import type { Hud } from './hud.ts';
 import type { DomUi } from '../ui/dom/dom-ui.ts';
 import { DomMinimap, type MinimapTask } from '../ui/dom/minimap.ts';
-import { controlViewport } from '../ui/phaser/control-layout-viewport.ts';
+import { controlViewportCss } from '../ui/phaser/control-layout-viewport.ts';
+import { canvasCssScale } from '../ui/viewport.ts';
 export type { MinimapTask } from '../ui/dom/minimap.ts';
 
 /** 小地图的场景接线；地形、边框和标记由 DOM/SVG 绘制。 */
@@ -25,8 +26,9 @@ export class StoryMinimap {
     this.layout();
   }
   layout(): void {
-    this.view.layout(controlViewport(this.owner));
-    this.owner.game.events.emit(UI_EVENTS.minimapLayout, this.view.height);
+    this.view.layout(controlViewportCss(this.owner));
+    // 小地图自己按 CSS 像素排；菜单侧边按钮挂在 UiSurface 上，仍要游戏单位。
+    this.owner.game.events.emit(UI_EVENTS.minimapLayout, this.view.height / canvasCssScale(this.owner));
   }
   extent(): { x: number; y: number; width: number; height: number } { return this.view.extent(); }
   updatePlayer(point: Point): void { this.view.updatePlayer(point); }

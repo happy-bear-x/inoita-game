@@ -9,6 +9,7 @@ import { loadSceneAssets } from '../rendering/scene-assets.ts';
 import { UiSurface, loadUiImages } from '../ui/phaser/widgets.ts';
 import type { ScrollArea } from '../ui/phaser/widgets.ts';
 import type { DomLabel, DomUi } from '../ui/dom/dom-ui.ts';
+import { canvasCssScale } from '../ui/viewport.ts';
 
 /** 装配时传入的 StoryApp 比场景端口多一个 DOM 文字层；缺省时这一页不显示文字。 */
 type StoryClassApp = StoryClassContext & { readonly domUi?: DomUi };
@@ -128,11 +129,12 @@ export class StoryClassScene extends Phaser.Scene {
     this.preview?.layout();
     this.layoutDomText();
   }
-  /** 页面坐标 → 画框内 CSS 坐标；画布按 CSS 尺寸渲染，容器矩阵已经是屏幕像素。 */
+  /** 页面坐标 → 画框内 CSS 坐标；矩阵是游戏单位，再乘画布像素到 CSS 像素的比例。 */
   private domMatrix():{scale:number;point:(x:number,y:number)=>{x:number;y:number}}{
     const matrix=this.surface?.root.getWorldTransformMatrix();
     if(!matrix)return{scale:1,point:(x,y)=>({x,y})};
-    return{scale:matrix.scaleX,point:(x,y)=>{const point=matrix.transformPoint(x,y);return{x:point.x,y:point.y};}};
+    const css=canvasCssScale(this);
+    return{scale:matrix.scaleX*css,point:(x,y)=>{const point=matrix.transformPoint(x,y);return{x:point.x*css,y:point.y*css};}};
   }
   private ensureDomText():ClassDomText|undefined{
     const domUi=this.app.domUi;if(!domUi)return undefined;

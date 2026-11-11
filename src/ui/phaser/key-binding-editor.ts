@@ -4,6 +4,7 @@ import type { KeyBindingPreferences } from '../../application/key-bindings.ts';
 import { KEY_ACTION_LABELS, bindingFromEvent, formatBinding, type KeyBindingAction } from '../../domain/key-bindings.ts';
 import type { DomLabel, DomUi } from '../dom/dom-ui.ts';
 import { GOLD, UiSurface } from './widgets.ts';
+import { canvasCssScale } from '../viewport.ts';
 
 /** 左列：移动、切人、切组、菜单；右列：六个快捷位。 */
 const LEFT_ACTIONS: readonly KeyBindingAction[] = [
@@ -156,6 +157,7 @@ export class KeyBindingEditor {
     const dom = this.dom;
     if (!dom) return;
     const matrix = this.canvas.root.getWorldTransformMatrix();
+    const css = canvasCssScale(this.scene);
     const shown = this.canvas.root.visible;
     const seen = new Set<string>();
     for (const spec of this.domSpecs) {
@@ -166,8 +168,8 @@ export class KeyBindingEditor {
         this.domLabels.set(spec.key, label);
       }
       const point = matrix.transformPoint(spec.x, spec.y);
-      const scale = matrix.scaleX;
-      label.setText(spec.text).setAnchor(spec.anchorX, spec.anchorY).setPosition(point.x, point.y)
+      const scale = matrix.scaleX * css;
+      label.setText(spec.text).setAnchor(spec.anchorX, spec.anchorY).setPosition(point.x * css, point.y * css)
         .setStyle({ fontSize: `${Math.max(1, spec.size * scale)}px`, color: spec.color,
           lineHeight: `${(spec.size + 5) * scale}px`, textAlign: spec.align });
       if (spec.width !== undefined) {

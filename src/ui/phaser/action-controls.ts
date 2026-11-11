@@ -5,7 +5,7 @@ import type { Cooldown } from '../../domain/combat.ts';
 import type { ActionControlsHandlers } from '../../rendering/action-controls.ts';
 import { UI_EVENTS } from '../../application/ui-events.ts';
 import { ControlLayoutPreferences, resolveControlLayout } from '../control-layout.ts';
-import { controlViewport } from './control-layout-viewport.ts';
+import { controlViewport, controlViewportCss } from './control-layout-viewport.ts';
 import type { DomUi } from '../dom/dom-ui.ts';
 import { DomActionControls } from '../dom/action-controls.ts';
 import type { ShortcutSlot } from '../shortcut-view.ts';
@@ -25,7 +25,6 @@ export class ActionControls {
   private readonly preferences?: ControlLayoutPreferences;
   private readonly unsubscribe: () => void;
   private requested = false;
-  private viewportSize?: { width: number; height: number };
   constructor(owner: Phaser.Scene, hud: Hud, handlers: ActionControlsHandlers, skin: ControlSkin, preferences?: ControlLayoutPreferences, domUi?: DomUi) {
     const parent = domUi?.layer('hud');
     if (!parent) throw new Error('操作界面尚未就绪');
@@ -33,7 +32,7 @@ export class ActionControls {
     this.view = new DomActionControls(parent, skin, handlers, error => {
       globalThis.storyDiagnostics?.record('ui-image-error', { error });
     });
-    this.unsubscribe = preferences?.subscribe(() => { if (this.viewportSize) this.layout(this.viewportSize.width, this.viewportSize.height); }) ?? (() => {});
+    this.unsubscribe = preferences?.subscribe(() => this.layout()) ?? (() => {});
     for (const event of ['sleep', 'wake', 'pause', 'resume']) owner.events.on(event, this.refresh);
     owner.game.events.on(UI_EVENTS.cancelInput, this.resetInput);
     window.addEventListener('blur', this.resetInput);
@@ -44,9 +43,8 @@ export class ActionControls {
   snapshot(): readonly ShortcutSlot[] { return this.view.snapshot(); }
   setCooldowns(cooldowns: Readonly<Record<string, Cooldown>>): void { this.view.setCooldowns(cooldowns); }
   setAttack(enabled: boolean, dimUnavailable = true): void { this.view.setAttack(enabled, dimUnavailable); }
-  layout(width: number, height: number): void {
-    this.viewportSize = { width, height };
-    this.view.layout(controlViewport(this.scene, width, height), this.preferences?.snapshot());
+  layout(): void {
+    this.view.layout(controlViewportCss(this.scene), this.preferences?.snapshot());
   }
   setVisible(visible: boolean): void { this.requested = visible; this.refresh(); }
   destroy(): void {

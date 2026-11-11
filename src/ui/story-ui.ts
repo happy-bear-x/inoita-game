@@ -31,7 +31,7 @@ import { inventoryView,INVENTORY_LABELS,INVENTORY_SIDE_FILTERS,type InventoryVie
 import { EQUIPMENT_SLOTS,SKILL_POINT_ITEM,USE_LABELS,unimplementedItemUse,type EquipmentSlot,type ItemInstance,type ItemResult } from '../domain/items.ts';
 import { GmPanel } from './phaser/gm-panel.ts';
 import type { GmActions } from '../debug/gm-actions.ts';
-import { readSafeArea, uiUnitScale } from './viewport.ts';
+import { canvasCssScale, readSafeArea, uiUnitScale } from './viewport.ts';
 import { ControlLayoutEditor } from './phaser/control-layout-editor.ts';
 import { KeyBindingEditor } from './phaser/key-binding-editor.ts';
 import { CONTROL_SIZES, HUD_SIDE_BUTTON_SIZE, PENDING_OFFSET, resolveControlLayout, type ControlId } from './control-layout.ts';
@@ -618,8 +618,8 @@ export class StoryUI {
     const fullPage=this.page==='system'||this.page==='save'||this.page==='load';
     const root=fullPage?this.surface?.root:this.body?.root;
     if(!root)return{x,y,scale:1};
-    const matrix=root.getWorldTransformMatrix(),point=matrix.transformPoint(x,y);
-    return{x:point.x,y:point.y,scale:matrix.scaleX};
+    const matrix=root.getWorldTransformMatrix(),point=matrix.transformPoint(x,y),css=this.scene?canvasCssScale(this.scene):1;
+    return{x:point.x*css,y:point.y*css,scale:matrix.scaleX*css};
   }
   /** 弹层本地坐标 → 内容块坐标；DOM 层统一按内容块根节点换算 CSS 位置。 */
   private modalToPagePoint(x:number,y:number):{x:number;y:number}{
@@ -1548,10 +1548,10 @@ export class StoryUI {
     const edit=this.shortcutEdit,screen=this.shortcutScreen,scene=this.scene,prompt=this.shortcutPrompt;
     if(!edit||!screen||!scene||!prompt)return;
     const {scale}=controlPlacement(scene,scene.scale.width,scene.scale.height);
-    const matrix=screen.root.getWorldTransformMatrix();
+    const matrix=screen.root.getWorldTransformMatrix(),css=canvasCssScale(scene);
     const point=matrix.transformPoint(scene.scale.width/scale/2,110);
-    prompt.setText(SHORTCUT_PROMPT).setPosition(point.x,point.y)
-      .setStyle({fontSize:`${26*matrix.scaleX}px`,color:TEXT_COLORS.white});
+    prompt.setText(SHORTCUT_PROMPT).setPosition(point.x*css,point.y*css)
+      .setStyle({fontSize:`${26*matrix.scaleX*css}px`,color:TEXT_COLORS.white});
   }
   /**
    * 登记快捷键屏左上角的关闭钮。全菜单统一用菜单页右上角那枚圆形关闭图，

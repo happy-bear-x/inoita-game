@@ -4,7 +4,7 @@ import type Phaser from 'phaser';
 import type { GameUI } from '../game-ui.ts';
 import { MONEY } from '../item-layout.ts';
 import { splitMoney } from '../../domain/money.ts';
-import { readSafeArea } from '../viewport.ts';
+import { canvasCssScale, readSafeArea } from '../viewport.ts';
 import { layoutQuestText, questPopupContent, questPopupLayout, type QuestTextLine } from '../quest-popup-layout.ts';
 import { UiSurface, GOLD, type ScrollArea } from './widgets.ts';
 import { FONT, TEXT_COLORS } from '../text-style.ts';
@@ -112,8 +112,8 @@ export class QuestPopup {
   destroy(): void { this.removeDom(); this.surface.destroy(); this.shade.destroy(); }
 
   private surfacePoint(x: number, y: number): { x: number; y: number; scale: number } {
-    const m = this.surface.root.getWorldTransformMatrix();
-    return { x: m.tx + x * m.scaleX, y: m.ty + y * m.scaleY, scale: m.scaleX };
+    const m = this.surface.root.getWorldTransformMatrix(), css = canvasCssScale(this.surface.scene);
+    return { x: (m.tx + x * m.scaleX) * css, y: (m.ty + y * m.scaleY) * css, scale: m.scaleX * css };
   }
 
   private placeLabel(pool: DomLabel[], index: number, parent: HTMLElement, text: string,
