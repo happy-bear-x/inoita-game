@@ -84,6 +84,7 @@ import type { Point } from '../domain/navigation.ts';
 import type { AssetLease } from '../application/assets.ts';
 import type { StoryContext } from '../application/ports.ts';
 import { CombatPresenter } from '../rendering/combat-presenter.ts';
+import { TargetFocus } from '../rendering/target-focus.ts';
 import { CombatEffects } from '../rendering/combat-effects.ts';
 import { setCharacterStealth } from '../rendering/character-visibility.ts';
 import { StatusColorRenderer } from '../rendering/status-color.ts';
@@ -252,6 +253,7 @@ export class WorldCombat {
   private wipeoutPosition?:Point;
   private generation=0;
   private playerAssets?:AssetLease;
+  private focusRings?:TargetFocus;
   private restoredAssets?:AssetLease;
   private storyAssets?:AssetLease;
   /** 压测敌人的角色图集与技能特效；只加载一次，保留到战斗销毁。 */
@@ -2444,6 +2446,8 @@ captureStoryActors():SceneActorState[] {
     const lease=await loadSceneAssets(this.scene,needed,()=>{});
     if(this.closed||generation!==this.generation){lease.release();return;}
     this.playerAssets=lease;
+    this.focusRings?.destroy();
+    this.focusRings=new TargetFocus(this.scene);
     // 结算特效素材已在共享包里；这里先把容器、精灵和动画建好，升级时只重播。
     this.outcomes.warm();
     this.feedback.warm();
@@ -3093,6 +3097,7 @@ captureStoryActors():SceneActorState[] {
     this.feedback.setPaused(!enabled||this.defeated);
     this.syncStateMarkers(enabled&&!this.performanceHidden&&!this.defeated);
     this.setPaused(!enabled||this.defeated);
+    this.syncFocusRings(enabled&&!this.performanceHidden&&!this.defeated);
     if(!enabled||this.defeated){
       this.syncBuffLoops();
       // 队伍已全灭但死亡演出被暂停或重建清掉时，结算不能一直等下去。
@@ -3137,6 +3142,17 @@ captureStoryActors():SceneActorState[] {
     // 冷却读数按战斗帧变化；这一渲染帧没推进逻辑帧时不必重新取快照、重算签名。
     if(tickBefore!==this.app.session.combatTick)this.scene.refreshSkillCooldowns(this.cooldowns);
     this.syncBuffLoops();
+  }
+  private syncFocusRings(shown:boolean):void{
+    const rings=this.focusRings;if(!rings)return;
+    const controlled=this.controlledVisual;
+    const alive=(this.memberOf(this.controlledId)?.player.health??0)>0;
+    const player=shown&&alive?this.movement.displayPosition(controlled):undefined;
+    const controller=this.partyControllers.get(this.controlledId);
+    const targetId=controller?controller.selectedTargetId():this.targetId;
+    const target=targetId&&!this.pendingDefeats.has(targetId)?this.visualOf(targetId):undefined;
+    const targetPoint=shown&&target?.container.active?this.movement.displayPosition(target):undefined;
+    rings.update(player,targetPoint,targetPoint?targetId:undefined,shown);
   }
   /** 规则状态统一在这里变成只读表现：眩晕用金色星星，睡眠用 Zzz；都不参与结算。 */
   private syncStateMarkers(shown:boolean):void{
@@ -3194,6 +3210,7 @@ captureStoryActors():SceneActorState[] {
     this.passivesCache.clear();this.skillTableCache.clear();this.equipmentRecoveryCache.clear();this.combatProcsCache.clear();this.aiSkillCostCache?.clear();this.combatantsCache=undefined;
     this.reactionSkillCache?.clear();
     this.combat=undefined;
+    this.focusRings?.destroy();this.focusRings=undefined;
     this.presenter?.clear();this.presenter=undefined;
     this.combatEffects.clear();
     this.unsubscribeHero?.();this.unsubscribeHero=undefined;this.unsubscribeSession?.();this.unsubscribeSession=undefined;

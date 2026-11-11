@@ -12,6 +12,7 @@ import {
 } from './combat-asset-descriptors.ts';
 import type { PendingAsset } from './scene-assets.ts';
 import { mergePendingAsset } from './scene-assets.ts';
+import { targetFocusAssets } from './target-focus-assets.ts';
 
 export interface ResidentCombatInput {
   battle: BattleCatalog;
@@ -107,6 +108,8 @@ export function residentCombatAssets(input: ResidentCombatInput): CombatAssetPac
   for (const name of COMBAT_OUTCOME_EFFECTS) effectNames.add(name);
   addAssets(combatOutcomeAssets(battle));
   addAssets(combatFeedbackAssets(battle));
+  // 脚下选中圈在探索和战斗里都用，体量很小，随标题页公共批次常驻，进图不再等它。
+  addAssets(targetFocusAssets);
   if (input.feedbackOnly) return { assets: [...assets.values()], effectNames, actorIds };
   const selectedClasses = input.classIds === undefined ? undefined : new Set(input.classIds);
   if (selectedClasses) for (const id of selectedClasses)

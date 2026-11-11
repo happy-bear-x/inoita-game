@@ -10,6 +10,7 @@ import {
   effectAssets, sharedCombatEffectMap, type EffectMap
 } from './combat-asset-descriptors.ts';
 import type { PendingAsset } from './scene-assets.ts';
+import { targetFocusAssets } from './target-focus-assets.ts';
 
 /**
  * 战斗素材只由这里的纯函数决定：正式战斗、进图预取与构建期覆盖校验共用同一份清单，
@@ -145,6 +146,7 @@ export function sharedCombatAssets(catalog: BattleCatalog, wardrobe: WardrobeCat
   return [
     ...combatOutcomeAssets(catalog),
     ...combatFeedbackAssets(catalog),
-    ...effectAssets(sharedCombatEffectMap(catalog, wardrobe, false))
+    ...effectAssets(sharedCombatEffectMap(catalog, wardrobe, false)),
+    ...targetFocusAssets
   ];
 }
