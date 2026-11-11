@@ -152,6 +152,30 @@ test('战斗开始预热结算特效，升级只复用并按角色挂载',()=>{
   assert.equal(f.containers.filter(effect=>effect.active).length,0,'销毁战斗时清掉池');
 });
 
+test('多位伤害数字共用一个容器，位数只增加精灵',()=>{
+  const f=fixture();
+  const clips:Record<string,EffectClip>={default:f.clip()};
+  for(let digit=0;digit<10;digit++)clips[String(digit)]={...f.clip(10),
+    layers:[{key:`digit-${digit}`,file:firstFile,blend:'normal',operations:[]}]};
+  const catalog={attackEffects:{enemy:{clips}},feedback:{shakeOffsets:[]}} as unknown as BattleCatalog;
+  const target={layers:[],actor:{effectAnchor:{x:0,y:0}},container:new Display('player')} as unknown as CharacterVisual;
+  const feedback=new CombatFeedback(f.scene,catalog);
+  const event={hit:{kind:'hit',damage:123},style:'weapon',periodic:false,casterControlled:true,
+    targetFriendly:false,targetParty:false,involvesControlled:true} as const;
+  const digitContainers=()=>f.containers.filter(value=>value.list.some(sprite=>sprite.plays.some(play=>play.key.startsWith('damage:'))));
+  feedback.show(event,target,{impacts:[],digitEffect:'enemy'});
+  assert.equal(digitContainers().length,1,'三位数字只建一个容器');
+  const shown=digitContainers()[0]!;
+  assert.equal(shown.list.length,3,'每一位数字一个精灵');
+  for(const sprite of shown.list)sprite.emit('animationcomplete');
+  assert.equal(shown.visible,false,'最后一位播完回池');
+  feedback.show({...event,hit:{kind:'hit',damage:7}},target,{impacts:[],digitEffect:'enemy'});
+  assert.equal(digitContainers().length,1,'同一个数字容器复用');
+  assert.equal(digitContainers()[0],shown);
+  assert.deepEqual(shown.list.map(sprite=>sprite.visible),[true,false,false],'多余的精灵收起来');
+  feedback.destroy();
+});
+
 test('数字动画按序列只建一次，重复命中复用同一个数字容器',()=>{
   const f=fixture();
   const clips:Record<string,EffectClip>={default:f.clip()};

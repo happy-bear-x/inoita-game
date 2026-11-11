@@ -44,6 +44,12 @@ function effectLayerPages(layer: EffectLayer, clip: EffectClip): { frameRefs: re
   return { frameRefs, pages };
 }
 
+/** 一层特效最终按什么方式混合；伤害数字和普通特效共用同一份判定。 */
+export function effectLayerBlendMode(layer: EffectLayer): Phaser.BlendModes {
+  const draw = layerDraw(layer);
+  return blendModeOf(draw.kind === 'backdrop' ? backdropApproximation(layer.operations) : draw.blend);
+}
+
 export function createEffect(scene: Phaser.Scene, clip: EffectClip, x: number, y: number, loop = false): Phaser.GameObjects.Container {
   const effect = scene.add.container(x, y).setDepth(y + 1);
   setEffectClip(scene, effect, clip, loop);
@@ -113,8 +119,7 @@ function buildEffectLayers(
       scene.anims.create({ key: animationKey, frames, frameRate: clip.frameRate });
     }
     rememberEffectAnimation(scene, animationKey, pages);
-    const draw = layerDraw(layer);
-    sprite.setBlendMode(blendModeOf(draw.kind === 'backdrop' ? backdropApproximation(layer.operations) : draw.blend));
+    sprite.setBlendMode(effectLayerBlendMode(layer));
     effect.add(sprite);
     animations.push(animationKey);
     if (effect.length === 1 && !loop) sprite.once('animationcomplete', onComplete);
