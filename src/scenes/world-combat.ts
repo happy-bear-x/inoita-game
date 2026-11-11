@@ -230,6 +230,9 @@ export class WorldCombat {
   private readonly outcomes:CombatOutcomes;
   private readonly buffLoops:BuffLoopRenderer;
   private readonly feedback:CombatFeedback;
+  /** 命中音效去重用的帧号与「出手者:种类」名单，每帧清空。 */
+  private hitFeedbackFrame=-1;
+  private readonly hitFeedbackClaims=new Set<string>();
   private combat?:CombatController;
   private presenter?:CombatPresenter;
   private readonly combatEffects:CombatEffects;
@@ -1931,6 +1934,20 @@ captureStoryActors():SceneActorState[] {
       if(actorId==='player')this.heroAi?.disable();else combatActor(this.allies,actorId,actor=>actor.id)?.ai.disable();
     }else combatActor(this.arena,actorId,actor=>actor.key)?.controller?.disable();
   }
+  /**
+   * 同一次结算（同一帧、同一出手者）里，同一类命中反馈只发一次。
+   * 范围技能一发打中多个目标时，暴击、格挡、命中、未命中各响一声，不随目标数量叠加。
+   */
+  private claimHitFeedback(casterId:string,kind:string):boolean {
+    const frame=this.scene.game?.loop?.frame;
+    if(frame===undefined)return true;
+    if(frame!==this.hitFeedbackFrame){this.hitFeedbackFrame=frame;this.hitFeedbackClaims.clear();}
+    const key=`${casterId}:${kind}`;
+    if(this.hitFeedbackClaims.has(key))return false;
+    this.hitFeedbackClaims.add(key);
+    return true;
+  }
+
   private showHit(event:AttackContact,hit:PhysicalHit,options:{style?:HitEffectStyle;periodic?:boolean;sound?:boolean}):void {
     const caster=combatActor(this.arena,event.casterId,actor=>actor.key),target=combatActor(this.arena,event.targetId,actor=>actor.key);
     const belongsToControlled=(id:string)=>id===this.controlledId||this.arena.some(enemy=>enemy.key===id&&enemy.summonedBy===this.controlledId);
@@ -1941,19 +1958,19 @@ captureStoryActors():SceneActorState[] {
     const plan=feedbackPlan(feedback);
     const selection=selectFeedbackAssets(feedback,this.app.battleCatalog.feedback,Math.random,displaySettings.criticalDecorations,plan);
     const visual=this.visualOf(event.targetId);if(!visual?.container.active)return;
-    this.feedback.show(feedback,visual,selection,plan);
+    this.feedback.show(feedback,visual,selection,plan,{decorationGroup:event.casterId});
     if(plan.flash)this.statusColors.flash(visual,this.scene);
     if(options.sound){
       // 普攻命中音效对所有玩家阵营成员生效；武器类型按出手者自己的装备取。
-      if(this.memberOf(event.casterId)){
+      if(this.memberOf(event.casterId)&&this.claimHitFeedback(event.casterId,`weapon:${hit.kind}`)){
         const equipment=this.hero.bag.equipmentItems(this.hero.bag.equipmentFor(event.casterId)),item=equipment['main-hand'];
         this.app.audio?.playerHit(item?this.app.items.items[item].kind:'unarmed',hit.kind,target?.definition.id);
       }
-      if(hit.kind==='shield-block'&&this.memberOf(event.targetId))this.app.audio?.shieldBlock();
+      if(hit.kind==='shield-block'&&this.memberOf(event.targetId)&&this.claimHitFeedback(event.casterId,'shield'))this.app.audio?.shieldBlock();
     }
     if(hit.damage>0){
-      if(caster)this.app.audio?.monsterAttack(caster.definition.id);
-      if(options.periodic&&target)this.app.audio?.periodicDamage();
+      if(caster&&this.claimHitFeedback(event.casterId,'attack'))this.app.audio?.monsterAttack(caster.definition.id);
+      if(options.periodic&&target&&this.claimHitFeedback(event.casterId,'periodic'))this.app.audio?.periodicDamage();
     }
   }
 

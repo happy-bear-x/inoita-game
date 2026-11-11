@@ -277,3 +277,19 @@ test('数字动画按序列只建一次，重复命中复用同一个数字容�
   feedback.destroy();
   assert.equal(digit.active,false,'销毁反馈时清掉数字容器');
 });
+
+test('同一次结算的多个暴击目标只放一组光环和爆闪',()=>{
+  const f=fixture();
+  const catalog={attackEffects:{critical:{clips:{default:f.clip()}},ring:{clips:{default:f.clip()}},
+    burst:{clips:{default:f.clip()}}},feedback:{shakeOffsets:[],criticalRing:'ring'}} as unknown as BattleCatalog;
+  const target={layers:[],actor:{effectAnchor:{x:0,y:0}},container:new Display('player')} as unknown as CharacterVisual;
+  const feedback=new CombatFeedback(f.scene,catalog);
+  const event={hit:{kind:'critical',damage:9},style:'weapon',periodic:false,casterControlled:false,
+    targetFriendly:false,targetParty:false,involvesControlled:true} as const;
+  const selection={impacts:[{name:'critical',attached:true},{name:'ring',attached:true},{name:'burst',attached:false}]};
+  for(let index=0;index<5;index++)feedback.show(event,target,selection,undefined,{decorationGroup:'hero'});
+  assert.equal(f.containers.length,7,'五个目标只放一个光环和一个爆闪，主体冲击每个目标都有');
+  feedback.show(event,target,selection,undefined,{decorationGroup:'ally'});
+  assert.equal(f.containers.length,10,'另一个出手者的结算单独放一组');
+  feedback.destroy();
+});

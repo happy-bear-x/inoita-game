@@ -114,6 +114,8 @@ export class CombatFeedback {
   private numberOrder=0;
   private decorationFrame=-1;
   private decorationBudget=DECORATION_BUDGET_PER_FRAME;
+  /** 同一帧里已经出过暴击装饰的出手者；范围技能一次打中多个目标时只放一组。 */
+  private readonly decorationGroups=new Set<string>();
   constructor(scene:Phaser.Scene,catalog:BattleCatalog,vibrationEnabled=false){
     this.scene=scene;this.catalog=catalog;this.vibrationEnabled=vibrationEnabled;
     this.pool=new EffectPool(scene);
@@ -228,10 +230,23 @@ export class CombatFeedback {
   private takeDecorationBudget():boolean {
     const frame=this.scene.game?.loop?.frame;
     if(frame===undefined)return true;
-    if(frame!==this.decorationFrame){this.decorationFrame=frame;this.decorationBudget=DECORATION_BUDGET_PER_FRAME;}
+    this.refreshDecorationFrame(frame);
     if(this.decorationBudget<=0)return false;
     this.decorationBudget--;
     return true;
+  }
+  /** 这一组（同一次结算）是否已经放过暴击装饰。 */
+  private decorationGroupSpent(group:string):boolean {
+    const frame=this.scene.game?.loop?.frame;
+    if(frame===undefined)return false;
+    this.refreshDecorationFrame(frame);
+    return this.decorationGroups.has(group);
+  }
+  private refreshDecorationFrame(frame:number|undefined=this.scene.game?.loop?.frame):void {
+    if(frame===undefined||frame===this.decorationFrame)return;
+    this.decorationFrame=frame;
+    this.decorationBudget=DECORATION_BUDGET_PER_FRAME;
+    this.decorationGroups.clear();
   }
   private track(effect:Phaser.GameObjects.Container):void {
     this.effects.add(effect);effect.setVisible(this.visible);
@@ -251,15 +266,17 @@ export class CombatFeedback {
     this.track(effect);
   }
   show(event:CombatHitFeedback,target:CharacterVisual,selection:CombatFeedbackSelection,
-    plan:ReturnType<typeof feedbackPlan>=feedbackPlan(event)):void {
+    plan:ReturnType<typeof feedbackPlan>=feedbackPlan(event),options:{decorationGroup?:string}={}):void {
     if(this.offscreen(target)){
       // 震屏属于出手者自己的反馈，不跟目标是否在镜头里走。
       if(plan.shake&&this.visible)this.startShake();
       return;
     }
+    const group=options.decorationGroup,shared=group!==undefined&&this.decorationGroupSpent(group);
     for(const effect of selection.impacts){
       const decoration=!effect.attached||effect.name===this.catalog.feedback.criticalRing;
-      if(decoration&&!this.takeDecorationBudget())continue;
+      if(decoration&&(shared||!this.takeDecorationBudget()))continue;
+      if(decoration&&group!==undefined)this.decorationGroups.add(group);
       this.impact(effect.name,target,effect.attached);
     }
     if(selection.digitEffect)this.showDigits(selection.digitEffect,event,target);
