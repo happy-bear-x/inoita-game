@@ -8,6 +8,7 @@ import { StatusHud } from '../ui/phaser/status-hud.ts';
 import { worldZoom } from '../ui/viewport.ts';
 import { OverheadStatus } from '../rendering/overhead-status.ts';
 import { QuestMarker } from '../rendering/quest-marker.ts';
+import { questNotices, type QuestNoticeState } from '../ui/quest-progress.ts';
 import Phaser from 'phaser';
 import { ExitTrigger, overlapsFootRect } from '../domain/navigation.ts';
 import { claimNearTrigger } from '../domain/story-trigger-occupancy.ts';
@@ -15,7 +16,7 @@ import { buildStoryTriggerIndex, type StoryTriggerIndex } from '../domain/story-
 import { NavigationWorld, collisionAt } from '../domain/navigation-world.ts';
 import { MovementWorld } from '../rendering/movement-world.ts';
 import { isBodyWalking } from '../rendering/arcade-movement.ts';
-import type { ClipName, EntityPlacement, ExitFacing, Facing, MapExit, QuestStatus, WorldMap } from '../domain/content.ts';
+import type { ClipName, EntityPlacement, ExitFacing, Facing, MapExit, WorldMap } from '../domain/content.ts';
 import type { AssetLease } from '../application/assets.ts';
 import { Wardrobe } from '../rendering/wardrobe.ts';
 import { acquireCompanionWardrobe, pruneCompanionWardrobes } from '../rendering/wardrobe-cache.ts';
@@ -211,9 +212,11 @@ export class WorldScene extends Phaser.Scene {
   /** 压测刷怪计时器；离开场景时停掉，避免退出后继续生成。 */
   private pressureSpawner?:Phaser.Time.TimerEvent;
   private readonly pickupRecipients=new Map<string,CharacterVisual>();
-  /** 任务完成提示的上次状态；按任务簿版本对比，不在每次会话通知里扫全部任务。 */
-  private questStatuses=new Map<string,QuestStatus>();
+  /** 任务完成/进度提示的上次状态；按任务簿版本对比，不在每次会话通知里扫全部任务。 */
+  private questStatuses=new Map<string,QuestNoticeState>();
   private questStatusVersion?:number;
+  /** 首次刷新只建基线，避免进图时把已有进度当成刚变化。 */
+  private questNoticesReady=false;
   /** 普攻连打门控：发起过一次普攻后，站定就自动接下一击，摇杆一动即停。 */
   private readonly autoAttack=new BasicAttackRepeat();
   private checkpointPending=false;
@@ -237,7 +240,7 @@ export class WorldScene extends Phaser.Scene {
     this.movement = undefined; this.lastPlayerPosition = undefined;this.combat=undefined;this.checkpointPending=!options.checkpoint;this.checkpointWaitLogged=false;
     this.shortcutPageCache=undefined;this.shortcutTick=undefined;
     this.dropCatalog=undefined;this.springCatalog=undefined;this.groundLootView=undefined;this.pickupMessages=undefined;this.pickupRecipients.clear();
-    this.questStatuses.clear();this.questStatusVersion=undefined;
+    this.questStatuses.clear();this.questStatusVersion=undefined;this.questNoticesReady=false;
     this.prefetchTarget = undefined; this.prefetchTask = undefined;
     this.baseEntities=[];this.occupiedRegions.clear();this.encounterResults.clear();this.triggerIndex=undefined;this.refreshStateSignatureValue=undefined;this.lastInteractionScan=undefined;this.interactionRevision=0;this.charactersRevision=0;
     this.entryPrefetches?.clear();
@@ -292,7 +295,7 @@ export class WorldScene extends Phaser.Scene {
       this.characters = []; this.entities = []; this.baseEntities = []; this.player = undefined; this.map = undefined;
       this.near = null; this.noclipVisual = undefined; this.equippedActor = undefined; this.triggerIndex = undefined;
       this.targetStatusCache = undefined; this.shortcutPageCache = undefined; this.unsubscribe = undefined;
-      this.entryStoryStarted = undefined; this.prefetchTask = undefined; this.questStatuses.clear(); this.encounterResults.clear();
+      this.entryStoryStarted = undefined; this.prefetchTask = undefined; this.questStatuses.clear(); this.questNoticesReady=false; this.encounterResults.clear();
       Reflect.deleteProperty(this, 'options');
     });
     this.hud = new Hud(this);
@@ -1072,23 +1075,22 @@ export class WorldScene extends Phaser.Scene {
       this.app.session.storyWorld.isPlaced(character.entity.id));
   }
   /**
-   * 任务目标完成时给一条和泉水相同的屏幕提示。只在任务簿版本变化时对比状态；
-   * 只提示普通目标计数任务：对话/剧情类任务在接取或演出里本来就有弹窗，避免一接就提示。
+   * 任务完成和进度只在任务簿版本变化时对比；完成优先，同一轮不再发进度。
+   * 日志外和对话/剧情任务不提示：它们本来就不进任务日志，或已有任务窗。
    */
-  private noticeQuestCompletions(): void {
+  private noticeQuestChanges(): void {
     const version=this.app.session.questBook.version;
     if(version===this.questStatusVersion)return;
     this.questStatusVersion=version;
-    const next=this.app.session.quests;
-    if(this.questStatuses.size){
-      for(const [id,state] of next){
-        if(state.status!=='ready'||this.questStatuses.get(id)==='ready')continue;
-        const quest=this.app.session.definition(id);
-        if(!quest||quest.journal===false||quest.completion!=='all')continue;
-        this.app.ui.showInstant(`任务完成：${quest.title}`);
-      }
-    }
-    this.questStatuses=new Map([...next].map(([id,state])=>[id,state.status]));
+    const {snapshot,completions,progress}=questNotices(
+      this.questStatuses,
+      this.app.session.quests,
+      id=>this.app.session.definition(id)
+    );
+    this.questStatuses=snapshot;
+    if(!this.questNoticesReady){this.questNoticesReady=true;return;}
+    for(const message of completions)this.app.ui.showInstant(message);
+    if(!completions.length&&progress)this.app.ui.showInstant(progress);
   }
 
   /** 地图与角色集合变化后重建触发索引；内容不可变，查询侧只读。 */
@@ -1108,7 +1110,7 @@ export class WorldScene extends Phaser.Scene {
     this.refreshLoadout();
     this.combat?.setPerformanceActive(this.performing);
     const { session } = this.app;
-    this.noticeQuestCompletions();
+    this.noticeQuestChanges();
     // 小地图创建前的那次刷新也会写签名；把「小地图是否已就绪」算进签名，
     // 保证创建后的第一次刷新一定执行，把本图任务人物交给小地图。
     const stateSignature=this.refreshStateSignature()+(this.minimap?'|minimap':'');

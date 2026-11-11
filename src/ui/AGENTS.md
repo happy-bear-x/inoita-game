@@ -6,7 +6,7 @@
 
 - 布局：`bag-layout.ts`（背包格位）、`skill-book-layout.ts`（技能书页的图标格与右栏）、`choice-layout.ts`（选项竖排）、`control-layout.ts`（控件键位）、`item-layout.ts`（物品格与货币）、`shop-layout.ts`（商店两栏）、`quest-popup-layout.ts`（任务窗）、`description-text-layout.ts`（说明断行）、`text-layout.ts`（通用换行）、`cloud-save-layout.ts`（云存档页状态、颜色与几何）、`changelog-layout.ts`（标题页更新日志弹窗与可视窗口）、`portrait-fit.ts`（头像等比裁剪）、`viewport.ts`（画布缩放、安全区与参考分辨率）。
 - 文本与样式：`text-style.ts`（共用字体）、`text-prompt.ts`（系统键盘输入，用于存档改名）、`cloud-credentials-input.ts`（云存档页内嵌的账号/密码输入框）、`password-change-prompt.ts`（修改密码的当前/新/确认三项表单）、`dialogue-text.ts`（对白分页、断行与逐字显示）、`item-detail-lines.ts`（物品说明行）、`skill-detail-lines.ts`（技能说明行）、`item-result-details.ts`（操作结果说明）、`enhancement-odds-lines.ts`（强化结果句与混沌结果表）、`item-name-color.ts`（品质颜色与装备格边框）、`character-values.ts`（角色数值）。
-- 接口与交互：`game-ui.ts`（UI 能力与视图接口）、`story-ui.ts`（剧情与菜单 UI 的接口、页面枚举和提示文案）、`story-ui-signature.ts`（菜单页面 viewModel 与显式签名）、`save-page.ts`（存档/读档页 controller）、`action-press-gate.ts`（动作按钮互斥）、`common-button.ts`（通用按钮素材）、`instant-message.ts`（屏幕提示）、`slot-frame.ts`（格子底图）。
+- 接口与交互：`game-ui.ts`（UI 能力与视图接口）、`story-ui.ts`（剧情与菜单 UI 的接口、页面枚举和提示文案）、`story-ui-signature.ts`（菜单页面 viewModel 与显式签名）、`save-page.ts`（存档/读档页 controller）、`action-press-gate.ts`（动作按钮互斥）、`common-button.ts`（通用按钮素材）、`instant-message.ts`（屏幕提示）、`quest-progress.ts`（任务完成/进度提示的纯函数）、`slot-frame.ts`（格子底图）。
 - DOM 组件：`dom/node.ts`、`dom/surface.ts` 提供菜单图片、文本、按钮、裁剪、滚动与原生指针；`dom/volume-slider.ts` 提供音量条。
 - DOM 文字：`dom/dom-ui.ts`（标签创建、层与坐标换算）、`dom/menu-text.ts`（菜单页、滚动与裁剪）。
 
@@ -51,7 +51,7 @@
 - **菜单子页面保留底层。** 强化台、合成台、技能书这类从菜单进入的子页面用 `page` 渲染在 `body` 上；`surface`/`body` 继续可见，只把说明层让位，不要隐藏整层再铺纯黑遮罩。
 - **技能书页复用技能目录的图标语言。** 左框只列当前可升级的技能（4×4 图标格，一屏放下），没有可升级技能时显示「暂无可升级技能」；右框显示等级变化与下一级数值预览，确认后才消耗技能书。
 - **游戏内界面不写解释性文案。** 这是游戏而不是说明书：格子、按钮和页面只呈现状态与结果，用户明确要求时才加「×＝可用」这类说明文字。
-- **操作结果提示走 `GameUI.showInstant`。** 泉水恢复、任务完成和菜单里的「脱离卡死」都用这一套屏幕提示；`toast` 只用于加载、准备之类的短提示。
+- **操作结果提示走 `GameUI.showInstant`。** 泉水恢复、任务完成、任务进度和菜单里的「脱离卡死」都用这一套屏幕提示；`toast` 只用于加载、准备之类的短提示。
 - 背包点击「召唤神灯商人」后立即使用一枚神灯并打开商店；丢弃仍通过数量确认。
 - **一次操作只重绘一次。** 子页面打开期间（如 `page==='forge'`）`bind` 的会话订阅跳过整页重绘；动作完成后由子页面面板的 `changed` 统一重绘一次。
 - 队员外观准备完成后只更新背包人物预览；已经切到其他队员或页面时忽略迟到结果。

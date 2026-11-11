@@ -68,7 +68,7 @@ test('a quest marker is created when a quest becomes available after the map is 
     map: { id: 'map' },
     player: { container: { x: 0, y: 0 } },
     minimap: { updatePlayer() {}, updateTasks(tasks: unknown[]) { taskLists.push(tasks); } },
-    refreshLoadout() {}, noticeQuestCompletions() {},
+    refreshLoadout() {}, noticeQuestChanges() {},
     chestOpened: () => false, legendarySwordConsumed: () => false,
     movement: { setEnabled() {} },
     createQuestMarker(target: typeof character) {
@@ -117,7 +117,7 @@ test('the minimap receives quest characters on the first refresh after it is cre
       'minimap-available': 'available.png', 'minimap-active': 'active.png', 'minimap-ready': 'ready.png' } } },
     characters: [character], map: { id: 'map' },
     player: { container: { x: 0, y: 0 } },
-    refreshLoadout() {}, noticeQuestCompletions() {},
+    refreshLoadout() {}, noticeQuestChanges() {},
     chestOpened: () => false, legendarySwordConsumed: () => false,
     movement: { setEnabled() {} },
   });
@@ -157,7 +157,7 @@ test('journal-external ready deliveries still light the overhead marker and the 
     characters: [character], map: { id: 'map' },
     player: { container: { x: 0, y: 0 } },
     minimap: { updatePlayer() {}, updateTasks(tasks: unknown[]) { taskLists.push(tasks); } },
-    refreshLoadout() {}, noticeQuestCompletions() {},
+    refreshLoadout() {}, noticeQuestChanges() {},
     chestOpened: () => false, legendarySwordConsumed: () => false,
     movement: { setEnabled() {} },
     createQuestMarker(target: typeof character) {

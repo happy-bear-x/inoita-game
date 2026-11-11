@@ -46,7 +46,7 @@ test('stationary interaction reuses candidates until scene positions or visibili
     map:{id:'map'},player:{container:{x:0,y:0}},characters:[npc],
     chestOpened:()=>false,legendarySwordConsumed:()=>false,interactionCandidate:()=>1,setClip(){},
     movement:{placeAll(values:{position:{x:number;y:number}}[]){Object.assign(container,values[0].position);},setEnabled(){}},
-    refreshLoadout(){},noticeQuestCompletions(){},refreshStateSignature:()=> 'visibility-change'
+    refreshLoadout(){},noticeQuestChanges(){},refreshStateSignature:()=> 'visibility-change'
   });
   invoke(host,'updateInteractionTarget');assert.equal(host.near,npc);inspected=0;
   for(let frame=0;frame<60;frame++)invoke(host,'updateInteractionTarget');
@@ -243,7 +243,7 @@ test('unchanged map state skips the character visibility loop',()=>{
     app:{session:{visible:()=>true,storyWorld:{actorVisible:()=>true},marker:()=>null,markerActor:()=>false}},
     performing:false,combat:{setPerformanceActive(){}},map:undefined,
     characters:[{entity:{id:'npc',actor:'npc'},actor:{id:'npc'},container:{x:0,y:0,setVisible:()=>touched++}}],
-    refreshLoadout(){},noticeQuestCompletions(){},refreshStateSignature:()=>'same',
+    refreshLoadout(){},noticeQuestChanges(){},refreshStateSignature:()=>'same',
     chestOpened:()=>false,legendarySwordConsumed:()=>false,movement:{setEnabled(){}},
   };
   invoke(host,'refreshState');
