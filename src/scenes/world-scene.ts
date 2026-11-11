@@ -295,7 +295,7 @@ export class WorldScene extends Phaser.Scene {
       this.characters = []; this.entities = []; this.baseEntities = []; this.player = undefined; this.map = undefined;
       this.near = null; this.noclipVisual = undefined; this.equippedActor = undefined; this.triggerIndex = undefined;
       this.targetStatusCache = undefined; this.shortcutPageCache = undefined; this.unsubscribe = undefined;
-      this.entryStoryStarted = undefined; this.prefetchTask = undefined; this.questStatuses.clear(); this.questNoticesReady=false; this.encounterResults.clear();
+      this.entryStoryStarted = undefined; this.prefetchTask = undefined; this.questStatuses.clear(); this.questStatusVersion=undefined; this.questNoticesReady=false; this.encounterResults.clear();
       Reflect.deleteProperty(this, 'options');
     });
     this.hud = new Hud(this);
@@ -1081,13 +1081,13 @@ export class WorldScene extends Phaser.Scene {
   private noticeQuestChanges(): void {
     const version=this.app.session.questBook.version;
     if(version===this.questStatusVersion)return;
-    this.questStatusVersion=version;
     const {snapshot,completions,progress}=questNotices(
       this.questStatuses,
       this.app.session.quests,
       id=>this.app.session.definition(id)
     );
     this.questStatuses=snapshot;
+    this.questStatusVersion=version;
     if(!this.questNoticesReady){this.questNoticesReady=true;return;}
     for(const message of completions)this.app.ui.showInstant(message);
     if(!completions.length&&progress)this.app.ui.showInstant(progress);

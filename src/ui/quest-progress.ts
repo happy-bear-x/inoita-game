@@ -65,12 +65,29 @@ export function questNotices(
       const count = Math.min(goal.quantity, state.goals[goal.id] ?? 0);
       const old = Math.min(goal.quantity, before.goals[goal.id] ?? 0);
       if (count <= old) continue;
-      const label = goal.label ?? quest.guidance.counterLabel ?? goal.target;
+      const raw = goal.label ?? quest.guidance.counterLabel ?? goal.target;
+      const label = raw.length > 20 ? `${raw.slice(0, 19)}…` : raw;
       changes.push(`${label} ${count}/${goal.quantity}`);
     }
   }
 
   if (!changes.length) return { snapshot, completions };
-  const shown = changes.slice(0, 3).join('、');
-  return { snapshot, completions, progress: `任务进度：${shown}${changes.length > 3 ? '…' : ''}` };
+  // 屏幕提示是 24px 单行，960×640 界面约放得下 32 个汉字。标签先截到 20 字，
+  // 保证首项连同数量和省略号也不超过预算；其余项放不下就少列。
+  const prefix = '任务进度：';
+  const budget = 32;
+  const shown: string[] = [];
+  let width = prefix.length;
+  for (const change of changes) {
+    if (shown.length >= 3) break;
+    const addition = change.length + (shown.length ? 1 : 0);
+    if (shown.length && width + addition + 1 > budget) break;
+    shown.push(change);
+    width += addition;
+  }
+  return {
+    snapshot,
+    completions,
+    progress: `${prefix}${shown.join('、')}${shown.length < changes.length ? '…' : ''}`,
+  };
 }

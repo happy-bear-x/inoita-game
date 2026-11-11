@@ -53,7 +53,7 @@ Phaser 场景层：驱动生命周期、转发输入，把 domain、rendering、
 - **战斗候选和名册按逻辑帧复用。** `combatants()` 在同一逻辑帧内共享快照，帧结束清空；名册刷新放在逻辑帧，最多晚约 60ms 生成。
 - `captureStoryScene` 与剧情舞台快照共享演员外观引用，只复制必要的外壳字段；开发/测试模式下外观是冻结的，原地修改会直接报错。
 - 喝泉水的回血回蓝和技能点结算调用 `domain/springs.ts` 的 `applySpringRecovery`、`grantSpringSkillPoint`；正面状态按存活上阵队员逐个施加，负面或攻防混合状态只给当前操控者。
-- **任务完成和进度提示走 `showInstant`。** 只在任务簿版本变化时对比状态：先提示 `completion: 'all'` 的可见任务进入待交付，再对目标数字增加的进行中任务提示 `任务进度：…`；同一轮完成优先。对话/剧情任务已有任务窗，不重复提示。
+- **任务完成和进度提示走 `showInstant`。** 只在任务簿版本变化时对比状态：有 `completion: 'all'` 的可见任务进入待交付时只提示 `任务完成：…`，这一轮不再发进度；没有完成提示时，才对目标数字增加的进行中任务提示 `任务进度：…`。对话/剧情任务已有任务窗，不重复提示。
 - 场景键从 `SCENE_KEYS`（`src/application/scene-keys.ts`）取，构造、查找、启动都用它，不写裸字符串。
 - 新增场景在 `src/main.ts` 注册，并接上对应的模式。
 - **GM 面板的文字也走 DOM。** 游戏内 GM 面板用 `MenuTextLayer` 或 `MenuTextWriter` 输出文字；按钮只留共用皮肤和命中区，角色头顶的调试标签用 `worldToScreen` 跟随相机。

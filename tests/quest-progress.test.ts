@@ -108,6 +108,39 @@ test('multiple increases share one line and stop after three goals', () => {
   assert.equal(result.progress, '任务进度：甲 1/1、乙 2/2、丙 3/3…');
 });
 
+test('long labels are shortened to keep the hint on one line', () => {
+  const long = quest({
+    id: 'long', title: '长标签',
+    goals: [
+      { id: 'a', kind: 'defeat', target: 'a', quantity: 10, label: '被揭露的帝国间谍多哈莫尔' },
+      { id: 'b', kind: 'defeat', target: 'b', quantity: 10, label: '暴走的暗精灵副队长之亡灵' },
+    ],
+  });
+  const result = notices(
+    new Map([['long', state('active', { a: 0, b: 0 })]]),
+    new Map([['long', view('active', { a: 1, b: 1 })]]),
+    [long],
+  );
+  assert.equal(result.progress, '任务进度：被揭露的帝国间谍多哈莫尔 1/10…');
+});
+
+test('an overlong first label is shortened instead of overflowing', () => {
+  const long = quest({
+    id: 'long-label', title: '超长',
+    goals: [
+      { id: 'a', kind: 'defeat', target: 'a', quantity: 1, label: '一'.repeat(30) },
+      { id: 'b', kind: 'defeat', target: 'b', quantity: 1, label: '二'.repeat(30) },
+    ],
+  });
+  const result = notices(
+    new Map([['long-label', state('active', { a: 0, b: 0 })]]),
+    new Map([['long-label', view('active', { a: 1, b: 1 })]]),
+    [long],
+  );
+  assert.equal(result.progress, `任务进度：${'一'.repeat(19)}… 1/1…`);
+  assert.ok((result.progress?.length ?? 0) <= 32);
+});
+
 test('only goals whose number grew are reported', () => {
   const mixed = quest({
     id: 'mixed', title: '混合',
