@@ -5,7 +5,7 @@
  */
 const STORAGE_KEY = 'inotia4.display.v1';
 
-export type FrameRateLimit = 30 | 60 | 120;
+export type FrameRateLimit = 30 | 60;
 /** 自动：安卓单纹理，其余平台多纹理；多纹理每批可绑多张图集页；单纹理只绑一张。 */
 export type TextureBatching = 'auto' | 'multi' | 'single';
 interface DisplayPreferences { fps: boolean; criticalDecorations: boolean; frameRateLimit: FrameRateLimit; textureBatching: TextureBatching }
@@ -19,7 +19,7 @@ function preferences(): DisplayPreferences {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}');
     return { fps: saved.fps !== false, criticalDecorations: saved.criticalDecorations !== false,
-      frameRateLimit: saved.frameRateLimit === 30 || saved.frameRateLimit === 120 ? saved.frameRateLimit : 60,
+      frameRateLimit: saved.frameRateLimit === 30 ? 30 : 60,
       textureBatching: saved.textureBatching === 'multi' || saved.textureBatching === 'single' ? saved.textureBatching : 'auto' };
   } catch { return { fps: true, criticalDecorations: true, frameRateLimit: 60, textureBatching: 'auto' }; }
 }

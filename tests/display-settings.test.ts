@@ -57,6 +57,7 @@ test('frame rate preference persists, notifies immediately, and rejects invalid 
   t.after(restoreStorage);
   const entries=installStorage();
   let settings=(await freshSettings()).displaySettings;
+  assert.equal(settings.frameRateLimit,60);
   const changes:number[]=[];
   const unsubscribe=settings.subscribeFrameRateLimit(limit=>changes.push(limit));
   settings.setFrameRateLimit(30);
@@ -64,18 +65,20 @@ test('frame rate preference persists, notifies immediately, and rejects invalid 
   assert.deepEqual(changes,[30]);
   assert.equal(JSON.parse(entries.get(KEY)!).frameRateLimit,30);
   assert.equal((await freshSettings()).displaySettings.frameRateLimit,30);
-  settings.setFrameRateLimit(120);
-  settings.setFrameRateLimit(120);
-  assert.deepEqual(changes,[30,120]);
-  assert.equal(JSON.parse(entries.get(KEY)!).frameRateLimit,120);
-  unsubscribe(); settings.setFrameRateLimit(60);
-  assert.deepEqual(changes,[30,120]);
-  settings.setFrameRateLimit(120);
-  settings=(await freshSettings()).displaySettings;
-  assert.equal(settings.frameRateLimit,120);
-  entries.set(KEY,JSON.stringify({frameRateLimit:144}));
+  settings.setFrameRateLimit(60);
+  settings.setFrameRateLimit(60);
+  assert.deepEqual(changes,[30,60]);
+  assert.equal(JSON.parse(entries.get(KEY)!).frameRateLimit,60);
+  unsubscribe(); settings.setFrameRateLimit(30);
+  assert.deepEqual(changes,[30,60]);
+  settings.setFrameRateLimit(60);
   settings=(await freshSettings()).displaySettings;
   assert.equal(settings.frameRateLimit,60);
+  for(const invalid of [120,90,144]){
+    entries.set(KEY,JSON.stringify({frameRateLimit:invalid}));
+    settings=(await freshSettings()).displaySettings;
+    assert.equal(settings.frameRateLimit,60,`${invalid} 回 60`);
+  }
 });
 
 test('texture batching persists, notifies once, and falls back to auto',async t=>{
@@ -114,6 +117,6 @@ test('broken storage falls back to defaults and write failures keep the in-memor
   settings=(await freshSettings()).displaySettings;
   assert.doesNotThrow(()=>settings.setCriticalDecorations(false));
   assert.equal(settings.criticalDecorations,false,'写盘失败时本次会话仍生效');
-  settings.setFrameRateLimit(120);
-  assert.equal(settings.frameRateLimit,120);
+  settings.setFrameRateLimit(30);
+  assert.equal(settings.frameRateLimit,30);
 });

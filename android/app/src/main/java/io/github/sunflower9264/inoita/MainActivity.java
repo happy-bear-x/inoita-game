@@ -170,14 +170,14 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
     }
 
     /**
-     * 页面报来 30/60/120，壳选一个刷新率能整除它的显示模式。
+     * 页面报来 30/60，壳选一个刷新率能整除它的显示模式。
      *
-     * 30 选 60/90/120，60 选 60/120，120 选 120。选整数倍是为了让每个游戏帧
+     * 30 选 60/90/120，60 选 60/120。选整数倍是为了让每个游戏帧
      * 占整数个屏幕节拍；60 帧跑在 90Hz 上会反复在 1 个和 2 个节拍之间跳。
      * 没有整数倍模式时退到不低于目标的最低模式，再没有就保持当前模式。
      */
     private void onFrameRateRequested(int rate) {
-        if (rate != 30 && rate != 60 && rate != 120) return;
+        if (rate != 30 && rate != 60) return;
         Display display = getWindowManager().getDefaultDisplay();
         Display.Mode current = display.getMode();
         Display.Mode best = null;

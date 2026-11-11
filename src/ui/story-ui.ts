@@ -949,8 +949,8 @@ export class StoryUI {
     v.button('',485,260,220,66,()=>{displaySettings.setFps(!fps);this.render();},{parent:content})
       .setData('label',fps?'开启':'关闭');
     const frameRateLimit=displaySettings.frameRateLimit;
-    for(const [index,limit] of ([30,60,120] as const).entries()){
-      v.button('',485+index*150,350,135,66,()=>{
+    for(const [index,limit] of ([30,60] as const).entries()){
+      v.button('',485+index*230,350,220,66,()=>{
         displaySettings.setFrameRateLimit(limit);
         this.render();
       },{parent:content,selected:frameRateLimit===limit}).setData('label',`${limit} 帧`);
@@ -1012,9 +1012,8 @@ export class StoryUI {
     add('fps-label','帧率显示',260,275,25);
     add('fps-toggle',displaySettings.fps?'开启':'关闭',595,293,22,.5,.5);
     add('frame-rate-label','帧率上限',260,365,25);
-    add('frame-rate-30','30 帧',552.5,383,22,.5,.5);
-    add('frame-rate-60','60 帧',702.5,383,22,.5,.5);
-    add('frame-rate-120','120 帧',852.5,383,22,.5,.5);
+    add('frame-rate-30','30 帧',595,383,22,.5,.5);
+    add('frame-rate-60','60 帧',825,383,22,.5,.5);
     const batchingLabel={auto:'自动',multi:'多纹理',single:'单纹理'}[displaySettings.textureBatching];
     add('texture-batching-label','纹理批次',260,455,25);
     add('texture-batching-toggle',batchingLabel,615,473,22,.5,.5);

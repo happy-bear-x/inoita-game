@@ -102,7 +102,7 @@ final class LocalAssetServer extends NanoHTTPD {
         return empty(ok ? Response.Status.OK : Response.Status.INTERNAL_ERROR);
     }
 
-    /** 页面只报 30/60/120；壳自己选刷新率能整除它的显示模式。 */
+    /** 页面只报 30/60；壳自己选刷新率能整除它的显示模式。 */
     private Response nativeFrameRate(IHTTPSession session) {
         String value = session.getParms().get("rate");
         int rate;
@@ -111,7 +111,7 @@ final class LocalAssetServer extends NanoHTTPD {
         } catch (NumberFormatException error) {
             rate = 0;
         }
-        if (rate == 30 || rate == 60 || rate == 120) {
+        if (rate == 30 || rate == 60) {
             final int requested = rate;
             mainHandler.post(() -> {
                 if (frameRateListener != null) frameRateListener.onFrameRateRequested(requested);

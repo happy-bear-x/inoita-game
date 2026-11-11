@@ -23,7 +23,7 @@
 - 职业选择的实时预览和页面复用由 `scene-input-routing.test.ts` 验证；`character-animation-reuse.test.ts` 验证六个职业的待机动作循环播放和角色释放。
 - `story-menu-interactions.test.ts` 使用真实 DOM 菜单组件和原生事件，验证交易、加点、背包拖放、存读档、布局编辑与弹层输入隔离。
 - 调试菜单用例覆盖可见行复用、滚动到列表末尾、关闭释放、迟到预览和重新打开；`resident-combat-lifecycle.test.ts` 覆盖调试现场表的持有、释放和异步加载竞态。
-- `game-timing.test.ts` 和 `movement.test.ts` 验证 30 / 60 / 120 帧限帧切换、实际耗时、移动平滑及战斗寻路额度；`display-settings.test.ts` 验证画面偏好的默认值和持久化。
+- `game-timing.test.ts` 验证 30 / 60 帧限帧切换、120 帧限帧器压力、实际耗时和战斗寻路额度；`movement.test.ts` 验证移动平滑；`display-settings.test.ts` 验证画面偏好的默认值和持久化。
 - `dom-assets.test.ts` 覆盖共享图集、独立取消与失败重试；`dom-components.test.ts` 覆盖裁剪、父子清理、轮盘技能/物品、多指互斥及隐藏后释放按键。
 - `status-color-renderer.test.ts` 验证受击闪光结束后恢复原色和最新状态颜色。
 - DOM 状态栏在 `dom-components.test.ts` 验证切控、阵亡头像、目标与资源释放；`status-hud.test.ts` 验证场景暂停、唤醒和销毁时的 DOM 可见性通知。
