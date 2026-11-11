@@ -41,7 +41,8 @@ import { UI_ICON_ATLAS_FILE } from './generated/icon-atlas.ts';
 import { MINIMAP_ASSETS } from './domain/story-interface.ts';
 import { GAME_FRAME_TIMING, installFrameLimitClock } from './application/game-timing.ts';
 import { displaySettings } from './application/display-settings.ts';
-import { currentRefreshRate, detectRefreshRate, refreshRateKnown, resolveFrameLimit } from './application/frame-pacing.ts';
+import { currentRefreshRate, detectRefreshRate, refreshRateKnown, resolveFrameLimit, setRefreshRate } from './application/frame-pacing.ts';
+import { requestNativeFrameRate } from './application/native-frame-rate.ts';
 import { installDiagnosticSnapshot, installStorySkipDiagnostics } from './application/game-diagnostics.ts';
 import { storyDevMode } from './domain/dev-mode.ts';
 import { createGmActions, consoleGmActions, type ConsoleGmActions } from './debug/gm-actions.ts';
@@ -785,6 +786,26 @@ function boot(): void {
   const remeasureNow = (): void => {
     if (document.visibilityState === 'visible') void detectRefreshRate().then(applyFrameLimit);
   };
+  // 玩家选的帧率也告诉安卓壳：壳会选一个刷新率能整除它的屏幕模式，
+  // 避免 60 帧在 90Hz 屏上反复在 1 个和 2 个屏幕节拍之间跳。
+  let nativeFrameRate = 0;
+  const syncNativeFrameRate = (): void => {
+    const rate = displaySettings.frameRateLimit;
+    if (rate === nativeFrameRate) return;
+    nativeFrameRate = rate;
+    requestNativeFrameRate(rate);
+  };
+  syncNativeFrameRate();
+  const unsubscribeNativeFrameRate = displaySettings.subscribeFrameRateLimit(syncNativeFrameRate);
+  // 壳选好显示模式后把真实刷新率写进页面；直接采用，不再靠 rAF 重测。
+  const applyNativeDisplayRate = (): void => {
+    const hz = (globalThis as { __inoitaDisplayHz?: number }).__inoitaDisplayHz;
+    if (typeof hz !== 'number' || !(hz > 0)) return;
+    setRefreshRate(hz);
+    applyFrameLimit();
+  };
+  applyNativeDisplayRate();
+  window.addEventListener('inoita-display-rate', applyNativeDisplayRate);
   // 刷新率要等页面跑起来才量得到；量到之前按 60Hz 处理，60Hz 屏直接走 vsync。
   void detectRefreshRate().then(applyFrameLimit);
   // 启动初期浏览器可能还没按高刷回调，量到的值会偏低；3 秒后补测一次。
@@ -803,7 +824,8 @@ function boot(): void {
   document.addEventListener('visibilitychange', remeasureWhenVisible);
   window.addEventListener('pageshow', remeasureWhenVisible);
   game.events.once(Phaser.Core.Events.DESTROY, () => {
-    frameLimitDisposed = true; unsubscribeFrameRate();
+    frameLimitDisposed = true; unsubscribeFrameRate(); unsubscribeNativeFrameRate();
+    window.removeEventListener('inoita-display-rate', applyNativeDisplayRate);
     window.clearTimeout(settleRefreshTimer);
     window.clearTimeout(startRefreshTimer);
     remeasureRefreshAfterStart = undefined;

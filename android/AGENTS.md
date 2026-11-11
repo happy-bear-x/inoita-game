@@ -6,9 +6,9 @@
 
 - 根目录：`build.gradle` 声明 Android 插件（AGP 9.4）与 Cefrium 插件，`settings.gradle` 配置模块与仓库，`gradle.properties` 放 Gradle 参数，`gradlew`、`gradlew.bat` 是包装器脚本（Gradle 9.7.1）。
 - `app/build.gradle`：应用配置、`assets.srcDirs` 指向 `../dist`、从 `config/endpoints.json` 派生调试/发布地址与签名；minSdk 29、compileSdk 37、只保留 arm64-v8a。
-- `app/src/main/AndroidManifest.xml` 与 `app/src/main/java/io/github/sunflower9264/inoita/MainActivity.java`：前者是清单、权限与横屏 Activity 配置，后者用 `CefriumBrowser` 承载页面、处理全屏与生命周期。
+- `app/src/main/AndroidManifest.xml` 与 `app/src/main/java/io/github/sunflower9264/inoita/MainActivity.java`：前者是清单、权限与横屏 Activity 配置，后者用 `CefriumBrowser` 承载页面、处理全屏与生命周期，并按页面报来的帧率选择显示模式。
 - `InotiaApplication.java`：在 `attachBaseContext` / `onCreate` 初始化 Chromium；初始化必须早于任何 `CefriumBrowser`。
-- `LocalAssetServer.java`：只监听 `127.0.0.1:47653` 的本地 HTTP 服务。按 `UpdateManager` 的版本快照送文件，并提供 `/__native/report`、`/__native/boot-ok`、`/__native/build-info`、`/__native/bootstrap.js`；`/__cloud`、`/__diagnostics/report` 反向代理到 `config/endpoints.json` 派生出的地址。
+- `LocalAssetServer.java`：只监听 `127.0.0.1:47653` 的本地 HTTP 服务。按 `UpdateManager` 的版本快照送文件，并提供 `/__native/report`、`/__native/boot-ok`、`/__native/build-info`、`/__native/frame-rate`、`/__native/bootstrap.js`；`/__cloud`、`/__diagnostics/report` 反向代理到 `config/endpoints.json` 派生出的地址。
 - `AssetPaths.java`：本地服务的路径规范化和 MIME/缓存规则，和原来的 WebViewAssetLoader 口径一致。
 - `SaveMigration.java`：首次启动时用隐藏的系统 WebView 读取旧地址 `https://appassets.androidplatform.net` 下的 `localStorage`，存成备份，再由 `bootstrap.js` 写入新地址。
 - `Diagnostics.java`：页面与更新流程共用的诊断上报。
@@ -22,7 +22,8 @@
 - 网页产物仍是 `dist/`；打包前先在仓库根目录运行 `npm run build`。`assets.srcDirs` 直接读取 `../dist`，不复制。
 - **页面 origin 固定为 `http://127.0.0.1:47653`**。端口写死是为了让 Cefrium 的 `localStorage` 一直落在同一个 origin；不要改成随机端口。端口被占用时 `MainActivity` 会弹出错误并退出。
 - `index.html` 由本地服务在 `<head>` 最前面注入 `/__native/bootstrap.js`。这个脚本必须在模块脚本之前定义 `__inoitaEndpoints`、`__inoitaBuildInfo`、`window.InotiaNative` 和一次性存档迁移；不要改成只在 `loadUrl` 后注入。
-- `window.InotiaNative` 只是兼容层：`report()` 走 `/__native/report`，`markBootOk()` 走 `/__native/boot-ok`，`buildInfo()` 读 `__inoitaBuildInfo`。页面代码继续按原接口调用。
+- `window.InotiaNative` 只是兼容层：`report()` 走 `/__native/report`，`markBootOk()` 走 `/__native/boot-ok`，`buildInfo()` 读 `__inoitaBuildInfo`，`setFrameRate(rate)` 走 `/__native/frame-rate`。页面代码继续按原接口调用。
+- **按玩家帧率选显示模式。** 壳收到 30/60/120 后，选一个刷新率是目标帧率整数倍的最低显示模式（30→60/90/120，60→60/120，120→120），写 `preferredDisplayModeId`；Android 11+ 再给 Surface 设同一个帧率。选好后把真实刷新率写进 `window.__inoitaDisplayHz` 并派发 `inoita-display-rate`，页面直接采用。整数倍保证每个游戏帧占整数个屏幕节拍；60 帧在 90Hz 上会反复在 1 个和 2 个节拍之间跳，所以不要固定请求最高刷新率。
 - `__inoitaEndpoints` 在 APK 内指向本地代理：`cloudBase = http://127.0.0.1:47653/__cloud`，`diagnosticsReport = http://127.0.0.1:47653/__diagnostics/report`；代理再转到 `config/endpoints.json` 派生地址，页面不写域名，也不受 CORS 影响。
 - **存档迁移只做一次**：旧 origin 是 `https://appassets.androidplatform.net`，新 origin 是本地地址。`SaveMigration` 先导出旧 `localStorage` 到 `filesDir/migration-localstorage.json`，`bootstrap.js` 写入后调用 `/__native/migration-done`，之后不再注入，避免覆盖新存档。
 - **热更只换网页层**。`UpdateManager.initialize()` 先读清单、发布不可变路径快照，再启动本地服务与浏览器；加载地址带 `?v=<buildId>`。清单不可用时降级为只读 APK 资源。

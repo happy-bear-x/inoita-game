@@ -9,6 +9,10 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.util.Log;
+import android.view.Display;
+import android.view.Surface;
+import android.view.SurfaceView;
+import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
@@ -45,6 +49,9 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
     private long lastBackPressed;
     private boolean pageReady;
     private String migrationJson;
+    /** 页面最近一次要求的显示帧率；Surface 建好后要按它设一次。 */
+    private float surfaceFrameRate;
+    private int surfaceRateRetries;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Runnable createBrowserTask = this::createBrowser;
@@ -125,7 +132,8 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
     private void onUpdateManagerReady() {
         if (isFinishing() || isDestroyed()) return;
         try {
-            server = new LocalAssetServer(this, updateManager, migrationJson, this::onMigrationDone);
+            server = new LocalAssetServer(this, updateManager, migrationJson,
+                    this::onMigrationDone, this::onFrameRateRequested);
             server.startServer();
         } catch (IOException error) {
             Log.e(TAG, "本地资源服务启动失败", error);
@@ -144,6 +152,94 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
 
     private void onMigrationDone() {
         SaveMigration.markDone(this);
+    }
+
+    /**
+     * 页面报来 30/60/120，壳选一个刷新率能整除它的显示模式。
+     *
+     * 30 选 60/90/120，60 选 60/120，120 选 120。选整数倍是为了让每个游戏帧
+     * 占整数个屏幕节拍；60 帧跑在 90Hz 上会反复在 1 个和 2 个节拍之间跳。
+     * 没有整数倍模式时退到不低于目标的最低模式，再没有就保持当前模式。
+     */
+    private void onFrameRateRequested(int rate) {
+        if (rate != 30 && rate != 60 && rate != 120) return;
+        Display display = getWindowManager().getDefaultDisplay();
+        Display.Mode current = display.getMode();
+        Display.Mode best = null;
+        for (Display.Mode mode : display.getSupportedModes()) {
+            if (mode.getPhysicalWidth() != current.getPhysicalWidth()
+                    || mode.getPhysicalHeight() != current.getPhysicalHeight()) continue;
+            double hz = mode.getRefreshRate();
+            if (hz + 0.5 < rate) continue;
+            double ratio = hz / rate;
+            if (Math.abs(ratio - Math.rint(ratio)) > 0.02) continue;
+            if (best == null || hz < best.getRefreshRate()) best = mode;
+        }
+        if (best == null) {
+            for (Display.Mode mode : display.getSupportedModes()) {
+                if (mode.getPhysicalWidth() != current.getPhysicalWidth()
+                        || mode.getPhysicalHeight() != current.getPhysicalHeight()) continue;
+                if (mode.getRefreshRate() + 0.5 < rate) continue;
+                if (best == null || mode.getRefreshRate() < best.getRefreshRate()) best = mode;
+            }
+        }
+        if (best == null) best = current;
+        WindowManager.LayoutParams attrs = getWindow().getAttributes();
+        if (attrs.preferredDisplayModeId != best.getModeId()) {
+            attrs.preferredDisplayModeId = best.getModeId();
+            getWindow().setAttributes(attrs);
+        }
+        surfaceFrameRate = best.getRefreshRate();
+        surfaceRateRetries = 0;
+        applySurfaceFrameRate(surfaceFrameRate);
+        notifyPageDisplayRate(surfaceFrameRate);
+        Log.i(TAG, "frame-rate " + rate + " -> " + best.getRefreshRate()
+                + "Hz (mode " + best.getModeId() + ")");
+    }
+
+    /** 把壳选定的刷新率写进页面，页面直接采用，不再靠 rAF 重测。 */
+    private void notifyPageDisplayRate(float hz) {
+        if (browser == null || hz <= 0) return;
+        String script = "window.__inoitaDisplayHz=" + hz
+                + ";window.dispatchEvent(new Event('inoita-display-rate'));";
+        try {
+            browser.evaluateJavaScript(script);
+        } catch (RuntimeException error) {
+            Log.w(TAG, "通知页面刷新率失败", error);
+        }
+    }
+
+    /** Android 11+ 把目标帧率也告诉 SurfaceFlinger；Surface 还没建好时短暂重试。 */
+    private void applySurfaceFrameRate(float hz) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || hz <= 0) return;
+        if (isFinishing() || isDestroyed()) return;
+        SurfaceView surfaceView = findSurfaceView(root);
+        if (surfaceView == null) return;
+        Surface surface = surfaceView.getHolder().getSurface();
+        if (surface == null || !surface.isValid()) {
+            if (surfaceRateRetries++ < 20) {
+                mainHandler.postDelayed(() -> applySurfaceFrameRate(hz), 250);
+            }
+            return;
+        }
+        surfaceRateRetries = 0;
+        try {
+            surface.setFrameRate(hz, Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE);
+        } catch (RuntimeException error) {
+            Log.w(TAG, "设置 Surface 帧率失败", error);
+        }
+    }
+
+    private static SurfaceView findSurfaceView(View view) {
+        if (view instanceof SurfaceView) return (SurfaceView) view;
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int index = 0; index < group.getChildCount(); index++) {
+                SurfaceView found = findSurfaceView(group.getChildAt(index));
+                if (found != null) return found;
+            }
+        }
+        return null;
     }
 
     private void createBrowser() {
@@ -173,7 +269,10 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
 
             @Override
             public void onLoadingStateChanged(boolean loading, boolean canGoBack, boolean canGoForward) {
-                if (!loading) pageReady = true;
+                if (!loading) {
+                    pageReady = true;
+                    if (surfaceFrameRate > 0) notifyPageDisplayRate(surfaceFrameRate);
+                }
             }
         });
         browser.setOnRenderProcessTerminatedListener((code, reason) -> {
@@ -449,6 +548,10 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
         if (browser != null) {
             browser.onResume();
             if (pageReady) browser.evaluateJavaScript("window.dispatchEvent(new Event('pageshow'));");
+        }
+        if (surfaceFrameRate > 0) {
+            surfaceRateRetries = 0;
+            applySurfaceFrameRate(surfaceFrameRate);
         }
         hideSystemBars();
         if (updateManager != null) updateManager.checkForUpdateOnForeground();

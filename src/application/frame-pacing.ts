@@ -115,3 +115,13 @@ export function refreshRateKnown(): boolean {
 export function currentRefreshRate(): number {
   return measuredRefreshHz;
 }
+
+/**
+ * 壳选好显示模式后直接告诉页面屏幕刷新率，比页面自己重测更可靠。
+ * 从 120Hz 切到 60Hz 时如果还按旧的 120 换算，60 上限会踩进限帧器临界区。
+ */
+export function setRefreshRate(hz: number): void {
+  if (!Number.isFinite(hz) || hz < 20 || hz > 300) return;
+  measuredRefreshHz = Math.round(hz * 2) / 2;
+  measuredSamples = SAMPLE_COUNT;
+}

@@ -7,6 +7,7 @@
 
 interface InotiaNativeBridge {
   markBootOk?: () => void;
+  setFrameRate?: (rate: number) => void;
 }
 
 declare global {

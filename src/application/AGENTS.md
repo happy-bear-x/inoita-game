@@ -11,7 +11,7 @@
 - 资源/版本：`assets.ts`（素材池与租约）、`asset-version.ts`（素材与内容版本号）。
 - 热更新接线：`live-update.ts`（标题页启动完成信号）。
 - 设置/控制：`control-settings.ts`（操作模式设置）、`control-state.ts`（操作状态与游戏模式）、`display-settings.ts`（显示偏好）、`key-bindings.ts`（键位偏好）、`fullscreen.ts`（全屏与横屏锁定）。
-- Phaser/浏览器适配：`game-audio.ts`（音频适配）、`game-timing.ts`（帧时钟适配）、`frame-pacing.ts`（帧率上限换算与刷新率测量）、`game-diagnostics.ts`（错误记录快照与跳过摘要）、`browser-compat.ts`（浏览器 API 兼容补丁）、`page-interaction-guard.ts`（整页缩放与长按菜单锁定）。
+- Phaser/浏览器适配：`game-audio.ts`（音频适配）、`game-timing.ts`（帧时钟适配）、`frame-pacing.ts`（帧率上限换算与刷新率测量）、`native-frame-rate.ts`（把玩家帧率告诉安卓壳）、`game-diagnostics.ts`（错误记录快照与跳过摘要）、`browser-compat.ts`（浏览器 API 兼容补丁）、`page-interaction-guard.ts`（整页缩放与长按菜单锁定）。
 
 ## 规则
 
@@ -26,6 +26,7 @@
 - 整页缩放和长按选择由 `page-interaction-guard.ts` 在入口统一拦截；viewport 声明和 `game.css` 的 `touch-action` 是第一道，Safari 的 gesture 事件、桌面 Ctrl/⌘ 缩放和右键/选择事件是兜底。输入框保留原生粘贴和选择菜单，不要在输入框上拦截。
 - 画面偏好保存在本机：帧率上限只接受 30、60 或 120，缺省为 60；游戏启动读取偏好，设置变化立即调整 Phaser 限帧，销毁时取消订阅。帧时钟继续使用相邻交付时刻计算真实耗时。
 - 限帧阈值不等于玩家选项：选的帧率离屏幕刷新率不到 2Hz 时交给 vsync（`fps.limit = 0`），只有明显低于刷新率的档位才按数值限帧。60Hz 屏上把上限设成 60 会踩进 Phaser 限帧器的临界区，实测刷新 54 次只交付 34 帧。刷新率用连续 rAF 间隔的中位数测量；高刷屏在启动初期可能仍按 60Hz 回调，所以进图/读档就绪后要补测，并且只采纳样本足够且更高的结果。否则 120Hz 屏上的 60 上限会被误判成「不限帧」，实际跑到 70～80 帧。
+- 玩家选的帧率通过 `window.InotiaNative.setFrameRate` 告诉安卓壳（`native-frame-rate.ts`）。壳选一个刷新率是目标帧率整数倍的显示模式：30 选 60/90/120，60 选 60/120，120 选 120。整数倍保证每个游戏帧占整数个屏幕节拍；60 帧跑在 90Hz 上会反复在 1 个和 2 个节拍之间跳。壳选好后把真实刷新率写回 `window.__inoitaDisplayHz` 并派发 `inoita-display-rate`，页面用 `setRefreshRate` 直接采用，不再靠 rAF 重测。网页版没有原生桥时静默跳过。
 - 改存档结构或校验口径时，把 `src/domain/save-game.ts` 的 `SAVE_FORMAT` 加一，并在 `saved-game.ts` 的升级链补旧版到新版的迁移和旧档测试。
 - **自动存档优先走 `writeAsync`，页面隐藏时走同步 `write`。** 常规写入先等一帧截取游戏画面缩略图；`flushForBackground` 不等截图，沿用最近一张，避免页面隐藏后保存没落地。截图失败只保存无图存档，不阻断写入。
 - 内容加载与构建共用 `content-validation.ts` 的校验器，新增内容字段先在这里定校验口径。

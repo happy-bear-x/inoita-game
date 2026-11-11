@@ -32,6 +32,10 @@ final class LocalAssetServer extends NanoHTTPD {
         void onMigrationDone();
     }
 
+    interface FrameRateListener {
+        void onFrameRateRequested(int rate);
+    }
+
     static final int PORT = 47653;
     private static final String TAG = "InotiaAssets";
     private static final int MAX_BODY_BYTES = 32 * 1024 * 1024;
@@ -39,18 +43,20 @@ final class LocalAssetServer extends NanoHTTPD {
     private final Context context;
     private final UpdateManager manager;
     private final MigrationListener migrationListener;
+    private final FrameRateListener frameRateListener;
     private final String migrationJson;
     private boolean migrationPending;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     LocalAssetServer(Context context, UpdateManager manager, String migrationJson,
-                     MigrationListener migrationListener) {
+                     MigrationListener migrationListener, FrameRateListener frameRateListener) {
         super("127.0.0.1", PORT);
         this.context = context;
         this.manager = manager;
         this.migrationJson = migrationJson;
         this.migrationPending = migrationJson != null && !migrationJson.equals("{}");
         this.migrationListener = migrationListener;
+        this.frameRateListener = frameRateListener;
     }
 
     String baseUrl() {
@@ -72,6 +78,7 @@ final class LocalAssetServer extends NanoHTTPD {
                 return empty(Response.Status.NO_CONTENT);
             }
             if (uri.equals("/__native/build-info")) return json(manager.buildInfoJson());
+            if (uri.equals("/__native/frame-rate")) return nativeFrameRate(session);
             if (uri.equals("/__native/bootstrap.js")) return bootstrap();
             if (uri.equals("/__native/migration-done")) {
                 mainHandler.post(() -> {
@@ -93,6 +100,24 @@ final class LocalAssetServer extends NanoHTTPD {
         if (body == null) return text(Response.Status.BAD_REQUEST, "body too large");
         boolean ok = Diagnostics.post(new String(body, StandardCharsets.UTF_8));
         return empty(ok ? Response.Status.OK : Response.Status.INTERNAL_ERROR);
+    }
+
+    /** 页面只报 30/60/120；壳自己选刷新率能整除它的显示模式。 */
+    private Response nativeFrameRate(IHTTPSession session) {
+        String value = session.getParms().get("rate");
+        int rate;
+        try {
+            rate = Integer.parseInt(value == null ? "" : value.trim());
+        } catch (NumberFormatException error) {
+            rate = 0;
+        }
+        if (rate == 30 || rate == 60 || rate == 120) {
+            final int requested = rate;
+            mainHandler.post(() -> {
+                if (frameRateListener != null) frameRateListener.onFrameRateRequested(requested);
+            });
+        }
+        return empty(Response.Status.NO_CONTENT);
     }
 
     private Response proxyDiagnostics(IHTTPSession session) {
@@ -227,6 +252,7 @@ final class LocalAssetServer extends NanoHTTPD {
                 .append(".then(function(ok){try{window.__inoitaNativeReportResult&&window.__inoitaNativeReportResult(id,ok)}catch(e){}});")
                 .append("},")
                 .append("markBootOk:function(){fetch('/__native/boot-ok',{method:'POST'}).catch(function(){});},")
+                .append("setFrameRate:function(rate){fetch('/__native/frame-rate?rate='+encodeURIComponent(rate),{method:'POST'}).catch(function(){});},")
                 .append("buildInfo:function(){return JSON.stringify(globalThis.__inoitaBuildInfo||{});}")
                 .append("};");
 
