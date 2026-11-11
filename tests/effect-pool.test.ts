@@ -55,6 +55,8 @@ function fixture(){
   const created:{key:string}[]=[];
   const scene={
     events:new EventEmitter(),
+    cameras:{main:{worldView:{x:-100000,y:-100000,width:200000,height:200000,right:100000,bottom:100000}}},
+    game:{loop:{frame:0}},
     textures:{exists:()=>true,remove:()=>{}},
     anims:{exists:(key:string)=>animations.has(key),get:(key:string)=>animations.get(key),
       create:(value:{key:string;frames:unknown[];frameRate:number})=>{created.push(value);animations.set(value.key,value);return value;},
@@ -173,6 +175,37 @@ test('多位伤害数字共用一个容器，位数只增加精灵',()=>{
   assert.equal(digitContainers().length,1,'同一个数字容器复用');
   assert.equal(digitContainers()[0],shown);
   assert.deepEqual(shown.list.map(sprite=>sprite.visible),[true,false,false],'多余的精灵收起来');
+  feedback.destroy();
+});
+
+test('镜头外的目标不再生成命中特效和数字',()=>{
+  const f=fixture();
+  const catalog={attackEffects:{ring:{clips:{default:f.clip()}}},
+    feedback:{shakeOffsets:[],criticalRing:'ring',digits:{enemy:['enemy']}}} as unknown as BattleCatalog;
+  const target={layers:[],actor:{effectAnchor:{x:0,y:0}},container:new Display('player')} as unknown as CharacterVisual;
+  target.container.x=200000;
+  const feedback=new CombatFeedback(f.scene,catalog);
+  const event={hit:{kind:'hit',damage:7},style:'weapon',periodic:false,casterControlled:true,
+    targetFriendly:false,targetParty:false,involvesControlled:true} as const;
+  feedback.show(event,target,{impacts:[{name:'ring',attached:true}],digitEffect:'enemy'});
+  assert.equal(f.containers.length,0,'镜头外不建特效容器，也不建数字容器');
+  feedback.destroy();
+});
+
+test('同一帧的暴击装饰有上限，下一帧恢复额度',()=>{
+  const f=fixture();
+  const catalog={attackEffects:{ring:{clips:{default:f.clip()}},burst:{clips:{default:f.clip()}}},
+    feedback:{shakeOffsets:[],criticalRing:'ring'}} as unknown as BattleCatalog;
+  const target={layers:[],actor:{effectAnchor:{x:0,y:0}},container:new Display('player')} as unknown as CharacterVisual;
+  const feedback=new CombatFeedback(f.scene,catalog);
+  const event={hit:{kind:'hit',damage:1},style:'weapon',periodic:false,casterControlled:false,
+    targetFriendly:false,targetParty:false,involvesControlled:true} as const;
+  const show=()=>feedback.show(event,target,{impacts:[{name:'ring',attached:true},{name:'burst',attached:false}]});
+  for(let index=0;index<6;index++)show();
+  assert.equal(f.containers.length,8,'同一帧只放 8 个装饰');
+  (f.scene as unknown as {game:{loop:{frame:number}}}).game.loop.frame=1;
+  show();
+  assert.equal(f.containers.length,10,'下一帧重新给额度');
   feedback.destroy();
 });
 
