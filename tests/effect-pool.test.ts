@@ -104,11 +104,11 @@ test('回收的特效从角色容器里摘下，再取时能换到别的位置',
 
 test('同片段空闲容器有上限，超出的直接销毁',()=>{
   const f=fixture(),pool=new EffectPool(f.scene),clip=f.clip();
-  const live=Array.from({length:8},()=>view(pool.acquire(clip,0,0)));
+  const live=Array.from({length:20},()=>view(pool.acquire(clip,0,0)));
   for(const effect of live)f.complete(effect);
   const destroyed=live.filter(effect=>!effect.active);
-  assert.equal(destroyed.length,4,'每个片段最多留 4 个');
-  assert.equal(f.containers.filter(value=>value.active).length,4);
+  assert.equal(destroyed.length,4,'每个片段最多留 16 个');
+  assert.equal(f.containers.filter(value=>value.active).length,16);
   pool.destroy();
   assert.equal(f.containers.filter(value=>value.active).length,0,'销毁池时清掉空闲容器');
 });

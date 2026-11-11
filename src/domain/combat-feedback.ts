@@ -17,6 +17,12 @@ export function feedbackEffects(definition:CombatFeedbackDefinition):string[] {
   return [...Object.values(definition.digits).flat(),...definition.normalImpacts,definition.skillImpact,
     definition.criticalImpact,definition.criticalRing,...definition.criticalBursts,definition.missEffect];
 }
+
+/** 命中时可能出现的装饰特效（不含伤害数字），供进战斗时预热。 */
+export function feedbackImpactEffects(definition:CombatFeedbackDefinition):string[] {
+  return [...new Set([...definition.normalImpacts,definition.skillImpact,definition.criticalImpact,
+    definition.criticalRing,...definition.criticalBursts,definition.missEffect])];
+}
 export function feedbackPlan(event:CombatHitFeedback) {
   const {hit}=event;
   const visible=event.involvesControlled||event.targetParty;

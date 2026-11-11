@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { damageDigits, digitSequence, feedbackPlan, reusableDigit, selectFeedbackAssets, type CombatHitFeedback, type CombatFeedbackDefinition } from '../src/domain/combat-feedback.ts';
+import { damageDigits, digitSequence, feedbackImpactEffects, feedbackPlan, reusableDigit, selectFeedbackAssets, type CombatHitFeedback, type CombatFeedbackDefinition } from '../src/domain/combat-feedback.ts';
 import { statusColorMatrix } from '../src/domain/status-color.ts';
 import fs from 'node:fs';
 import { parseBattle } from '../src/application/content-validation.ts';
@@ -86,6 +86,11 @@ test('party and summon visibility does not grant companions the controlled playe
   assert.equal(feedbackPlan({...critical,involvesControlled:false}).digits,false);
   const party=feedbackPlan({...critical,involvesControlled:false,targetParty:true,targetFriendly:true});
   assert.equal(party.digits,true);assert.equal(party.digitStyle,'partyCritical');assert.equal(party.impact,null);
+});
+
+test('impact warm list leaves out digits and removes repeats',()=>{
+  const repeated={...definition,normalImpacts:['normal-0','normal-0'],criticalBursts:['burst-0','burst-0']};
+  assert.deepEqual(feedbackImpactEffects(repeated),['normal-0','skill','critical','ring','burst-0','miss']);
 });
 
 test('native digits stagger, alternate height and hold at source frame four',()=>{

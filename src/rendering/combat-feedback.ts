@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import type { BattleCatalog } from '../domain/battle.ts';
 import type { EffectLayer } from '../domain/content.ts';
-import { damageDigits, digitSequence, feedbackPlan, reusableDigit, type CombatHitFeedback, type CombatFeedbackSelection } from '../domain/combat-feedback.ts';
+import { damageDigits, digitSequence, feedbackImpactEffects, feedbackPlan, reusableDigit, type CombatHitFeedback, type CombatFeedbackSelection } from '../domain/combat-feedback.ts';
 import type { CharacterVisual } from './characters.ts';
 import { EffectPool } from './effects.ts';
 import { rememberEffectAnimation } from './effect-animations.ts';
@@ -61,6 +61,13 @@ export class CombatFeedback {
   constructor(scene:Phaser.Scene,catalog:BattleCatalog,vibrationEnabled=false){
     this.scene=scene;this.catalog=catalog;this.vibrationEnabled=vibrationEnabled;
     this.pool=new EffectPool(scene);
+  }
+  /** 进图装配战斗时预建命中特效容器；首次命中不再现场建对象。 */
+  warm():void {
+    for(const name of feedbackImpactEffects(this.catalog.feedback)){
+      const clip=this.catalog.attackEffects[name]?.clips.default;
+      if(clip)this.pool.warm(clip,2);
+    }
   }
   private track(effect:Phaser.GameObjects.Container):void {
     this.effects.add(effect);effect.setVisible(this.visible);

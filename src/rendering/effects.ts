@@ -147,8 +147,8 @@ function replayEffect(scene: Phaser.Scene, effect: Phaser.GameObjects.Container,
   }
 }
 
-const POOL_PER_CLIP = 4;
-const POOL_TOTAL = 64;
+const POOL_PER_CLIP = 16;
+const POOL_TOTAL = 256;
 
 /** 池里的容器记得自己当初按哪个片段建好，回收时才知道放回哪个桶。 */
 const pooledEffects = new WeakMap<Phaser.GameObjects.Container, { clip: EffectClip; animations: string[] }>();
