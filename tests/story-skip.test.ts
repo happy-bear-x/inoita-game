@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { StoryDirector, type StoryUI, type StorySkipPhase } from '../src/domain/story-director.ts';
+import { StoryDirector, type StoryUI, type StoryWorldPort, type StorySkipPhase } from '../src/domain/story-director.ts';
 import { Session } from '../src/domain/session.ts';
 import { compileScript } from './support/story-fixtures.ts';
 import type { Campaign } from '../src/domain/campaign.ts';
@@ -9,7 +9,7 @@ import type { ChoiceOption } from '../src/domain/content.ts';
 import { parseCampaign, parseControlSkin } from '../src/application/content-validation.ts';
 
 const campaign = parseCampaign(JSON.parse(fs.readFileSync(new URL('../public/content/campaign.json', import.meta.url), 'utf8')));
-function harness(content: Campaign = campaign, overrides: Partial<StoryUI> = {}) {
+function harness(content: Campaign = campaign, overrides: Partial<StoryUI> = {}, world?: StoryWorldPort) {
   const session = new Session(content), lines: string[] = [], locks: boolean[] = [];
   let finish: (() => void) | undefined, choose: ((option: ChoiceOption) => void) | undefined;
   let cancel: (() => void) | undefined, flushes = 0;
@@ -25,7 +25,7 @@ function harness(content: Campaign = campaign, overrides: Partial<StoryUI> = {})
     async questPopup() {},
     skipDialogue: () => finish?.(), closeDialogue: () => cancel?.(), toast() {}, ...overrides
   };
-  const director = new StoryDirector(content, session, ui, value => locks.push(value), { begin() {}, async execute() {}, async finish() {}, async flushStage() { flushes++; } });
+  const director = new StoryDirector(content, session, ui, value => locks.push(value), { begin() {}, async execute() {}, async finish() {}, async flushStage() { flushes++; } }, world);
   return { director, session, lines, locks, flushes: () => flushes, finish: () => finish?.(), choose: (option: ChoiceOption) => choose!(option) };
 }
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -76,6 +76,21 @@ test('跳过落在界面建立对白等待之前时，导演仍会结束这一�
     skipDialogue: () => {}
   });
   const playing = h.director.trigger({ id: 'skip-before-pending', script: 'demo' });
+  await tick(); h.director.skip();
+  assert.equal(await playing, true);
+  assert.deepEqual(h.locks, [true, false]);
+});
+
+test('跳过不等卡住的立绘预取，剧情仍会结束并解锁', async () => {
+  const h = harness({ ...campaign, scripts: { ...campaign.scripts, demo: compileScript('demo', [
+    { type: 'dialogue', speaker: '', actor: null, text: '一句' }
+  ]) } }, {}, {
+    capture: () => undefined, restore: async () => {}, project: async () => {}, checkpoint: () => {},
+    normalize: async () => {}, settle: async () => {},
+    // 模拟一直加载不完的立绘/音效：跳过只结束等待，不取消后台准备。
+    prefetch: () => new Promise<void>(() => {})
+  });
+  const playing = h.director.trigger({ id: 'skip-prefetch', script: 'demo' });
   await tick(); h.director.skip();
   assert.equal(await playing, true);
   assert.deepEqual(h.locks, [true, false]);

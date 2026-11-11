@@ -322,11 +322,11 @@ export class StoryDirector {
       this.prefetchedScripts.clear();
     }
     const script = this.runtime.runScript(context.runId);
-    // 立绘和音效仍按正常流程预取：跳过不该让后面的选项或对白缺资源。
+    // 立绘和音效仍按正常流程预取：跳过只结束等待，后台加载继续，后面的选项或对白不会缺资源。
     if (script && !this.prefetchedScripts.has(script)) {
-      await this.world?.prefetch?.([script], context.signal);
+      const completed = await this.waitSkippable(this.world?.prefetch?.([script], context.signal) ?? Promise.resolve(), context.signal);
       context.signal.throwIfAborted();
-      this.prefetchedScripts.add(script);
+      if (completed) this.prefetchedScripts.add(script);
     }
     await this.recover(context.signal);
     await this.world?.normalize?.(context.signal);
@@ -337,6 +337,22 @@ export class StoryDirector {
       // `begin` 已经把这一幕画出来了；进图加载页到这里就可以收。
       if (this.presenting) { this.presentationRun = context.runId; this.markPresentationStarted(); }
     }
+  }
+  /** 跳过只结束等待，不取消已经在跑的准备；准备本身仍由剧情信号决定成败。 */
+  private waitSkippable(work: Promise<unknown>, signal: AbortSignal): Promise<boolean> {
+    signal.throwIfAborted();
+    const skip = this.skipRequest.signal;
+    if (skip.aborted) { void work.catch(() => {}); return Promise.resolve(false); }
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const clean = () => { signal.removeEventListener('abort', abort); skip.removeEventListener('abort', skipped); };
+      const done = (completed: boolean) => { if (settled) return; settled = true; clean(); resolve(completed); };
+      const fail = (error: unknown) => { if (settled) return; settled = true; clean(); reject(error); };
+      const abort = () => fail(signal.reason ?? new DOMException('cancelled', 'AbortError'));
+      const skipped = () => done(false);
+      signal.addEventListener('abort', abort, { once: true }); skip.addEventListener('abort', skipped, { once: true });
+      work.then(() => done(true), fail);
+    });
   }
   private async recover(signal: AbortSignal): Promise<void> {
     await this.cleanup.catch(() => {}); signal.throwIfAborted();
