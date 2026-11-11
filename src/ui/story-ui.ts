@@ -775,7 +775,7 @@ export class StoryUI {
       slotReading:ref=>this.app.saves.peek(ref),
       settings:()=>({
         music:this.app.audio?.settings.music??0,effects:this.app.audio?.settings.effects??0,
-        fps:displaySettings.fps,frameRateLimit:displaySettings.frameRateLimit,criticalDecorations:displaySettings.criticalDecorations,
+        fps:displaySettings.fps,frameRateLimit:displaySettings.frameRateLimit,textureBatching:displaySettings.textureBatching,criticalDecorations:displaySettings.criticalDecorations,
         fullscreen:fullscreenStatus(),fullscreenActive:fullscreenActive(),controlMode:controlSettings.mode
       }),
       learn:()=>this.skillBook?.viewModel??{entryId:'',message:''},
@@ -955,14 +955,21 @@ export class StoryUI {
         this.render();
       },{parent:content,selected:frameRateLimit===limit}).setData('label',`${limit} 帧`);
     }
+    // 纹理批次：自动时安卓单纹理，iOS 和桌面多纹理；单纹理更保守。
+    const batching=displaySettings.textureBatching;
+    const batchingLabel={auto:'自动',multi:'多纹理',single:'单纹理'}[batching];
+    v.button('',485,440,260,66,()=>{
+      displaySettings.setTextureBatching(batching==='auto'?'multi':batching==='multi'?'single':'auto');
+      this.render();
+    },{parent:content}).setData('label',`纹理批次：${batchingLabel}`);
     // 暴击光环和爆闪只影响画面，默认开启；不影响暴击冲击、数字、震屏或音效。
     const decorations=displaySettings.criticalDecorations;
-    v.button('',485,440,220,66,()=>{
+    v.button('',485,530,220,66,()=>{
       displaySettings.setCriticalDecorations(!decorations);
       this.render();
     },{parent:content}).setData('label',decorations?'开启':'关闭');
     // 全屏是浏览器能力；不支持的环境显示为不可用，APK 壳已经隐藏系统栏，显示为已全屏。
-    let rowTop=530;
+    let rowTop=620;
     const fullscreen=fullscreenStatus();
     if(fullscreen==='available'){
       const active=fullscreenActive();
@@ -1008,9 +1015,12 @@ export class StoryUI {
     add('frame-rate-30','30 帧',552.5,383,22,.5,.5);
     add('frame-rate-60','60 帧',702.5,383,22,.5,.5);
     add('frame-rate-120','120 帧',852.5,383,22,.5,.5);
-    add('critical-label','暴击光效',260,455,25);
-    add('critical-toggle',displaySettings.criticalDecorations?'开启':'关闭',595,473,22,.5,.5);
-    let rowTop=530;
+    const batchingLabel={auto:'自动',multi:'多纹理',single:'单纹理'}[displaySettings.textureBatching];
+    add('texture-batching-label','纹理批次',260,455,25);
+    add('texture-batching-toggle',batchingLabel,615,473,22,.5,.5);
+    add('critical-label','暴击光效',260,545,25);
+    add('critical-toggle',displaySettings.criticalDecorations?'开启':'关闭',595,563,22,.5,.5);
+    let rowTop=620;
     add('fullscreen-label','全屏',260,rowTop+15,25);
     const fullscreen=fullscreenStatus();
     add('fullscreen-toggle',fullscreen==='available'?(fullscreenActive()?'开启':'关闭'):(fullscreen==='packaged'?'已全屏':'不支持'),

@@ -2,7 +2,7 @@ import { AUTO_SAVE_SLOT, MANUAL_SAVE_SLOT_COUNT, type SaveSlotRef, type SlotSumm
 import type { Session } from '../domain/session.ts';
 import type { FullscreenStatus } from '../application/fullscreen.ts';
 import type { ControlMode } from '../application/control-settings.ts';
-import type { FrameRateLimit } from '../application/display-settings.ts';
+import type { FrameRateLimit, TextureBatching } from '../application/display-settings.ts';
 
 /** 菜单里所有可显示的页面；新增页面必须同时补一个签名分支。 */
 export const STORY_MENU_PAGES = [
@@ -17,6 +17,7 @@ export interface StoryMenuSettingsView {
   effects: number;
   fps: boolean;
   frameRateLimit: FrameRateLimit;
+  textureBatching: TextureBatching;
   criticalDecorations: boolean;
   fullscreen: FullscreenStatus;
   fullscreenActive: boolean;

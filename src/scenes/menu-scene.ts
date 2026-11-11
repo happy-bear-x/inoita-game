@@ -1,6 +1,5 @@
 import { UiNode, UiImage, type UiText } from '../ui/dom/node.ts';
 import { SCENE_KEYS } from '../application/scene-keys.ts';
-import { displaySettings } from '../application/display-settings.ts';
 import { notifyBootReady } from '../application/live-update.ts';
 import { fullscreenActive, fullscreenStatus, onFullscreenChange, setFullscreen } from '../application/fullscreen.ts';
 import Phaser from 'phaser';
@@ -256,18 +255,27 @@ export class MenuScene extends Phaser.Scene {
     else if(this.changelogState!=='ready'||!this.changelogEntries.length)this.changelogMessage('暂无更新日志。');
     else this.renderChangelogEntries(v,scroll,textSize);
   }
+  /** 弹层顶部居中的版本号与说明；不随日志条目滚动。 */
+  private changelogTitleSpec():MenuTextSpec {
+    const {panel}=CHANGELOG_LAYOUT;
+    return {key:'changelog-title',text:`${GAME_VERSION} 更新说明`,x:panel.x+panel.width/2,y:panel.y+42,
+      style:{size:28,color:GOLD,anchorX:.5,anchorY:.5,align:'center'}};
+  }
+  private changelogEntryText(index:number):string {
+    return `${index+1}. ${this.changelogEntries[index]!}`;
+  }
   /** 加载中、空列表和失败都只显示一行居中文字。 */
   private changelogMessage(text:string):void{
     const area=CHANGELOG_LAYOUT.scroll;
-    this.changelogSpecs=[{key:'changelog-message',text,x:area.x+area.width/2,y:area.y+area.height/2,
+    this.changelogSpecs=[this.changelogTitleSpec(),{key:'changelog-message',text,x:area.x+area.width/2,y:area.y+area.height/2,
       style:{size:CHANGELOG_LAYOUT.textSize,color:GOLD,anchorX:.5,anchorY:.5,
         width:area.width-40,align:'center',wrap:'word'}}];
   }
   /** 先量每条正文的实际高度，算出总高度；真正输出时只取可视范围。 */
   private renderChangelogEntries(v:UiSurface,scroll:ScrollArea,textSize:number):void{
     const area=CHANGELOG_LAYOUT.scroll;
-    const heights=this.changelogEntries.map(entry=>{
-      const probe=v.text(entry,0,0,area.width,textSize,GOLD);
+    const heights=this.changelogEntries.map((_entry,index)=>{
+      const probe=v.text(this.changelogEntryText(index),0,0,area.width,textSize,GOLD);
       const height=probe.height;
       probe.destroy();
       return height;
@@ -284,8 +292,8 @@ export class MenuScene extends Phaser.Scene {
     if(!scroll)return;
     const area=CHANGELOG_LAYOUT.scroll;
     const {first,last}=changelogVisibleRange(this.changelogOffsets,this.changelogHeights,scroll.scrollTop,area.height);
-    const specs:MenuTextSpec[]=[];
-    for(let index=first;index<=last;index++)specs.push({key:`changelog-${index}`,text:this.changelogEntries[index]!,
+    const specs:MenuTextSpec[]=[this.changelogTitleSpec()];
+    for(let index=first;index<=last;index++)specs.push({key:`changelog-${index}`,text:this.changelogEntryText(index),
       x:area.x,y:area.y+this.changelogOffsets[index]!,
       style:{size:CHANGELOG_LAYOUT.textSize,color:GOLD,width:area.width,wrap:'word'},
       scroll:'changelog',clip:{top:area.y,bottom:area.y+area.height}});
@@ -466,9 +474,6 @@ export class MenuScene extends Phaser.Scene {
           rowTop+=100;
         }
         const rows:{label:string;value:string;action:()=>void;disabled?:boolean}[]=[];
-        const decorations=displaySettings.criticalDecorations;
-        rows.push({label:'暴击光效',value:decorations?'开':'关',
-          action:()=>{displaySettings.setCriticalDecorations(!decorations);this.render();}});
         // 全屏是浏览器能力；不支持的环境显示为不可用，APK 壳已经隐藏系统栏，显示为已全屏。
         const fullscreen=fullscreenStatus();
         if(fullscreen==='available'){

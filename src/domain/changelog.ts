@@ -1,5 +1,5 @@
 /**
- * 标题页的更新日志：按条目顺序显示正文，不显示版本号或日期。
+ * 标题页的更新日志：顶部显示标题页版本号，正文按条目顺序编号。
  * 内容集中在 `public/content/changelog.json`，点按钮时才加载。
  */
 export interface ChangelogCatalog {

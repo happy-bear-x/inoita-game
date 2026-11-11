@@ -40,7 +40,7 @@ import { gameMenuImageGroups } from './application/menu-images.ts';
 import { UI_ICON_ATLAS_FILE } from './generated/icon-atlas.ts';
 import { MINIMAP_ASSETS } from './domain/story-interface.ts';
 import { GAME_FRAME_TIMING, installFrameLimitClock } from './application/game-timing.ts';
-import { displaySettings } from './application/display-settings.ts';
+import { displaySettings, parallelTextureUnits } from './application/display-settings.ts';
 import { currentRefreshRate, detectRefreshRate, refreshRateKnown, resolveFrameLimit, setRefreshRate } from './application/frame-pacing.ts';
 import { requestNativeFrameRate } from './application/native-frame-rate.ts';
 import { installDiagnosticSnapshot, installStorySkipDiagnostics } from './application/game-diagnostics.ts';
@@ -767,6 +767,15 @@ function boot(): void {
     callbacks: { postBoot: game => {
       const restoreClock = installFrameLimitClock(game.loop);
       game.events.once(Phaser.Core.Events.DESTROY, restoreClock);
+      // 启动配置固定为多纹理，再按玩家偏好应用：自动时安卓单纹理，iOS 和桌面多纹理。
+      const applyTextureBatching = (): void => {
+        const renderer = game.renderer as Phaser.Renderer.WebGL.WebGLRenderer;
+        if (!renderer?.renderNodes) return;
+        renderer.renderNodes.setMaxParallelTextureUnits(
+          parallelTextureUnits(displaySettings.textureBatching, game.device.os.android, renderer.maxTextures));
+      };
+      applyTextureBatching();
+      game.events.once(Phaser.Core.Events.DESTROY, displaySettings.subscribeTextureBatching(applyTextureBatching));
     } },
     scale: { mode: Phaser.Scale.NONE, autoCenter: Phaser.Scale.CENTER_BOTH, width: GAME_WIDTH, height: GAME_HEIGHT },
     render: { powerPreference: 'high-performance', batchSize: 16384, autoMobileTextures: false },

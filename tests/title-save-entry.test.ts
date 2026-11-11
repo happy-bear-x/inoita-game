@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {registerHooks} from 'node:module';
 import {SaveSlots,SAVE_FORMAT,type SaveSlotRef} from '../src/domain/save-game.ts';
-import {displaySettings} from '../src/application/display-settings.ts';
 import type {MenuContext} from '../src/application/ports.ts';
 import type {StoryWorldViewSnapshot} from '../src/scenes/world-scene.ts';
 import type {CloudSaveEntry,CloudSavePort,CloudSession} from '../src/application/cloud-save.ts';
@@ -130,17 +129,19 @@ test('title changelog loads on demand and only renders visible entries',async()=
   assert.equal(loads,1,'点按钮才加载更新日志');
   assert.ok(f.domTexts().includes('正在加载更新日志…'));
   await new Promise(resolve=>setImmediate(resolve));
-  const labels=()=>f.domTexts().filter(text=>text.startsWith('第 '));
-  assert.ok(labels().some(text=>text.startsWith('第 1 条')),'首条可见');
+  assert.ok(f.domTexts().includes('v1.0.2 更新说明'),'顶部居中显示版本号和更新说明');
+  const labels=()=>f.domTexts().filter(text=>/^\d+\. 第 /.test(text));
+  assert.ok(labels().some(text=>text.includes('第 1 条')),'首条可见');
+  assert.ok(labels()[0]!.startsWith('1. '),'条目前带序号');
   assert.ok(labels().length>0&&labels().length<entries.length,`只渲染可视条目，实际 ${labels().length} 条`);
   const scroll=f.state.changelogScroll!;
   scroll.scrollTop=scroll.extent-scroll.height;
   scroll.onScroll?.();
-  assert.ok(labels().some(text=>text.startsWith('第 40 条')),'滚到底显示最后一条');
-  assert.ok(!labels().some(text=>text.startsWith('第 1 条')),'滚出视口的条目不渲染');
+  assert.ok(labels().some(text=>text.includes('第 40 条')),'滚到底显示最后一条');
+  assert.ok(!labels().some(text=>text.includes('第 1 条')),'滚出视口的条目不渲染');
   f.clickModal('关闭更新日志');
   assert.equal(f.state.changelogOpen,false);
-  assert.ok(!f.domTexts().some(text=>text.startsWith('第 1 条')),'关闭弹窗后日志文字撤掉');
+  assert.ok(!f.domTexts().some(text=>text.includes('第 1 条')),'关闭弹窗后日志文字撤掉');
 });
 
 test('changelog loader keeps its receiver and empty entries show the empty state',async()=>{
@@ -151,6 +152,7 @@ test('changelog loader keeps its receiver and empty entries show the empty state
   assert.ok(f.domTexts().includes('正在加载更新日志…'));
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(receiver,f.app,'作为对象方法调用，this 不能丢');
+  assert.ok(f.domTexts().includes('v1.0.2 更新说明'),'空日志也保留顶部版本号');
   assert.ok(f.domTexts().includes('暂无更新日志。'),'空日志显示暂无数据');
 });
 
@@ -256,26 +258,20 @@ test('title settings keeps every row inside a scrolling panel',()=>{
   assert(f.domTexts().includes('背景音乐'));assert(f.domTexts().includes('音效'));
   assert(!f.domTexts().some(text=>text.includes('语言')||text.includes('简体中文')));
   assert.deepEqual(f.view.buttons.map(button=>button.getData('label')),
-    ['返回主菜单','暴击光效：开','全屏：不支持']);
+    ['返回主菜单','全屏：不支持']);
   assert.deepEqual(f.view.sliders.map(slider=>slider.label),['music','effects']);
   assert(f.view.sliders.every(slider=>slider.value===1),'音频默认满音量');
   // 选项挂在面板内侧的滚动区：边框不滚，行数再多也只滚动，不会画到边线上。
   const scroll=f.view.scrolls.at(-1);assert.ok(scroll);
   assert.deepEqual([scroll.x,scroll.y,scroll.width,scroll.height],[240,190,720,297]);
   const rows=f.view.buttons.filter(button=>String(button.getData('label')).includes('：'));
-  assert.equal(rows.length,2);
+  assert.equal(rows.length,1);
   assert(rows.every(row=>row.y>=0&&row.y+row.height<=scroll.extent),'每一行都在滚动内容的高度内');
-  assert(scroll.extent>scroll.height,'四行排不进可视区时靠滚动查看');
 });
 
-test('title settings toggles critical light effects',t=>{
-  displaySettings.setCriticalDecorations(true);
-  t.after(()=>displaySettings.setCriticalDecorations(true));
+test('title settings leaves critical light effects to the in-game settings',()=>{
   const f=fixture();f.click('环境设置');
-  assert(f.view.buttons.some(button=>button.getData('label')==='暴击光效：开'));
-  f.click('暴击光效：开');
-  assert(f.view.buttons.some(button=>button.getData('label')==='暴击光效：关'));
-  assert.equal(displaySettings.criticalDecorations,false);
+  assert(!f.view.buttons.some(button=>String(button.getData('label')).startsWith('暴击光效')));
 });
 
 test('title settings uses volume sliders and leftmost means silence',()=>{

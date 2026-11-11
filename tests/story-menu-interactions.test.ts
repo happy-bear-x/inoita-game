@@ -469,7 +469,8 @@ test('character resource labels and values align with their gauges below the por
 test('system exposes load alongside save while settings keeps the working display and audio preferences',t=>{
   displaySettings.setCriticalDecorations(true);
   displaySettings.setFrameRateLimit(60);
-  t.after(()=>{displaySettings.setCriticalDecorations(true);displaySettings.setFrameRateLimit(60);});
+  displaySettings.setTextureBatching('auto');
+  t.after(()=>{displaySettings.setCriticalDecorations(true);displaySettings.setFrameRateLimit(60);displaySettings.setTextureBatching('auto');});
   const f=fixture();t.after(f.cleanup);
   const audio={settings:{music:1,effects:1},setVolume(channel:'music'|'effects',value:number){this.settings[channel]=value;}};
   Object.defineProperty(f.app,'audio',{value:audio});
@@ -489,8 +490,18 @@ test('system exposes load alongside save while settings keeps the working displa
   assert.deepEqual(sliders.map(slider=>slider.label),['music','effects']);
   assert.equal(sliders[0]!.value,1);assert.equal(sliders[1]!.value,1);
   const toggle=(y:number)=>f.scene.buttons('开启').concat(f.scene.buttons('关闭')).find(node=>node.y===y)!;
-  const rows={fps:260,critical:440} as const;
+  const rows={fps:260,critical:530} as const;
   assert(toggle(rows.fps));assert(toggle(rows.critical));
+  const batching=()=>f.scene.nodes.find(node=>node.shown&&String(node.getData('label')).startsWith('纹理批次：'))!;
+  assert.equal(batching().getData('label'),'纹理批次：自动');
+  f.scene.click(batching());
+  assert.equal(displaySettings.textureBatching,'multi');
+  assert.equal(batching().getData('label'),'纹理批次：多纹理');
+  f.scene.click(batching());
+  assert.equal(displaySettings.textureBatching,'single');
+  assert.equal(batching().getData('label'),'纹理批次：单纹理');
+  f.scene.click(batching());
+  assert.equal(displaySettings.textureBatching,'auto');
   assert(domTexts().includes('帧率上限'));
   assert.equal(f.scene.button('30 帧').getData('selected'),false);
   assert.equal(f.scene.button('60 帧').getData('selected'),true);

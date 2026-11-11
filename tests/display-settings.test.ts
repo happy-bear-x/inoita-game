@@ -32,12 +32,14 @@ test('display settings default both switches on and upgrade an old fps-only reco
   assert.equal(settings.fps,true);
   assert.equal(settings.criticalDecorations,true);
   assert.equal(settings.frameRateLimit,60);
+  assert.equal(settings.textureBatching,'auto');
 
   installStorage({[KEY]:JSON.stringify({fps:false})});
   settings=(await freshSettings()).displaySettings;
   assert.equal(settings.fps,false);
   assert.equal(settings.criticalDecorations,true,'旧记录没有新字段时默认开启');
   assert.equal(settings.frameRateLimit,60);
+  assert.equal(settings.textureBatching,'auto','旧记录没有纹理批次时默认自动');
 });
 
 test('critical decorations persist without dropping the fps preference',async t=>{
@@ -46,9 +48,9 @@ test('critical decorations persist without dropping the fps preference',async t=
   const {displaySettings}=await freshSettings();
   displaySettings.setCriticalDecorations(false);
   assert.equal(displaySettings.criticalDecorations,false);
-  assert.deepEqual(JSON.parse(entries.get(KEY)!),{fps:true,criticalDecorations:false,frameRateLimit:60});
+  assert.deepEqual(JSON.parse(entries.get(KEY)!),{fps:true,criticalDecorations:false,frameRateLimit:60,textureBatching:'auto'});
   displaySettings.setFps(false);
-  assert.deepEqual(JSON.parse(entries.get(KEY)!),{fps:false,criticalDecorations:false,frameRateLimit:60});
+  assert.deepEqual(JSON.parse(entries.get(KEY)!),{fps:false,criticalDecorations:false,frameRateLimit:60,textureBatching:'auto'});
 });
 
 test('frame rate preference persists, notifies immediately, and rejects invalid stored values',async t=>{
@@ -74,6 +76,31 @@ test('frame rate preference persists, notifies immediately, and rejects invalid 
   entries.set(KEY,JSON.stringify({frameRateLimit:144}));
   settings=(await freshSettings()).displaySettings;
   assert.equal(settings.frameRateLimit,60);
+});
+
+test('texture batching persists, notifies once, and falls back to auto',async t=>{
+  t.after(restoreStorage);
+  const entries=installStorage();
+  const {displaySettings,parallelTextureUnits}=await freshSettings();
+  assert.equal(displaySettings.textureBatching,'auto');
+  const changes:string[]=[];
+  const unsubscribe=displaySettings.subscribeTextureBatching(mode=>changes.push(mode));
+  displaySettings.setTextureBatching('single');
+  displaySettings.setTextureBatching('single');
+  assert.deepEqual(changes,['single']);
+  assert.equal(JSON.parse(entries.get(KEY)!).textureBatching,'single');
+  displaySettings.setTextureBatching('multi');
+  assert.deepEqual(changes,['single','multi']);
+  unsubscribe();displaySettings.setTextureBatching('auto');
+  assert.deepEqual(changes,['single','multi']);
+  assert.equal((await freshSettings()).displaySettings.textureBatching,'auto');
+  entries.set(KEY,JSON.stringify({textureBatching:'weird'}));
+  assert.equal((await freshSettings()).displaySettings.textureBatching,'auto');
+  assert.equal(parallelTextureUnits('auto',true,16),1,'自动在安卓使用单纹理');
+  assert.equal(parallelTextureUnits('auto',false,16),16,'自动在 iOS 和桌面使用多纹理');
+  assert.equal(parallelTextureUnits('single',false,16),1);
+  assert.equal(parallelTextureUnits('multi',true,16),16);
+  assert.equal(parallelTextureUnits('multi',false,0),1);
 });
 
 test('broken storage falls back to defaults and write failures keep the in-memory switch',async t=>{
