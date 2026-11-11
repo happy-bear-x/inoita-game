@@ -23,7 +23,15 @@ export function feedbackImpactEffects(definition:CombatFeedbackDefinition):strin
   return [...new Set([...definition.normalImpacts,definition.skillImpact,definition.criticalImpact,
     definition.criticalRing,...definition.criticalBursts,definition.missEffect])];
 }
-export function feedbackPlan(event:CombatHitFeedback) {
+export interface CombatFeedbackPlan {
+  digits:boolean;
+  digitStyle:'enemy'|'enemyCritical'|'party'|'partyCritical'|'miss';
+  impact:'miss'|'normal'|'critical'|null;
+  flash:boolean;
+  shake:boolean;
+}
+/** 一次命中只算一遍，选择素材、闪光和数字都读同一份计划。 */
+export function feedbackPlan(event:CombatHitFeedback):CombatFeedbackPlan {
   const {hit}=event;
   const visible=event.involvesControlled||event.targetParty;
   const critical=hit.kind==='critical';
@@ -34,7 +42,7 @@ export function feedbackPlan(event:CombatHitFeedback) {
       critical?(event.involvesControlled?'critical':null):hit.kind==='hit'?'normal':null,
     flash:hit.damage>0,
     shake:hit.damage>0&&critical&&event.casterControlled&&!event.periodic
-  } as const;
+  };
 }
 export interface CombatFeedbackSelection {
   impacts:{name:string;attached:boolean}[];
@@ -42,8 +50,8 @@ export interface CombatFeedbackSelection {
 }
 /** Resolve shared combat randomness before rendering visibility or digit-pool capacity can reject an effect. */
 export function selectFeedbackAssets(event:CombatHitFeedback,definition:CombatFeedbackDefinition,
-  random:()=>number=Math.random,criticalDecorations=true):CombatFeedbackSelection {
-  const plan=feedbackPlan(event),selection:CombatFeedbackSelection={impacts:[]};
+  random:()=>number=Math.random,criticalDecorations=true,plan:CombatFeedbackPlan=feedbackPlan(event)):CombatFeedbackSelection {
+  const selection:CombatFeedbackSelection={impacts:[]};
   const choose=(values:readonly string[])=>values.length===1?values[0]!:values[Math.floor(random()*values.length)]!;
   if(plan.impact==='miss')selection.impacts.push({name:definition.missEffect,attached:true});
   if(plan.impact==='normal')selection.impacts.push({name:event.style==='skill'?definition.skillImpact:choose(definition.normalImpacts),attached:true});
@@ -63,12 +71,14 @@ export function damageDigits(damage:number,miss=false) {
   return digits.map((digit,index)=>({digit,x:miss?0:-digits.length*4+index*8,y:miss?0:(index%2)*2,
     delayMs:index*60,holdFrames:digits.length-1-index}));
 }
-export function digitSequence(frames:number,holdFrames:number):number[] {
-  return Array.from({length:frames},(_,frame)=>Array(frame===4?holdFrames+1:1).fill(frame)).flat();
-}
-/** 原版满池时替换进度最大的项；尚未开始或仍在首帧的项不能被替换。 */
-export function reusableDigit(progress:readonly number[]):number {
-  let chosen=-1,maximum=0;
-  for(let i=0;i<progress.length;i++)if(progress[i]>maximum){chosen=i;maximum=progress[i];}
-  return chosen;
+const digitSequences=new Map<number,readonly number[]>();
+/** 帧序列只由帧数和保持帧数决定；缓存后每次命中不再重建小数组。 */
+export function digitSequence(frames:number,holdFrames:number):readonly number[] {
+  const key=frames*1024+holdFrames;
+  let sequence=digitSequences.get(key);
+  if(!sequence){
+    sequence=Array.from({length:frames},(_,frame)=>Array(frame===4?holdFrames+1:1).fill(frame)).flat();
+    digitSequences.set(key,sequence);
+  }
+  return sequence;
 }

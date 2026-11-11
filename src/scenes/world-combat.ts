@@ -1938,10 +1938,11 @@ captureStoryActors():SceneActorState[] {
       casterControlled:event.casterId===this.controlledId,targetParty:!!this.memberOf(event.targetId),
       targetFriendly:!!this.memberOf(event.targetId)||!!this.memberOf(target?.summonedBy??''),
       involvesControlled:belongsToControlled(event.casterId)||belongsToControlled(event.targetId)};
-    const selection=selectFeedbackAssets(feedback,this.app.battleCatalog.feedback,Math.random,displaySettings.criticalDecorations);
+    const plan=feedbackPlan(feedback);
+    const selection=selectFeedbackAssets(feedback,this.app.battleCatalog.feedback,Math.random,displaySettings.criticalDecorations,plan);
     const visual=this.visualOf(event.targetId);if(!visual?.container.active)return;
-    this.feedback.show(feedback,visual,selection);
-    if(feedbackPlan(feedback).flash)this.statusColors.flash(visual,this.scene);
+    this.feedback.show(feedback,visual,selection,plan);
+    if(plan.flash)this.statusColors.flash(visual,this.scene);
     if(options.sound){
       // 普攻命中音效对所有玩家阵营成员生效；武器类型按出手者自己的装备取。
       if(this.memberOf(event.casterId)){

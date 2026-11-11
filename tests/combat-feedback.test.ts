@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { damageDigits, digitSequence, feedbackImpactEffects, feedbackPlan, reusableDigit, selectFeedbackAssets, type CombatHitFeedback, type CombatFeedbackDefinition } from '../src/domain/combat-feedback.ts';
+import { damageDigits, digitSequence, feedbackImpactEffects, feedbackPlan, selectFeedbackAssets, type CombatHitFeedback, type CombatFeedbackDefinition } from '../src/domain/combat-feedback.ts';
 import { statusColorMatrix } from '../src/domain/status-color.ts';
 import fs from 'node:fs';
 import { parseBattle } from '../src/application/content-validation.ts';
@@ -99,9 +99,8 @@ test('native digits stagger, alternate height and hold at source frame four',()=
     {digit:2,x:-4,y:2,delayMs:60,holdFrames:1},
     {digit:3,x:4,y:0,delayMs:120,holdFrames:0}]);
   assert.deepEqual(digitSequence(7,2),[0,1,2,3,4,4,4,5,6]);
+  assert.equal(digitSequence(7,2),digitSequence(7,2),'同一帧序列复用缓存数组');
   assert.deepEqual(damageDigits(0,true),[{digit:10,x:0,y:0,delayMs:0,holdFrames:0}]);
-  assert.equal(reusableDigit([-2,0,4,4,3]),2);
-  assert.equal(reusableDigit([-2,0,0]),-1);
 });
 
 test('hit gamma brightens dark pixels while keeping buff colors and alpha',()=>{

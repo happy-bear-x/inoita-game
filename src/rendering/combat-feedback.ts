@@ -13,9 +13,27 @@ import { EFFECT_ATLAS_BY_FILE, EFFECT_ATLAS_PAGES } from '../generated/effect-at
  * 数字文件进了图集时，序列里是源帧序号，必须换成图集页键和帧名；
  * 直接拿页纹理配数字帧会找不到帧，Phaser 会把整页图集当一张图显示。
  */
-export function playDigitAnimation(sprite:Phaser.GameObjects.Sprite,layer:EffectLayer|undefined,sequence:number[],
-  frameRate:number,delayMs:number):void {
-  const file=layer?.file;
+interface DigitAnimation {
+  key:string;
+  frames:{key:string;frame:string|number}[];
+  textureKeys:string[];
+}
+
+/**
+ * 同一个帧序列数组会被复用；再按「图集来源 + 帧率」缓存帧表和动画键，
+ * 每次命中只取一次缓存，不再重建帧对象、Set 和 key 字符串。
+ */
+const digitAnimations=new WeakMap<readonly number[],Map<string,Map<number,DigitAnimation>>>();
+
+function digitAnimationFor(sprite:Phaser.GameObjects.Sprite,layer:EffectLayer|undefined,
+  sequence:readonly number[],frameRate:number):DigitAnimation {
+  const file=layer?.file,source=file||sprite.texture.key;
+  let bySource=digitAnimations.get(sequence);
+  if(!bySource){bySource=new Map();digitAnimations.set(sequence,bySource);}
+  let byRate=bySource.get(source);
+  if(!byRate){byRate=new Map();bySource.set(source,byRate);}
+  const cached=byRate.get(frameRate);
+  if(cached)return cached;
   let frames:{key:string;frame:string|number}[];
   if(file){
     const atlas=EFFECT_ATLAS_BY_FILE[file];
@@ -27,21 +45,30 @@ export function playDigitAnimation(sprite:Phaser.GameObjects.Sprite,layer:Effect
     });
   }else frames=sequence.map(frame=>({key:sprite.texture.key,frame}));
   const textureKeys=[...new Set(frames.map(frame=>frame.key))];
-  const key=`damage:${file||sprite.texture.key}:${textureKeys.join('+')}:${frameRate}:${sequence.join('.')}`;
-  const anims=sprite.scene.anims;
-  const existing=anims.exists(key)?anims.get(key):undefined;
+  const animation={key:`damage:${source}:${textureKeys.join('+')}:${frameRate}:${sequence.join('.')}`,frames,textureKeys};
+  byRate.set(frameRate,animation);
+  return animation;
+}
+
+export function playDigitAnimation(sprite:Phaser.GameObjects.Sprite,layer:EffectLayer|undefined,sequence:readonly number[],
+  frameRate:number,delayMs:number):void {
+  const animation=digitAnimationFor(sprite,layer,sequence,frameRate),anims=sprite.scene.anims;
+  const existing=anims.exists(animation.key)?anims.get(animation.key):undefined;
   // 贴图在上一次地图关闭时被释放后，帧会失效；重建而不是播旧动画。
-  const stale=!!existing?.frames.some(frame=>{
-    const textureFrame=(frame as unknown as {frame?:{texture?:unknown}}).frame;
-    return !!textureFrame&&typeof textureFrame==='object'&&!textureFrame.texture;
-  });
-  if(existing&&(!existing.frames.length||stale))anims.remove(key);
-  if(!anims.exists(key)){
-    anims.create({key,frames,frameRate});
-    rememberEffectAnimation(sprite.scene,key,textureKeys);
+  if(existing){
+    let stale=!existing.frames.length;
+    for(const frame of existing.frames){
+      const textureFrame=(frame as unknown as {frame?:{texture?:unknown}}).frame;
+      if(textureFrame&&typeof textureFrame==='object'&&!textureFrame.texture){stale=true;break;}
+    }
+    if(stale)anims.remove(animation.key);
+  }
+  if(!anims.exists(animation.key)){
+    anims.create({key:animation.key,frames:animation.frames,frameRate});
+    rememberEffectAnimation(sprite.scene,animation.key,animation.textureKeys);
   }
   sprite.anims.stop();
-  sprite.play({key,delay:delayMs,showOnStart:true});
+  sprite.play({key:animation.key,delay:delayMs,showOnStart:true});
 }
 
 /** 一个伤害数字占一个容器；容器里的每个精灵对应一位数字。 */
