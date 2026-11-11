@@ -84,9 +84,8 @@ export class MenuScene extends Phaser.Scene {
   private titleAssetsBound=false;
   private page:'home'|'slots'|'settings'|'cloud'='home';
   private slotRequest?:AbortController;
-  /** 挑战模式的隐藏入口：连续 5 次点击后进入压测，2 秒内没有新点击就清零。 */
+  /** 挑战模式的隐藏入口：累计点击 5 次后进入压测，离开标题页或关闭场景时清零。 */
   private challengeClicks=0;
-  private challengeTimer?:ReturnType<typeof setTimeout>;
   /** 改名输入与通用确认：标题页的存档管理与云存档覆盖确认共用。 */
   private renameRef?:SaveSlotRef;
   private prompt?:TextPrompt;
@@ -176,17 +175,15 @@ export class MenuScene extends Phaser.Scene {
     if(!this.app.ui.ready||this.app.ui.suspended||!this.sys.isActive())return;
     if(this.page!=='home'||this.confirmAction!==undefined||this.changelogOpen||this.renameRef!==undefined
       ||this.prompt?.active||this.passwordPrompt?.active||this.credentials?.focused)return;
-    if(this.challengeTimer){clearTimeout(this.challengeTimer);this.challengeTimer=undefined;}
     this.challengeClicks++;
+    globalThis.storyDiagnostics?.record('pressure-click',{clicks:this.challengeClicks});
     if(this.challengeClicks>=5){
       this.challengeClicks=0;
+      globalThis.storyDiagnostics?.record('pressure-enter',{});
       void this.app.startPressureTest?.();
-      return;
     }
-    this.challengeTimer=setTimeout(()=>{this.challengeTimer=undefined;this.challengeClicks=0;},2000);
   }
   private resetChallengeClicks():void{
-    if(this.challengeTimer){clearTimeout(this.challengeTimer);this.challengeTimer=undefined;}
     this.challengeClicks=0;
   }
   /**
@@ -398,14 +395,20 @@ export class MenuScene extends Phaser.Scene {
     };
     if(this.page==='home'){
       view.image(art('logo'),291,52,617,353);view.image(art('subtitle-left'),305,385,undefined,122);view.image(art('subtitle-right'),601,385,undefined,122);
-      const menuButton=(key:string,label:string,x:number,y:number,width:number,height:number,action:()=>void,disabled=false,fontSize=36):void=>{
-        view.button('',x,y,width,height,action,{fontSize,disabled,guard}).setData('label',label);
+      const menuButton=(key:string,label:string,x:number,y:number,width:number,height:number,action:()=>void,disabled=false,fontSize=36):UiNode=>{
+        const button=view.button('',x,y,width,height,action,{fontSize,disabled,guard}).setData('label',label);
         buttonText(key,label,x,y,width,height,fontSize,disabled?'rgba(243,222,176,.4)':GOLD);
+        return button;
       };
       menuButton('home-start','开始游戏',416,457,369,124,()=>this.openSlots());
       menuButton('home-settings','环境设置',65,472,300,92,()=>{this.resetChallengeClicks();this.page='settings';this.render();});
-      menuButton('home-challenge','挑战模式',835,472,300,92,()=>{},true);
-      // 按钮本身保持禁用外观和键盘不可聚焦；透明热区只用于隐藏的连续点击。
+      const challenge=menuButton('home-challenge','挑战模式',835,472,300,92,()=>{},true);
+      // 按钮本身保持禁用外观和键盘不可聚焦；透明热区和按钮原生层都只用于隐藏的连续点击。
+      const challengeElement=(challenge as {element?:HTMLElement}).element;
+      if(challengeElement){
+        challengeElement.style.pointerEvents='auto';
+        challengeElement.addEventListener('pointerdown',()=>this.countChallengeClick());
+      }
       const challengeZone=view.rect(835,472,300,92,0,0).setInteractive();
       view.root.add(challengeZone);
       challengeZone.on('pointerdown',()=>this.countChallengeClick());
