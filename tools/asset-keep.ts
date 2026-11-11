@@ -303,6 +303,16 @@ export async function collectAssetKeep(contentDir: string, assetsDir: string): P
   // 被图集覆盖的原图可以归档；其余引用必须保留原文件。
   const route = (file: string): void => {
     if (phaser.has(file) || covered.has(file)) return;
+    // 掉落等运行时特效已经进图集；内容里保留的源路径不能把原图继续留在 public。
+    const effect = EFFECT_ATLAS_BY_FILE[file];
+    if (effect?.length) {
+      for (const ref of effect) {
+        const page = EFFECT_ATLAS_PAGES[ref.page];
+        if (page) addAtlasPage(page);
+      }
+      covered.set(file, 'effect-atlas');
+      return;
+    }
     const character = CHARACTER_ATLAS_BY_FILE[CHARACTER_ATLAS_ALIASES[file] ?? file];
     if (character) {
       for (const pageIndex of character.pages) {
