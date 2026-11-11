@@ -296477,7 +296477,6 @@
       "delivery": "darius",
       "deliveryCharacterId": "npc-40",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -296553,7 +296552,6 @@
         "active": "处决逃脱的罪犯"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -296606,7 +296604,6 @@
       "delivery": "darius",
       "deliveryCharacterId": "npc-40",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -296696,7 +296693,6 @@
       "delivery": "janus",
       "deliveryCharacterId": "npc-55",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -296789,7 +296785,6 @@
       "delivery": "portia",
       "deliveryCharacterId": "npc-54",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -296896,7 +296891,6 @@
       "delivery": "portia",
       "deliveryCharacterId": "npc-54",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -297059,7 +297053,7 @@
         "active": "贝勒塞骑士团的铠甲"
       },
       "completion": "internal",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -297108,7 +297102,6 @@
         "active": "汇合圣女救援队"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -297194,7 +297187,6 @@
       "delivery": "wizard-grumman-fe20dafb",
       "deliveryCharacterId": "npc-60",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -297257,7 +297249,6 @@
       "delivery": "wizard-grumman-fe20dafb",
       "deliveryCharacterId": "npc-60",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -297359,7 +297350,6 @@
       "delivery": "story-lehman-90989efd",
       "deliveryCharacterId": "npc-59",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -297455,7 +297445,6 @@
         "active": "圣女救援行动1"
       },
       "completion": "internal",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -297498,7 +297487,6 @@
         "active": "圣女救援行动2"
       },
       "completion": "internal",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -297541,7 +297529,6 @@
         "active": "圣女救援行动3"
       },
       "completion": "internal",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -297584,7 +297571,6 @@
         "active": "圣女救援行动4"
       },
       "completion": "internal",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -297627,7 +297613,6 @@
         "active": "前往卡姆兰秘密基地1"
       },
       "completion": "internal",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -297674,7 +297659,6 @@
       "delivery": "story-guard-zone-5f102cfd",
       "deliveryCharacterId": "npc-126",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -297745,7 +297729,7 @@
         "active": "导入战斗01任务"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -298028,7 +298012,7 @@
         "active": "导入战斗02任务"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -298455,7 +298439,7 @@
         "active": "导入战斗03任务"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -298849,7 +298833,7 @@
         "active": "格里普顿伯爵护卫兵_战斗"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -299088,7 +299072,6 @@
         "active": "前往卡姆兰秘密基地"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -299140,7 +299123,6 @@
         "active": "消失的圣女1"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -299192,7 +299174,7 @@
         "active": "第2章战斗01"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -299295,7 +299277,6 @@
         "active": "消失的圣女2"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -299349,7 +299330,6 @@
       "delivery": "goblin-s-lair-gateway-150",
       "deliveryCharacterId": "npc-150",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -299452,7 +299432,6 @@
         "active": "分毫之差"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -299508,7 +299487,6 @@
       "delivery": "chef-robbie-3401d91d",
       "deliveryCharacterId": "npc-164",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -299711,7 +299689,6 @@
         "active": "通过蜘蛛洞穴"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -299763,7 +299740,7 @@
         "active": "第2章战斗_蜘蛛女王"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -299825,7 +299802,6 @@
       "delivery": "prison-gates-0d7bba14",
       "deliveryCharacterId": "npc-167",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -299895,7 +299871,6 @@
       "delivery": "prison-gates-680a1a1e",
       "deliveryCharacterId": "npc-170",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -300077,7 +300052,6 @@
       "delivery": "prison-gates-92ac57a9",
       "deliveryCharacterId": "npc-172",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -300255,7 +300229,6 @@
         "active": "消失的圣女3"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -300307,7 +300280,7 @@
         "active": "哥布林队长_战斗_BOSS战"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -300371,7 +300344,6 @@
       "delivery": "blind-kinkan-4eec25f6",
       "deliveryCharacterId": "npc-163",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -300496,7 +300468,6 @@
       "delivery": "nirniti-3c3ca603",
       "deliveryCharacterId": "npc-196",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -300575,7 +300546,6 @@
         "active": "艾伦尼士兵的奇袭"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -300799,7 +300769,6 @@
         "active": "单独潜入"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -300861,7 +300830,6 @@
         "active": "逃出艾伦尼城"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -300917,7 +300885,6 @@
       "delivery": "story-channel-rescue-crew-44453878",
       "deliveryCharacterId": "npc-190",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -301012,7 +300979,6 @@
         "active": "潜入艾伦尼城"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -301066,7 +301032,6 @@
       "delivery": "dwarf-village-guard-8826e45e",
       "deliveryCharacterId": "npc-201",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -301129,7 +301094,6 @@
       "delivery": "dwarf-village-mayor-c541de1b",
       "deliveryCharacterId": "npc-200",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -301194,7 +301158,6 @@
         "active": "打退狼人"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -301248,7 +301211,6 @@
       "delivery": "dwarf-village-mayor-c541de1b",
       "deliveryCharacterId": "npc-200",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -301309,7 +301271,6 @@
       "delivery": "mine-specialist-dolpe-9e540a7c",
       "deliveryCharacterId": "npc-204",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -301366,7 +301327,6 @@
       "delivery": "mine-specialist-dolpe-9e540a7c",
       "deliveryCharacterId": "npc-204",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -301533,7 +301493,7 @@
       "delivery": "barricade-a63be1c1",
       "deliveryCharacterId": "npc-341",
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -301704,7 +301664,6 @@
       "delivery": "purity-stone-0db733e6",
       "deliveryCharacterId": "npc-91",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -301763,7 +301722,6 @@
         "active": "净化石的守护灵"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -301853,7 +301811,6 @@
       "delivery": "amarok-walter-197",
       "deliveryCharacterId": "npc-197",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -301920,7 +301877,6 @@
       "delivery": "dwarf-village-mayor-c541de1b",
       "deliveryCharacterId": "npc-200",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -301981,7 +301937,6 @@
       "delivery": "nirniti-3c3ca603",
       "deliveryCharacterId": "npc-196",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -302068,7 +302023,6 @@
       "giver": "nirniti-3c3ca603",
       "giverCharacterId": "npc-196",
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -302146,7 +302100,6 @@
         "active": "出现伏兵"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -302200,7 +302153,6 @@
       "delivery": "nirniti-3c3ca603",
       "deliveryCharacterId": "npc-196",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -302322,7 +302274,6 @@
         "active": "无谓的突进"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -302394,7 +302345,6 @@
         "active": "逃出卡姆兰"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -302448,7 +302398,7 @@
       "delivery": "barricade-221",
       "deliveryCharacterId": "npc-221",
       "completion": "talk",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -302509,7 +302459,7 @@
       "delivery": "bundle-of-straw-at-the-storage-3be2dd3c",
       "deliveryCharacterId": "npc-350",
       "completion": "talk",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -302568,7 +302518,6 @@
         "active": "甩掉艾伦尼追击兵"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -302624,7 +302573,6 @@
       "delivery": "merchant-michikoff-16a8f21b",
       "deliveryCharacterId": "npc-229",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -302715,7 +302663,6 @@
       "delivery": "dylan-a44dda29",
       "deliveryCharacterId": "npc-228",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -302811,7 +302758,6 @@
       "delivery": "old-lady-sasha-578d662f",
       "deliveryCharacterId": "npc-230",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -302953,7 +302899,6 @@
       "delivery": "shredder-8bc5b3b6",
       "deliveryCharacterId": "npc-231",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -303063,7 +303008,6 @@
       "delivery": "jackie-ddc12ac2",
       "deliveryCharacterId": "npc-232",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -303139,7 +303083,6 @@
       "delivery": "baldwin-4c77766c",
       "deliveryCharacterId": "npc-238",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -303242,7 +303185,6 @@
       "delivery": "rodger-e773e0b6",
       "deliveryCharacterId": "npc-227",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -303343,7 +303285,6 @@
       "delivery": "mine-dwarf-schreiber-330d6c15",
       "deliveryCharacterId": "npc-237",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -303424,7 +303365,6 @@
       "delivery": "amarok-harris-234",
       "deliveryCharacterId": "npc-234",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -303534,7 +303474,6 @@
       "delivery": "kevin-ba9d5a88",
       "deliveryCharacterId": "npc-235",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -303680,7 +303619,6 @@
       "delivery": "haiden-iii-427a30fc",
       "deliveryCharacterId": "npc-236",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -303754,7 +303692,6 @@
       "delivery": "ben-a380d77f",
       "deliveryCharacterId": "npc-239",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -303835,7 +303772,6 @@
       "delivery": "ben-a380d77f",
       "deliveryCharacterId": "npc-239",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -303969,7 +303905,6 @@
       "delivery": "ben-a380d77f",
       "deliveryCharacterId": "npc-239",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -304119,7 +304054,6 @@
         "active": "刺杀盗贼团首领"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -304193,7 +304127,6 @@
       "delivery": "ben-a380d77f",
       "deliveryCharacterId": "npc-239",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -304284,7 +304217,6 @@
         "active": "潜入警卫哨所"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -304384,7 +304316,7 @@
         "active": "与贝恩的协商"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -304472,7 +304404,7 @@
         "active": "警卫哨所_战斗"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -304650,7 +304582,6 @@
       "delivery": "story-eara-e221699c",
       "deliveryCharacterId": "npc-58",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -304765,7 +304696,6 @@
         "active": "走私用秘密洞穴"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -304871,7 +304801,6 @@
         "active": "古老的地下城"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -304927,7 +304856,6 @@
       "delivery": "prisoner-izelynn-d7282ce6",
       "deliveryCharacterId": "npc-175",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -305041,7 +304969,6 @@
       "delivery": "vigilance-force-leader-reims-dfe55364",
       "deliveryCharacterId": "npc-268",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -305117,7 +305044,6 @@
       "delivery": "biologist-benzino-a12fad65",
       "deliveryCharacterId": "npc-269",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -305198,7 +305124,6 @@
       "delivery": "melanie-the-cook-3b8f4866",
       "deliveryCharacterId": "npc-272",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -305312,7 +305237,7 @@
       "delivery": "ben-a380d77f",
       "deliveryCharacterId": "npc-239",
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -305425,7 +305350,6 @@
         "active": "前往贝勒塞"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -305501,7 +305425,6 @@
       "delivery": "vigilance-force-member-sina-8301f259",
       "deliveryCharacterId": "npc-270",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -305587,7 +305510,6 @@
       "delivery": "ben-s-butler-4af2836d",
       "deliveryCharacterId": "npc-273",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -305656,7 +305578,6 @@
       "delivery": "ben-s-butler-4af2836d",
       "deliveryCharacterId": "npc-273",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -305753,7 +305674,6 @@
       "delivery": "farmer-jose-c5f09630",
       "deliveryCharacterId": "npc-271",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -305835,7 +305755,6 @@
         "active": "意外的幸运"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -305887,7 +305806,6 @@
         "active": "前往首都的路"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -305939,7 +305857,7 @@
         "active": "追击队队长_战斗"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -306017,7 +305935,6 @@
       "delivery": "janus",
       "deliveryCharacterId": "npc-55",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -306110,7 +306027,6 @@
       "delivery": "story-leiden-the-alchemist-599a73ef",
       "deliveryCharacterId": "npc-322",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -306173,7 +306089,7 @@
         "active": "追击队队长_战斗"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -306220,7 +306136,6 @@
       "delivery": "story-leiden-the-alchemist-599a73ef",
       "deliveryCharacterId": "npc-322",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -306456,7 +306371,6 @@
       "delivery": "dark-sorcerer-kane-369ccd17",
       "deliveryCharacterId": "npc-364",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -306517,7 +306431,6 @@
       "delivery": "trainees-leader-324",
       "deliveryCharacterId": "npc-324",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -306580,7 +306493,6 @@
       "delivery": "trainees-leader-324",
       "deliveryCharacterId": "npc-324",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -306677,7 +306589,6 @@
       "delivery": "dark-sorcerer-kane-369ccd17",
       "deliveryCharacterId": "npc-364",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -306738,7 +306649,6 @@
       "delivery": "story-leiden-the-alchemist-599a73ef",
       "deliveryCharacterId": "npc-322",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -306807,7 +306717,7 @@
         "active": "抓走雷顿的士兵"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -306912,7 +306822,6 @@
       "delivery": "portia",
       "deliveryCharacterId": "npc-54",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -307172,7 +307081,6 @@
         "active": "被污染的寺院"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -307224,7 +307132,6 @@
         "active": "前往钢之兽人部落"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -307276,7 +307183,6 @@
         "active": "被绑架的兽人长老"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -307328,7 +307234,6 @@
         "active": "影子沼泽的埋伏"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -307380,7 +307285,7 @@
         "active": "第4章战斗01"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -307485,7 +307390,6 @@
       "delivery": "story-chief-guard-marduk-9f22e5ce",
       "deliveryCharacterId": "npc-250",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -307566,7 +307470,6 @@
       "delivery": "story-stranger-of-hwagan-b390b261",
       "deliveryCharacterId": "npc-288",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -307657,7 +307560,6 @@
       "delivery": "story-stranger-of-hwagan-b390b261",
       "deliveryCharacterId": "npc-288",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -307788,7 +307690,6 @@
         "active": "霍尔干峡谷的石魔"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -307862,7 +307763,6 @@
       "delivery": "story-clear-spring-waters-d6162db3",
       "deliveryCharacterId": "npc-289",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -308054,7 +307954,6 @@
       "delivery": "bone-orc-guard-315",
       "deliveryCharacterId": "npc-315",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -308113,7 +308012,6 @@
         "active": "悲鸣之要塞"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -308226,7 +308124,6 @@
       "delivery": "steel-door-430a2b1b",
       "deliveryCharacterId": "npc-320",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -308316,7 +308213,6 @@
       "delivery": "zahad-kuruhatt-319",
       "deliveryCharacterId": "npc-319",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -308399,7 +308295,6 @@
       "delivery": "steel-orc-s-elder-318",
       "deliveryCharacterId": "npc-318",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -308499,7 +308394,6 @@
         "active": "被封印的出口"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -308551,7 +308445,7 @@
         "active": "被污染的神殿_战斗"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -308655,7 +308549,6 @@
       "delivery": "bloody-den-68a7be08",
       "deliveryCharacterId": "npc-511",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -308710,7 +308603,6 @@
       "delivery": "chapel-s-steel-door-257",
       "deliveryCharacterId": "npc-257",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -308792,7 +308684,6 @@
         "active": "前往人类领地"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -308848,7 +308739,6 @@
       "delivery": "guard-turnak-e46028d1",
       "deliveryCharacterId": "npc-259",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -308929,7 +308819,6 @@
       "delivery": "steel-orc-bauer-908f46c9",
       "deliveryCharacterId": "npc-260",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -309057,7 +308946,6 @@
       "delivery": "steel-orc-shultz-bb82b7e8",
       "deliveryCharacterId": "npc-282",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -309244,7 +309132,6 @@
       "delivery": "steel-orc-guste-600ee8f7",
       "deliveryCharacterId": "npc-283",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -309319,7 +309206,6 @@
       "delivery": "guard-hedfeld-51496c08",
       "deliveryCharacterId": "npc-285",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -309495,7 +309381,6 @@
       "delivery": "noxious-librarian-brinner-bac5428c",
       "deliveryCharacterId": "npc-286",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -309580,7 +309465,6 @@
         "active": "救出雷顿"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -309676,7 +309560,7 @@
         "active": "异教徒审问官_战斗"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -309794,7 +309678,6 @@
       "delivery": "story-leiden-the-alchemist-599a73ef",
       "deliveryCharacterId": "npc-322",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -309847,7 +309730,6 @@
         "active": "调查博鲁扎男爵"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -309899,7 +309781,6 @@
         "active": "追踪博鲁扎男爵"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -309979,7 +309860,7 @@
         "active": "博鲁扎男爵_战斗"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -310200,7 +310081,6 @@
       "delivery": "portia",
       "deliveryCharacterId": "npc-54",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -310368,7 +310248,6 @@
         "active": "休息"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -310464,7 +310343,6 @@
         "active": "守护圣女"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -310516,7 +310394,7 @@
         "active": "网络任务结束_EP6A"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -310612,7 +310490,6 @@
         "active": "追击圣女的护卫骑士"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -310664,7 +310541,6 @@
         "active": "重回广场"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -310707,7 +310583,6 @@
         "active": "前往神圣骑士团"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -310759,7 +310634,6 @@
         "active": "向费罗赛普妮报告"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -310813,7 +310687,7 @@
       "delivery": "bandit-door-295",
       "deliveryCharacterId": "npc-295",
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -310920,7 +310794,7 @@
         "active": "哥布林根据地的机关"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -311008,7 +310882,6 @@
         "active": "备用次元之门"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -311062,7 +310935,7 @@
       "delivery": "story-lehman-7f389159",
       "deliveryCharacterId": "npc-246",
       "completion": "talk",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -311123,7 +310996,7 @@
       "delivery": "leap-gate-253891b2",
       "deliveryCharacterId": "npc-111",
       "completion": "talk",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -311226,7 +311099,7 @@
         "active": "卡娜_战斗"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -311480,7 +311353,6 @@
         "active": "汇合圣女追击队"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -311536,7 +311408,6 @@
       "delivery": "bounty-hunter-lars-ff7d92aa",
       "deliveryCharacterId": "npc-351",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -311622,7 +311493,6 @@
       "delivery": "bounty-hunter-duey-72929a03",
       "deliveryCharacterId": "npc-382",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -311747,7 +311617,6 @@
       "delivery": "bounty-hunter-mowanza-d0d69c26",
       "deliveryCharacterId": "npc-353",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -311833,7 +311702,6 @@
       "delivery": "bounty-hunter-boaz-ffa6cf3b",
       "deliveryCharacterId": "npc-356",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -311932,7 +311800,6 @@
       "delivery": "bounty-hunter-othniel-17ccae6d",
       "deliveryCharacterId": "npc-354",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -312057,7 +311924,6 @@
       "delivery": "bounty-hunter-clint-e88c2f99",
       "deliveryCharacterId": "npc-355",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -312156,7 +312022,6 @@
       "delivery": "bounty-hunter-clint-e88c2f99",
       "deliveryCharacterId": "npc-355",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -312246,7 +312111,7 @@
       "delivery": "story-lehman-90989efd",
       "deliveryCharacterId": "npc-59",
       "completion": "talk",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -312349,7 +312214,7 @@
       "delivery": "leap-gate-253891b2",
       "deliveryCharacterId": "npc-111",
       "completion": "talk",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -312476,7 +312341,7 @@
       "delivery": "chapel-s-steel-door-257",
       "deliveryCharacterId": "npc-257",
       "completion": "talk",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -312535,7 +312400,7 @@
         "active": "第5章选择地"
       },
       "completion": "talk",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -313148,7 +313013,6 @@
       "delivery": "darius",
       "deliveryCharacterId": "npc-40",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -313271,7 +313135,6 @@
       "delivery": "weapon-researcher-jeff-154c1083",
       "deliveryCharacterId": "npc-338",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -313478,7 +313341,6 @@
       "delivery": "prisoner-ba282101",
       "deliveryCharacterId": "npc-339",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -313775,7 +313637,6 @@
       "delivery": "dark-sorcerer-kane-369ccd17",
       "deliveryCharacterId": "npc-364",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -313903,7 +313764,6 @@
       "delivery": "tony-bf373568",
       "deliveryCharacterId": "npc-361",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -313984,7 +313844,6 @@
       "delivery": "tony-bf373568",
       "deliveryCharacterId": "npc-361",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -314166,7 +314025,6 @@
       "delivery": "maria-a5ef27b3",
       "deliveryCharacterId": "npc-340",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -314250,7 +314108,6 @@
       "delivery": "bowl-of-flesh-8437464e",
       "deliveryCharacterId": "npc-365",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -314454,7 +314311,6 @@
       "delivery": "bowl-of-soul-63903c00",
       "deliveryCharacterId": "npc-366",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -314542,7 +314398,6 @@
         "active": "生命碎片"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -314599,7 +314454,7 @@
         "active": "掌管因果的守护灵"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -314659,7 +314514,6 @@
         "active": "小精灵与项链"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -314756,7 +314610,7 @@
         "active": "第1章路障"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -314812,7 +314666,6 @@
       "delivery": "dark-sorcerer-kane-da3b1c3e",
       "deliveryCharacterId": "npc-76",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -314905,7 +314758,7 @@
         "active": "黑帽盗贼团_战斗"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -315352,7 +315205,6 @@
       "delivery": "story-yirien-27c6ae81",
       "deliveryCharacterId": "npc-372",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -315458,7 +315310,6 @@
         "active": "前往罗尼恩"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -315512,7 +315363,6 @@
       "delivery": "rinoen-village-mayor-6e9c7cb7",
       "deliveryCharacterId": "npc-388",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -315567,7 +315417,6 @@
       "delivery": "village-woman-828eb08e",
       "deliveryCharacterId": "npc-387",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -315620,7 +315469,6 @@
         "active": "寻找丢失的补给品"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -315687,7 +315535,6 @@
         "active": "黑帽盗贼团根据地的战斗"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -315815,7 +315662,6 @@
         "active": "侦察"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -315869,7 +315715,6 @@
       "delivery": "story-tindalrose-3aed1899",
       "deliveryCharacterId": "npc-413",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -315960,7 +315805,6 @@
         "active": "追击圣女1"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -316044,7 +315888,6 @@
         "active": "卡娜的陷阱"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -316132,7 +315975,6 @@
         "active": "追击圣女2"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -316184,7 +316026,7 @@
         "active": "越狱犯_战斗"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -316279,7 +316121,6 @@
         "active": "追击圣女3"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -316331,7 +316172,6 @@
         "active": "蝎子地狱"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -316445,7 +316285,6 @@
       "delivery": "story-chasers-medic-2d56c4c6",
       "deliveryCharacterId": "npc-418",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -316648,7 +316487,7 @@
       "delivery": "well-dc439825",
       "deliveryCharacterId": "npc-137",
       "completion": "talk",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -316732,7 +316571,6 @@
         "active": "追击圣女4"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -316784,7 +316622,6 @@
         "active": "眼前的圣女2"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -316879,7 +316716,6 @@
         "active": "完美的策略"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -316931,7 +316767,7 @@
         "active": "悬崖_战斗"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -317022,7 +316858,7 @@
       "delivery": "story-fainted-arnen-soldier-9c962b05",
       "deliveryCharacterId": "npc-426",
       "completion": "talk",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -317081,7 +316917,6 @@
         "active": "峡谷的烽火台"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -317135,7 +316970,6 @@
       "delivery": "torch-427",
       "deliveryCharacterId": "npc-427",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -317201,7 +317035,7 @@
         "active": "烽火台_战斗"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -317292,7 +317126,6 @@
       "delivery": "story-chasers-adjutant-c69e578f",
       "deliveryCharacterId": "npc-419",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -317351,7 +317184,6 @@
         "active": "追击结束"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -317403,7 +317235,6 @@
         "active": "再会"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -317455,7 +317286,6 @@
         "active": "盗贼团仓库的钥匙"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -317527,7 +317357,7 @@
         "active": "盗贼团头领_战斗"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -317589,7 +317419,6 @@
       "delivery": "captain-of-arnen-chasers-c9df1bc7",
       "deliveryCharacterId": "npc-205",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -317670,7 +317499,6 @@
       "delivery": "story-eara-e221699c",
       "deliveryCharacterId": "npc-58",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -317803,7 +317631,6 @@
       "delivery": "herbal-pharmicist-mabel-10b5f0ef",
       "deliveryCharacterId": "npc-393",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -317900,7 +317727,6 @@
       "delivery": "herbal-pharmicist-mabel-10b5f0ef",
       "deliveryCharacterId": "npc-393",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -318148,7 +317974,6 @@
       "delivery": "herbal-pharmicist-mabel-10b5f0ef",
       "deliveryCharacterId": "npc-393",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -318220,7 +318045,7 @@
         "active": "眼球怪近卫兵"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -318302,7 +318127,7 @@
         "active": "眼球怪女王_战斗"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -318364,7 +318189,6 @@
       "delivery": "shin-d28fab6e",
       "deliveryCharacterId": "npc-575",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -318430,7 +318254,7 @@
       "delivery": "shinty",
       "deliveryCharacterId": "npc-56",
       "completion": "talk",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -318519,7 +318343,7 @@
         "active": "侦察队长_战斗"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -318613,7 +318437,6 @@
       "delivery": "berkel-soldier-4e2d15b4",
       "deliveryCharacterId": "npc-61",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -318983,7 +318806,6 @@
       "delivery": "herbal-pharmicist-mabel-10b5f0ef",
       "deliveryCharacterId": "npc-393",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -319059,7 +318881,6 @@
         "active": "决心"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -319171,7 +318992,6 @@
       "delivery": "street-vendor-hawkins-6e10848d",
       "deliveryCharacterId": "npc-430",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -319340,7 +319160,6 @@
       "delivery": "ghost-josh-50e3df18",
       "deliveryCharacterId": "npc-431",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -319416,7 +319235,6 @@
       "delivery": "adventurer-simon-a81b6e1f",
       "deliveryCharacterId": "npc-453",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -319640,7 +319458,6 @@
       "delivery": "lawrence-f5eb5c6d",
       "deliveryCharacterId": "npc-454",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -319785,7 +319602,6 @@
       "delivery": "village-man-389",
       "deliveryCharacterId": "npc-389",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -319894,7 +319710,6 @@
       "delivery": "deponin-s-supply-chief-d3772532",
       "deliveryCharacterId": "npc-398",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -319985,7 +319800,6 @@
       "delivery": "oogle-researcher-10d39548",
       "deliveryCharacterId": "npc-400",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -320066,7 +319880,6 @@
       "delivery": "deponin-s-supply-chief-d3772532",
       "deliveryCharacterId": "npc-398",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -320200,7 +320013,6 @@
       "delivery": "captain-of-arnen-chasers-c9df1bc7",
       "deliveryCharacterId": "npc-205",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -320301,7 +320113,6 @@
       "delivery": "rinoen-village-mayor-6e9c7cb7",
       "deliveryCharacterId": "npc-388",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -320404,7 +320215,6 @@
       "delivery": "story-sailen-81e5bc90",
       "deliveryCharacterId": "npc-405",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -320466,7 +320276,6 @@
       "delivery": "spiritual-tree-fc28bf35",
       "deliveryCharacterId": "npc-406",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -320529,7 +320338,6 @@
       "delivery": "spiritual-tree-fc28bf35",
       "deliveryCharacterId": "npc-406",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -320649,7 +320457,6 @@
       "delivery": "enchanted-stone-9ecf10f5",
       "deliveryCharacterId": "npc-407",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -320865,7 +320672,6 @@
       "delivery": "sealed-dungeon-barrier-eaae1bdd",
       "deliveryCharacterId": "npc-410",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -320922,7 +320728,6 @@
       "delivery": "drow-leader-412",
       "deliveryCharacterId": "npc-412",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -320979,7 +320784,6 @@
       "delivery": "drow-leader-412",
       "deliveryCharacterId": "npc-412",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -321195,7 +320999,6 @@
       "giver": "drow-leader-412",
       "giverCharacterId": "npc-412",
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [
@@ -321260,7 +321063,6 @@
       "delivery": "story-healer-0ea2b701",
       "deliveryCharacterId": "npc-455",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -321455,7 +321257,6 @@
       "delivery": "carp-sage-7311190b",
       "deliveryCharacterId": "npc-456",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -321526,7 +321327,6 @@
       "delivery": "carp-sage-7311190b",
       "deliveryCharacterId": "npc-456",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -321652,7 +321452,6 @@
       "delivery": "carp-sage-7311190b",
       "deliveryCharacterId": "npc-456",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -321760,7 +321559,6 @@
       "delivery": "goblin-miller-a1aeb5aa",
       "deliveryCharacterId": "npc-457",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -321826,7 +321624,6 @@
       "delivery": "goblin-miller-a1aeb5aa",
       "deliveryCharacterId": "npc-457",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -321899,7 +321696,6 @@
       "delivery": "goblin-miller-a1aeb5aa",
       "deliveryCharacterId": "npc-457",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -322073,7 +321869,6 @@
       "delivery": "carp-sage-7311190b",
       "deliveryCharacterId": "npc-456",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -322144,7 +321939,6 @@
         "active": "净化之泉水"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -322208,7 +322002,7 @@
       "delivery": "well-dc439825",
       "deliveryCharacterId": "npc-137",
       "completion": "talk",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -322289,7 +322083,6 @@
       "delivery": "story-healer-0ea2b701",
       "deliveryCharacterId": "npc-455",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -322409,7 +322202,6 @@
         "active": "精灵部落的长老"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -322481,7 +322273,6 @@
         "active": "前往秘密神殿"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -322533,7 +322324,7 @@
         "active": "暗精灵副队长_战斗"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -322595,7 +322386,6 @@
       "delivery": "drow-leader-412",
       "deliveryCharacterId": "npc-412",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -322661,7 +322451,6 @@
       "delivery": "sealed-dungeon-barrier-eaae1bdd",
       "deliveryCharacterId": "npc-410",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -322720,7 +322509,7 @@
         "active": "眼球怪_战斗"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -322811,7 +322600,6 @@
       "delivery": "fey-leader-434",
       "deliveryCharacterId": "npc-434",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -322868,7 +322656,6 @@
       "delivery": "fey-leader-434",
       "deliveryCharacterId": "npc-434",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -322955,7 +322742,6 @@
       "giver": "fey-leader-434",
       "giverCharacterId": "npc-434",
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -323013,7 +322799,7 @@
         "active": "守护石魔_战斗"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -323073,7 +322859,6 @@
         "active": "逃脱"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -323125,7 +322910,6 @@
         "active": "前往雪之精灵部落"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -323177,7 +322961,6 @@
         "active": "雪原洞穴"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -323229,7 +323012,6 @@
         "active": "引诱追击队"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -323281,7 +323063,6 @@
         "active": "引诱追击队2"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -323333,7 +323114,6 @@
         "active": "逐个击破"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -323385,7 +323165,7 @@
         "active": "逐个击破1"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -323646,7 +323426,7 @@
         "active": "逐个击破2"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -323907,7 +323687,7 @@
         "active": "逐个击破3"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -324168,7 +323948,6 @@
         "active": "前往临时驻地"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -324220,7 +323999,6 @@
         "active": "易爆物品"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -324552,7 +324330,6 @@
         "active": "前往雪原山丘"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -324662,7 +324439,6 @@
       "delivery": "story-eara-22d61f15",
       "deliveryCharacterId": "npc-142",
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -324718,7 +324494,6 @@
       "delivery": "juradkiel-91bbd3f6",
       "deliveryCharacterId": "npc-468",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -324808,7 +324583,6 @@
       "delivery": "melibael-9e462007",
       "deliveryCharacterId": "npc-467",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -324918,7 +324692,6 @@
       "delivery": "spania-f98b4640",
       "deliveryCharacterId": "npc-465",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -325045,7 +324818,6 @@
       "delivery": "beatrice-d4103820",
       "deliveryCharacterId": "npc-464",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -325161,7 +324933,6 @@
       "delivery": "beatrice-d4103820",
       "deliveryCharacterId": "npc-464",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -325271,7 +325042,6 @@
       "delivery": "largal-8104ad1c",
       "deliveryCharacterId": "npc-466",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -325375,7 +325145,7 @@
       "delivery": "story-healer-0ea2b701",
       "deliveryCharacterId": "npc-455",
       "completion": "talk",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -325464,7 +325234,6 @@
         "active": "坟墓的看守者"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -325540,7 +325309,6 @@
       "delivery": "story-ivan-8dc12928",
       "deliveryCharacterId": "npc-490",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -325731,7 +325499,6 @@
       "delivery": "story-ivan-8dc12928",
       "deliveryCharacterId": "npc-490",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -325799,7 +325566,6 @@
       "delivery": "collapsed-berkel-soldier-2c527b41",
       "deliveryCharacterId": "npc-82",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -325902,7 +325668,6 @@
         "active": "快一步的不速之客"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -326000,7 +325765,6 @@
       "delivery": "dominique-632",
       "deliveryCharacterId": "npc-632",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -326130,7 +325894,6 @@
       "delivery": "dominique-632",
       "deliveryCharacterId": "npc-632",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -326196,7 +325959,7 @@
         "active": "黄泉之关大厅_战斗"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -326278,7 +326041,6 @@
         "active": "又一个难关"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -326332,7 +326094,7 @@
       "delivery": "wrecked-guardian-846f6da3",
       "deliveryCharacterId": "npc-495",
       "completion": "talk",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -326393,7 +326155,6 @@
       "delivery": "wrecked-guardian-846f6da3",
       "deliveryCharacterId": "npc-495",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -326512,7 +326273,6 @@
       "delivery": "altar-of-covenant-e803f6da",
       "deliveryCharacterId": "npc-496",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -326593,7 +326353,7 @@
         "active": "悬崖_战斗1"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -326721,7 +326481,7 @@
         "active": "悬崖_战斗2"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -326781,7 +326541,6 @@
         "active": "艾丽恩之家"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -326837,7 +326596,6 @@
       "delivery": "story-sailen-81e5bc90",
       "deliveryCharacterId": "npc-405",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -327001,7 +326759,6 @@
       "delivery": "spiritual-tree-fc28bf35",
       "deliveryCharacterId": "npc-406",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -327183,7 +326940,6 @@
       "delivery": "fey-leader-434",
       "deliveryCharacterId": "npc-434",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -327246,7 +327002,6 @@
       "delivery": "fey-leader-434",
       "deliveryCharacterId": "npc-434",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -327344,7 +327099,6 @@
       "delivery": "fey-leader-434",
       "deliveryCharacterId": "npc-434",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -327592,7 +327346,6 @@
       "delivery": "drow-warrior-3c7a1bd4",
       "deliveryCharacterId": "npc-443",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -327676,7 +327429,6 @@
       "delivery": "bear-s-body-403c5c60",
       "deliveryCharacterId": "npc-444",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -327731,7 +327483,6 @@
       "delivery": "story-hunter-a227ec65",
       "deliveryCharacterId": "npc-445",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -327804,7 +327555,6 @@
       "delivery": "story-hunter-a227ec65",
       "deliveryCharacterId": "npc-445",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -328022,7 +327772,7 @@
         "active": "随葬品室3_战斗"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -328117,7 +327867,6 @@
         "active": "多巴洛克的凶计"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -328169,7 +327918,7 @@
         "active": "回归之屋_战斗"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -328254,7 +328003,6 @@
       "delivery": "senior-elf-497",
       "deliveryCharacterId": "npc-497",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -328459,7 +328207,6 @@
         "active": "古代之被隐藏的力量"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -328511,7 +328258,6 @@
         "active": "在极度绝望之中"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -328565,7 +328311,6 @@
       "delivery": "story-veteran-eaf2cb52",
       "deliveryCharacterId": "npc-498",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -328669,7 +328414,6 @@
         "active": "寻找被忘却的某物"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -328741,7 +328485,6 @@
         "active": "最具威胁的对手"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -328795,7 +328538,6 @@
       "delivery": "story-hunter-a227ec65",
       "deliveryCharacterId": "npc-445",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -328923,7 +328665,6 @@
         "active": "前往古代精灵的神殿"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -329044,7 +328785,6 @@
         "active": "女人的项链"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -329108,7 +328848,6 @@
       "delivery": "claude-e6e221a8",
       "deliveryCharacterId": "npc-449",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -329161,7 +328900,6 @@
         "active": "陌生的村庄2"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -329215,7 +328953,6 @@
       "delivery": "ivan-451",
       "deliveryCharacterId": "npc-451",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -329286,7 +329023,6 @@
       "delivery": "claude-e6e221a8",
       "deliveryCharacterId": "npc-449",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -329343,7 +329079,6 @@
       "delivery": "dominique-850ecc9b",
       "deliveryCharacterId": "npc-452",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -329412,7 +329147,6 @@
         "active": "前往东部洞穴"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -329506,7 +329240,7 @@
         "active": "封印地下城_战斗1"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -329634,7 +329368,6 @@
       "delivery": "healer-franz-478",
       "deliveryCharacterId": "npc-478",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -329731,7 +329464,6 @@
         "active": "前往北部洞穴"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -329807,7 +329539,6 @@
       "delivery": "bookshelf-1963f09b",
       "deliveryCharacterId": "npc-479",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -329906,7 +329637,6 @@
       "delivery": "bookshelf-1963f09b",
       "deliveryCharacterId": "npc-479",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -329959,7 +329689,6 @@
         "active": "村长之家地下室"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -330021,7 +329750,7 @@
         "active": "艾尔凡的召唤兽"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -330139,7 +329868,6 @@
         "active": "逃出村长之家"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -330213,7 +329941,6 @@
       "delivery": "healer-franz-478",
       "deliveryCharacterId": "npc-478",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -330268,7 +329995,6 @@
       "delivery": "rummy-5ae20bb9",
       "deliveryCharacterId": "npc-473",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -330323,7 +330049,6 @@
       "giver": "rummy-5ae20bb9",
       "giverCharacterId": "npc-473",
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -330381,7 +330106,6 @@
         "active": "前往西南部地下城"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -330443,7 +330167,7 @@
         "active": "艾尔凡_战斗"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -330589,7 +330313,6 @@
       "delivery": "ivan-451",
       "deliveryCharacterId": "npc-451",
       "completion": "talk",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -330672,7 +330395,6 @@
         "active": "最后的封印"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -330724,7 +330446,7 @@
         "active": "东部_战斗"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -330922,7 +330644,7 @@
         "active": "南部_战斗"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -331120,7 +330842,7 @@
         "active": "西部_战斗"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -331318,7 +331040,7 @@
         "active": "北部_战斗"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -331516,7 +331238,7 @@
         "active": "最后的封印_战斗"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -331617,7 +331339,7 @@
         "active": "领悟之森_战斗"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -331703,7 +331425,6 @@
       "delivery": "bounty-hunter-lars-9521311c",
       "deliveryCharacterId": "npc-593",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -331802,7 +331523,6 @@
       "delivery": "bounty-hunter-craig-c9c26b77",
       "deliveryCharacterId": "npc-573",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -331927,7 +331647,6 @@
       "delivery": "bounty-hunter-reeves-2c2e99ce",
       "deliveryCharacterId": "npc-594",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -332039,7 +331758,6 @@
       "delivery": "bounty-hunter-pinto-1b04ad71",
       "deliveryCharacterId": "npc-597",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -332138,7 +331856,6 @@
       "delivery": "bounty-hunter-arnold-42fe291f",
       "deliveryCharacterId": "npc-574",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -332237,7 +331954,6 @@
       "delivery": "bounty-hunter-hunde-452a144f",
       "deliveryCharacterId": "npc-596",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -332336,7 +332052,6 @@
       "delivery": "fusion-machine-3d13b5ee",
       "deliveryCharacterId": "npc-576",
       "completion": "all",
-      "hidden": false,
       "repeat": true,
       "goals": [
         {
@@ -332451,7 +332166,6 @@
       "delivery": "fusion-machine-9942e2a8",
       "deliveryCharacterId": "npc-577",
       "completion": "all",
-      "hidden": false,
       "repeat": true,
       "goals": [
         {
@@ -332602,7 +332316,6 @@
       "delivery": "fusion-machine-55b7b351",
       "deliveryCharacterId": "npc-578",
       "completion": "all",
-      "hidden": false,
       "repeat": true,
       "goals": [
         {
@@ -332677,7 +332390,6 @@
       "delivery": "fusion-machine-3d13b5ee",
       "deliveryCharacterId": "npc-579",
       "completion": "all",
-      "hidden": false,
       "repeat": true,
       "goals": [
         {
@@ -332828,7 +332540,6 @@
       "delivery": "fusion-machine-abc1ecb0",
       "deliveryCharacterId": "npc-580",
       "completion": "all",
-      "hidden": false,
       "repeat": true,
       "goals": [
         {
@@ -332973,7 +332684,6 @@
       "delivery": "fusion-machine-417ebc09",
       "deliveryCharacterId": "npc-581",
       "completion": "all",
-      "hidden": false,
       "repeat": true,
       "goals": [
         {
@@ -333094,7 +332804,6 @@
       "delivery": "murphy-0ab6d138",
       "deliveryCharacterId": "npc-622",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -333192,7 +332901,6 @@
       "delivery": "felix-a1cb422a",
       "deliveryCharacterId": "npc-483",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -333268,7 +332976,6 @@
       "delivery": "monica-5a307cb2",
       "deliveryCharacterId": "npc-447",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -333402,7 +333109,6 @@
       "delivery": "fusion-machine-390578f3",
       "deliveryCharacterId": "npc-582",
       "completion": "all",
-      "hidden": false,
       "repeat": true,
       "goals": [
         {
@@ -333613,7 +333319,6 @@
       "delivery": "fusion-machine-0aa8ba92",
       "deliveryCharacterId": "npc-583",
       "completion": "all",
-      "hidden": false,
       "repeat": true,
       "goals": [
         {
@@ -333800,7 +333505,6 @@
       "delivery": "fusion-machine-45caedc2",
       "deliveryCharacterId": "npc-584",
       "completion": "all",
-      "hidden": false,
       "repeat": true,
       "goals": [
         {
@@ -333925,7 +333629,6 @@
       "delivery": "fusion-machine-679fb40c",
       "deliveryCharacterId": "npc-585",
       "completion": "all",
-      "hidden": false,
       "repeat": true,
       "goals": [
         {
@@ -334065,7 +333768,6 @@
       "delivery": "fusion-machine-d14105d8",
       "deliveryCharacterId": "npc-586",
       "completion": "all",
-      "hidden": false,
       "repeat": true,
       "goals": [
         {
@@ -334194,7 +333896,7 @@
         "active": "地下问答1"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -334246,7 +333948,7 @@
         "active": "地下问答2"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -334298,7 +334000,7 @@
         "active": "地下问答3"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -334350,7 +334052,7 @@
         "active": "地下问答4"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -334404,7 +334106,7 @@
       "delivery": "enchanted-stone-418e8345",
       "deliveryCharacterId": "npc-409",
       "completion": "talk",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -334459,7 +334161,6 @@
       "delivery": "story-elinia-8ac11fea",
       "deliveryCharacterId": "npc-598",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -334535,7 +334236,6 @@
         "active": "灵界2"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -334777,7 +334477,6 @@
         "active": "灵界1"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -335029,7 +334728,6 @@
       "delivery": "story-elinia-8ac11fea",
       "deliveryCharacterId": "npc-598",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -335105,7 +334803,6 @@
         "active": "黑暗降临之森2"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -335335,7 +335032,6 @@
         "active": "黑暗降临之森1"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -335575,7 +335271,6 @@
       "delivery": "story-elinia-8ac11fea",
       "deliveryCharacterId": "npc-598",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -335651,7 +335346,6 @@
         "active": "哥布林巢穴2"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -335869,7 +335563,6 @@
         "active": "哥布林巢穴1"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -336097,7 +335790,7 @@
       "delivery": "barricade-a1eb664e",
       "deliveryCharacterId": "npc-120",
       "completion": "talk",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -336368,7 +336061,7 @@
         "active": "哈怒恩丛林04不可出入"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -336442,7 +336135,7 @@
         "active": "哈怒恩丛林04强行出入"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -336538,7 +336231,7 @@
         "active": "调查眼球怪栖息地的巨石"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -336634,7 +336327,7 @@
         "active": "记忆1层选择地"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -336686,7 +336379,7 @@
         "active": "灵界_BOSS战"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -336794,7 +336487,7 @@
         "active": "黑暗降临的丛林_BOSS战"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -336902,7 +336595,7 @@
         "active": "哥布林巢穴_BOSS战"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -337012,7 +336705,7 @@
       "delivery": "story-lehman-7f389159",
       "deliveryCharacterId": "npc-246",
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -337066,7 +336759,6 @@
       "delivery": "elinia-603",
       "deliveryCharacterId": "npc-603",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -337142,7 +336834,6 @@
         "active": "被遗弃的矿山2"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -337294,7 +336985,6 @@
         "active": "被遗弃的矿山1"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -337528,7 +337218,6 @@
       "delivery": "elinia-603",
       "deliveryCharacterId": "npc-603",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -337588,7 +337277,6 @@
         "active": "燃烧的沙漠2"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -337718,7 +337406,6 @@
         "active": "燃烧的沙漠1"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -337924,7 +337611,6 @@
       "delivery": "elinia-603",
       "deliveryCharacterId": "npc-603",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -337984,7 +337670,6 @@
         "active": "寂静的高原2"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -338126,7 +337811,6 @@
         "active": "寂静的高原1"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -338342,7 +338026,7 @@
         "active": "灵界4"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -338434,7 +338118,7 @@
         "active": "黑暗降临的丛林4"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -338526,7 +338210,7 @@
         "active": "哥布林巢穴4"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -338618,7 +338302,7 @@
         "active": "保留1"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -338670,7 +338354,7 @@
         "active": "无限地下城1连接"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -338722,7 +338406,7 @@
         "active": "被遗弃的矿山4"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -338814,7 +338498,7 @@
         "active": "燃烧的沙漠4"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -338874,7 +338558,7 @@
         "active": "寂静的高原4"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -338934,7 +338618,7 @@
         "active": "保留2"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -338986,7 +338670,7 @@
         "active": "无限地下城2连接"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -339038,7 +338722,7 @@
         "active": "记忆2层选择地"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -339090,7 +338774,7 @@
         "active": "无限地下城3连接"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -339142,7 +338826,7 @@
         "active": "被遗弃的矿山_BOSS战"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -339250,7 +338934,7 @@
         "active": "燃烧的沙漠_BOSS战"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -339310,7 +338994,7 @@
         "active": "寂静的高原_BOSS战"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -339372,7 +339056,7 @@
       "delivery": "shinty",
       "deliveryCharacterId": "npc-56",
       "completion": "talk",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -339453,7 +339137,7 @@
       "delivery": "gravestone-3635b2b6",
       "deliveryCharacterId": "npc-116",
       "completion": "talk",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -339514,7 +339198,6 @@
       "delivery": "elinia-604",
       "deliveryCharacterId": "npc-604",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -339574,7 +339257,6 @@
         "active": "破旧的城堡2"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -339794,7 +339476,6 @@
         "active": "破旧的城堡1"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -340024,7 +339705,6 @@
       "delivery": "elinia-604",
       "deliveryCharacterId": "npc-604",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -340084,7 +339764,6 @@
         "active": "死亡之地2"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -340322,7 +340001,6 @@
         "active": "死亡之地1"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -340570,7 +340248,6 @@
       "delivery": "elinia-604",
       "deliveryCharacterId": "npc-604",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -340630,7 +340307,6 @@
         "active": "幻影之森2"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -340880,7 +340556,6 @@
         "active": "幻影之森1"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -341138,7 +340813,7 @@
         "active": "古旧的城堡4"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -341198,7 +340873,7 @@
         "active": "死亡之地4"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -341258,7 +340933,7 @@
         "active": "幻影之森4"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -341318,7 +340993,7 @@
         "active": "保留3"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -341370,7 +341045,7 @@
         "active": "记忆3层选择地"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -341422,7 +341097,7 @@
         "active": "古旧的城堡_BOSS战"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -341482,7 +341157,7 @@
         "active": "死亡之地_BOSS战"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -341542,7 +341217,7 @@
         "active": "幻影之森_BOSS战"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -341604,7 +341279,6 @@
       "delivery": "elinia-605",
       "deliveryCharacterId": "npc-605",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -341664,7 +341338,6 @@
         "active": "无际的雪原2"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -341794,7 +341467,6 @@
         "active": "无际的雪原1"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -342090,7 +341762,6 @@
       "delivery": "elinia-605",
       "deliveryCharacterId": "npc-605",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -342150,7 +341821,6 @@
         "active": "试炼之洞2"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -342268,7 +341938,6 @@
         "active": "试炼之洞1"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -342510,7 +342179,6 @@
       "delivery": "elinia-605",
       "deliveryCharacterId": "npc-605",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -342570,7 +342238,6 @@
         "active": "被遗忘的遗迹2"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -342688,7 +342355,6 @@
         "active": "被遗忘的遗迹1"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -342940,7 +342606,7 @@
         "active": "无际的雪原4"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -343000,7 +342666,7 @@
         "active": "试练之洞4"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -343060,7 +342726,7 @@
         "active": "被遗忘的遗迹4"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -343120,7 +342786,7 @@
         "active": "保留4"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -343172,7 +342838,7 @@
         "active": "无限地下城4连接"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -343224,7 +342890,7 @@
         "active": "记忆4层选择地"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -343276,7 +342942,7 @@
         "active": "无际的雪原_BOSS战"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -343336,7 +343002,7 @@
         "active": "试练之洞_BOSS战"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -343396,7 +343062,7 @@
         "active": "被遗忘的遗迹_BOSS战"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -343456,7 +343122,7 @@
         "active": "记忆5层选择地"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -343499,7 +343165,7 @@
         "active": "保留5"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -343573,7 +343239,6 @@
       "delivery": "elinia-606",
       "deliveryCharacterId": "npc-606",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -343685,7 +343350,7 @@
         "active": "卓拉德"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -343781,7 +343446,7 @@
         "active": "费罗赛普妮"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -343877,7 +343542,7 @@
         "active": "黑暗神"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -343973,7 +343638,7 @@
         "active": "卓拉德_BOSS战"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -344033,7 +343698,7 @@
         "active": "费罗赛普妮_BOSS战"
       },
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -344093,7 +343758,7 @@
         "active": "无限地下城5连接"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -344147,7 +343812,7 @@
       "delivery": "closed-door-f859a8ad",
       "deliveryCharacterId": "npc-602",
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -344411,7 +344076,7 @@
       "delivery": "closed-door-1ce9564b",
       "deliveryCharacterId": "npc-613",
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -344675,7 +344340,7 @@
       "delivery": "closed-door-e7764435",
       "deliveryCharacterId": "npc-614",
       "completion": "all",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [
         {
@@ -344939,7 +344604,7 @@
       "delivery": "unidentified-switch-1af7ecfc",
       "deliveryCharacterId": "npc-615",
       "completion": "talk",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -345000,7 +344665,7 @@
       "delivery": "unidentified-switch-40f96743",
       "deliveryCharacterId": "npc-616",
       "completion": "talk",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -345061,7 +344726,7 @@
       "delivery": "unidentified-switch-f3ba53ae",
       "deliveryCharacterId": "npc-617",
       "completion": "talk",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -345122,7 +344787,7 @@
       "delivery": "boulder-blocking-the-cave-fc43f63b",
       "deliveryCharacterId": "npc-601",
       "completion": "talk",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -345209,7 +344874,7 @@
       "delivery": "barricade-a1eb664e",
       "deliveryCharacterId": "npc-120",
       "completion": "talk",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -345482,7 +345147,7 @@
       "delivery": "supplies-46445ec0",
       "deliveryCharacterId": "npc-392",
       "completion": "talk",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -345621,7 +345286,6 @@
       "delivery": "healer-franz-478",
       "deliveryCharacterId": "npc-478",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -345779,7 +345443,6 @@
       "delivery": "helen-2181687e",
       "deliveryCharacterId": "npc-649",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -345937,7 +345600,6 @@
       "delivery": "helen-2181687e",
       "deliveryCharacterId": "npc-649",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -346025,7 +345687,7 @@
         "active": "无限地下城1_2"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -346077,7 +345739,7 @@
         "active": "德普尼恩路障"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -346153,7 +345815,7 @@
       "delivery": "barricade-a1eb664e",
       "deliveryCharacterId": "npc-120",
       "completion": "talk",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -346428,7 +346090,6 @@
       "delivery": "milriah-2e303d53",
       "deliveryCharacterId": "npc-363",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -346537,7 +346198,6 @@
       "delivery": "rich-roderick-f77d4714",
       "deliveryCharacterId": "npc-626",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -346719,7 +346379,6 @@
       "delivery": "mountaineer-vermont-7b536a86",
       "deliveryCharacterId": "npc-627",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -346925,7 +346584,6 @@
       "delivery": "kernaks-1891ef9c",
       "deliveryCharacterId": "npc-628",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -347058,7 +346716,6 @@
       "delivery": "patriot-ludwig-06b864bb",
       "deliveryCharacterId": "npc-629",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -347294,7 +346951,6 @@
       "delivery": "elven-sanctuary-keeper-4783ec1b",
       "deliveryCharacterId": "npc-631",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -347417,7 +347073,7 @@
       "delivery": "enchanted-stone-3509eb9a",
       "deliveryCharacterId": "npc-408",
       "completion": "talk",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -347476,7 +347132,6 @@
         "active": "最后的记忆1"
       },
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -347657,7 +347312,6 @@
       "delivery": "monica-5a307cb2",
       "deliveryCharacterId": "npc-447",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -347757,7 +347411,7 @@
         "active": "旧宅问答1"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -347825,7 +347479,7 @@
         "active": "旧宅问答2"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -347893,7 +347547,7 @@
         "active": "旧宅问答3"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -347961,7 +347615,7 @@
         "active": "旧宅问答4"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -348029,7 +347683,7 @@
         "active": "旧宅问答4"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -348072,7 +347726,6 @@
         "active": "亲~我需要你的评论~"
       },
       "completion": "story",
-      "hidden": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -348288,7 +347941,6 @@
       "delivery": "robbins-76d09f5c",
       "deliveryCharacterId": "npc-362",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -348488,7 +348140,6 @@
       "delivery": "robbins-76d09f5c",
       "deliveryCharacterId": "npc-362",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -348616,7 +348267,6 @@
       "delivery": "robbins-76d09f5c",
       "deliveryCharacterId": "npc-362",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -348774,7 +348424,6 @@
       "delivery": "milriah-2e303d53",
       "deliveryCharacterId": "npc-363",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -348914,7 +348563,6 @@
       "delivery": "milriah-2e303d53",
       "deliveryCharacterId": "npc-363",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -348995,7 +348643,6 @@
       "delivery": "dark-sorcerer-kane-369ccd17",
       "deliveryCharacterId": "npc-364",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -349225,7 +348872,6 @@
       "delivery": "dark-sorcerer-kane-369ccd17",
       "deliveryCharacterId": "npc-364",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -349335,7 +348981,6 @@
       "delivery": "dark-sorcerer-kane-369ccd17",
       "deliveryCharacterId": "npc-364",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -349451,7 +349096,6 @@
       "delivery": "dark-sorcerer-kane-369ccd17",
       "deliveryCharacterId": "npc-364",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -349562,7 +349206,6 @@
       "delivery": "robbins-76d09f5c",
       "deliveryCharacterId": "npc-362",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -349778,7 +349421,6 @@
       "delivery": "milriah-2e303d53",
       "deliveryCharacterId": "npc-363",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -349912,7 +349554,6 @@
       "delivery": "milriah-2e303d53",
       "deliveryCharacterId": "npc-363",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -349993,7 +349634,6 @@
       "delivery": "dark-sorcerer-kane-369ccd17",
       "deliveryCharacterId": "npc-364",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -350277,7 +349917,6 @@
       "delivery": "dark-sorcerer-kane-369ccd17",
       "deliveryCharacterId": "npc-364",
       "completion": "all",
-      "hidden": false,
       "repeat": false,
       "goals": [
         {
@@ -350386,7 +350025,7 @@
         "active": "보류_베스킨의 목걸이"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -350432,7 +350071,7 @@
         "active": "보류_뒷골목의 무법자들"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],
@@ -350478,7 +350117,7 @@
         "active": "보류_위험한 연구"
       },
       "completion": "story",
-      "hidden": true,
+      "journal": false,
       "repeat": false,
       "goals": [],
       "onAcceptItems": [],

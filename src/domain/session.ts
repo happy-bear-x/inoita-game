@@ -925,8 +925,8 @@ export class Session {
       const after=this.questBook.state(entry.quest.id)?.goals[entry.goal.id]??0;
       if(after<=(before.get(progressKey(entry.quest,entry.goal))??0))continue;
       advanced=true;
-      // 隐藏任务照常计数，但和任务面板、场景标记一样不在玩家眼前提示。
-      if(entry.quest.hidden||!entry.goal.feedbackText||feedback.includes(entry.goal.feedbackText))continue;
+      // 日志外任务照常计数，但和任务面板、场景标记一样不在玩家眼前提示。
+      if(entry.quest.journal===false||!entry.goal.feedbackText||feedback.includes(entry.goal.feedbackText))continue;
       feedback.push(entry.goal.feedbackText);
     }
     return {advanced,feedback};
@@ -966,7 +966,7 @@ export class Session {
     const focus=this.debugFocusQuestValue,priority:Record<QuestStatus,number>={ready:0,available:1,active:2,locked:3,completed:4};
     return this.campaign.quests.filter(quest=>(!focus||quest.id===focus)
       &&this.matchesQuestActor(quest,actor,characterId,this.status(quest.id)!=='available')
-      &&(!!focus||this.questBook.visible(quest.id))&&['ready','available','active'].includes(this.status(quest.id)))
+      &&(!!focus||this.questBook.journalVisible(quest.id))&&['ready','available','active'].includes(this.status(quest.id)))
       .sort((a,b)=>priority[this.status(a.id)]-priority[this.status(b.id)]);
   }
   /**
@@ -992,13 +992,13 @@ export class Session {
   private computeQuestSlot(actor:string,characterId?:string):CampaignQuest|undefined {
     const focus=this.debugFocusQuestValue;
     if(focus)return this.forActor(actor,characterId)[0];
-    // 待交付包含隐藏任务：它们同样在运行池里，原版第一段循环不会因为日志不可见而跳过。
+    // 待交付包含日志外任务：它们同样在运行池里，原版第一段循环不会因为日志不可见而跳过。
     for(const id of this.questBook.runningQuestIds){
       if(this.status(id)!=='ready')continue;
       const quest=this.definition(id);
       if(quest&&this.matchesQuestActor(quest,actor,characterId,true))return quest;
     }
-    // 隐藏只表示不进任务日志，不是“彩蛋任务”：可接状态同样参与任务槽。
+    // 日志外只表示不进任务日志：可接状态同样参与任务槽。
     const available=this.campaign.quests.filter(quest=>this.status(quest.id)==='available'
       &&this.matchesQuestActor(quest,actor,characterId,false));
     const main=available.find(quest=>this.questGroupKinds.get(quest.id)==='main');
@@ -1014,7 +1014,7 @@ export class Session {
   /**
    * `forActor` 看不到、但仍然可以在这个角色／物件上交付的任务。
    *
-   * 两种：**隐藏任务**不进任务日志（`forActor` 因此看不到），但它由剧情事件接取后，原版同样要在
+   * 两种：**日志外任务**不进任务日志（`forActor` 因此看不到），但它由剧情事件接取后，原版同样要在
    * 指定对象上交付——任务 #50「打开地下矿山之门」的目标就是矿洞里的路障（NPC 341，景物），接取后
    * 拿到钥匙、跟路障交互即开门；把「日志可见」当成「可交付」会让这类任务永远停在待交付。
    * 另一种是**事件授予的任务**：接取没有发布者菜单，但原版仍按 `npc_index` 指向的角色交付
@@ -1025,7 +1025,7 @@ export class Session {
     const focus=this.debugFocusQuestValue;
     return this.campaign.quests.filter(quest=>(!focus||quest.id===focus)
       &&this.status(quest.id)==='ready'&&this.matchesQuestActor(quest,actor,characterId,true)
-      &&!this.questBook.visible(quest.id));
+      &&!this.questBook.journalVisible(quest.id));
   }
   marker(actor:string,characterId?:string):QuestStatus|null {
     const quest=this.npcQuestSlot(actor,characterId);
@@ -1034,9 +1034,9 @@ export class Session {
   /**
    * 头顶和小地图该不该给这个角色／物件挂标记。
    *
-   * 隐藏任务只表示不进任务日志，不是彩蛋任务；它们和可见任务共用同一套场景标记，
+   * 日志外任务只表示不进任务日志；它们和日志内任务共用同一套场景标记，
    * 可接、进行中、待交付都要提示；进行中任务的 `talk` / `interact` 目标也算。
-   * 不要再用 `questBook.visible()` 过滤一次。调试焦点只看焦点任务：前置任务的人物不挂标记。
+   * 不要再用 `questBook.journalVisible()` 过滤一次。调试焦点只看焦点任务：前置任务的人物不挂标记。
    */
   markerActor(actor:string,characterId?:string):boolean {
     const version=this.questBook.version,focus=this.debugFocusQuestValue,cached=this.markerActorProjection;
@@ -1054,7 +1054,7 @@ export class Session {
   }
   /**
    * 进行中任务的 `talk` / `interact` 目标也要在场景里提示。
-   * 只标记还没记满的目标；目标完成后图标消失。隐藏任务同样参与，不按任务日志可见性过滤。
+   * 只标记还没记满的目标；目标完成后图标消失。日志外任务同样参与，不按任务日志可见性过滤。
    */
   private activeGoalMarker(actor:string,characterId?:string):boolean {
     const version=this.questBook.version,focus=this.debugFocusQuestValue,cached=this.goalMarkerProjection;
@@ -1078,14 +1078,14 @@ export class Session {
       const quest=this.definition(focus);
       return quest&&['active','ready','available'].includes(this.status(focus))?quest:undefined;
     }
-    if(this.trackedQuest&&this.questBook.visible(this.trackedQuest)&&['active','ready'].includes(this.status(this.trackedQuest)))return this.definition(this.trackedQuest);
-    return this.campaign.quests.find(quest=>this.questBook.visible(quest.id)&&['active','ready'].includes(this.status(quest.id)))??
-      this.campaign.quests.find(quest=>this.questBook.visible(quest.id)&&this.status(quest.id)==='available');
+    if(this.trackedQuest&&this.questBook.journalVisible(this.trackedQuest)&&['active','ready'].includes(this.status(this.trackedQuest)))return this.definition(this.trackedQuest);
+    return this.campaign.quests.find(quest=>this.questBook.journalVisible(quest.id)&&['active','ready'].includes(this.status(quest.id)))??
+      this.campaign.quests.find(quest=>this.questBook.journalVisible(quest.id)&&this.status(quest.id)==='available');
   }
   trackQuest(id:string):boolean {
     const focus=this.debugFocusQuestValue;
     if(focus&&id!==focus)return false;
-    if((!focus&&!this.questBook.visible(id))||!['active','ready'].includes(this.status(id)))return false;
+    if((!focus&&!this.questBook.journalVisible(id))||!['active','ready'].includes(this.status(id)))return false;
     this.trackedQuest=id;this.emit();return true;
   }
   private applyActorCommand(command:StoryCommand,bag:Bag,hero:BattleCharacter|undefined,party:PartyRoster|undefined,fallback:StoryPlayerState|undefined):void {

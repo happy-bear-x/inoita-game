@@ -345,12 +345,12 @@ const DEBUG_START_SCRIPT = 'debug-start-play';
 
 /**
  * 手写一份现场表：不依赖导出器，验证运行时「套表 + 焦点 + 直接开演」这条通路。
- * 目标任务在副本里标成隐藏，用来确认焦点覆盖隐藏规则。
+ * 目标任务在副本里标成日志外，用来确认调试焦点仍能覆盖不进日志的任务。
  */
 function startTableCampaign(): Campaign {
   const copy = structuredClone(campaign) as Campaign;
   const task = copy.debugStory!.tasks.find(value => value.quest === DEBUG_START_QUEST)!;
-  copy.quests.find(quest => quest.id === DEBUG_START_QUEST)!.hidden = true;
+  copy.quests.find(quest => quest.id === DEBUG_START_QUEST)!.journal = false;
   copy.scripts[DEBUG_START_SCRIPT] = { entry: 'open', nodes: [
     { id: 'open', presentation: [], commands: [{ type: 'flag', flag: 'debug-play-ran' }], exit: { type: 'end' } },
   ] } as unknown as Campaign['scripts'][string];
@@ -400,7 +400,7 @@ test('a hand-written start table is applied verbatim and the opening play runs t
 
   session.restoreState(prepared);
   assert.equal(session.itemCount(DEBUG_START_ITEM), 2, 'itemReset 先清空，items 再给绝对值');
-  // 隐藏任务的焦点覆盖：任务日志只显示这一条。
+  // 日志外任务的焦点覆盖：任务日志只显示这一条。
   const journal = questJournal(debugCampaign, session.quests, session.debugFocusQuest);
   assert.deepEqual(journal.flatMap(group => group.entries.map(entry => entry.quest.id)), [DEBUG_START_QUEST]);
 

@@ -1084,7 +1084,7 @@ export class WorldScene extends Phaser.Scene {
       for(const [id,state] of next){
         if(state.status!=='ready'||this.questStatuses.get(id)==='ready')continue;
         const quest=this.app.session.definition(id);
-        if(!quest||quest.hidden||quest.completion!=='all')continue;
+        if(!quest||quest.journal===false||quest.completion!=='all')continue;
         this.app.ui.showInstant(`任务完成：${quest.title}`);
       }
     }
@@ -1124,8 +1124,8 @@ export class WorldScene extends Phaser.Scene {
         (!opened || this.chestFades.has(character.entity.id)) && !consumed);
       this.movement?.setEnabled(character, character.container.visible && !opened && !consumed);
       const status = session.marker(character.entity.actor,character.entity.characterId);
-      // 隐藏任务照常可交付，但不在场景里提示。头顶和小地图必须共用这一个判断，
-      // 否则隐藏任务会在小地图上多出一个玩家点不到用途的标记。
+      // 头顶和小地图共用 `markerActor` 这一个判断，避免同一任务在两处显示不同标记。
+      // 日志外任务不进任务日志，但可接、进行中、待交付照常挂场景标记。
       const marked = session.markerActor(character.entity.actor,character.entity.characterId);
       // 任务可能在进图后才变为可接取：标记缺失时按当前任务状态补建，而不是只在建角色时判断一次。
       if (character.entity.id !== 'player' && !character.marker && status && marked)

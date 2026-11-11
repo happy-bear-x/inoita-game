@@ -17,11 +17,12 @@ export function sideQuestIds(groups: readonly QuestGroupDefinition[]): ReadonlyS
 }
 
 /**
- * 任务定义本身要不要出现在玩家眼前：隐藏任务与内部任务都不出现。
- * 与有没有进度无关——`QuestBook.visible` 与任务日志的过滤都从这里取这一条。
+ * 任务定义本身要不要出现在玩家眼前：日志外任务与内部任务都不出现。
+ * 与有没有进度无关——`QuestBook.journalVisible` 与任务日志的过滤都从这里取这一条。
+ * 日志外任务不是彩蛋：它们照常接取、计数、交付和显示场景标记，只是不写进任务日志。
  */
-export function questIsVisible(definition: QuestRules): boolean {
-  return !definition.hidden && definition.completion !== 'internal';
+export function questInJournal(definition: QuestRules): boolean {
+  return definition.journal !== false && definition.completion !== 'internal';
 }
 
 interface QuestItemAmount { item: string; quantity: number }
@@ -42,7 +43,8 @@ export interface QuestRules {
   goals: QuestGoal[];
   availableWhen?: StoryCondition;
   completion: 'talk' | 'all' | 'story' | 'internal';
-  hidden?: boolean;
+  /** 缺省 true；false 表示日志外任务：不进任务日志，也不弹任务面板与任务提示。 */
+  journal?: boolean;
   repeat?: boolean;
   onAcceptItems?: QuestItemAmount[];
   handoverItems?: QuestHandoverItem[];
@@ -331,7 +333,7 @@ export class QuestBook {
   unpinDebug(id: string): void { this.commit(this.plan({ type: 'unpin-active', quest: id })); }
   accepted(id: string): boolean { return ACCEPTED_QUEST_STATUSES.includes(this.status(id)); }
   completedCycles(id: string): number { return this.states.get(id)?.completedCycles ?? 0; }
-  visible(id: string): boolean { const definition=this.definitions.get(id); return !!definition && questIsVisible(definition); }
+  journalVisible(id: string): boolean { const definition=this.definitions.get(id); return !!definition && questInJournal(definition); }
   get runningQuestIds(): readonly string[] { return [...this.runningIds]; }
   captureState(): QuestBookState {
     return structuredClone({ version: QUEST_BOOK_STATE_VERSION, quests: [...this.states], runningQuestIds: this.runningIds,

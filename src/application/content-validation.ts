@@ -721,7 +721,7 @@ const campaign=shape<Campaign>({debugStory:optional(debugStory),version:(v,p)=>r
     targetChanges:optional(array(object({goal:text,enemyId:text,actor:text,removeAfterInteraction:boolean,changedText:text,interactText:text}))),
     descriptionTargets:optional(array(object({target:text,characterId:optional(text),label:optional(text)}))),
     goals:array(object({id:text,kind:oneOf('talk','item','interact','defeat','recruit'),target:text,characterId:optional(text),quantity:count,label:optional(text),feedbackText:optional(nonEmptyText)})),
-    availableWhen:optional(storyCondition),completion:oneOf('talk','all','story','internal'),hidden:optional(boolean),repeat:optional(boolean),
+    availableWhen:optional(storyCondition),completion:oneOf('talk','all','story','internal'),journal:optional(boolean),repeat:optional(boolean),
     onAcceptItems:optional(array(object({item:text,quantity:count}))),handoverItems:optional(array(object({item:text,quantity:count,removal:optional(oneOf('quantity','all-matching'))}))),
     itemCompletion:optional(oneOf('all','equipped-item-shortcut')),acceptance:optional(oneOf('automatic','optional')),
     rewards:optional(object({experience:integer,money:integer,items:array(object({item:text,quantity:count,classIds:optional(strings)}))})),
@@ -964,7 +964,7 @@ export function parseCampaign(value:unknown):Campaign {
     for(const id of group.questIds)requireValue(result.quests.some(quest=>quest.id===id),group.id,`任务不存在 ${id}`);
   }
   for(const quest of result.quests){
-    requireValue(quest.id&&(!quest.hidden&&quest.completion!=='internal'?groupedQuests.includes(quest.id):true),quest.id,'任务缺少标识或所属分组');
+    requireValue(quest.id&&(quest.journal!==false&&quest.completion!=='internal'?groupedQuests.includes(quest.id):true),quest.id,'任务缺少标识或所属分组');
     unique(quest.goals.map(goal=>goal.id),quest.id+'.goals');
     if(quest.completion==='all')requireValue(quest.goals.length,quest.id,'任务需要完成目标');
     for(const goal of quest.goals)requireValue(goal.id&&goal.target,quest.id,'任务目标标识为空');

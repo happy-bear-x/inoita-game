@@ -16,7 +16,7 @@ function harness(popup:StoryUI['questPopup']) {
 }
 
 test('native quest state commands commit before their popup and same-state guards bypass both',()=>{
-  let visible=0,hidden=0;
+  let journaled=0,journalExternal=0;
   for(const [name,script] of Object.entries(campaign.scripts)) {
     if(!/^event-\d+$/.test(name))continue;
     for(const node of script.nodes)for(const command of node.commands) {
@@ -28,8 +28,8 @@ test('native quest state commands commit before their popup and same-state guard
       assert.ok(node.exit.type==='next');
       const next=script.nodes.find(candidate=>candidate.id===(node.exit.type==='next'?node.exit.target.node:''))!;
       const popup=next.presentation.find(action=>action.type==='quest-popup'&&action.quest===quest.id);
-      if(quest.hidden){hidden++;assert.equal(popup,undefined,`${name}/${quest.id}`);continue;}
-      visible++;
+      if(quest.journal===false){journalExternal++;assert.equal(popup,undefined,`${name}/${quest.id}`);continue;}
+      journaled++;
       assert.deepEqual(popup,{type:'quest-popup',kind:command.command.type==='accept'?'start':'complete',quest:quest.id});
       assert.deepEqual(next.commands,[],'confirming the popup cannot commit the reward again');
       assert.ok(next.exit.type==='next');
@@ -37,7 +37,7 @@ test('native quest state commands commit before their popup and same-state guard
         &&guard.exit.then.node===(next.exit.type==='next'?next.exit.target.node:'')),`${name}/${quest.id}: missing same-state guard`);
     }
   }
-  assert.ok(visible>0);assert.ok(hidden>0);
+  assert.ok(journaled>0);assert.ok(journalExternal>0);
 });
 
 test('the original forest quest popup observes committed acceptance and direct replay grants nothing twice',async()=>{
@@ -56,7 +56,7 @@ test('the original forest quest popup observes committed acceptance and direct r
   assert.deepEqual(h.session.questBook.captureState(),before);
 });
 
-test('hidden quests settle through dialogue without opening a panel',async()=>{
+test('journal-external quests settle through dialogue without opening a panel',async()=>{
   const popups:string[]=[];
   const h=harness(async(kind,quest)=>{popups.push(`${kind}:${quest.id}`);});
   assert.equal(h.session.accept('quest-61'),true);
@@ -65,7 +65,7 @@ test('hidden quests settle through dialogue without opening a panel',async()=>{
   const actor={id:'barricade-221',name:'路障'};
   await h.director.interact(entity as never,actor as never);
   assert.equal(h.session.status('quest-61'),'completed');
-  assert.deepEqual(popups,[],'隐藏任务交付不弹面板');
+  assert.deepEqual(popups,[],'日志外任务交付不弹面板');
 });
 
 test('cancelling a native completion popup keeps its reward and retry only confirms the settled quest',async()=>{

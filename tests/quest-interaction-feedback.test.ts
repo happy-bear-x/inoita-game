@@ -107,10 +107,10 @@ test('a multi-count interact goal stays interactable until its quantity is reach
   h.director.dispose();
 });
 
-test('a hidden quest still counts interaction goals but shows no prompt', async () => {
+test('a journal-external quest still counts interaction goals but shows no prompt', async () => {
   const quest: CampaignQuest = {
-    id: 'secret', title: '隐藏任务', description: '隐藏任务', guidance: { available: '接取', active: '进行中' },
-    completion: 'all', hidden: true,
+    id: 'secret', title: '日志外任务', description: '日志外任务', guidance: { available: '接取', active: '进行中' },
+    completion: 'all', journal: false,
     goals: [{ id: 'horn', kind: 'interact', target: 'altar', quantity: 1, feedbackText: '破坏号角' }],
     progressText: '进行中', completeText: '完成'
   };
@@ -119,9 +119,9 @@ test('a hidden quest still counts interaction goals but shows no prompt', async 
   const entity: EntityPlacement = { id: 'altar-instance', actor: 'altar', x: 0, y: 0 };
   const actor = { id: 'altar', name: '祭坛', description: '' } as unknown as ActorDefinition;
   await h.director.interact(entity, actor);
-  assert.equal(h.session.quests.get(quest.id)!.goals.horn, 1, '隐藏任务照常计数');
+  assert.equal(h.session.quests.get(quest.id)!.goals.horn, 1, '日志外任务照常计数');
   assert.equal(h.session.status(quest.id), 'ready');
-  assert.equal(h.toasts.length, 0, '隐藏任务不弹提示');
+  assert.equal(h.toasts.length, 0, '日志外任务不弹提示');
   h.director.dispose();
 });
 

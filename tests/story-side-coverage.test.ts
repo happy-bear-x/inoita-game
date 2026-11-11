@@ -14,8 +14,8 @@ test('active side quest coverage stays explicit and every gap has a reason',()=>
   const {campaign,maps,items}=headlessContent;
   const groupKind=new Map<string,string>();
   for(const group of campaign.questGroups)for(const id of group.questIds)groupKind.set(id,group.kind);
-  const hidden=new Set(campaign.quests.filter(quest=>quest.hidden).map(quest=>quest.id));
-  const isSide=(quest:string)=>hidden.has(quest)||groupKind.get(quest)==='side';
+  const journalExternal=new Set(campaign.quests.filter(quest=>quest.journal===false).map(quest=>quest.id));
+  const isSide=(quest:string)=>journalExternal.has(quest)||groupKind.get(quest)==='side';
   const questById=new Map(campaign.quests.map(quest=>[quest.id,quest]));
   const placements:Placement[]=[];
   for(const [mapId,map] of maps)for(const entity of map.entities)

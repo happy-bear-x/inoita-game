@@ -68,10 +68,10 @@ const readableStoryText = (value:string):string => {
   return translated.replace(/[·_]EP\d+[A-Z]?/g,'').replace(/_BOSS战/g,'：首领战').replace(/BOSS/g,'首领').replaceAll('_',' · ');
 };
 
-type StoryCategory = 'main' | 'side' | 'hidden';
-const CATEGORY_LABELS: Record<StoryCategory, string> = { main: '主线', side: '支线', hidden: '日志外' };
+type StoryCategory = 'main' | 'side' | 'journal-external';
+const CATEGORY_LABELS: Record<StoryCategory, string> = { main: '主线', side: '支线', 'journal-external': '日志外' };
 const STORY_FILTERS: readonly (readonly [StoryCategory, string])[] = [
-  ['main', '主线'], ['side', '支线'], ['hidden', '日志外'],
+  ['main', '主线'], ['side', '支线'], ['journal-external', '日志外'],
 ];
 const QUEST_STATUS_LABELS: Record<string, string> = {
   locked: '未解锁', available: '可接取', active: '进行中', ready: '待交付', completed: '已完成',
@@ -522,7 +522,7 @@ export class GmPanel {
         return [{
           task,quest,
           title:readableStoryText(group&&group!==quest.title?`${group} · ${quest.title}`:quest.title),
-          category:quest.hidden?'hidden':side.has(quest.id)?'side':'main',
+          category:quest.journal===false?'journal-external':side.has(quest.id)?'side':'main',
         }];
       });
     }

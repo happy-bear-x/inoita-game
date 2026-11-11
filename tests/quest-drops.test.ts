@@ -149,7 +149,7 @@ test('entering another map discards ordinary drops elsewhere but keeps quest dro
 
 test('session preserves quest boundaries, acceptance order, duplicate items and fulfilled goals',()=>{
   const base=campaign.quests.find(quest=>quest.id==='knight-uniform')!;
-  const first={...base,id:'first',hidden:true,handoverItems:[],rewards:undefined,completeScript:null,goals:[
+  const first={...base,id:'first',journal:false,handoverItems:[],rewards:undefined,completeScript:null,goals:[
     {id:'ore',kind:'item' as const,target:'mithril',quantity:1},
     {id:'material',kind:'item' as const,target:'ectoplasm',quantity:1},
   ]};

@@ -116,7 +116,7 @@ test('a story that ends into waitEncounter still settles while the encounter is 
   assert.deepEqual(order.slice(-2),['settle','checkpoint'],'收拢发生在检查点之前');
 });
 
-test('a hidden quest popup action is skipped without blocking the node',async()=>{
+test('a journal-external quest popup action is skipped without blocking the node',async()=>{
   const popup=node('popup',[],{type:'next',target:{script:'demo',node:'after'}});
   popup.presentation=[{type:'quest-popup',kind:'complete',quest:'quest-61'}];
   const h=harness([popup,node('after')]);
@@ -125,7 +125,7 @@ test('a hidden quest popup action is skipped without blocking the node',async()=
   assert.ok(h.session.rewardReceiptFor('quest-61'));
   let shown=0;h.ui.questPopup=async()=>{shown++;};
   assert.equal(await h.director.start(),true);
-  assert.equal(shown,0,'隐藏任务面板不显示');
+  assert.equal(shown,0,'日志外任务面板不显示');
   assert.equal(h.director.runtime.eventStatus('demo-event'),'completed');
 });
 

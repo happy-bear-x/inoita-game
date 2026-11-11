@@ -1,6 +1,6 @@
 import type { QuestGroupDefinition } from './content.ts';
 import type { Campaign, CampaignQuest } from './campaign.ts';
-import { ACCEPTED_QUEST_STATUSES, questIsVisible, type QuestProgress } from './quest-book.ts';
+import { ACCEPTED_QUEST_STATUSES, questInJournal, type QuestProgress } from './quest-book.ts';
 
 interface QuestJournalEntry {
   quest: CampaignQuest;
@@ -16,7 +16,7 @@ interface QuestJournalGroup {
 /**
  * 运行中的任务组保留同组已交付的步骤，整组离开运行池后不再显示。
  * `focus` 是 GM 任务调试的焦点：只显示这一条任务，不管它所在组是否还有其他进展，
- * 也覆盖隐藏/内部任务规则——现场表可能停在开幕演出之前，此时任务还是「可接取」，
+ * 也覆盖日志外/内部任务规则——现场表可能停在开幕演出之前，此时任务还是「可接取」，
  * 任务日志仍要显示它，演出接取后自然变成进行中。
  */
 export function questJournal(campaign: Campaign, states: ReadonlyMap<string, Readonly<QuestProgress>>,
@@ -30,7 +30,7 @@ export function questJournal(campaign: Campaign, states: ReadonlyMap<string, Rea
       const state = states.get(id), quest = definitions.get(id);
       if (!quest || !state) return [];
       if (focus) return id === focus && state.status !== 'locked' ? [{ quest, state }] : [];
-      return questIsVisible(quest) && ACCEPTED_QUEST_STATUSES.includes(state.status) ? [{ quest, state }] : [];
+      return questInJournal(quest) && ACCEPTED_QUEST_STATUSES.includes(state.status) ? [{ quest, state }] : [];
     }).reverse();
     if (!entries.length) return [];
     if (!focus && !entries.some(entry => entry.state.status === 'active' || entry.state.status === 'ready')) return [];

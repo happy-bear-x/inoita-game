@@ -18,7 +18,7 @@ const ui:StoryUI={async dialogue(){throw new Error('This event has no dialogue')
 // The verified event 28 ends by settling original quests 30 and 31, without dialogue.
 // Its still separate camera/wait/sound performance is outside this contract fixture.
 test('original event 28 links two quest states through a command-only event and deduplicates its trigger',async()=>{
-  const first={...quest('native-quest-30','internal'),hidden:true},second=quest('native-quest-31','story');
+  const first={...quest('native-quest-30','internal'),journal:false},second=quest('native-quest-31','story');
   const campaign:Campaign={...structuredClone(base),quests:[first,second],questGroups:[{id:'fixture',title:'fixture',kind:'main',questIds:[second.id]}],placements:[],
     scripts:{native:{entry:'settle',nodes:[{id:'settle',presentation:[],commands:[
       {type:'quest',command:{type:'script-complete',quest:first.id}},{type:'quest',command:{type:'script-complete',quest:second.id}}

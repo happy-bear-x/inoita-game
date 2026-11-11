@@ -24,7 +24,7 @@ test('the task catalog is valid and only contains tasks with a fixed entry',()=>
 test('preparing an available task stays before its opening and focuses the journal',async()=>{
  const h=playthrough();try{
   const task=h.session.campaign.debugStory!.tasks.find(task=>
-   task.phase==='available'&&!h.session.campaign.quests.find(quest=>quest.id===task.quest)!.hidden)!;
+   task.phase==='available'&&h.session.campaign.quests.find(quest=>quest.id===task.quest)!.journal!==false)!;
   const before=h.session.captureState();
   const prepared=await prepareTaskStart(h.session,{quest:task.quest});
   assert.deepEqual(h.session.captureState(),before,'准备过程不能修改当前会话');

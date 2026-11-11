@@ -178,10 +178,10 @@ test('equipped-item shortcut preserves original ordered success and does not pas
   equipped.clear(); commit({ type: 'refresh' }); assert.equal(book.status(definition.id), 'active');
 });
 
-test('hidden, internal and script-controlled quests have distinct admission and completion rules', () => {
-  const { book, commit } = fixture([rules('hidden', { hidden: true }), rules('internal', { completion: 'internal' }), rules('story', { completion: 'story' })]);
-  assert.equal(book.visible('hidden'), false); assert.equal(book.status('hidden'), 'available');
-  assert.equal(book.visible('internal'), false); assert.equal(book.status('internal'), 'locked');
+test('journal-external, internal and script-controlled quests have distinct admission and completion rules', () => {
+  const { book, commit } = fixture([rules('journal-external', { journal: false }), rules('internal', { completion: 'internal' }), rules('story', { completion: 'story' })]);
+  assert.equal(book.journalVisible('journal-external'), false); assert.equal(book.status('journal-external'), 'available');
+  assert.equal(book.journalVisible('internal'), false); assert.equal(book.status('internal'), 'locked');
   assert.throws(() => book.plan({ type: 'accept', quest: 'internal' }), /内部任务/);
   commit({ type: 'accept', quest: 'internal', source: 'script' });
   commit({ type: 'script-ready', quest: 'internal' }); assert.equal(book.status('internal'), 'ready');

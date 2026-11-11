@@ -196,20 +196,20 @@ test('NPC interaction executes one native quest slot instead of listing every re
   const content=campaign([
     quest('main-offer',{giver:'npc'}),
     quest('side-offer',{giver:'npc'}),
-    quest('hidden-delivery',{delivery:'npc',hidden:true}),
+    quest('journal-external-delivery',{delivery:'npc',journal:false}),
     quest('ongoing',{giver:'npc',completion:'all',goals:[{id:'token',kind:'item',target:'token',quantity:2}]}),
   ]);
   content.questGroups=[
-    {id:'g-main',title:'main',kind:'main',questIds:['main-offer','hidden-delivery']},
+    {id:'g-main',title:'main',kind:'main',questIds:['main-offer','journal-external-delivery']},
     {id:'g-side',title:'side',kind:'side',questIds:['side-offer','ongoing']},
   ];
   const session=new Session(content);
   assert.equal(session.npcQuestSlot('npc')?.id,'main-offer','可接主线优先于支线');
-  session.accept('hidden-delivery');
-  assert.equal(session.status('hidden-delivery'),'ready');
-  assert.equal(session.npcQuestSlot('npc')?.id,'hidden-delivery','隐藏的待交付压过可接任务');
-  assert.equal(session.forActor('npc').some(value=>value.id==='hidden-delivery'),false,'完整列表仍只含日志可见任务');
-  session.complete('hidden-delivery');
+  session.accept('journal-external-delivery');
+  assert.equal(session.status('journal-external-delivery'),'ready');
+  assert.equal(session.npcQuestSlot('npc')?.id,'journal-external-delivery','日志外待交付压过可接任务');
+  assert.equal(session.forActor('npc').some(value=>value.id==='journal-external-delivery'),false,'完整列表仍只含日志内任务');
+  session.complete('journal-external-delivery');
   assert.equal(session.npcQuestSlot('npc')?.id,'main-offer');
   session.accept('main-offer');
   assert.equal(session.npcQuestSlot('npc')?.id,'main-offer','对话任务接取即待交付');

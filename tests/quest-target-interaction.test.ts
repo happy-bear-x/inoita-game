@@ -130,20 +130,20 @@ test('an interaction advances only the talk and interact goals that point at tha
   assert.deepEqual(session.captureState().factSequences, [['talk', 1], ['interaction', 1]]);
 });
 
-// 隐藏任务不进任务日志，但原版仍要在它指定的对象上交付：#50「打开地下矿山之门」由剧情事件接取，
+// 日志外任务不进任务日志，但原版仍要在它指定的对象上交付：#50「打开地下矿山之门」由剧情事件接取，
 // 钥匙由同一段剧情的事件命令发放，交付对象是矿洞里的路障（NPC 341，景物）。只按日志可见性挑交互对象，
 // 会让这类任务永远停在待交付——原版事件只负责接取，没有第二条结算路径。
-test('a hidden quest settles on the object it names once its event has granted it', async()=>{
+test('a journal-external quest settles on the object it names once its event has granted it', async()=>{
   const quest = campaign.quests.find(quest=>quest.id==='quest-50')!;
   const placement = campaign.placements.find(candidate=>candidate.actor===(quest.delivery??quest.giver) && !candidate.objective)!;
   const h = harness();
-  assert.equal(h.session.questBook.visible(quest.id), false, '隐藏任务不进日志');
+  assert.equal(h.session.questBook.journalVisible(quest.id), false, '日志外任务不进日志');
   // 原版事件 62 在矿洞里把 #50 接上、同时发钥匙；这里直接接取，再补上事件发的那把钥匙。
   h.session.accept(quest.id);
   h.session.bag.add('west-mine-key', 1);
   h.session.applyStoryCommands([{ type: 'quest', command: { type: 'refresh' } }]);
   assert.equal(h.session.status(quest.id), 'ready');
-  assert.equal(h.session.markerActor(placement.actor, placement.characterId), true, '隐藏待交付也显示场景标记');
+  assert.equal(h.session.markerActor(placement.actor, placement.characterId), true, '日志外待交付也显示场景标记');
   assert.equal(h.session.itemCount('west-mine-key'), 1, '钥匙来自剧情事件，接取时不再补发');
   assert.equal(await h.director.interact(placement, world.actors[placement.actor]), true);
   assert.equal(h.session.status(quest.id), 'completed');

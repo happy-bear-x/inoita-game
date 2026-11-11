@@ -172,9 +172,9 @@ export function validateStoryPerformance(world: WorldIndex, campaign: Campaign, 
         if (action.type === 'dialogue') validateLine(action);
         else if (action.type === 'choice') action.options.flatMap(option => option.lines ?? []).forEach(validateLine);
         else if (action.type === 'quest-popup') {
-          // 隐藏任务不进日志、不挂标记，也不该在脚本里占一次面板。
+          // 日志外任务不进任务日志，也不弹任务面板；脚本里不该为它安排面板动作。
           const quest = campaign.quests.find(quest => quest.id === action.quest);
-          ensure(!quest?.hidden, `隐藏任务不应有任务面板 ${action.quest}`);
+          ensure(quest?.journal !== false, `日志外任务不应有任务面板 ${action.quest}`);
         } else visit(action);
       }
       const after = snapshot();

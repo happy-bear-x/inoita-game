@@ -13,7 +13,7 @@ type DebugTask = {
   basis?: {choices?: DebugChoice[]; battles?: DebugBattle[]};
 };
 
-test('side and hidden task opening performances resolve a unique actor set', async () => {
+test('side and journal-external task opening performances resolve a unique actor set', async () => {
   const {campaign,world,items,characterStats,classes,companions,battle} = {
     ...headlessContent,
     characterStats: headlessContent.stats,
@@ -22,11 +22,11 @@ test('side and hidden task opening performances resolve a unique actor set', asy
   };
   const groupKind = new Map<string,string>();
   for (const group of campaign.questGroups) for (const id of group.questIds) groupKind.set(id,group.kind);
-  const hidden = new Set(campaign.quests.filter(quest => quest.hidden).map(quest => quest.id));
-  const isSide = (quest: string) => hidden.has(quest) || groupKind.get(quest) === 'side';
+  const journalExternal = new Set(campaign.quests.filter(quest => quest.journal === false).map(quest => quest.id));
+  const isSide = (quest: string) => journalExternal.has(quest) || groupKind.get(quest) === 'side';
   const tasks = (campaign.debugStory?.tasks ?? []) as DebugTask[];
   const performances = tasks.filter(task => task.play && isSide(task.quest));
-  assert.ok(performances.length >= 100, `支线/隐藏开幕演出只有 ${performances.length} 条，审计覆盖不足`);
+  assert.ok(performances.length >= 100, `支线/日志外开幕演出只有 ${performances.length} 条，审计覆盖不足`);
 
   const session = newStorySession(campaign,world.actors[campaign.start.actor],classes.classes[0]!,items,
     characterStats,battle,companions);
@@ -57,6 +57,6 @@ test('side and hidden task opening performances resolve a unique actor set', asy
       failures.push(`${task.quest}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  assert.deepEqual(failures,[],`支线/隐藏演出回放失败；已回放 ${replayed} 条`);
-  assert.equal(replayed,performances.length,`应回放全部 ${performances.length} 条支线/隐藏演出`);
+  assert.deepEqual(failures,[],`支线/日志外演出回放失败；已回放 ${replayed} 条`);
+  assert.equal(replayed,performances.length,`应回放全部 ${performances.length} 条支线/日志外演出`);
 });

@@ -54,7 +54,7 @@ test('a GM focus keeps only the selected quest in the journal', () => {
   assert.deepEqual(questJournal(campaign, progress, 'knight-uniform'), [], '焦点任务未接取时不显示空组');
 });
 
-test('a GM focus shows the task even when it is hidden or only available', () => {
+test('a GM focus shows the task even when it is journal-external or only available', () => {
   const progress = states({
     'grafton-mission': questProgress('available'),
     'knight-uniform': questProgress('active'),
@@ -64,10 +64,10 @@ test('a GM focus shows the task even when it is hidden or only available', () =>
     ['knight-uniform']);
   assert.deepEqual(questJournal(campaign, progress, 'grafton-mission').flatMap(group => group.entries.map(entry => entry.quest.id)),
     ['grafton-mission']);
-  // 隐藏任务的可见性规则同样由焦点覆盖。
-  const hidden = structuredClone(campaign);
-  hidden.quests.find(quest => quest.id === 'grafton-mission')!.hidden = true;
-  assert.deepEqual(questJournal(hidden, progress, 'grafton-mission').flatMap(group => group.entries.map(entry => entry.quest.id)),
+  // 日志外任务的可见性规则同样由焦点覆盖。
+  const journalExternal = structuredClone(campaign);
+  journalExternal.quests.find(quest => quest.id === 'grafton-mission')!.journal = false;
+  assert.deepEqual(questJournal(journalExternal, progress, 'grafton-mission').flatMap(group => group.entries.map(entry => entry.quest.id)),
     ['grafton-mission']);
   // 未解锁任务没有现场可显示。
   assert.deepEqual(questJournal(campaign, states({ 'grafton-mission': questProgress('locked') }), 'grafton-mission'), []);
@@ -150,9 +150,9 @@ test('multiple goals display independent counts and colors, without inferring co
   assert.equal(group.ready,false);assert.ok(visibleQuestText(text).includes('蛆虫肉: 5/5\n蝙蝠脆骨: 2/5'));
 });
 
-test('hidden and internal tasks keep their progress outside the player journal',()=>{
+test('journal-external and internal tasks keep their progress outside the player journal',()=>{
   const content=structuredClone(campaign);
-  content.quests[0].hidden=true;content.quests[1].completion='internal';
+  content.quests[0].journal=false;content.quests[1].completion='internal';
   const groups=questJournal(content,states({[content.quests[0].id]:questProgress('active'),[content.quests[1].id]:questProgress('ready'),[content.quests[2].id]:questProgress('active')}));
   assert.deepEqual(groups.flatMap(group=>group.entries.map(entry=>entry.quest.id)),[content.quests[2].id]);
 });

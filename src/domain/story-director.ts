@@ -443,8 +443,8 @@ export class StoryDirector {
         for (const line of option.lines ?? []) await this.dialogue(line, context.signal);
       } else if (action.type === 'quest-popup') {
         const quest = this.session.definition(action.quest); if (!quest) throw new Error(`任务不存在：${action.quest}`);
-        // 隐藏任务不进日志、不挂标记，也不占一次面板；生成的脚本里即使残留面板动作也在这里跳过。
-        if (quest.hidden) continue;
+        // 日志外任务不进任务日志、不弹任务面板；生成的脚本里即使残留面板动作也在这里跳过。
+        if (quest.journal === false) continue;
         this.markPresentationStarted();
         const receipt = action.kind === 'complete' ? this.session.rewardReceiptFor(quest.id) : undefined;
         if (action.kind === 'complete' && !receipt) throw new Error(`任务尚未结算，无法展示奖励：${quest.id}`);
@@ -666,8 +666,8 @@ export class StoryDirector {
   }
   /** 剧情脚本之外的接取/交付提示：与 `present()` 的 quest-popup 动作同一套窗口。 */
   private async notice(kind: 'start' | 'complete', quest: CampaignQuest): Promise<void> {
-    // 隐藏任务照常结算，但不弹任务面板；它们本来就不出现在日志和场景标记里。
-    if (quest.hidden) return;
+    // 日志外任务照常结算，但不弹任务面板；它们本来就不进任务日志。
+    if (quest.journal === false) return;
     const signal = this.context?.signal ?? this.manual.signal;
     signal.throwIfAborted();
     this.confirming = true;

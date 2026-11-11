@@ -17,7 +17,7 @@
 | `completion: all` | 全部目标达成后等待交付 |
 | `completion: story` | 由 `script-ready` 提交达成，随后交付 |
 | `completion: internal` | 剧情内部进度，可由 `script-complete` 直接推进 |
-| `hidden` | 保存任务状态，同时从任务日志和普通任务列表隐藏 |
+| `journal: false` | 日志外任务：保存状态、照常计数和交付，但不进任务日志，也不弹任务面板 |
 | `repeat` | 每次接取开启新周期；每个周期独立记录目标及奖励 |
 | `onAcceptItems` | 接取时交给玩家的物品 |
 | `handoverItems` | 完成时交回物品；`quantity` 扣固定数量，`all-matching` 扣当前所有匹配物品 |
@@ -73,7 +73,7 @@
 
 `waitEncounter` 声明地图、敌人实例和 outcomes。等待会释放输入锁；每个敌人完成死亡结算之后才能走 won。存在 lost 时先播放该分支，仍全灭则进入原有败北恢复。遭遇 ID 在运行时加上剧情运行和节点身份，同一次结果回调只接受一次。恢复战后节点保留已经获得的经验和掉落。
 
-任务接取、完成先提交状态，再显示任务面板；隐藏任务省略面板，同态重放跳过已结算操作。
+任务接取、完成先提交状态，再显示任务面板；日志外任务省略面板，同态重放跳过已结算操作。
 
 临时场景物件使用 `world.place` 的 `scope: "visit"`，保留到离开当前地图。`mapFromStage` 从实际演出地图解析位置归属。`instant-message` 通过游戏提示条显示教学文字。
 

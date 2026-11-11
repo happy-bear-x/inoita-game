@@ -132,7 +132,7 @@ test('the minimap receives quest characters on the first refresh after it is cre
   assert.deepEqual(taskLists, [[{ id: 'npc-1', x: 64, y: 96, status: 'available' }]]);
 });
 
-test('hidden ready deliveries still light the overhead marker and the minimap', () => {
+test('journal-external ready deliveries still light the overhead marker and the minimap', () => {
   type Status = 'available' | 'ready';
   let status: Status = 'available', marked = true, version = 1;
   let markerFile: string | undefined = 'available.png';
@@ -142,7 +142,7 @@ test('hidden ready deliveries still light the overhead marker and the minimap', 
     setVisible(value: boolean) { container.visible = value; },
   };
   const character = {
-    entity: { id: 'npc-hidden', actor: 'well', characterId: 'npc-137' },
+    entity: { id: 'npc-journal-external', actor: 'well', characterId: 'npc-137' },
     actor: { id: 'well' }, container, marker: undefined as Marker | undefined,
   };
   const session = {
@@ -170,11 +170,11 @@ test('hidden ready deliveries still light the overhead marker and the minimap', 
   assert.equal(created.length, 1);
   assert.equal(markerFile, 'available.png', '普通任务仍显示头顶标记');
 
-  // 隐藏任务只是不进任务日志；待交付时头顶和小地图仍要提示交付对象。
+  // 日志外任务只是不进任务日志；待交付时头顶和小地图仍要提示交付对象。
   status = 'ready'; marked = true; version += 1; session.questBook.version = version;
   invoke(host, 'refreshState');
-  assert.equal(markerFile, 'ready.png', '隐藏待交付仍显示头顶图标');
-  assert.deepEqual(taskLists.at(-1), [{ id: 'npc-hidden', x: 32, y: 48, status: 'ready' }], '小地图也显示隐藏待交付');
+  assert.equal(markerFile, 'ready.png', '日志外待交付仍显示头顶图标');
+  assert.deepEqual(taskLists.at(-1), [{ id: 'npc-journal-external', x: 32, y: 48, status: 'ready' }], '小地图也显示日志外待交付');
 });
 
 test('quest markers live in their own high-depth layer and follow the character', () => {
