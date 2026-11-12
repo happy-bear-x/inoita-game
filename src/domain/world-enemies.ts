@@ -226,6 +226,15 @@ capturePreparedState():{roster:ReturnType<EnemyRoster['captureState']>;breakable
       super.removeEnemy(placed.key);present.delete(placed.key);removed.push(placed.key);
       if(leaving&&this.breakableRolls.delete(placed.key))this.breakableRevision++;
     }
+    // 主人从名册消失时，它名下的召唤物也一起离场；否则快照里会留下找不到主人的孤儿召唤。
+    const removedSet=new Set(removed);
+    for(let changed=true;changed;){
+      changed=false;
+      for(const placed of [...this.enemies]){
+        if(placed.summonedBy===undefined||!removedSet.has(placed.summonedBy)||removedSet.has(placed.key))continue;
+        super.removeEnemy(placed.key);present.delete(placed.key);removed.push(placed.key);removedSet.add(placed.key);changed=true;
+      }
+    }
     for(const spawn of spawns){
       this.sources.set(spawn.id,spawn);
       if(!this.session.canSpawnEnemy(spawn)){

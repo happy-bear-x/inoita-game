@@ -73,8 +73,6 @@ test('AI kinds, complete actor records and finite enemy decision state are valid
     state=>{state.enemies[0].ai={kind:'enemy',state:{...enemyState(),clock:-1}};},
     state=>{state.enemies=[];},
     state=>{state.enemies.push({...state.enemies[0]});},
-    state=>{state.roster.enemies[0].summonedBy='missing';},
-    state=>{state.roster.enemies[0].summonedBy='enemy';},
     state=>{state.enemies[0].summonRemainingMs=-60;},
   ];
   for(const mutate of mutations){
@@ -102,7 +100,6 @@ test('a summon AI kind, owner and role must match its roster identity and active
     state=>{const ai=state.enemies[1].ai!;if(ai.kind==='friendly-summon')ai.state.role='hell-soldier';},
     state=>{state.roster.enemies[1].summonedBy='enemy';state.summonGroups=[['enemy',['summon']]];},
     state=>{state.roster.enemies[1].summonedBy=undefined;state.summonGroups=[];},
-    state=>{state.party=[];},
     state=>{state.roster.enemies[1].enemyId=catalog.enemies[0].id;},
   ];
   for(const mutate of mutations){
@@ -121,7 +118,24 @@ test('an active companion retains ownership of its friendly summon across statio
   const restored=prepared.enemies[1].ai!;assert.equal(restored.kind,'friendly-summon');
   if(restored.kind==='friendly-summon')assert.equal(restored.state.ownerId,'companion');
   const absent=structuredClone(input);absent.party.pop();
-  assert.throws(()=>prepareCombatRestore(absent,catalog,['player','companion']),/召唤主人引用无效|活动队伍/);
+  const repaired=prepareCombatRestore(absent,catalog,['player','companion']);
+  assert.equal(repaired.roster.enemies.some(enemy=>enemy.key==='summon'),false,'主人不在队员记录里时丢掉孤儿召唤');
+});
+
+test('orphan summons are dropped instead of failing the whole save load',()=>{
+  const input=summonSnapshot();
+  input.roster.enemies.push({key:'orphan',enemyId:catalog.enemies[0].id,x:32,y:20,summonedBy:'missing-owner'});
+  input.enemies.push({id:'orphan',facing:'south',ai:{kind:'enemy',state:enemyState()},summonRemainingMs:6000});
+  input.summonGroups.push(['missing-owner',['orphan']]);
+  input.conditions.buffs.push(['orphan',[]]);
+  input.conditions.states.push(['orphan',[]]);
+  input.conditions.temporary.push(['orphan',[]]);
+  input.threat.entries.push({ownerId:'orphan',sourceId:'player',score:10,updatedTick:1});
+  const prepared=prepareCombatRestore(input,catalog,[]);
+  assert.equal(prepared.roster.enemies.some(enemy=>enemy.key==='orphan'),false);
+  assert.equal(prepared.enemies.some(enemy=>enemy.id==='orphan'),false);
+  assert.equal(prepared.summonGroups.some(([owner])=>owner==='missing-owner'),false);
+  assert.ok(prepared.roster.enemies.some(enemy=>enemy.key==='summon'),'有效召唤继续保留');
 });
 test('a hostile summon keeps the enemy AI branch and a valid enemy owner',()=>{
   const input=snapshot();

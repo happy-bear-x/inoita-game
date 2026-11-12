@@ -93,6 +93,18 @@ test('same-length direct instance replacement cannot bypass the roster identity 
   assert.ok(roster.enemies.some(enemy=>enemy.key==='local-summon'),'临时召唤仍保留');
 });
 
+test('removing a summon owner also removes its summons from the roster',()=>{
+  const session=new Session(campaign),map=content('maps/shadow-forest-west.json') as WorldMap;
+  const roster=new WorldEnemyRoster(session,map,[],1),owner=roster.enemies[0]!;
+  roster.restoreEnemy({key:'summon',enemyId:owner.enemyId,x:owner.x+8,y:owner.y,summonedBy:owner.key});
+  assert.equal(roster.enemies.some(enemy=>enemy.key==='summon'),true);
+  session.applyStoryCommands([{type:'world',command:{kind:'enemy-availability',map:map.id,enemyId:owner.enemyId,available:false}}]);
+  const changes=roster.refresh();
+  assert.ok(changes.removed.includes(owner.key));
+  assert.ok(changes.removed.includes('summon'),'主人的生成资格消失时召唤物一起移除');
+  assert.equal(roster.enemies.some(enemy=>enemy.key==='summon'),false);
+});
+
 test('a source enemy identity changed in place refreshes its existing slot',()=>{
   const session=new Session(campaign),map={id:'identity-map',enemySpawns:[
     {id:'slot',enemyId:'enemy-before',x:16,y:16}

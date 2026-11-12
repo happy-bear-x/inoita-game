@@ -40,6 +40,54 @@ function finiteTree(value:unknown,seen=new Set<object>()):void {
     seen.add(value);for(const child of Object.values(value))finiteTree(child,seen);seen.delete(value);
   }
 }
+/**
+ * 读档修复：旧版本在召唤主人被名册刷新移除后，可能把它的召唤物留在快照里。
+ * 主人的 key 必须仍是队员或敌人；否则把这个召唤和它的子树一起丢掉，让存档继续可读。
+ */
+function pruneOrphanSummons(copy:WorldCombatState):string[] {
+  const removed=new Set<string>();
+  for(let changed=true;changed;){
+    changed=false;
+    const actors=new Set<string>();
+    for(const saved of copy.party)actors.add(saved.id);
+    for(const placed of copy.roster.enemies)actors.add(placed.key);
+    for(const placed of copy.roster.enemies){
+      if(placed.summonedBy===undefined)continue;
+      if(typeof placed.summonedBy==='string'&&placed.summonedBy!==placed.key&&actors.has(placed.summonedBy))continue;
+      const drop=new Set([placed.key]);
+      for(let added=true;added;){
+        added=false;
+        for(const child of copy.roster.enemies)
+          if(child.summonedBy!==undefined&&drop.has(child.summonedBy)&&!drop.has(child.key)){drop.add(child.key);added=true;}
+      }
+      for(const key of drop)removed.add(key);
+      copy.roster.enemies=copy.roster.enemies.filter(enemy=>!drop.has(enemy.key));
+      copy.enemies=copy.enemies.filter(enemy=>!drop.has(enemy.id));
+      if(Array.isArray(copy.summonGroups))copy.summonGroups=copy.summonGroups
+        .filter(([owner])=>!drop.has(owner))
+        .map(([owner,ids])=>[owner,ids.filter(id=>!drop.has(id))] as [string,string[]]);
+      if(copy.conditions){
+        if(Array.isArray(copy.conditions.buffs))copy.conditions.buffs=copy.conditions.buffs.filter(([id])=>!drop.has(id));
+        if(Array.isArray(copy.conditions.states))copy.conditions.states=copy.conditions.states.filter(([id])=>!drop.has(id));
+        if(Array.isArray(copy.conditions.temporary))copy.conditions.temporary=copy.conditions.temporary.filter(([id])=>!drop.has(id));
+        if(Array.isArray(copy.conditions.resourceCapacities))copy.conditions.resourceCapacities=copy.conditions.resourceCapacities.filter(([id])=>!drop.has(id));
+        if(Array.isArray(copy.conditions.resourceCapacityInputs))copy.conditions.resourceCapacityInputs=copy.conditions.resourceCapacityInputs.filter(([id])=>!drop.has(id));
+      }
+      if(copy.threat&&Array.isArray(copy.threat.entries))copy.threat.entries=copy.threat.entries.filter(entry=>!drop.has(entry.ownerId)&&!drop.has(entry.sourceId));
+      if(copy.focusTargetId&&drop.has(copy.focusTargetId))copy.focusTargetId=undefined;
+      changed=true;break;
+    }
+  }
+  // 主人已经不在名单里的分组也要删掉，否则后面的引用校验会拒绝整份存档。
+  if(Array.isArray(copy.summonGroups)){
+    const owners=new Set<string>();
+    for(const saved of copy.party)owners.add(saved.id);
+    for(const placed of copy.roster.enemies)owners.add(placed.key);
+    copy.summonGroups=copy.summonGroups.filter(([owner])=>owners.has(owner));
+  }
+  return [...removed];
+}
+
 /** 读档先校验隔离副本；静止恢复丢弃动作、路径与动作临时属性。 */
 export function prepareCombatRestore(value:WorldCombatState,catalog:BattleCatalog,partyIds:readonly string[]):WorldCombatState {
   const copy=structuredClone(value);finiteTree(copy);
@@ -54,6 +102,14 @@ export function prepareCombatRestore(value:WorldCombatState,catalog:BattleCatalo
   }
   for(const enemy of copy.roster.enemies){if(typeof enemy.key!=='string'||!enemy.key||actors.has(enemy.key)||!definitions.has(enemy.enemyId)||!Number.isFinite(enemy.x)||!Number.isFinite(enemy.y)||
     enemy.health!==undefined&&enemy.health<0||enemy.mana!==undefined&&enemy.mana<0)throw new Error('战斗敌人快照无效');actors.add(enemy.key);}
+  // 旧档可能在主人离场后留下孤儿召唤；先剔除，再按剩余名单做引用校验。
+  const repairedSummons=pruneOrphanSummons(copy);
+  if(repairedSummons.length){
+    actors.clear();
+    for(const saved of copy.party)actors.add(saved.id);
+    for(const enemy of copy.roster.enemies)actors.add(enemy.key);
+    globalThis.storyDiagnostics?.record('save-repaired-orphan-summon',{keys:repairedSummons});
+  }
   const placedById=new Map(copy.roster.enemies.map(enemy=>[enemy.key,enemy]));
   const enemies=new Set(placedById.keys());
   const party=new Set(copy.party.map(member=>member.id));
