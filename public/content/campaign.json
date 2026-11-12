@@ -4833,7 +4833,7 @@
               "x": 104,
               "y": 88,
               "facing": "south",
-              "playerVisible": true,
+              "playerVisible": false,
               "cast": [],
               "resetActors": true
             },
@@ -50136,7 +50136,7 @@
               "x": 72,
               "y": 8,
               "facing": "south",
-              "playerVisible": false,
+              "playerVisible": true,
               "cast": [],
               "retainPlayerPosition": true
             },
@@ -50145,10 +50145,6 @@
               "text": "$G（次元之门附近应该还有士兵在驻守，现在去的话有点太危险了...）$B",
               "speaker": "凯恩",
               "actor": "kiyan"
-            },
-            {
-              "type": "show",
-              "target": "player"
             },
             {
               "type": "walk",
@@ -50197,7 +50193,7 @@
               "x": 72,
               "y": 8,
               "facing": "south",
-              "playerVisible": false,
+              "playerVisible": true,
               "cast": [],
               "retainPlayerPosition": true
             },
@@ -50206,10 +50202,6 @@
               "text": "$G（士兵们应该去村子里了，成功引诱追击队之前，还是不要去村里比较好。）$B",
               "speaker": "凯恩",
               "actor": "kiyan"
-            },
-            {
-              "type": "show",
-              "target": "player"
             },
             {
               "type": "walk",
@@ -50258,7 +50250,7 @@
               "x": 72,
               "y": 8,
               "facing": "south",
-              "playerVisible": false,
+              "playerVisible": true,
               "cast": [],
               "retainPlayerPosition": true
             },
@@ -50267,10 +50259,6 @@
               "text": "$G（次元之门附近应该还有士兵在驻守，现在去的话有点太危险了...）$B",
               "speaker": "凯恩",
               "actor": "kiyan"
-            },
-            {
-              "type": "show",
-              "target": "player"
             },
             {
               "type": "walk",
@@ -50319,7 +50307,7 @@
               "x": 72,
               "y": 8,
               "facing": "south",
-              "playerVisible": false,
+              "playerVisible": true,
               "cast": [],
               "retainPlayerPosition": true
             },
@@ -50328,10 +50316,6 @@
               "text": "$G（士兵们应该去村子里了，成功引诱追击队之前，还是不要去村里比较好。）$B",
               "speaker": "凯恩",
               "actor": "kiyan"
-            },
-            {
-              "type": "show",
-              "target": "player"
             },
             {
               "type": "walk",
@@ -51427,7 +51411,7 @@
               "x": 72,
               "y": 8,
               "facing": "south",
-              "playerVisible": false,
+              "playerVisible": true,
               "cast": [],
               "retainPlayerPosition": true
             },
@@ -51436,10 +51420,6 @@
               "text": "$G（次元之门附近应该还有士兵在驻守，现在去的话有点太危险了...）$B",
               "speaker": "凯恩",
               "actor": "kiyan"
-            },
-            {
-              "type": "show",
-              "target": "player"
             },
             {
               "type": "walk",
@@ -51488,7 +51468,7 @@
               "x": 72,
               "y": 8,
               "facing": "south",
-              "playerVisible": false,
+              "playerVisible": true,
               "cast": [],
               "retainPlayerPosition": true
             },
@@ -51497,10 +51477,6 @@
               "text": "$G（士兵们应该去村子里了，成功引诱追击队之前，还是不要去村里比较好。）$B",
               "speaker": "凯恩",
               "actor": "kiyan"
-            },
-            {
-              "type": "show",
-              "target": "player"
             },
             {
               "type": "walk",
@@ -114291,7 +114267,7 @@
               "x": 8,
               "y": 8,
               "facing": "south",
-              "playerVisible": false,
+              "playerVisible": true,
               "cast": [
                 {
                   "id": "nirniti-3c3ca603",
@@ -114330,10 +114306,6 @@
             {
               "type": "leave",
               "target": "nirniti-3c3ca603"
-            },
-            {
-              "type": "show",
-              "target": "player"
             },
             {
               "type": "walk",
@@ -142154,7 +142126,7 @@
               "x": 536,
               "y": 424,
               "facing": "south",
-              "playerVisible": true,
+              "playerVisible": false,
               "cast": [
                 {
                   "id": "story-eara-0079206d",
@@ -153246,7 +153218,7 @@
               "x": 168,
               "y": 168,
               "facing": "south",
-              "playerVisible": true,
+              "playerVisible": false,
               "cast": [
                 {
                   "id": "story-alexander-ed2defb7",
@@ -179810,7 +179782,7 @@
               "x": 152,
               "y": 392,
               "facing": "south",
-              "playerVisible": true,
+              "playerVisible": false,
               "cast": [
                 {
                   "id": "story-alexander-ed2defb7",
@@ -188344,7 +188316,7 @@
               "x": 328,
               "y": 216,
               "facing": "south",
-              "playerVisible": false,
+              "playerVisible": true,
               "cast": [
                 {
                   "id": "story-the-king-s-tomb-a2c73ac0",
@@ -188444,10 +188416,6 @@
             {
               "type": "wait",
               "durationMs": 420
-            },
-            {
-              "type": "show",
-              "target": "player"
             },
             {
               "type": "camera",
@@ -192904,7 +192872,7 @@
               "x": 312,
               "y": 24,
               "facing": "south",
-              "playerVisible": true,
+              "playerVisible": false,
               "cast": [
                 {
                   "id": "story-chasers-soldier-28387be1-493",
@@ -208840,7 +208808,7 @@
               "x": 312,
               "y": 56,
               "facing": "south",
-              "playerVisible": true,
+              "playerVisible": false,
               "cast": [
                 {
                   "id": "story-alexander-ed2defb7",
@@ -244326,7 +244294,7 @@
               "x": 88,
               "y": 88,
               "facing": "south",
-              "playerVisible": false,
+              "playerVisible": true,
               "cast": [],
               "retainPlayerPosition": true
             },
@@ -244350,10 +244318,6 @@
               "text": "$G（有了这次事件之后，国境的警卫一定变得特别的森严。）&P（虽然有点麻烦，不过想要跨过国境就必须想想$R其他办法$G了...）",
               "speaker": "凯恩",
               "actor": "kiyan"
-            },
-            {
-              "type": "show",
-              "target": "player"
             },
             {
               "type": "walk",

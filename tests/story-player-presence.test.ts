@@ -61,3 +61,29 @@ test('a scene the native script does place the player in still shows them', () =
   assert.equal(cave.stage.playerVisible, true);
   assert.ok(appearsIn('event-3', cave.node.id));
 });
+
+test('a scene that starts without placing the player keeps them off stage', () => {
+  // 这些事件切到另一张图后先演别人的戏，原版要到后面的放置命令才把主角摆上来。
+  const scenes = [
+    ['event-233', 'scene-2'], ['event-330', 'scene-2'], ['event-355', 'scene-2'],
+    ['event-255', 'scene-2'], ['event-305', 'scene-2'], ['event-0', 'scene-2'],
+  ] as const;
+  for (const [name, nodeId] of scenes) {
+    const stage = stagesOf(name).find(entry => entry.node.id === nodeId)!.stage;
+    assert.equal(stage.playerVisible, false, `${name}/${nodeId} 的主角开场不该显示`);
+  }
+  for (const [name, nodeId] of scenes.slice(0, 3))
+    assert.ok(appearsIn(name, nodeId), `${name}/${nodeId} 应当由后续放置命令让主角入场`);
+});
+
+test('the player never speaks while hidden', () => {
+  for (const [name, script] of Object.entries(campaign.scripts)) for (const node of script.nodes) {
+    const stage = node.presentation.find(action => action.type === 'stage') as StoryStage | undefined;
+    if (!stage || stage.playerVisible) continue;
+    const speech = node.presentation.findIndex(action => action.type === 'dialogue' && action.actor === campaign.start.actor);
+    if (speech < 0) continue;
+    const appearance = node.presentation.findIndex(action =>
+      (action.type === 'appear' || action.type === 'show') && action.target === 'player');
+    assert.ok(appearance >= 0 && appearance < speech, `${name}/${node.id} 的主角在显形前说话`);
+  }
+});
