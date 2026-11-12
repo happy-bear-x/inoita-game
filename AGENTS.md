@@ -159,6 +159,6 @@ npm run verify:update              # 核对 APK 基线与线上清单的差量
 
 安卓战斗掉帧（安卓浏览器和 APK 都掉，iOS 不卡）目前有一个待验证的候选：[Phaser PR #7420](https://github.com/phaserjs/phaser/pull/7420)。它改 `WebGLBufferWrapper.update`：动态缓冲区从偏移 0 上传时改用 `bufferData` 重新分配存储，让驱动丢弃旧缓冲，避免同一帧前面的 draw call 还在用的缓冲被复制或同步；`STATIC_DRAW` 和带偏移的局部更新保持原逻辑。早期版本 [PR #7345](https://github.com/phaserjs/phaser/pull/7345) 只做了每次 `bufferData` 重分配，没有处理局部更新，不要单独采用。
 
-现状：项目声明版本仍是 Phaser 4.2.1；两个 PR 都未合并，也没有安卓实测数据。开发服务 4003 目前临时把 #7420 打在 `node_modules/phaser/dist/phaser.esm.js` 上做对比验证（Vite 依赖已重新预打包），没有提交、没有部署，4002/APK 仍是 4.2.1 原版；重新安装 `phaser@4.2.1` 即可恢复。
+现状：项目声明版本仍是 Phaser 4.2.1；两个 PR 都未合并，也没有安卓实测数据。开发服务 4003 当前恢复为 4.2.1 原版做基线；要重新验证时，按 #7420 的 diff 临时打到 `node_modules/phaser/dist/phaser.esm.js`，清空 `node_modules/.vite` 后用 `npm run dev -- --force` 重启。这个临时补丁不提交、不部署，4002/APK 始终是 4.2.1 原版；重新安装 `phaser@4.2.1` 即可恢复。
 
 验证方式：同一台安卓设备、同一张地图和战斗，对比补丁前后的实际帧率。菜单和静态地图不掉、只有战斗掉且随同屏敌人/特效增加而变差，才更像这个补丁能解决的「批次缓冲复制」问题。确认有效后再考虑做成项目内持久补丁或等 Phaser 发版；没有提升就撤掉。
