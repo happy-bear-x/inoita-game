@@ -7,7 +7,7 @@ import { moneyText, splitMoney } from '../../domain/money.ts';
 import { itemDescriptionBody } from '../item-detail-lines.ts';
 import { INVENTORY_LABELS, INVENTORY_SIDE_FILTERS, matchesFilter, type InventoryFilter } from '../../domain/inventory.ts';
 
-import { shopLayout, tradeLayout, tradeMessageLayout, type ShopLayout } from '../shop-layout.ts';
+import { shopLayout, tradeLayout, tradeMessageLayout, tradeMessageScrollLayout, type ShopLayout } from '../shop-layout.ts';
 import { TEXT_COLORS } from '../text-style.ts';
 import { BAG_DESCRIPTION_WIDTH, DESCRIPTION_PANEL, descriptionPanel, SIDE_FILTER_TEXT_SIZE } from '../bag-layout.ts';
 import type { PlaceModal } from './modal-placement.ts';
@@ -225,6 +225,10 @@ export class ShopPanel {
     for(const spec of this.detailText)writer.add(spec);
   }
   renderModalText(writer:MenuTextWriter):void{for(const spec of this.modalText)writer.add(spec);}
+  /**
+   * 优先走菜单统一入口登记滚动区；没有 DOM 文字目标时退回 surface。
+   * 回退模式只保证内容不重叠，DOM 文字不会跟随滚动（生产路径始终提供 `text`）。
+   */
   private scrollAt(surface:UiSurface,name:string,x:number,y:number,width:number,height:number):ScrollArea{
     return this.text?.scroll(name,x,y,width,height,surface)??surface.scroll(x,y,width,height);
   }
@@ -343,8 +347,10 @@ export class ShopPanel {
     // 盖背包栏时右边缘让开右侧那一列分类按钮（BAG_DESCRIPTION_WIDTH），与背包页同一套规则。
     const covered=selection.kind==='buy'?this.layout.bagFrame:this.layout.leftFrame,
       panel=descriptionPanel(selection.kind==='buy'?BAG_DESCRIPTION_WIDTH:covered.width),left=covered.x,top=panel.y;
-    // 商店说明是侧栏、没有全屏遮罩，保持原来的可读底色。
-    drawDescriptionPanel(v,this.frames,left,top,panel.width,DESCRIPTION_PANEL.height,.85);
+    // 说明侧栏与背包共用不透明内容区，页面压暗交给菜单遮罩。
+    // 整块先铺透明拦截层，避免点击穿透到被盖住的货架/背包按钮。
+    v.rect(left,top,panel.width,DESCRIPTION_PANEL.height,0x000000,0).setInteractive();
+    drawDescriptionPanel(v,this.frames,left,top,panel.width,DESCRIPTION_PANEL.height);
     const member=this.viewedMember();
     const body=itemDescriptionBody({item,entry,numbers:this.store.characterStats.equipment[entry.item],catalog:this.store.characterStats,
       grades:this.catalog.grades,member,classNames:this.classNames,gemNames:entry.gems.map(id=>this.session.bag.catalog.items[id]?.name),skill:entry.skill?this.session.bag.catalog.skillDescriptions?.[entry.skill]:undefined,concealed:offer?.concealed});
@@ -453,16 +459,43 @@ export class ShopPanel {
    */
   private renderBox(v:UiSurface,lines:(string|undefined)[],confirm:()=>void,
     {total=0,disabled=false,cancel=true}:{total?:number;disabled?:boolean;cancel?:boolean}={}):void{
-    const shown=lines.filter(Boolean) as string[],box=tradeMessageLayout(shown.length,total>0),{button}=box;
+    const shown=(lines.filter(Boolean) as string[]).map(value=>{
+      const question=value.includes('？');
+      return{value,size:question?26:22,color:question?undefined:'#e9a08a'};
+    });
+    // 正文按实际换行高度量；超过原版 200 像素正文区时改用滚动布局。
+    const heights=shown.map(line=>{
+      const probe=v.text(line.value,0,0,410,line.size,line.color??'#ffffff');
+      const height=probe.height;probe.destroy();return height;
+    });
+    const contentHeight=heights.reduce((sum,height)=>sum+height,0)+Math.max(0,shown.length-1)*3;
+    // 正文区固定 200 高；有金额时下面还要留 34 高底板和 12 的间隔，正文只能用到 162。
+    const bodyCapacity=total>0?162:200;
+    const scrollLayout=contentHeight>bodyCapacity?tradeMessageScrollLayout(contentHeight,total>0):undefined;
+    const box=scrollLayout??tradeMessageLayout(shown.length,total>0,contentHeight),{button}=box;
     // 框从画布左上角开始画，居中交给锚点（按框高算），不再自己算垂直偏移。
     this.placeModal?.(box.width,box.height);
     drawPopupPanel(v,this.frames,box.width,box.height);
-    shown.forEach((value,line)=>{
-      const question=value.includes('？');
-      // 纵轴原点取顶边：布局里的 text.y 是问题行的上沿，与黑底的上边同一行。
-      this.addModal(`shop-confirm-line-${line}`,value,box.text.x,box.text.y+line*box.text.step,
-        question?26:22,question?undefined:'#e9a08a',.5,0,{width:410,align:'center',wrap:'word'});
-    });
+    if(scrollLayout){
+      const scroll=this.scrollAt(v,'shop-confirm',scrollLayout.body.x,scrollLayout.body.y,
+        scrollLayout.body.width,scrollLayout.body.height);
+      scroll.setHeight(contentHeight);scroll.scrollTop=0;
+      let y=scrollLayout.body.y;
+      shown.forEach((line,index)=>{
+        this.modalText.push({key:`shop-confirm-line-${index}`,text:line.value,x:scrollLayout.text.x,y,
+          style:{size:line.size,color:line.color,anchorX:.5,anchorY:0,width:410,align:'center',wrap:'word'},
+          scroll:'shop-confirm',clip:{top:scrollLayout.body.y,bottom:scrollLayout.body.y+scrollLayout.body.height}});
+        y+=heights[index]!+3;
+      });
+    } else {
+      let y=box.text.y;
+      shown.forEach((line,index)=>{
+        // 纵轴原点取顶边：布局里的 text.y 是问题行的上沿，与黑底的上边同一行。
+        this.addModal(`shop-confirm-line-${index}`,line.value,box.text.x,y,
+          line.size,line.color,.5,0,{width:410,align:'center',wrap:'word'});
+        y+=heights[index]!+3;
+      });
+    }
     if(total){
       v.textPlate(this.catalog.assets['text-plate-left'],this.catalog.assets['text-plate-right'],box.textPlate.x,box.textPlate.y,box.textPlate.width);
       this.money(v,total,box.money.x,box.money.y,'shop-confirm-money',true);

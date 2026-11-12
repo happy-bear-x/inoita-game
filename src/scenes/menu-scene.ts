@@ -8,10 +8,10 @@ import { TITLE_MESSAGE_ASSETS, titleMenuImages } from '../application/menu-image
 import { GOLD, UiSurface, type ScrollArea } from '../ui/phaser/widgets.ts';
 import { SceneUiAssets } from '../ui/phaser/ui-asset-host.ts';
 import { SAVE_BOARD, SAVE_BOARD_LAYOUT, drawSaveBoardRow, newestFirstSlots, saveBoardOrigin, saveRowTitle, setSaveBoardTextSink, type SaveBoardControl, type SaveBoardTextSpec } from '../ui/phaser/save-board.ts';
-import { MenuTextLayer, type MenuTextClip, type MenuTextPoint, type MenuTextSpec, type MenuTextWriter } from '../ui/dom/menu-text.ts';
+import { MenuTextLayer, type MenuTextClip, type MenuTextOcclude, type MenuTextPoint, type MenuTextSpec, type MenuTextWriter } from '../ui/dom/menu-text.ts';
 import type { DomLabel, DomUi } from '../ui/dom/dom-ui.ts';
 import { canvasCssScale } from '../ui/viewport.ts';
-import { drawNativeMessage } from '../ui/phaser/native-message.ts';
+import { drawNativeMessage, NATIVE_MESSAGE_EDGE, type NativeMessageBand } from '../ui/phaser/native-message.ts';
 import { centerModal } from '../ui/phaser/modal-placement.ts';
 import { CHANGELOG_LAYOUT, changelogMetrics, changelogVisibleRange } from '../ui/changelog-layout.ts';
 import { TextPrompt } from '../ui/text-prompt.ts';
@@ -75,6 +75,7 @@ export class MenuScene extends Phaser.Scene {
   private changelogOffsets:number[]=[];
   private changelogSpecs:MenuTextSpec[]=[];
   private changelogScroll?:ScrollArea;
+  private confirmBand?:NativeMessageBand;
   private changelogScrollTop=0;
   private changelogRequest?:AbortController;
   private changelogError='';
@@ -136,16 +137,25 @@ export class MenuScene extends Phaser.Scene {
       if(controller.signal.aborted)return;
       this.backdrop=new UiImage(this,undefined,art('background')).setOrigin(.5);
       // 遮罩同时拦掉底层输入；弹层在它上面，按钮仍然先命中。
-      this.popupMask=new UiNode(this).setSize(1,1).setFillStyle(0,.5).setDepth(150).setVisible(false).setInteractive();
+      this.popupMask=new UiNode(this).setSize(1,1).setFillStyle(0,.65).setDepth(150).setVisible(false).setInteractive();
       this.surface=new UiSurface(this,1200,640);this.modal=new UiSurface(this,1024,640,200);this.prompt=new TextPrompt();this.passwordPrompt=new PasswordChangePrompt();
       const domUi=this.domUi;
       if(domUi){
         // 更新日志画在弹层画布上，文字定位跟着弹层根节点；其它页面仍用标题页画布。
-        this.menuText=new MenuTextLayer(domUi,(x,y)=>this.changelogOpen?this.modalTextPoint(x,y):this.menuTextPoint(x,y),(page)=>this.menuScrollTop(page));
+        this.menuText=new MenuTextLayer(domUi,(x,y)=>this.menuTextPoint(x,y),(page)=>this.menuScrollTop(page),(x,y)=>this.modalTextPoint(x,y));
         for(const page of ['home','slots','settings','cloud'] as const){
-          this.menuText.register(page,writer=>{for(const spec of this.domSpecs)writer.add(spec);});
+          this.menuText.register(page,writer=>{
+            // 确认框打开时页面文字整体压暗，只让出横带矩形；弹层文字另走 modalLabels。
+            const occlude=this.confirmAction?this.confirmOcclusion():undefined;
+            for(const spec of this.domSpecs)writer.add(occlude?{...spec,dim:true,occlude}:spec);
+          });
         }
-        this.menuText.register('changelog',writer=>{for(const spec of this.changelogSpecs)writer.add(spec);});
+        this.menuText.register('changelog',writer=>{
+          // 更新日志盖住页面时，页面文字整体压暗，只让出日志面板；日志文字用弹层坐标。
+          const occlude=this.changelogOcclusion();
+          for(const spec of this.domSpecs)writer.add({...spec,dim:true,occlude});
+          for(const spec of this.changelogSpecs)writer.add(spec);
+        });
       }
       this.credentials=new CloudCredentialsInput({
         onAccount:value=>{this.cloudAccountInput=value;},
@@ -260,7 +270,7 @@ export class MenuScene extends Phaser.Scene {
   private changelogTitleSpec():MenuTextSpec {
     const {panel}=CHANGELOG_LAYOUT;
     return {key:'changelog-title',text:`${GAME_VERSION} 更新说明`,x:panel.x+panel.width/2,y:panel.y+42,
-      style:{size:28,color:GOLD,anchorX:.5,anchorY:.5,align:'center'}};
+      style:{size:28,color:GOLD,anchorX:.5,anchorY:.5,align:'center'},space:'modal'};
   }
   private changelogEntryText(index:number):string {
     return `${index+1}. ${this.changelogEntries[index]!}`;
@@ -270,7 +280,7 @@ export class MenuScene extends Phaser.Scene {
     const area=CHANGELOG_LAYOUT.scroll;
     this.changelogSpecs=[this.changelogTitleSpec(),{key:'changelog-message',text,x:area.x+area.width/2,y:area.y+area.height/2,
       style:{size:CHANGELOG_LAYOUT.textSize,color:GOLD,anchorX:.5,anchorY:.5,
-        width:area.width-40,align:'center',wrap:'word'}}];
+        width:area.width-40,align:'center',wrap:'word'},space:'modal'}];
   }
   /** 先量每条正文的实际高度，算出总高度；真正输出时只取可视范围。 */
   private renderChangelogEntries(v:UiSurface,scroll:ScrollArea,textSize:number):void{
@@ -297,7 +307,7 @@ export class MenuScene extends Phaser.Scene {
     for(let index=first;index<=last;index++)specs.push({key:`changelog-${index}`,text:this.changelogEntryText(index),
       x:area.x,y:area.y+this.changelogOffsets[index]!,
       style:{size:CHANGELOG_LAYOUT.textSize,color:GOLD,width:area.width,wrap:'word'},
-      scroll:'changelog',clip:{top:area.y,bottom:area.y+area.height}});
+      scroll:'changelog',clip:{top:area.y,bottom:area.y+area.height},space:'modal'});
     this.changelogSpecs=specs;
   }
 
@@ -322,6 +332,28 @@ export class MenuScene extends Phaser.Scene {
     if(!modal)return this.menuTextPoint(x,y);
     const matrix=modal.root.getWorldTransformMatrix(),point=matrix.transformPoint(x,y),css=canvasCssScale(this);
     return{x:point.x*css,y:point.y*css,scale:matrix.scaleX*css};
+  }
+  /** 确认横带在标题页画布坐标里的矩形；页面文字按它裁剪。 */
+  private confirmOcclusion():MenuTextOcclude|undefined {
+    const modal=this.modal,surface=this.surface,band=this.confirmBand;
+    if(!modal||!surface||!band)return undefined;
+    const matrix=surface.root.getWorldTransformMatrix(),origin=matrix.transformPoint(0,0),
+      point=(x:number,y:number)=>{const world=modal.root.getWorldTransformMatrix().transformPoint(x,y);
+        return{x:(world.x-origin.x)/matrix.scaleX,y:(world.y-origin.y)/matrix.scaleY};},
+      edge=NATIVE_MESSAGE_EDGE,
+      start=point(band.left,band.top-edge),end=point(band.left+band.width,band.top+band.height+edge);
+    return{left:start.x,top:start.y,right:end.x,bottom:end.y};
+  }
+  /** 更新日志面板在标题页画布坐标里的矩形；页面文字按它裁剪。 */
+  private changelogOcclusion():MenuTextOcclude|undefined {
+    const modal=this.modal,surface=this.surface;
+    if(!modal||!surface||!this.changelogOpen)return undefined;
+    const {panel}=CHANGELOG_LAYOUT;
+    const matrix=surface.root.getWorldTransformMatrix(),origin=matrix.transformPoint(0,0),
+      point=(x:number,y:number)=>{const world=modal.root.getWorldTransformMatrix().transformPoint(x,y);
+        return{x:(world.x-origin.x)/matrix.scaleX,y:(world.y-origin.y)/matrix.scaleY};},
+      start=point(panel.x,panel.y),end=point(panel.x+panel.width,panel.y+panel.height);
+    return{left:start.x,top:start.y,right:end.x,bottom:end.y};
   }
   /** 滚动文字按当前偏移重算；每次整页重画后指向新的滚动区。 */
   private menuScrollTop(page:string):number|undefined {
@@ -496,18 +528,18 @@ export class MenuScene extends Phaser.Scene {
       }
     }
     this.domSpecs=texts;
-    // 确认框盖住页面时先收起页面文字；确认框正文由独立的 DOM 标签绘制。
-    // 加载页会盖住画布，但 DOM 在画布之上；加载或挂起时页面文字必须让位。
+    // 确认框打开时页面文字继续输出并压暗，被横带盖住的部分让位；加载或挂起时整层收起。
     const modalOpen=this.confirmAction!==undefined||this.changelogOpen;
-    const textVisible=this.app.ui.ready&&!this.app.ui.suspended&&(this.changelogOpen||this.confirmAction===undefined);
+    const textVisible=this.app.ui.ready&&!this.app.ui.suspended;
     this.popupMask?.setVisible(modalOpen&&this.app.ui.ready&&!this.app.ui.suspended);
     if(!textVisible)for(const label of this.modalLabels)label.setVisible(false);
     this.clearModalLabels();
+    this.confirmBand=undefined;
     if(this.confirmAction){
       const action=this.confirmAction,modal=this.modal!;
       // 先按父画布的缩放放好弹层，横带才能按实际可见范围铺满屏幕。
       centerModal(modal,view,1024,640);
-      drawNativeMessage(modal,TITLE_MESSAGE_ASSETS,action.message,()=>action.accept(),()=>action.cancel(),this.modalTextWriter());
+      this.confirmBand=drawNativeMessage(modal,TITLE_MESSAGE_ASSETS,action.message,()=>action.accept(),()=>action.cancel(),this.modalTextWriter());
     }
     if(this.changelogOpen&&this.modal){
       centerModal(this.modal,view,1024,640);
@@ -528,10 +560,14 @@ export class MenuScene extends Phaser.Scene {
       const point=this.modalTextPoint(spec.x,spec.y),scale=point.scale;
       const anchorX=spec.style.anchorX??0,anchorY=spec.style.anchorY??0;
       const label=domUi.label('screen','dom-label dom-native-message',{x:anchorX,y:anchorY});
+      // 标题页确认框的正文是固定短句；万一超过横带，至少按横带可视高度裁住，不让文字压到按钮。
+      const maxHeight=spec.clip?Math.max(0,(spec.clip.bottom-spec.clip.top)*scale):undefined;
       label.setText(spec.text).setPosition(point.x,point.y).setStyle({
         fontSize:`${spec.style.size*scale}px`,color:spec.style.color??'#ffffff',textAlign:spec.style.align??'center',
         width:spec.style.width===undefined?undefined:`${spec.style.width*scale}px`,
-        lineHeight:`${(spec.style.lineHeight??spec.style.size+5)*scale}px`,whiteSpace:'pre-wrap'
+        lineHeight:`${(spec.style.lineHeight??spec.style.size+5)*scale}px`,whiteSpace:'pre-wrap',
+        maxHeight:maxHeight===undefined?undefined:`${maxHeight.toFixed(2)}px`,overflow:maxHeight===undefined?undefined:'hidden',
+        zIndex:'2'
       });
       this.modalLabels.push(label);
     }};
@@ -936,6 +972,8 @@ export class MenuScene extends Phaser.Scene {
     this.popupMask?.setSize(this.scale.width,this.scale.height);
     this.surface?.layout();
     if(this.surface&&this.modal&&(this.confirmAction!==undefined||this.changelogOpen))centerModal(this.modal,this.surface,1024,640);
+    // 弹层里的滚动区（更新日志、长提示）跟着弹层位置和缩放重排。
+    this.modal?.scrolls.forEach(scroll=>scroll.layout());
     this.syncCredentials();
     // 画布缩放或安全区变化后，DOM 文字的 CSS 坐标和字号要跟着重算。
     this.menuText?.refresh();

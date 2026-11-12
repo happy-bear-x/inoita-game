@@ -106,9 +106,13 @@ export class PartyPanel {
     // 成功时队伍变更已经通过 session 通知重画过；只有失败要本地重画显示错误。
     if(failed)this.changed();
   }
-  /** 页面或弹层文字交给菜单 DOM 层；弹层坐标由宿主的包装器换算。 */
+  /** 页面文字交给菜单 DOM 层；弹层打开时页面文字仍输出，由宿主统一压暗和裁剪。 */
   renderText(writer:MenuTextWriter):void{
-    for(const spec of this.modal?this.modalText:this.pageText)writer.add(spec);
+    for(const spec of this.pageText)writer.add(spec);
+  }
+  /** 弹层文字仍是弹层本地坐标，由宿主的包装器换算。 */
+  renderModalText(writer:MenuTextWriter):void{
+    for(const spec of this.modalText)writer.add(spec);
   }
   private text(key:string,value:string,x:number,y:number,size:number,color=GOLD,anchorX=0,anchorY=0,
     style:Partial<MenuTextSpec['style']>={}):void{
@@ -280,7 +284,7 @@ export class PartyPanel {
     const modal=this.modal!,member=this.member(modal.id);if(!member){this.modal=undefined;return;}
     const panels=this.app.menuPanels;
     this.placeModal?.(718,415);
-    v.frame(panels.assets,0,0,718,415);
+    v.frame(panels.assets,0,0,718,415,1);
     if(modal.kind==='dismiss'){
       v.imageCover(this.portrait(modal.id),38,66,127,114,v.root,.5,.2);
       this.modalEntry('dismiss-title',`确定放逐 ${this.name(modal.id)}？`,196,70,25,GOLD,0,0,{width:470,wrap:'word'});

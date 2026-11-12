@@ -7,7 +7,7 @@ import type { WorldIndex } from '../domain/content.ts';
 import type { StoryUIContext } from '../application/ports.ts';
 import type { SaveWorldReason, StoryWorldViewSnapshot } from '../scenes/world-scene.ts';
 import { SAVE_BOARD, SAVE_BOARD_LAYOUT, drawSaveBoardRow, newestFirstSlots, saveBoardOrigin, saveRowTitle, type SaveBoardRow } from './phaser/save-board.ts';
-import { drawNativeMessage } from './phaser/native-message.ts';
+import { drawNativeMessage, type NativeMessageBand } from './phaser/native-message.ts';
 import type { ScrollArea, UiSurface } from './phaser/widgets.ts';
 import type { MenuTextWriter } from './dom/menu-text.ts';
 import { TextPrompt } from './text-prompt.ts';
@@ -60,6 +60,7 @@ export class SavePage {
   private loadConfirm?: SaveSlotRef;
   private deleteConfirm?: SaveSlotRef;
   private renameRef?: SaveSlotRef;
+  private messageBand?: NativeMessageBand;
   private readonly prompt = new TextPrompt();
   private readonly host: SavePageHost;
 
@@ -74,6 +75,11 @@ export class SavePage {
   /** 确认框会盖在页面之上，走菜单公共弹层。 */
   get modalOpen(): boolean {
     return this.saveConfirm !== undefined || this.loadConfirm !== undefined || this.deleteConfirm !== undefined;
+  }
+
+  /** 确认横带的弹层本地上下边界；菜单用它裁剪底层页面文字。 */
+  get band(): NativeMessageBand | undefined {
+    return this.messageBand;
   }
 
   get renaming(): boolean {
@@ -98,27 +104,33 @@ export class SavePage {
   /** 确认框由菜单的公共弹层画；三个确认只按用户打开的顺序存在一个。 */
   renderConfirmations(): void {
     const app = this.host.app;
+    this.messageBand = undefined;
     if (this.loadConfirm !== undefined) {
       const slot = this.loadConfirm;
       this.host.beginModal(1024, 640);
-      drawNativeMessage(this.host.modal(), app.menuPanels.assets, '读取存档将丢失当前未保存的进度，确定读取？',
+      this.messageBand = drawNativeMessage(this.host.modal(), app.menuPanels.assets, '读取存档将丢失当前未保存的进度，确定读取？',
         () => { this.loadConfirm = undefined; void this.loadFromSlot(slot); },
-        () => { this.loadConfirm = undefined; this.host.render(); }, this.host.modalWriter());
+        () => { this.loadConfirm = undefined; this.host.render(); }, this.host.modalWriter(), this.messageScroll());
     }
     if (this.saveConfirm !== undefined) {
       const slot = this.saveConfirm;
       this.host.beginModal(1024, 640);
-      drawNativeMessage(this.host.modal(), app.menuPanels.assets, '这个存档槽里已经有存档，确定覆盖？',
+      this.messageBand = drawNativeMessage(this.host.modal(), app.menuPanels.assets, '这个存档槽里已经有存档，确定覆盖？',
         () => { this.saveConfirm = undefined; void this.saveToSlot(slot); },
-        () => { this.saveConfirm = undefined; this.host.render(); }, this.host.modalWriter());
+        () => { this.saveConfirm = undefined; this.host.render(); }, this.host.modalWriter(), this.messageScroll());
     }
     if (this.deleteConfirm !== undefined) {
       const slot = this.deleteConfirm;
       this.host.beginModal(1024, 640);
-      drawNativeMessage(this.host.modal(), app.menuPanels.assets, '删除后无法恢复，确定删除这个存档？',
+      this.messageBand = drawNativeMessage(this.host.modal(), app.menuPanels.assets, '删除后无法恢复，确定删除这个存档？',
         () => this.deleteSlot(slot),
-        () => { this.deleteConfirm = undefined; this.host.render(); }, this.host.modalWriter());
+        () => { this.deleteConfirm = undefined; this.host.render(); }, this.host.modalWriter(), this.messageScroll());
     }
+  }
+
+  /** 确认框正文过长时在弹层里滚动；滚动区仍走菜单统一登记入口。 */
+  private messageScroll(): { scroll(name: string, x: number, y: number, width: number, height: number): ScrollArea } {
+    return { scroll: (name, x, y, width, height) => this.host.scroll(name, x, y, width, height, this.host.modal()) };
   }
 
   /** Escape 只关最上层的存档确认；返回 true 表示这次按键已处理。 */

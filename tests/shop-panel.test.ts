@@ -81,7 +81,7 @@ class Surface {
     const before=this.calls[index-1];
     return call.kind==='border'&&!!before&&before.kind==='rect'&&before.color===0;});}
   /** 说明面板的内缩黑底：`GRPX_FillRectAlpha(...,0xff000000,60)` 的矩形。 */
-  get descriptionFills(){return this.calls.filter(call=>call.kind==='rect'&&call.color===0&&call.alpha===.85);}
+  get descriptionFills(){return this.calls.filter(call=>call.kind==='rect'&&call.color===0&&call.alpha===1);}
   /** 面板上不画字的按钮（关闭钮）用 `setData('label')` 标身份，所以两种标签都要认。 */
   get buttons(){return this.calls.filter(call=>call.kind==='button'&&(call.label!==''||call.node?.label));}
 }
@@ -175,10 +175,10 @@ test('shop layout keeps the native panel geometry',()=>{
   assert.equal(descriptionPanel(462).menu.width,377+20,'变宽时菜单行右侧留边不变');
   assert.equal(DESCRIPTION_PANEL.height,431);
   // 面板自带底色：内缩 10 取原版（UIDesc_Draw 的 GRPX_FillRectAlpha 参数 0x3c=60），
-  // 不透明度按观感提到 85%，靠面板自己压住下面的格子与图标。
+  // 内容区不透明，页面压暗由菜单弹层遮罩统一负责。
   assert.equal(DESCRIPTION_PANEL.inset,10);
   assert.equal(DESCRIPTION_PANEL.background,0x000000);
-  assert.equal(DESCRIPTION_PANEL.backgroundAlpha,.85);
+  assert.equal(DESCRIPTION_PANEL.backgroundAlpha,1);
   // 物品名在面板顶上，不在滚动区里：落点 (20,22)、右边留 82 给关闭按钮。
   assert.deepEqual(DESCRIPTION_PANEL.title,{x:20,y:22,right:82,size:24});
   assert.deepEqual(DESCRIPTION_PANEL.scroll,{x:20,y:60,width:358,height:258});
@@ -450,7 +450,8 @@ test('trade follows the native steps: description, quantity box, then confirmati
   // 数量框确认后是只有文字、金额与两个按钮的确认框，金额显示单价×数量。
   (boxButton(surface,'确定').action as ()=>void)();draw();
   // 框从画布左上角开始画，垂直居中交给锚点；桩 Surface 不传父画布，所以只看框内坐标。
-  const message=tradeMessageLayout(1,true),boxTop=0;
+  // 桩文字高 24；确认框按实测正文高定位金额，和面板实际绘制用同一口径。
+  const message=tradeMessageLayout(1,true,24),boxTop=0;
   assert.deepEqual(popupFrame(surface),nativePopupFrame(450,message.height));
   assert.equal(textSpecs(texts,'确定购买 恢复药水（小）？','modal').length,1);
   // 面板本身的金币仍在 (518,365)，弹层里的金额画在弹层画布坐标上。
@@ -483,6 +484,19 @@ test('each dialog centres its own box in the menu canvas',()=>{
   const message=tradeMessageLayout(1,true);
   assert.equal(message.height,quantity.height,'确认框与数量框同为原版的 450×350');
   assert.deepEqual([surface.root.x,surface.root.y],centred(message.width,message.height),'确认框按自己的尺寸居中');
+});
+
+test('long confirm text scrolls inside the opaque box and keeps the buttons below it',()=>{
+  const {surface,panel,texts}=open('merchandise-dealer-b09d9585');
+  const renderBox=(panel as unknown as {renderBox:(v:Surface,lines:(string|undefined)[],confirm:()=>void,options:{total?:number})=>void}).renderBox;
+  surface.calls=[];
+  renderBox.call(panel,surface,Array.from({length:12},(_,index)=>`第 ${index} 行很长的确认说明`),()=>{}, {total:123});
+  const scroll=surface.calls.find(call=>call.kind==='scroll'&&call.width===410);
+  assert.ok(scroll,'正文超过可用高度时建立滚动区');
+  assert.ok((scroll.height as number)<=200,'滚动区不压到按钮行');
+  assert.equal(boxButton(surface,'确定').y,275,'按钮行仍固定在框底');
+  texts.modal=[];panel.renderModalText({add:spec=>texts.modal.push(spec as unknown as Record<string,unknown>)});
+  assert.ok(texts.modal.some(spec=>spec.scroll==='shop-confirm'&&spec.clip),'弹层文字跟随滚动区裁剪');
 });
 
 test('non-stackable and unsellable items skip the quantity box',()=>{

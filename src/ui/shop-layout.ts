@@ -98,16 +98,35 @@ export const tradeLayout = {
  * 自上而下是问题行、可选的提示行、可选的金额：正文在黑底上半区（35 到 235）里纵向居中，
  * 金额紧接正文、带原版 377 宽的文本底板并与底板左端对齐。
  */
-export function tradeMessageLayout(lines:number, hasMoney:boolean) {
+export function tradeMessageLayout(lines:number, hasMoney:boolean, contentHeight?:number) {
   const width = 450, step = 34, gap = 12, plateHeight = 34, buttonHeight = 55;
-  const block = Math.max(1, lines) * step + (hasMoney ? gap + plateHeight : 0);
+  const textBlock = contentHeight ?? Math.max(1, lines) * step;
+  const block = textBlock + (hasMoney ? gap + plateHeight : 0);
   const height = Math.max(235, block) + 115;
   const textY = Math.round(TRADE_INSET + Math.max(0, 235 - TRADE_INSET - block) / 2);
-  const plateY = textY + block - (hasMoney ? plateHeight : 0);
+  const plateY = textY + textBlock + (hasMoney ? gap : 0);
   return {
     width, height,
     plate:{x:TRADE_INSET, y:TRADE_INSET, width:width-TRADE_INSET*2, height:height-TRADE_INSET*2},
     text:{x:width/2, y:textY, step},
+    textPlate:{x:Math.round((width-MESSAGE_PLATE_WIDTH)/2), y:plateY, width:MESSAGE_PLATE_WIDTH},
+    money:{x:Math.round((width-MESSAGE_PLATE_WIDTH)/2), y:plateY+3},
+    button:{width:125, height:buttonHeight, y:275, left:45, right:280},
+  };
+}
+
+/**
+ * 确认框正文超过原版 200 像素正文区时的布局：框仍按 450×350，按钮留在 275，
+ * 正文改成可滚动区；有金额时把它固定在正文下方，避免被长文本顶出框外。
+ */
+export function tradeMessageScrollLayout(contentHeight:number, hasMoney:boolean) {
+  const width=450, height=350, buttonHeight=55;
+  const bodyTop=TRADE_INSET, bodyBottom=hasMoney?197:235, plateY=hasMoney?201:bodyBottom;
+  return {
+    width, height, contentHeight,
+    plate:{x:TRADE_INSET, y:TRADE_INSET, width:width-TRADE_INSET*2, height:height-TRADE_INSET*2},
+    body:{x:20, y:bodyTop, width:410, height:Math.max(1, bodyBottom-bodyTop)},
+    text:{x:width/2, y:bodyTop, step:34},
     textPlate:{x:Math.round((width-MESSAGE_PLATE_WIDTH)/2), y:plateY, width:MESSAGE_PLATE_WIDTH},
     money:{x:Math.round((width-MESSAGE_PLATE_WIDTH)/2), y:plateY+3},
     button:{width:125, height:buttonHeight, y:275, left:45, right:280},

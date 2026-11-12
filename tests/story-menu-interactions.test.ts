@@ -299,6 +299,8 @@ test('character allocation uses native arrow art and keeps points in the allocat
   const close=f.scene.button('确认属性加点');
   assert.equal(`interface:${close.getData('face').getData('file')}`,`interface:${panels.assets.confirm}`);
   f.scene.click(close);assert(!f.scene.canHit(f.scene.button('增加力量')),'确认框阻止底层加点');
+  const tab=domLabel(f,'人物');assert.ok(tab,'加点确认打开时页签文字仍在');
+  assert.equal(tab.style.opacity,'0.35','页面文字随弹层压暗');
   f.scene.click(f.scene.button('取消'));
   assert.deepEqual(f.hero.panel.attributes,before);assert.equal(f.hero.statPoints,points);
   f.scene.click(f.scene.button('查看属性加点'));f.scene.click(f.scene.button('增加力量'));
@@ -1442,7 +1444,11 @@ test('party and shop modal placement survives StoryUI sync and resize in either 
   for (const order of [['party', 'shop'], ['shop', 'party']] as const) {
     const f = fixture(); t.after(f.cleanup); const member = f.recruit(); f.session.party!.reserve(member.id);
     for (const kind of order) {
-      if (kind === 'party') { f.menu.show('party'); f.scene.click(f.scene.button(member.definition.name)); f.scene.click(f.scene.button('放逐')); }
+      if (kind === 'party') {
+        f.menu.show('party'); f.scene.click(f.scene.button(member.definition.name)); f.scene.click(f.scene.button('放逐'));
+        const tab=domLabel(f,'人物');assert.ok(tab,'队伍弹层打开时页签文字仍在');
+        assert.equal(tab.style.opacity,'0.35','页面文字随队伍弹层压暗');
+      }
       else f.menu.debugShop(f.app.shops.lampShop, 'quantity');
       const expected = kind === 'party' ? { x: 153, y: 112.5 } : { x: 287, y: 145 };
       const centered = () => {
@@ -1728,6 +1734,8 @@ test('save page writes the loaded world into the chosen slot and asks before ove
   const bytes=JSON.stringify(f.app.saves.inspect(1));
   f.scene.click(f.scene.button('存档槽 2'));
   assert(domTexts(f).includes('这个存档槽里已经有存档，确定覆盖？'));
+  const pageTitle=domLabel(f,'存档槽');assert.ok(pageTitle,'确认框打开时页面标题仍在');
+  assert.equal(pageTitle.style.opacity,'0.35','页面文字随确认横带压暗');
   // 确认层铺满整屏：花纹从屏幕左缘平铺，最后一格覆盖到右缘之外由画布裁掉。
   const edgeKey=`interface:${f.app.menuPanels.assets['message-edge']}`;
   const edges=f.scene.nodes.filter(node=>node.shown&&`interface:${node.getData('file')}`===edgeKey);
@@ -2493,6 +2501,10 @@ test('the discard dialog keeps the bag text outside the popup', t => {
   assert.ok(labels.some(label=>label.text==='人物'),'顶部页签文字仍然显示');
   assert.ok(labels.some(label=>label.text==='武器'),'背包分类文字仍然显示');
   assert.ok(labels.some(label=>label.text==='丢弃物品'),'弹层标题仍然显示');
+  const title=domLabel(f,'技能初始化卷轴');
+  assert.ok(title,'左侧说明标题仍然存在，没有被整条删除');
+  assert.equal(title.style.opacity,'0.35','页面文字跟着弹层一起压暗');
+  assert.ok(String(title.style.clipPath??'').startsWith('inset('),'被弹层盖住的部分按实际宽度裁剪');
 });
 
 test('key binding editor keeps its text inside the framed page', t => {

@@ -7,7 +7,7 @@ import type {StoryWorldViewSnapshot} from '../src/scenes/world-scene.ts';
 import type {CloudSaveEntry,CloudSavePort,CloudSession} from '../src/application/cloud-save.ts';
 import {CLOUD_PAGE} from '../src/ui/cloud-save-layout.ts';
 import {InputRouter} from '../src/application/input-router.ts';
-import {MenuTextLayer,type MenuTextSpec} from '../src/ui/dom/menu-text.ts';
+import {MenuTextLayer,type MenuTextOcclude,type MenuTextSpec} from '../src/ui/dom/menu-text.ts';
 import type {DomUi} from '../src/ui/dom/dom-ui.ts';
 const hook=registerHooks({resolve(specifier,context,next){return specifier==='phaser'?{url:'data:text/javascript,export default {Scene:class{},BlendModes:{}}',shortCircuit:true}:next(specifier,context);}});
 const {MenuScene}=await import('../src/scenes/menu-scene.ts');
@@ -93,6 +93,8 @@ function fixture(gmMode?:MenuContext['gmMode'],cloud?:CloudSavePort){
   // 直接借用 MenuScene.prototype 的假场景不会跑字段初始化；这里补上新加的私有状态，
   // 尤其是 cloudSerial（`++undefined` 会变成 NaN，后续请求代次比较全部失败）。
   const state={app,surface:view,modal,page:'home',cloudSerial:0,cloudBusy:false,cloudAccountInput:'',cloudPassword:'',
+    // DOM 文字按画布倍率换算；标题页测试也补齐 Phaser ScaleManager 的 `zoom`。
+    scale:{width:1200,height:640,zoom:1,on(){},off(){}},
     cloudStatus:undefined,cloudCount:undefined,cloudRequest:undefined,confirmAction:undefined,confirmResolve:undefined,
     renameRef:undefined,slotRequest:undefined,slotPortraits:undefined,prompt:undefined,settingsScroll:0,backdrop:undefined,
     challengeClicks:0,challengeTimer:undefined,
@@ -101,13 +103,21 @@ function fixture(gmMode?:MenuContext['gmMode'],cloud?:CloudSavePort){
     changelogOffsets:[] as number[],changelogSpecs:[] as MenuTextSpec[],changelogScroll:undefined as FakeScroll|undefined,
     changelogScrollTop:0,changelogRequest:undefined as AbortController|undefined,changelogError:'',
     sys:{isActive:()=>true},textures:{exists:()=>true}};
-  const menuText=new MenuTextLayer(domUi as unknown as Pick<DomUi,'label'>,(x,y)=>({x,y,scale:1}),
-    page=>page==='changelog'?state.changelogScroll?.scrollTop:undefined);
-  for(const page of ['home','slots','settings','cloud'] as const)menuText.register(page,writer=>{for(const spec of state.domSpecs)writer.add(spec);});
-  menuText.register('changelog',writer=>{for(const spec of state.changelogSpecs)writer.add(spec);});
-  state.menuText=menuText;
   const scene=Object.setPrototypeOf(state,MenuScene.prototype);
   const call=(name:string,...args:unknown[])=>Reflect.get(MenuScene.prototype,name).call(scene,...args);
+  const menuText=new MenuTextLayer(domUi as unknown as Pick<DomUi,'label'>,(x,y)=>({x,y,scale:1}),
+    page=>page==='changelog'?state.changelogScroll?.scrollTop:undefined);
+  // 与 MenuScene.attach 的注册保持一致：确认框压暗页面文字，更新日志混用页面/弹层坐标。
+  for(const page of ['home','slots','settings','cloud'] as const)menuText.register(page,writer=>{
+    const occlude=state.confirmAction?call('confirmOcclusion') as MenuTextOcclude|undefined:undefined;
+    for(const spec of state.domSpecs)writer.add(occlude?{...spec,dim:true,occlude}:spec);
+  });
+  menuText.register('changelog',writer=>{
+    const occlude=call('changelogOcclusion') as MenuTextOcclude|undefined;
+    for(const spec of state.domSpecs)writer.add({...spec,dim:true,occlude});
+    for(const spec of state.changelogSpecs)writer.add(spec);
+  });
+  state.menuText=menuText;
   const clickIn=(surface:ReturnType<typeof fakeView>,label:string)=>{
     const node=surface.buttons.find(button=>button.getData('label')===label);
     assert.ok(node,label);assert.equal(node.input.enabled,true);(node.getData('action') as ()=>void)();
@@ -130,6 +140,8 @@ test('title changelog loads on demand and only renders visible entries',async()=
   assert.ok(f.domTexts().includes('正在加载更新日志…'));
   await new Promise(resolve=>setImmediate(resolve));
   assert.ok(f.domTexts().includes('v1.0.2 更新说明'),'顶部居中显示版本号和更新说明');
+  assert(f.domLabels.some(label=>label.visible&&!label.removed&&label.style.opacity==='0.35'),
+    '更新日志打开时页面文字压暗而不是消失');
   const labels=()=>f.domTexts().filter(text=>/^\d+\. 第 /.test(text));
   assert.ok(labels().some(text=>text.includes('第 1 条')),'首条可见');
   assert.ok(labels()[0]!.startsWith('1. '),'条目前带序号');
@@ -207,6 +219,8 @@ test('title slots delete a manual save only after the native confirmation',()=>{
   // 确认之前不动存档，底下的存档页也不接受输入。
   assert.equal(f.entries.has('inotia4.story.v1.slot0'),true);
   assert(f.domTexts().includes('删除后无法恢复，确定删除这个存档？'));
+  assert(f.domLabels.some(label=>label.visible&&!label.removed&&label.style.opacity==='0.35'),
+    '确认框打开时页面文字压暗而不是消失');
   assert.equal(f.view.enabled(),false,'确认框打开时存档页不接受输入');
   f.clickModal('否');
   assert.equal(f.entries.has('inotia4.story.v1.slot0'),true);

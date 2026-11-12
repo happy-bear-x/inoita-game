@@ -29,6 +29,55 @@ test('HUD controls stop pointer starts before they reach the game window listene
   assert.equal(windowed,0,'不再冒泡到 Phaser 的 window 监听');
 });
 
+test('dimmed page text stays in the DOM and only clips the side covered by the popup',()=>{
+  const dom=new DomUi(),labels:ReturnType<DomUi['label']>[]=[];
+  const layer=new MenuTextLayer({label:(...args)=>{const label=dom.label(...args);labels.push(label);return label;}},(x,y)=>({x,y,scale:1}),()=>0);
+  layer.register('page',writer=>{
+    writer.add({key:'page',text:'装备说明',x:10,y:10,style:{size:20,width:100},dim:true,
+      occlude:{left:60,top:0,right:200,bottom:40}});
+    writer.add({key:'popup',text:'确认',x:10,y:60,style:{size:20}});
+  });
+  layer.renderPage('page');
+  const page=labels[0]!,popup=labels[1]!;
+  assert.equal(page.element.style.opacity,'0.35','页面文字整体压暗');
+  assert.equal(page.element.style.clipPath,'inset(0 50.00px 0 0)','只裁掉弹层盖住的右边一段');
+  assert.equal(popup.element.style.opacity,'','弹层文字保持原亮度');
+  assert.equal(popup.element.style.clipPath,'');
+  layer.destroy();
+});
+
+test('full-width popups clip only the covered rows of a multi-line label',()=>{
+  const dom=new DomUi(),labels:ReturnType<DomUi['label']>[]=[];
+  const layer=new MenuTextLayer({label:(...args)=>{const label=dom.label(...args);labels.push(label);return label;}},(x,y)=>({x,y,scale:1}),()=>0);
+  layer.register('page',writer=>writer.add({key:'page',text:'第一行第二行第三行',x:10,y:10,
+    style:{size:20,width:100},dim:true,occlude:{left:0,top:30,right:200,bottom:60}}));
+  layer.renderPage('page');
+  assert.equal(labels[0]!.element.style.clipPath,'inset(0 0 30.00px 0)','只裁掉被横带盖住的下半段');
+  assert.equal(labels[0]!.element.style.opacity,'0.35');
+  layer.destroy();
+});
+
+test('a corner-covered multi-line label keeps the rows outside the popup',()=>{
+  const dom=new DomUi(),labels:ReturnType<DomUi['label']>[]=[];
+  const layer=new MenuTextLayer({label:(...args)=>{const label=dom.label(...args);labels.push(label);return label;}},(x,y)=>({x,y,scale:1}),()=>0);
+  layer.register('page',writer=>writer.add({key:'page',text:'第一行第二行第三行',x:10,y:10,
+    style:{size:20,width:100},dim:true,occlude:{left:60,top:30,right:200,bottom:60}}));
+  layer.renderPage('page');
+  assert.equal(labels[0]!.element.style.clipPath,
+    'polygon(0 0, 100px 0, 100px 20px, 50px 20px, 50px 50px, 0 50px)','只切掉右下角被盖住的一块');
+  layer.destroy();
+});
+
+test('a label partially outside a scroll viewport stays visible for the browser to clip',()=>{
+  const dom=new DomUi(),labels:ReturnType<DomUi['label']>[]=[];
+  const layer=new MenuTextLayer({label:(...args)=>{const label=dom.label(...args);labels.push(label);return label;}},(x,y)=>({x,y,scale:1}),()=>0);
+  layer.register('page',writer=>writer.add({key:'page',text:'刚滚出上沿',x:10,y:10,
+    style:{size:20,width:100},scroll:'list',clip:{top:20,bottom:100}}));
+  layer.renderPage('page');
+  assert.equal(labels[0]!.element.hidden,false,'标签顶部只露出一点时仍交给裁剪容器');
+  layer.destroy();
+});
+
 test('reused menu text updates and clears its contrast background',()=>{
   const dom=new DomUi(),labels:ReturnType<DomUi['label']>[]=[];
   const layer=new MenuTextLayer({label:(...args)=>{const label=dom.label(...args);labels.push(label);return label;}},(x,y)=>({x,y,scale:1}),()=>0);

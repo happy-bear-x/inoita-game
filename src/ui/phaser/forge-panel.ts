@@ -9,7 +9,7 @@ import { bagLayout } from '../bag-layout.ts';
 import { TEXT_COLORS } from '../text-style.ts';
 import { SLOT, SLOT_STRIDE } from '../item-layout.ts';
 import { ENHANCEMENT_ODDS_ROW_STRIDE, ENHANCEMENT_ODDS_ROW_TOP, ENHANCEMENT_ODDS_TOP, enhancementOddsView, type EnhancementOutcomeTone } from '../enhancement-odds-lines.ts';
-import { drawNativeMessage } from './native-message.ts';
+import { drawNativeMessage, type NativeMessageBand } from './native-message.ts';
 import type { UiSurface, ScrollArea } from './widgets.ts';
 import { GOLD } from './widgets.ts';
 import type { MenuTextSpec, MenuTextWriter } from '../dom/menu-text.ts';
@@ -37,7 +37,7 @@ export class ForgePanel {
   private selectedItem?:string;private socketIndex?:number;private replaceIndex?:number;
   private offset=0;private leftOffset=0;
   private confirmation?:Confirmation;private scroll?:ScrollArea;private leftScroll?:ScrollArea;
-  private pageText:MenuTextSpec[]=[];private modalText:MenuTextSpec[]=[];
+  private pageText:MenuTextSpec[]=[];private modalText:MenuTextSpec[]=[];private band?:NativeMessageBand;
   private text?:ForgeTextTarget;
   /** 左框可滚动区从 (0,0) 开始，正文坐标就是内容坐标。 */
   private static readonly LEFT_CLIP={top:0,bottom:431};
@@ -48,6 +48,8 @@ export class ForgePanel {
     this.changed=changed;this.sound=sound;this.notify=notify;this.preview=preview;
   }
   get confirming():boolean{return !!this.confirmation;}
+  /** 原生提示横带在弹层本地坐标里的上下边界；页面文字按它让位。 */
+  get messageBand():NativeMessageBand|undefined{return this.band;}
   /** 强化台自己的显式状态，供页面签名使用。 */
   get viewModel():{targetId?:string;tab:ForgeTab;confirming:boolean}{return {targetId:this.targetId,tab:this.tab,confirming:this.confirming};}
   open(targetId:string,tab:ForgeTab='enchant'):void {
@@ -81,7 +83,7 @@ export class ForgePanel {
   renderText(writer:MenuTextWriter):void {for(const spec of this.pageText)writer.add(spec);}
   renderModalText(writer:MenuTextWriter):void {for(const spec of this.modalText)writer.add(spec);}
   render(v:UiSurface,modal:UiSurface,placeModal:(width:number,height:number)=>void,text?:ForgeTextTarget):void {
-    this.pageText=[];this.modalText=[];this.text=text;this.surface=v;
+    this.pageText=[];this.modalText=[];this.band=undefined;this.text=text;this.surface=v;
     const assets=this.panels.assets;
     v.border(assets,10,0,462,431);drawBagRail(v,assets);
     this.scroll=undefined;this.leftScroll=undefined;
@@ -379,7 +381,8 @@ export class ForgePanel {
       :'替换后旧宝石会回到背包，装备上的属性会改为新宝石。确定替换？';
     placeModal(1024,640);
     const writer:MenuTextWriter={add:spec=>this.modalText.push(spec)};
-    drawNativeMessage(modal,this.panels.assets,message,()=>this.confirm(),()=>this.cancelConfirmation(),writer);
+    this.band=drawNativeMessage(modal,this.panels.assets,message,()=>this.confirm(),()=>this.cancelConfirmation(),writer,
+      this.text?{scroll:(name,x,y,width,height)=>this.text!.scroll(name,x,y,width,height,modal)}:undefined);
   }
   private confirm():void {
     const confirmation=this.confirmation,targetId=this.targetId;

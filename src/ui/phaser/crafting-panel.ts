@@ -13,7 +13,7 @@ import {inventoryView,INVENTORY_SIDE_FILTERS,INVENTORY_LABELS,type InventoryView
 import {bagLayout} from '../bag-layout.ts';
 import {TEXT_COLORS} from '../text-style.ts';
 import {moneyText,splitMoney} from '../../domain/money.ts';
-import {drawNativeMessage} from './native-message.ts';
+import {drawNativeMessage, type NativeMessageBand} from './native-message.ts';
 import type {UiSurface,ScrollArea} from './widgets.ts';
 import {GOLD} from './widgets.ts';
 import type {MenuTextSpec,MenuTextWriter} from '../dom/menu-text.ts';
@@ -35,10 +35,13 @@ export class CraftingPanel {
   bagScroll?:ScrollArea;private recipeScroll?:ScrollArea;drops:CraftingDrop[]=[];
   private message?:string;private confirmation?:Confirmation;private committing=false;
   private pageText:MenuTextSpec[]=[];private modalText:MenuTextSpec[]=[];private text?:CraftingTextTarget;
+  private band?:NativeMessageBand;
   private surface?:UiSurface;
   private readonly changed:()=>void;private readonly sound:()=>void;
   constructor(crafting:EquipmentCrafting,panels:MenuPanels,changed:()=>void,sound:()=>void,grades:ShopCatalog['grades']=[]){this.grades=grades;this.crafting=crafting;this.panels=panels;this.changed=changed;this.sound=sound;}
   get modalOpen():boolean{return !!this.message||!!this.confirmation;}
+  /** 原生提示横带在弹层本地坐标里的上下边界；页面文字按它让位。 */
+  get messageBand():NativeMessageBand|undefined{return this.band;}
   captureScroll():void {this.offset=this.bagScroll?.scrollTop??this.offset;this.recipeOffset=this.recipeScroll?.scrollTop??this.recipeOffset;}
   close():void {this.message=undefined;this.confirmation=undefined;}
   cancel():void {this.message=undefined;this.confirmation=undefined;this.changed();}
@@ -104,7 +107,7 @@ export class CraftingPanel {
   renderText(writer:MenuTextWriter):void {for(const spec of this.pageText)writer.add(spec);}
   renderModalText(writer:MenuTextWriter):void {for(const spec of this.modalText)writer.add(spec);}
   render(v:UiSurface,modal:UiSurface,placeModal:(width:number,height:number)=>void,startDrag:(pointer:UiPointer,entry:string,scroll:ScrollArea)=>void,text?:CraftingTextTarget):void {
-    this.pageText=[];this.modalText=[];this.text=text;this.surface=v;
+    this.pageText=[];this.modalText=[];this.band=undefined;this.text=text;this.surface=v;
     const assets=this.panels.assets;
     this.drops=[];
     v.border(assets,10,0,462,431);drawBagRail(v,assets);
@@ -116,7 +119,8 @@ export class CraftingPanel {
     if(this.modalOpen){
       placeModal(1024,640);
       const writer:MenuTextWriter={add:spec=>this.modalText.push(spec)};
-      drawNativeMessage(modal,assets,this.message??this.panels.itemMessages['craft-confirm'],()=>this.message?this.cancel():this.confirm(),this.confirmation?()=>this.cancel():undefined,writer);
+      this.band=drawNativeMessage(modal,assets,this.message??this.panels.itemMessages['craft-confirm'],()=>this.message?this.cancel():this.confirm(),this.confirmation?()=>this.cancel():undefined,writer,
+        text?{scroll:(name,x,y,width,height)=>text.scroll(name,x,y,width,height,modal)}:undefined);
     }
   }
   private renderModeStrip(v:UiSurface):void {

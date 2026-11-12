@@ -37,11 +37,11 @@ import { KeyBindingEditor } from './phaser/key-binding-editor.ts';
 import { CONTROL_SIZES, HUD_SIDE_BUTTON_SIZE, PENDING_OFFSET, resolveControlLayout, type ControlId } from './control-layout.ts';
 import { controlViewport } from './phaser/control-layout-viewport.ts';
 import { GOLD, UiSurface, type ScrollArea } from './phaser/widgets.ts';
-import { MenuTextLayer, type MenuTextSpec, type MenuTextWriter } from './dom/menu-text.ts';
+import { MenuTextLayer, type MenuTextOcclude, type MenuTextSpec, type MenuTextWriter } from './dom/menu-text.ts';
 import type { DomLabel } from './dom/dom-ui.ts';
 import { setSaveBoardTextSink, type SaveBoardTextSpec } from './phaser/save-board.ts';
 import { drawDescriptionClose, drawDescriptionPanel, drawDescriptionRows, drawDescriptionSeparator, drawDescriptionTitle } from './phaser/description-panel.ts';
-import { drawNativeMessage } from './phaser/native-message.ts';
+import { drawNativeMessage, NATIVE_MESSAGE_EDGE, type NativeMessageBand } from './phaser/native-message.ts';
 import { drawBagRail, drawBagRailSelection } from './phaser/bag-rail.ts';
 import type { SaveGame } from '../domain/save-game.ts';
 import { SavePage } from './save-page.ts';
@@ -130,6 +130,8 @@ export class StoryUI {
   private saveModalTextSpecs:MenuTextSpec[]=[];
   /** 通用原生提示（`drawNativeMessage`）的 DOM 文字；弹层坐标已换成当前页坐标。 */
   private noticeTextSpecs:MenuTextSpec[]=[];
+  /** 原生提示横带的弹层本地覆盖范围；用于裁剪和页面文字让位。 */
+  private noticeBand?:NativeMessageBand;
   /** 物品使用/丢弃弹层的文字规格；仍是弹层本地坐标，输出时统一换算。 */
   private operationTextSpecs:MenuTextSpec[]=[];
   /** 背包说明层与 GM 物品详情打开时，页面文字让位，只留下说明自身。 */
@@ -247,24 +249,27 @@ export class StoryUI {
       this.menuText.register('save',writer=>this.renderSaveText(writer));
       this.menuText.register('load',writer=>this.renderSaveText(writer));
       this.menuText.register('status',writer=>{
-        // 加点确认框打开时只留弹层文字，页面文字整层让位。
-        if(this.allocationExit){this.renderStatusModalText(writer);return;}
-        this.renderTabsText(writer);this.renderStatusText(writer);this.renderNoticeText(writer);
+        // 加点确认框打开时页面文字压暗，只让出弹层矩形；弹层文字单独输出。
+        const page=this.allocationExit?this.dimPage(writer,this.modalOcclusion()):writer;
+        this.renderTabsText(page);this.renderStatusText(page);this.renderNoticeText(page);
+        if(this.allocationExit)this.renderStatusModalText(writer);
       });
       this.menuText.register('party',writer=>{
         const panel=this.partyPanel;if(!panel)return;
-        if(panel.modalOpen){panel.renderText({add:spec=>writer.add(this.modalTextSpec(spec))});return;}
-        this.renderTabsText(writer);panel.renderText(writer);this.renderNoticeText(writer);
+        const page=panel.modalOpen?this.dimPage(writer,this.modalOcclusion()):writer;
+        this.renderTabsText(page);panel.renderText(page);this.renderNoticeText(page);
+        if(panel.modalOpen)panel.renderModalText({add:spec=>writer.add(this.modalTextSpec(spec))});
       });
       this.menuText.register('quests',writer=>{
         this.renderTabsText(writer);this.questPanel?.renderText(writer);this.renderNoticeText(writer);
       });
       this.menuText.register('skills',writer=>{
-        // 技能初始化确认框打开时只留弹层文字，页面文字整层让位。
-        if(this.skillReset){for(const spec of this.skillResetTextSpecs)writer.add(this.modalTextSpec(spec));return;}
-        this.renderTabsText(writer);
-        for(const spec of this.skillTextSpecs)writer.add(spec);
-        this.renderNoticeText(writer);
+        // 技能初始化确认框打开时页面文字压暗，只让出弹层矩形；弹层文字单独输出。
+        const page=this.skillReset?this.dimPage(writer,this.modalOcclusion()):writer;
+        this.renderTabsText(page);
+        for(const spec of this.skillTextSpecs)page.add(spec);
+        this.renderNoticeText(page);
+        if(this.skillReset)for(const spec of this.skillResetTextSpecs)writer.add(this.modalTextSpec(spec));
       });
       this.menuText.register('bag',writer=>this.renderBagText(writer));
       // 技能书页顶部标题画在菜单画布坐标里，换算到内容块坐标后和面板文字一起输出。
@@ -273,26 +278,31 @@ export class StoryUI {
           style:{size:28,color:GOLD,anchorX:.5,anchorY:0}});
         this.skillBook?.renderText(writer);
       });
-      // 商店、融合器与强化台的页面文字由面板收集；弹层打开时只输出弹层那一份。
+      // 商店、融合器与强化台：弹层打开时页面文字压暗，弹层文字单独输出。
       this.menuText.register('shop',writer=>{
         const panel=this.shopPanel;if(!panel)return;
+        const page=panel.modalOpen?this.dimPage(writer,this.modalOcclusion(POPUP_FRAME.corner.outer)):writer;
+        panel.renderText(page);
         if(panel.modalOpen)panel.renderModalText({add:spec=>writer.add(this.modalTextSpec(spec))});
-        else panel.renderText(writer);
       });
       this.menuText.register('crafting',writer=>{
-        const actor=this.craftingActor?this.world?.actors[this.craftingActor]:undefined;
-        if(actor)writer.add({key:'crafting-title',text:actor.name,x:512-CONTENT_ORIGIN.x,y:25-CONTENT_ORIGIN.y,
+        const actor=this.craftingActor?this.world?.actors[this.craftingActor]:undefined,
+          panel=this.craftingPanel,band=panel?.modalOpen?panel.messageBand:undefined,
+          page=panel?.modalOpen?this.dimPage(writer,this.bandOcclusion(band)):writer;
+        if(actor)page.add({key:'crafting-title',text:actor.name,x:512-CONTENT_ORIGIN.x,y:25-CONTENT_ORIGIN.y,
           style:{size:28,color:GOLD,anchorX:.5,anchorY:0}});
-        const panel=this.craftingPanel;if(!panel)return;
+        if(!panel)return;
+        panel.renderText(page);
         if(panel.modalOpen)panel.renderModalText({add:spec=>writer.add(this.modalTextSpec(spec))});
-        else panel.renderText(writer);
       });
       this.menuText.register('forge',writer=>{
-        writer.add({key:'forge-title',text:'装备强化',x:512-CONTENT_ORIGIN.x,y:25-CONTENT_ORIGIN.y,
+        const panel=this.forge,band=panel?.confirming?panel.messageBand:undefined,
+          page=panel?.confirming?this.dimPage(writer,this.bandOcclusion(band)):writer;
+        page.add({key:'forge-title',text:'装备强化',x:512-CONTENT_ORIGIN.x,y:25-CONTENT_ORIGIN.y,
           style:{size:28,color:GOLD,anchorX:.5,anchorY:0}});
-        const panel=this.forge;if(!panel)return;
+        if(!panel)return;
+        panel.renderText(page);
         if(panel.confirming)panel.renderModalText({add:spec=>writer.add(this.modalTextSpec(spec))});
-        else panel.renderText(writer);
       });
       // GM 调试页的文字由面板自己收集。
       this.menuText.register('debug',writer=>{
@@ -302,11 +312,19 @@ export class StoryUI {
         if(this.gmDetailOpen)for(const spec of this.gmDetailTextSpecs)writer.add(spec);
         this.renderNoticeText(writer);
       });
-      // 通用原生提示盖在任何页面之上：页面文字让位，只输出这一份。
-      this.menuText.register('native-notice',writer=>{for(const spec of this.noticeTextSpecs)writer.add(spec);});
-      // 物品使用/丢弃弹层：底下的背包页继续显示，只让出被弹层盖住的文字。
+      // 原生提示盖在页面上：页面文字整体压暗，横带矩形里的部分让位；弹层文字不压暗。
+      this.menuText.register('native-notice',writer=>{
+        const occlude=this.bandSurfaceOcclusion(this.noticeBand);
+        if(this.page==='bag')this.renderBagText(writer,{dim:true,occlude:this.bandOcclusion(this.noticeBand)});
+        else if(this.page==='save'||this.page==='load'){
+          for(const spec of this.saveTextSpecs)writer.add({...spec,dim:true,occlude});
+          this.renderNoticeText({add:spec=>writer.add({...spec,dim:true,occlude})},true);
+        }
+        for(const spec of this.noticeTextSpecs)writer.add(spec);
+      });
+      // 物品使用/丢弃弹层：底下的背包页继续显示，只把被弹层盖住的文字裁掉。
       this.menuText.register('operation-notice',writer=>{
-        if(this.page==='bag')this.renderBagText(writer,spec=>this.operationTextCovers(spec));
+        if(this.page==='bag')this.renderBagText(writer,{dim:true,occlude:this.modalOcclusion(POPUP_FRAME.corner.outer)});
         for(const spec of this.operationTextSpecs)writer.add(this.modalTextSpec(spec));
       });
     }
@@ -314,8 +332,8 @@ export class StoryUI {
     this.backTab.enabled=()=>this.shortcutScreen!.enabled();
     this.hudButtons=new UiSurface(scene,960,640,50);this.backdrop=new UiNode(scene).setSize(1,1).setFillStyle(0,.65).setDepth(99).setInteractive();
     this.backdropPieces=[];this.bagPortrait=createPreview?new LiveCharacterPreview(scene,rect=>this.setBackdropHole(rect),createPreview):undefined;
-    // 说明/弹层用：压暗菜单页但不盖住说明层（300）和弹层（400）。
-    this.popupMask=new UiNode(scene).setSize(1,1).setFillStyle(0,.5).setDepth(250).setVisible(false);
+    // 说明/弹层用：压暗菜单页和说明层（300），只让弹层（400）保持原色。
+    this.popupMask=new UiNode(scene).setSize(1,1).setFillStyle(0,.65).setDepth(399).setVisible(false);
     this.surface.enabled=()=>this.open&&!this.app.ui.suspended&&!this.busy&&!this.app.ui.controlLayoutEditing&&!this.app.ui.keyBindingEditing&&!this.shortcutEdit&&!this.operation&&!this.itemNotice&&!this.allocationExit&&!this.skillReset&&!this.savePage.blocksPage&&!this.craftingPanel?.modalOpen&&!this.shopPanel?.modalOpen&&!this.partyPanel?.modalOpen&&!this.forge?.confirming;
     this.body.enabled=()=>this.surface!.enabled();this.description.enabled=()=>this.body!.enabled();
     this.modal.enabled=()=>this.open&&!this.app.ui.suspended&&!this.busy&&(!!this.operation||!!this.itemNotice||!!this.allocationExit||this.skillReset||this.savePage.modalOpen||!!this.craftingPanel?.modalOpen||!!this.shopPanel?.modalOpen||!!this.partyPanel?.modalOpen||!!this.forge?.confirming);
@@ -649,28 +667,50 @@ export class StoryUI {
       panel=descriptionPanel(this.descSide==='left'?covered.width:BAG_DESCRIPTION_WIDTH);
     return this.descriptionCovers(spec,{x:covered.x,y:panel.y,width:panel.width,height:panel.height});
   }
-  /** 背包页文字：说明面板盖住的那一栏与弹层盖住的区域让位，其余照常显示。 */
-  private renderBagText(writer:MenuTextWriter,skip?:(spec:MenuTextSpec)=>boolean):void {
-    this.renderTabsText(writer);
+  /** 背包页文字：说明面板盖住的那一栏先让位；弹层打开时其余文字压暗，被弹层盖住的部分裁掉。 */
+  private renderBagText(writer:MenuTextWriter,options?:{dim?:boolean;occlude?:MenuTextOcclude}):void {
+    const page:MenuTextWriter={add:spec=>writer.add(
+      options?.dim||options?.occlude?{...spec,dim:options.dim,occlude:options.occlude}:spec)};
+    this.renderTabsText(page);
     for(const spec of this.bagTextSpecs)
-      if((!this.bagDetailOpen||!this.bagDescriptionCovers(spec))&&!skip?.(spec))writer.add(spec);
-    if(this.bagDetailOpen)for(const spec of this.bagDetailTextSpecs)if(!skip?.(spec))writer.add(spec);
-    this.renderNoticeText(writer);
+      if(!this.bagDetailOpen||!this.bagDescriptionCovers(spec))page.add(spec);
+    if(this.bagDetailOpen)for(const spec of this.bagDetailTextSpecs)page.add(spec);
+    this.renderNoticeText(page);
   }
-  /**
-   * 物品操作弹层在图框外扩范围内盖住页面。DOM 文字层在画布图片之上，
-   * 落进这块矩形的背包文字必须让位，否则会压在弹层黑底上。
-   */
-  private operationTextCovers(spec:MenuTextSpec):boolean {
-    if(!this.modal||!this.body)return false;
-    const pad=POPUP_FRAME.corner.outer;
+  /** 弹层在内容块坐标里的覆盖矩形；`pad` 用于把 drawPopupPanel 的图框外沿一起让出。 */
+  private modalOcclusion(pad=0):MenuTextOcclude|undefined {
+    if(!this.modal||!this.body)return undefined;
     const start=this.modalToPagePoint(0,0),end=this.modalToPagePoint(this.modalBox.width,this.modalBox.height);
-    const textWidth=spec.style.width??Array.from(spec.text).length*spec.style.size;
-    const lineHeight=spec.style.lineHeight??spec.style.size+5;
-    const lines=spec.style.width?Math.max(1,Math.ceil(Array.from(spec.text).length*spec.style.size/Math.max(1,spec.style.width))):1;
-    const height=lineHeight*lines;
-    const left=spec.x-(spec.style.anchorX??0)*textWidth,top=spec.y-(spec.style.anchorY??0)*height;
-    return left<=end.x+pad&&left+textWidth>=start.x-pad&&top<=end.y+pad&&top+height>=start.y-pad;
+    return{left:start.x-pad,top:start.y-pad,right:end.x+pad,bottom:end.y+pad};
+  }
+  /** 原生提示横带在内容块坐标里的覆盖矩形；按横带实际左右范围让位。 */
+  private bandOcclusion(band?:NativeMessageBand):MenuTextOcclude|undefined {
+    if(!this.modal||!this.body||!band)return undefined;
+    const edge=NATIVE_MESSAGE_EDGE,
+      start=this.modalToPagePoint(band.left,band.top-edge),end=this.modalToPagePoint(band.left+band.width,band.top+band.height+edge);
+    return{left:start.x,top:start.y,right:end.x,bottom:end.y};
+  }
+  /** 弹层在整页表面坐标里的覆盖矩形；存档/读档页的页面文字用这一份。 */
+  private modalSurfaceOcclusion(pad=0):MenuTextOcclude|undefined {
+    if(!this.modal||!this.surface)return undefined;
+    const matrix=this.surface.root.getWorldTransformMatrix(),origin=matrix.transformPoint(0,0),
+      point=(x:number,y:number)=>{const world=this.modal!.root.getWorldTransformMatrix().transformPoint(x,y);
+        return{x:(world.x-origin.x)/matrix.scaleX,y:(world.y-origin.y)/matrix.scaleY};},
+      start=point(-pad,-pad),end=point(this.modalBox.width+pad,this.modalBox.height+pad);
+    return{left:start.x,top:start.y,right:end.x,bottom:end.y};
+  }
+  private bandSurfaceOcclusion(band?:NativeMessageBand):MenuTextOcclude|undefined {
+    if(!this.modal||!this.surface||!band)return undefined;
+    const matrix=this.surface.root.getWorldTransformMatrix(),origin=matrix.transformPoint(0,0),
+      point=(x:number,y:number)=>{const world=this.modal!.root.getWorldTransformMatrix().transformPoint(x,y);
+        return{x:(world.x-origin.x)/matrix.scaleX,y:(world.y-origin.y)/matrix.scaleY};},
+      edge=NATIVE_MESSAGE_EDGE,
+      start=point(band.left,band.top-edge),end=point(band.left+band.width,band.top+band.height+edge);
+    return{left:start.x,top:start.y,right:end.x,bottom:end.y};
+  }
+  /** 页面文字统一压暗，并让出弹层覆盖的矩形。 */
+  private dimPage(writer:MenuTextWriter,occlude?:MenuTextOcclude):MenuTextWriter {
+    return{add:spec=>writer.add({...spec,dim:true,occlude})};
   }
   /** GM 调试页的物品详情固定在左侧，高 392；只让出这块矩形里的文字。 */
   private gmDescriptionCovers(spec:MenuTextSpec):boolean {
@@ -891,12 +931,15 @@ export class StoryUI {
     if(this.page==='save'||this.page==='load')this.renderSavePage();
     if(this.page==='settings')this.renderSettings();
     if(this.operation)this.renderOperation();if(this.allocationExit)this.renderAllocationConfirmation();if(this.skillReset)this.renderSkillResetConfirmation();
+    this.noticeBand=undefined;
     if(this.itemNotice){
       this.beginModal(1024,640);this.noticeTextSpecs=[];
       // 系统页与存档页按整块菜单画布排版，换算到整页表面；其余页换算到内容块坐标。
       const fullPage=this.page==='system'||this.page==='save'||this.page==='load';
       const writer:MenuTextWriter={add:spec=>this.noticeTextSpecs.push(fullPage?this.modalSurfaceTextSpec(spec):this.modalTextSpec(spec))};
-      drawNativeMessage(this.modal!,this.app.menuPanels.assets,this.itemNotice,()=>{this.itemNotice=undefined;this.render();},undefined,writer);
+      this.noticeBand=drawNativeMessage(this.modal!,this.app.menuPanels.assets,this.itemNotice,
+        ()=>{this.itemNotice=undefined;this.render();},undefined,writer,
+        {scroll:(name,x,y,width,height)=>this.scroll(name,x,y,width,height,this.modal!)});
     }
     if(this.page==='save'||this.page==='load')this.renderSaveConfirmations();else this.savePage.renderConfirmations();
     // 页面文字在各自绘制阶段收集完，等弹层位置也确定后再统一交给 DOM 层；原生提示盖在页面之上。
@@ -1064,8 +1107,15 @@ export class StoryUI {
   }
   /** 存档/读档页的当前文字；确认框打开时只保留确认框那一份。 */
   private renderSaveText(writer:MenuTextWriter):void{
-    for(const spec of this.savePage.modalOpen?this.saveModalTextSpecs:this.saveTextSpecs)writer.add(spec);
-    if(!this.savePage.modalOpen)this.renderNoticeText(writer,true);
+    if(this.savePage.modalOpen){
+      const occlude=this.bandSurfaceOcclusion(this.savePage.band)??this.modalSurfaceOcclusion();
+      for(const spec of this.saveTextSpecs)writer.add({...spec,dim:true,occlude});
+      this.renderNoticeText({add:spec=>writer.add({...spec,dim:true,occlude})},true);
+      for(const spec of this.saveModalTextSpecs)writer.add(spec);
+      return;
+    }
+    for(const spec of this.saveTextSpecs)writer.add(spec);
+    this.renderNoticeText(writer,true);
   }
   /**
    * 存档/读档页：槽位文字由 `save-board` 写进接收器，页标题仍由 controller 调用
@@ -1100,9 +1150,12 @@ export class StoryUI {
   private modalSurfaceTextSpec(spec:MenuTextSpec):MenuTextSpec{
     const modal=this.modal,surface=this.surface;
     if(!modal||!surface)return spec;
-    const world=modal.root.getWorldTransformMatrix().transformPoint(spec.x,spec.y);
-    const matrix=surface.root.getWorldTransformMatrix(),origin=matrix.transformPoint(0,0);
-    return{...spec,x:(world.x-origin.x)/matrix.scaleX,y:(world.y-origin.y)/matrix.scaleY};
+    const matrix=surface.root.getWorldTransformMatrix(),origin=matrix.transformPoint(0,0),
+      point=(x:number,y:number)=>{const world=modal.root.getWorldTransformMatrix().transformPoint(x,y);
+        return{x:(world.x-origin.x)/matrix.scaleX,y:(world.y-origin.y)/matrix.scaleY};},
+      start=point(spec.x,spec.y),
+      clip=spec.clip?{top:point(0,spec.clip.top).y,bottom:point(0,spec.clip.bottom).y}:undefined;
+    return{...spec,x:start.x,y:start.y,clip};
   }
   /** 槽位文字（页面坐标）→ DOM 文字；有换行宽度时按词断行。 */
   private saveBoardText(spec:SaveBoardTextSpec):MenuTextSpec{
@@ -1265,7 +1318,7 @@ export class StoryUI {
       this.statusModalTextSpecs.push({key,text,x:x+width/2,y:y+height/2,
         style:{size:Math.min(22,height*.42),color:GOLD,anchorX:.5,anchorY:.5}});
     };
-    this.beginModal(718,415);v.frame(this.app.menuPanels.assets,0,0,718,415);
+    this.beginModal(718,415);v.frame(this.app.menuPanels.assets,0,0,718,415,1);
     add('alloc-title','确定按当前分配增加能力？',35,30,26,648);
     character.attributes.forEach((attribute,index)=>add(`alloc-${PRIMARY_STATS[index]}`,`${attribute.name}　＋${pending[PRIMARY_STATS[index]]}`,65,91+index*38,22,580));
     if(this.allocationError)add('alloc-error',this.allocationError,35,292,20,648);
@@ -1478,7 +1531,7 @@ export class StoryUI {
       this.skillResetTextSpecs.push({key,text,x:x+width/2,y:y+height/2,
         style:{size:Math.min(22,height*.42),color:GOLD,anchorX:.5,anchorY:.5}});
     };
-    this.beginModal(718,415);v.visible(true);v.frame(panels.assets,0,0,718,415);
+    this.beginModal(718,415);v.visible(true);v.frame(panels.assets,0,0,718,415,1);
     add('skill-reset-title',`确定为${this.actor().name}初始化技能点？`,35,30,26,648);
     add('skill-reset-description','清空已学技能与快捷栏，返还正常加点的技能点。',35,91,22,648);
     v.button('',270,350,170,48,()=>{this.skillReset=false;this.render();}).setData('label','取消');
@@ -1786,6 +1839,9 @@ export class StoryUI {
     const layout=bagLayout(),covered=this.descSide==='left'?layout.leftFrame:layout.bagFrame,
       // 盖背包栏时右边缘让开右侧那一列分类按钮（BAG_DESCRIPTION_WIDTH），盖人物栏时与原版一样与栏同宽。
       panel=descriptionPanel(this.descSide==='left'?covered.width:BAG_DESCRIPTION_WIDTH),left=covered.x,top=panel.y;
+    // 面板现在完全不透明，整块先铺一层透明拦截层，避免点击穿透到被盖住的格子；
+    // 关闭钮、动作按钮和正文滚动区随后绘制，仍在上层。
+    v.rect(left,top,panel.width,panel.height,0x000000,0).setInteractive();
     drawDescriptionPanel(v,this.app.menuPanels.assets,left,top,panel.width);
     // 滚动区必须建在说明层上（末尾的 `v`）：面板底色、图框与物品名都画在这一层，
     // 滚动区若留在内容块那一层（默认值）会被面板自己的黑底压住，正文看起来就是灰的。
@@ -2059,6 +2115,8 @@ export class StoryUI {
     // 与说明面板同一套矩形，免得看结果时又跳回旧位置。
     const v=this.description!,layout=bagLayout(),covered=this.descSide==='left'?layout.leftFrame:layout.bagFrame,
       panel=descriptionPanel(this.descSide==='left'?covered.width:BAG_DESCRIPTION_WIDTH),left=covered.x,top=panel.y;
+    // 结果面板同样完全不透明：先铺整块透明拦截层，避免点击穿透到被盖住的格子。
+    v.rect(left,top,panel.width,panel.height,0x000000,0).setInteractive();
     drawDescriptionPanel(v,this.app.menuPanels.assets,left,top,panel.width);
     // 同物品说明：滚动区也建在说明层上，否则正文会被面板底色压暗。
     const detail=this.scroll('item',left+panel.scroll.x,top+panel.scroll.y,panel.scroll.width,panel.scroll.height,v);let y=0;
