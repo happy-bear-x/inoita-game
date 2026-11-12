@@ -50,18 +50,20 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
     private long lastBackPressed;
     private boolean pageReady;
     private String migrationJson;
-    /** 当前显示模式实际生效的刷新率；Surface 建好后要按它设一次。 */
-    private float surfaceFrameRate;
+    /** 页面请求的游戏帧率（30/60）；Surface 始终按它向系统投票，不跟随屏幕瞬时低刷新率。 */
+    private int requestedFrameRate;
+    /** 最近一次读到的屏幕实际刷新率；只用于通知页面换算限帧和日志，不回设 Surface。 */
+    private float actualDisplayRate;
     private int surfaceRateRetries;
     private DisplayManager displayManager;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
-    /** 显示模式切换完成后系统会回调；用实际生效的刷新率通知页面。 */
+    /** 刷新率变化时只观察实际值并通知页面；Surface 的帧率请求保持玩家选的 30/60。 */
     private final DisplayManager.DisplayListener displayListener = new DisplayManager.DisplayListener() {
         @Override public void onDisplayAdded(int displayId) {}
         @Override public void onDisplayRemoved(int displayId) {}
         @Override public void onDisplayChanged(int displayId) {
-            if (displayId == Display.DEFAULT_DISPLAY) applyActualDisplayRate();
+            if (displayId == Display.DEFAULT_DISPLAY) observeActualDisplayRate();
         }
     };
     private final Runnable createBrowserTask = this::createBrowser;
@@ -69,7 +71,7 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
         if (browser != null) browser.onPause();
     };
     private final Runnable bootWatchdog = this::onBootWatchdog;
-    private final Runnable applyDisplayRateTask = this::applyActualDisplayRate;
+    private final Runnable applyDisplayRateTask = this::observeActualDisplayRate;
 
     private AlertDialog updateDialog;
     private AlertDialog checkFailedDialog;
@@ -178,6 +180,7 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
      */
     private void onFrameRateRequested(int rate) {
         if (rate != 30 && rate != 60) return;
+        requestedFrameRate = rate;
         Display display = getWindowManager().getDefaultDisplay();
         Display.Mode current = display.getMode();
         Display.Mode best = null;
@@ -204,28 +207,37 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
             attrs.preferredDisplayModeId = best.getModeId();
             getWindow().setAttributes(attrs);
         }
+        // Surface 只按玩家选的帧率向系统投票。实际显示刷新率可能更低（LTPO 会掉到 10Hz），
+        // 但那是屏幕的当前状态，不能反过来限制应用；稍后只读出来通知页面。
+        surfaceRateRetries = 0;
+        applySurfaceFrameRate(rate);
         // 切换是异步的，而且 preferredDisplayModeId 只是建议；稍后读实际生效的值。
         mainHandler.removeCallbacks(applyDisplayRateTask);
         mainHandler.postDelayed(applyDisplayRateTask, 800);
         Log.i(TAG, "frame-rate " + rate + " -> request " + best.getRefreshRate()
-                + "Hz (mode " + best.getModeId() + ")");
+                + "Hz (mode " + best.getModeId() + "), surface " + rate + "Hz");
     }
 
-    /** 等系统真正切完模式后，把实际刷新率告诉页面和 Surface。 */
-    private void applyActualDisplayRate() {
+    /**
+     * 读取系统实际生效的刷新率，只用来通知页面换算限帧和写日志。
+     *
+     * 不能把这个值回设给 Surface：LTPO 屏空闲时会掉到 10Hz，拿 10Hz 去调用
+     * setFrameRate 会让系统把整个应用按 10fps 限死。Surface 的请求保持在
+     * {@link #requestedFrameRate}。
+     */
+    private void observeActualDisplayRate() {
         if (isFinishing() || isDestroyed()) return;
         Display display = getWindowManager().getDefaultDisplay();
         Display.Mode mode = display.getMode();
         float hz = mode != null ? mode.getRefreshRate() : display.getRefreshRate();
         if (hz <= 0) hz = display.getRefreshRate();
-        surfaceFrameRate = hz;
-        surfaceRateRetries = 0;
-        applySurfaceFrameRate(hz);
+        actualDisplayRate = hz;
+        // 页面用这个值判断 60 档要不要用 90 上限、30 档要不要交给 vsync；低于 20Hz 的瞬时值页面会忽略。
         notifyPageDisplayRate(hz);
-        Log.i(TAG, "display-rate actual " + hz + "Hz");
+        Log.i(TAG, "display-rate actual " + hz + "Hz (requested " + requestedFrameRate + "Hz)");
     }
 
-    /** 把壳选定的刷新率写进页面，页面直接采用，不再靠 rAF 重测。 */
+    /** 把屏幕实际刷新率写进页面；页面据此在「60 档的 90 上限」「30 档跟随 vsync」和「按选项限帧」之间换算。 */
     private void notifyPageDisplayRate(float hz) {
         if (browser == null || hz <= 0) return;
         String script = "window.__inoitaDisplayHz=" + hz
@@ -237,7 +249,12 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
         }
     }
 
-    /** Android 11+ 把目标帧率也告诉 SurfaceFlinger；Surface 还没建好时短暂重试。 */
+    /**
+     * Android 11+ 把目标帧率告诉 SurfaceFlinger；Surface 还没建好时短暂重试。
+     *
+     * 传玩家选的 30/60。游戏要的是固定目标帧率，Android 游戏文档用 FIXED_SOURCE；
+     * 关键是不能传屏幕瞬时的低刷新率（LTPO 会掉到 10Hz），那会把整个应用按 10fps 限死。
+     */
     private void applySurfaceFrameRate(float hz) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || hz <= 0) return;
         if (isFinishing() || isDestroyed()) return;
@@ -299,7 +316,7 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
             public void onLoadingStateChanged(boolean loading, boolean canGoBack, boolean canGoForward) {
                 if (!loading) {
                     pageReady = true;
-                    if (surfaceFrameRate > 0) notifyPageDisplayRate(surfaceFrameRate);
+                    if (actualDisplayRate > 0) notifyPageDisplayRate(actualDisplayRate);
                 }
             }
         });
@@ -577,9 +594,9 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
             browser.onResume();
             if (pageReady) browser.evaluateJavaScript("window.dispatchEvent(new Event('pageshow'));");
         }
-        if (surfaceFrameRate > 0) {
+        if (requestedFrameRate > 0) {
             surfaceRateRetries = 0;
-            applySurfaceFrameRate(surfaceFrameRate);
+            applySurfaceFrameRate(requestedFrameRate);
         }
         hideSystemBars();
         if (updateManager != null) updateManager.checkForUpdateOnForeground();

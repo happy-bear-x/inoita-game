@@ -819,7 +819,7 @@ function boot(): void {
   };
   applyNativeDisplayRate();
   window.addEventListener('inoita-display-rate', applyNativeDisplayRate);
-  // 刷新率要等页面跑起来才量得到；量到之前按 60Hz 处理，60Hz 屏直接走 vsync。
+  // 刷新率要等页面跑起来才量得到；量到之前按 60Hz 处理，60 档先按 90 的上限跑。
   void detectRefreshRate().then(applyFrameLimit);
   // 启动初期浏览器可能还没按高刷回调，量到的值会偏低；3 秒后补测一次。
   const settleRefreshTimer = window.setTimeout(remeasureNow, 3000);

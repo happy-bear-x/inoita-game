@@ -4,15 +4,18 @@
  * Phaser 的限帧器只在累计时间越过 1000 / 上限 毫秒时才交付一帧，并把不足一帧的
  * 余量直接丢掉。阈值等于屏幕刷新率时，单帧耗时只要比 16.7 毫秒慢一点点，累积时间
  * 就反复差一丁点过不去，画面会成规律地跳到一半（实测刷新 54 次只交付 34 帧）。
- * 所以选的帧率够得着屏幕时，直接交给屏幕节拍（limit 0），不再自己数帧。
+ * 所以选的帧率够得着屏幕时，不再把阈值设成和屏幕一样：60 档改用 90 的数值上限，
+ * 比 60Hz 高，保证每个 rAF 都能过阈值；30 档仍交给屏幕节拍（limit 0）。
  *
  * 这个判断依赖刷新率量得准。高刷屏在启动初期可能仍按 60Hz 回调，量到的值会偏低，
- * 把 120Hz 屏上的 60 上限误判成「不限帧」；所以游戏跑起来后要补测，并且只采纳
+ * 把 120Hz 屏上的 60 上限误判成「90 上限」；所以游戏跑起来后要补测，并且只采纳
  * 样本足够且更高的结果。
  */
 
-/** 与 vsync 的距离小于这个值时不再自己限帧。 */
+/** 与屏幕刷新率的距离小于这个值时，说明玩家选的值已经贴近屏幕节拍。 */
 const NEAR_VSYNC_HZ = 2;
+/** 60 档贴近屏幕时用的数值上限：高于 60Hz，每个屏幕节拍都能过限帧阈值。 */
+const SIXTY_NEAR_VSYNC_LIMIT = 90;
 export const DEFAULT_REFRESH_HZ = 60;
 const SAMPLE_COUNT = 24;
 const MAX_SAMPLE_MS = 700;
@@ -20,9 +23,20 @@ const FALLBACK_WAIT_MS = 1200;
 /** 少于这个数量的采样不足以判断刷新率。 */
 const MIN_SAMPLES = 6;
 
-/** 把玩家选的帧率换算成 Phaser 的 `fps.limit`；0 表示跟随屏幕刷新率。 */
+/**
+ * 把玩家选的帧率换算成 Phaser 的 `fps.limit`；0 表示跟随屏幕刷新率。
+ *
+ * `refreshHz` 必须是屏幕实际生效的刷新率，不是玩家请求的帧率：实际值只用来决定
+ * 「用高一档的数值上限」还是「按数值限帧」。请求 30 时如果误传 30 而不是实际的 60，
+ * 这里会返回 0，页面反而按 60 跑；请求 60 时误传 60 而不是实际的 120，会返回 90，
+ * 页面跑到 90 左右。
+ *
+ * 60 档贴近屏幕时返回 90 而不是 0：60Hz 屏上 90 高于屏幕节拍，每个 rAF 都能过
+ * 阈值，画面仍是 60 帧，同时保留一个明确的上限。
+ */
 export function resolveFrameLimit(chosen: number, refreshHz: number): number {
-  return chosen + NEAR_VSYNC_HZ >= refreshHz ? 0 : chosen;
+  if (chosen + NEAR_VSYNC_HZ < refreshHz) return chosen;
+  return chosen === 60 ? SIXTY_NEAR_VSYNC_LIMIT : 0;
 }
 
 function median(values: number[]): number {
