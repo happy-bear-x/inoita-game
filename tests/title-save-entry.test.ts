@@ -139,7 +139,7 @@ test('title changelog loads on demand and only renders visible entries',async()=
   assert.equal(loads,1,'点按钮才加载更新日志');
   assert.ok(f.domTexts().includes('正在加载更新日志…'));
   await new Promise(resolve=>setImmediate(resolve));
-  assert.ok(f.domTexts().includes('v1.0.2 更新说明'),'顶部居中显示版本号和更新说明');
+  assert.ok(f.domTexts().includes('v1.0.3 更新说明'),'顶部居中显示版本号和更新说明');
   assert(f.domLabels.some(label=>label.visible&&!label.removed&&label.style.opacity==='0.35'),
     '更新日志打开时页面文字压暗而不是消失');
   const labels=()=>f.domTexts().filter(text=>/^\d+\. 第 /.test(text));
@@ -164,7 +164,7 @@ test('changelog loader keeps its receiver and empty entries show the empty state
   assert.ok(f.domTexts().includes('正在加载更新日志…'));
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(receiver,f.app,'作为对象方法调用，this 不能丢');
-  assert.ok(f.domTexts().includes('v1.0.2 更新说明'),'空日志也保留顶部版本号');
+  assert.ok(f.domTexts().includes('v1.0.3 更新说明'),'空日志也保留顶部版本号');
   assert.ok(f.domTexts().includes('暂无更新日志。'),'空日志显示暂无数据');
 });
 
@@ -323,7 +323,7 @@ test('challenge mode needs five hidden clicks before starting the pressure test'
 test('the version number sits bottom-right at menu-button size and toggles GM',()=>{
   const gm={on:false,toggles:0,toggle(){this.on=!this.on;this.toggles+=1;return this.on;}};
   const f=fixture(gm);
-  const node=f.domLabels.find(text=>text.text==='v1.0.2');assert.ok(node);
+  const node=f.domLabels.find(text=>text.text==='v1.0.3');assert.ok(node);
   assert.equal(Number.parseFloat(String(node.style.fontSize)),36,'版本号与主菜单按钮同字号');
   assert.deepEqual(node.anchor,[1,1],'以右下角为锚点');
   assert.equal(node.x,1180);assert.equal(node.y,612);
