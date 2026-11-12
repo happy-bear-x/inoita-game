@@ -4,7 +4,7 @@
 
 ## 文件
 
-- 构建/校验：`build.mjs` 打包入口，`content-build.ts` 把内容 JSON 编译成运行时数据，`content-manifest.ts` 生成生产内容哨兵清单，`validate-content.mjs` 校验内容，`validate-spritesheet.ts` 校验精灵表，`build-version.ts` 计算资源与内容版本，`deploy.ts` 构建后核对 HTTPS 入口版本。
+- 构建/校验：`build.mjs` 打包入口，`content-build.ts` 把内容 JSON 编译成运行时数据，`content-manifest.ts` 生成生产内容哨兵清单，`validate-content.mjs` 校验内容，`validate-spritesheet.ts` 校验精灵表，`build-version.ts` 计算资源与内容版本，`deploy.ts` 构建后核对 HTTPS 入口版本，`patch-phaser.mjs` 把 Phaser PR #7420 的动态缓冲补丁应用到 4.2.1 运行时包。
 - 服务/诊断：`serve-built.ts` 提供打包后的静态服务，`diagnostic-collector.mjs` 是诊断上报中间件（2 MiB 轮转，保留 7 份；同一会话同一地图的重复检查点诊断 60 秒内只留一条），`diagnostic-collector.d.mts` 是它的类型声明。
 - 云存档：`cloud-save-store.ts` 负责账号、会话、续期、改密和存档落盘（scrypt、单会话、锁定、配额、原子写），`cloud-save-service.ts` 把 `/__cloud` HTTP 路由、CORS、限流和请求体上限接到静态服务上。
 - 图集/资源：`build-icon-atlas.ts`、`build-prop-atlas.ts`、`build-effect-atlas.ts`、`build-ui-atlas.ts`、`build-character-atlas.ts` 生成图集，`atlas-pack.ts` 提供按加载块装箱的共用实现，`asset-source.ts` 解析 `asset-source/` 源图，`build-slot-frames.ts` 生成装备槽帧，`asset-report.ts` 输出源素材重复与生产构建后的运行时素材口径，`asset-keep.ts` 计算运行时保留集，`prune-assets.ts` 把未引用素材移进归档目录。
@@ -15,6 +15,7 @@
 ## 规则
 
 - `tools/` 不进入 tsconfig 的 include，脚本独立于应用的类型检查运行。
+- **Phaser 固定在 4.2.1，动态缓冲补丁由 `patch-phaser.mjs` 固化。** `postinstall`、`predev` 和 `prebuild` 会自动执行；脚本按版本和补丁锚点校验，重复执行直接跳过。升级 Phaser 时先核对 PR #7420，再同步更新脚本里的版本号和锚点，不要手工改 `node_modules` 后依赖它。
 - `.mjs` 脚本不做类型检查；`.ts` 脚本由 Node 的类型剥离直接执行，写法保持可擦除。
 - **Android 打包工具链**：Cefrium 需要 JDK 25、Gradle 9.7.1、AGP 9.4、Android SDK 37 和 build-tools 37.0.0。`build-apk.mjs` 优先使用 `~/.local/jdk-25`，其次 `JAVA_HOME`；低于 JDK 25 直接失败。不要退回 JDK 17 / Gradle 8.7。
 - `verify-apk.mjs` 会检查 Cefrium 类、arm64 原生库、16 KB 页对齐；Cefrium 自带的 `icudtl.dat`、`*.pak`、`stored-locales/`、`cefrium/` 不参与和 `dist` 的逐文件对比。

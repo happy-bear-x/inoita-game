@@ -16,7 +16,10 @@
   },
   "scripts": {
     "dev": "vite",
-    "prebuild": "npm run atlas:all",
+    "patch:phaser": "node tools/patch-phaser.mjs",
+    "postinstall": "node tools/patch-phaser.mjs",
+    "predev": "npm run patch:phaser",
+    "prebuild": "npm run atlas:all && npm run patch:phaser",
     "serve": "node tools/serve-built.ts",
     "deploy": "node tools/deploy.ts",
     "build": "node tools/build.mjs",
