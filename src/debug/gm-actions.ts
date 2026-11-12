@@ -79,6 +79,7 @@ export interface GmItemEntry {
 }
 
 interface GmLevelResult extends GmResult { level?: number; gained?: number }
+interface GmSkillResult extends GmResult { learned?: number; maxed?: number }
 interface GmGiveResult extends GmResult { item?: string; name?: string; requested?: number; total?: number }
 interface GmMoneyResult extends GmResult { money?: number }
 
@@ -169,6 +170,8 @@ export interface GmActions {
   characters(): readonly GmCharacterState[];
   /** 升一级（只升不降）。 */
   levelUp(id: string): GmLevelResult;
+  /** 一键把某个角色的全部技能拉到最高级，未学的也一并学会。 */
+  maxSkills(id: string): GmSkillResult;
   /** 回满 HP；角色已倒下时走战斗侧复活。 */
   restoreHealth(id: string): GmResult;
   /** 回满 MP。 */
@@ -636,6 +639,18 @@ export function createGmActions(ports: GmPorts): GmActions {
       const gained = member.addExperience(delta);
       if (gained <= 0) return { ok: false, reason: '升级未生效' };
       return { ok: true, level: member.player.level, gained };
+    }),
+    maxSkills: id => run('maxSkills', [id], () => {
+      if (!activeMember(id)) return { ok: false, reason: `没有上阵角色：${id}` };
+      let result: { learned: number; maxed: number };
+      if (id === 'player') result = session.skills.maxAll();
+      else {
+        const companion = session.party?.get(id);
+        if (!companion) return { ok: false, reason: `没有该角色：${id}` };
+        result = companion.skills.maxAll();
+      }
+      session.emit();
+      return { ok: true, ...result };
     }),
     restoreHealth: id => run('restoreHealth', [id], () => {
       const member = activeMember(id);

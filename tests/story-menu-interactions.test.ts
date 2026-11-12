@@ -2106,7 +2106,7 @@ test('the GM character page levels, heals and toggles the debug switches', async
   assert.ok(visibleDomLabels(f).some(label => label.text.includes('等级 Lv.')),
     visibleDomLabels(f).map(label => label.text).join(' | '));
   assert.equal(f.scene.buttons('角色 player').length, 1);
-  for (const label of ['升一级', '回满 HP', '回满 MP', '全队回满', '无敌', '技能无 CD', '一击必杀']) {
+  for (const label of ['升一级', '回满 HP', '回满 MP', '全队回满', '无敌', '技能无 CD', '一击必杀', '技能全满']) {
     assert.equal(f.scene.buttons(label).length, 1, label);
   }
 
@@ -2114,6 +2114,12 @@ test('the GM character page levels, heals and toggles the debug switches', async
   f.scene.click(f.scene.button('升一级'));
   assert.equal(f.hero.level, before + 1);
   assert.equal(gm.actions().at(-1)?.call, 'levelUp');
+
+  f.scene.click(f.scene.button('技能全满'));
+  assert.equal(gm.actions().at(-1)?.call, 'maxSkills');
+  for (const id of battle.classes.find(value => value.id === f.hero.classId)!.skills) {
+    assert.equal(f.session.skills.level(id), battle.skills[id]!.ranks.length, `${id} 满级`);
+  }
 
   f.hero.setHealth(1);
   f.scene.click(f.scene.button('回满 HP'));

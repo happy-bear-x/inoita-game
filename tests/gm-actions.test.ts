@@ -196,6 +196,35 @@ test('a fallen character is revived through the combat port', () => {
   assert.match(failed.reason ?? '', /无法完成复活/);
 });
 
+test('maxSkills learns and maxes every class skill for the hero without spending points', () => {
+  const { session, gm } = harness();
+  const classSkills = battle.classes.find(value => value.id === session.hero!.classId)!.skills;
+  const before = Object.fromEntries(classSkills.map(id => [id, session.skills.level(id)]));
+  const points = session.skills.points();
+  const result = gm.maxSkills('player');
+  assert.equal(result.ok, true);
+  for (const id of classSkills) {
+    assert.equal(session.skills.level(id), battle.skills[id]!.ranks.length, `${id} 达到最高等级`);
+  }
+  assert.equal(session.skills.points(), points, '不消耗技能点');
+  assert.equal(result.learned! + result.maxed!,
+    classSkills.filter(id => before[id]! < battle.skills[id]!.ranks.length).length, '变化数量与实际提升的技能一致');
+  const again = gm.maxSkills('player');
+  assert.deepEqual([again.ok, again.learned, again.maxed], [true, 0, 0], '再次执行没有变化');
+});
+
+test('maxSkills raises companion skills to their own caps without changing level', () => {
+  const { session, gm } = harness();
+  const member = recruit(session);
+  const level = member.level;
+  const result = gm.maxSkills(member.id);
+  assert.equal(result.ok, true);
+  const levels = member.skills.skillLevels();
+  for (const [id, cap] of Object.entries(member.skills.caps)) assert.equal(levels[id], cap, `${id} 达到上限`);
+  assert.equal(member.level, level, '不改变角色等级');
+  assert.equal(gm.maxSkills('nope').ok, false);
+});
+
 test('recoverParty heals living members and leaves fallen ones to the combat port', () => {
   const { session, gm } = harness();
   const member = recruit(session);

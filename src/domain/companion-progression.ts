@@ -76,6 +76,21 @@ export class CompanionSkillProgression extends SkillConfiguration {
     this.markChanged();
   }
   skillLevels():Record<string,number>{return {...this.levels};}
+  /**
+   * GM 调试：把佣兵自己这套技能直接拉到各自上限，不改变角色等级。
+   * 佣兵技能本来只随等级成长，普通玩法不会调用这里。
+   */
+  maxAll(): { learned: number; maxed: number } {
+    let learned=0,maxed=0;
+    for(const [id,cap] of Object.entries(this.caps)){
+      const from=this.levels[id]??0,to=Math.max(0,cap);
+      if(to<=from)continue;
+      if(from===0)learned++;else maxed++;
+      this.levels[id]=to;
+    }
+    this.markChanged();
+    return {learned,maxed};
+  }
   override draft(catalog:BattleCatalog,classId:string):SkillLoadout{
     this.draftCallCount++;
     const character=catalog.classes.find(entry=>entry.id===classId);if(!character)throw new Error('职业不存在');

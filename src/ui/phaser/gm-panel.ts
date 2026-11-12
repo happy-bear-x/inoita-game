@@ -260,7 +260,9 @@ export class GmPanel {
       () => this.onToggleNoCooldown(selected), { selected: selected.noCooldown }).setData('label', '技能无 CD');
     this.button(body, `一击必杀：${selected.oneHitKill ? '开' : '关'}`, 416, 346, 190, 46,
       () => this.onToggleOneHitKill(selected), { selected: selected.oneHitKill }).setData('label', '一击必杀');
-    return '升级只升不降；倒下角色点「回满 HP」即可复活。无敌只挡战斗伤害，不挡剧情直接改血；一击必杀在命中敌人时直接击杀，未命中仍然落空。';
+    this.button(body, '技能全满', 624, 346, 200, 46,
+      () => this.onMaxSkills()).setData('label', '技能全满');
+    return '升级只升不降；倒下角色点「回满 HP」即可复活。无敌只挡战斗伤害，不挡剧情直接改血；一击必杀在命中敌人时直接击杀，未命中仍然落空。技能全满会直接拉满当前角色全部技能，不耗技能点。';
   }
 
   /** 道具页：背包同款格子整页滚动；点格子打开与背包一致的详情层。 */
@@ -341,6 +343,15 @@ export class GmPanel {
   private onLevelUp(): void {
     const result = this.gm.levelUp(this.characterId);
     this.result = result.ok ? `已升到 Lv.${result.level}` : `升级失败：${result.reason}`;
+    this.hooks.render();
+  }
+  private onMaxSkills(): void {
+    const result = this.gm.maxSkills(this.characterId);
+    this.result = result.ok
+      ? (result.learned || result.maxed
+        ? `技能已全满：新学 ${result.learned ?? 0} 门，升级 ${result.maxed ?? 0} 门`
+        : '技能已经全满')
+      : `技能全满失败：${result.reason}`;
     this.hooks.render();
   }
   private onRestoreHealth(): void {

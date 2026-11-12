@@ -88,6 +88,27 @@ export class StorySkillProgression extends SkillConfiguration {
     draft.levels[id]=next;this.loadouts.set(this.hero!.classId,draft);this.markChanged();
     return next;
   }
+  /**
+   * GM 调试：把主角本职业的全部技能直接拉到最高等级，未学的也一并学会。
+   * 不扣技能点，也不改变快捷栏；普通玩法仍只能通过 `learn` / `book` 提升。
+   */
+  maxAll(): { learned: number; maxed: number } {
+    if(!this.catalog||!this.hero)throw new Error('技能进度不可用');
+    const character=this.catalog.classes.find(entry=>entry.id===this.hero!.classId);
+    if(!character)throw new Error('职业不存在');
+    const draft=this.draft(this.catalog,this.hero.classId);
+    let learned=0,maxed=0;
+    for(const id of character.skills){
+      const skill=this.catalog.skills[id];
+      if(!skill)continue;
+      const from=draft.levels[id]??0,to=skill.ranks.length;
+      if(to<=from)continue;
+      if(from===0)learned++;else maxed++;
+      draft.levels[id]=to;
+    }
+    this.loadouts.set(this.hero.classId,draft);this.markChanged();
+    return {learned,maxed};
+  }
   /** 初始化技能点：清等级与技能点，快捷栏也退回默认（初始技能在第一格、其它格清空）。 */
   reset():void {
     if(!this.catalog||!this.hero)throw new Error('技能进度不可用');
