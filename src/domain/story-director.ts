@@ -412,9 +412,13 @@ export class StoryDirector {
   private async flushStageBehindBackdrop(signal: AbortSignal, skipped: boolean): Promise<void> {
     const presentation = this.presentation;
     if (!presentation?.flushStage) return;
-    if (skipped) presentation.setBackdrop?.(true);
-    try { await presentation.flushStage(signal); }
-    finally { if (skipped) presentation.setBackdrop?.(false); }
+    try {
+      if (skipped) presentation.setBackdrop?.(true);
+      await presentation.flushStage(signal);
+    } finally {
+      // 开黑底本身失败时也要尝试复原；收尾异常不能盖住原来的错误。
+      if (skipped) try { presentation.setBackdrop?.(false); } catch { /* 保留原错误 */ }
+    }
   }
   private async choice(prompt: string, options: ChoiceOption[], description?: string, signal = this.context?.signal ?? this.manual.signal): Promise<ChoiceOption> {
     const skipped = this.skipping;

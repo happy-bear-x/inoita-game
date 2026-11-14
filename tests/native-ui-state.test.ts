@@ -26,6 +26,12 @@ test('world rebuild cover survives loading/loaded and is cleared by a mode switc
   ui.setWorldRebuildCover(true);ui.setMode('game');assert.equal(ui.worldRebuildCover,false,'切模式兜底清除');
 });
 
+test('skip backdrop stays separate from the rebuild cover and is cleared by a mode switch',()=>{
+  const ui=new GameUI();let syncs=0;ui.view={sync(){syncs++;},renderText(){},paginate:(_ui,text)=>[{text,end:text.length}],portrait:async()=>undefined};
+  ui.setSkipBackdrop(true);assert.equal(ui.skipBackdrop,true);assert.equal(ui.worldRebuildCover,false,'两种黑幕互不影响');
+  ui.setSkipBackdrop(true);assert.equal(syncs,1,'重复开启只通知一次');
+  ui.setMode('menu');assert.equal(ui.skipBackdrop,false,'切模式兜底清除');
+});
 test('closing a dialogue rejects its waiting page and prevents an old gesture advancing a new one',async()=>{
   const ui=new GameUI();ui.ready=true;const dialogue=ui.dialogue({text:'第一句',speaker:'',actor:null});await Promise.resolve();
   ui.pressDialogue(1);ui.closeDialogue();await assert.rejects(dialogue,{name:'AbortError'});let advanced=0;ui.pending=()=>advanced++;ui.releaseDialogue(1);await Promise.resolve();assert.equal(advanced,0);

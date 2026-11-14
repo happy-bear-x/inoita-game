@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { StoryDirector, type StoryUI, type StoryWorldPort, type StorySkipPhase } from '../src/domain/story-director.ts';
+import type { StoryPresentationPort } from '../src/domain/story-performance.ts';
 import { Session } from '../src/domain/session.ts';
 import { compileScript } from './support/story-fixtures.ts';
 import type { Campaign } from '../src/domain/campaign.ts';
@@ -10,7 +11,8 @@ import type { ChoiceOption } from '../src/domain/content.ts';
 import { parseCampaign, parseControlSkin } from '../src/application/content-validation.ts';
 
 const campaign = parseCampaign(JSON.parse(fs.readFileSync(new URL('../public/content/campaign.json', import.meta.url), 'utf8')));
-function harness(content: Campaign = campaign, overrides: Partial<StoryUI> = {}, world?: StoryWorldPort) {
+function harness(content: Campaign = campaign, overrides: Partial<StoryUI> = {}, world?: StoryWorldPort,
+  presentation: Partial<StoryPresentationPort> = {}) {
   const session = new Session(content), lines: string[] = [], locks: boolean[] = [];
   let finish: (() => void) | undefined, choose: ((option: ChoiceOption) => void) | undefined;
   let cancel: (() => void) | undefined, flushes = 0;
@@ -28,7 +30,7 @@ function harness(content: Campaign = campaign, overrides: Partial<StoryUI> = {},
   };
   const backdrops: boolean[] = [];
   const director = new StoryDirector(content, session, ui, value => locks.push(value), { begin() {}, async execute() {}, async finish() {},
-    async flushStage() { flushes++; }, setBackdrop(covered: boolean) { backdrops.push(covered); } }, world);
+    async flushStage() { flushes++; }, setBackdrop(covered: boolean) { backdrops.push(covered); }, ...presentation }, world);
   return { director, session, lines, locks, backdrops: () => backdrops, flushes: () => flushes,
     finish: () => finish?.(), choose: (option: ChoiceOption) => choose!(option) };
 }
@@ -55,6 +57,31 @@ test('skip stops at choices, resumes selected lines normally and preserves compl
   await tick();
   assert.equal(h.lines.at(-1), '第一句'); h.director.cancel(); assert.equal(await replay, false);
 });
+test('补画失败时跳过黑底仍会关闭', async () => {
+  const option = { label: '继续', value: 'go', lines: [] };
+  const h = harness({ ...campaign, scripts: { ...campaign.scripts, demo: compileScript('demo', [
+    { type: 'dialogue', speaker: '', actor: null, text: '一句' },
+    { type: 'choice', prompt: '选择', options: [option] }
+  ]) } }, {}, undefined, { async flushStage() { throw new Error('补画失败'); } });
+  const playing = h.director.trigger({ id: 'flush-fails', script: 'demo', map: 'shadow-camp', x: 0, y: 0, width: 10, height: 10 });
+  await tick(); h.director.skip();
+  await playing.catch(() => {});
+  assert.deepEqual(h.backdrops(), [true, false], '补画失败也要撤掉黑底');
+});
+
+test('正常播放到选项时不打开跳过黑底', async () => {
+  const option = { label: '继续', value: 'go', lines: [] };
+  const h = harness({ ...campaign, scripts: { ...campaign.scripts, demo: compileScript('demo', [
+    { type: 'choice', prompt: '选择', options: [option] }
+  ]) } });
+  const playing = h.director.trigger({ id: 'no-skip', script: 'demo', map: 'shadow-camp', x: 0, y: 0, width: 10, height: 10 });
+  await tick();
+  assert.deepEqual(h.backdrops(), []);
+  h.choose(option);
+  await playing.catch(() => {});
+  assert.deepEqual(h.backdrops(), [], '正常播放不盖黑底');
+});
+
 test('cancelling playback does not mark a skipped trigger complete or carry skip into the next run', async () => {
   const h = harness({ ...campaign, scripts: { ...campaign.scripts, demo: compileScript('demo', [{ type: 'dialogue', speaker: '', actor: null, text: '一句' }, { type: 'dialogue', speaker: '', actor: null, text: '两句' }]) } });
   const trigger = { id: 'cancelled', script: 'demo', map: 'shadow-camp', x: 0, y: 0, width: 10, height: 10 };

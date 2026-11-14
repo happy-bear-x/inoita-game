@@ -98,7 +98,9 @@ export class GameUI {
   setMode(mode:GameMode):void{
     this.controlLayoutEditing=false;this.keyBindingEditing=false;
     this.closeDefeat();this.mode=mode;this.ready=false;this.failed=false;this.resetInput();
-    this.closeDialogue();this.cancelQuestPopup?.();this.toastMessage='';this.instant.clear();this.loadingState=undefined;this.rebuildCover=false;this.updateControls();
+    this.closeDialogue();this.cancelQuestPopup?.();this.toastMessage='';this.instant.clear();this.loadingState=undefined;
+    // 回标题、读档和换模式都兜底撤掉两种黑幕，剧情异常留下的状态不能盖住菜单。
+    this.rebuildCover=false;this.skipCover=false;this.updateControls();
   }
   lock(value:boolean,owner='interaction'):void{this.controls.lock(owner,value);if(value)this.resetInput();this.updateControls();}
   suspend(value:boolean):void{this.suspended=value;if(value)this.resetInput();this.updateControls();}
