@@ -57,6 +57,25 @@ test('skip stops at choices, resumes selected lines normally and preserves compl
   await tick();
   assert.equal(h.lines.at(-1), '第一句'); h.director.cancel(); assert.equal(await replay, false);
 });
+test('跳过补画前先收掉旧对白框再盖黑底', async () => {
+  const option = { label: '继续', value: 'go', lines: [] };
+  const events: string[] = [];
+  const h = harness({ ...campaign, scripts: { ...campaign.scripts, demo: compileScript('demo', [
+    { type: 'dialogue', speaker: '', actor: null, text: '一句' },
+    { type: 'choice', prompt: '选择', options: [option] }
+  ]) } }, { closeDialogue: () => { events.push('close-dialogue'); } }, undefined, {
+    async flushStage() { events.push('flush'); },
+    setBackdrop(covered: boolean) { events.push(covered ? 'backdrop-on' : 'backdrop-off'); }
+  });
+  const playing = h.director.trigger({ id: 'close-before-backdrop', script: 'demo', map: 'shadow-camp', x: 0, y: 0, width: 10, height: 10 });
+  await tick(); h.director.skip(); await tick();
+  const on = events.indexOf('backdrop-on'), flush = events.indexOf('flush'), off = events.indexOf('backdrop-off');
+  assert(on >= 0 && flush > on && off > flush, `补画在黑底内完成：${events.join(',')}`);
+  assert(events.slice(0, on).includes('close-dialogue'), '盖黑底前先收掉对白框');
+  h.choose(option);
+  await playing.catch(() => {});
+});
+
 test('补画失败时跳过黑底仍会关闭', async () => {
   const option = { label: '继续', value: 'go', lines: [] };
   const h = harness({ ...campaign, scripts: { ...campaign.scripts, demo: compileScript('demo', [

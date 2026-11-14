@@ -413,7 +413,11 @@ export class StoryDirector {
     const presentation = this.presentation;
     if (!presentation?.flushStage) return;
     try {
-      if (skipped) presentation.setBackdrop?.(true);
+      if (skipped) {
+        // 对白框画在主界面上层，黑底盖不住；补画前先收起，避免它压在黑底上。
+        this.ui.closeDialogue();
+        presentation.setBackdrop?.(true);
+      }
       await presentation.flushStage(signal);
     } finally {
       // 开黑底本身失败时也要尝试复原；收尾异常不能盖住原来的错误。
