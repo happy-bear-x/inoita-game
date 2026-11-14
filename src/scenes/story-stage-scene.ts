@@ -158,7 +158,7 @@ export class StoryStageScene extends Phaser.Scene {
         const classId = character?.classId ?? member?.classId;
         const skills = character ? this.app.session.skills : member?.skills;
         const learnedSkills = classId ? learnedSkillIds(this.app.battleCatalog, classId, skills) : undefined;
-        const outfit = await wardrobe.prepare(base, equipment, classId, { signal, learnedSkills });
+        const outfit = await wardrobe.prepare(base, equipment, classId, { signal, learnedSkills, townPose: actor.townPose ?? map.townPose });
         guard(); appearances.set(actor.id, outfit.actor); outfits.push({ wardrobe, outfit });
       }
       nextLayers = drawStoryMap(this, map);

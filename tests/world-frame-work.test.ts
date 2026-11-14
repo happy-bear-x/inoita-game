@@ -293,3 +293,20 @@ test('lamp preparation cancels or rejects a blocked landing before creating a me
     assert.equal(created,0);assert.equal(released,failure==='load'?0:1);
   }
 });
+
+test('world appearance follows town maps and keeps an explicit armed story override', async () => {
+  const read=<T>(name:string)=>JSON.parse(readFileSync(new URL(`../public/content/${name}.json`,import.meta.url),'utf8')) as T;
+  const battle=read<BattleCatalog>('battle'),items=read<ItemCatalog>('items'),stats=read<CharacterStatsCatalog>('character-stats');
+  const hero=new BattleCharacter('dark-knight',stats,items),actor=battle.classes.find(value=>value.id==='dark-knight')!.actor;
+  const session=new Session(read<Campaign>('campaign'),undefined,{classId:hero.classId,appearance:actor},items,hero,battle);
+  const selected:boolean[]=[];
+  const host=Object.assign(Object.create(WorldScene.prototype),{app:{session,battleCatalog:battle},player:{actor},
+    map:{townPose:true},request:new AbortController(),outfitRequest:0,
+    wardrobe:{prepare:async (_base:unknown,_equipment:unknown,_class:unknown,options:{townPose:boolean})=>{selected.push(options.townPose);return {actor};},activate(){}}});
+  await host.preparePlayerAppearance();
+  host.playerTownPose=false;
+  await host.preparePlayerAppearance();
+  delete host.playerTownPose;host.map.townPose=false;
+  await host.preparePlayerAppearance();
+  assert.deepEqual(selected,[true,false,false]);
+});

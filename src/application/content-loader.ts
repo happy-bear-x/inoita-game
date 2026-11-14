@@ -7,7 +7,7 @@ import type { ChangelogCatalog } from '../domain/changelog.ts';
 import type { StoryInterface } from '../domain/story-interface.ts';
 import type { ShopCatalog } from '../domain/shop.ts';
 import { parseSprings, type SpringCatalog } from '../domain/springs.ts';
-import { wardrobePoseFile, type CostumePose, type WardrobeCatalog } from '../domain/wardrobe.ts';
+import { townMovementPoses, wardrobePoseFile, type CostumePose, type WardrobeCatalog } from '../domain/wardrobe.ts';
 import { contentVersionNow, versionedContent } from './asset-version.ts';
 import { storyDevMode } from '../domain/dev-mode.ts';
 
@@ -57,6 +57,7 @@ export class ContentLoader {
   private manifestRequest?: Promise<ContentManifest>;
   private readonly requests = new Map<string, ContentRequest<unknown>>();
   private splitWardrobe = true;
+  private readonly townPoses = new Map<string, CostumePose>();
   statusHud(signal?:AbortSignal){return this.read('content/status-hud.json',parseStatusHud,signal);}
   characterStats(signal?:AbortSignal){return this.read('content/character-stats.json',parseCharacterStats,signal);}
   items(signal?:AbortSignal){return this.read('content/items.json',parseItemCatalog,signal);}
@@ -85,7 +86,29 @@ export class ContentLoader {
     const ids=await this.read<string[]>('content/wardrobe/pose-index.json',value=>value as string[],signal);
     return parseWardrobe({...core,poses:await this.wardrobePoses(ids,signal)});
   }
+  /** 标题预载与直接进图共用，动作保留到本次应用退出。 */
+  async prepareTownPoses(wardrobe: WardrobeCatalog, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted();
+    const ids = new Set(Object.values(townMovementPoses(wardrobe)).filter((id): id is string => id !== undefined));
+    await Promise.all([...ids].map(async id => {
+      if (this.townPoses.has(id)) return;
+      const pose = wardrobe.poses[id] ?? (await this.readWardrobePoses([id], signal))[id];
+      this.townPoses.set(id, pose);
+    }));
+  }
   async wardrobePoses(ids:readonly string[],signal?:AbortSignal):Promise<Record<string,CostumePose>>{
+    signal?.throwIfAborted();
+    const poses: Record<string, CostumePose> = {};
+    const missing: string[] = [];
+    for (const id of new Set(ids)) {
+      const pose = this.townPoses.get(id);
+      if (pose) poses[id] = pose;
+      else missing.push(id);
+    }
+    return Object.assign(poses, await this.readWardrobePoses(missing, signal));
+  }
+  private async readWardrobePoses(ids: readonly string[], signal?: AbortSignal): Promise<Record<string, CostumePose>> {
+    if (!ids.length) return {};
     if (!this.splitWardrobe) {
       const catalog = await this.read('content/wardrobe.json', parseWardrobe, signal, 'pose');
       return Object.fromEntries(ids.map(id => {

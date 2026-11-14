@@ -33,6 +33,7 @@
 - `story-stage-isolation.test.ts` 验证加载途中跳过、迟到画面清理、共享启动与真实坐标保留；`story-skip.test.ts` 验证流程阶段及解锁顺序。
 - `scene-assets.test.ts` 验证已齐全的资源不等待无关下载，以及缺帧修复仍按队列执行。
 - `wardrobe.test.ts` 验证跨场景合成外观复用、独立取消、无外观变化的换装、大动作分批绘制、缓存上限、会话清理及图形上下文恢复；`composition-budget.test.ts` 验证工作预算排除等待时间及中途取消。
+- `content-loader.test.ts` 用拆包及完整衣柜两种格式验证八份城镇动作跨会话常驻、并发只下载一次。
 - `wardrobe.test.ts` 还覆盖绘图恢复等待、超时、取消、半成品重建、尺寸限制与外观显存预算；`phaser-framebuffer.test.ts` 从实际运行时包提取构造器验证分配失败清理和补丁重复执行。
 - `world-frame-work.test.ts` 验证饰品换装保留角色、碰撞体和攻击动作，随后投影不会重复准备；`world-skill-cache.test.ts` 验证饰品不触发技能资源补载，新技能等待外观合成；`story-menu-interactions.test.ts` 验证装备准备期间保留页面、完成后只刷新一次。
 
@@ -74,3 +75,5 @@ npm run test:standalone
 - `party-follow.test.ts` 按连续移动推进角色，覆盖墙内站位、拐角、赶路、拉扯与离队边界、共享轨迹上限和预算等待；跟随验收统计实际位移和拉回次数。
 
 - 佣兵技能书测试覆盖用书限制、独立成长、存档恢复与技能页局部更新。
+
+- `story-scene`、`story-stage-isolation` 与 `saved-game` 覆盖主角收放武器的正常/跳过路径、同图保留、地图重载恢复默认和上一版存档迁移。

@@ -292,9 +292,14 @@ export class HeadlessStory {
     if (!map) throw new Error('剧情舞台缺少地图');
     const sameMap = !!this.stage && (declaration.mapFromWorld || declaration.map === this.stage.map)
       && !declaration.resetActors && !(this.honorDeclaredMap && this.stage.map !== map);
-    const scene = sameMap ? this.stage!.scene
+    let scene = sameMap ? this.stage!.scene
       : !declaration.resetActors && this.scenes.has(map) ? this.scenes.get(map)!
         : this.buildScene(map);
+    if (!sameMap) {
+      scene = structuredClone(scene);
+      const player = scene.actors.find(actor => actor.id === 'player');
+      if (player) delete player.townPose;
+    }
     if (!this.committedScenes.has(map) || declaration.resetActors)
       this.committedScenes.set(map, structuredClone(scene));
     return resolveStoryScene(declaration, scene);

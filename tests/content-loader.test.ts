@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { ContentLoader } from '../src/application/content-loader.ts';
 
 const fixture = JSON.parse(readFileSync(new URL('../public/content/status-hud.json', import.meta.url), 'utf8'));
+const wardrobeFile = new URL('../public/content/wardrobe.json', import.meta.url);
 
 test('a stalled content request times out for all callers and can be retried', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
@@ -136,6 +137,34 @@ test('trusted wardrobe returns the core file and fetches only requested poses', 
   } finally { globalThis.fetch = original; }
 });
 
+test('title and direct entry share eight town poses across session cleanup', async t => {
+  const wardrobe = JSON.parse(readFileSync(wardrobeFile, 'utf8'));
+  const { poses, ...core } = wardrobe;
+  const ids = Object.entries(wardrobe.stances['unarmed:empty'] as Record<string,string>)
+    .filter(([clip]) => clip.startsWith('idle-') || clip.startsWith('walk-')).map(([,id]) => id);
+  const requested: string[] = [];
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url === 'content-manifest.json') return manifestResponse();
+    if (url === 'content/wardrobe.json') return Response.json({ ...core, poses: {} });
+    const id = url.split('/').pop()!.replace(/\.json$/, '');
+    requested.push(id);
+    return Response.json(poses[id]);
+  });
+  const loader = new ContentLoader();
+  loader.trusted = true;
+  const catalog = await loader.wardrobe();
+  await Promise.all([loader.prepareTownPoses(catalog), loader.prepareTownPoses(catalog)]);
+  assert.equal(new Set(ids).size, 8);
+  assert.deepEqual(requested.sort(), [...ids].sort());
+  const before = await loader.wardrobePoses(ids);
+  loader.clearSessionCaches();
+  await loader.prepareTownPoses(catalog);
+  const after = await loader.wardrobePoses(ids);
+  for (const id of ids) assert.equal(after[id], before[id]);
+  assert.equal(requested.length, 8);
+});
+
 test('map cache retains two recently read results without invalidating returned maps or in-flight downloads', async () => {
   const original = globalThis.fetch, calls = new Map<string, number>();
   let finish!: () => void;
@@ -182,17 +211,22 @@ test('pose requests share in-flight data but release completed results to their 
 
 test('validation releases full wardrobe poses and source-format callers can reload an individual pose', async () => {
   const original = globalThis.fetch;
-  const source = readFileSync(new URL('../public/content/wardrobe.json', import.meta.url), 'utf8');
+  const source = readFileSync(wardrobeFile, 'utf8');
   let calls = 0;
   globalThis.fetch = (async () => {
     calls++; return { ok: true, json: async () => JSON.parse(source) } as Response;
   }) as typeof fetch;
   try {
     const loader = new ContentLoader(), wardrobe = await loader.wardrobe();
-    const id = Object.keys(wardrobe.poses)[0]!;
+    const townId = wardrobe.stances['unarmed:empty']['walk-south']!;
+    const townPose = wardrobe.poses[townId];
+    const id = wardrobe.stances['unarmed:empty']['attack-south']!;
     const pose = wardrobe.poses[id];
+    await loader.prepareTownPoses(wardrobe);
     loader.releaseValidationCaches(wardrobe);
     assert.deepEqual(wardrobe.poses, {});
+    assert.equal((await loader.wardrobePoses([townId]))[townId], townPose);
+    assert.equal(calls, 1);
     assert.deepEqual((await loader.wardrobePoses([id]))[id], pose);
     assert.equal(calls, 2);
     assert.deepEqual(wardrobe.poses, {});

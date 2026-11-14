@@ -379,3 +379,23 @@ test('a create-mode appearance reusing its world entity clears the pending entra
   assert.equal(after.id,before.id,'带 worldEntityId 的 create 复用地图实例');
   assert.deepEqual([after.visible,after.stageHidden,after.x,after.y],[true,undefined,40,50]);
 });
+
+test('town pose overrides only the hero and survives same-map scene changes', () => {
+  const snapshot = resolveStoryScene(stage(), source([
+    actor('member:ally', { memberId: 'ally' }),
+  ]));
+  const hero = boundSceneActor(snapshot, 'player')!;
+  hero.clip = 'attack-south'; hero.animationProgress = 0.5;
+  const changed = applyStorySceneAction(snapshot, { type: 'town-pose', enabled: true });
+  assert.equal(boundSceneActor(changed, 'player')!.townPose, true);
+  assert.equal(changed.scene.actors.find(actor => actor.id === 'member:ally')!.townPose, undefined);
+  assert.equal(boundSceneActor(snapshot, 'player')!.townPose, undefined);
+  assert.equal(boundSceneActor(changed, 'player')!.clip, 'attack-south');
+  assert.equal(boundSceneActor(changed, 'player')!.animationProgress, 0.5);
+  const next = resolveStoryScene(stage(), changed.scene);
+  assert.equal(boundSceneActor(next, 'player')!.townPose, true);
+  const armed = applyStorySceneAction(next, { type: 'town-pose', enabled: false });
+  assert.equal(boundSceneActor(armed, 'player')!.townPose, false);
+  const reloaded = resolveStoryScene({ ...stage(), resetActors: true }, armed.scene);
+  assert.equal(boundSceneActor(reloaded, 'player')!.townPose, undefined);
+});

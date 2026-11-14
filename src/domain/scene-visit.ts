@@ -69,6 +69,7 @@ export function prepareSceneVisit(inputs:SceneVisitInputs,map:WorldMap,player:Sc
   for(const actor of actors)register(actor,'neutral');
   const hero=structuredClone(player);
   hero.id='player';hero.memberId='player';hero.visible=true;
+  delete hero.townPose;
   hero.appearance??=structuredClone(world.actors[hero.actor]);
   if(!hero.appearance)throw new Error('剧情地图缺少主角外观');
   Object.assign(hero,navigation.nearestBody(hero.appearance,hero)??navigation.nearest(hero.appearance,hero));

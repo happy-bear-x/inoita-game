@@ -28,6 +28,17 @@ const world=read<WorldIndex>('content/world.json'),campaign=read<Campaign>('cont
 const storyInterface=read<{portraits:Record<string,string>}>('content/story-interface.json');
 const sourceMap=JSON.parse(fs.readFileSync(fileURLToPath(new URL('../tools/debug-start/data/source-map.json',import.meta.url)),'utf8')) as {actors:Record<string,number>};
 
+test('the capital and camp use town poses, and the cave confrontation changes them before walking', () => {
+ for (const id of ['shadow-camp', 'berkel-capital']) {
+  assert.equal(read(`content/maps/${id}.json`).townPose, true, id);
+ }
+ assert.equal(read('content/maps/silent-cave-depths.json').townPose ?? false, false);
+ const scene = campaign.scripts['event-5'].nodes.find(node => node.id === 'scene-2')!;
+ const switches = scene.presentation.flatMap((action, i) => action.type === 'town-pose'
+  ? [[action.enabled, scene.presentation[i + 1]?.type]] : []);
+ assert.deepEqual(switches, [[true, 'wait'], [false, 'walk'], [true, 'wait']]);
+});
+
 test('dialogue portraits resolve to exported files and player identity is separate from NPC professions',()=>{
  assert.equal(world.actors.kiyan.portrait,'kiyan');assert.equal(world.actors.saint.portrait,'saint');
  assert.equal(world.actors.darius.portrait,'darius');assert.equal(world.actors['shadow-soldier'].portrait,null);

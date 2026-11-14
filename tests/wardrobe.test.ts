@@ -382,3 +382,26 @@ test('byte budget evicts idle outfits before allocation and protects live outfit
   assert.ok(next.outfit.textures.every(key=>f.textures.has(key)));
   active.release();next.release();
 });
+
+test('town movement replaces only locomotion and keeps equipped parts and combat poses', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const { costumeRecipe, townMovementPoses } = await import('../src/domain/wardrobe.ts');
+  const catalog = JSON.parse(await readFile(new URL('../public/content/wardrobe.json', import.meta.url), 'utf8'));
+  const items = JSON.parse(await readFile(new URL('../public/content/items.json', import.meta.url), 'utf8'));
+  const town = townMovementPoses(catalog);
+  assert.equal(Object.keys(town).length, 8);
+  for (const [stance, poses] of Object.entries(catalog.stances) as [string,Record<string,string>][]) {
+    const [main, off] = stance.split(':');
+    const equipment:Record<string,string> = {};
+    for (const [slot, kind] of [['main-hand',main],['off-hand',off]]) {
+      if (kind === 'unarmed' || kind === 'empty') continue;
+      const id = Object.keys(items.items).find(id => items.items[id].kind === kind && catalog.equipment[id]);
+      assert.ok(id, kind); equipment[slot] = id;
+    }
+    const field = costumeRecipe(catalog, items, equipment);
+    const city = costumeRecipe(catalog, items, equipment, undefined, undefined, undefined, true);
+    assert.deepEqual(city.variants, field.variants);
+    for (const [name,id] of Object.entries(city.poses))
+      assert.equal(id, name.startsWith('idle-') || name.startsWith('walk-') ? town[name as keyof typeof town] : poses[name]);
+  }
+});

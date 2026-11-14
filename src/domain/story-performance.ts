@@ -65,6 +65,7 @@ export type PerformanceAction =
   | { type: 'sound'; sound: string }
   | { type: 'instant-message'; text: string }
   | { type: 'refresh-appearance' }
+  | { type: 'town-pose'; enabled: boolean }
   | { type: 'stop-audio' }
   | { type: 'music'; sound: string | null }
   | { type: 'camera'; target: string; motion: 'cut' | 'pan' }

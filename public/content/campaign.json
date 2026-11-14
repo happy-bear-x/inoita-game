@@ -9650,6 +9650,10 @@
               "motion": "cut"
             },
             {
+              "type": "town-pose",
+              "enabled": true
+            },
+            {
               "type": "wait",
               "durationMs": 900
             },
@@ -9756,6 +9760,10 @@
               "text": "如果是这样...那你也得死了...",
               "speaker": "凯恩",
               "actor": "kiyan"
+            },
+            {
+              "type": "town-pose",
+              "enabled": false
             },
             {
               "type": "walk",
@@ -9909,6 +9917,10 @@
               "type": "camera",
               "target": "player",
               "motion": "pan"
+            },
+            {
+              "type": "town-pose",
+              "enabled": true
             },
             {
               "type": "wait",
@@ -10873,6 +10885,10 @@
               "target": "player",
               "ensure": true,
               "facing": "east"
+            },
+            {
+              "type": "town-pose",
+              "enabled": true
             },
             {
               "type": "fade",
@@ -16399,6 +16415,10 @@
               "actor": "kiyan"
             },
             {
+              "type": "town-pose",
+              "enabled": true
+            },
+            {
               "type": "wait",
               "durationMs": 900
             },
@@ -16975,6 +16995,10 @@
             {
               "type": "wait",
               "durationMs": 900
+            },
+            {
+              "type": "town-pose",
+              "enabled": true
             },
             {
               "type": "pose",
@@ -26270,6 +26294,10 @@
               "durationMs": 1200
             },
             {
+              "type": "town-pose",
+              "enabled": true
+            },
+            {
               "type": "appear",
               "target": "player",
               "mode": "reuse",
@@ -29661,6 +29689,10 @@
               "opacity": 1,
               "color": 0,
               "durationMs": 600
+            },
+            {
+              "type": "town-pose",
+              "enabled": true
             },
             {
               "type": "appear",
@@ -53921,6 +53953,10 @@
               "motion": "cut"
             },
             {
+              "type": "town-pose",
+              "enabled": false
+            },
+            {
               "type": "fade",
               "opacity": 0,
               "color": 0,
@@ -53968,6 +54004,10 @@
               "type": "camera",
               "target": "player",
               "motion": "pan"
+            },
+            {
+              "type": "town-pose",
+              "enabled": true
             },
             {
               "type": "wait",
@@ -54125,6 +54165,10 @@
               "type": "camera",
               "target": "shinty",
               "motion": "pan"
+            },
+            {
+              "type": "town-pose",
+              "enabled": false
             },
             {
               "type": "wait",
@@ -79463,6 +79507,10 @@
               "durationMs": 1800
             },
             {
+              "type": "town-pose",
+              "enabled": true
+            },
+            {
               "type": "wait",
               "durationMs": 600
             },
@@ -79900,6 +79948,10 @@
             {
               "type": "wait",
               "durationMs": 900
+            },
+            {
+              "type": "town-pose",
+              "enabled": true
             },
             {
               "type": "appear",
@@ -82730,6 +82782,10 @@
               "target": "shinty",
               "ensure": true,
               "facing": "west"
+            },
+            {
+              "type": "town-pose",
+              "enabled": true
             },
             {
               "type": "parallel",
@@ -87449,6 +87505,10 @@
               "facing": "west"
             },
             {
+              "type": "town-pose",
+              "enabled": false
+            },
+            {
               "type": "camera",
               "target": "shinty",
               "motion": "cut"
@@ -90115,6 +90175,10 @@
               "x": 200,
               "y": 248,
               "facing": "south"
+            },
+            {
+              "type": "town-pose",
+              "enabled": true
             },
             {
               "type": "fade",
@@ -93302,6 +93366,10 @@
               "facing": "west"
             },
             {
+              "type": "town-pose",
+              "enabled": true
+            },
+            {
               "type": "dialogue",
               "text": "好险啊。&N再晚一点就该出事了。",
               "speaker": "凯萨尔",
@@ -94700,6 +94768,10 @@
               "text": "请跟我来吧。我送您到营帐去。",
               "speaker": "海克迪驻军队长",
               "actor": "story-heket-forces-captain-70b1d33a"
+            },
+            {
+              "type": "town-pose",
+              "enabled": true
             },
             {
               "type": "wait",
@@ -134472,6 +134544,10 @@
               "durationMs": 600
             },
             {
+              "type": "town-pose",
+              "enabled": true
+            },
+            {
               "type": "face",
               "target": "story-tindalrose-3aed1899",
               "ensure": true,
@@ -137636,6 +137712,10 @@
               "durationMs": 600
             },
             {
+              "type": "town-pose",
+              "enabled": true
+            },
+            {
               "type": "appear",
               "target": "player",
               "mode": "reuse",
@@ -138524,6 +138604,10 @@
             {
               "type": "wait",
               "durationMs": 1200
+            },
+            {
+              "type": "town-pose",
+              "enabled": true
             },
             {
               "type": "fade",
@@ -182258,6 +182342,10 @@
               "durationMs": 600
             },
             {
+              "type": "town-pose",
+              "enabled": true
+            },
+            {
               "type": "appear",
               "target": "player",
               "mode": "reuse",
@@ -182426,6 +182514,10 @@
               "durationMs": 180
             },
             {
+              "type": "town-pose",
+              "enabled": false
+            },
+            {
               "type": "wait",
               "durationMs": 420
             },
@@ -182512,6 +182604,10 @@
             {
               "type": "wait",
               "durationMs": 420
+            },
+            {
+              "type": "town-pose",
+              "enabled": true
             },
             {
               "type": "wait",
@@ -215344,6 +215440,10 @@
               }
             },
             {
+              "type": "town-pose",
+              "enabled": true
+            },
+            {
               "type": "face",
               "target": "player",
               "ensure": true,
@@ -220114,7 +220214,12 @@
         },
         {
           "id": "scene-4",
-          "presentation": [],
+          "presentation": [
+            {
+              "type": "town-pose",
+              "enabled": true
+            }
+          ],
           "commands": [],
           "exit": {
             "type": "next",
@@ -220292,6 +220397,10 @@
               "x": 488,
               "y": 168,
               "facing": "south"
+            },
+            {
+              "type": "town-pose",
+              "enabled": true
             },
             {
               "type": "face",
@@ -239395,6 +239504,10 @@
             {
               "type": "leave",
               "target": "player"
+            },
+            {
+              "type": "town-pose",
+              "enabled": true
             },
             {
               "type": "appear",

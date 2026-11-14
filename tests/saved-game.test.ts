@@ -386,3 +386,12 @@ test('format 51 mercenaries gain empty skill book progress on upgrade',()=>{
   assert.deepEqual(restored.generated.skillCaps,member.generated.skillCaps);
   assert.deepEqual(restored.skills.skillLevels(),member.skills.skillLevels());
 });
+
+test('format 54 restores map-default posture and new saves retain explicit hero posture', () => {
+  const legacy = record();
+  legacy.format = 54;
+  assert.equal(prepareSavedGame(legacy, content).world.scene!.actors[0].townPose, undefined);
+  const current = record();
+  current.world.scene!.actors[0].townPose = false;
+  assert.equal(prepareSavedGame(current, content).world.scene!.actors[0].townPose, false);
+});

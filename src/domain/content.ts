@@ -246,6 +246,8 @@ export interface QuestItemSpawn {
 
 /** 一张地图的全部数据：地形阻挡、两层贴图、人物和出口。 */
 export interface WorldMap {
+  /** 角色站立和行走时使用城镇姿态。缺省使用当前装备的野外姿态。 */
+  townPose?: boolean;
   /** 地图宝箱使用的掉落等级，0 保留原版空掉落。 */
   lootLevel?: number;
   /** 体验版宝箱有效等级：原版 lootLevel 为 0 时由导出器沿出口回退。 */

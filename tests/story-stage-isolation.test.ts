@@ -933,3 +933,22 @@ test('entering skip mode captures the actual current actor position and camera b
   assert.equal(snapshot.scene.actors.find(actor => actor.id === 'player')!.x, 77);
   assert.equal(snapshot.camera!.x, 123 + run.stage.cameras.main.width / 2);
 });
+
+test('normal and skipped town pose commands persist across scenes and reset on travel', async () => {
+  for (const skipped of [false, true]) {
+    const run = harness(), signal = new AbortController().signal, skip = new AbortController();
+    await run.presenter.begin(signal);
+    if (skipped) skip.abort();
+    const playback = { signal, skipSignal: skip.signal };
+    await run.presenter.execute({ type: 'town-pose', enabled: true }, playback);
+    assert.equal(run.presenter.captureStage()!.scene.actors.find(actor => actor.id === 'player')!.townPose, true);
+    await run.presenter.execute({ type: 'stage', map: 'home', mapFromWorld: true, x: 10, y: 20,
+      facing: 'south', playerVisible: true, cast: [] }, playback);
+    assert.equal(run.presenter.captureStage()!.scene.actors.find(actor => actor.id === 'player')!.townPose, true);
+    await run.presenter.execute({ type: 'town-pose', enabled: false }, playback);
+    assert.equal(run.presenter.captureStage()!.scene.actors.find(actor => actor.id === 'player')!.townPose, false);
+    await run.presenter.execute({ type: 'stage', map: 'remote', x: 10, y: 20,
+      facing: 'south', playerVisible: true, cast: [] }, playback);
+    assert.equal(run.presenter.captureStage()!.scene.actors.find(actor => actor.id === 'player')!.townPose, undefined);
+  }
+});

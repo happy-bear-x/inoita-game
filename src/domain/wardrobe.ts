@@ -38,7 +38,18 @@ export function hasOffhandShield(items:ItemCatalog,equipment:Partial<Record<Equi
   const offhand=equipment['off-hand'];
   return offhand!==undefined?items.items[offhand]?.kind==='shield':defaultShield;
 }
-export function costumeRecipe(catalog: WardrobeCatalog, items: ItemCatalog, equipment: Partial<Record<EquipmentSlot,string>>, classId?:string,appearanceId?:string,learnedSkills?:ReadonlySet<string>) {
+/** 所有可换装角色在城镇共用的四向站立和行走动作。 */
+export function townMovementPoses(catalog: WardrobeCatalog): Partial<Record<ClipName,string>> {
+  const poses: Partial<Record<ClipName,string>> = {};
+  for (const movement of ['idle','walk'] as const) for (const facing of ['south','west','north','east'] as const) {
+    const name = `${movement}-${facing}` as const;
+    const id = catalog.stances['unarmed:empty']?.[name];
+    if (!id) throw new Error(`城镇动作缺失：${name}`);
+    poses[name] = id;
+  }
+  return poses;
+}
+export function costumeRecipe(catalog: WardrobeCatalog, items: ItemCatalog, equipment: Partial<Record<EquipmentSlot,string>>, classId?:string,appearanceId?:string,learnedSkills?:ReadonlySet<string>,townPose=false) {
   const companion=appearanceId?catalog.companions?.[appearanceId]:undefined;
   const variants={...catalog.defaults,...companion?.variants};
   for(const [slot,id]of Object.entries(equipment)) {
@@ -50,7 +61,9 @@ export function costumeRecipe(catalog: WardrobeCatalog, items: ItemCatalog, equi
   }
   const main=equipment['main-hand']?items.items[equipment['main-hand']].kind:'unarmed';
   const off=equipment['off-hand']?items.items[equipment['off-hand']].kind:'empty';
-  const poses=catalog.stances[`${main}:${off}`];
+  const weaponPoses=catalog.stances[`${main}:${off}`];
+  const townPoses=townPose?townMovementPoses(catalog):{};
+  const poses=weaponPoses?{...weaponPoses,...townPoses}:undefined;
   if(!poses)throw new Error('这组武器缺少人物动作');
   const skills=classId?catalog.skillStances[classId]?.[`${main}:${off}`]:undefined;
   // 只合成已学技能的姿态；未学技能不参与外观，学会后再补。姿态动作全部保留，

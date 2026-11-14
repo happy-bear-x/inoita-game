@@ -32,7 +32,7 @@ const STORY_CURTAIN_COVERAGE_SCALE = 3;
 interface Performer { visual: CharacterVisual; facing: Facing; worldEntityId?: string; unpositioned?:boolean; storyPoseHold?: boolean; clearPose?: () => void }
 type VisualAction = Exclude<PerformanceAction, { type: 'parallel' }>;
 /** 跳过时只需要改逻辑舞台状态的演员动作。 */
-type LogicalSceneAction = Extract<VisualAction, { type: 'world-object' | 'appear' | 'show' | 'leave' | 'face' | 'pose' | 'walk' }>;
+type LogicalSceneAction = Extract<VisualAction, { type: 'town-pose' | 'world-object' | 'appear' | 'show' | 'leave' | 'face' | 'pose' | 'walk' }>;
 
 /** 独立舞台只产生语义结果，由运行时提交到正式世界。 */
 export class StoryPresenter implements StoryPresentationPort {
@@ -351,6 +351,11 @@ export class StoryPresenter implements StoryPresentationPort {
           battleCatalog: this.app.battleCatalog, drops: cachedDropCatalog(drops, this.app.items, this.app.battleCatalog.enemies), springs, partyActors: current?.scene.actors },
           worldMap, { ...player, x: declaration.x, y: declaration.y, facing: declaration.facing });
       }
+      if (declaration.resetActors || current?.map !== map) {
+        source = structuredClone(source);
+        const player = source.actors.find(actor => actor.id === 'player');
+        if (player) delete player.townPose;
+      }
       this.rememberScene(source);
       snapshot = resolveStoryScene({ ...declaration, map }, source);
     }
@@ -590,6 +595,7 @@ export class StoryPresenter implements StoryPresentationPort {
       switch (action.type) {
         case 'instant-message': this.app.ui.showInstant(action.text); return;
         case 'stage': await this.stage(action, playback.signal, pendingEntrances, playback.skipSignal); return;
+        case 'town-pose': this.applyLogicalAction(action); return;
         case 'refresh-appearance': this.refreshLogicalAppearance(); return;
         case 'fade': this.opacity = action.opacity; this.color = action.color; return;
         case 'stop-audio': this.app.audio?.stopStoryAudio(); return;
@@ -619,6 +625,14 @@ export class StoryPresenter implements StoryPresentationPort {
     const scene = this.scene();
     switch (action.type) {
       case 'instant-message': this.app.ui.showInstant(action.text);return;
+      case 'town-pose': {
+        const current = this.captureStage();
+        if (current) {
+          const next = applyStorySceneAction(current, action);
+          await this.stage(next, playback.signal, undefined, playback.skipSignal);
+        }
+        return;
+      }
       case 'refresh-appearance': {
         const stage=this.captureStage();
         if(stage){

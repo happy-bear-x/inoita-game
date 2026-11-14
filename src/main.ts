@@ -303,6 +303,7 @@ function prepareStory(_signal: AbortSignal): Promise<void> {
     if (gmOn()) campaign.debugStory = await app.content.storyDebug(signal);
     signal.throwIfAborted();
     recordStartPhase('story-debug-ready');
+    await app.content.prepareTownPoses(wardrobe, signal);
     // 生产构建信任构建期校验：不重复跑语义校验，也不为校验 fetch 281 张剧情地图。
     // dev/测试/?gm 仍走完整路径。
     if (!app.content.trusted) {

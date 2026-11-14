@@ -15,6 +15,7 @@ export interface Outfit {
   redraw(): void;
 }
 export interface WardrobePrepareOptions {
+  townPose?: boolean;
   /** 菜单预览只需要 idle-south；省略表示整套动作。 */
   clipNames?: Iterable<string>;
   /** 只合成这些技能的动作；省略表示该职业全部技能（构建期/测试）。 */
@@ -62,7 +63,7 @@ export class OutfitPool {
   get available():boolean { return this.active; }
   key(base: ActorDefinition, equipment: Partial<Record<EquipmentSlot, string>>, classId?: string,
     options?: WardrobePrepareOptions): string {
-    const recipe = costumeRecipe(this.catalog, this.items, equipment, classId, base.id, options?.learnedSkills);
+    const recipe = costumeRecipe(this.catalog, this.items, equipment, classId, base.id, options?.learnedSkills, options?.townPose);
     return JSON.stringify([base.id, base.clips, recipe.poses, Object.entries(recipe.variants).sort(),
       options?.clipNames === undefined ? null : [...options.clipNames].sort()]);
   }
@@ -167,7 +168,7 @@ export class OutfitPool {
   }
   private async prepare(base: ActorDefinition, equipment: Partial<Record<EquipmentSlot, string>>, classId: string | undefined,
     options: WardrobePrepareOptions | undefined, signal: AbortSignal): Promise<Outfit> {
-    const recipe = costumeRecipe(this.catalog, this.items, equipment, classId, base.id, options?.learnedSkills);
+    const recipe = costumeRecipe(this.catalog, this.items, equipment, classId, base.id, options?.learnedSkills, options?.townPose);
     const requested = options?.clipNames === undefined ? undefined : new Set(options.clipNames);
     const poses = Object.entries(recipe.poses).filter(([name]) => !requested || requested.has(name));
     const missing = [...new Set(poses.map(([, id]) => id).filter((id): id is string => !!id && !this.catalog.poses[id]))];

@@ -553,7 +553,7 @@ const entity={...visibility,actor:text,characterId:optional(text),authority:opti
 const enemySpawn={respawn:optional((v,p)=>requireValue(v===false,p,'一次性敌人不可刷新')),id:text,enemyId:text,x:number,y:number,tierLevel:optional(count),breakableEligible:optional(boolean)};
 const campaignEnemy={...enemySpawn,map:text,activeQuest:text,rewardItem:text,respawn:(value:unknown,path:string)=>requireValue(value===false,path,'任务敌人不可刷新')};
 const world=shape<WorldIndex>({storyEffects:optional(record(object({clips:record(effectClip),placement:optional(oneOf('ground','above-characters'))}))),version:integer,maps:array(object({id:text,name:text,file})),actors:record(actor),portraits:record(object({file,width:positive,height:positive})),props:array(object({key:text,file}))});
-const map=shape<WorldMap>({lootLevel:optional(integer),chestLevel:optional(integer),chestLevelSource:optional(oneOf('native','neighbor','floor','override')),id:text,name:text,width:positive,height:positive,tileSize:positive,columns:positive,rows:positive,blocked:array(boolean),water:optional(array(integer)),ground:file,canopy:file,
+const map=shape<WorldMap>({townPose:optional(boolean),lootLevel:optional(integer),chestLevel:optional(integer),chestLevelSource:optional(oneOf('native','neighbor','floor','override')),id:text,name:text,width:positive,height:positive,tileSize:positive,columns:positive,rows:positive,blocked:array(boolean),water:optional(array(integer)),ground:file,canopy:file,
   features:array(object({texture:text,x:number,y:number,offsetX:number,offsetY:number,width:positive,flip:boolean,blend:oneOf('normal','screen','add','multiply','color-dodge')})),entities:array(object(entity)),enemySpawns:optional(array(object(enemySpawn))),breakableSpawn:optional(oneOf('bush','jar')),
   questItemSpawns:optional(array(object({id:text,quest:text,item:text,x:number,y:number,respawnFrames:count}))),
   exits:array(object({...box,id:optional(text),destination:text,spawn:object({x:number,y:number}),exitFacing,facing:exitFacing}))});
@@ -582,6 +582,7 @@ const performanceChecks:Record<string,Check>={
   sound:object({type:oneOf('sound'),sound:text}),
   music:object({type:oneOf('music'),sound:nullable(text)}),
   'refresh-appearance':object({type:oneOf('refresh-appearance')}),
+  'town-pose':object({type:oneOf('town-pose'),enabled:boolean}),
   'stop-audio':object({type:oneOf('stop-audio')}),
   camera:object({type:oneOf('camera'),target:text,motion:oneOf('cut','pan')}),
   'camera-point':object({type:oneOf('camera-point'),x:number,y:number,motion:oneOf('cut','pan')}),

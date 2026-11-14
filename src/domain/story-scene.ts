@@ -214,6 +214,10 @@ export function resolveStoryScene(declaration: StoryStage, source: SceneSnapshot
       other.stageHidden = true;
     }
   }
+  if (declaration.resetActors) {
+    const player = scene.actors.find(actor => actor.id === 'player');
+    if (player) delete player.townPose;
+  }
   const { mapFromWorld: _dynamic, resetActors: _reset, ...stage } = declaration;
   return syncStoryScene({ ...stage, map: scene.map, scene, bindings });
 }
@@ -236,6 +240,11 @@ export function applyStorySceneAction(previous: StoryStageSnapshot, action: Perf
   const state = structuredClone(previous);
   if (action.type === 'parallel') {
     return action.actions.reduce<StoryStageSnapshot>((snapshot, child) => applyStorySceneAction(snapshot, child), state);
+  }
+  if (action.type === 'town-pose') {
+    const player = state.scene.actors.find(actor => actor.id === 'player');
+    if (player) { player.townPose = action.enabled; delete player.appearance; }
+    return syncStoryScene(state);
   }
   if (action.type === 'world-object') {
     const command = action.command;
