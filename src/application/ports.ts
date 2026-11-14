@@ -34,7 +34,7 @@ export interface StoryClassContext {
   syncLifecycle?: () => void;
 }
 
-type SceneUI = Pick<GameUI,'ready'|'locked'|'mode'|'loading'|'loaded'|'error'|'toast'|'showInstant'|'resetInput'|'setMode'|'showDefeat'|'closeDefeat'|'controlLayoutEditing'|'keyBindingEditing'|'preloadPortraits'|'setWorldRebuildCover'>;
+type SceneUI = Pick<GameUI,'ready'|'locked'|'mode'|'loading'|'loaded'|'error'|'toast'|'showInstant'|'resetInput'|'setMode'|'showDefeat'|'closeDefeat'|'controlLayoutEditing'|'keyBindingEditing'|'preloadPortraits'|'setWorldRebuildCover'|'setSkipBackdrop'>;
 export interface StoryContext {
   readonly gm?: Pick<import('../debug/gm-actions.ts').GmActions, 'storyDebug'>;
   /** 压测模式：不写存档/检查点，世界持续刷怪并自动复活队伍。 */

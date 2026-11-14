@@ -335,6 +335,7 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     if(!ui.dialogueLine||uiOcclusion(ui)||ui.quest||ui.choices)this.hideDialogueDom();
     const portrait=window.innerHeight>window.innerWidth;
     const cover=ui.worldRebuildCover;
+    const skipBackdrop=ui.skipBackdrop;
     const quest=ui.mode==='game'&&!portrait&&!cover&&!ui.loadingState&&!ui.defeated?ui.quest:undefined;
     this.questPopup.sync(quest,this.app.storyInterface?.assets??{},id=>ui.questItemName?.(id)??id);
     const progress=Phaser.Math.Clamp(ui.loadingState?.progress??0,0,1);
@@ -349,7 +350,7 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
       :null;
     const speakerSignature=JSON.stringify([ui.dialogueLine?.speaker,ui.dialogueLine?.actor,ui.portraitFile,ui.playerActor]);
     const bodySignature=JSON.stringify([ui.dialoguePageMarkup,ui.dialogueLine?.presentation,speakerSignature]);
-    const signature=JSON.stringify([ui.mode,ui.loadingState?.label,!!ui.loadingState?.retry,ui.failed,ui.suspended,portrait,cover,defeat,ui.toastMessage,shell,ui.dialogueLine?null:ui.portraitFile,ui.canSkip,showSkip,ui.choices?.prompt,ui.choices?.description,ui.choices?.options,ui.quest?.definition.id,ui.quest?.kind]);
+    const signature=JSON.stringify([ui.mode,ui.loadingState?.label,!!ui.loadingState?.retry,ui.failed,ui.suspended,portrait,cover,skipBackdrop,defeat,ui.toastMessage,shell,ui.dialogueLine?null:ui.portraitFile,ui.canSkip,showSkip,ui.choices?.prompt,ui.choices?.description,ui.choices?.options,ui.quest?.definition.id,ui.quest?.kind]);
     if(signature===this.signature){
       if(this.dialogueShell&&!uiOcclusion(ui)&&bodySignature!==this.dialogueBodySignature){
         if(speakerSignature!==this.dialogueSpeakerSignature)this.syncDialogueSpeaker(ui,speakerSignature);
@@ -359,9 +360,11 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     }
     this.signature=signature;this.dialogueShell=false;this.dialoguePortraitParent=undefined;this.dialoguePortrait=undefined;this.dialogueSpeakerSignature='';this.resetChoiceDom();
     const v=this.surface;v.clear();v.layout(0);this.dialogueLayout=undefined;this.progressBar=undefined;v.visible(true);
+    // 跳过补画黑底只盖画面，不隐藏任务窗和选择框；跨图重建黑幕（cover）仍然按原规则隐藏它们。
     const modal=portrait||!!ui.loadingState||!!defeat||cover,{width,height}=frameRect();
-    this.background.setVisible(modal).setSize(width,height).setFillStyle(0x000000,!!defeat&&!portrait&&!ui.loadingState&&!cover ? .65:1);
-    this.blocker.setVisible((modal||!!ui.quest||!!ui.dialogueLine||!!ui.choices)).setSize(width,height);if(this.blocker.input)this.blocker.input.hitArea.setSize(width,height);
+    this.background.setVisible(modal||skipBackdrop).setSize(width,height)
+      .setFillStyle(0x000000,skipBackdrop?1:!!defeat&&!portrait&&!ui.loadingState&&!cover ? .65:1);
+    this.blocker.setVisible((modal||skipBackdrop||!!ui.quest||!!ui.dialogueLine||!!ui.choices)).setSize(width,height);if(this.blocker.input)this.blocker.input.hitArea.setSize(width,height);
     this.cover?.destroy();this.cover=undefined;
     if(portrait){v.rect(0,0,960,640,0x101d24,1);}
     else if(ui.loadingState){

@@ -63,6 +63,15 @@ export class GameUI {
     globalThis.storyDiagnostics?.record('story-rebuild-cover',{covered});
     this.updateControls();
   }
+  /** 跳过剧情时补画选项/任务窗所在的舞台画面，这层黑底遮住加载过程。 */
+  private skipCover=false;
+  get skipBackdrop():boolean{return this.skipCover;}
+  setSkipBackdrop(covered:boolean):void{
+    if(this.skipCover===covered)return;
+    this.skipCover=covered;
+    globalThis.storyDiagnostics?.record('story-skip-backdrop',{covered});
+    this.updateControls();
+  }
   /** 原版 `INSTANTMSGSYSTEM_Add` 的屏幕提示（泉水效果文本走这条），与 toast 各自独立。 */
   readonly instant=new InstantMessage();
   showInstant(message:string):void{this.instant.show(message);}

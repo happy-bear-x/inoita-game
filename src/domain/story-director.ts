@@ -405,12 +405,24 @@ export class StoryDirector {
     }
     finally { signal.removeEventListener('abort', abort); skip.removeEventListener('abort', abort); }
   }
+  /**
+   * 跳过到选项/任务窗：先盖全屏黑底遮住补画过程，按逻辑快照画出对应的剧情画面，
+   * 补完撤掉黑底露出画面，随后才弹窗。正常播放不盖黑底。
+   */
+  private async flushStageBehindBackdrop(signal: AbortSignal, skipped: boolean): Promise<void> {
+    const presentation = this.presentation;
+    if (!presentation?.flushStage) return;
+    if (skipped) presentation.setBackdrop?.(true);
+    try { await presentation.flushStage(signal); }
+    finally { if (skipped) presentation.setBackdrop?.(false); }
+  }
   private async choice(prompt: string, options: ChoiceOption[], description?: string, signal = this.context?.signal ?? this.manual.signal): Promise<ChoiceOption> {
+    const skipped = this.skipping;
     signal.throwIfAborted(); this.skipping = false; this.skipRequest = new AbortController(); this.choosing = true;
     try {
       // 跳过到这里必须停下来让玩家选；先把逻辑舞台画出来，选择框背后的地图和人物才对。
       this.onSkipProgress?.('logic-complete');
-      await this.presentation?.flushStage?.(signal);
+      await this.flushStageBehindBackdrop(signal, skipped);
       this.onSkipProgress?.('world-ready'); this.onSkipProgress?.('choice');
       const option = await this.ui.choice(prompt, options, description, signal); signal.throwIfAborted(); return option;
     }
@@ -468,7 +480,7 @@ export class StoryDirector {
         try {
           // 任务窗要盖在剧情画面上；跳过期间先把当前逻辑舞台补画出来。
           this.onSkipProgress?.('logic-complete');
-          await this.presentation?.flushStage?.(context.signal);
+          await this.flushStageBehindBackdrop(context.signal, this.skipping);
           this.onSkipProgress?.('world-ready'); this.onSkipProgress?.('quest-popup');
           await this.ui.questPopup(action.kind, quest, receipt, context.signal);
         }

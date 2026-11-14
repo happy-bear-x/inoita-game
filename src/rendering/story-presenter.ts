@@ -212,6 +212,7 @@ export class StoryPresenter implements StoryPresentationPort {
 
   }
   /** 选择或任务弹窗前把逻辑舞台真正画一次；素材走正常加载，缺什么补什么。 */
+  setBackdrop(covered: boolean): void { this.app.ui.setSkipBackdrop(covered); }
   async flushStage(signal: AbortSignal): Promise<void> {
     if (!this.skipping) return;
     signal.throwIfAborted();

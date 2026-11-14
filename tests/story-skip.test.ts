@@ -26,8 +26,11 @@ function harness(content: Campaign = campaign, overrides: Partial<StoryUI> = {},
     async questPopup() {},
     skipDialogue: () => finish?.(), closeDialogue: () => cancel?.(), toast() {}, ...overrides
   };
-  const director = new StoryDirector(content, session, ui, value => locks.push(value), { begin() {}, async execute() {}, async finish() {}, async flushStage() { flushes++; } }, world);
-  return { director, session, lines, locks, flushes: () => flushes, finish: () => finish?.(), choose: (option: ChoiceOption) => choose!(option) };
+  const backdrops: boolean[] = [];
+  const director = new StoryDirector(content, session, ui, value => locks.push(value), { begin() {}, async execute() {}, async finish() {},
+    async flushStage() { flushes++; }, setBackdrop(covered: boolean) { backdrops.push(covered); } }, world);
+  return { director, session, lines, locks, backdrops: () => backdrops, flushes: () => flushes,
+    finish: () => finish?.(), choose: (option: ChoiceOption) => choose!(option) };
 }
 const tick = () => new Promise(resolve => setImmediate(resolve));
 test('skip stops at choices, resumes selected lines normally and preserves completion flags', async () => {
@@ -41,6 +44,7 @@ test('skip stops at choices, resumes selected lines normally and preserves compl
   h.director.skip(); await tick();
   assert.deepEqual(h.lines, ['第一句']); assert.equal(h.director.busy, true);
   assert.equal(h.flushes(), 1, '选择框出现前先把逻辑舞台补画一次');
+  assert.deepEqual(h.backdrops(), [true, false], '补画期间用黑底遮住，补完露出画面再弹选择框');
   h.director.skip(); h.choose(option); await tick();
   assert.deepEqual(h.lines, ['第一句', '选项后的对白']);
   h.director.skip(); assert.equal(await result, true);

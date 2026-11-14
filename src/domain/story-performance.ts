@@ -89,6 +89,8 @@ export interface StoryPresentationPort {
   begin(signal?: AbortSignal, stage?: StoryStage | StoryStageSnapshot, initialCurtain?: StoryCurtain, deferFirstStage?: boolean, skipSignal?: AbortSignal): void | Promise<void>;
   /** 跳过期间选择或任务弹窗要出现在正确画面上时，按当前逻辑快照补画一次。 */
   flushStage?(signal: AbortSignal): Promise<void>;
+  /** 补画期间遮住舞台加载过程的全屏黑底；补画完成后关闭，露出对应的剧情画面。 */
+  setBackdrop?(covered: boolean): void;
   prefetchMap?(map: string): void;
   /** `pendingEntrances`：本幕稍后会出场的别名；舞台开场先隐藏这些演员在地图上的现成实例。 */
   execute(action: Exclude<PerformanceAction, { type: 'parallel' }>, playback: PerformancePlayback, pendingEntrances?: readonly string[]): Promise<void>;
