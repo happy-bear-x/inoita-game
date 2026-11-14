@@ -301271,12 +301271,6 @@
               "x": 88,
               "y": 200,
               "source": "quest-delivery"
-            },
-            {
-              "map": "nirniti-s-house-96a77301",
-              "x": 136,
-              "y": 120,
-              "source": "quest-delivery"
             }
           ]
         }
@@ -353400,7 +353394,76 @@
     }
   ],
   "enemyPlacements": [],
-  "exitRules": [],
+  "exitRules": [
+    {
+      "id": "kamuran-wilderness-d37060c8:kamuran-village-ea786378:496:592:16:16",
+      "map": "kamuran-wilderness-d37060c8",
+      "condition": {
+        "type": "not",
+        "condition": {
+          "type": "any",
+          "conditions": [
+            { "type": "quest", "quest": "quest-57", "status": "active" },
+            { "type": "quest", "quest": "quest-58", "status": "active" },
+            { "type": "quest", "quest": "quest-59", "status": "active" },
+            { "type": "quest", "quest": "quest-60", "status": "active" },
+            { "type": "quest", "quest": "quest-63", "status": "active" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "kamuran-wilderness-d37060c8:kamuran-village-ea786378:512:592:16:16",
+      "map": "kamuran-wilderness-d37060c8",
+      "condition": {
+        "type": "not",
+        "condition": {
+          "type": "any",
+          "conditions": [
+            { "type": "quest", "quest": "quest-57", "status": "active" },
+            { "type": "quest", "quest": "quest-58", "status": "active" },
+            { "type": "quest", "quest": "quest-59", "status": "active" },
+            { "type": "quest", "quest": "quest-60", "status": "active" },
+            { "type": "quest", "quest": "quest-63", "status": "active" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "kamuran-wilderness-d37060c8:kamuran-village-ea786378:528:592:16:16",
+      "map": "kamuran-wilderness-d37060c8",
+      "condition": {
+        "type": "not",
+        "condition": {
+          "type": "any",
+          "conditions": [
+            { "type": "quest", "quest": "quest-57", "status": "active" },
+            { "type": "quest", "quest": "quest-58", "status": "active" },
+            { "type": "quest", "quest": "quest-59", "status": "active" },
+            { "type": "quest", "quest": "quest-60", "status": "active" },
+            { "type": "quest", "quest": "quest-63", "status": "active" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "kamuran-wilderness-d37060c8:kamuran-village-ea786378:544:592:16:16",
+      "map": "kamuran-wilderness-d37060c8",
+      "condition": {
+        "type": "not",
+        "condition": {
+          "type": "any",
+          "conditions": [
+            { "type": "quest", "quest": "quest-57", "status": "active" },
+            { "type": "quest", "quest": "quest-58", "status": "active" },
+            { "type": "quest", "quest": "quest-59", "status": "active" },
+            { "type": "quest", "quest": "quest-60", "status": "active" },
+            { "type": "quest", "quest": "quest-63", "status": "active" }
+          ]
+        }
+      }
+    }
+  ],
   "mapEntryPlacements": [
     {
       "id": "review-invitation-37",
