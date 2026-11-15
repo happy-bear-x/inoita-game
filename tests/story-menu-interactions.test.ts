@@ -1286,6 +1286,14 @@ test('mercenary skill descriptions use the member cap and hero point requirement
   assert(!visibleDomLabels(f).some(label=>label.text==='佣兵技能'));
 });
 
+test('unopened mercenary skills explain the block instead of showing level zero',t=>{
+  const f=fixture();t.after(f.cleanup);const member=f.recruit('warlock');f.select(member.id);
+  const id=battle.classes.find(character=>character.id===member.classId)!.skills.find(id=>!member.skills.available(id))!;
+  f.menu.show('skills');f.scene.click(f.scene.button(battle.skills[id].name));
+  assert(!visibleDomLabels(f).some(label=>label.text==='最高等级： LV 0'));
+  assert(visibleDomLabels(f).some(label=>label.text==='该佣兵未开放此技能'));
+});
+
 test('selecting a skill keeps its list and changes the description',t=>{
   const f=fixture();t.after(f.cleanup);
   const ids=battle.classes.find(value=>value.id===f.hero.classId)!.skills;

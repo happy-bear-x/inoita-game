@@ -1665,17 +1665,20 @@ export class StoryUI {
       skill=skillForGrowth(this.app.battleCatalog.skills[this.skill!]!,memberSkillGrowth(this.selectedMemberId)),
       level=draft.levels[skill.id]??0,
       companion=this.selectedMemberId==='player'?undefined:this.session!.party?.get(this.selectedMemberId),
-      naturalCap=companion?.snapshot().skillCaps[skill.id],
+      mercenary=companion?.source==='mercenary',
+      naturalCap=companion&&!mercenary?companion.snapshot().skillCaps[skill.id]:undefined,
       unlocked=companion?companion.skills.unlockedState()[skill.id]!==undefined:false,
-      maximum=companion?(companion.source==='mercenary'?companion.skills.normalMaximum(skill.id,this.app.battleCatalog):unlocked?skill.ranks.length:Math.max(naturalCap??0,level)):skill.normalMaxLevel;
+      maximum=companion?(mercenary?companion.skills.normalMaximum(skill.id,this.app.battleCatalog):unlocked?skill.ranks.length:Math.max(naturalCap??0,level)):skill.normalMaxLevel;
     // AI 页未掌握的格子只保留选中状态，右侧说明区清空（原版 UISkill_AIMainExe 调 UIDesc_SetOff）。
     if(this.skillSection==='ai'&&level===0)return;
     const detailHeight=this.skillSection==='ai'?342:279;
     const detail=this.scroll('description',565,71,353,detailHeight);
     const clip={top:71,bottom:71+detailHeight};
     // 说明正文按现有断行结果落字；滚动时 DOM 层按 `description` 的偏移重算位置。
-    const description=this.descriptionLayout(v,skillDescriptionParts(skill,level,companion?.source==='mercenary'&&maximum?skill.ranks.length:companion?maximum:undefined,
-      companion?.source==='mercenary'&&maximum?maximum:undefined),353,22);
+    const descriptionParts=skillDescriptionParts(skill,level,mercenary?(maximum?skill.ranks.length:undefined):companion?maximum:undefined,
+      mercenary&&maximum?maximum:undefined);
+    if(mercenary&&!maximum)descriptionParts.splice(1,0,{text:'该佣兵未开放此技能\n'});
+    const description=this.descriptionLayout(v,descriptionParts,353,22);
     this.addDescriptionText('skill-desc',description,565,71,353,22,'description',clip);
     let y=description.height;
     if(this.skillSection==='ai'){this.finishScroll('description',detail,y);return;}

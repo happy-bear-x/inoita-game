@@ -406,9 +406,10 @@ export class PartyPanel {
     }
     const skill=skillForGrowth(this.app.battleCatalog.skills[modal.skill],memberSkillGrowth(modal.id)),configuration=modal.id==='player'?this.session.skills:(member as CompanionMember).skills;
     const level=configuration.draft(this.app.battleCatalog,member.classId).levels[skill.id]??0;
-    const naturalCap=modal.id==='player'?undefined:(member as CompanionMember).snapshot().skillCaps[skill.id],
+    const mercenary=modal.id!=='player'&&(member as CompanionMember).source==='mercenary',
+      naturalCap=modal.id==='player'||mercenary?undefined:(member as CompanionMember).snapshot().skillCaps[skill.id],
       unlocked=modal.id!=='player'&&(member as CompanionMember).skills.unlockedState()[skill.id]!==undefined,
-      cap=modal.id==='player'?skill.normalMaxLevel:(member as CompanionMember).source==='mercenary'?
+      cap=modal.id==='player'?skill.normalMaxLevel:mercenary?
         (member as CompanionMember).skills.normalMaximum(skill.id,this.app.battleCatalog):naturalCap??level;
     v.image(skill.icon,35,25,75,75);
     this.modalEntry('skill-name',skill.name,135,30,26,GOLD,0,0,{width:550,wrap:'word'});
