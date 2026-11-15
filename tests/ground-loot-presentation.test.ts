@@ -28,6 +28,18 @@ test('ground sprite metadata matches shipped artwork, including currency outside
   assert.equal(new Set(assets.map(asset=>asset.file)).size,assets.length);
 });
 
+test('sealed skillbooks all drop as a skillbook, not the resurrection prayer artwork',()=>{
+  const skillbook='assets/items/ground/skillbook.png';
+  const sealed=['black-knight','assassin','warlock','priest','ranger','warrior']
+    .map(profession=>`sealed-skillbook-${profession}`);
+  for(const id of sealed){
+    const item=items.items[id];
+    assert.ok(item,`${id} 缺少物品定义`);
+    assert.equal(item.groundSprite.file,skillbook,`${id} 的地面图`);
+    assert.notEqual(item.groundSprite.file,'assets/items/ground/resurrection-prayer.png',`${id} 不应沿用复活祈祷图`);
+  }
+});
+
 class Visual {
   x=0;y=0;width=0;visible=true;active=true;depth=0;name='';origin=[0,0];scale=1;
   children:Visual[]=[];

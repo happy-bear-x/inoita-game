@@ -200,7 +200,7 @@ test('buff icons straddle the panel bottom-left corner and blink only inside the
   }
   assert.equal(buffIconPosition(icons,skin.player.height,3).x,-icons.size/2-3*icons.step);
   for(const name of ['dark-strike','whist','aimed-shot','blood-revenge',
-    'bard-of-destruction','dark-sense','deep-breath','magic-insight','ordination-prayer',
+    'bard-of-destruction','dark-sense','deep-breath','magic-insight','mana-recovery','ordination-prayer',
     'shield-of-trust','sniping','storm-of-frenzy-power'])assert.ok(icons.catalog[name],name);
   assert.ok(Object.values(icons.catalog).every(file=>file.startsWith('assets/ui/status/buff-')));
   for(const [name,file] of Object.entries(icons.catalog))assert.ok(shippedImage(file),name);

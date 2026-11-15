@@ -280574,7 +280574,7 @@
             "condition": {
               "type": "quest",
               "quest": "quest-499",
-              "status": "active"
+              "status": "accepted"
             },
             "then": {
               "script": "event-596",
@@ -280767,7 +280767,7 @@
             "condition": {
               "type": "quest",
               "quest": "quest-500",
-              "status": "active"
+              "status": "accepted"
             },
             "then": {
               "script": "event-598",
@@ -280960,7 +280960,7 @@
             "condition": {
               "type": "quest",
               "quest": "quest-502",
-              "status": "active"
+              "status": "accepted"
             },
             "then": {
               "script": "event-600",
