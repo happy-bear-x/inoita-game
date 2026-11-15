@@ -26,8 +26,8 @@ const battle=JSON.parse(readFileSync(new URL('../public/content/battle.json',imp
 test('redeploying a removed ally while paused requests a fresh party sync',()=>{
   const ids=['player','ally'],controllers=new Map([['ally',{cancel(){}}]]);
   const host:any=Object.assign(Object.create(WorldCombat.prototype),{
-    app:{session:{party:{activeIds:ids},skills:{resetVersion:0}}},partySignature:'player|ally',
-    partyControllers:controllers,combatRuntime:{removeActor(){}},conditions:{remove(){}},
+    app:{session:{party:{activeIds:ids,get:()=>undefined},skills:{resetVersion:0}}},partySignature:'player|ally',
+    partyControllers:controllers,lastSkillResets:new Map(),combatRuntime:{removeActor(){}},conditions:{remove(){}},
     threat:{removeActor(){}},allySkillSignatures:new Map(),forgetMemberCaches(){},
     summons:{removeOwner:()=>[]},visualOf:()=>undefined,scheduleSkillAssetRefresh(){}
   });
@@ -82,7 +82,7 @@ test('combat entry creates enemies once when loading a checkpoint',async()=>{
       textures:{exists:()=>true,get:()=>({has:()=>true}),on(){},remove(){}},anims:{exists:()=>false},
       events:{once(){},off(){}},add:{image:()=>ring}};
     const host:any=Object.assign(Object.create(WorldCombat.prototype),{
-      scene,app:{battleCatalog:battle,wardrobe,world:{actors:{}},session:{skills:{resetVersion:0},subscribe:()=>()=>{},party:{activeSize:3,activeIds:['player','ally','ally2']}}},
+      scene,app:{battleCatalog:battle,wardrobe,world:{actors:{}},session:{skills:{resetVersion:0},subscribe:()=>()=>{},party:{activeSize:3,activeIds:['player','ally','ally2'],get:()=>undefined}}},lastSkillResets:new Map(),
       roster:{spawns:[],enemies:[{key:'one'},{key:'two'}]},drops:{chests:{}},
       hero:{player:{health:1},subscribe:()=>()=>{}},generation:0,closed:false,
       equipmentAttack:()=>({}),prepareCombatSounds(){},outcomes:{warm(){}},feedback:{warm(){}},
@@ -189,8 +189,8 @@ function pauseFixture(performing=false) {
   const stopped:unknown[]=[],temporary:string[]=[];
   const state={
     scene:{player,performing,movement:{stop:(value:unknown)=>stopped.push(value)}},
-    app:{session:{party:{activeIds:['player','companion-1'],controlledId:'companion-1'}}},
-    partyActionsSuspended:false,partyControllers:new Map([['player',hero.controller],['companion-1',ally.controller]]),
+    app:{session:{party:{activeIds:['player','companion-1'],controlledId:'companion-1',get:()=>undefined}}},
+    partyActionsSuspended:false,lastSkillResets:new Map(),partyControllers:new Map([['player',hero.controller],['companion-1',ally.controller]]),
     heroAi:hero.ai,allies:[{id:'companion-1',visual,ai:ally.ai}],arena:[],
     conditions:{clearTemporary:(id:string)=>temporary.push(id)}
   };
@@ -217,7 +217,7 @@ test('a menu pause preserves party actions and cooldowns until control resumes',
 test('resetting skills during a menu cancels the hero delayed work while preserving paid cooldowns',()=>{
   const f=pauseFixture();let revision=0,hits=0;
   Object.assign(f.state.app.session,{skills:{get resetVersion(){return revision;}}});
-  Reflect.set(f.state,'lastSkillReset',0);
+  Reflect.set(f.state,'lastSkillResets',new Map([['player',{configuration:(f.state.app.session as any).skills,revision:0}]]));
   Reflect.get(f.state,'runtime').schedule('player',1,()=>hits++);
   revision++;Reflect.get(WorldCombat.prototype,'onPartyChanged').call(f.runtime);
   f.advanceFrames(1);Reflect.get(f.state,'runtime').step(1);
