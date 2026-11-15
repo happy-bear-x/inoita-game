@@ -272,6 +272,50 @@ export class StoryStageScene extends Phaser.Scene {
       this.movement.setGhost(visual, bound.has(actor.id));
     }
   }
+  /**
+   * 只重合成一个演员的外观，保留地图、其他演员和正在播放的动作。
+   * 城镇姿态这类只换站立/行走贴图的命令走这里，不重建整张舞台。
+   */
+  async refreshActorAppearance(actor: SceneActorState, stage: StoryStageSnapshot,
+    playerAppearance: ActorDefinition | undefined, signal: AbortSignal): Promise<CharacterVisual | undefined> {
+    const current = this.characters.get(actor.id), map = this.map, movement = this.movement;
+    if (!current || !map || !movement || map.id !== stage.map) return undefined;
+    const memberId = actor.id === 'player' ? 'player' : actor.memberId;
+    if (!memberId) return undefined;
+    const member = memberId === 'player' ? undefined : this.app.session.party?.get(memberId);
+    const character = memberId === 'player' ? this.app.session.character : undefined;
+    const base = character?.appearance
+      ?? (member ? this.app.world.actors[member.definition.actor] : playerAppearance);
+    if (!base) return undefined;
+    const bag = this.app.session.bag;
+    const equipment = member ? bag.equipmentItems(bag.equipmentFor(memberId)) : bag.equipmentItems();
+    const classId = character?.classId ?? member?.classId;
+    const skills = character ? this.app.session.skills : member?.skills;
+    const learnedSkills = classId ? learnedSkillIds(this.app.battleCatalog, classId, skills) : undefined;
+    let wardrobe = this.wardrobes.get(memberId);
+    if (!wardrobe) {
+      wardrobe = new Wardrobe(this, this.app.wardrobe, this.app.items,
+        (ids, s) => this.app.content.wardrobePoses(ids, s), this.app.outfits);
+      this.wardrobes.set(memberId, wardrobe);
+    }
+    const outfit = await wardrobe.prepare(base, equipment, classId,
+      { signal, learnedSkills, townPose: actor.townPose ?? map.townPose });
+    signal.throwIfAborted();
+    wardrobe.activate(outfit);
+    const position = movement.position(current);
+    const next = drawStoryCharacters(this, [{ ...actor, x: position.x, y: position.y }],
+      new Map([[actor.id, outfit.actor]])).get(actor.id);
+    if (!next) return undefined;
+    movement.remove(current);
+    if (current.container.scene) current.container.destroy();
+    this.characters.set(actor.id, next);
+    if (actor.id === 'player') this.player = next;
+    const bound = stage.bindings.some(([, id]) => id === actor.id);
+    movement.register(next, bound, false, 'party');
+    movement.setGhost(next, bound);
+    movement.setEnabled(next, actor.visible && !actor.unpositioned);
+    return next;
+  }
   releaseStage(preserveEarlyCurtain = false): void {
     // 最终释放时先恢复世界渲染，再到场景 stop 之间露出下面已经切换好的世界，避免黑帧。
     // 换幕重建（preserveEarlyCurtain）仍由旧舞台盖着，不能中途解除遮挡。

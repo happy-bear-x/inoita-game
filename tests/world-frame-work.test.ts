@@ -310,3 +310,15 @@ test('world appearance follows town maps and keeps an explicit armed story overr
   await host.preparePlayerAppearance();
   assert.deepEqual(selected,[true,false,false]);
 });
+
+test('restoring a story scene adopts its hero posture and forces a new outfit', () => {
+  const host=Object.assign(Object.create(WorldScene.prototype),{
+    map:{id:'town'},movement:{placeAll(){}},characters:[],playerTownPose:true,
+    projectedPlayerEquipment:'signature',interactionRevision:0,refreshMinimapInteractions(){}
+  });
+  host.restoreScenePositions({map:'town',actors:[
+    {id:'player',actor:'hero',x:10,y:20,facing:'south',visible:true,townPose:false}
+  ]});
+  assert.equal(host.playerTownPose,false);
+  assert.equal(host.projectedPlayerEquipment,'','姿态变化必须重新合成主角外观');
+});

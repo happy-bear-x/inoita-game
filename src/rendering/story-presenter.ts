@@ -629,6 +629,25 @@ export class StoryPresenter implements StoryPresentationPort {
         const current = this.captureStage();
         if (current) {
           const next = applyStorySceneAction(current, action);
+          const player = next.scene.actors.find(actor => actor.id === 'player');
+          const scene = this.scene();
+          let refreshed: CharacterVisual | undefined;
+          try {
+            refreshed = player
+              ? await scene.refreshActorAppearance(player, next, this.appearance, playback.signal)
+              : undefined;
+          } catch (error) {
+            // 轻量刷新失败时退回完整重建，不能因为只换贴图丢掉整幕演出。
+            if (playback.signal.aborted) throw error;
+            refreshed = undefined;
+          }
+          if (refreshed) {
+            const performer = this.actors.get('player');
+            if (performer) performer.visual = refreshed;
+            this.state = next;
+            this.scenes.set(next.map, structuredClone(next.scene));
+            return;
+          }
           await this.stage(next, playback.signal, undefined, playback.skipSignal);
         }
         return;

@@ -241,6 +241,7 @@ function harness() {
     }
   };
   const events = new EventEmitter();
+  let refreshed = 0;
   const stage = { characters: new Map(), map: undefined as { id: string } | undefined, player: visual(10, 20), facing: 'south', movement,
     cameras: { main: { scrollX: 0, scrollY: 0, width: 960, height: 640, zoom: 1, stopFollow() {},
       setScroll(this: { scrollX: number; scrollY: number }, x: number, y: number) { this.scrollX = x; this.scrollY = y; },
@@ -257,6 +258,16 @@ function harness() {
       this.player=this.characters.get('player')!;
       audioMaps.push(value.map);
       audio.enterMap(value.map);
+    },
+    refreshActorAppearance(this:{map?:{id:string};characters:Map<string,ReturnType<typeof visual>>;player:ReturnType<typeof visual>},
+      actor:StoryStageSnapshot['scene']['actors'][number],value:StoryStageSnapshot){
+      if(this.map?.id!==value.map)return undefined;
+      const character=visual(actor.x,actor.y);
+      character.entity={id:actor.id,actor:actor.actor,x:actor.x,y:actor.y};
+      character.container.visible=actor.visible;this.characters.set(actor.id,character);
+      if(actor.id==='player')this.player=character;
+      refreshed++;
+      return character;
     },
     ensureActors(this:{characters:Map<string,ReturnType<typeof visual>>},value:StoryStageSnapshot){
       for(const actor of value.scene.actors)if(!this.characters.has(actor.id)){
@@ -278,7 +289,7 @@ function harness() {
   const presenter = new StoryPresenter(app, () => world, () => stage);
   const prepared=(presenter as unknown as {scenes:Map<string,unknown>}).scenes;
   for(const map of ['hall','remote'])prepared.set(map,{map,actors:[{id:'player',actor:'hero',x:10,y:20,facing:'south',visible:true}]});
-  return { presenter, stage, world, released: () => released, rendered: () => rendered,
+  return { presenter, stage, world, released: () => released, rendered: () => rendered, refreshed: () => refreshed,
     placeAllGroups: () => placeAllGroups, audioMaps: () => audioMaps, music: () => currentMusic };
 }
 
@@ -940,8 +951,11 @@ test('normal and skipped town pose commands persist across scenes and reset on t
     await run.presenter.begin(signal);
     if (skipped) skip.abort();
     const playback = { signal, skipSignal: skip.signal };
+    const renderedBefore = run.rendered(), refreshedBefore = run.refreshed();
     await run.presenter.execute({ type: 'town-pose', enabled: true }, playback);
     assert.equal(run.presenter.captureStage()!.scene.actors.find(actor => actor.id === 'player')!.townPose, true);
+    assert.equal(run.rendered(), renderedBefore, '切换姿态不重建整张舞台');
+    assert.equal(run.refreshed(), refreshedBefore + (skipped ? 0 : 1), skipped ? '跳过只改逻辑状态' : '正常播放只刷新主角外观');
     await run.presenter.execute({ type: 'stage', map: 'home', mapFromWorld: true, x: 10, y: 20,
       facing: 'south', playerVisible: true, cast: [] }, playback);
     assert.equal(run.presenter.captureStage()!.scene.actors.find(actor => actor.id === 'player')!.townPose, true);
