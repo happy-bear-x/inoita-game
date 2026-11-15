@@ -1269,9 +1269,11 @@ test('shop equipment condition colors use the viewed member across menu pages',t
   const f=fixture();t.after(f.cleanup);const member=f.recruit('warlock');
   const [key,item]=Object.entries(items.items).find(([,item])=>item.equipment?.classes.includes('warlock')&&!item.equipment.classes.includes('dark-knight')&&item.sellable)!;
   f.add(key);
+  // 双手武器（法杖、弓、弩、水晶球）的类型行统一显示「双手武器」，不能再拿 item.typeName 找这一行。
+  const typeLine=item.equipment!.twoHanded?'双手武器':item.typeName;
   for(const [owner,color]of [[member.id,'#ffffff'],['player','#ff0000']]){
     f.select(owner);f.menu.openShop('merchandise-dealer-b09d9585','');f.scene.click(f.scene.button(`出售 ${item.name}`));
-    assert.equal(visibleDomLabels(f).filter(label=>label.text===item.typeName).at(-1)!.style.color,color);
+    assert.equal(visibleDomLabels(f).filter(label=>label.text===typeLine).at(-1)!.style.color,color);
   }
 });
 
