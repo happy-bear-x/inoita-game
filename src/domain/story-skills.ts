@@ -130,9 +130,6 @@ export class StorySkillProgression extends SkillConfiguration {
       const rank=this.book(skillId);
       return `${this.skill(skillId).name}提升至 ${rank} 级`;
     }
-    if(item.use?.kind==='reset-skills'){
-      this.reset();return '已初始化技能与技能点';
-    }
     if(itemId===SKILL_POINT_ITEM){
       this.hero.grantSkillPoint();return '获得 1 个技能点';
     }

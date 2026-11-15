@@ -93,21 +93,19 @@ test('passives activate on learning; books, elixir and skill reset update the sa
   assert.equal(bag.count('skillbook'),1);
   bag.add('supreme-elixir');const elixir=bag.entries.find(entry=>entry.item==='supreme-elixir')!;
   bag.use(elixir.id);assert.equal(hero.skillPoints,remaining+1);
-  bag.add('skills-reset-spell');const reset=bag.entries.find(entry=>entry.item==='skills-reset-spell')!;
   skills.setShortcutPage(hero.classId,1);
   assert(skills.version>version);version=skills.version;
-  bag.use(reset.id);
+  skills.reset();
   assert(skills.version>version);
   assert.equal(hero.skillPoints,20,'reset refunds spent points and clears the elixir bonus');
   assert.equal(skills.level('dark-strike'),1);
   assert.equal(skills.level('improved-defense'),0);
   assert.equal(skills.investedPoints(),1,'初始化恢复免费一级的累计值');
-  // 初始化卷轴把快捷栏也退回默认：初始技能回到第一格，第二组清空。
+  // 免费初始化把快捷栏也退回默认：初始技能回到第一格，第二组清空。
   assert(skills.isEquipped('dark-strike'));
   assert.deepEqual(skills.bar().page(0)[0],{kind:'skill',id:'dark-strike'});
   assert(skills.bar().page(1).every(slot=>slot===null));
   assert.equal(skills.shortcutPage(hero.classId),0);
-  assert.equal(bag.count('skills-reset-spell'),0);
 });
 
 test('skill configuration versions advance on save and restore without entering snapshots',()=>{

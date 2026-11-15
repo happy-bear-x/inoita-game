@@ -2294,10 +2294,6 @@ export class StoryUI {
         content.push({kind:'line',text:name?`复活目标：${name}`:'当前没有阵亡的出战队员',size:22});
       }
     }
-    else if(use?.kind==='reset-skills'){
-      content.push({kind:'line',text:`确定为${this.world!.actors[this.session!.campaign.start.actor].name}初始化技能？`,size:22});
-      content.push({kind:'line',text:'清空已学技能与快捷栏，返还正常加点；卓越灵药增加的技能点会消失。',size:22});
-    }
     else if(entry.item===SKILL_POINT_ITEM)content.push({kind:'line',text:`确定对${this.world!.actors[this.session!.campaign.start.actor].name}使用${item.name}？`,size:22});
     if(op.error)content.push({kind:'line',text:op.error,size:22});
 
@@ -2375,7 +2371,7 @@ export class StoryUI {
     const unimplemented=unimplementedItemUse(entry.item,definition);
     if(unimplemented)return unimplemented;
     const kind=definition.use?.kind;
-    if(this.selectedMemberId!=='player'&&(kind==='reset-skills'||entry.item===SKILL_POINT_ITEM||
+    if(this.selectedMemberId!=='player'&&(entry.item===SKILL_POINT_ITEM||
       kind==='learn'&&this.session!.party?.get(this.selectedMemberId)?.source!=='mercenary'))return '该道具仅能用于主角';
   }
   private renderItemResult():void {

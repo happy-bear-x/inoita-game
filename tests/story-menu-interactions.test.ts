@@ -402,6 +402,7 @@ test('skill reset confirmation keeps the skill page',t=>{
   const f=fixture();t.after(f.cleanup);f.hero.addExperience(Number.MAX_SAFE_INTEGER);const base=f.session.skills.level('dark-strike');f.session.skills.learn('dark-strike');f.menu.show('skills');
   f.scene.click(f.scene.button('设置'));
   const reset=f.scene.button(panels.skillPanel.labels.resetButton),tabs=f.scene.button('技能目录');
+  const money=f.session.money,inventory=f.session.bag.entries.map(entry=>({...entry}));
   const body=f.internals.body.root.list.slice();
   f.scene.click(reset);
   assert.equal(f.scene.button(panels.skillPanel.labels.resetButton),reset);
@@ -415,6 +416,9 @@ test('skill reset confirmation keeps the skill page',t=>{
   assert.equal(f.scene.button('技能目录'),tabs);assert.deepEqual(f.internals.body.root.list,body);
   f.scene.click(reset);f.scene.click(f.scene.button('确定'));
   assert.equal(f.session.skills.level('dark-strike'),base);assert.equal(f.scene.button(panels.skillPanel.labels.resetButton),reset);
+  assert.equal(f.session.skills.points(),(f.hero.level-1)*stats.skillPointsPerLevel);
+  assert.equal(f.session.money,money,'免费重置不扣钱');
+  assert.deepEqual(f.session.bag.entries,inventory,'免费重置不消耗物品');
   assert.equal(f.scene.button('技能目录'),tabs);assert.deepEqual(f.internals.body.root.list,body);
 });
 
@@ -776,18 +780,15 @@ test('DOM common buttons use a continuous image and preserve selected feedback o
   assert.equal(plain.getData('highlight').visible,false,'普通按钮取消输入后恢复常态');
 });
 
-test('companion bag rejects hero-only items at the button, direct entry and confirmation boundaries', t => {
-  for (const item of ['skills-reset-spell', 'supreme-elixir']) {
-    const f = fixture(); t.after(f.cleanup); f.hero.addExperience(f.hero.player.nextLevelExperience); f.hero.allocate('strength', 1);
-    const member = f.recruit(), source = f.add(item); f.select(member.id); f.menu.debugDescribe(source.id);
-    const label = item === 'skills-reset-spell' ? '初始化技能' : '使用';
-    assert.equal(f.scene.button(label).input!.enabled, false, item);
-    const before = f.session.captureState(); f.menu.debugUse(source.id);
-    assert.equal(f.internals.operation, undefined, `${item} 不进入使用流程`); assert.deepEqual(f.session.captureState(), before);
-    f.internals.operation = { entry: source.id, kind: 'use', quantity: 1 }; f.internals.confirmOperation();
-    assert.deepEqual(f.session.captureState(), before, `${item} 确认前再次拒绝，库存与整队状态不变`);
-    f.internals.operation = undefined;
-  }
+test('companion bag rejects supreme elixir at the button, direct entry and confirmation boundaries', t => {
+  const f = fixture(); t.after(f.cleanup); f.hero.addExperience(f.hero.player.nextLevelExperience); f.hero.allocate('strength', 1);
+  const member = f.recruit(), source = f.add('supreme-elixir'); f.select(member.id); f.menu.debugDescribe(source.id);
+  assert.equal(f.scene.button('使用').input!.enabled, false);
+  const before = f.session.captureState(); f.menu.debugUse(source.id);
+  assert.equal(f.internals.operation, undefined, '不进入使用流程'); assert.deepEqual(f.session.captureState(), before);
+  f.internals.operation = { entry: source.id, kind: 'use', quantity: 1 }; f.internals.confirmOperation();
+  assert.deepEqual(f.session.captureState(), before, '确认前再次拒绝，库存与整队状态不变');
+  f.internals.operation = undefined;
 });
 
 test('processing items no longer expose a use button on their own description', t => {
@@ -1066,16 +1067,14 @@ test('equipment actions wrap without shrinking after adding manual lock', async 
   assert.deepEqual(buttons.map(button=>[button.x,button.y]),[[100,238],[276,238],[100,300],[276,300],[100,362]],'三行两列');
 });
 
-test('hero bag still applies skill reset and supreme elixir', t => {
-  for (const item of ['skills-reset-spell', 'supreme-elixir']) {
-    const f = fixture(); t.after(f.cleanup); f.hero.addExperience(Number.MAX_SAFE_INTEGER); f.hero.allocate('strength', 1);
-    f.session.skills.learn('dark-strike');f.session.skills.learn('dark-strike');
-    const skill = battle.classes.find(value => value.id === f.hero.classId)!.skills[1]; f.session.skills.learn(skill);
-    const source = f.add(item), points = f.session.skills.points(); f.menu.debugUse(source.id); f.scene.click(f.scene.button('确定'));
-    assert.equal(f.session.bag.count(item), 0);
-    if (item === 'skills-reset-spell') assert.equal(f.session.skills.level(skill), 0);
-    if (item === 'supreme-elixir') assert.equal(f.session.skills.points(), points + 1);
-  }
+test('hero bag applies supreme elixir', t => {
+  const f = fixture(); t.after(f.cleanup); f.hero.addExperience(Number.MAX_SAFE_INTEGER); f.hero.allocate('strength', 1);
+  f.session.skills.learn('dark-strike');f.session.skills.learn('dark-strike');
+  const skill = battle.classes.find(value => value.id === f.hero.classId)!.skills[1]; f.session.skills.learn(skill);
+  const source = f.add('supreme-elixir'), points = f.session.skills.points(); f.menu.debugUse(source.id); f.scene.click(f.scene.button('确定'));
+  assert.equal(f.session.bag.count('supreme-elixir'), 0);
+  assert.equal(f.session.skills.points(), points + 1);
+  assert.equal(f.session.skills.level(skill), 1);
 });
 
 test('a wrapped bag item name pushes the item detail content down',t=>{
@@ -1407,9 +1406,9 @@ test('discarding a lamp keeps the bag; summoning awaits the map and closes the m
 });
 
 test('description buttons and scrolling reject modal, busy, suspended and closed input', t => {
-  const f = fixture(); t.after(f.cleanup); const source = f.add('skills-reset-spell');
+  const f = fixture(); t.after(f.cleanup); const source = f.add('supreme-elixir');
   f.menu.debugDescribe(source.id); f.menu.debugUse(source.id, 'discard');
-  const button = f.scene.button('初始化技能'), scroll = f.internals.description.scrolls[0]!;
+  const button = f.scene.button('使用'), scroll = f.internals.description.scrolls[0]!;
   scroll.setHeight(1000);
   const point = scroll.content.getWorldTransformMatrix().transformPoint(10, 10);
   Object.assign(f.scene.input.activePointer, point);
@@ -1485,8 +1484,8 @@ test('scrolling a shop description never scrolls the bag column underneath', t =
 });
 
 test('opening a modal cancels an unfinished description press before it can resume', t => {
-  const f = fixture(); t.after(f.cleanup); const source = f.add('skills-reset-spell'); f.menu.debugDescribe(source.id);
-  const button = f.scene.button('初始化技能');
+  const f = fixture(); t.after(f.cleanup); const source = f.add('supreme-elixir'); f.menu.debugDescribe(source.id);
+  const button = f.scene.button('使用');
   for (const transition of ['modal', 'suspended'] as const) {
     f.scene.press(button); assert.equal(button.getData('highlight').visible, true);
     if (transition === 'modal') f.internals.operation = { entry: source.id, kind: 'discard', quantity: 1 };
@@ -1506,7 +1505,7 @@ test('keyboard reaches equipment description actions and modal focus stays insid
   const item = items.startingEquipment['dark-knight']['main-hand']!, weapon = f.add(item);
   f.menu.debugDescribe(weapon.id); keyboardFocus(f, '装备'); assert(f.scene.key('Enter')); await Promise.resolve();
   assert.equal(f.session.bag.equipment['main-hand'], weapon.id, 'Enter 执行独立说明层装备按钮');
-  const source = f.add('skills-reset-spell'); f.menu.debugDescribe(source.id);
+  const source = f.add('supreme-elixir'); f.menu.debugDescribe(source.id);
   keyboardFocus(f, '丢弃', true); assert(f.scene.key(' '));
   assert.equal(f.internals.operation?.kind, 'discard', 'Shift+Tab 与空格执行说明层按钮');
   const labels = new Set<string>();
@@ -1515,7 +1514,7 @@ test('keyboard reaches equipment description actions and modal focus stays insid
   assert(f.scene.key('Escape')); assert.equal(f.internals.operation, undefined);
   assert.equal(f.session.bag.count(source.item), 1, 'Escape 取消确认');
   keyboardFocus(f, '关闭', true); assert(f.scene.key('Enter'));
-  assert.equal(f.scene.buttons('初始化技能').length, 0, '键盘关闭说明而保留背包'); assert(f.scene.buttons('背包').length);
+  assert.equal(f.scene.buttons('使用').length, 0, '键盘关闭说明而保留背包'); assert(f.scene.buttons('背包').length);
 });
 
 test('keyboard reaches shop buy and sell description actions and Escape backs out', t => {
@@ -3222,7 +3221,7 @@ test('sampling changes preserve discard and save popup coverage, text and pointe
 
 test('the discard dialog keeps the bag text outside the popup', t => {
   const f=fixture();t.after(f.cleanup);
-  const source=f.add('skills-reset-spell',3);
+  const source=f.add('supreme-elixir',3);
   f.menu.debugDescribe(source.id);
   f.scene.click(f.scene.button('丢弃'));
   assert.ok(f.internals.operation);
@@ -3230,7 +3229,7 @@ test('the discard dialog keeps the bag text outside the popup', t => {
   assert.ok(labels.some(label=>label.text==='人物'),'顶部页签文字仍然显示');
   assert.ok(labels.some(label=>label.text==='武器'),'背包分类文字仍然显示');
   assert.ok(labels.some(label=>label.text==='丢弃物品'),'弹层标题仍然显示');
-  const title=domLabel(f,'技能初始化卷轴');
+  const title=domLabel(f,'卓越灵药');
   assert.ok(title,'左侧说明标题仍然存在，没有被整条删除');
   assert.equal(title.style.opacity,'0.35','页面文字跟着弹层一起压暗');
   assert.ok(String(title.style.clipPath??'').startsWith('inset('),'被弹层盖住的部分按实际宽度裁剪');

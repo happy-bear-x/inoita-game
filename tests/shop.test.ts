@@ -34,8 +34,8 @@ test('bulk sale validates the whole batch before mutating and settles with one n
   const s=session(),store=open(s),id=offer(store,'healing-potion-s').id;
   s.gainMoney(100);store.buy(id,2);
   const potion=s.bag.entries.find(value=>value.item==='healing-potion-s')!;
-  s.bag.add('skills-reset-spell');
-  const quest=s.bag.entries.find(value=>value.item==='skills-reset-spell')!;
+  s.bag.add('shadow-mercenary-emblem');
+  const quest=s.bag.entries.find(value=>value.item==='shadow-mercenary-emblem')!;
   const money=s.money,count=s.bag.count('healing-potion-s');
   // 批里只要有一件卖不掉，整批都不落地。
   assert.throws(()=>store.sellMany([{id:potion.id,quantity:1},{id:quest.id,quantity:1}]),/无法出售/);

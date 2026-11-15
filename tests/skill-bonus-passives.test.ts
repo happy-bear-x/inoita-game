@@ -635,7 +635,7 @@ test('normalMaxLevel three active and passive skills stop at three and books rai
   }, 'unarmed'), [{attribute: 'frenzyAttackChance', operation: {kind: 'add', amount: 370}}]);
 });
 
-test('elixirs grant points and the reset scroll clears ranks, points and shortcuts', () => {
+test('elixirs grant points and free reset clears ranks, points and shortcuts', () => {
   const {hero, skills} = createProgression('dark-knight');
   levelTo(hero, 6);
   assert.equal(hero.skillPoints, (hero.level - 1) * stats.skillPointsPerLevel);
@@ -655,13 +655,7 @@ test('elixirs grant points and the reset scroll clears ranks, points and shortcu
   skills.bar().assign(1, 0, {kind: 'skill', id: 'improved-defense'});
   assert.equal(skills.shortcutPage(hero.classId), 1);
   const resetVersion = skills.resetVersion;
-  const resetId = Object.entries(items.items).find(([, item]) => item.use?.kind === 'reset-skills')?.[0];
-  assert.equal(resetId, 'skills-reset-spell');
-  hero.bag.add(resetId!);
-  const scroll = hero.bag.entries.find(entry => entry.item === resetId);
-  assert.ok(scroll);
-  assert.equal(hero.bag.use(scroll.id).message, '已初始化技能与技能点');
-  assert.equal(hero.bag.count(resetId!), 0);
+  skills.reset();
   assert.ok(skills.resetVersion > resetVersion);
 
   const levels = skills.draft(battle, hero.classId).levels;
@@ -676,7 +670,7 @@ test('elixirs grant points and the reset scroll clears ranks, points and shortcu
   assert.deepEqual(skills.bar().page(1), [null, null, null, null, null, null]);
 });
 
-test('applyItem routes books, elixirs and reset scrolls through the same progression', () => {
+test('applyItem routes books and elixirs through the same progression', () => {
   const {hero, skills} = createProgression('dark-knight');
   levelTo(hero, 11);
 
@@ -691,13 +685,13 @@ test('applyItem routes books, elixirs and reset scrolls through the same progres
   assert.equal(skills.level('improved-defense'), 5);
   assert.equal(hero.skillPoints, pointsBeforeBook, '技能书不扣技能点');
 
-  assert.equal(skills.applyItem('skills-reset-spell'), '已初始化技能与技能点');
+  skills.reset();
   assert.equal(skills.level('improved-defense'), 0);
   assert.equal(hero.skillPoints, (hero.level - 1) * stats.skillPointsPerLevel);
   const beforeElixir = hero.skillPoints;
   assert.equal(skills.applyItem(SKILL_POINT_ITEM), '获得 1 个技能点');
   assert.equal(hero.skillPoints, beforeElixir + 1);
-  assert.equal(skills.applyItem('skills-reset-spell'), '已初始化技能与技能点');
+  skills.reset();
   assert.equal(hero.skillPoints, (hero.level - 1) * stats.skillPointsPerLevel);
 });
 
