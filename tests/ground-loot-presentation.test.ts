@@ -8,6 +8,7 @@ import type { DomUi } from '../src/ui/dom/dom-ui.ts';
 import { parseItemCatalog } from '../src/application/content-validation.ts';
 
 const items=parseItemCatalog(JSON.parse(fs.readFileSync(new URL('../public/content/items.json',import.meta.url),'utf8')));
+const drops=JSON.parse(fs.readFileSync(new URL('../public/content/drops.json',import.meta.url),'utf8'));
 const imageSize=(file:string)=>{
   const png=fs.readFileSync(new URL(`../public/${file}`,import.meta.url));
   assert.equal(png.toString('ascii',12,16),'IHDR',file);
@@ -37,6 +38,18 @@ test('sealed skillbooks all drop as a skillbook, not the resurrection prayer art
     assert.ok(item,`${id} 缺少物品定义`);
     assert.equal(item.groundSprite.file,skillbook,`${id} 的地面图`);
     assert.notEqual(item.groundSprite.file,'assets/items/ground/resurrection-prayer.png',`${id} 不应沿用复活祈祷图`);
+  }
+});
+
+test('gift boxes drop as treasure chests and reserved drops never use the ERR placeholder',()=>{
+  const chest={file:'assets/items/ground/treasure-chest.png',width:15,height:16,anchorX:7,anchorY:6};
+  const boxes=Object.values(items.items).filter(item=>item.name.endsWith('礼盒'));
+  assert.equal(boxes.length,56);
+  for(const item of boxes) assert.deepEqual(item.groundSprite,chest,`${item.name} 的地面图`);
+  for(const entry of drops.reservedDrops.entries){
+    const item=items.items[entry.item];
+    assert.ok(item,`${entry.item} 缺少物品定义`);
+    assert.notEqual(item.groundSprite.file,'assets/items/ground/resurrection-prayer.png',`${entry.item} 仍使用 ERR 占位图`);
   }
 });
 
