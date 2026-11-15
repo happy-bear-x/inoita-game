@@ -1,7 +1,7 @@
 import type { SessionState } from '../domain/session.ts';
 
 /** 调试标记的存储格式版本；旧标记只在版本一致时恢复。 */
-export const DEBUG_MARK_VERSION = 1;
+export const DEBUG_MARK_VERSION = 2;
 
 export interface DebugMarkSummary {
   name: string;

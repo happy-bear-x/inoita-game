@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { IndexedDbDebugMarkStore } from '../src/application/debug-mark-store.ts';
-import type { DebugMark } from '../src/debug/debug-marks.ts';
+import { DEBUG_MARK_VERSION, type DebugMark } from '../src/debug/debug-marks.ts';
 
 /** IndexedDB 边界替身：请求异步完成，事务末尾统一提交，模拟正文配额失败。 */
 function database() {
@@ -68,7 +68,7 @@ function database() {
   } as unknown as IDBFactory;
   return { factory, reads, full: (value: boolean) => { failBody = value; }, closed: () => closed };
 }
-const mark = (name: string, savedAt: number): DebugMark => ({ version: 1, summary: { name, savedAt, classId: 'mage', map: 'camp' }, session: { money: savedAt } as DebugMark['session'] });
+const mark = (name: string, savedAt: number): DebugMark => ({ version: DEBUG_MARK_VERSION, summary: { name, savedAt, classId: 'mage', map: 'camp' }, session: { money: savedAt } as DebugMark['session'] });
 
 test('mark summaries page newest first without reading bodies; a new store reads durable bodies', async () => {
   const db = database(), store = new IndexedDbDebugMarkStore(() => db.factory);

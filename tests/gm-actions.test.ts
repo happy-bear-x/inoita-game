@@ -10,6 +10,7 @@ import type { StoryClassCatalog } from '../src/domain/story-class.ts';
 import { newStorySession } from '../src/domain/story-class.ts';
 import { StoryDirector, type StoryUI } from '../src/domain/story-director.ts';
 import { createGmActions, type GmCombatPort } from '../src/debug/gm-actions.ts';
+import { DEBUG_MARK_VERSION, type DebugMark } from '../src/debug/debug-marks.ts';
 import { prepareDebugMark } from '../src/application/debug-mark-preparation.ts';
 import { prepareTaskStart } from '../src/debug/story-jump.ts';
 import { questJournal } from '../src/domain/quest-journal.ts';
@@ -828,7 +829,7 @@ test('mark exit restores the formal position before resuming and rejects concurr
 test('actual mark preflight restores into an independent session and rejects corrupt state before notifications', () => {
   const { session, director } = harness();
   const content = { campaign, world: read<import('../src/domain/content.ts').WorldIndex>('world'), storyClasses: classes, items, characterStats: stats, battleCatalog: battle, companions };
-  const mark = { version: 1 as const, summary: { name: 'real', savedAt: 1, classId: session.hero!.classId }, session: session.captureState() };
+  const mark: DebugMark = { version: DEBUG_MARK_VERSION, summary: { name: 'real', savedAt: 1, classId: session.hero!.classId }, session: session.captureState() };
   let notified = 0;
   const unsubscribe = session.subscribe(() => { notified++; });
   const before = session.captureState();
