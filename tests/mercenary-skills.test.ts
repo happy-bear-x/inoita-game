@@ -101,6 +101,16 @@ test('skill point validation rejects corrupt checkpoints before changing the liv
   }
 });
 
+test('skill point restore requires the exact cost of the allocated ranks',()=>{
+  const progression=new CompanionSkillProgression({'shield-bash':3},companions.generation.training,{
+    classId:'dark-knight',catalog:battle,pointsPerLevel:1,changed:()=>{},clearShortcuts:()=>{},
+  });
+  progression.updateLevel(40);
+  // 盾击各级花费是 3/2/2，三级实际花 7 点；只按最少/最多区间校验会放过少报的 6 点。
+  assert.throws(()=>progression.restorePoints({allocations:{'shield-bash':3},spentPoints:6,legacyBonusPoints:0}),/花费/);
+  progression.restorePoints({allocations:{'shield-bash':3},spentPoints:7,legacyBonusPoints:0});
+});
+
 test('GM skill levels do not become refundable points and story companions keep automatic growth',()=>{
   const {party,recruit}=fixture(),member=recruit(),points=member.skills.points();
   member.skills.maxAll(battle,member.classId);assert.equal(member.skills.level('dark-strike'),8);

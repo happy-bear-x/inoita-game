@@ -98,8 +98,7 @@ export function migrateMercenarySkills(caps:Record<string,number>,training:Compa
   let spentPoints=0;
   for(const id of new Set([...Object.keys(caps),...Object.keys(unlocked)])){
     const skill=catalog.skills[id];if(!skill)throw new Error('存档中的佣兵技能不存在');
-    const allocated=unlocked[id]!==undefined?Math.min(1,unlocked[id]):
-      training[id]?.requiredLevels.slice(0,caps[id]).filter(required=>level>=required).length??0;
+    const allocated=unlocked[id]!==undefined?Math.min(1,unlocked[id]):autoSkillLevel(training,id,caps[id],level);
     if(allocated)allocations[id]=allocated;
     const bookLevel=unlocked[id]!==undefined?Math.max(0,unlocked[id]-allocated):(books[id]??0);
     if(bookLevel)bookLevels[id]=bookLevel;
@@ -108,6 +107,11 @@ export function migrateMercenarySkills(caps:Record<string,number>,training:Compa
   }
   return {skillPoints:{allocations,spentPoints,legacyBonusPoints:Math.max(0,spentPoints-(level-1)*pointsPerLevel)},
     skillBookLevels:bookLevels,unlockedSkills:qualifications};
+}
+
+/** 训练表按角色等级算出的自然技能等级；自动成长和旧档迁移共用这一份口径。 */
+function autoSkillLevel(training:CompanionGenerationRules['training'],id:string,cap:number,level:number):number {
+  return training[id]?.requiredLevels.slice(0,cap).filter(required=>level>=required).length??0;
 }
 
 export class CompanionSkillProgression extends SkillConfiguration {
@@ -129,7 +133,7 @@ export class CompanionSkillProgression extends SkillConfiguration {
   updateLevel(level:number):void{
     this.characterLevel=level;
     if(!this.manual)this.levels=Object.fromEntries(Object.entries(this.caps).map(([id,cap])=>[id,
-      (this.training[id]?.requiredLevels.slice(0,cap).filter(required=>level>=required).length??0)+(this.bookLevels[id]??0)]));
+      autoSkillLevel(this.training,id,cap,level)+(this.bookLevels[id]??0)]));
     this.markChanged();
   }
   skillLevels():Record<string,number>{
@@ -186,7 +190,10 @@ export class CompanionSkillProgression extends SkillConfiguration {
         catalog&&(!catalog.classes.find(entry=>entry.id===this.context!.classId)?.skills.includes(id)||
         value>this.normalMaximum(id,catalog)))throw new Error('佣兵技能分配无效');
       if(catalog){
-        const costs=catalog.skills[id].ranks.slice(0,this.normalMaximum(id,catalog)).map(rank=>rank.pointCost).sort((a,b)=>a-b);
+        // 普通加点和技能书提升共用等级，且加点的先后无法从终态还原：
+        // 没有技能书时花费固定；有技能书时只能校验可能区间的上下限。
+        const books=this.bookLevels[id]??0,
+          costs=catalog.skills[id].ranks.slice(0,value+books).map(rank=>rank.pointCost).sort((a,b)=>a-b);
         minimumSpent+=costs.slice(0,value).reduce((sum,cost)=>sum+cost,0);
         maximumSpent+=costs.slice(costs.length-value).reduce((sum,cost)=>sum+cost,0);
       }
