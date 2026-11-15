@@ -1342,6 +1342,11 @@ export const UI_ATLAS_FRAMES: Readonly<Record<string, { key: string; frame: stri
     "frame": "assets/ui/status/buff-magic-insight.png",
     "page": 4
   },
+  "assets/ui/status/buff-mana-recovery.png": {
+    "key": "interface:assets/ui/menu-ui-4.png",
+    "frame": "assets/ui/status/buff-mana-recovery.png",
+    "page": 4
+  },
   "assets/ui/status/buff-molten-armor.png": {
     "key": "interface:assets/ui/menu-ui-4.png",
     "frame": "assets/ui/status/buff-molten-armor.png",
@@ -1410,11 +1415,6 @@ export const UI_ATLAS_FRAMES: Readonly<Record<string, { key: string; frame: stri
   "assets/ui/status/buff-spring-health-recovery.png": {
     "key": "interface:assets/ui/menu-ui-4.png",
     "frame": "assets/ui/status/buff-spring-health-recovery.png",
-    "page": 4
-  },
-  "assets/ui/status/buff-spring-mana-cost.png": {
-    "key": "interface:assets/ui/menu-ui-4.png",
-    "frame": "assets/ui/status/buff-spring-mana-cost.png",
     "page": 4
   },
   "assets/ui/status/buff-spring-mana-recovery.png": {
@@ -1602,6 +1602,11 @@ export const UI_ATLAS_FRAMES: Readonly<Record<string, { key: string; frame: stri
     "frame": "assets/ui/title-menu/subtitle-right.png",
     "page": 5
   },
+  "assets/ui/status/buff-spring-mana-cost.png": {
+    "key": "interface:assets/ui/menu-ui-4.png",
+    "frame": "assets/ui/status/buff-mana-recovery.png",
+    "page": 4
+  },
   "assets/ui/status/buff-spring-power-up.png": {
     "key": "interface:assets/ui/menu-ui-4.png",
     "frame": "assets/ui/status/buff-spring-health-recovery.png",
@@ -1758,4 +1763,4 @@ export const UI_ATLAS_FRAMES: Readonly<Record<string, { key: string; frame: stri
     "page": 0
   }
 };
-export const UI_ATLAS_SOURCE_DIGEST = "b260eb19be99034dfe7d73fe753e51f60169ec037ffe8cf4a9da3cf014a3f87c";
+export const UI_ATLAS_SOURCE_DIGEST = "15d455d6bf80c912f336825e6a35c277f21c7b8e025265f99f64761a848c9f02";
