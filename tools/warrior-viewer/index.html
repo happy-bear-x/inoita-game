@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>狂战士 · 动作素材查看器</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <header class="masthead">
+    <div><span class="eyebrow">艾诺迪亚 · 素材工作台</span><h1>狂战士<span>动作与换装</span></h1></div>
+    <p id="status" role="status">正在读取游戏原始素材…</p>
+  </header>
+  <main class="workspace" aria-busy="true">
+    <aside class="actions-panel panel">
+      <div class="panel-heading"><h2>动作</h2><span id="action-count"></span></div>
+      <div id="directions" class="directions" aria-label="角色朝向">
+        <button data-facing="south" aria-pressed="true">南 ↓</button>
+        <button data-facing="west" aria-pressed="false">西 ←</button>
+        <button data-facing="north" aria-pressed="false">北 ↑</button>
+        <button data-facing="east" aria-pressed="false">东 →</button>
+      </div>
+      <nav id="actions" aria-label="选择动作"></nav>
+    </aside>
+    <section class="preview-panel panel">
+      <div class="preview-heading"><div><span class="eyebrow">当前动作</span><h2 id="action-title">准备中</h2></div><span id="pose-info"></span></div>
+      <div id="stage" class="stage checker"><div id="character-canvas"></div><span id="scale-info" class="scale-info"></span></div>
+      <div class="view-options">
+        <label>缩放 <select id="zoom"><option value="1">1×</option><option value="2">2×</option><option value="3">3×</option><option value="4">4×</option><option value="6" selected>6×</option><option value="8">8×</option><option value="12">12×</option></select></label>
+        <label>背景 <select id="background"><option value="checker">透明棋盘</option><option value="gray">中灰</option><option value="dark">深灰</option><option value="light">浅色</option></select></label>
+        <button id="show-all" hidden>显示完整角色</button>
+      </div>
+      <div class="transport">
+        <button id="previous" title="上一帧（←）" aria-label="上一帧">←</button>
+        <button id="play" class="primary">暂停</button>
+        <button id="next" title="下一帧（→）" aria-label="下一帧">→</button>
+        <output id="frame-label">— / —</output>
+        <label class="speed">速度 <select id="speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select></label>
+        <input id="timeline" type="range" min="0" max="0" value="0" aria-label="当前帧">
+        <span class="shortcuts">空格 暂停 / 继续 · 左右键 逐帧</span>
+      </div>
+      <section class="frame-inspector">
+        <div class="panel-heading"><h2>这一帧的切片</h2><span id="piece-count"></span></div>
+        <p class="hint">按从后到前的绘制顺序排列。点击「仅看此片」在预览中保留它的位置和变换。</p>
+        <div id="pieces" class="pieces"></div>
+      </section>
+    </section>
+    <aside class="outfit-panel panel">
+      <div class="panel-heading"><h2>外观部件</h2><button id="reset" class="text-button">恢复默认</button></div>
+      <div class="weapons">
+        <label>主手装备<select id="main-hand"></select></label>
+        <label>副手装备<select id="off-hand"></select></label>
+      </div>
+      <p class="hint">装备决定出手动作。下面可独立切换每个部位的现有外形。</p>
+      <div id="variants" class="variants"></div>
+      <p class="hint legend">「未使用」表示当前帧没有绘制这个部位。上衣包含手臂与手套，下装包含腿脚。</p>
+    </aside>
+  </main>
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>

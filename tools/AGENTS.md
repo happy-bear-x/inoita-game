@@ -10,6 +10,7 @@
 - 图集/资源：`build-icon-atlas.ts`、`build-prop-atlas.ts`、`build-effect-atlas.ts`、`build-ui-atlas.ts`、`build-character-atlas.ts` 生成图集，`atlas-pack.ts` 提供按加载块装箱的共用实现，`asset-source.ts` 解析 `asset-source/` 源图，`build-slot-frames.ts` 生成装备槽帧，`asset-report.ts` 输出源素材重复与生产构建后的运行时素材口径，`asset-keep.ts` 计算运行时保留集，`prune-assets.ts` 把未引用素材移进归档目录。
 - 角色图集按 1024 页装箱，并在生成时打印「最差 10 个 actor」的页占用；新增大型 actor 或大技能帧后先看这份报告，避免单个小角色被装进大页后一次拉起几十 MB 纹理。
 - 测试/审计/APK：`test.ts` 是测试入口，`audit-story-actors.ts` 审计剧情角色摆放，`build-apk.mjs` 与 `verify-apk.mjs` 打包并校验 APK。
+- 素材查看：`warrior-viewer/` 是独立 HTML 开发页面，在 4003 的 `/tools/warrior-viewer/index.html` 检查狂战士全部可用动作、部件换装与逐帧切片，操作与验证见目录内规则。
 - 热更新：`update-manifest.ts` 生成、签名和验签逐文件清单，`update-key.ts` 生成签名密钥与公钥，`verify-update.ts` 核对 APK 基线与线上清单的差量。
 
 ## 规则
