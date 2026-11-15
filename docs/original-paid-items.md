@@ -11,7 +11,7 @@
 
 原版运行时读取的付费商品表是 `game.dat` 表 98 `CHARGEDITEMBASE`，共 **225 条**；表 99 `CHARGEDITEMPRODUCTBASE` 是充值商品。本项目不接入充值商品和付费货币。
 
-表 98 中有 **215 件**道具列入 `public/content/items.json` 的 `reservedItems`，保留给单独获取设计；另有 6 项功能服务按第六节的免费规则处理。
+表 98 中有 **215 件**道具列入 `public/content/items.json` 的 `reservedItems`；该清单另含 6 种材料礼盒，共 221 件，统一由独立掉落配置控制获取。另有 6 项功能服务按第六节的免费规则处理。
 
 `site/data/shops.json` 的 `cash_shop` 44 条来自 `CASHITEMBASE`。这张表在原版里只被导出 Excel 的代码读取，不是运行时货架，不能直接当成实际付费清单。本文以表 98 和表 99 为准。
 
@@ -168,7 +168,7 @@
 
 ### 8.2 保留道具的边界
 
-- `public/content/items.json` 的 `reservedItems` 记录 215 件付费道具；连同 12 本配方书和 3 种封印宝箱，共 230 个条目写入 `public/content/drops.json` 的 `reservedDrops`。
+- `public/content/items.json` 的 `reservedItems` 记录 215 件付费道具和 6 种材料礼盒；连同 12 本配方书和 3 种封印宝箱，共 236 个条目写入 `public/content/drops.json` 的 `reservedDrops`。材料礼盒的等级门槛与来源见 `docs/drops.md`。
 - `parseDrops` 解析普通掉落时仍剔除这些条目；`Storefront` 不把它们放上新货架；`EquipmentCrafting` 只显示已学会的配方书配方；标记 `allowReservedResult` 的三条原版常备药水配方（再生药水（特大）、元气恢复药水、卓越灵药）正常显示、可合成，其余结果为保留道具的常备配方仍不显示。`reservedDrops` 是配方书和配方结果等保留道具的独立掉落通道；配方书也可以由任务奖励发放。
 - 只有精英/Boss，或标了 `paidDropEligible` 的低等级小 Boss/精英会结算保留掉落；普通怪、宝箱和景物不参与。基础概率精英 45/10000、Boss 55/10000；解锁型连续 25 次未出必出。
 - 每次击杀全队只结算一次，使用主角等级；`minPlayerLevel` / `maxPlayerLevel` 控制等级区间，一次性道具超过建议等级后权重下降但不归零。

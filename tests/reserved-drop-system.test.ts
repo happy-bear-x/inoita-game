@@ -21,7 +21,7 @@ test('shipped reserved drop table covers every blocked item and only uses elite/
   assert.equal(config.sources.elite.chancePer10000, 45);
   assert.equal(config.sources.boss.chancePer10000, 55);
   assert.equal(config.pity.unlockGuaranteeAfter, 25);
-  assert.equal(config.entries.length, 230);
+  assert.equal(config.entries.length, 236);
   assert.ok(config.entries.every(entry => entry.sources.every(source => source === 'elite' || source === 'boss')));
   const flagged = Object.entries(rawDrops.enemies).filter(([, rule]) => rule.paidDropEligible);
   assert.equal(flagged.length, 18);

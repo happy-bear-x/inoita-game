@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { parseDrops, type DropCatalog } from '../src/domain/drops.ts';
-import { reservedAcquisitionIds } from '../src/domain/items.ts';
+import { blockedNormalAcquisitionIds, reservedAcquisitionIds } from '../src/domain/items.ts';
 import { parseItemCatalog, parseShops, validateStoryItems } from '../src/application/content-validation.ts';
 import type { CharacterStatsCatalog } from '../src/domain/character-stats.ts';
 import type { Campaign } from '../src/domain/campaign.ts';
@@ -20,9 +20,9 @@ const shops = parseShops(read('shops'));
 const rawDrops = read<DropCatalog>('drops');
 const craftingCatalog = parseCrafting(read('crafting'));
 
-test('paid item list covers the documented 215 items and their containers', () => {
-  assert.equal(reserved.size, 215);
-  assert.equal(blocked.size, 230);
+test('reserved item list covers 215 paid items, six material gifts and their containers', () => {
+  assert.equal(reserved.size, 221);
+  assert.equal(blocked.size, 236);
   assert.ok(blocked.has('durandal'));
   assert.ok(blocked.has('sword-of-truth'));
   for (const id of ['sealed-weapon-chest', 'sealed-armor-chest', 'sealed-necklace-chest'])
@@ -32,7 +32,8 @@ test('paid item list covers the documented 215 items and their containers', () =
   for (const id of recipeBooks) assert.ok(blocked.has(id), id);
 });
 
-test('random drops never select a reserved item', () => {
+test('random drops respect normal acquisition restrictions', () => {
+  const blocked = blockedNormalAcquisitionIds(items);
   const drops = parseDrops(rawDrops, items, Object.keys(rawDrops.enemies));
   for (const kind of ['weapon', 'armor', 'special', 'unique', 'epic'] as const)
     assert.ok(drops.equipment[kind].every(choice => !blocked.has(choice.item)), `${kind} pool contains reserved item`);
