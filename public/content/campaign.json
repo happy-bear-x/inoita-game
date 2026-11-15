@@ -296099,9 +296099,22 @@
       "source": "near",
       "script": "event-595",
       "condition": {
-        "type": "quest",
-        "quest": "quest-492",
-        "status": "completed"
+        "type": "all",
+        "conditions": [
+          {
+            "type": "quest",
+            "quest": "quest-492",
+            "status": "completed"
+          },
+          {
+            "type": "not",
+            "condition": {
+              "type": "quest",
+              "quest": "quest-499",
+              "status": "accepted"
+            }
+          }
+        ]
       },
       "near": "robbins-76d09f5c",
       "nearCharacterId": "npc-362",
@@ -296139,9 +296152,22 @@
       "source": "near",
       "script": "event-597",
       "condition": {
-        "type": "quest",
-        "quest": "quest-494",
-        "status": "completed"
+        "type": "all",
+        "conditions": [
+          {
+            "type": "quest",
+            "quest": "quest-494",
+            "status": "completed"
+          },
+          {
+            "type": "not",
+            "condition": {
+              "type": "quest",
+              "quest": "quest-500",
+              "status": "accepted"
+            }
+          }
+        ]
       },
       "near": "milriah-2e303d53",
       "nearCharacterId": "npc-363",
@@ -296179,9 +296205,22 @@
       "source": "near",
       "script": "event-599",
       "condition": {
-        "type": "quest",
-        "quest": "quest-498",
-        "status": "completed"
+        "type": "all",
+        "conditions": [
+          {
+            "type": "quest",
+            "quest": "quest-498",
+            "status": "completed"
+          },
+          {
+            "type": "not",
+            "condition": {
+              "type": "quest",
+              "quest": "quest-502",
+              "status": "accepted"
+            }
+          }
+        ]
       },
       "near": "dark-sorcerer-kane-369ccd17",
       "nearCharacterId": "npc-364",
