@@ -19,6 +19,7 @@
 
 ## 验证
 
+- `bag.test.ts` 与 `inventory.test.ts` 覆盖完整物品目录、分类数量和装备数据；任务物品来源由 `quest-drops.test.ts` 与 `story-side-item-quests.test.ts` 验证。
 - `loot-redesign.test.ts` 覆盖来源等级筛选、全队黄紫装保底和封印盒存档。
 - `dom-text-layout.test.ts` 验证菜单仅移动时文字跟随、锚点即时更新；`dom-surface.test.ts` 验证输入守卫、原生拖动、取消、嵌套长按、滚动后点击、静态按钮键盘导航、嵌套菜单滚动层坐标、图片裁边翻转、实时角色预览与预载信号；3× 采样下滚动、滑条与拖动沿用屏幕输入坐标，预览在画布内随采样倍率换算，DOM 遮罩留出的区域保持屏幕尺寸。
 - 职业选择的实时预览和页面复用由 `scene-input-routing.test.ts` 验证；`character-animation-reuse.test.ts` 验证六个职业的待机动作循环播放和角色释放。
