@@ -42,6 +42,27 @@ function fixture(){
   return {session,host,invoke};
 }
 
+test('mercenary skill reset cancels only its actor and refreshes prepared skills',()=>{
+  const {host,invoke}=fixture(),hero=host.hero;
+  const session=new Session(read<Campaign>('campaign'),undefined,undefined,host.app.items,hero,host.app.battleCatalog,
+    read<CharacterStatsCatalog>('character-stats'),read('companions'));
+  host.app.session=session;
+  const recruit=()=>{session.bag.add('mercenary-emblem-black-knight');return session.party!.recruit(session.bag.entries.find(entry=>entry.item==='mercenary-emblem-black-knight')!.id,()=>0).member;};
+  const first=recruit(),second=recruit();session.party!.deployFirstAvailable(first.id);session.party!.deployFirstAvailable(second.id);
+  const cancelled:string[]=[],runtime:string[]=[],conditions:string[]=[];let refreshed=0;
+  Object.assign(host,{
+    lastSkillResets:new Map(),partyControllers:new Map(session.party!.activeIds.map(id=>[id,{cancel:()=>cancelled.push(id)}])),
+    combatRuntime:{cancel:(id:string)=>runtime.push(id)},conditions:{clearTemporary:(id:string)=>conditions.push(id)},
+    scheduleSkillAssetRefresh:()=>{refreshed++;},
+  });
+  invoke('onPartyChanged');assert.deepEqual(cancelled,[]);
+  first.skills.reset();invoke('onPartyChanged');
+  assert.deepEqual(cancelled,[first.id]);assert.deepEqual(runtime,[first.id]);assert.deepEqual(conditions,[first.id]);
+  invoke('onPartyChanged');assert.deepEqual(cancelled,[first.id],'同一初始化只清理一次');
+  session.skills.reset();invoke('onPartyChanged');assert.deepEqual(cancelled,[first.id,'player']);
+  assert.equal(refreshed,4);
+});
+
 test('party passives are reused until a real input changes',t=>{
   const {session,host,invoke}=fixture();
   const equipment=t.mock.method(host.hero.bag,'equipmentItems');

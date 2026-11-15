@@ -83,7 +83,7 @@ export class SkillBookPanel {
 
   private canUnlock(member: CompanionMember, skill=this.unlockSkill): boolean {
     return !!skill && member.source === 'mercenary' && member.classId === this.classOf(skill)
-      && (member.skills.skillLevels()[skill] ?? 0) === 0;
+      && !member.skills.available(skill);
   }
 
   get skillIds(): string[] {
@@ -157,10 +157,10 @@ export class SkillBookPanel {
       page=Math.min(this.memberPage,Math.max(0,pages-1)), start=page*pageSize, visible=sameClass.slice(start,start+pageSize),
       offset=pages>1?40:15;
     visible.forEach((member,index)=>{
-      const learned=(member.skills.skillLevels()[skill!]??0)>0, x=offset+index*73, y=8, width=70, height=28;
+      const learned=member.skills.available(skill!), x=offset+index*73, y=8, width=70, height=28;
       v.button('',x,y,width,height,()=>this.selectUnlockMember(member),{fontSize:12,disabled:learned,
         selected:this.unlockMember?.id===member.id}).setData('label',member.definition.name);
-      this.textSpecs.push({key:`book-member-${member.id}`,text:learned?`${member.definition.name}·已会`:member.definition.name,
+      this.textSpecs.push({key:`book-member-${member.id}`,text:learned?`${member.definition.name}·已开放`:member.definition.name,
         x:x+width/2,y:y+height/2,style:{size:11,color:learned?'rgba(243,222,176,.4)':GOLD,
           anchorX:.5,anchorY:.5,width:width-4,align:'center',wrap:'word'}});
     });
@@ -248,7 +248,7 @@ export class SkillBookPanel {
       style: {size: layout.level.size, color: TEXT_COLORS.primary, width: layout.level.width,
         lineHeight: layout.level.size + 5, wrap: 'word'}});
     this.textSpecs.push({key: 'book-status', text: problem ?? (this.unlockBook
-      ? `使用后：LV ${rank} → LV 1`
+      ? '使用后：开放学习'
       : `使用技能书：LV ${rank} → ${rank + 1}`),
       x: layout.status.x, y: layout.status.y,
       style: {size: layout.status.size, color: problem ? TEXT_COLORS.danger : '#ffd75e',
@@ -266,7 +266,7 @@ export class SkillBookPanel {
     this.addDescriptionText('book-desc', description, layout.scroll.x, layout.scroll.y,
       layout.scroll.width, 20, scrollName, clip);
     let y = description.height;
-    if (!problem) {
+    if (!problem && !this.unlockBook) {
       if (y) y += 8;
       const center = layout.scroll.width / 2;
       skillNextLevelPreview(skill.ranks, rank, skill.kind, skill.ranks.length, skill.display)
@@ -364,7 +364,7 @@ export class SkillBookPanel {
       const member = this.unlockMember;
       if (!member) return '请选择同职业佣兵';
       if (member.classId !== this.classOf(id)) return '该佣兵职业不符';
-      if ((member.skills.skillLevels()[id] ?? 0) > 0) return '该佣兵已学会此技能';
+      if (member.skills.available(id)) return '该佣兵已开放此技能';
       return undefined;
     }
     if (bound && bound !== id) return '这本书只能提升指定的技能';

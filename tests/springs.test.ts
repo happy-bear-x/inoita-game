@@ -99,7 +99,7 @@ test('spring mana recovery uses each member own mana maximum',()=>{
 test('spring skill points only go to the living hero',()=>{
   const hero=springMember('player',100,200,10,100),ally=springMember('ally',70,80,10,40);
   assert.deepEqual(grantSpringSkillPoint([hero,ally]),['player']);
-  assert.deepEqual([hero.skillPoints,ally.skillPoints],[1,0],'佣兵没有技能点系统');
+  assert.deepEqual([hero.skillPoints,ally.skillPoints],[1,0],'泉水额外技能点只发给主角');
   hero.setHealth(0);
   assert.deepEqual(grantSpringSkillPoint([hero,ally]),[]);
 });

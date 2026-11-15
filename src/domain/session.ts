@@ -11,6 +11,7 @@ import { groundLootFor, GroundLootStore, type GroundLootState } from './ground-l
 import { QuestItemGenerators, type QuestItemGenerationState } from './quest-item-spawns.ts';
 import { boundedHealth } from './status-hud.ts';
 import { StorySkillProgression } from './story-skills.ts';
+import { CompanionSkillProgression } from './companion-progression.ts';
 import { Bag, verifyBagState, type BagState } from './bag.ts';
 import type { SkillConfigurationState } from './skill-configuration.ts';
 import type { ItemCatalog } from './items.ts';
@@ -435,7 +436,7 @@ export class Session {
         if(!classSkills.includes(skill))throw new Error('该佣兵职业不符');
         member.skills.unlockSkill(skill,battle);
         this.recordPerformance(['party','bag']);this.emit();
-        return `${battle.skills[skill].name}已解锁（1 级）`;
+        return `${battle.skills[skill].name}已开放学习`;
       }
       if(!memberId||memberId==='player')return this.skills.applyItem(item,skill);
       const member=this.party?.get(memberId);
@@ -444,7 +445,7 @@ export class Session {
       return `${battle.skills[skill].name}提升至 ${rank} 级`;
     });
     this.party=hero&&items&&stats&&companions?new PartyRoster(hero,stats,items,companions,()=>{this.recordPerformance(['party','bag']);this.emit();},id=>{this.cooldowns.removeActor(id);this.frenzyAnimations.removeActor(id);this.lootPity.removeMember(id);},
-      sourceItem=>this.recordQuestFact('recruit',sourceItem,'recruit'),operation=>this.atomic(operation,['bag','party','questBook'])):undefined;
+      sourceItem=>this.recordQuestFact('recruit',sourceItem,'recruit'),operation=>this.atomic(operation,['bag','party','questBook']),battle):undefined;
     this.bag = hero?.bag ?? new Bag(()=>{this.recordPerformance(['bag']);this.emit();},items,character?.classId,items?'game':'none');
     const inputs={events:new Set<string>(),choices:new Set<string>(),flags:new Set<string>(),world:new Set<string>()};
     for(const quest of campaign.quests){
@@ -641,6 +642,15 @@ export class Session {
       for(const member of state.party.members){
         if(!member.id||ids.has(member.id)||!this.party?.catalog.definitions[member.definitionId])throw new Error('检查点伙伴引用无效');
         ids.add(member.id);validate(member.skills);
+        if(!['story','mercenary'].includes(member.source)||!Number.isSafeInteger(member.level)||member.level<1||this.stats&&member.level>this.stats.maxLevel)throw new Error('检查点伙伴等级或来源无效');
+        if(member.source==='mercenary'&&this.companions&&this.stats){
+          const definition=this.companions.definitions[member.definitionId];
+          const progression=new CompanionSkillProgression(member.generated.skillCaps,this.companions.generation.training,{
+            classId:definition.classId,catalog:this.battle,pointsPerLevel:this.stats.skillPointsPerLevel,changed:()=>{},clearShortcuts:()=>{},
+          });
+          progression.restoreBooks(member.skillBookLevels??{},member.level);
+          progression.restoreUnlocked(member.unlockedSkills??{});progression.restorePoints(member.skillPoints);
+        }
       }
       for(const id of [...state.party.slots,...state.party.rosterSlots])if(id&&!ids.has(id))throw new Error('检查点队伍格位引用无效');
       if(state.party.selected!=='player'&&!ids.has(state.party.selected))throw new Error('检查点操控伙伴不存在');

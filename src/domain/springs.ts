@@ -34,7 +34,7 @@ export interface SpringCatalog {
   effects: SpringEffect[];
 }
 
-/** 泉水结算读写一名上阵队员的资源；佣兵没有技能点，所以 `grantSkillPoint` 可选。 */
+/** 泉水结算读写一名上阵队员的资源；`grantSkillPoint` 只由主角提供，接收泉水额外点数。 */
 export interface SpringPartyResources {
   id: string;
   player: { health: number; maxHealth: number; mana: number; maxMana: number };
@@ -92,7 +92,7 @@ export function applySpringRecovery(effect: { kind: SpringKind; percent?: number
 }
 
 /**
- * 技能点只属于主角：佣兵没有技能点系统，即使传入也不会被加。
+ * 泉水额外技能点只发给主角。
  * 返回真正拿到技能点的成员 id。
  */
 export function grantSpringSkillPoint(members: readonly SpringPartyResources[]): string[] {

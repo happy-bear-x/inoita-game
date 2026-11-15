@@ -8,6 +8,7 @@ import type {StoryWorldViewSnapshot} from '../src/scenes/world-scene.ts';
 import {emptyShortcutRow} from '../src/domain/shortcut-bar.ts';
 import type {WorldMap} from '../src/domain/content.ts';
 import {WorldEnemyRoster} from '../src/domain/world-enemies.ts';
+import {CompanionSkillProgression} from '../src/domain/companion-progression.ts';
 const read=<T>(name:string):T=>JSON.parse(readFileSync(new URL(`../public/content/${name}.json`,import.meta.url),'utf8')) as T;
 const content:SavedGameContent={campaign:read('campaign'),world:read('world'),storyClasses:read('story-classes'),
   items:read('items'),characterStats:read('character-stats'),battleCatalog:read('battle'),companions:read('companions')};
@@ -381,10 +382,53 @@ test('format 51 mercenaries gain empty skill book progress on upgrade',()=>{
   saved.session.party=session.party!.captureState();
   const previous=saved.session.party.members[0]!;
   delete previous.skillBookLevels;saved.format=51;
+  delete previous.skillPoints;
   const restored=prepareSavedGame(saved,content).session.party!.get(member.id)!;
+  const legacy=new CompanionSkillProgression(member.generated.skillCaps,content.companions.generation.training);legacy.updateLevel(member.level);
   assert.deepEqual(restored.skills.bookState(),{});
   assert.deepEqual(restored.generated.skillCaps,member.generated.skillCaps);
-  assert.deepEqual(restored.skills.skillLevels(),member.skills.skillLevels());
+  assert.deepEqual(restored.skills.skillLevels(),legacy.skillLevels());
+  assert.equal(restored.skills.manual,true);
+});
+
+test('format 55 keeps mercenary ranks and book gains, funds historical ranks once and saves manual allocation',()=>{
+  for(const level of [1,105]){
+    const base=record(),character=content.storyClasses.classes[0],session=newStorySession(content.campaign,content.world.actors[content.campaign.start.actor],character,
+      content.items,content.characterStats,content.battleCatalog,content.companions);
+    session.bag.add('mercenary-emblem-black-knight');
+    const member=session.party!.recruit(session.bag.entries.find(entry=>entry.item==='mercenary-emblem-black-knight')!.id,()=>0).member;
+    const saved=captureSaveGame(session,base.world,{...base.summary,level:session.hero!.level});saved.format=55;
+    const previous=saved.session.party!.members[0];previous.level=level;delete previous.skillPoints;
+    const missing=content.battleCatalog.classes.find(value=>value.id===member.classId)!.skills.find(id=>!previous.generated.skillCaps[id]&&content.battleCatalog.skills[id].normalMaxLevel===4)!;
+    previous.unlockedSkills={[missing]:3};previous.skillBookLevels=level>1?{'dark-strike':2}:{};
+    const legacy=new CompanionSkillProgression(previous.generated.skillCaps,content.companions.generation.training);
+    legacy.restoreBooks(previous.skillBookLevels,level);legacy.restoreUnlocked(previous.unlockedSkills);
+    const expected=legacy.skillLevels(),before=structuredClone(saved);
+    const candidate=prepareSavedGame(saved,content),restored=candidate.session.party!.get(member.id)!;
+    assert.deepEqual(restored.skills.skillLevels(),expected);assert.deepEqual(saved,before,'迁移不改写旧档');
+    assert.equal(restored.skills.bookState()[missing],2,'解锁书首级以外的等级仍属于技能书提升');
+    const state=restored.skills.pointsState()!,budget=(level-1)*content.characterStats.skillPointsPerLevel;
+    assert.equal(state.legacyBonusPoints,Math.max(0,state.spentPoints-budget));
+    assert.equal(restored.skills.points(),Math.max(0,budget-state.spentPoints));
+    if(level===1)assert(state.legacyBonusPoints>0,'旧档的免费首级会得到一次性点数补齐');
+    const normalCost=Object.entries(state.allocations).reduce((sum,[id,rank])=>sum+content.battleCatalog.skills[id].ranks.slice(0,rank).reduce((total,value)=>total+value.pointCost,0),0);
+    assert.equal(state.spentPoints,normalCost,'技能书等级不计入普通投入');
+    const current=captureSaveGame(candidate.session,candidate.world,saved.summary);
+    assert.equal(current.format,56);
+    const loaded=prepareSavedGame(current,content),again=loaded.session.party!.get(member.id)!;
+    assert.deepEqual(again.skills.pointsState(),state);assert.deepEqual(again.skills.skillLevels(),expected);
+    if(level===105){
+      const points=again.skills.points(),cost=content.battleCatalog.skills[missing].ranks[3].pointCost;
+      again.skills.learn(missing);assert.equal(again.skills.points(),points-cost);
+      assert.equal(again.skills.bookState()[missing],2,'继续普通加点保留已有技能书提升');
+      const updated=captureSaveGame(loaded.session,loaded.world,saved.summary),roundTrip=prepareSavedGame(updated,content).session.party!.get(member.id)!;
+      assert.equal(roundTrip.skills.level(missing),4);assert.equal(roundTrip.skills.points(),points-cost);
+    }
+    again.skills.reset();assert.equal(again.skills.points(),budget+state.legacyBonusPoints);
+    assert.equal(again.skills.available(missing),true);assert.equal(again.skills.level(missing),0);
+    assert.deepEqual(again.skills.bookState(),{});
+    again.skills.reset();assert.equal(again.skills.points(),budget+state.legacyBonusPoints,'再次初始化不会重复返还');
+  }
 });
 
 test('format 54 restores map-default posture and new saves retain explicit hero posture', () => {

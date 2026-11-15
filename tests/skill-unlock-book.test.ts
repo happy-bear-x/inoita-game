@@ -65,7 +65,7 @@ test('an unlock book can be obtained again after it is discarded',()=>{
   assert.equal(second.skill,first.skill,'不再持有时可以重新获得');
 });
 
-test('an unlock book teaches a mercenary an off-table skill without being consumed',()=>{
+test('an unlock book opens an off-table skill for manual learning without being consumed',()=>{
   const {session,recruit}=fixture();
   const member=recruit('mercenary-emblem-black-knight');
   const classSkills=battle.classes.find(entry=>entry.id===member.classId)!.skills;
@@ -75,22 +75,23 @@ test('an unlock book teaches a mercenary an off-table skill without being consum
   const book=session.bag.entries.find(entry=>entry.item==='skill-unlock-book')!;
 
   const result=session.bag.use(book.id,undefined,missing,()=>0.5,member.id);
-  assert.match(result.message,/已解锁/);
-  assert.equal(member.skills.skillLevels()[missing],1,'解锁后从 1 级开始');
+  assert.match(result.message,/已开放学习/);
+  assert.equal(member.skills.skillLevels()[missing],0,'解锁后从 0 级开始');
   assert.ok(session.bag.get(book.id),'解锁书使用后不消失');
-  assert.equal(member.skills.bookProblem(missing,battle),undefined,'解锁技能可以用普通技能书继续升级');
-  assert.equal(member.skills.book(missing,battle),2);
-  assert.equal(member.skills.bookProblem(missing,battle),undefined);
+  assert.equal(member.skills.available(missing),true);
+  assert.match(member.skills.bookProblem(missing,battle)!,/技能达到/,'先用普通点数加到上限，才能用技能书');
+  assert.throws(()=>member.skills.book(missing,battle),/技能达到/);
 
-  assert.throws(()=>session.bag.use(book.id,undefined,missing,()=>0.5,member.id),/已学会/);
-  assert.ok(session.bag.get(book.id),'已学会时书仍在背包里');
+  assert.throws(()=>session.bag.use(book.id,undefined,missing,()=>0.5,member.id),/已开放/);
+  assert.ok(session.bag.get(book.id),'已开放时书仍在背包里');
   assert.throws(()=>session.bag.use(book.id,undefined,missing,()=>0.5,'player'),/佣兵/);
 
   const second=recruit('mercenary-emblem-black-knight');
   assert.equal(second.classId,member.classId);
   assert.equal(second.skills.skillLevels()[missing]??0,0);
   session.bag.use(book.id,undefined,missing,()=>0.5,second.id);
-  assert.equal(second.skills.skillLevels()[missing],1,'同一本书可以给另一个同职业佣兵');
+  assert.equal(second.skills.skillLevels()[missing],0,'同一本书可以给另一个同职业佣兵');
+  assert.equal(second.skills.available(missing),true);
   assert.ok(session.bag.get(book.id));
 
   const assassin=recruit('mercenary-emblem-assassin');
@@ -105,24 +106,25 @@ test('unlocked skills are saved and restored with the mercenary',()=>{
   session.bag.add('skill-unlock-book',1,missing);
   session.bag.use(session.bag.entries.find(entry=>entry.item==='skill-unlock-book')!.id,undefined,missing,()=>0.5,member.id);
   const state=member.captureState();
-  assert.equal(state.unlockedSkills?.[missing],1);
+  assert.equal(state.unlockedSkills?.[missing],0);
   const restored=recruit('mercenary-emblem-black-knight');
   restored.restoreState(state);
-  assert.equal(restored.skills.skillLevels()[missing],1,'读档后解锁技能仍在');
-  assert.equal(restored.skills.bookProblem(missing,battle),undefined);
+  assert.equal(restored.skills.skillLevels()[missing],0,'读档后保留待学习状态');
+  assert.equal(restored.skills.available(missing),true);
+  assert.match(restored.skills.bookProblem(missing,battle)!,/技能达到/);
 });
 
-test('unlocking an initial-table skill at level zero freezes its natural growth and books still raise it',()=>{
+test('initial-table skills are already open at level zero and reject redundant unlocks',()=>{
   const {session,recruit}=fixture();
   const member=recruit('mercenary-emblem-black-knight');
   const capped=Object.keys(member.generated.skillCaps).find(id=>(member.skills.skillLevels()[id]??0)===0);
-  assert.ok(capped,'佣兵初始技能表里存在尚未到等级的技能');
+  assert.ok(capped,'佣兵初始技能表里存在尚未加点的技能');
   session.bag.add('skill-unlock-book',1,capped);
-  session.bag.use(session.bag.entries.find(entry=>entry.item==='skill-unlock-book')!.id,undefined,capped,()=>0.5,member.id);
-  assert.equal(member.skills.skillLevels()[capped],1);
+  const book=session.bag.entries.find(entry=>entry.item==='skill-unlock-book')!;
+  assert.throws(()=>session.bag.use(book.id,undefined,capped,()=>0.5,member.id),/已开放/);
+  assert.equal(member.skills.skillLevels()[capped],0);assert.ok(session.bag.get(book.id));
   member.addExperience(Number.MAX_SAFE_INTEGER);
-  assert.equal(member.skills.skillLevels()[capped],1,'解锁技能不随角色等级自然成长');
-  assert.equal(member.skills.book(capped,battle),2,'普通技能书仍能从解锁等级继续升');
+  assert.equal(member.skills.skillLevels()[capped],0,'升级增加点数，技能由玩家分配');
 });
 
 test('unlock books bound to the same skill stack in the bag',()=>{

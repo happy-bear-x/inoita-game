@@ -11,12 +11,13 @@ import type {StoryWorldViewSnapshot} from '../scenes/world-scene.ts';
 import {validateSceneSnapshot,type SceneActorState} from '../domain/scene-snapshot.ts';
 import {duplicateVisibleActors} from '../domain/actor-census.ts';
 import {dedupeSkillShortcuts} from '../domain/shortcut-bar.ts';
+import {migrateMercenarySkills} from '../domain/companion-progression.ts';
 
 export interface SavedGameContent {
   campaign:Campaign;world:WorldIndex;storyClasses:StoryClassCatalog;items:ItemCatalog;
   characterStats:CharacterStatsCatalog;battleCatalog:BattleCatalog;companions:CompanionCatalog;
 }
-type SaveUpgrade = (game:SaveGame<StoryWorldViewSnapshot>)=>void;
+type SaveUpgrade = (game:SaveGame<StoryWorldViewSnapshot>,content:SavedGameContent)=>void;
 interface LegacyStoryRun {stage?:Record<string,unknown>}
 /** 40 版迁移只针对「被污染的神殿大堂」这 7 只常驻恶灵，其他敌人的永久死亡原样保留。 */
 const NOXIOUS_HALL_MAP='noxious-sanctum-main-hall-2e80d907';
@@ -56,6 +57,14 @@ function stageHasDuplicateActors(stage:unknown):boolean {
  * 如果带重复演员，丢弃舞台快照，让剧情从当前节点继续而不是拒绝整份存档。
  */
 const SAVE_UPGRADES:Record<number,SaveUpgrade>={
+  55:(game,content)=>{
+    for(const member of game.session.party?.members??[]){
+      if(member.source!=='mercenary')continue;
+      Object.assign(member,migrateMercenarySkills(member.generated.skillCaps,content.companions.generation.training,
+        member.level,member.skillBookLevels??{},member.unlockedSkills??{},content.battleCatalog,content.characterStats.skillPointsPerLevel));
+    }
+    game.format=56;
+  },
   54:game=>{
     // 旧快照省略主角姿态覆盖，按地图默认值恢复。
     game.format=55;
@@ -229,13 +238,13 @@ const SAVE_UPGRADES:Record<number,SaveUpgrade>={
     game.format=44;
   },
 };
-function upgradeSavedGame(game:SaveGame<StoryWorldViewSnapshot>):SaveGame<StoryWorldViewSnapshot>{
+function upgradeSavedGame(game:SaveGame<StoryWorldViewSnapshot>,content:SavedGameContent):SaveGame<StoryWorldViewSnapshot>{
   if(game.format===SAVE_FORMAT)return game;
   if(!isReadableSaveFormat(game.format))throw new Error('存档版本不受支持');
   const upgraded=structuredClone(game);
   while(upgraded.format!==SAVE_FORMAT){
     const upgrade=SAVE_UPGRADES[upgraded.format];if(!upgrade)throw new Error('存档版本不受支持');
-    upgrade(upgraded);
+    upgrade(upgraded,content);
   }
   return upgraded;
 }
@@ -288,7 +297,7 @@ function migrateLegacyItems(game:SaveGame<StoryWorldViewSnapshot>):SaveGame<Stor
 }
 /** 候选会话独立于当前游戏，坏记录在切换场景之前被拒绝。 */
 export function prepareSavedGame(game:SaveGame<StoryWorldViewSnapshot>,content:SavedGameContent){
-  const upgraded=migrateLegacyItems(upgradeSavedGame(game));
+  const upgraded=migrateLegacyItems(upgradeSavedGame(game,content));
   const selected=content.storyClasses.classes.find(entry=>entry.id===upgraded.summary.classId);
   if(!selected)throw new Error('存档记录的职业在当前内容里不存在');
   const world=structuredClone(upgraded.world),location=world?.location;

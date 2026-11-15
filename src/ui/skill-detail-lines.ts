@@ -1,6 +1,6 @@
 import type { SkillDisplayRow, SkillRank } from '../domain/battle.ts';
 import type { DescriptionTextPart } from '../domain/description-text.ts';
-import type { StorySkillProgression } from '../domain/story-skills.ts';
+import type { SkillLearningProgression } from '../domain/skill-learning.ts';
 import type { SkillDefinition } from '../domain/battle.ts';
 import { skillDetailEntries, type SkillDetailEntry } from '../domain/skill-display.ts';
 import { TEXT_COLORS } from './text-style.ts';
@@ -24,7 +24,7 @@ function skillDetailLabel(detail: Pick<SkillDetailEntry, 'label' | 'valueSpacing
 export function skillDescriptionParts(skill: SkillDefinition, level: number, companionMaximum?: number, naturalMaximum?:number): DescriptionTextPart[] {
   const rank=skill.ranks[Math.max(0,level-1)],parts:DescriptionTextPart[]=[{text:`${skill.name} (LV ${Math.max(1,level)})\n`}];
   if(companionMaximum!==undefined)parts.push({text:`最高等级： LV ${companionMaximum}\n`});
-  if(naturalMaximum!==undefined)parts.push({text:`自然成长上限： LV ${naturalMaximum}\n`});
+  if(naturalMaximum!==undefined)parts.push({text:`普通学习上限： LV ${naturalMaximum}\n`});
   parts.push(...(skill.descriptionParts??[{text:skill.description}]),{text:'\n'});
   skillDetailEntries(skill,rank!).forEach((entry,index)=>{
     parts.push({text:skillDetailLabel(entry,index,skill.kind)},...entry.parts,{text:'\n'});
@@ -33,7 +33,7 @@ export function skillDescriptionParts(skill: SkillDefinition, level: number, com
 }
 
 export function skillLearningParts(name: string, level: number,
-  requirements: ReturnType<StorySkillProgression['learningRequirements']> | undefined,
+  requirements: ReturnType<SkillLearningProgression['learningRequirements']> | undefined,
   companionLearningLevel?: number): DescriptionTextPart[] {
   const parts:DescriptionTextPart[]=[{text:`${name} (LV ${level+1})\n`}];
   if(companionLearningLevel!==undefined)parts.push({text:`学习级别： LV ${companionLearningLevel}`,color:TEXT_COLORS.requirementUnmet});

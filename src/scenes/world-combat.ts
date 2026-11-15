@@ -322,7 +322,7 @@ export class WorldCombat {
   private readonly soundedSkills=new WeakSet<object>();
   private unsubscribeHero?:()=>void;
   private unsubscribeSession?:()=>void;
-  private lastSkillReset?:number;
+  private lastSkillResets=new Map<string,{configuration:StorySkillProgression|CompanionSkillProgression;revision:number}>();
   /** 整盒校验拒绝的强制位移落点；正常应为空，出现时说明技能落点被挡。 */
   private relocationFailures: { id: string; position: Point }[] = [];
   /** 跟随长时间没有进展、被传送到队长身边的次数；用于上报排查。 */
@@ -2542,7 +2542,11 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
     this.partySkills.set('player',this.partySkillsFor('player'));
     this.heroAi=new PartyController('player',heroController.port,heroController.controller);
     if(!this.hero.player.health)this.markAlreadyFallen('player');
-    this.lastSkillReset=this.app.session.skills.resetVersion;
+    this.lastSkillResets.clear();
+    for(const id of this.activeParty){
+      const configuration=id==='player'?this.app.session.skills:this.app.session.party?.get(id)?.skills;
+      if(configuration)this.lastSkillResets.set(id,{configuration,revision:configuration.resetVersion});
+    }
     this.unsubscribeHero=this.hero.subscribe(()=>this.onHeroChanged());
     this.unsubscribeSession=this.app.session.subscribe(()=>this.onPartyChanged());
     await this.syncAllies();
@@ -2801,10 +2805,18 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
   }
   private onPartyChanged():void {
     if(this.closed)return;
-    const revision=this.app.session.skills.resetVersion;
-    if(this.lastSkillReset!==undefined&&revision!==this.lastSkillReset){this.partyControllers.get('player')?.cancel(true);this.runtime.cancel('player');this.conditions.clearTemporary('player');}
-    this.lastSkillReset=revision;
     const active=new Set(this.activeParty);
+    for(const id of active){
+      const configuration=id==='player'?this.app.session.skills:this.app.session.party?.get(id)?.skills;
+      if(!configuration)continue;
+      const previous=this.lastSkillResets.get(id),revision=configuration.resetVersion;
+      if(previous?.configuration===configuration){
+        if(previous.revision===revision)continue;
+        previous.revision=revision;
+        this.partyControllers.get(id)?.cancel(true);this.runtime.cancel(id);this.conditions.clearTemporary(id);
+      }else this.lastSkillResets.set(id,{configuration,revision});
+    }
+    for(const id of this.lastSkillResets.keys())if(!active.has(id))this.lastSkillResets.delete(id);
     for(const [id,controller] of this.partyControllers)if(!active.has(id)){
       this.partySignature='';
       controller.cancel(true);this.runtime.removeActor(id);this.partyControllers.delete(id);this.conditions.remove(id);this.threat?.removeActor(id);
@@ -3315,7 +3327,7 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
     this.heroAi?.dispose();this.heroAi=undefined;
     this.stateMarkers.clear();this.conditionVisuals?.clear();
     for(const ally of [...this.allies]){ally.ai.dispose();ally.overhead.destroy();this.movement.remove(ally.visual);ally.visual.container.destroy();ally.assets?.release();}
-    this.allies=[];this.partyControllers.clear();this.partySkills.clear();
+    this.allies=[];this.partyControllers.clear();this.partySkills.clear();this.lastSkillResets.clear();
     this.passivesCache.clear();this.skillTableCache.clear();this.equipmentRecoveryCache.clear();this.combatProcsCache.clear();this.aiSkillCostCache?.clear();this.combatantsCache=undefined;
     this.reactionSkillCache?.clear();
     this.combat=undefined;

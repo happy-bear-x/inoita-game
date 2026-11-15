@@ -21,8 +21,8 @@ import type { Session } from '../domain/session.ts';
 import type { WorldIndex } from '../domain/content.ts';
 import type { StoryInterface } from '../domain/story-interface.ts';
 import type { CompanionMember } from '../domain/party.ts';
+import type { SkillLearningProgression } from '../domain/skill-learning.ts';
 import type { BattleClass, SkillLoadout } from '../domain/battle.ts';
-import type { StorySkillProgression } from '../domain/story-skills.ts';
 import { ShopPanel } from './phaser/shop-panel.ts';
 import { Storefront } from '../domain/shop.ts';
 import { QuestPanel } from './phaser/quest-panel.ts';
@@ -864,6 +864,12 @@ export class StoryUI {
     return memberArtwork(this.app.menuPanels,this.actor(),member.classId,source);
   }
   private configuration(){return this.selectedMemberId==='player'?this.session!.skills:(this.member() as CompanionMember).skills;}
+
+  private skillProgression():SkillLearningProgression|undefined {
+    if(this.selectedMemberId==='player')return this.session!.skills;
+    const member=this.session!.party?.get(this.selectedMemberId);
+    return member?.source==='mercenary'?member.skills:undefined;
+  }
   private scroll(name:string,x:number,y:number,w:number,h:number,surface=this.body!,bleed=0,
     bar?:Parameters<UiSurface['scroll']>[5]):ScrollArea{
     const scroll=surface.scroll(x,y,w,h,bleed,bar);this.scrollNames.set(name,scroll);
@@ -1547,21 +1553,19 @@ export class StoryUI {
     // 内容区各是一块图框；面板里露出的是黑色 65% 遮罩下的世界画面。
     v.border(panels.assets,85,0,409,431);drawSolidBorder(v,panels.assets,537,0,409,53);v.border(panels.assets,537,53,409,378);
     this.drawPartyColumn(v);
-    (['directory','ai','settings'] as const).forEach((section,index)=>{const button=v.button('',486,38+index*118,46,118,()=>{if(this.skillSection===section)return;this.skillSection=section;const detail=this.scrollNames.get('description');if(detail)detail.scrollTop=0;this.scrollOffsets.delete('skills:description');this.updateSkillsMember();},{image:panels.assets[`skill-tab-${section}`],disabled:section!=='directory'&&(!this.session!.party||(section==='settings'&&this.selectedMemberId!=='player'))}).setData('label',{directory:'技能目录',ai:'AI 设置',settings:'设置'}[section]);this.skillTabs.set(section,button);});
+    (['directory','ai','settings'] as const).forEach((section,index)=>{const button=v.button('',486,38+index*118,46,118,()=>{if(this.skillSection===section)return;this.skillSection=section;const detail=this.scrollNames.get('description');if(detail)detail.scrollTop=0;this.scrollOffsets.delete('skills:description');this.updateSkillsMember();},{image:panels.assets[`skill-tab-${section}`],disabled:section!=='directory'&&(!this.session!.party||(section==='settings'&&!this.skillProgression()))}).setData('label',{directory:'技能目录',ai:'AI 设置',settings:'设置'}[section]);this.skillTabs.set(section,button);});
     this.renderSkillContent();
   }
   private renderSkillContent():void{
     const v=this.body!,before=new Set(v.root.list),member=this.member()!,panels=this.app.menuPanels,configuration=this.configuration(),character=this.app.battleCatalog.classes.find(value=>value.id===member.classId)!;
-    if(this.skillSection==='settings'&&this.selectedMemberId!=='player')this.skillSection='directory';
+    if(this.skillSection==='settings'&&!this.skillProgression())this.skillSection='directory';
     this.skill??=character.skills[0];if(!character.skills.includes(this.skill))this.skill=character.skills[0];
-    const draft=configuration.draft(this.app.battleCatalog,member.classId),progression=this.selectedMemberId==='player'?this.session!.skills:undefined;
+    const draft=configuration.draft(this.app.battleCatalog,member.classId),progression=this.skillProgression();
     if(this.skillSection==='directory')this.renderSkillDirectory(character,draft);
     else if(this.skillSection==='ai')this.renderSkillAi(character,draft);
     else this.renderSkillSettings();
-    // 剧情伙伴的定义 id 也叫 mercenary-*，身份只能看 source。
-    const companion=progression?undefined:this.session!.party?.get(this.selectedMemberId);
     this.addSkillText('skills-header',progression?`${panels.character.labels.skillPoints} ${progression.points()}`
-      :(companion?.source==='story'?'伙伴技能':'佣兵技能'),561,14,19,GOLD,0,0,
+      :'伙伴技能',561,14,19,GOLD,0,0,
       {width:350,wrap:'word',lineHeight:24});
     const beforeAside=new Set(v.root.list),textStart=this.skillTextSpecs.length;
     this.renderSkillAside(draft,progression);
@@ -1643,11 +1647,11 @@ export class StoryUI {
     });
     this.finishScroll('ai',list,Math.max(20+5*89+75,20+2*178+75));
   }
-  /** 设置：只剩主角的技能点初始化；佣兵没有独立设置项。 */
+  /** 主角和佣兵共用居中的技能初始化入口。 */
   private renderSkillSettings():void{
-    const v=this.body!,labels=this.app.menuPanels.skillPanel.labels;
-    v.button('',161,290,257,63,()=>{this.skillReset=true;this.updateSkillResetModal();}).setData('label',labels.resetButton);
-    this.addSkillText('skills-reset',labels.resetButton,161+257/2,290+63/2,22,GOLD,.5,.5);
+    const v=this.body!,labels=this.app.menuPanels.skillPanel.labels,x=85+(409-257)/2,y=(431-63)/2;
+    v.button('',x,y,257,63,()=>{this.skillReset=true;this.updateSkillResetModal();}).setData('label',labels.resetButton);
+    this.addSkillText('skills-reset',labels.resetButton,x+257/2,y+63/2,22,GOLD,.5,.5);
   }
   /** 说明区由技能目录与 AI 设置共享；设置页与原版一样留空。 */
   /**
@@ -1655,7 +1659,7 @@ export class StoryUI {
    * 当前等级的数值 → 浅蓝点线 → 下一级预览（只列会变的项，满级不画）；AI 设置页只列当前等级的数值。
    * 底部是原版说明面板的菜单行（只挂在目录页）：学习、快捷键两枚按钮。
    */
-  private renderSkillAside(draft:SkillLoadout,progression:StorySkillProgression|undefined):void{
+  private renderSkillAside(draft:SkillLoadout,progression:SkillLearningProgression|undefined):void{
     if(this.skillSection==='settings')return;
     const v=this.body!,panels=this.app.menuPanels,
       skill=skillForGrowth(this.app.battleCatalog.skills[this.skill!]!,memberSkillGrowth(this.selectedMemberId)),
@@ -1663,7 +1667,7 @@ export class StoryUI {
       companion=this.selectedMemberId==='player'?undefined:this.session!.party?.get(this.selectedMemberId),
       naturalCap=companion?.snapshot().skillCaps[skill.id],
       unlocked=companion?companion.skills.unlockedState()[skill.id]!==undefined:false,
-      maximum=companion?(unlocked?skill.ranks.length:Math.max(naturalCap??0,level)):skill.normalMaxLevel;
+      maximum=companion?(companion.source==='mercenary'?companion.skills.normalMaximum(skill.id,this.app.battleCatalog):unlocked?skill.ranks.length:Math.max(naturalCap??0,level)):skill.normalMaxLevel;
     // AI 页未掌握的格子只保留选中状态，右侧说明区清空（原版 UISkill_AIMainExe 调 UIDesc_SetOff）。
     if(this.skillSection==='ai'&&level===0)return;
     const detailHeight=this.skillSection==='ai'?342:279;
@@ -1671,14 +1675,14 @@ export class StoryUI {
     const clip={top:71,bottom:71+detailHeight};
     // 说明正文按现有断行结果落字；滚动时 DOM 层按 `description` 的偏移重算位置。
     const description=this.descriptionLayout(v,skillDescriptionParts(skill,level,companion?.source==='mercenary'&&maximum?skill.ranks.length:companion?maximum:undefined,
-      companion?.source==='mercenary'&&maximum?companion.snapshot().skillCaps[skill.id]:undefined),353,22);
+      companion?.source==='mercenary'&&maximum?maximum:undefined),353,22);
     this.addDescriptionText('skill-desc',description,565,71,353,22,'description',clip);
     let y=description.height;
     if(this.skillSection==='ai'){this.finishScroll('description',detail,y);return;}
     if(level<maximum&&skill.ranks[level]){
       drawDescriptionSeparator(v,0,y+5,353,detail.content);y+=20;
       const learning=this.descriptionLayout(v,skillLearningParts(skill.name,level,progression?.learningRequirements(skill.id),
-        companion?skill.ranks[level].requiredCharacterLevel:undefined),353,22);
+        companion&&!progression?skill.ranks[level].requiredCharacterLevel:undefined),353,22);
       this.addDescriptionText('skill-learn',learning,565,71,353,22,'description',clip,y);
       y+=learning.height+12;
       skillNextLevelPreview(skill.ranks,level,skill.kind,maximum,skill.display).forEach((row,index)=>{
@@ -1698,7 +1702,7 @@ export class StoryUI {
     const menu=DESCRIPTION_PANEL.menu,rowX=537+menu.x,rowY=menu.y;
     const buttons:{image:string;label:string;disabled?:boolean;run:()=>void}[]=[];
     if(progression){
-      const cost=skill.ranks[level]?.pointCost??0,problem=progression.learningProblem(skill.id);
+      const cost=progression.learningRequirements(skill.id).cost,problem=progression.learningProblem(skill.id);
       buttons.push({image:panels.assets['skill-learn'],label:cost?`学习 ${cost}`:'学习',disabled:!!problem,
         run:()=>this.learnSkill(progression,skill.id)});
     }
@@ -1728,7 +1732,8 @@ export class StoryUI {
     this.sync();
   }
   private renderSkillResetConfirmation():void{
-    const v=this.modal!,panels=this.app.menuPanels;
+    const v=this.modal!,panels=this.app.menuPanels,memberId=this.selectedMemberId,progression=this.skillProgression();
+    if(!progression)return;
     this.skillResetTextSpecs=[];
     const add=(key:string,text:string,x:number,y:number,size:number,width:number):void=>{
       this.skillResetTextSpecs.push({key,text,x,y,style:{size,color:GOLD,width,wrap:'word'}});
@@ -1739,16 +1744,19 @@ export class StoryUI {
     };
     this.beginModal(MENU_FRAME_MODAL_WIDTH,MENU_FRAME_MODAL_HEIGHT);v.visible(true);v.frame(panels.assets,0,0,MENU_FRAME_MODAL_WIDTH,MENU_FRAME_MODAL_HEIGHT,1);
     add('skill-reset-title',`确定为${this.actor().name}初始化技能点？`,35,30,26,648);
-    add('skill-reset-description','清空已学技能与快捷栏，返还正常加点的技能点。',35,91,22,648);
+    add('skill-reset-description',memberId==='player'?'清空已学技能与快捷栏，返还正常加点的技能点。':
+      '清空已学技能与快捷栏，返还正常加点的技能点。技能书提升会清除，解锁资格保留。',35,91,22,648);
     v.button('',270,350,170,48,()=>{this.skillReset=false;this.updateSkillResetModal();}).setData('label','取消');
     button('skill-reset-cancel','取消',270,350,170,48);
     v.button('',480,350,190,48,()=>{
-      if(this.busy)return;this.busy=true;
-      try{this.session!.skills.reset();this.skillReset=false;}
+      if(this.busy)return;
+      if(this.selectedMemberId!==memberId||this.skillProgression()!==progression){this.skillReset=false;this.updateSkillResetModal();return;}
+      this.busy=true;
+      try{this.session!.batchNotifications(()=>progression.reset());this.skillReset=false;}
       catch(error){this.notice=(error as Error).message;}
       finally{this.busy=false;}
       const header=this.skillTextSpecs.find(spec=>spec.key==='skills-header');
-      if(header)header.text=`${panels.character.labels.skillPoints} ${this.session!.skills.points()}`;
+      if(header)header.text=`${panels.character.labels.skillPoints} ${progression.points()}`;
       this.sessionSignature=this.sessionDataSignature()??this.sessionSignature;this.updateSkillResetModal();
     }).setData('label','确定');
     button('skill-reset-confirm','确定',480,350,190,48);
@@ -2487,7 +2495,7 @@ export class StoryUI {
     })
       .catch(error=>{if(!signal.aborted&&this.open&&this.selectedMemberId===id){this.notice=(error as Error).message;this.menuText?.renderPage(this.page);}});
   }
-  private learnSkill(progression:StorySkillProgression,id:string):void{
+  private learnSkill(progression:SkillLearningProgression,id:string):void{
     if(this.busy)return;this.busy=true;
     try{progression.learn(id);}catch(error){this.notice=(error as Error).message;}
     finally{this.busy=false;}
@@ -2529,7 +2537,7 @@ export class StoryUI {
     this.skillTextSpecs=this.skillTextSpecs.filter(spec=>!this.skillAsideKeys.has(spec.key));
     const before=new Set(v.root.list),textStart=this.skillTextSpecs.length,member=this.member()!;
     const draft=this.configuration().draft(this.app.battleCatalog,member.classId);
-    this.renderSkillAside(draft,this.selectedMemberId==='player'?this.session!.skills:undefined);
+    this.renderSkillAside(draft,this.skillProgression());
     this.skillAsideNodes=v.root.list.filter(node=>!before.has(node));
     this.skillAsideKeys=new Set(this.skillTextSpecs.slice(textStart).map(spec=>spec.key));
     this.skillContentNodes=this.skillContentNodes.filter(node=>node.active).concat(this.skillAsideNodes);
@@ -2544,7 +2552,7 @@ export class StoryUI {
       const index=v.scrolls.indexOf(scroll);if(index>=0)v.scrolls.splice(index,1);
     }
     this.scrollNames.clear();v.pruneDestroyed();this.keyboardFocus=undefined;this.skillTextSpecs=[];
-    for(const [section,button] of this.skillTabs)button.getData('setEnabled')?.(section==='directory'||!!this.session!.party&&(section!=='settings'||this.selectedMemberId==='player'));
+    for(const [section,button] of this.skillTabs)button.getData('setEnabled')?.(section==='directory'||!!this.session!.party&&(section!=='settings'||!!this.skillProgression()));
     this.renderSkillContent();this.menuText?.renderPage('skills');
   }
   private updateStatusMember():void{

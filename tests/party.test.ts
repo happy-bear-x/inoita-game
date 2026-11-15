@@ -11,6 +11,7 @@ import { WorldEnemyRoster } from '../src/domain/world-enemies.ts';
 import type { BattleCatalog } from '../src/domain/battle.ts';
 
 const read=<T>(name:string):T=>JSON.parse(readFileSync(new URL(`../public/content/${name}.json`,import.meta.url),'utf8')) as T;
+
 const items=read<ItemCatalog>('items'),stats=read<CharacterStatsCatalog>('character-stats'),catalog=read<CompanionCatalog>('companions');
 
 test('original mercenary emblems recruit owned members, deploy two, and expel with their equipment',()=>{
@@ -52,7 +53,7 @@ test('activeMembers lists deployed resources player first and excludes reserves'
   assert.deepEqual(active.map(member=>member.id),party.activeIds,'顺序与上阵槽一致');
   assert.equal(active.some(member=>member.id===reserve.id),false,'候补不在上阵资源里');
   assert.equal(typeof active[0]!.grantSkillPoint,'function','主角有技能点');
-  assert.equal(active[1]!.grantSkillPoint,undefined,'佣兵没有技能点系统');
+  assert.equal(active[1]!.grantSkillPoint,undefined,'泉水的额外技能点仍只发给主角');
   active[1]!.setHealth(1);active[1]!.setMana(1);
   assert.deepEqual([second.player.health,second.player.mana],[1,1]);
   active[0]!.setMana(1);
@@ -186,15 +187,15 @@ test('all eighteen roster slots open and capacity failures preserve the emblem',
   party.dismiss(members[4].id);const replacement=party.recruit(emblem.id,()=>0).member;
   assert.equal(party.snapshot().rosterSlots[4],replacement.id);
 });
-test('recruitment uses native quality weights, generated attributes and automatic rank thresholds',()=>{
+test('recruitment keeps native quality and generated differences while skills start unallocated',()=>{
   const {party}=setup();const common=recruit(party),trained=recruit(party,'mercenary-emblem-black-knight',()=>.99),rare=recruit(party,'hero-emblem');
   assert.equal(common.definition.quality,0);assert.equal(trained.definition.quality,1);assert.equal(rare.definition.quality,2);
   assert.equal(common.generated.baseAttributes.strength,10);assert.notDeepEqual(common.generated.baseAttributes,stats.classes['dark-knight']);
-  assert.equal(common.snapshot().skillLevels['dark-strike'],1);assert.equal(common.snapshot().skillLevels['firestorm']??0,0);
+  assert.equal(common.snapshot().skillLevels['dark-strike'],0);assert.equal(common.snapshot().skillLevels['firestorm']??0,0);
   assert.ok(Object.keys(common.generated.skillCaps).length<15);assert.equal(rare.generated.groupSkills.length,2);
-  common.skills.updateLevel(32);assert.equal(common.skills.skillLevels()['dark-strike'],1);
-  common.skills.updateLevel(33);assert.equal(common.skills.skillLevels()['dark-strike'],2);
-  common.skills.updateLevel(105);assert.equal(common.skills.skillLevels()['dark-strike'],common.generated.skillCaps['dark-strike']);
+  common.skills.updateLevel(32);assert.equal(common.skills.skillLevels()['dark-strike'],0);assert.equal(common.skills.points(),31);
+  common.skills.updateLevel(33);assert.equal(common.skills.skillLevels()['dark-strike'],0);assert.equal(common.skills.points(),32);
+  common.skills.updateLevel(105);assert.equal(common.skills.skillLevels()['dark-strike'],0);assert.equal(common.skills.points(),104);
   const battle=read<BattleCatalog>('battle'),draft=common.skills.draft(battle,common.classId);
   draft.levels['firestorm']=9;assert.throws(()=>common.skills.save(battle,common.classId,draft),/等级/);
 });
@@ -348,6 +349,7 @@ test('mercenary skill books affect only the selected member and survive level re
   assert.throws(()=>hero.bag.use(book.id,undefined,skill,Math.random,member.id),/技能达到/);
   assert.equal(hero.bag.count('skillbook'),9);
   member.addExperience(Number.MAX_SAFE_INTEGER);
+  while(member.skills.level(skill)<cap)member.skills.learn(skill);
   assert.equal(member.skills.skillLevels()[skill],cap);
   const otherBefore=other.skills.skillLevels()[skill]??0,heroBefore=session.skills.draft(battle,hero.classId);
   for(let rank=cap;rank<8;rank++){

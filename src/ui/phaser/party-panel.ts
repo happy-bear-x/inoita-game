@@ -335,7 +335,7 @@ export class PartyPanel {
       503+index*91+36,18+8.5,14,'#9a9a9a','party-skills',{top:18,bottom:360},{anchorX:.5,anchorY:.5}));
     character.skills.forEach((skillId,index)=>{
       const skill=this.app.battleCatalog.skills[skillId],position=panels.skillPositions[index],level=loadout.levels[skillId]??0,
-        available=!companion||!!companion.skillCaps[skillId]||level>0;
+        available=!companion||(member as CompanionMember).skills.available(skillId)||level>0;
       const button=v.button('',position.column*91,20+position.row*89,75,75,()=>{this.modal={kind:'skill',id,skill:skillId};this.modalChanged();},
         {image:available?skill.icon:panels.assets['party-skill-unavailable'],parent:scroll.content,guard:scroll.guard}).setData('label',`${skill.name} ${available?`${level} 级`:'未开放'}`);
       button.addAt(v.image(panels.assets['skill-slot'],-9,-9,93,93,button),0);
@@ -408,11 +408,13 @@ export class PartyPanel {
     const level=configuration.draft(this.app.battleCatalog,member.classId).levels[skill.id]??0;
     const naturalCap=modal.id==='player'?undefined:(member as CompanionMember).snapshot().skillCaps[skill.id],
       unlocked=modal.id!=='player'&&(member as CompanionMember).skills.unlockedState()[skill.id]!==undefined,
-      cap=modal.id==='player'?skill.normalMaxLevel:naturalCap??level;
+      cap=modal.id==='player'?skill.normalMaxLevel:(member as CompanionMember).source==='mercenary'?
+        (member as CompanionMember).skills.normalMaximum(skill.id,this.app.battleCatalog):naturalCap??level;
     v.image(skill.icon,35,25,75,75);
     this.modalEntry('skill-name',skill.name,135,30,26,GOLD,0,0,{width:550,wrap:'word'});
-    this.modalEntry('skill-level',level?(modal.id!=='player'&&(member as CompanionMember).source==='mercenary'?
-      `等级 ${level} / ${skill.ranks.length}${unlocked?'（技能书解锁）':`（自然成长上限 ${naturalCap}）`}`:`等级 ${level} / ${cap}`):cap?'尚未习得':'该佣兵未开放此技能',135,70,21,GOLD,0,0,{width:550,wrap:'word'});
+    this.modalEntry('skill-level',modal.id!=='player'&&(member as CompanionMember).source==='mercenary'&&cap?
+      `等级 ${level} / ${skill.ranks.length}${unlocked?'（技能书解锁）':`（普通学习上限 ${cap}）`}`:
+      level?`等级 ${level} / ${cap}`:cap?'尚未习得':'该佣兵未开放此技能',135,70,21,GOLD,0,0,{width:550,wrap:'word'});
     const scroll=this.scrollArea(v,'party-modal',35,124,648,197);
     scroll.onScroll=()=>this.refreshText();
     let y=0;

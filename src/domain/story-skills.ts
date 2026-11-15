@@ -3,6 +3,7 @@ import type { BattleCharacter } from './character-stats.ts';
 import { SkillConfiguration } from './skill-configuration.ts';
 import { ShortcutBar, defaultShortcutRow, type ShortcutRow } from './shortcut-bar.ts';
 import { SKILL_POINT_ITEM } from './items.ts';
+import { investedSkillPoints, skillLearningRequirements, skillLearningProblem } from './skill-learning.ts';
 
 /** 正式游戏的已学技能与快捷栏，同一份状态供菜单和战斗读取。 */
 export class StorySkillProgression extends SkillConfiguration {
@@ -50,24 +51,13 @@ export class StorySkillProgression extends SkillConfiguration {
   points():number {return this.hero?.skillPoints??0;}
   /** 按每门技能当前等级的累计行统计，免费初始技能和技能书等级也参与。 */
   investedPoints():number {
-    const character=this.catalog?.classes.find(entry=>entry.id===this.hero?.classId);
-    if(!character)return 0;
-    return character.skills.reduce((total,id)=>{
-      const rank=this.level(id),ranks=this.catalog!.skills[id].ranks;
-      return total+(rank>0?(ranks[rank-1].investedSkillPoints??ranks.slice(0,rank).reduce((sum,value)=>sum+value.pointCost,0)):0);
-    },0);
+    return this.catalog&&this.hero?investedSkillPoints(this.catalog,this.hero.classId,this.draft(this.catalog,this.hero.classId).levels):0;
   }
   learningRequirements(id:string) {
-    const skill=this.skill(id),level=this.level(id),cost=skill.ranks[level]?.pointCost??0,
-      invested=this.investedPoints(),requiredInvested=skill.requiredInvestedSkillPoints??0,
-      atLimit=level>=skill.normalMaxLevel;
-    return {level,cost,invested,requiredInvested,atLimit,conditionMet:invested>=requiredInvested,pointsAvailable:this.points()>=cost};
+    return skillLearningRequirements(this.skill(id),this.level(id),this.points(),this.investedPoints());
   }
   learningProblem(id:string):string|undefined {
-    const state=this.learningRequirements(id);
-    if(state.atLimit)return '已达到普通学习上限';
-    if(!state.conditionMet)return `条件：投入${state.requiredInvested}技能点`;
-    if(!state.pointsAvailable)return `需要 ${state.cost} 个技能点`;
+    return skillLearningProblem(this.learningRequirements(id));
   }
   learn(id:string):number {
     const problem=this.learningProblem(id);if(problem)throw new Error(problem);

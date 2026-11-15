@@ -2,6 +2,7 @@ import type { BattleCatalog, SkillLoadout } from './battle.ts';
 import type { PrimaryAttributes } from './character-stats.ts';
 import { PRIMARY_STATS, primaryAttributesFrom } from './character-stats.ts';
 import { SkillConfiguration } from './skill-configuration.ts';
+import { investedSkillPoints, skillLearningRequirements, skillLearningProblem } from './skill-learning.ts';
 
 export type CompanionGroupEffect = 'low-health-resistance'|'sword-damage'|'plate-defense'|'ancient-legendary-chance'|
   'sell-price'|'critical-stun-chance'|'leather-physical-damage'|'chest-quality'|'magic-damage'|'cloth-magic-damage'|
@@ -76,97 +77,189 @@ export function generateCompanion(rules:CompanionGenerationRules,definition:{cla
   return {level,baseAttributes,skillCaps:caps,groupSkills};
 }
 
-/** Mercenaries acquire generated skills through character levels, without spending hero skill points. */
+/** 每名佣兵独立记录普通分配、实际花费和旧档补齐的点数。 */
+export interface MercenarySkillPoints {
+  allocations:Record<string,number>;
+  spentPoints:number;
+  legacyBonusPoints:number;
+}
+export interface MercenarySkillContext {
+  classId:string;
+  catalog?:BattleCatalog;
+  pointsPerLevel:number;
+  changed:()=>void;
+  clearShortcuts:()=>void;
+}
+
+/** 把旧自动成长与解锁书首级换成普通分配，技能书提升独立保留。 */
+export function migrateMercenarySkills(caps:Record<string,number>,training:CompanionGenerationRules['training'],
+  level:number,books:Record<string,number>,unlocked:Record<string,number>,catalog:BattleCatalog,pointsPerLevel:number) {
+  const allocations:Record<string,number>={},bookLevels:Record<string,number>={},qualifications:Record<string,number>={};
+  let spentPoints=0;
+  for(const id of new Set([...Object.keys(caps),...Object.keys(unlocked)])){
+    const skill=catalog.skills[id];if(!skill)throw new Error('存档中的佣兵技能不存在');
+    const allocated=unlocked[id]!==undefined?Math.min(1,unlocked[id]):
+      training[id]?.requiredLevels.slice(0,caps[id]).filter(required=>level>=required).length??0;
+    if(allocated)allocations[id]=allocated;
+    const bookLevel=unlocked[id]!==undefined?Math.max(0,unlocked[id]-allocated):(books[id]??0);
+    if(bookLevel)bookLevels[id]=bookLevel;
+    if(unlocked[id]!==undefined)qualifications[id]=0;
+    spentPoints+=skill.ranks.slice(0,allocated).reduce((sum,rank)=>sum+rank.pointCost,0);
+  }
+  return {skillPoints:{allocations,spentPoints,legacyBonusPoints:Math.max(0,spentPoints-(level-1)*pointsPerLevel)},
+    skillBookLevels:bookLevels,unlockedSkills:qualifications};
+}
+
 export class CompanionSkillProgression extends SkillConfiguration {
   private levels:Record<string,number>={};
   private bookLevels:Record<string,number>={};
-  /** 被封印技能书解锁的技能等级；不参与角色等级自然成长。 */
+  /** 剧情伙伴保存解锁等级，手动培养的佣兵只保存开放资格。 */
   private unlocked:Record<string,number>={};
+  private pointState:MercenarySkillPoints={allocations:{},spentPoints:0,legacyBonusPoints:0};
+  private characterLevel=1;
+  private resetRevision=0;
+  get resetVersion():number{return this.resetRevision;}
+  get manual():boolean{return !!this.context;}
   readonly caps:Record<string,number>;
   private readonly training:Record<string,CompanionTraining>;
-  constructor(caps:Record<string,number>,training:Record<string,CompanionTraining>){super();this.caps={...caps};this.training=training;}
+  private readonly context?:MercenarySkillContext;
+  constructor(caps:Record<string,number>,training:Record<string,CompanionTraining>,context?:MercenarySkillContext){
+    super();this.caps={...caps};this.training=training;this.context=context;
+  }
   updateLevel(level:number):void{
-    this.levels=Object.fromEntries(Object.entries(this.caps).map(([id,cap])=>[id,
+    this.characterLevel=level;
+    if(!this.manual)this.levels=Object.fromEntries(Object.entries(this.caps).map(([id,cap])=>[id,
       (this.training[id]?.requiredLevels.slice(0,cap).filter(required=>level>=required).length??0)+(this.bookLevels[id]??0)]));
     this.markChanged();
   }
   skillLevels():Record<string,number>{
-    const levels={...this.levels};
-    // 解锁技能不随角色等级自然成长；有效等级以解锁记录为准。
-    for(const [id,level] of Object.entries(this.unlocked))levels[id]=level;
-    return levels;
+    if(this.manual)return Object.fromEntries([...new Set([...Object.keys(this.caps),...Object.keys(this.unlocked)])]
+      .map(id=>[id,(this.pointState.allocations[id]??0)+(this.bookLevels[id]??0)]));
+    return {...this.levels,...this.unlocked};
+  }
+  private skill(id:string){
+    const skill=this.context?.catalog?.skills[id],character=this.context?.catalog?.classes.find(value=>value.id===this.context?.classId);
+    if(!skill||!character?.skills.includes(id))throw new Error('请选择本职业的技能');
+    return skill;
+  }
+  available(id:string):boolean{return this.caps[id]!==undefined||this.unlocked[id]!==undefined;}
+  normalMaximum(id:string,catalog:BattleCatalog):number{
+    return Math.min(this.caps[id]??(this.unlocked[id]!==undefined?catalog.skills[id].normalMaxLevel:0),catalog.skills[id].normalMaxLevel);
+  }
+  level(id:string):number{this.skill(id);return this.skillLevels()[id]??0;}
+  points():number{return this.manual?(this.characterLevel-1)*this.context!.pointsPerLevel+this.pointState.legacyBonusPoints-this.pointState.spentPoints:0;}
+  investedPoints():number{
+    return this.context?.catalog?investedSkillPoints(this.context.catalog,this.context.classId,this.skillLevels()):0;
+  }
+  learningRequirements(id:string){
+    const skill=this.skill(id);
+    return skillLearningRequirements(skill,this.level(id),this.points(),this.investedPoints(),this.normalMaximum(id,this.context!.catalog!));
+  }
+  learningProblem(id:string):string|undefined{
+    this.skill(id);
+    if(!this.available(id))return '该佣兵未开放此技能';
+    return skillLearningProblem(this.learningRequirements(id));
+  }
+  learn(id:string):number{
+    const problem=this.learningProblem(id);if(problem)throw new Error(problem);
+    const next=this.level(id)+1,cost=this.skill(id).ranks[next-1].pointCost;
+    this.pointState.allocations[id]=(this.pointState.allocations[id]??0)+1;
+    this.pointState.spentPoints+=cost;this.markChanged();this.context!.changed();return next;
+  }
+  reset():void{
+    if(!this.context)throw new Error('该伙伴不能初始化技能');
+    this.pointState={allocations:{},spentPoints:0,legacyBonusPoints:this.pointState.legacyBonusPoints};
+    this.bookLevels={};this.levels={};this.loadouts.delete(this.context.classId);
+    this.resetRevision++;this.setShortcutPage(this.context.classId,0);
+    this.context.clearShortcuts();this.context.changed();
+  }
+  pointsState():MercenarySkillPoints|undefined{return this.manual?structuredClone(this.pointState):undefined;}
+  restorePoints(state:MercenarySkillPoints|undefined):void{
+    if(!this.context)return;
+    if(!state||!state.allocations||!Number.isSafeInteger(state.spentPoints)||state.spentPoints<0||
+      !Number.isSafeInteger(state.legacyBonusPoints)||state.legacyBonusPoints<0||
+      state.spentPoints>(this.characterLevel-1)*this.context.pointsPerLevel+state.legacyBonusPoints)throw new Error('佣兵技能点记录无效');
+    const catalog=this.context.catalog;
+    let minimumSpent=0,maximumSpent=0;
+    for(const [id,value] of Object.entries(state.allocations)){
+      if(!Number.isSafeInteger(value)||value<0||!this.available(id)||
+        catalog&&(!catalog.classes.find(entry=>entry.id===this.context!.classId)?.skills.includes(id)||
+        value>this.normalMaximum(id,catalog)))throw new Error('佣兵技能分配无效');
+      if(catalog){
+        const costs=catalog.skills[id].ranks.slice(0,this.normalMaximum(id,catalog)).map(rank=>rank.pointCost).sort((a,b)=>a-b);
+        minimumSpent+=costs.slice(0,value).reduce((sum,cost)=>sum+cost,0);
+        maximumSpent+=costs.slice(costs.length-value).reduce((sum,cost)=>sum+cost,0);
+      }
+    }
+    if(catalog&&(state.spentPoints<minimumSpent||state.spentPoints>maximumSpent))throw new Error('佣兵技能点花费无效');
+    for(const [id,value] of Object.entries(this.unlocked)){
+      if(value!==0||catalog&&!catalog.classes.find(entry=>entry.id===this.context!.classId)?.skills.includes(id))throw new Error('佣兵技能解锁记录无效');
+    }
+    for(const id of new Set([...Object.keys(this.caps),...Object.keys(state.allocations),...Object.keys(this.bookLevels)])){
+      const books=this.bookLevels[id]??0,rank=(state.allocations[id]??0)+books,skill=catalog?.skills[id];
+      if(!Number.isSafeInteger(books)||books<0||!this.available(id)||
+        catalog&&(!skill||rank>(skill.companion?.ranks.length??skill.ranks.length)))throw new Error('佣兵技能书记录无效');
+    }
+    this.pointState=structuredClone(state);this.markChanged();
   }
   bookState():Record<string,number>{return {...this.bookLevels};}
   unlockedState():Record<string,number>{return {...this.unlocked};}
-  restoreBooks(books:Record<string,number>,level:number):void{
-    this.bookLevels={...books};this.updateLevel(level);
-  }
-  restoreUnlocked(unlocked:Record<string,number>):void{
-    this.unlocked={...unlocked};this.markChanged();
-  }
+  restoreBooks(books:Record<string,number>,level:number):void{this.bookLevels={...books};this.updateLevel(level);}
+  restoreUnlocked(unlocked:Record<string,number>):void{this.unlocked={...unlocked};this.markChanged();}
   bookProblem(id:string,catalog:BattleCatalog):string|undefined{
-    const skill=catalog.skills[id],cap=this.caps[id],rank=this.skillLevels()[id]??0;
+    const skill=catalog.skills[id],rank=this.skillLevels()[id]??0;
     if(!skill)return '技能不存在';
     const maximum=skill.companion?.ranks.length??skill.ranks.length;
-    if(this.unlocked[id]===undefined){
-      if(!cap)return '该佣兵未开放此技能';
+    if(this.manual){
+      if(!this.available(id))return '该佣兵未开放此技能';
+      const cap=this.normalMaximum(id,catalog);
       if(rank<cap)return `技能达到 ${cap} 级后才能使用技能书`;
+    }else if(this.unlocked[id]===undefined){
+      if(!this.caps[id])return '该伙伴未开放此技能';
+      if(rank<this.caps[id])return `技能达到 ${this.caps[id]} 级后才能使用技能书`;
     }
     if(rank>=maximum)return '技能已达到最高等级';
   }
   book(id:string,catalog:BattleCatalog):number{
     const problem=this.bookProblem(id,catalog);if(problem)throw new Error(problem);
-    if(this.unlocked[id]!==undefined){
-      const rank=(this.unlocked[id]??0)+1;
-      if(rank>(catalog.skills[id].companion?.ranks.length??catalog.skills[id].ranks.length))throw new Error('技能已达到最高等级');
-      this.unlocked[id]=rank;this.markChanged();return rank;
+    if(!this.manual&&this.unlocked[id]!==undefined){
+      this.unlocked[id]++;this.markChanged();return this.unlocked[id];
     }
     this.bookLevels[id]=(this.bookLevels[id]??0)+1;
-    this.levels[id]++;this.markChanged();return this.levels[id];
+    if(!this.manual)this.levels[id]++;
+    this.markChanged();return this.skillLevels()[id];
   }
-  /** 用封印技能书让佣兵学会初始技能表外的技能，从 1 级开始。 */
   unlockSkill(id:string,catalog:BattleCatalog):number{
     const skill=catalog.skills[id];
     if(!skill)throw new Error('技能不存在');
-    if((this.skillLevels()[id]??0)>0||this.unlocked[id]!==undefined)throw new Error('该佣兵已学会此技能');
-    const maximum=skill.companion?.ranks.length??skill.ranks.length;
-    if(maximum<1)throw new Error('技能已达到最高等级');
-    this.unlocked[id]=1;this.markChanged();return 1;
+    if(this.manual?this.available(id):(this.skillLevels()[id]??0)>0||this.unlocked[id]!==undefined)throw new Error('该佣兵已开放此技能');
+    if((skill.companion?.ranks.length??skill.ranks.length)<1)throw new Error('技能已达到最高等级');
+    this.unlocked[id]=this.manual?0:1;this.markChanged();return this.unlocked[id];
   }
-  /**
-   * GM 调试：把佣兵本职业的全部技能直接学会并升到最高等级，不改变角色等级。
-   * 最高等级取该技能的伙伴成长表（`companion.ranks`）长度；没有伙伴成长表时退回普通表长度。
-   * 不写技能书等级，也不改变招募时生成的自然上限。
-   */
-  maxAll(catalog:BattleCatalog,classId:string): { learned: number; maxed: number } {
-    const character=catalog.classes.find(entry=>entry.id===classId);
-    if(!character)throw new Error('职业不存在');
-    const before=this.skillLevels();
-    let learned=0,maxed=0;
+  /** GM 调试提升独立记录为免费等级，初始化时清除，不计入可返还的普通技能点。 */
+  maxAll(catalog:BattleCatalog,classId:string):{learned:number;maxed:number}{
+    const character=catalog.classes.find(entry=>entry.id===classId);if(!character)throw new Error('职业不存在');
+    const before=this.skillLevels();let learned=0,maxed=0;
     for(const id of character.skills){
-      const skill=catalog.skills[id];
-      if(!skill)continue;
+      const skill=catalog.skills[id];if(!skill)continue;
       const from=before[id]??0,to=skill.companion?.ranks.length??skill.ranks.length;
       if(to<=from)continue;
       if(from===0)learned++;else maxed++;
-      this.levels[id]=to;
-      // 职业技能里的未解锁技能也要在自然成长重建后保留满级。
-      this.unlocked[id]=Math.max(this.unlocked[id]??0,to);
+      if(this.manual){
+        this.unlocked[id]=0;this.bookLevels[id]=to-(this.pointState.allocations[id]??0);
+      }else{this.levels[id]=to;this.unlocked[id]=to;}
     }
-    this.markChanged();
-    return {learned,maxed};
+    this.markChanged();return {learned,maxed};
   }
   override draft(catalog:BattleCatalog,classId:string):SkillLoadout{
     this.draftCallCount++;
     const character=catalog.classes.find(entry=>entry.id===classId);if(!character)throw new Error('职业不存在');
-    const levels=this.skillLevels();
-    return {levels:Object.fromEntries(character.skills.map(id=>[id,levels[id]??0]))};
+    const levels=this.skillLevels();return {levels:Object.fromEntries(character.skills.map(id=>[id,levels[id]??0]))};
   }
   override save(catalog:BattleCatalog,classId:string,draft:SkillLoadout):void{
     const expected=this.draft(catalog,classId),character=catalog.classes.find(entry=>entry.id===classId);
-    if(!character)throw new Error('技能配置无效');
-    if(Object.keys(draft.levels).some(id=>!character.skills.includes(id))||
-      character.skills.some(id=>draft.levels[id]!==expected.levels[id]))throw new Error('佣兵技能随角色等级成长');
+    if(!character||Object.keys(draft.levels).some(id=>!character.skills.includes(id))||
+      character.skills.some(id=>draft.levels[id]!==expected.levels[id]))throw new Error('技能等级只能通过学习改变');
     this.loadouts.set(classId,structuredClone(draft));this.markChanged();
   }
 }

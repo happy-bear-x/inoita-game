@@ -382,6 +382,8 @@ test('skill settings page drops the initial-point label and keeps the reset butt
   f.menu.show('skills');f.scene.click(f.scene.button('设置'));
   assert(!visibleDomLabels(f).some(label=>label.text===panels.skillPanel.labels.initialSkillPoints),'设置页不再画「初始技能点」');
   assert(f.scene.canHit(f.scene.button(panels.skillPanel.labels.resetButton)),'初始化按钮仍在');
+  const reset=f.scene.button(panels.skillPanel.labels.resetButton);
+  assert.deepEqual([reset.x+257/2,reset.y+63/2],[85+409/2,431/2],'按钮位于左侧内容区正中');
 });
 
 test('switching skill sections keeps the frame, party column and section tabs',t=>{
@@ -422,6 +424,33 @@ test('skill reset confirmation keeps the skill page',t=>{
   assert.equal(f.scene.button('技能目录'),tabs);assert.deepEqual(f.internals.body.root.list,body);
 });
 
+test('mercenary skill page shows points, learns in place and resets only the selected member for free',t=>{
+  const f=fixture();t.after(f.cleanup);const member=f.recruit('warlock'),other=f.recruit('priest');
+  member.addExperience(Number.MAX_SAFE_INTEGER);f.select(member.id);f.menu.show('skills');
+  const id=Object.keys(member.generated.skillCaps)[0]!,points=member.skills.points(),cost=battle.skills[id].ranks[0].pointCost;
+  const icon=f.scene.button(battle.skills[id].name),tab=f.scene.button('技能目录'),frame=f.internals.body.root.list[1];
+  f.scene.click(icon);
+  assert(visibleDomLabels(f).some(label=>label.text===`${panels.character.labels.skillPoints} ${points}`));
+  f.scene.click(f.scene.button(`学习 ${cost}`));
+  assert.equal(member.skills.level(id),1);assert.equal(member.skills.points(),points-cost);
+  assert.equal(f.scene.button(battle.skills[id].name),icon);assert.equal(f.scene.button('技能目录'),tab);assert.equal(f.internals.body.root.list[1],frame);
+  assert(visibleDomLabels(f).some(label=>label.text===`${panels.character.labels.skillPoints} ${points-cost}`));
+  while(member.skills.level(id)<member.generated.skillCaps[id])member.skills.learn(id);
+  const book=f.add('skillbook');f.session.bag.use(book.id,undefined,id,Math.random,member.id);
+  const beforeRank=member.skills.level(id),otherBefore=other.captureState(),money=f.session.money,inventory=f.session.bag.entries.map(entry=>({...entry}));
+  f.scene.click(f.scene.button('设置'));
+  const reset=f.scene.button(panels.skillPanel.labels.resetButton),body=f.internals.body.root.list.slice();
+  assert.deepEqual([reset.x+257/2,reset.y+63/2],[85+409/2,431/2]);
+  f.scene.click(reset);f.scene.click(f.scene.button('取消'));assert.equal(member.skills.level(id),beforeRank);
+  f.scene.click(reset);f.scene.click(f.scene.button('确定'));
+  assert.equal(member.skills.level(id),0);assert.equal(member.skills.points(),points);
+  assert.equal(f.scene.button(panels.skillPanel.labels.resetButton),reset);assert.deepEqual(f.internals.body.root.list,body);
+  assert.deepEqual(other.captureState(),otherBefore);assert.equal(f.session.skills.level('dark-strike'),1);
+  assert.equal(f.session.money,money);assert.deepEqual(f.session.bag.entries,inventory);
+  assert(visibleDomLabels(f).some(label=>label.text===`${panels.character.labels.skillPoints} ${points}`));
+  f.scene.click(f.scene.button('技能目录'));assert.equal(f.scene.button('快捷键').input!.enabled,false);
+});
+
 test('AI settings shows two columns and clears the description for unlearned skills',t=>{
   const f=fixture();t.after(f.cleanup);
   f.menu.show('skills');f.scene.click(f.scene.button('AI 设置'));
@@ -457,6 +486,7 @@ test('story companions use their own skill label and no mercenary group',t=>{
   const f=fixture();t.after(f.cleanup);
   const story=f.session.party!.joinStory('mercenary-portia');
   f.select(story.id);f.menu.show('skills');
+  assert.equal(f.scene.button('设置').input!.enabled,false,'剧情伙伴仍随等级成长');
   assert(visibleDomLabels(f).some(label=>label.text==='伙伴技能'));
   assert(!visibleDomLabels(f).some(label=>label.text==='佣兵技能'));
   f.menu.show('party');f.scene.click(f.scene.button(story.definition.name));f.scene.click(f.scene.button('技能目录'));
@@ -1127,6 +1157,8 @@ test('using a skill book opens the icon page and returns to the bag', t => {
 test('mercenary skill book keeps the selected skill icon and applies companion growth',t=>{
   const f=fixture();t.after(f.cleanup);
   const member=f.recruit('warlock');member.addExperience(Number.MAX_SAFE_INTEGER);
+  const first=Object.keys(member.generated.skillCaps)[0]!;
+  while(member.skills.level(first)<member.generated.skillCaps[first])member.skills.learn(first);
   const id=Object.keys(member.generated.skillCaps)[0]!,rank=member.skills.skillLevels()[id];
   const book=f.add('skillbook',2);f.select(member.id);f.menu.debugDescribe(book.id);
   f.scene.click(f.scene.button('使用'));
@@ -1151,14 +1183,14 @@ test('unlock book page lists same-class mercenaries and keeps the book after unl
   assert(visibleDomLabels(f).some(label=>label.text===member.definition.name),'同职业佣兵出现在解锁页');
   assert.equal(f.scene.button('解锁技能').input!.enabled,true);
   f.scene.click(f.scene.button('解锁技能'));
-  assert.equal(member.skills.skillLevels()[missing],1,'佣兵学会技能并到 1 级');
+  assert.equal(member.skills.skillLevels()[missing],0,'解锁仅开放资格，仍需手动加点');
   assert.equal(f.session.bag.get(book.id)?.item,'skill-unlock-book','解锁书使用后仍留在背包');
-  assert(visibleDomLabels(f).some(label=>label.text.includes(member.definition.name)&&label.text.includes('已会')),'已学会的佣兵标记为已会');
+  assert(visibleDomLabels(f).some(label=>label.text.includes(member.definition.name)&&label.text.includes('已开放')),'已开放的佣兵不能重复解锁');
   assert.equal(f.scene.button('解锁技能').input!.enabled,false,'同一佣兵不能重复解锁');
   assert.equal(f.internals.page,'learn','使用后仍停留在解锁页');
   f.scene.click(f.scene.button('关闭技能书'));
   f.menu.show('party');f.scene.click(f.scene.button(member.definition.name));f.scene.click(f.scene.button('技能目录'));
-  const unlockedIcon=f.scene.button(`${battle.skills[missing].name} 1 级`);
+  const unlockedIcon=f.scene.button(`${battle.skills[missing].name} 0 级`);
   assert.ok(unlockedIcon,'解锁技能在队伍页显示为已开放');
   f.scene.click(unlockedIcon);
   assert(!visibleDomLabels(f).some(label=>label.text.includes('undefined')),'未开放上限不再显示 undefined');
@@ -1243,13 +1275,15 @@ test('shop equipment condition colors use the viewed member across menu pages',t
   }
 });
 
-test('companion skill descriptions use the member cap and next learning level',t=>{
+test('mercenary skill descriptions use the member cap and hero point requirements',t=>{
   const f=fixture();t.after(f.cleanup);const member=f.recruit('warlock');f.select(member.id);
   const id=battle.classes.find(character=>character.id===member.classId)!.skills.find(id=>member.snapshot().skillCaps[id]>0)!;
   f.menu.show('skills');f.scene.click(f.scene.button(battle.skills[id].name));
   assert(visibleDomLabels(f).some(label=>label.text===`最高等级： LV ${battle.skills[id].companion!.ranks.length}`));
-  assert(visibleDomLabels(f).some(label=>label.text===`自然成长上限： LV ${member.snapshot().skillCaps[id]}`));
-  assert(!visibleDomLabels(f).some(label=>label.text.startsWith('需要技能点数：')));
+  assert(visibleDomLabels(f).some(label=>label.text===`普通学习上限： LV ${member.snapshot().skillCaps[id]}`));
+  assert(f.domLabels.filter(label=>!label.removed).some(label=>label.text===`需要技能点数： ${battle.skills[id].ranks[0].pointCost}`));
+  assert(visibleDomLabels(f).some(label=>label.text===`${panels.character.labels.skillPoints} ${member.skills.points()}`));
+  assert(!visibleDomLabels(f).some(label=>label.text==='佣兵技能'));
 });
 
 test('selecting a skill keeps its list and changes the description',t=>{
@@ -2970,7 +3004,7 @@ test('switching members on the skills page retains the frame and tab buttons',t=
   f.scene.click(portrait);
   assert.equal(f.internals.selectedMemberId,member.id);assert.equal(body.root.list[1],frame);
   assert.equal(f.scene.button(member.definition.name),portrait);assert.equal(f.scene.button('技能目录'),tab);
-  assert.equal(f.scene.button('设置').input!.enabled,false);
+  assert.equal(f.scene.button('设置').input!.enabled,true);
   const labels=visibleDomLabels(f).map(label=>label.text).sort();f.menu.show('skills');
   assert.deepEqual(visibleDomLabels(f).map(label=>label.text).sort(),labels);
 });

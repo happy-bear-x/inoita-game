@@ -1,13 +1,15 @@
 import { boundedHealth } from './status-hud.ts';
 import { calculateCharacter, previewGemPanel, PRIMARY_STATS, primaryAttributesFrom, type CharacterPanel, type CharacterStatsCatalog, type Modifier, type PrimaryAttributes, type BattleCharacter } from './character-stats.ts';
 import type { SkillConfigurationState } from './skill-configuration.ts';
-import { CompanionSkillProgression, generateCompanion, MERCENARY_CLASS_ORDER, randomInteger, weightedIndex, type CompanionGenerationRules, type CompanionGroupEffect, type CompanionGroupSkill, type GeneratedCompanion } from './companion-progression.ts';
+import { CompanionSkillProgression, generateCompanion, MERCENARY_CLASS_ORDER, randomInteger, weightedIndex, type CompanionGenerationRules, type CompanionGroupEffect, type CompanionGroupSkill, type GeneratedCompanion, type MercenarySkillPoints } from './companion-progression.ts';
 export type { CompanionGroupEffect, CompanionGroupSkill } from './companion-progression.ts';
 const MERCENARY_SLOT_COUNT=18;
 /** 普通复活卷轴只恢复一成生命和法力。 */
 const REVIVE_RECOVERY_RATE=0.1;
 import type { ItemCatalog, ItemResult } from './items.ts';
 import type { Bag } from './bag.ts';
+import type { BattleCatalog } from './battle.ts';
+import { emptyShortcutRow } from './shortcut-bar.ts';
 import type { SpringPartyResources } from './springs.ts';
 
 export interface CompanionDefinition {
@@ -83,6 +85,7 @@ interface CompanionState {
   allocationBaseLevel?:number; allocation?:PrimaryAttributes;
   skillBookLevels?:Record<string,number>;
   unlockedSkills?:Record<string,number>;
+  skillPoints?:MercenarySkillPoints;
 }
 interface PartyState {
   members:CompanionState[];rosterSlots:(string|null)[];slots:(string|null)[];selected:string;serial:number;
@@ -113,11 +116,14 @@ export class CompanionMember {
   private combatResourceLimits:{maxHealth:number;maxMana:number}|null=null;
   constructor(id:string,definition:CompanionDefinition,source:'story'|'mercenary',level:number,
     stats:CharacterStatsCatalog,items:ItemCatalog,bag:Bag,growth:PrimaryAttributes[],changed:()=>void,generated:GeneratedCompanion,
-    training:CompanionGenerationRules['training'],onLevelUp?:()=>void){
+    training:CompanionGenerationRules['training'],onLevelUp?:()=>void,battleCatalog?:BattleCatalog){
     if(!stats.classes[definition.classId]||growth.length<stats.maxLevel)throw new Error('伙伴职业成长数据缺失');
     this.id=id;this.definition=definition;this.source=source;this.stats=stats;this.items=items;this.bag=bag;
     this.growth=growth;this.changed=changed;this.onLevelUp=onLevelUp;this.currentLevel=Math.min(stats.maxLevel,Math.max(1,level));
-    this.generated=structuredClone(generated);this.skills=new CompanionSkillProgression(generated.skillCaps,training);
+    this.generated=structuredClone(generated);this.skills=new CompanionSkillProgression(generated.skillCaps,training,source==='mercenary'?{
+      classId:definition.classId,catalog:battleCatalog,pointsPerLevel:stats.skillPointsPerLevel,changed,
+      clearShortcuts:()=>bag.setShortcuts(id,emptyShortcutRow()),
+    }:undefined);
     this.skills.updateLevel(this.currentLevel);
     this.currentHealth=this.panel.maxHealth;this.currentMana=this.panel.maxMana;
   }
@@ -194,11 +200,11 @@ export class CompanionMember {
     name:this.definition.name,classId:this.definition.classId,source:this.source,elite:this.definition.elite,...player};}
   captureState():CompanionState{return structuredClone({id:this.id,definitionId:this.definition.id,source:this.source,
     generated:this.generated,level:this.currentLevel,health:this.currentHealth,mana:this.currentMana,experience:this.currentExperience,
-    combatResourceLimits:this.combatResourceLimits,skills:this.skills.captureState(),aiFrequency:[...this.aiFrequency],allocationBaseLevel:this.allocationBaseLevel,allocation:this.allocation,skillBookLevels:this.skills.bookState(),unlockedSkills:this.skills.unlockedState()});}
+    combatResourceLimits:this.combatResourceLimits,skills:this.skills.captureState(),aiFrequency:[...this.aiFrequency],allocationBaseLevel:this.allocationBaseLevel,allocation:this.allocation,skillBookLevels:this.skills.bookState(),unlockedSkills:this.skills.unlockedState(),skillPoints:this.skills.pointsState()});}
   restoreState(state:CompanionState):void{
     this.allocationBaseLevel=state.allocationBaseLevel??state.level;this.allocation=state.allocation??primaryAttributesFrom({strength:0,dexterity:0,vitality:0,intelligence:0,mentality:0});this.panelCache=undefined;
     this.currentLevel=state.level;this.currentHealth=state.health;this.currentMana=state.mana;this.currentExperience=state.experience;
-    this.combatResourceLimits=state.combatResourceLimits?{...state.combatResourceLimits}:null;this.skills.restoreBooks(state.skillBookLevels??{},this.currentLevel);this.skills.restoreUnlocked(state.unlockedSkills??{});this.skills.restoreState(state.skills);
+    this.combatResourceLimits=state.combatResourceLimits?{...state.combatResourceLimits}:null;this.skills.restoreBooks(state.skillBookLevels??{},this.currentLevel);this.skills.restoreUnlocked(state.unlockedSkills??{});this.skills.restorePoints(state.skillPoints);this.skills.restoreState(state.skills);
     this.aiFrequency.clear();for(const [id,value] of state.aiFrequency)this.aiFrequency.set(id,value);
   }
 
@@ -220,6 +226,7 @@ export class PartyRoster {
   readonly hero:BattleCharacter;
   readonly bag:Bag;
   readonly catalog:CompanionCatalog;
+  private readonly battleCatalog?:BattleCatalog;
   readonly heroAiFrequency=new Map<string,number>();
   private readonly stats:CharacterStatsCatalog;
   private readonly items:ItemCatalog;
@@ -240,9 +247,9 @@ export class PartyRoster {
    */
   get groupModifierVersion():number{return this.groupModifierVersionValue;}
   constructor(hero:BattleCharacter,stats:CharacterStatsCatalog,items:ItemCatalog,catalog:CompanionCatalog,changed:()=>void,onMemberRemoved?:(id:string)=>void,
-    onRecruited?:(sourceItem:string,memberId:string)=>void,atomic?:<T>(operation:()=>T)=>T){
+    onRecruited?:(sourceItem:string,memberId:string)=>void,atomic?:<T>(operation:()=>T)=>T,battleCatalog?:BattleCatalog){
     this.hero=hero;this.bag=hero.bag;this.stats=stats;this.items=items;this.catalog=catalog;this.changed=changed;this.onMemberRemoved=onMemberRemoved;
-    this.onRecruited=onRecruited;this.atomic=atomic;
+    this.onRecruited=onRecruited;this.atomic=atomic;this.battleCatalog=battleCatalog;
   }
   /** 成员集合或成员等级变化：组队被动版本推进。 */
   private bumpGroupModifiers():void{this.groupModifierVersionValue++;}
@@ -307,7 +314,7 @@ export class PartyRoster {
   private create(definition:CompanionDefinition,source:'story'|'mercenary',id:string,generated:GeneratedCompanion):CompanionMember{
     if(!this.catalog.growth[definition.classId])throw new Error('伙伴成长数据缺失');
     const member=new CompanionMember(id,definition,source,generated.level,this.stats,this.items,this.bag,
-      this.catalog.growth[definition.classId],this.changed,generated,this.catalog.generation.training,()=>this.bumpGroupModifiers());
+      this.catalog.growth[definition.classId],this.changed,generated,this.catalog.generation.training,()=>this.bumpGroupModifiers(),this.battleCatalog);
     const gear=this.items.startingEquipment[definition.classId]??{},
       retired=source==='story'?this.bag.takeRetiredEquipment(id):undefined;
     try {
@@ -453,7 +460,7 @@ export class PartyRoster {
     for(const entry of saved.members){
       const definition=this.catalog.definitions[entry.definitionId];if(!definition)throw new Error('检查点中的伙伴不存在');
       const member=new CompanionMember(entry.id,definition,entry.source,entry.level,this.stats,this.items,this.bag,
-        this.catalog.growth[definition.classId],this.changed,entry.generated,this.catalog.generation.training,()=>this.bumpGroupModifiers());
+        this.catalog.growth[definition.classId],this.changed,entry.generated,this.catalog.generation.training,()=>this.bumpGroupModifiers(),this.battleCatalog);
       member.restoreState(entry);this.owned.set(entry.id,member);
     }
     this.rosterSlots=saved.rosterSlots;this.slots=saved.slots.map(value=>value??undefined);this.selected=saved.selected;this.serial=saved.serial;
