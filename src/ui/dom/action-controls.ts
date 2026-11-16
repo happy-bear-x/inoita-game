@@ -42,6 +42,8 @@ export class DomActionControls extends DomComponent {
   private readonly skin: ControlSkin;
   private readonly handlers: ActionControlsHandlers;
   private readonly failed: (error: unknown) => void;
+  /** 上一次显隐；初始按可见算，第一次隐藏也要清掉按住状态。 */
+  private shown = true;
   constructor(parent: HTMLElement, skin: ControlSkin, handlers: ActionControlsHandlers, failed: (error: unknown) => void, assets = domAssets) {
     super(parent); this.skin = skin; this.handlers = handlers; this.failed = failed; this.assets = assets;
     Object.assign(this.element.style, { inset: '0', width: '100%', height: '100%' });
@@ -151,5 +153,10 @@ export class DomActionControls extends DomComponent {
     this.slots.forEach((control, index) => place(control, `slot-${index}` as ControlId));
   }
   resetInput(): void { this.gate.reset(); for (const control of [this.attack, ...this.slots, this.swap]) control.button.reset(); }
-  override visible(shown: boolean): this { if (!shown) this.resetInput(); return super.visible(shown); }
+  override visible(shown: boolean): this {
+    // 只在“显示→隐藏”这一下释放按住状态；每帧隐藏不重复复位，也不新建按钮数组。
+    if (!shown && this.shown) this.resetInput();
+    this.shown = shown;
+    return super.visible(shown);
+  }
 }

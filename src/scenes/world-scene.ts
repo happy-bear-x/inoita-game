@@ -303,6 +303,7 @@ export class WorldScene extends Phaser.Scene {
       this.baseOptions = options;
     }
     this.stageOccluded = false;
+    // 正常进图/换图先排一次“恢复控制后的安全基线”；从检查点恢复时保留原检查点，不重抓。
     this.movement = undefined; this.lastPlayerPosition = undefined;this.combat=undefined;this.checkpointPending=!options.checkpoint;this.checkpointWaitLogged=false;
     this.shortcutPageCache=undefined;this.shortcutTick=undefined;
     this.dropCatalog=undefined;this.springCatalog=undefined;this.groundLootView=undefined;this.pickupMessages=undefined;this.pickupRecipients.clear();
@@ -774,7 +775,10 @@ export class WorldScene extends Phaser.Scene {
     this.syncStageOcclusion();
     this.app.audio?.enterMap(map.id);
     this.trimTextures(); this.app.syncLifecycle?.();
-    if(!this.app.checkpoint.available){this.captureCheckpoint();this.checkpointPending=true;}
+    // 内存里还没有检查点：立即抓一次兜底，读档后死亡不必等第一个安全时机才有回退点。
+    // 立即抓取成功就结束待抓取；失败才保留标记，由 update 在恢复控制、导演空闲时重试。
+    // 已有检查点（换图）仍按 init 的待抓取标记，在恢复控制后更新成新地图的基线。
+    if(!this.app.checkpoint.available)this.captureEntryCheckpoint();
     options.onReady?.();
     // 进图后写自动存档。读档进场只是把刚存下的状态装回来，不必再写一遍。
     if(!options.resumeStory)this.app.autoSave?.();
@@ -2054,6 +2058,10 @@ export class WorldScene extends Phaser.Scene {
     this.checkpointPending=false;
     return true;
   }
+  /** 进图兜底：立即抓一次；成功就结束待抓取，失败才留给更新循环重试。 */
+  private captureEntryCheckpoint():void{
+    this.checkpointPending=!this.captureCheckpoint();
+  }
   checkpointStoryWorld():void{
     this.captureCheckpoint();
   }
@@ -2436,6 +2444,8 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     const controlled=this.combat?.controlledVisual??this.player;
     this.pickupMessages?.setPaused(!this.canCombatControl);
     this.combat?.setPerformanceActive(this.performing);
+    // 待抓取表示还缺一份安全基线：进图兜底失败，或换图后等恢复控制（由 init 排入）。
+    // 抓取成功由 captureCheckpoint 清掉标记；失败则保留到下一次满足条件时重试。
     if(this.checkpointPending&&this.canControl&&!this.performing&&!this.app.director.busy&&this.combat?.canCheckpoint)this.captureCheckpoint();
     this.combat?.update(stepDelta,this.canCombatControl);
     if(this.canCombatControl&&!this.app.director.busy)for(const encounter of this.combat?.completedStoryEncounters??[]){

@@ -23,17 +23,44 @@ const { WorldScene } = await import('../src/scenes/world-scene.ts');
 phaser.deregister();
 const battle=JSON.parse(readFileSync(new URL('../public/content/battle.json',import.meta.url),'utf8')) as BattleCatalog;
 
+test('world entry captures a fallback checkpoint once unless that capture fails',()=>{
+  const host:any=Object.assign(Object.create(WorldScene.prototype),{checkpointPending:false,captureCheckpoint:()=>true});
+  host.captureEntryCheckpoint();
+  assert.equal(host.checkpointPending,false,'立即兜底成功后不再排第二次完整快照');
+  host.captureCheckpoint=()=>false;
+  host.captureEntryCheckpoint();
+  assert.equal(host.checkpointPending,true,'立即兜底失败保留重试标记');
+});
+
 test('redeploying a removed ally while paused requests a fresh party sync',()=>{
   const ids=['player','ally'],controllers=new Map([['ally',{cancel(){}}]]);
   const host:any=Object.assign(Object.create(WorldCombat.prototype),{
-    app:{session:{party:{activeIds:ids,get:()=>undefined},skills:{resetVersion:0}}},partySignature:'player|ally',
+    app:{session:{party:{activeIds:ids,activeRevision:1,get:()=>undefined},skills:{resetVersion:0}}},
+    syncedPartyRevision:1,partySyncPending:false,
     partyControllers:controllers,lastSkillResets:new Map(),combatRuntime:{removeActor(){}},conditions:{remove(){}},
     threat:{removeActor(){}},allySkillSignatures:new Map(),forgetMemberCaches(){},
     summons:{removeOwner:()=>[]},visualOf:()=>undefined,scheduleSkillAssetRefresh(){}
   });
   ids.pop();host.onPartyChanged();ids.push('ally');host.onPartyChanged();
   assert.equal(controllers.has('ally'),false);
-  assert.notEqual(host.partySignature,ids.join('|'));
+  assert.equal(host.partySyncPending,true,'暂停期间队员离队也要重新同步');
+});
+
+test('party revision changes trigger ally sync while failure retries stay pending',()=>{
+  const party={activeIds:['player','ally'],activeRevision:3,get:()=>undefined};
+  const host:any=Object.assign(Object.create(WorldCombat.prototype),{
+    app:{session:{party}},syncedPartyRevision:3,partySyncPending:false,partySyncInFlight:0,nextPartySyncAt:0
+  });
+  assert.equal(host.shouldSyncParty(0),false,'版本未变时不重新同步');
+  party.activeRevision=4;
+  assert.equal(host.shouldSyncParty(0),true,'上阵顺序变化触发同步');
+  host.syncedPartyRevision=4;
+  assert.equal(host.shouldSyncParty(0),false);
+  host.partySyncPending=true;host.nextPartySyncAt=100;
+  assert.equal(host.shouldSyncParty(50),false,'失败后的重试窗口内不重复同步');
+  assert.equal(host.shouldSyncParty(100),true,'窗口结束后保留重试');
+  host.partySyncPending=false;host.syncedPartyRevision=3;
+  assert.equal(host.shouldSyncParty(100),true,'同步后队伍又变化时再次触发');
 });
 
 test('combat candidates reflect stealth applied during the same frame',()=>{
@@ -82,8 +109,8 @@ test('combat entry creates enemies once when loading a checkpoint',async()=>{
       textures:{exists:()=>true,get:()=>({has:()=>true}),on(){},remove(){}},anims:{exists:()=>false},
       events:{once(){},off(){}},add:{image:()=>ring}};
     const host:any=Object.assign(Object.create(WorldCombat.prototype),{
-      scene,app:{battleCatalog:battle,wardrobe,world:{actors:{}},session:{skills:{resetVersion:0},subscribe:()=>()=>{},party:{activeSize:3,activeIds:['player','ally','ally2'],get:()=>undefined}}},lastSkillResets:new Map(),
-      roster:{spawns:[],enemies:[{key:'one'},{key:'two'}]},drops:{chests:{}},
+      scene,app:{battleCatalog:battle,wardrobe,world:{actors:{}},session:{skills:{resetVersion:0},subscribe:()=>()=>{},party:{activeSize:3,activeIds:['player','ally','ally2'],activeRevision:5,get:()=>undefined}}},lastSkillResets:new Map(),
+      roster:{spawns:[],enemies:[{key:'one'},{key:'two'}],enemy(key:string){return this.enemies.find((enemy:any)=>enemy.key===key);}},drops:{chests:{}},
       hero:{player:{health:1},subscribe:()=>()=>{}},generation:0,closed:false,
       equipmentAttack:()=>({}),prepareCombatSounds(){},outcomes:{warm(){}},feedback:{warm(){}},
       refreshSkillAssets:async()=>{},playerSkillSignatureNow:()=>'',playerSkillGateNow:()=>'',
@@ -106,14 +133,15 @@ test('combat entry creates enemies once when loading a checkpoint',async()=>{
         prepareRestoredSkills:async()=>{},enemyAssets:()=>[],combatRuntime:{reset(){}},
         pendingDefeats:{clear(){},keys(){return [];}},summonAwareness:undefined,combatEffects:{clear(){}},buffLoops:{clear(){}},
         presenterFor:()=>undefined,deathTweens:new Map(),fallen:new Set(),clearEnemies(){},
-        roster:{enemies:[],restoreState(state:any){this.enemies=state.enemies;},setPartySize(size:number){partySizes.push(size);}},
+        roster:{enemies:[],enemy(key:string){return this.enemies.find((enemy:any)=>enemy.key===key);},
+          restoreState(state:any){this.enemies=state.enemies;},setPartySize(size:number){partySizes.push(size);}},
         conditions:{restoreState(){}},syncControlled(){},visualOf:()=>undefined,arena:[],
         spawnEnemy:(enemy:any)=>placed.push(enemy),threat:{restoreState(){}},
         summons:{restore:(value:unknown)=>groups.push(value)}
       });
       await host.restoreState(saved);
       assert.deepEqual(partySizes,[3],'读档后按当前上阵人数校正名册');
-      assert.equal(host.partySignature,'player|ally|ally2');
+      assert.equal(host.syncedPartyRevision,5,'读档后按当前队伍版本标记已同步');
       assert.deepEqual(placed,saved.roster.enemies,'恢复保存的敌人位置、血量和召唤关系');
       assert.deepEqual(groups,[saved.summonGroups]);
     }
