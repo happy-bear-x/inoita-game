@@ -31,6 +31,19 @@ test('a native boss form removal clears the old encounter without awarding a pla
   assert.deepEqual(session.storyWorld.pendingEnemyRemovals,[]);
 });
 
+test('removing an active encounter enemy records its defeat quest goal',()=>{
+  const session=new Session(campaign);
+  assert.equal(session.accept('quest-297'),true);
+  const map='hall-of-abyss-f7a501f5';
+  session.applyStoryCommands([{type:'encounter',encounter:{id:'alexander-battle',map,status:'active',
+    spawns:[{id:'boss',enemyId:'enemy-alexander-2',x:100,y:100}]}}]);
+  const roster=new WorldEnemyRoster(session,{...read<WorldMap>('maps/'+map),enemySpawns:[]},[],1);
+  session.applyStoryCommands([{type:'world',command:{kind:'remove-enemy',enemyId:'enemy-alexander-2',all:false}}]);
+  applyStoryEnemyRemovals(session,map,roster.enemies,key=>roster.removeEnemy(key));
+  assert.equal(session.quests.get('quest-297')!.goals.objective,1);
+  assert.equal(session.status('quest-297'),'ready');
+});
+
 test('a native encounter without a map condition uses the current scene and finishes after restore',async()=>{
   const session=new Session(campaign),script='event-37',map='shadow-forest-west';
   const port={async prepare(){},currentMap:()=>map,capture:()=>session.captureState(),async present(){return {};},async finish(){},

@@ -3,11 +3,22 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { Session, DEFAULT_ENEMY_RESPAWN_MS } from '../src/domain/session.ts';
 import { WorldEnemyRoster, applyStoryEnemyRemovals, encounterSpawnId, selectMapSpawns } from '../src/domain/world-enemies.ts';
+import { QuestEnemyWatch } from '../src/domain/quest-enemies.ts';
 import type { WorldMap } from '../src/domain/content.ts';
 import type { Campaign } from '../src/domain/campaign.ts';
+import type { DropCatalog } from '../src/domain/drops.ts';
 
 const content=(name:string)=>JSON.parse(fs.readFileSync(new URL(`../public/content/${name}`,import.meta.url),'utf8'));
 const campaign=content('campaign.json') as Campaign;
+const dropsCatalog=content('drops.json') as DropCatalog;
+const turtleMap=()=>content('maps/piolren-meadows-7-4c61d9fe.json') as WorldMap;
+const turtleSpawnIds=()=>turtleMap().enemySpawns!.filter(spawn=>spawn.enemyId==='enemy-meadow-turtle-1').map(spawn=>spawn.id);
+/** 复现 event-231 的 remove-enemy：先让当前名册消费命令，写入剧情移除和永久死亡。 */
+const removeStoryTurtles=(session:Session,map:WorldMap):void=>{
+  session.applyStoryCommands([{type:'world',command:{kind:'remove-enemy',enemyId:'enemy-meadow-turtle-1',map:map.id,all:true}}]);
+  const roster=new WorldEnemyRoster(session,map,[],10);
+  applyStoryEnemyRemovals(session,map.id,roster.enemies,key=>roster.removeEnemy(key));
+};
 
 test('map enemy dies, remains absent across map visits, then respawns after game time',()=>{
   const session=new Session(campaign);
@@ -513,4 +524,102 @@ test('pruning old completed encounters also clears their one-off enemy death rec
   assert.deepEqual(session.enemyVitals(keys[0]!),{},'它的怪物死亡记录一起清掉');
   assert.equal(session.storyWorld.encounter('repeat-64')?.status,'won');
   assert.equal(session.enemyVitals(keys[64]!).deadUntil,'permanent','窗口内最近一次遭遇仍保留状态');
+});
+
+test('story-removed map enemies return while an active quest targets them',()=>{
+  const session=new Session(campaign),map=turtleMap(),spawnIds=turtleSpawnIds();
+  removeStoryTurtles(session,map);
+  for(const id of spawnIds){
+    assert.equal(session.storyWorld.visible(id),false,'剧情 remove-enemy 已撤下地图槽');
+    assert.equal(session.enemyVitals(id).deadUntil,'permanent');
+  }
+  assert.equal(new WorldEnemyRoster(session,map,[],10).enemies.some(enemy=>enemy.enemyId==='enemy-meadow-turtle-1'),false,
+    '没有进行中任务时不生成');
+
+  assert.equal(session.accept('quest-357'),true);
+  const roster=new WorldEnemyRoster(session,map,[],10,new QuestEnemyWatch(session,dropsCatalog.questItems),()=>1);
+  assert.deepEqual(roster.enemies.filter(enemy=>enemy.enemyId==='enemy-meadow-turtle-1').map(enemy=>enemy.key).sort(),
+    [...spawnIds].sort(),'任务目标豁免剧情永久移除');
+  for(const id of spawnIds)assert.deepEqual(session.enemyVitals(id),{},'豁免生成前清掉永久死亡与 0 血记录');
+});
+
+test('kills still count after the story returns a quest-target map enemy',()=>{
+  const session=new Session(campaign),map=turtleMap(),spawnIds=turtleSpawnIds();
+  removeStoryTurtles(session,map);
+  assert.equal(session.accept('quest-357'),true);
+  const roster=new WorldEnemyRoster(session,map,[],10,new QuestEnemyWatch(session,dropsCatalog.questItems),()=>1);
+  const key=spawnIds[0]!,spawn=roster.source(key)!;
+  assert.equal(spawn.enemyId,'enemy-meadow-turtle-1');
+  const previousFacts=session.questBook.factSequence('combat');
+  session.enemyDefeated(spawn);
+  assert.equal(session.questBook.factSequence('combat'),previousFacts+1,'击杀事实不会因旧死亡记录被跳过');
+  assert.equal(typeof session.enemyVitals(key).deadUntil,'number','击杀后按普通刷新计时');
+  session.bag.add('meadow-turtle-s-shell',3);session.refresh();
+  assert.equal(session.questBook.state('quest-357')!.goals['objective-1'],3,'任务物品目标正常计数');
+});
+
+test('story-removed quest targets survive unrelated refreshes',()=>{
+  const session=new Session(campaign),map=turtleMap(),spawnIds=turtleSpawnIds();
+  removeStoryTurtles(session,map);
+  assert.equal(session.accept('quest-357'),true);
+  const roster=new WorldEnemyRoster(session,map,[],10,new QuestEnemyWatch(session,dropsCatalog.questItems),()=>1);
+  assert.equal(roster.enemies.filter(enemy=>enemy.enemyId==='enemy-meadow-turtle-1').length,spawnIds.length);
+
+  session.applyStoryCommands([{type:'flag',flag:'unrelated-refresh',value:true}]);
+  assert.deepEqual(roster.refresh().removed,[],'无关剧情修订不会删掉已生成的任务怪');
+  assert.equal(roster.enemies.filter(enemy=>enemy.enemyId==='enemy-meadow-turtle-1').length,spawnIds.length);
+
+  session.setEnemyVitals(spawnIds[0]!,100,50);
+  session.applyStoryCommands([{type:'flag',flag:'damaged-refresh',value:true}]);
+  assert.deepEqual(roster.refresh().removed,[],'掉血后的活怪同样不能被刷新删掉');
+  assert.deepEqual(session.enemyVitals(spawnIds[0]!),{health:100,mana:50});
+});
+
+test('a quest target removed by story keeps its normal death timer',()=>{
+  const session=new Session(campaign),map=turtleMap(),spawnIds=turtleSpawnIds();
+  removeStoryTurtles(session,map);
+  assert.equal(session.accept('quest-357'),true);
+  const roster=new WorldEnemyRoster(session,map,[],10,new QuestEnemyWatch(session,dropsCatalog.questItems),()=>1);
+  const key=spawnIds[0]!,spawn=roster.source(key)!;
+  session.enemyDefeated(spawn);
+  roster.removeEnemy(key);
+  assert.deepEqual(roster.refresh().added,[],'普通击杀的刷新计时期间不能借任务豁免复活');
+  assert.equal(typeof session.enemyVitals(key).deadUntil,'number');
+  session.advanceGameTime(DEFAULT_ENEMY_RESPAWN_MS);
+  assert.ok(roster.refresh().added.some(enemy=>enemy.key===key),'计时结束后照常恢复');
+});
+
+test('a story-removed encounter enemy is not restored by a quest target',()=>{
+  const session=new Session(campaign),map='hall-of-abyss-f7a501f5';
+  session.applyStoryCommands([{type:'encounter',encounter:{id:'boss-battle',map,status:'active',
+    spawns:[{id:'boss',enemyId:'enemy-alexander-2',x:100,y:100}]}}]);
+  assert.equal(session.accept('quest-297'),true);
+  const roster=new WorldEnemyRoster(session,{...content('maps/'+map+'.json') as WorldMap,enemySpawns:[]},[],1,
+    new QuestEnemyWatch(session,dropsCatalog.questItems));
+  const key=encounterSpawnId('boss-battle','boss');
+  session.removeStoryEnemy(key);
+  assert.deepEqual(roster.refresh().added,[],'剧情遭遇槽不能被任务豁免刷回来');
+  assert.equal(roster.enemies.some(enemy=>enemy.key===key),false);
+});
+
+test('a finished or unaccepted quest no longer exempts story-removed map enemies',()=>{
+  const session=new Session(campaign),map=turtleMap(),spawnIds=turtleSpawnIds();
+  removeStoryTurtles(session,map);
+  assert.equal(session.accept('quest-357'),true);
+  const watch=new QuestEnemyWatch(session,dropsCatalog.questItems);
+  const roster=new WorldEnemyRoster(session,map,[],10,watch,()=>1);
+  assert.equal(roster.enemies.some(enemy=>enemy.enemyId==='enemy-meadow-turtle-1'),true);
+
+  session.bag.add('meadow-turtle-s-shell',3);
+  session.bag.add('canyon-bear-s-gallbladder',3);
+  session.refresh();
+  assert.equal(session.status('quest-357'),'ready');
+  const readyChanges=roster.refresh();
+  assert.ok(spawnIds.every(id=>readyChanges.removed.includes(id)),'待交付后剧情移除重新生效');
+  assert.equal(roster.enemies.some(enemy=>enemy.enemyId==='enemy-meadow-turtle-1'),false);
+
+  assert.equal(session.complete('quest-357'),true);
+  assert.equal(session.status('quest-357'),'available','可重复任务回到可接取');
+  assert.equal(new WorldEnemyRoster(session,map,[],10,watch,()=>1).enemies.some(enemy=>enemy.enemyId==='enemy-meadow-turtle-1'),false,
+    '完成并重新进图也不会生成');
 });

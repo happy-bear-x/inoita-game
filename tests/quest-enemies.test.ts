@@ -43,6 +43,20 @@ test('targetChanges enemy is protected across tiers',()=>{
   assert.ok(roster.spawns.some(spawn=>spawn.enemyId==='enemy-shaggy-grayfang-1'));
 });
 
+test('a story-hidden enemy stays spawnable while its quest is active',()=>{
+  const session=sessionFor('quest-181',true);
+  const mapData=map('shadow-training-dungeon-2-a6b8293b');
+  const target='enemy-knife-needled-mosquitoes-1';
+  session.applyStoryCommands([{type:'world',command:{kind:'enemy-availability',map:mapData.id,enemyId:target,available:false}}]);
+
+  const roster=new WorldEnemyRoster(session,mapData,[],105,new QuestEnemyWatch(session,drops.questItems));
+  assert.ok(roster.spawns.some(spawn=>spawn.enemyId===target),'任务进行中，剧情禁用不压任务目标');
+
+  session.applyStoryCommands([{type:'quest',command:{type:'script-complete',quest:'quest-181'}}]);
+  const completed=new WorldEnemyRoster(session,mapData,[],105,new QuestEnemyWatch(session,drops.questItems));
+  assert.equal(completed.spawns.some(spawn=>spawn.enemyId===target),false,'任务结束后剧情禁用重新生效');
+});
+
 test('inactive quests do not protect their enemies',()=>{
   const session=sessionFor('quest-181',false);
   const watch=new QuestEnemyWatch(session,drops.questItems);

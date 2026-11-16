@@ -755,6 +755,30 @@ export class Session {
     this.setEnemyState(id,{...this.enemyStates.get(id),health:0,deadUntil:'permanent'});
     this.emit();
   }
+
+  /**
+   * 只清掉这个生成槽位的永久死亡和 0 血记录，让它按满血重新生成。
+   * 只由明确豁免剧情移除的调用方使用；剧情移除本身仍留在 `storyWorld`，
+   * 任务不再进行时 `canSpawnEnemy` 会再次挡住它，永久死亡 Boss 的存档语义不变。
+   */
+  clearEnemyDefeat(id:string):boolean {
+    const state=this.enemyStates.get(id);
+    // 没有死亡记录就是已经可生成的状态（首次豁免清空后会走到这里）。
+    if(!state)return true;
+    // 捕捉目标保留 capture 记录，不能把原怪和转化后的 NPC 同时放回来。
+    if(state.capture)return false;
+    // 只有血量/法力记录的怪仍然活着，没有死亡记录需要清。
+    if(state.deadUntil===undefined)return true;
+    // 永久死亡和已经到期的普通刷新计时都可以清；未到期的计时由调用方拒绝。
+    if(state.deadUntil!=='permanent'
+      &&(typeof state.deadUntil!=='number'||this.gameTimeMs<state.deadUntil))return false;
+    const rest:EnemyState={...state};
+    delete rest.deadUntil;
+    delete rest.health;
+    if(Object.keys(rest).length)this.setEnemyState(id,rest);
+    else this.deleteEnemyState(id);
+    return true;
+  }
   setEnemyVitals(id:string,health:number,mana:number):void {
     this.setEnemyState(id,{...this.enemyStates.get(id),health,mana});
   }
@@ -970,6 +994,20 @@ export class Session {
   }
   recordQuestFact(kind:QuestFact['kind'],target:string,source:string=kind):void {
     this.applyStoryCommands([{type:'quest',command:{type:'fact',fact:this.nextQuestFact(kind,target,source)}}]);
+  }
+  /**
+   * 进行中遭遇的敌人被剧情移走时，只在确实有任务需要这次击杀记录时才推进事实。
+   * 没有对应目标时不写事实序号，避免剧情清场被当成一次玩家击杀。
+   */
+  recordStoryDefeat(enemyId:string):void {
+    for(const id of this.questBook.runningQuestIds){
+      if(this.status(id)!=='active')continue;
+      const quest=this.questBook.definition(id);
+      if(quest?.completion!=='all')continue;
+      if(quest.goals.some(goal=>goal.kind==='defeat'&&goal.target===enemyId)){
+        this.recordQuestFact('defeat',enemyId,'story-removal');return;
+      }
+    }
   }
   complete(id:string):boolean {
     if(this.questBook.pinned(id))this.unpinDebugQuest(id);
