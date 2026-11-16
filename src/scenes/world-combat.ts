@@ -1310,8 +1310,10 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
     if(hit.damage){
       if(hit.damage>0)this.conditions.removeState(event.targetId,'sleep');
       const recipient=this.memberOf(event.targetId);
-      if(recipient){const before=recipient.player.health,wasAlive=before>0;
+      if(recipient){const wasAlive=recipient.player.health>0;
         if(hit.damage>0)this.readResourceCapacity(event.targetId,'maxHealth');
+        // 读取上限可能把超过上限的生命夹回上限；伤害必须从夹紧后的生命扣除。
+        const before=recipient.player.health;
         recipient.setHealth(before-hit.damage);
         // 按实际掉血统计：伤害不能超过结算前的生命值。
         const dropped=Math.max(0,Math.min(hit.damage,before));
