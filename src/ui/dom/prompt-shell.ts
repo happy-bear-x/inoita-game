@@ -40,7 +40,7 @@ export function skinPrompt(form:HTMLFormElement, title:HTMLElement, actions:HTML
   for(const [file,property] of [[COMMON_BUTTON.image,'--prompt-button'],[COMMON_BUTTON.pressed,'--prompt-button-pressed']] as const){
     load(file,source=>{
       form.style.setProperty(property,`url(${JSON.stringify(source.url)})`);
-      form.style.setProperty('--prompt-button-cap',`${COMMON_BUTTON.cap*44/source.frame.height}px`);
+      form.style.setProperty('--prompt-button-cap',`calc(var(--prompt-button-height,44px) * ${COMMON_BUTTON.cap/source.frame.height})`);
       form.style.setProperty('--prompt-button-slice',`0 ${COMMON_BUTTON.cap} fill`);
     });
   }
@@ -52,6 +52,8 @@ export function placePrompt(form:HTMLFormElement|undefined):void {
   if(!form||typeof window==='undefined')return;
   const viewport=window.visualViewport;
   const width=viewport?.width??window.innerWidth, height=viewport?.height??window.innerHeight;
+  form.classList.toggle('text-prompt-compact',height<280);
+  form.classList.toggle('text-prompt-scroll',height<180);
   form.style.left=`${(viewport?.offsetLeft??0)+width/2}px`;
   form.style.top=`${(viewport?.offsetTop??0)+height/2}px`;
   form.style.width=`${Math.min(420,Math.max(0,width-24))}px`;

@@ -28,11 +28,17 @@ body.ui-occluded .text-prompt,body.ui-occluded .cloud-credentials{display:none!i
 .text-prompt input:focus{border-color:currentColor;box-shadow:0 0 0 1px currentColor}
 .text-prompt input.number-prompt-invalid{border-color:var(--prompt-danger);box-shadow:0 0 0 1px var(--prompt-danger)}
 .text-prompt-actions{display:flex;gap:12px;flex-shrink:0}
-.text-prompt-actions button{position:relative;isolation:isolate;flex:1;min-width:0;height:44px;padding:0 8px;border:0;background:transparent;color:inherit;font:inherit;font-size:20px;touch-action:manipulation}
+.text-prompt-actions button{position:relative;isolation:isolate;flex:1;min-width:0;height:var(--prompt-button-height,44px);padding:0 8px;border:0;background:transparent;color:inherit;font:inherit;font-size:20px;touch-action:manipulation}
 .text-prompt-actions button::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;border-style:solid;border-color:transparent;border-width:0 var(--prompt-button-cap,32px);border-image-source:var(--prompt-button);border-image-slice:var(--prompt-button-slice);border-image-repeat:stretch}
 .text-prompt-actions button:active::before{border-image-source:var(--prompt-button-pressed)}
 .text-prompt-actions button[disabled]{opacity:.45}
 .text-prompt-actions button:focus-visible{outline:1px solid currentColor;outline-offset:2px}
+
+.text-prompt form.text-prompt-compact{padding:16px;gap:6px;--prompt-button-height:36px}
+.text-prompt-compact .text-prompt-title{font-size:18px;line-height:22px}
+.text-prompt-compact .text-prompt-body{min-height:50px;gap:8px}
+.text-prompt form.text-prompt-scroll{display:block;overflow-y:auto;overscroll-behavior:contain}
+.text-prompt-scroll .text-prompt-body{overflow:visible;min-height:0;margin:6px 0}
 
 /* 云存档登录：账号/密码输入框直接盖在面板对应行上，并和画布共用 #game-frame 的坐标。 */
 .cloud-credentials{position:absolute;inset:0;z-index:5;display:none;pointer-events:none;touch-action:auto}

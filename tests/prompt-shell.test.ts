@@ -27,6 +27,14 @@ test('prompt placement fits the visual viewport above the keyboard',t=>{
   const form=document.createElement('form');placePrompt(form);
   assert.equal(form.style.left,'168px');assert.equal(form.style.top,'117px');
   assert.equal(form.style.width,'296px');assert.equal(form.style.maxHeight,'186px');
+  assert.equal(form.classList.contains('text-prompt-compact'),true);
+  assert.equal(form.classList.contains('text-prompt-scroll'),false);
+  target.visualViewport={width:640,height:160,offsetLeft:0,offsetTop:0};placePrompt(form);
+  assert.equal(form.classList.contains('text-prompt-scroll'),true,'极短空间允许整张表单滚动');
+  assert.equal(form.style.maxHeight,'136px');
+  target.visualViewport={width:640,height:480,offsetLeft:0,offsetTop:0};placePrompt(form);
+  assert.equal(form.classList.contains('text-prompt-compact'),false);
+  assert.equal(form.classList.contains('text-prompt-scroll'),false,'键盘收起恢复固定操作行');
 });
 
 test('password prompt preserves mismatch validation and native form submission',async t=>{
