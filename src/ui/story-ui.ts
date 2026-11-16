@@ -24,6 +24,7 @@ import type { CompanionMember } from '../domain/party.ts';
 import type { SkillLearningProgression } from '../domain/skill-learning.ts';
 import type { BattleClass, SkillLoadout } from '../domain/battle.ts';
 import { ShopPanel } from './phaser/shop-panel.ts';
+import { NumberPrompt } from './number-prompt.ts';
 import { Storefront } from '../domain/shop.ts';
 import { QuestPanel } from './phaser/quest-panel.ts';
 import { PartyPanel } from './phaser/party-panel.ts';
@@ -193,6 +194,7 @@ export class StoryUI {
   private allocationHold?:Phaser.Time.TimerEvent;
   private craftingPanel?:CraftingPanel;private craftingActor?:string;private forge?:ForgePanel;private skillBook?:SkillBookPanel;
   private shopPanel?:ShopPanel;private partyPanel?:PartyPanel;private notice='';
+  private readonly allocationPrompt=new NumberPrompt();
   private keyboardFocus?:UiNode;
   /**
    * 背包页那颗合成立绘。它按当前角色和身上装备拼出来，换人、换装备才重做；
@@ -507,6 +509,7 @@ export class StoryUI {
       if(this.page==='party')this.app.releasePartyPreview?.();
       if(this.page==='debug')this.releaseDebugPanel();
       if(this.page==='bag')this.clearBagTransientState();
+      this.allocationPrompt.close();
       this.itemResult=undefined;this.cancelOperation();this.adjusting=false;this.notice='';
     }
     // 背包页的 DOM、静态图框和合成立绘都留着；数据没变时只把整层显示出来。
@@ -610,7 +613,7 @@ export class StoryUI {
       return;
     }
     if(this.page==='debug')this.releaseDebugPanel();this.controlEditor?.close();this.app.ui.setControlLayoutEditing(false);
-    this.keyBindingEditor?.close();this.app.ui.setKeyBindingEditing(false);this.cancelOperation();this.modalActive=false;this.shortcutEdit=undefined;this.shortcutScreen?.clear();this.shortcutSlots=[];this.backTab?.clear();
+    this.keyBindingEditor?.close();this.app.ui.setKeyBindingEditing(false);this.cancelOperation();this.allocationPrompt.close();this.modalActive=false;this.shortcutEdit=undefined;this.shortcutScreen?.clear();this.shortcutSlots=[];this.backTab?.clear();
     // 背包的说明面板和使用结果不属于缓存页面；下次打开背包时应回到干净的列表。
     const hadBagDetail=this.page==='bag'&&(!!this.selectedItem||!!this.itemResult);
     if(this.page==='bag')this.clearBagTransientState();
@@ -673,8 +676,8 @@ export class StoryUI {
       }
       return false;
     }
-    // 改名或数量输入框开着时键盘归系统输入法：Enter/Escape 由输入框自己处理。
-    if(this.savePage.renaming||this.shopPanel?.prompting)return true;
+    // 改名或数字输入框开着时键盘归系统输入法：Enter/Escape 由输入框自己处理。
+    if(this.savePage.renaming||this.shopPanel?.prompting||this.allocationPrompt.active)return true;
     if(this.app.ui.controlLayoutEditing){if(event.key==='Escape'){event.preventDefault();this.closeControlEditor();}else this.controlEditor?.key(event);return true;}
     if(event.key==='Escape'&&this.itemNotice){event.preventDefault();this.itemNotice=undefined;this.updateItemNotice();return true;}
     if(this.savePage.handleEscape(event))return true;
@@ -1427,6 +1430,9 @@ export class StoryUI {
           button.on('pointerupoutside',()=>{if(this.allocationHoldSource===button)this.allocationHeld=false;});
           if(delta===1)for(const part of ['face','highlight']) (button.getData(part) as UiImage).setFlipX(true);
         }
+        // 数值和「+N」所在的那一段点一下就能直接输入本轮点数。
+        v.button('',690,index*64+70,125,58,()=>this.beginAllocationInput(stat),{bare:true})
+          .setData('label',`输入${attribute.name}加点`);
       }
     });
     this.statusAdjustButton=v.button('',this.adjusting?846:661,0,67,67,()=>this.toggleAllocation(),{image:panels.assets[this.adjusting?'confirm':'character-adjust'],disabled:!hero}).setData('label',this.adjusting?'确认属性加点':'查看属性加点');
@@ -1455,6 +1461,29 @@ export class StoryUI {
     try{this.allocation.change(stat,delta);this.updateStatusMember();}
     catch(error){this.notice=(error as Error).message;this.menuText?.renderPage('status');}
   }
+
+  /** 点属性数值打开输入卡；确定后一次性改这项的本轮投入。 */
+  private beginAllocationInput(stat:PrimaryStat):void{
+    const allocation=this.allocation,member=this.member();
+    if(this.busy||!allocation||!member)return;
+    const character=this.app.storyClasses.classes.find(value=>value.id===member.classId);
+    const name=character?.attributes[PRIMARY_STATS.indexOf(stat)]?.name??stat;
+    const maximum=allocation.pending[stat]+allocation.remainingPoints;
+    this.allocationPrompt.show({
+      title:`${name} · 本次加点`,
+      hint:maximum<1?'没有可分配的能力点':`本次最多可加 ${maximum} 点`,
+      initial:allocation.pending[stat],
+      minimum:0,
+      maximum,
+      overMessage:limit=>limit<1?'没有可分配的能力点':`超过剩余能力点（最多 ${limit} 点）`,
+      onConfirm:value=>{
+        if(this.allocation!==allocation)return;
+        try{allocation.set(stat,value);this.updateStatusMember();}
+        catch(error){this.notice=(error as Error).message;this.menuText?.renderPage('status');}
+      },
+      onCancel:()=>{},
+    });
+  }
   private resetAllocation():void{
     if(this.busy)return;this.busy=true;
     try{this.resetAttributes();}catch(error){this.notice=(error as Error).message;}
@@ -1469,7 +1498,7 @@ export class StoryUI {
     this.allocationError='';
   }
   private discardAllocation():void{
-    this.stopAllocationHold();
+    this.stopAllocationHold();this.allocationPrompt.close();
     this.allocation?.cancel();this.allocation=undefined;this.allocationExit=undefined;this.allocationError='';this.adjusting=false;
   }
   /** 长按加点：按住 400ms 后开始，每 90ms 加／减一点；松开或到达上下限就停。 */

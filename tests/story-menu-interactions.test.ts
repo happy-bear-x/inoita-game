@@ -363,6 +363,38 @@ test('ability allocation counts added points per attribute and the reset button 
   assert(visibleDomLabels(f).some(label=>label.text===`${panels.character.labels.statPoints} ${points}`),'标题栏显示返还后的全部点数');
 });
 
+test('allocation points can be typed and stop at the remaining points',t=>{
+  const f=fixture();t.after(f.cleanup);f.hero.addExperience(f.hero.player.nextLevelExperience);
+  const points=f.hero.statPoints;
+  f.menu.show('status');f.scene.click(f.scene.button('查看属性加点'));
+  const prompt=()=>{
+    const documentRoot=domWindow.children[0]!,find=(node:any,predicate:(node:any)=>boolean):any=>
+      predicate(node)?node:[...node.children].map((child:any)=>find(child,predicate)).find(Boolean);
+    const root=documentRoot.children.filter(node=>String(node.className).includes('number-prompt')).at(-1)!;
+    return {root,input:find(root,node=>node.inputMode==='numeric'),confirm:find(root,node=>node.textContent==='确定'),
+      error:find(root,node=>String(node.className).includes('text-prompt-error'))};
+  };
+  const added=()=>visibleDomLabels(f).find(label=>label.style.color==='#e1823b'&&label.text.startsWith('+'));
+  f.scene.click(f.scene.button('输入力量加点'));
+  let view=prompt();
+  assert.ok(view.root,'加点输入卡已打开');
+  view.input.value=String(points+1);view.input.dispatchEvent(new Event('input',{bubbles:true}));
+  assert.equal(view.error.hidden,false,'超过剩余点数时显示红字');assert.equal(view.confirm.disabled,true);
+  assert.ok(String(view.error.textContent).includes('剩余能力点'));
+  view.input.value=String(points);view.input.dispatchEvent(new Event('input',{bubbles:true}));
+  assert.equal(view.error.hidden,true);assert.equal(view.confirm.disabled,false);
+  view.input.parentElement!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
+  const allocation=(f.menu as any).allocation;
+  assert.equal(allocation.pending.strength,points,'输入值写回本轮加点');
+  assert.equal(allocation.remainingPoints,0);
+  assert.equal(added()?.text,`+${points}`);
+  f.scene.click(f.scene.button('输入力量加点'));
+  view=prompt();view.input.value='0';view.input.dispatchEvent(new Event('input',{bubbles:true}));
+  view.input.parentElement!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
+  assert.equal(allocation.pending.strength,0,'输入 0 清掉本轮投入');
+  assert.equal(allocation.remainingPoints,points);assert.equal(added(),undefined);
+});
+
 test('holding an allocation arrow keeps adding points until released',t=>{
   const f=fixture();t.after(f.cleanup);f.hero.addExperience(f.hero.player.nextLevelExperience);
   f.menu.show('status');f.scene.click(f.scene.button('查看属性加点'));

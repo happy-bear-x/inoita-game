@@ -28,6 +28,14 @@ export class AttributeAllocation {
     this.additions[stat] += delta;
   }
 
+  /** 一次把某项待确认的点数设为 N；先整体校验，失败不改现有分配。 */
+  set(stat: PrimaryStat, points: number): void {
+    if (!PRIMARY_STATS.includes(stat) || !Number.isSafeInteger(points) || points < 0) throw new Error('属性操作无效');
+    const maximum = this.additions[stat] + this.remainingPoints;
+    if (points > maximum) throw new Error('超过剩余能力点');
+    this.additions[stat] = points;
+  }
+
   commit(): void {
     const delta = this.additions;
     this.additions = empty();

@@ -65,6 +65,29 @@ test('allocation previews include equipment, undo only pending points, and cance
   assert.deepEqual(new AttributeAllocation(hero).pending, zero);
 });
 
+test('bulk allocation sets one attribute atomically and rejects overdraw', () => {
+  const { hero } = start();
+  hero.addExperience(hero.player.nextLevelExperience);
+  const draft = new AttributeAllocation(hero);
+  draft.set('strength', 3);
+  assert.equal(draft.pending.strength, 3);
+  assert.equal(draft.remainingPoints, 2);
+  draft.change('vitality', 1);
+  assert.equal(draft.remainingPoints, 1);
+  assert.throws(() => draft.set('strength', 5), /剩余能力点/);
+  assert.equal(draft.pending.strength, 3, '失败不改变已有分配');
+  assert.throws(() => draft.set('strength', 1.5));
+  assert.throws(() => draft.set('strength', -1));
+  assert.throws(() => draft.set('bogus' as never, 1));
+  draft.set('strength', 4);
+  assert.equal(draft.pending.strength, 4);
+  assert.equal(draft.remainingPoints, 0);
+  assert.equal(draft.pending.vitality, 1);
+  draft.set('strength', 0);
+  assert.equal(draft.pending.strength, 0);
+  assert.equal(draft.remainingPoints, 4);
+});
+
 test('confirmation commits once, publishes a complete panel, and later visits cannot undo committed points', () => {
   const { hero, session } = start();
   hero.addExperience(hero.player.nextLevelExperience);
