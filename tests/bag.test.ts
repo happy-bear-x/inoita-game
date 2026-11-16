@@ -39,6 +39,7 @@ test('complete physical catalogue has every use flow and isolated starting equip
   const physical=Object.entries(catalog.items).filter(([,item])=>!item.pickup);
   assert.equal(physical.length,986);
   for(const [item] of physical){
+    if(catalog.items[item].equipment?.locked)continue;
     const bag=new Bag(()=>{},catalog);bag.add(item);
     assert.equal(bag.entries.length,1,item);assert.equal(bag.entries[0].item,item);
     assert.equal(bag.entries[0].quantity,1,item);bag.verifyConsistency();
@@ -65,9 +66,9 @@ test('equipment swaps are atomic, obey class and hand restrictions, and ignore c
   bag.unequip('main-hand');assert.equal(bag.equipment['off-hand'],undefined);
   assert.throws(()=>bag.equip(second.id,'off-hand'),/单手/);
   assert.ok(bag.entries.length>=before);
-  const wrong=prepareItem(bag,d=>!!d.equipment&&!d.equipment.classes.includes('warrior'));
+  const wrong=prepareItem(bag,d=>!!d.equipment&&!d.equipment.locked&&!d.equipment.classes.includes('warrior'));
   assert.deepEqual(bag.slotsFor(wrong.id),[]);
-  assert.deepEqual(bag.slotsFor(prepareItem(bag,d=>!!d.equipment?.locked).id),[]);
+  assert.throws(()=>bag.add('disguise-mask'),/剧情专属装备不能放入背包/);
   const ring=prepareItem(bag,d=>d.equipment?.slot==='ring'&&!d.equipment.locked);
   bag.equip(ring.id,'accessory');assert.equal(bag.equipment.accessory,ring.id);
 });
@@ -84,7 +85,7 @@ test('equipProblem answers like planEquip and never changes the bag',()=>{
   // 每件装备使用独立背包，逐件逐槽比较两种判定，保持完整目录覆盖。
   let checked=0;
   for(const [item,definition] of Object.entries(catalog.items)){
-    if(!definition.equipment||definition.pickup)continue;
+    if(!definition.equipment||definition.equipment.locked||definition.pickup)continue;
     const candidate=create('warrior',()=>updates++,[]);candidate.add(item);
     const entry=candidate.entries[0],before=candidate.captureState();
     for(const slot of candidate.slotsFor(entry.id)){
@@ -103,7 +104,7 @@ test('all eligible equipment has complete poses, including shield, unarmed and d
   validateWardrobe(wardrobe,catalog);
   for(const classId of Object.keys(catalog.startingEquipment)){
     for(const [item,definition] of Object.entries(catalog.items)){
-      if(!definition.equipment||definition.pickup)continue;
+      if(!definition.equipment||definition.equipment.locked||definition.pickup)continue;
       const bag=create(classId,()=>{},[]);bag.add(item);
       const entry=bag.entries[0];
       for(const slot of bag.slotsFor(entry.id)){

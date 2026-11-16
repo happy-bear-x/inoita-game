@@ -307,6 +307,7 @@ test('giveItem adds the requested quantity and refuses excluded items and bad co
   for (const item of ['mana-gem', 'nope']) {
     assert.equal(gm.giveItem(item, 1).ok, false, item);
   }
+  for(const item of items.storyEquipment!)assert.equal(gm.giveItem(item,1).ok,false,item);
   for (const quantity of [0, -1, 1.5, 1000]) {
     assert.equal(gm.giveItem('healing-potion-s', quantity).ok, false, String(quantity));
   }

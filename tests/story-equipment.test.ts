@@ -8,6 +8,7 @@ import type { CharacterStatsCatalog } from '../src/domain/character-stats.ts';
 import type { Campaign } from '../src/domain/campaign.ts';
 import { Session } from '../src/domain/session.ts';
 import { Storefront } from '../src/domain/shop.ts';
+import { Bag } from '../src/domain/bag.ts';
 
 const read = <T>(name: string): T => JSON.parse(readFileSync(new URL(`../public/content/${name}.json`, import.meta.url), 'utf8')) as T;
 const items = parseItemCatalog(read('items'));
@@ -68,6 +69,46 @@ test('quest rewards and ground drops refuse story equipment while story equip co
   const script = Object.values(drop.scripts).find(value => value.nodes.length > 0)!;
   script.nodes[0]!.commands.push({ type: 'item-drop', item: 'the-promised-sword', quantity: 1, x: 0, y: 0 } as never);
   assert.throws(() => validateStoryItems(drop, items), /剧情不能掉落/);
+  const give=structuredClone(campaign);
+  Object.values(give.scripts)[0]!.nodes[0]!.commands.push({type:'item-give',item:'disguise-mask',quantity:1});
+  assert.throws(()=>validateStoryItems(give,items),/剧情专属装备应直接穿戴/);
+});
+
+test('every story equipment item is rejected by bag grants and ground pickups before any inventory changes',()=>{
+  const bag=new Bag(()=>{},items,'dark-knight');
+  const before=bag.captureState();
+  for(const item of storyEquipment){
+    assert.throws(()=>bag.add(item),/剧情专属装备不能放入背包/);
+    assert.throws(()=>bag.receiveDrop({id:'ground-story',item,quantity:1,enhancement:0,gems:[]}),/剧情专属装备不能放入背包/);
+    assert.deepEqual(bag.captureState(),before);
+  }
+});
+
+test('story equipment can be worn for a scene and is removed instead of returned to the bag',()=>{
+  const bag=new Bag(()=>{},items,'dark-knight');
+  const normalHead=Object.keys(items.items).find(id=>items.items[id].equipment?.slot==='head'&&!items.items[id].equipment?.locked)!;
+  const mask=bag.addEquipped('disguise-mask','head','player','dark-knight');
+  assert.equal(bag.equipmentItems().head,'disguise-mask');bag.verifyConsistency();
+  bag.add(normalHead);bag.equip(bag.entries.find(entry=>entry.item===normalHead)!.id,'head');
+  assert.equal(bag.get(mask),undefined);assert.equal(bag.entries.some(entry=>storyEquipment.has(entry.item)),false);
+  bag.verifyConsistency();
+  const second=bag.addEquipped('disguise-mask','head','player','dark-knight');bag.unequip('head');
+  assert.equal(bag.get(second),undefined);bag.verifyConsistency();
+  const third=bag.addEquipped('disguise-mask','head','player','dark-knight');
+  const invalid=bag.captureState();delete invalid.worn.head;
+  invalid.allCells.push(third);invalid.pouches.armor.push(third);
+  assert.throws(()=>bag.restoreState(invalid),/剧情专属装备不能放入背包/);
+  assert.equal(bag.equipmentItems().head,'disguise-mask');
+});
+
+test('a story companion leaving returns normal equipment but removes scene equipment and its retirement reference',()=>{
+  const bag=new Bag(()=>{},items,'dark-knight');
+  const mask=bag.addEquipped('disguise-mask','head','story-member','dark-knight');
+  const normal=bag.addEquipped('dagger','main-hand','story-member','dark-knight');
+  bag.removeOwner('story-member',true,true);
+  assert.equal(bag.get(mask),undefined);assert.ok(bag.entries.some(entry=>entry.id===normal));
+  const retired=bag.takeRetiredEquipment('story-member')!;
+  assert.equal(retired.head,undefined);assert.equal(retired['main-hand'],normal);bag.verifyConsistency();
 });
 
 test('item catalog rejects a story equipment list that drifts from the locked set', () => {

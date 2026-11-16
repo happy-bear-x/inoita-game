@@ -40,7 +40,7 @@ export interface BagState {
   allCells: (string | undefined)[];
   worn: Equipment;
   companionEquipment: [string, Equipment][];
-  /** 已离队剧情伙伴的装备表：实例仍在背包里，重新入队时按它穿回同一批，避免复制。 */
+  /** 已离队剧情伙伴的普通装备表：实例仍在背包里，重新入队时穿回同一批。 */
   retiredEquipment?: [string, Equipment][];
   serial: number;
   /** 每个角色一份十二格快捷栏：技能与物品共用，见 `shortcut-bar.ts`。 */
@@ -67,17 +67,20 @@ export function verifyBagState(state: BagState, catalog: ItemCatalog): void {
   const knownItems = Object.keys(catalog.items).length > 0;
   if (!Number.isSafeInteger(state.serial) || state.serial < 0) throw new Error('背包物品序号无效');
   const ids = new Set<string>();
+  const storyIds = new Set<string>();
   for (const entry of state.instances) {
     if (!entry.id || ids.has(entry.id) || !entry.item || knownItems && !catalog.items[entry.item] || !Number.isSafeInteger(entry.quantity) || entry.quantity <= 0) throw new Error('背包物品引用或数量无效');
     if(entry.locked!==undefined&&typeof entry.locked!=='boolean')throw new Error('装备锁定状态无效');
     if(entry.lootLevel!==undefined&&(!Number.isSafeInteger(entry.lootLevel)||entry.lootLevel<1||entry.lootLevel>105||catalog.items[entry.item]?.use?.kind!=='box'||entry.quantity!==1))throw new Error('封印盒掉落等级无效');
     if(entry.locked&&knownItems&&!catalog.items[entry.item]?.equipment)throw new Error('只有装备可以上锁');
     ids.add(entry.id);
+    if(catalog.items[entry.item]?.equipment?.locked)storyIds.add(entry.id);
     for (const gem of entry.gems) if (knownItems && !catalog.items[gem]) throw new Error('背包宝石引用无效');
   }
   const loose = new Set<string>();
   for (const row of Object.values(state.pouches)) for (const id of row) if (id != null) {
     if (!ids.has(id) || loose.has(id)) throw new Error('背包格位引用无效');
+    if(storyIds.has(id))throw new Error('剧情专属装备不能放入背包');
     loose.add(id);
   }
   const all = state.allCells.filter((id): id is string => id != null);
@@ -268,8 +271,10 @@ export class Bag {
   private trim(cells: (string | undefined)[]): void {
     while (cells.length && cells[cells.length - 1] === undefined) cells.pop();
   }
-  /** 全部与所属分类分别填第一个空位；没有空位就接到末尾。 */
+  /** 剧情装备离身即销毁；普通物品在全部与所属分类分别填第一个空位。 */
   private put(id: string): void {
+    const entry=this.instances.get(id);
+    if(entry&&this.catalog.items[entry.item]?.equipment?.locked){this.instances.delete(id);return;}
     for (const cells of [this.all, this.cellsOf(id)!]) {
       const free = cells.indexOf(undefined);
       if (free < 0) cells.push(id); else cells[free] = id;
@@ -315,7 +320,8 @@ export class Bag {
     this.companionEquipment.delete(owner);
     // 剧情伙伴会随剧本反复离队、归队。记住离队时的装备表，归队时按实例穿回，
     // 既不复制新装备，也不会误穿玩家背包里的同名物品。
-    if(retireEquipment)this.retiredEquipment.set(owner,structuredClone(equipment));
+    if(retireEquipment)this.retiredEquipment.set(owner,Object.fromEntries(Object.entries(equipment).filter(([,id])=>
+      id&&!this.catalog.items[this.instances.get(id)!.item]?.equipment?.locked)));
     for(const id of Object.values(equipment)){
       if(!id)continue;
       if(returnEquipment)this.put(id);else this.instances.delete(id);
@@ -367,6 +373,7 @@ export class Bag {
   }
   /** Called by the session's pickup/quest notification batch; notification belongs to its caller. */
   add(item: string, quantity = 1, skill?: string): void {
+    if(this.catalog.items[item]?.equipment?.locked)throw new Error('剧情专属装备不能放入背包');
     if (!Number.isSafeInteger(quantity) || quantity <= 0) throw new Error('物品数量必须为正整数');
     if(Object.keys(this.catalog.items).length&&!this.catalog.items[item])throw new Error('物品定义不存在');
     if(this.catalog.items[item]?.pickup)throw new Error('该物品在地面拾取时生效');
@@ -388,6 +395,7 @@ export class Bag {
   }
   receiveDrop(prepared:ItemInstance):void {
     if(!this.catalog.items[prepared.item]||this.catalog.items[prepared.item].pickup||prepared.quantity!==1)throw new Error('地面物品无效');
+    if(this.catalog.items[prepared.item].equipment?.locked)throw new Error('剧情专属装备不能放入背包');
     if(this.catalog.items[prepared.item].stackable&&instanceStackKey(prepared)!==undefined){this.add(prepared.item,prepared.quantity,prepared.skill);return;}
     const entry={...copy(prepared),id:`owned-${++this.serial}`};
     this.instances.set(entry.id,entry);this.put(entry.id);this.revision++;

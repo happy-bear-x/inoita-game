@@ -22,6 +22,32 @@ function record(index=0){
   return captureSaveGame(session,world,saveSummary(session,{id:map.id,name:map.name},{name:character.name,portrait:'assets/ui/menus/character-kiyan.png'}));
 }
 
+test('format 58 clears loose story equipment and its references while preserving equipment worn for the story',()=>{
+  const saved=record(),bag=saved.session.bag;saved.format=58;
+  const looseId=`story-loose-${++bag.serial}`,wornId=`story-worn-${++bag.serial}`;
+  bag.instances.push({id:looseId,item:'the-promised-sword',quantity:1,enhancement:0,gems:[]});
+  bag.allCells.push(looseId);bag.pouches.weapon.push(looseId);
+  bag.retiredEquipment=[['old-story-member',{'main-hand':looseId}]];
+  bag.instances.push({id:wornId,item:'disguise-mask',quantity:1,enhancement:0,gems:[]});
+  if(bag.worn.head){bag.allCells.push(bag.worn.head);bag.pouches.armor.push(bag.worn.head);}
+  bag.worn.head=wornId;
+  if(!bag.shortcuts.length)bag.shortcuts.push(['player',emptyShortcutRow()]);
+  bag.shortcuts[0]![1][0]={kind:'item',id:'the-promised-sword'};
+  saved.session.groundLoot.drops.push({id:'story-ground',map:saved.world.location.map,x:16,y:24,
+    reward:{kind:'item',item:'the-promised-sword',quantity:1}});
+  const before=structuredClone(saved),candidate=prepareSavedGame(saved,content),state=candidate.session.bag.captureState();
+  assert.deepEqual(saved,before);
+  assert.equal(candidate.session.bag.get(looseId),undefined);
+  assert.equal(candidate.session.bag.equipmentItems().head,'disguise-mask');
+  assert.ok(!state.allCells.includes(looseId));assert.ok(!state.pouches.weapon.includes(looseId));
+  assert.equal(state.retiredEquipment![0]![1]['main-hand'],undefined);
+  assert.equal(state.shortcuts[0]![1][0],null);
+  assert.equal(candidate.session.captureState().groundLoot.drops.some(drop=>drop.id==='story-ground'),false);
+  const current=captureSaveGame(candidate.session,candidate.world,saved.summary);
+  assert.equal(current.format,59);prepareSavedGame(current,content).session.bag.verifyConsistency();
+  candidate.session.bag.unequip('head');assert.equal(candidate.session.bag.get(wornId),undefined);
+});
+
 test('format 57 preserves normal respawn deadlines and derives offscreen deadlines without changing the source',()=>{
   const saved=record();saved.format=57;
   saved.session.enemies=[['waiting',{deadUntil:90_000}],['elapsed',{deadUntil:30_000}],

@@ -211,8 +211,10 @@ export function validateStoryItems(campaign:Campaign, content:ItemCatalog):void 
         // 与背包判定同一口径：主/副手和饰品槽必须和物品定义匹配，双手武器不能塞进副手。
         requireValue(rule.slot===command.slot||(command.slot==='off-hand'&&rule.dualWield)||(command.slot==='accessory'&&rule.slot==='ring'),node.id,'剧情装备槽位不匹配');
       }
-      if(command.type==='item-give')
+      if(command.type==='item-give'){
         requireValue(!reserved.has(command.item),node.id,`剧情不能发放保留道具 ${command.item}`);
+        requireValue(!content.items[command.item].equipment?.locked,node.id,`剧情专属装备应直接穿戴 ${command.item}`);
+      }
       if(command.type==='item-drop')
         requireValue(!blockedNormal.has(command.item),node.id,`剧情不能掉落保留道具或剧情装备 ${command.item}`);
     }

@@ -67,6 +67,21 @@ function migrateSharedSkillUnlocks(game:SaveGame<StoryWorldViewSnapshot>,content
   for(const receipt of session.receipts)receipt.reward.items=receipt.reward.items.filter(entry=>entry.item!==legacyBook);
   party.sharedUnlockedSkills=[...shared];
 }
+
+function migrateStoryEquipmentInventory(game:SaveGame<StoryWorldViewSnapshot>,content:SavedGameContent):void{
+  const bag=game.session.bag;
+  const worn=new Set([bag.worn,...bag.companionEquipment.map(([,equipment])=>equipment)].flatMap(equipment=>Object.values(equipment)));
+  const story=(item:string)=>!!content.items.items[item]?.equipment?.locked;
+  const removed=new Set(bag.instances.filter(entry=>story(entry.item)&&!worn.has(entry.id)).map(entry=>entry.id));
+  bag.instances=bag.instances.filter(entry=>!removed.has(entry.id));
+  for(const cells of [bag.allCells,...Object.values(bag.pouches)])
+    for(let index=0;index<cells.length;index++)if(cells[index]&&removed.has(cells[index]!))cells[index]=undefined;
+  bag.retiredEquipment=bag.retiredEquipment?.map(([owner,equipment])=>[owner,Object.fromEntries(
+    Object.entries(equipment).filter(([,id])=>!id||!removed.has(id)))]);
+  for(const [,row] of bag.shortcuts)
+    for(let index=0;index<row.length;index++)if(row[index]?.kind==='item'&&story(row[index]!.id))row[index]=null;
+  game.session.groundLoot.drops=game.session.groundLoot.drops.filter(drop=>drop.reward.kind!=='item'||!story(drop.reward.item));
+}
 type LegacyScene = {actors?:unknown};
 function duplicateSceneActors(scene:unknown):SceneActorState[][] {
   if(!scene||typeof scene!=='object')return [];
@@ -91,6 +106,7 @@ function stageHasDuplicateActors(stage:unknown):boolean {
  * 如果带重复演员，丢弃舞台快照，让剧情从当前节点继续而不是拒绝整份存档。
  */
 const SAVE_UPGRADES:Record<number,SaveUpgrade>={
+  58:(game,content)=>{migrateStoryEquipmentInventory(game,content);game.format=59;},
   57:game=>{
     for(const [,enemy] of game.session.enemies)if(typeof enemy.deadUntil==='number'&&Number.isFinite(enemy.deadUntil)&&enemy.deadUntil>=0&&!enemy.capture)
       enemy.offscreenRespawnAt=Math.max(0,enemy.deadUntil-DEFAULT_ENEMY_RESPAWN_MS+OFFSCREEN_ENEMY_RESPAWN_MS);

@@ -1191,7 +1191,7 @@ export class Session {
       for(const [slot,id] of targets) {
         if(!id)continue;
         if(bag.equipmentFor(command.member)[slot]===id)bag.unequip(slot,command.member);
-        bag.take(id,1);
+        if(bag.get(id))bag.take(id,1);
       }
       return;
     }

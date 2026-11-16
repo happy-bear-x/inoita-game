@@ -726,6 +726,7 @@ export function createGmActions(ports: GmPorts): GmActions {
       const definition = session.bag.catalog.items[item];
       if (!definition) return { ok: false, reason: `未找到物品：${item}` };
       if (definition.pickup) return { ok: false, reason: '该物品只能在地面拾取，不能直接发放' };
+      if (definition.equipment?.locked) return { ok: false, reason: '剧情专属装备不能放入背包' };
       if (!Number.isSafeInteger(quantity) || quantity <= 0) return { ok: false, reason: '数量必须是正整数' };
       if (quantity > MAX_GM_ITEM_QUANTITY) return { ok: false, reason: '单次最多发放 999 个' };
       session.bag.add(item, quantity);
