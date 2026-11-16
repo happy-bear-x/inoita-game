@@ -16,15 +16,15 @@ function fixture(){
     {entry:null,quantity:0,enabled:false}
   ];
   const visible=(name:string)=>({setVisible:(value:boolean)=>{visibility[name]=value;}});
-  const state={sys:{isActive:()=>true},loadingWorld:false,performing:false,near:null,chestFades:new Map(),
+  const state={sys:{isActive:()=>true},loadingWorld:false,near:null,chestFades:new Map(),
     app:{locked:true,suspended:false,ui:{ready:true,controlLayoutEditing:true},session:{combatTick:0}},
     stick:{...visible('stick'),reset:()=>calls.push('stick-reset')},
     controls:{...visible('controls'),setAttack:()=>{},snapshot:()=>preview,resetInput:()=>calls.push('controls-reset')},
     skillHud:visible('skillHud'),
     minimap:visible('minimap'),statusHud:{...visible('status'),update:()=>{},setTarget:()=>{}},overheadStatus:visible('overhead'),
     nameBanner:{sync:(value:boolean)=>{visibility.banner=value;}},
-    refreshCombatTarget:()=>{},refreshShortcutPage:()=>{},
-    combat:{hasHostileTarget:()=>false,setPaused:(value:boolean)=>calls.push(`paused:${value}`),setPerformanceActive:()=>{},
+    refreshCombatTarget:()=>{},
+    combat:{hasHostileTarget:()=>false,setPaused:(value:boolean)=>calls.push(`paused:${value}`),
       update:(_delta:number,enabled:boolean)=>calls.push(`combat:${enabled}`)},
     player:{},movement:{stop:()=>calls.push('stop')}
   };

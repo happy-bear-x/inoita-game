@@ -37,7 +37,7 @@ function harness(content: Campaign = campaign) {
   const view = (name: string) => ({ setVisible(value: boolean) { visible[name] = value; }, reset() {}, resetInput() {}, setAttack() {}, sync() {} });
   const host = {
     get canControl() { return !ui.locked; }, get canCombatControl() { return !ui.locked; },
-    performing: false, loadingWorld: false, sys: { isActive: () => true }, app: { ui, suspended: false, session },
+    loadingWorld: false, sys: { isActive: () => true }, app: { ui, suspended: false, session },
     player: { container: {} }, movement: { stop() { counters.stops++; } },
     combat: { setPaused(value: boolean) { counters.pauses.push(value); }, hasHostileTarget: () => false },
     chestFades: new Map(), near: null, refreshCombatTarget() {},
@@ -58,7 +58,7 @@ test('syncHud tolerates the boot state before a session is installed', () => {
   ui.mode = 'menu'; ui.ready = false;
   const view = () => ({ setVisible() {} });
   const host = {
-    canControl: false, performing: false, loadingWorld: true,
+    canControl: false, loadingWorld: true,
     sys: { isActive: () => false },
     app: { ui, suspended: false, session: undefined },
     player: { container: {} }, near: null, chestFades: new Map(),

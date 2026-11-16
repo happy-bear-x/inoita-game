@@ -41,15 +41,15 @@ function sceneFixture(){
   const calls:string[]=[];
   const combat={targetId:'enemy' as string|undefined,attackState:'idle' as 'idle'|'approaching'|'attacking',
     castingSkill:false,
-    attack:()=>calls.push('attack'),update(){},setPerformanceActive(){},playerCannotMove:()=>false,movementSpeedForPlayer:()=>4,
+    attack:()=>calls.push('attack'),update(){},playerCannotMove:()=>false,movementSpeedForPlayer:()=>4,
     cancelAttack:()=>calls.push('cancelAttack'),clearTarget:()=>calls.push('clearTarget'),cancelAmbushOnDirection(){},controlledId:'player',
     switchControl:()=>true,switchMember:()=>true};
   const state={
-    player:{container:{x:0,y:0}},characters:[],near:null,performing:false,loadingWorld:false,destroyed:false,
+    player:{container:{x:0,y:0}},characters:[],near:null,loadingWorld:false,destroyed:false,
     autoAttack:new BasicAttackRepeat(),
     stick:{axis:{x:0,y:0}},
     movement:{drive:()=>calls.push('drive'),stop(){}},
-    combat,refreshShortcutPage(){},
+    combat,
     app:{ui:{ready:true},locked:false,suspended:false,director:{busy:false},session:{combatTick:0,refresh(){}}},
     sys:{isActive:()=>true}
   };
@@ -149,15 +149,14 @@ test('interacting does not arm the repeat',()=>{
 test('the attack key interacts with a nearby object before attacking',()=>{
   const calls:string[]=[];
   const state={
-    player:{container:{x:0,y:0}},characters:[],performing:false,loadingWorld:false,destroyed:false,
+    player:{container:{x:0,y:0}},characters:[],loadingWorld:false,destroyed:false,
     autoAttack:new BasicAttackRepeat(),
     near:{actor:{},entity:{}} as {actor:object;entity:object}|null,
     stick:{axis:{x:0,y:0}},movement:{drive(){},stop(){}},
     updateInteractionTarget(){},interact(){calls.push('interact');return true;},
     combat:{targetId:'enemy' as string|undefined,attackState:'idle' as 'idle'|'approaching'|'attacking',
-      attack:()=>calls.push('attack'),update(){},setPerformanceActive(){},playerCannotMove:()=>false,movementSpeedForPlayer:()=>4,
+      attack:()=>calls.push('attack'),update(){},playerCannotMove:()=>false,movementSpeedForPlayer:()=>4,
       cancelAttack(){},clearTarget(){},cancelAmbushOnDirection(){},controlledId:'player'},
-    refreshShortcutPage(){},
     app:{ui:{ready:true},locked:false,suspended:false,director:{busy:false},session:{combatTick:0,refresh(){}}},
     sys:{isActive:()=>true}
   };

@@ -227,7 +227,7 @@ export function playthrough(saved?:SessionState){
     const app={session,campaign,director,ui:{...ui,ready:true,controlLayoutEditing:false},locked:false,suspended:false};
     visit={mapId:map.id,occupied,app,host:Object.assign(Object.create(WorldScene.prototype),{
       app,
-      sys:{isActive:()=>true},loadingWorld:false,performing:false,destroyed:false,
+      sys:{isActive:()=>true},loadingWorld:false,destroyed:false,
       map,characters:[],near:null,occupiedRegions:occupied,minimap:undefined,
       lastPlayerPosition:{x:location.x,y:location.y},
       player:{container:{x:location.x,y:location.y}},

@@ -225,7 +225,7 @@ test('stage occlusion hides the world camera, pauses physics and restores it on 
   const host=Object.assign(Object.create(WorldScene.prototype),{
     destroyed:false,stageOccluded:false,cameras:{main:camera},physics,
     pickupMessages:messages,groundLootView:loot,
-    sys:{isActive:()=>true},loadingWorld:false,performing:false,
+    sys:{isActive:()=>true},loadingWorld:false,
     app:{ui:{ready:true,controlLayoutEditing:false},locked:true,suspended:false,director:{busy:true}}});
   invoke(host,'setStageOccluded',true);
   assert.deepEqual(calls,['preRender','visible:false','pause'],'隐藏前先结算镜头，再停渲染和物理');
@@ -252,7 +252,7 @@ test('world update stays idle while the stage covers it and recovers when the st
     cameras:{main:{preRender(){calls.push('preRender');},setVisible(value:boolean){calls.push(`visible:${value}`);}}},
     physics:{world:{},pause(){calls.push('pause');},resume(){calls.push('resume');}},
     pickupMessages:{setPaused(){}},groundLootView:{setPaused(){}},
-    sys:{isActive:()=>true},loadingWorld:false,performing:false,
+    sys:{isActive:()=>true},loadingWorld:false,
     app:{ui:{ready:true,controlLayoutEditing:false},locked:false,suspended:false,director:{busy:false}}});
   invoke(host,'update',0,16);
   assert.equal(host.stageOccluded,true,'舞台仍盖住时不推进世界');
@@ -267,7 +267,7 @@ test('unchanged map state skips the character visibility loop',()=>{
   let touched=0;
   const host={
     app:{session:{visible:()=>true,storyWorld:{actorVisible:()=>true},marker:()=>null,markerActor:()=>false}},
-    performing:false,combat:{setPerformanceActive(){}},map:undefined,
+    combat:{},map:undefined,
     characters:[{entity:{id:'npc',actor:'npc'},actor:{id:'npc'},container:{x:0,y:0,setVisible:()=>touched++}}],
     refreshLoadout(){},noticeQuestChanges(){},refreshStateSignature:()=>'same',
     chestOpened:()=>false,legendarySwordConsumed:()=>false,movement:{setEnabled(){}},

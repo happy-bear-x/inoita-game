@@ -100,7 +100,7 @@ function pressAttack(mapId:string,current=new Session(campaign,undefined,undefin
   current.chests.enterMap(map.id);
   const combat={controlledVisual:undefined as {container:Display}|undefined,controlledMember:{level:100},
     facing,cannotAct:false,playerCannotAct:()=>false,hasHostileTarget:()=>false,
-    attack:()=>calls.push('attack'),setPerformanceActive(){},syncChestEnemies(){}};
+    attack:()=>calls.push('attack'),syncChestEnemies(){}};
   const state={
     app:{world:dynamicWorld(world),items,session:current,campaign,locked:false,suspended:false,characterStats:stats,
       autoSave:()=>calls.push('autosave'),
@@ -111,7 +111,7 @@ function pressAttack(mapId:string,current=new Session(campaign,undefined,undefin
         visitInnkeeper:(actor:ActorDefinition,quote:{cost:number},rest:()=>void)=>{calls.push(`visitInnkeeper:${actor.id}:${quote.cost}`);rest();return Promise.resolve(true);}},
       openCrafting:(actorId:string)=>calls.push(`openCrafting:${actorId}`)},
     map,dropCatalog:drops,player:{container:new Display()},characters:[] as Character[],near:null as Character|null,combat,
-    autoAttack:{engage(){}},performing:false,loadingWorld:false,active:true,chestFades:new Map(),
+    autoAttack:{engage(){}},loadingWorld:false,active:true,chestFades:new Map(),
     sys:{isActive:()=>true},
     add:{container:(x:number,y:number)=>new Display(x,y),sprite:()=>new Display(),text:()=>new Display()},
     anims:{exists:(key:string)=>animations.has(key),create:({key}:{key:string})=>animations.add(key),generateFrameNumbers:()=>[]},
