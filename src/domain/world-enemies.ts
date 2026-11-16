@@ -76,6 +76,9 @@ export function selectMapSpawns(map:WorldMap,questSpawns:readonly CampaignEnemyP
   return [...raw.filter((_,index)=>chosen.has(index)),...questSpawns];
 }
 
+/** 主镜头的地图坐标范围；边缘缓冲也以地图像素计。 */
+export interface EnemyRespawnView {x:number;y:number;width:number;height:number}
+export const ENEMY_RESPAWN_VIEW_MARGIN_PX=48;
 /** One map's enemy roster. Stable spawn IDs and combat resources live in Session. */
 export class WorldEnemyRoster extends EnemyRoster {
   readonly session:Session;
@@ -108,6 +111,8 @@ export class WorldEnemyRoster extends EnemyRoster {
    */
   private completedCache?:{encounterRevision:number;enemySpawnRevision:number;membershipRevision:number;value:readonly StoryEncounter[]};
   private lastRefresh?:{spawns:readonly WorldSpawn[];enemyRevision:number;questVersion:number;membershipRevision:number;members:ReadonlySet<string>;nextSpawnAt:number};
+  private readonly offscreenWaiting=new Map<string,WorldSpawn>();
+  private respawnView?:EnemyRespawnView;
   private questSourceRevision?:number;
   private questSourceIds?:ReadonlySet<string>;
   private emptyReported=false;
@@ -236,21 +241,35 @@ capturePreparedState():{roster:ReturnType<EnemyRoster['captureState']>;breakable
       if(snapshot)this.session.setEnemyVitals(placed.key,snapshot.health,snapshot.mana);
     }
   }
-  refresh():{added:PlacedEnemy[];removed:string[]}{
+  refresh(view?:EnemyRespawnView):{added:PlacedEnemy[];removed:string[]}{
     const added:PlacedEnemy[]=[],removed:string[]=[];
+    if(view&&(!Number.isFinite(view.x)||!Number.isFinite(view.y)||!Number.isFinite(view.width)||!Number.isFinite(view.height)||view.width<=0||view.height<=0))view=undefined;
+    const oldView=this.respawnView;
+    const viewChanged=!!view!==!!oldView||!!view&&!!oldView&&
+      (view.x!==oldView.x||view.y!==oldView.y||view.width!==oldView.width||view.height!==oldView.height);
+    if(view){
+      if(oldView){oldView.x=view.x;oldView.y=view.y;oldView.width=view.width;oldView.height=view.height;}
+      else this.respawnView={x:view.x,y:view.y,width:view.width,height:view.height};
+    }else this.respawnView=undefined;
+    // 镜头移动只复核等待中的生成点；没有可提前刷新的点就沿用正常缓存。
+    let offscreenReady=false;
+    if(viewChanged)for(const spawn of this.offscreenWaiting.values()){
+      if(this.outsideRespawnView(spawn,view)&&this.session.canRespawnEnemy(spawn,true)){offscreenReady=true;break;}
+    }
     const spawns=this.spawns,previous=this.lastRefresh;
     if(previous?.spawns===spawns&&previous.enemyRevision===this.session.enemySpawnRevision&&
       previous.questVersion===this.session.questBook.version&&previous.membershipRevision===this.membershipRevision&&
-      previous.members.size===this.enemies.length&&this.session.nowMs<previous.nextSpawnAt&&this.identitiesMatchSources(previous.members))return {added,removed};
+      previous.members.size===this.enemies.length&&!offscreenReady&&this.session.nowMs<previous.nextSpawnAt&&this.identitiesMatchSources(previous.members))return {added,removed};
     if(this.spawnIndex?.spawns!==spawns)this.spawnIndex={spawns,byId:new Map(spawns.map(spawn=>[spawn.id,spawn]))};
     const current=this.spawnIndex.byId;
     let nextSpawnAt=Infinity;
+    this.offscreenWaiting.clear();
     const present=new Set(this.enemies.map(enemy=>enemy.key));
     for(const placed of [...this.enemies]){
       const spawn=current.get(placed.key)??this.sources.get(placed.key);
       if(!spawn)continue;
       // 槽位离场（死亡、隐藏、从本次生成集合消失）才丢弃替换结果，下次出现重掷。
-      const leaving=!current.has(spawn.id)||!this.spawnAllowed(spawn);
+      const leaving=!current.has(spawn.id)||!this.spawnAllowed(spawn,view);
       // 同 key 换身份只是这一槽改了外观，缓存仍是本次访问的结果，下一帧不能再掷一次。
       if(!leaving&&placed.enemyId===spawn.enemyId)continue;
       super.removeEnemy(placed.key);present.delete(placed.key);removed.push(placed.key);
@@ -267,9 +286,15 @@ capturePreparedState():{roster:ReturnType<EnemyRoster['captureState']>;breakable
     }
     for(const spawn of spawns){
       this.sources.set(spawn.id,spawn);
-      if(!this.spawnAllowed(spawn)){
-        const deadline=this.session.enemyVitals(spawn.id).deadUntil;
-        if(typeof deadline==='number'&&deadline>this.session.nowMs)nextSpawnAt=Math.min(nextSpawnAt,deadline);
+      if(!this.spawnAllowed(spawn,view)){
+        const state=this.session.enemyVitals(spawn.id),deadline=state.deadUntil;
+        if(typeof deadline==='number'&&deadline>this.session.nowMs){
+          nextSpawnAt=Math.min(nextSpawnAt,deadline);
+          if(this.staticSpawnIds.has(spawn.id)&&spawn.respawn!==false&&!state.capture&&state.offscreenRespawnAt!==undefined){
+            this.offscreenWaiting.set(spawn.id,spawn);
+            if(state.offscreenRespawnAt>this.session.nowMs)nextSpawnAt=Math.min(nextSpawnAt,state.offscreenRespawnAt);
+          }
+        }
         continue;
       }
       if(present.has(spawn.id))continue;
@@ -371,20 +396,23 @@ capturePreparedState():{roster:ReturnType<EnemyRoster['captureState']>;breakable
     const byId=new Map(value.map(spawn=>[spawn.id,spawn]));
     this.sourceProjection={story,chests,quests:questRevision,sources,size,byId};return byId;
   }
-  /**
-   * 只豁免被剧情永久移除（`remove-enemy` 留下 `visible` false）的任务目标槽位：
-   * 清掉该槽位的永久死亡记录后照常生成，任务结束后 `canSpawnEnemy` 会重新挡住它。
-   * `enemy-availability` 的豁免在 `spawnAvailable` 里，其他永久死亡仍按原规则。
-   */
-  private spawnAllowed(spawn:WorldSpawn):boolean {
+  private outsideRespawnView(spawn:WorldSpawn,view:EnemyRespawnView|undefined):boolean {
+    if(!view||!this.staticSpawnIds.has(spawn.id)||spawn.respawn===false)return false;
+    const margin=ENEMY_RESPAWN_VIEW_MARGIN_PX;
+    return spawn.x<view.x-margin||spawn.x>view.x+view.width+margin||
+      spawn.y<view.y-margin||spawn.y>view.y+view.height+margin;
+  }
+  /** 刷新统一消费剧情资格与死亡计时；静态任务槽可以解除剧情清场留下的永久死亡。 */
+  private spawnAllowed(spawn:WorldSpawn,view?:EnemyRespawnView):boolean {
     const presence=this.spawnPresence(spawn);
     if(presence==='absent')return false;
-    if(!this.session.canRespawnEnemy(spawn)){
+    const offscreen=this.outsideRespawnView(spawn,view);
+    if(!this.session.canRespawnEnemy(spawn,offscreen)){
       // 永久死亡只在剧情移除的静态任务槽上解除；捕捉记录由清理入口继续保护。
       if(presence!=='quest'||this.session.storyWorld.visible(spawn.id)||this.session.enemyVitals(spawn.id).deadUntil!=='permanent')return false;
     }
     // 清理死亡记录只发生在刷新入口，查询保留原始记录。
-    return this.session.clearEnemyDefeat(spawn.id);
+    return this.session.clearEnemyDefeat(spawn.id,offscreen);
   }
   private recordEmptyDiagnostic(spawns:readonly WorldSpawn[]):void{
     if(this.emptyReported||this.enemies.length||!this.rawMapSpawns.length)return;

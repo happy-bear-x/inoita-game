@@ -33,8 +33,9 @@ import { BattleCharacter, type BattleCharacterState, type CharacterStatsCatalog 
 import { PartyRoster, type CompanionCatalog } from './party.ts';
 import { LootPity, type LootPityState } from './loot-pity.ts';
 
-interface EnemyState { health?:number; mana?:number; deadUntil?:number|'permanent'; capture?:{map:string;visit:number} }
+interface EnemyState { health?:number; mana?:number; deadUntil?:number|'permanent'; offscreenRespawnAt?:number; capture?:{map:string;visit:number} }
 export const DEFAULT_ENEMY_RESPAWN_MS = 60_000;
+export const OFFSCREEN_ENEMY_RESPAWN_MS = 20_000;
 
 type SessionListener = (session: Session) => void;
 type SnapshotSlot = 'questBook'|'storyWorld'|'bag'|'enemies'|'receipts'|'chests'|'groundLoot';
@@ -318,7 +319,8 @@ export class Session {
   }
   private readonly enemyStates = new Map<string, EnemyState>();
   private setEnemyState(id:string,state:EnemyState):void {
-    if(this.enemyStates.get(id)?.deadUntil!==state.deadUntil)this.enemySpawnRevisionValue++;
+    const previous=this.enemyStates.get(id);
+    if(previous?.deadUntil!==state.deadUntil||previous?.offscreenRespawnAt!==state.offscreenRespawnAt)this.enemySpawnRevisionValue++;
     // 存档快照按 `enemyRevision` 复用；每次 set 都视为一次新写入。
     this.enemyStates.set(id,state);this.enemyRevisionValue++;
   }
@@ -693,6 +695,8 @@ export class Session {
     if(!Number.isSafeInteger(restored.money)||restored.money<0||!Number.isFinite(restored.gameTimeMs)||restored.gameTimeMs<0)throw new Error('检查点金币或时间无效');
     if(!Number.isFinite(restored.resourceRecovery.elapsedMs)||restored.resourceRecovery.elapsedMs<0||!Number.isSafeInteger(restored.resourceRecovery.deadlineTick)||restored.resourceRecovery.deadlineTick<0)throw new Error('检查点恢复时钟无效');
     if(new Set(restored.enemies.map(([id])=>id)).size!==restored.enemies.length||restored.enemies.some(([id,enemy])=>!id||[enemy.health,enemy.mana].some(value=>value!==undefined&&(!Number.isFinite(value)||value<0))||enemy.deadUntil!==undefined&&enemy.deadUntil!=='permanent'&&(!Number.isFinite(enemy.deadUntil)||enemy.deadUntil<0)))throw new Error('检查点敌人状态无效');
+    if(restored.enemies.some(([,enemy])=>enemy.offscreenRespawnAt!==undefined&&
+      (!Number.isFinite(enemy.offscreenRespawnAt)||enemy.offscreenRespawnAt<0||typeof enemy.deadUntil!=='number'||enemy.offscreenRespawnAt>enemy.deadUntil||!!enemy.capture)))throw new Error('检查点敌人刷新时间无效');
     if(restored.enemies.some(([,enemy])=>enemy.capture!==undefined&&(!enemy.capture||typeof enemy.capture.map!=='string'||!enemy.capture.map||
       !Number.isSafeInteger(enemy.capture.visit)||enemy.capture.visit<0||enemy.capture.visit>restored.storyWorld.mapVisit||enemy.deadUntil!=='permanent')))throw new Error('检查点捕捉来源无效');
     if(new Set(restored.factSequences.map(([id])=>id)).size!==restored.factSequences.length||restored.factSequences.some(([id,value])=>!id||!Number.isSafeInteger(value)||value<0))throw new Error('检查点任务事实序号无效');
@@ -750,16 +754,14 @@ export class Session {
   }
   removeStoryEnemy(id:string):void {
     this.storyWorld.apply({kind:'remove',id});
-    this.setEnemyState(id,{...this.enemyStates.get(id),health:0,deadUntil:'permanent'});
+    const state={...this.enemyStates.get(id),health:0,deadUntil:'permanent' as const};
+    delete state.offscreenRespawnAt;
+    this.setEnemyState(id,state);
     this.emit();
   }
 
-  /**
-   * 只清掉这个生成槽位的永久死亡和 0 血记录，让它按满血重新生成。
-   * 只由明确豁免剧情移除的调用方使用；剧情移除本身仍留在 `storyWorld`，
-   * 任务不再进行时 `canSpawnEnemy` 会再次挡住它，永久死亡 Boss 的存档语义不变。
-   */
-  clearEnemyDefeat(id:string):boolean {
+  /** 名册在正常/视野外计时到期，或明确豁免剧情清场时，消费死亡记录并恢复满血。 */
+  clearEnemyDefeat(id:string,offscreen=false):boolean {
     const state=this.enemyStates.get(id);
     // 没有死亡记录就是已经可生成的状态（首次豁免清空后会走到这里）。
     if(!state)return true;
@@ -767,11 +769,12 @@ export class Session {
     if(state.capture)return false;
     // 只有血量/法力记录的怪仍然活着，没有死亡记录需要清。
     if(state.deadUntil===undefined)return true;
-    // 永久死亡和已经到期的普通刷新计时都可以清；未到期的计时由调用方拒绝。
+    // 永久死亡由名册的任务资格放行；普通死亡仍必须满足对应的计时。
     if(state.deadUntil!=='permanent'
-      &&(typeof state.deadUntil!=='number'||this.gameTimeMs<state.deadUntil))return false;
+      &&this.gameTimeMs<state.deadUntil&&!(offscreen&&state.offscreenRespawnAt!==undefined&&this.gameTimeMs>=state.offscreenRespawnAt))return false;
     const rest:EnemyState={...state};
     delete rest.deadUntil;
+    delete rest.offscreenRespawnAt;
     delete rest.health;
     if(Object.keys(rest).length)this.setEnemyState(id,rest);
     else this.deleteEnemyState(id);
@@ -781,12 +784,12 @@ export class Session {
     this.setEnemyState(id,{...this.enemyStates.get(id),health,mana});
   }
   /** 只读死亡刷新资格；剧情与任务的在场规则由敌人名册处理。 */
-  canRespawnEnemy(spawn:EnemySpawn|CampaignEnemyPlacement):boolean {
+  canRespawnEnemy(spawn:EnemySpawn|CampaignEnemyPlacement,offscreen=false):boolean {
     const state=this.enemyStates.get(spawn.id);
     if(state?.capture)return false;
     if(state?.deadUntil===undefined)return true;
-    if(state.deadUntil==='permanent'||this.gameTimeMs<state.deadUntil)return false;
-    return true;
+    if(state.deadUntil==='permanent')return false;
+    return this.gameTimeMs>=state.deadUntil||offscreen&&state.offscreenRespawnAt!==undefined&&this.gameTimeMs>=state.offscreenRespawnAt;
   }
   /** 类型 3 任务把低血量的怪物变成同格可交互角色，交互之后才记目标次数。 */
   weakenQuestTarget(enemyId:string,source:{id:string;map:string;x:number;y:number}):boolean {
@@ -818,7 +821,8 @@ export class Session {
       const commands:StoryCommand[]=[{type:'quest',command:{type:'fact',fact:this.nextQuestFact('defeat',spawn.enemyId,'combat')}}];
       if('activeQuest' in spawn)commands.push({type:'item-give',item:spawn.rewardItem,quantity:1});
       this.applyStoryCommands(commands);
-      this.setEnemyState(spawn.id,{deadUntil:spawn.respawn===false?'permanent':this.gameTimeMs+respawnMs});
+      this.setEnemyState(spawn.id,spawn.respawn===false?{deadUntil:'permanent'}:{
+        deadUntil:this.gameTimeMs+respawnMs,offscreenRespawnAt:this.gameTimeMs+Math.min(respawnMs,OFFSCREEN_ENEMY_RESPAWN_MS)});
       this.emit();
     });
     for (const listener of this.defeatListeners) listener(spawn.enemyId);

@@ -13,7 +13,7 @@ import {duplicateVisibleActors} from '../domain/actor-census.ts';
 import {dedupeSkillShortcuts} from '../domain/shortcut-bar.ts';
 import {migrateMercenarySkills} from '../domain/companion-progression.ts';
 import {groundLootFor} from '../domain/ground-loot.ts';
-import type {Session} from '../domain/session.ts';
+import {DEFAULT_ENEMY_RESPAWN_MS,OFFSCREEN_ENEMY_RESPAWN_MS,type Session} from '../domain/session.ts';
 
 export interface SavedGameContent {
   campaign:Campaign;world:WorldIndex;storyClasses:StoryClassCatalog;items:ItemCatalog;
@@ -91,6 +91,11 @@ function stageHasDuplicateActors(stage:unknown):boolean {
  * 如果带重复演员，丢弃舞台快照，让剧情从当前节点继续而不是拒绝整份存档。
  */
 const SAVE_UPGRADES:Record<number,SaveUpgrade>={
+  57:game=>{
+    for(const [,enemy] of game.session.enemies)if(typeof enemy.deadUntil==='number'&&Number.isFinite(enemy.deadUntil)&&enemy.deadUntil>=0&&!enemy.capture)
+      enemy.offscreenRespawnAt=Math.max(0,enemy.deadUntil-DEFAULT_ENEMY_RESPAWN_MS+OFFSCREEN_ENEMY_RESPAWN_MS);
+    game.format=58;
+  },
   56:(game,content)=>{migrateSharedSkillUnlocks(game,content);game.format=57;},
   55:(game,content)=>{
     for(const member of game.session.party?.members??[]){

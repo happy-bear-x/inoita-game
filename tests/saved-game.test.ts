@@ -22,6 +22,18 @@ function record(index=0){
   return captureSaveGame(session,world,saveSummary(session,{id:map.id,name:map.name},{name:character.name,portrait:'assets/ui/menus/character-kiyan.png'}));
 }
 
+test('format 57 preserves normal respawn deadlines and derives offscreen deadlines without changing the source',()=>{
+  const saved=record();saved.format=57;
+  saved.session.enemies=[['waiting',{deadUntil:90_000}],['elapsed',{deadUntil:30_000}],
+    ['permanent',{deadUntil:'permanent'}],['alive',{health:123}]];
+  const before=structuredClone(saved),candidate=prepareSavedGame(saved,content);
+  assert.deepEqual(candidate.session.enemyVitals('waiting'),{deadUntil:90_000,offscreenRespawnAt:50_000});
+  assert.deepEqual(candidate.session.enemyVitals('elapsed'),{deadUntil:30_000,offscreenRespawnAt:0});
+  assert.deepEqual(candidate.session.enemyVitals('permanent'),{deadUntil:'permanent'});
+  assert.deepEqual(candidate.session.enemyVitals('alive'),{health:123});
+  assert.deepEqual(saved,before);
+});
+
 test('format 50 merges party loot pity without losing the best progress',()=>{
   const saved=record();
   saved.format=50;
@@ -453,7 +465,7 @@ test('format 56 turns bound books and mercenary unlocks into shared knowledge wi
   const future=candidate.session.party!.recruit(candidate.session.bag.entries.find(entry=>entry.item==='mercenary-emblem-black-knight')!.id,()=>0).member;
   assert.equal(future.skills.available(learned),true);assert.equal(future.skills.available(bound),true);
   const current=captureSaveGame(candidate.session,candidate.world,saved.summary),again=prepareSavedGame(current,content).session;
-  assert.equal(current.format,57);assert.equal(again.party!.hasSharedSkill(bound),true);
+  assert.equal(current.format,SAVE_FORMAT);assert.equal(again.party!.hasSharedSkill(bound),true);
   assert.deepEqual(again.party!.get(member.id)!.skills.pointsState(),member.skills.pointsState());
 });
 

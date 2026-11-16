@@ -3350,7 +3350,7 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
     this.app.session.advanceCombatFrames(delta,frame=>{
       this.combatantsCache=undefined;
       // 名册按逻辑帧刷新；最多晚一帧（约 60ms）出现，不再每渲染帧全量扫描生成点。
-      this.consumeRosterChanges(this.roster.refresh());
+      this.consumeRosterChanges(this.roster.refresh(this.scene.cameras?.main?.worldView));
       this.conditions.update(LOGIC_FRAME_MS,tick=>this.periodicTick(tick));
       if(this.focusTargetId&&!this.conditions.canTarget(this.focusTargetId)){this.focusTargetId=undefined;this.scene.refreshCombatTarget();}
       for(const id of this.activeParty){

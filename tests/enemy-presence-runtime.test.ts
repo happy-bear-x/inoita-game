@@ -45,8 +45,8 @@ function restoredTurtles(){
   const roster=new WorldEnemyRoster(session,map,[],52,new QuestEnemyWatch(session,drops.questItems));
   return {session,roster};
 }
-function combat(session:Session,roster:WorldEnemyRoster,enemyId=turtleId,next=map){
-  const placed=roster.enemies.find(enemy=>enemy.enemyId===enemyId)!;
+function combat(session:Session,roster:WorldEnemyRoster,enemyId=turtleId,next=map,key?:string){
+  const placed=roster.enemies.find(enemy=>enemy.enemyId===enemyId&&(key===undefined||enemy.key===key))!;
   assert.ok(placed);
   const definition=battle.enemies.find(enemy=>enemy.id===enemyId)!;
   const visual={actor:definition.actor,container:{active:true,x:placed.x,y:placed.y,disableInteractive(){}}};
@@ -127,6 +127,21 @@ test('quest completion invalidates same-frame candidates and delayed hits while 
   session.enterMap('other-map');
   const returning=new WorldEnemyRoster(session,map,[],52,new QuestEnemyWatch(session,drops.questItems));
   assert.equal(returning.isPresent(enemy.key),true,'换图回来仍按有效任务生成');
+});
+
+test('quest-restored enemies accelerated outside view can be hit and settle each new life exactly once',t=>{
+  t.mock.method(Math,'random',()=>0);
+  const {session,roster}=restoredTurtles();
+  const first=combat(session,roster),key=first.enemy.key;
+  first.strike(100000);first.host.pendingDefeats.complete(key,false);roster.refresh();
+  session.advanceGameTime(20_000);
+  assert.ok(roster.refresh({x:-10000,y:-10000,width:100,height:100}).added.some(enemy=>enemy.key===key));
+  const second=combat(session,roster,turtleId,map,key),before=second.health()!;
+  second.strike(100);assert.equal(second.health(),before-100);
+  second.strike(100000);second.strike(100000);
+  second.host.pendingDefeats.complete(key,false);second.host.pendingDefeats.complete(key,false);
+  assert.equal(second.loot.filter(reward=>reward.item==='meadow-turtle-s-shell').length,1);
+  assert.equal(session.questBook.factSequence('combat'),2);
 });
 
 test('presence queries leave expired deaths intact until the roster refresh consumes them',()=>{

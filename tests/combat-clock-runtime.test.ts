@@ -6,6 +6,8 @@ import test from 'node:test';
 import {Session} from '../src/domain/session.ts';
 import {CombatConditions} from '../src/domain/combat-conditions.ts';
 import type { Campaign } from '../src/domain/campaign.ts';
+import {WorldEnemyRoster} from '../src/domain/world-enemies.ts';
+import type {WorldMap} from '../src/domain/content.ts';
 
 const phaser=registerHooks({resolve(specifier,context,next){
   return specifier==='phaser'?{url:'data:text/javascript,export default {BlendModes:{},Scene:class{},Physics:{Arcade:{Body:class{}}}}',shortCircuit:true}:next(specifier,context);
@@ -27,7 +29,7 @@ function fixture(){
     scene:{canCombatControl:true,time:{now:0},events:{emit:()=>{}},refreshCombatTarget:()=>{},refreshCombatHud:(value:unknown)=>shown.push(value)},
     get cooldowns(){return session.cooldowns.forActor('player').snapshot();},
     activeParty:['player','ally'],controlledId:'player',syncedControlledId:'player',nextPartySyncAt:Infinity,shouldSyncParty:()=>false,dealtDamage:new Set(),
-    roster:{refresh:()=>({removed:[],added:[]})},
+    roster:{refresh:():ReturnType<WorldEnemyRoster['refresh']>=>({removed:[],added:[]})},
     memberOf:(id:string)=>['player','ally'].includes(id)?{player:{health:1}}:undefined,
     syncCombatResourceLimits:()=>{},syncAiSkills:()=>{},syncBuffLoops:()=>{},syncStateMarkers:()=>{},syncFocusRings:()=>{},
     consumeRosterChanges:()=>{},isPartyWiped:()=>false,suspendPartyActions:()=>{},stopEnemies:()=>{},
@@ -58,6 +60,22 @@ test('world combat advances the clock without painting the shortcut HUD itself',
   assert.equal(run.session.combatTick,2);
   assert.deepEqual(run.session.cooldowns.forActor('player').snapshot(),{},'冷却到点后由场景的统一刷新读取最新快照');
   assert.deepEqual(run.shown,[],'WorldCombat 只推进逻辑帧，快捷栏绘制交给 WorldScene');
+});
+
+test('scene respawn uses main-camera map coordinates and stops both deadlines while paused',()=>{
+  const map={id:'respawn-clock-test',enemySpawns:[{id:'resident',enemyId:'enemy-cave-bat',x:100,y:100}]} as WorldMap;
+  for(const sampling of [1,2,3]){
+    const run=fixture(),roster=new WorldEnemyRoster(run.session,map,[],1),spawn=roster.spawns[0]!;
+    // 画布尺寸随采样变化；名册必须收到主镜头已经换算好的地图范围。
+    Object.assign(run.host.scene,{scale:{width:200*sampling,height:200*sampling},
+      cameras:{main:{worldView:{x:1000,y:1000,width:200,height:200}}}});
+    run.host.roster=roster;
+    run.session.enemyDefeated(spawn);roster.refresh();run.session.advanceGameTime(19_940);
+    run.update(60_000,false);
+    assert.equal(run.session.nowMs,19_940);assert.equal(roster.enemies.length,0);
+    run.update(60);
+    assert.equal(roster.isPresent(spawn.id),true);
+  }
 });
 
 test('scene removal clears enemy cooldowns while checkpoint visual replacement preserves restored records',()=>{
