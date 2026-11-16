@@ -5,7 +5,7 @@
 ## 文件
 
 - 布局：`bag-layout.ts`（背包格位）、`skill-book-layout.ts`（技能书页的图标格与右栏）、`choice-layout.ts`（选项竖排）、`control-layout.ts`（控件键位）、`item-layout.ts`（物品格与货币）、`shop-layout.ts`（商店两栏）、`quest-popup-layout.ts`（任务窗）、`description-text-layout.ts`（说明断行）、`text-layout.ts`（通用换行）、`cloud-save-layout.ts`（云存档页状态、颜色与几何）、`changelog-layout.ts`（标题页更新日志弹窗与可视窗口）、`portrait-fit.ts`（头像等比裁剪）、`viewport.ts`（屏幕尺寸、安全区、画布采样倍率与参考分辨率；`screenRectToCanvas` 将菜单预览的屏幕矩形交给游戏画布）。
-- 文本与样式：`text-style.ts`（共用字体）、`text-prompt.ts`（系统键盘输入，用于存档改名）、`cloud-credentials-input.ts`（云存档页内嵌的账号/密码输入框）、`password-change-prompt.ts`（修改密码的当前/新/确认三项表单）、`dialogue-text.ts`（对白分页、断行与逐字显示）、`item-detail-lines.ts`（物品说明行）、`skill-detail-lines.ts`（技能说明行）、`item-result-details.ts`（操作结果说明）、`enhancement-odds-lines.ts`（强化结果句与混沌结果表）、`item-name-color.ts`（品质颜色与装备格边框）、`character-values.ts`（角色数值）。
+- 文本与样式：`text-style.ts`（共用字体）、`text-prompt.ts`（系统键盘输入，用于存档改名）、`number-prompt.ts`（商店数量与能力点数字输入卡，负责范围校验和红色提示）、`cloud-credentials-input.ts`（云存档页内嵌的账号/密码输入框）、`password-change-prompt.ts`（修改密码的当前/新/确认三项表单）、`dialogue-text.ts`（对白分页、断行与逐字显示）、`item-detail-lines.ts`（物品说明行）、`skill-detail-lines.ts`（技能说明行）、`item-result-details.ts`（操作结果说明）、`enhancement-odds-lines.ts`（强化结果句与混沌结果表）、`item-name-color.ts`（品质颜色与装备格边框）、`character-values.ts`（角色数值）。
 - 接口与交互：`game-ui.ts`（UI 能力与视图接口）、`story-ui.ts`（剧情与菜单 UI 的接口、页面枚举和提示文案）、`story-ui-signature.ts`（菜单页面 viewModel 与显式签名）、`save-page.ts`（存档/读档页 controller）、`action-press-gate.ts`（动作按钮互斥）、`common-button.ts`（通用按钮素材）、`instant-message.ts`（屏幕提示）、`quest-progress.ts`（任务完成/进度提示的纯函数）、`slot-frame.ts`（格子底图）。
 - DOM 组件：`dom/node.ts`、`dom/surface.ts` 提供菜单图片、文本、按钮、裁剪、滚动与原生指针；`dom/volume-slider.ts` 提供音量条。
 - DOM 文字：`dom/dom-ui.ts`（标签创建、层与坐标换算）、`dom/menu-text.ts`（菜单页、滚动与裁剪）。
@@ -25,6 +25,8 @@
 - `story-ui.ts` 的长按加点与背包拖放接收窗口原生移动、松手、取消和失焦事件；正文重绘后仍能结束手势。侧边按钮按实际内容节点判断是否已创建。
 - `story-ui.ts` 只在 `attach` 时向 `app.inputRouter` 注册一个 `menu` 作用域，菜单打开时独占键盘；场景不再单独订阅 `keydown`。
 - 游戏菜单切换页签时复用顶部导航按钮、图标和文字，只更新选中状态与页面正文；存读档确认框打开和取消时保留底层列表；物品操作弹层的打开、取消和数量变化保留背景页面，数量变化只更新数量文字。
+- **背包的滚动位置和物品详情只属于一次进入。** 离开背包页或关闭菜单时清掉选中物品、使用结果以及背包和详情滚动缓存，重新进入从第一行开始；页内切换分类仍回顶部，切换队员和数据刷新仍保留滚动位置。
+- **数字输入卡负责范围校验。** 商店数量与能力点输入共用 `number-prompt.ts`：只收数字，超限标红并禁用确定，非法值不写回。输入卡打开时菜单键盘让路，Escape/Enter 由卡片挂在 `document` 上的监听处理，焦点不在输入框时也能取消或提交；打开卡片前先停掉仍按着的加减长按。
 - **页面 controller 拥有这一页的状态和操作。** `save-page.ts` 是存档/读档页的样板：确认框、改名输入、读写请求和 Escape 分层都在 controller 里，`StoryUI` 负责路由、生命周期、共享输入和页面装配；各面板负责各自的局部更新。后续拆分页面时沿用同一方向。
 - **每个菜单页面都有显式签名。** 页面 viewModel 与签名集中在 `story-ui-signature.ts`：用 `page`、`selectedMemberId`、`bag.revision`、`questBook.version`、`party` 形状、技能版本、存档槽摘要、设置值和面板自己的 `viewModel()` 拼出来，不做对象深度哈希。新增 `Page` 必须同时在 `STORY_MENU_PAGES` 和签名分支里补上；会话通知只在该页签名变化时重绘，数据没变不重绘。
 - 设置页操作只更新选中状态、数值和对应动作，保留滚动区与其它控件；并列显示 30 / 60 帧上限并标出当前选择；上限切换立即生效并保留本机选择，帧率显示是独立开关。画面精度并列显示 1× / 2× / 3×，默认 1×，实际倍率不超过本机设备像素比，切换立即重配画布。帧率、暴击光效、纹理批次和画面精度等画面偏好统一放在游戏内设置页；标题页环境设置只保留音量与全屏。
