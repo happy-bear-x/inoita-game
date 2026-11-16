@@ -725,9 +725,9 @@ export class ShopPanel {
       {image:this.catalog.assets['count-left'],pressed:this.catalog.assets['count-left-pressed'],disabled:selection.quantity<=1,hold:QUANTITY_HOLD});
     const plus=v.button('',field.x+step.right,field.y,step.width,step.height,()=>this.stepQuantity(1),
       {image:this.catalog.assets['count-right'],pressed:this.catalog.assets['count-right-pressed'],disabled:selection.quantity>=maximum,hold:QUANTITY_HOLD});
-    this.addModal('shop-quantity-count',String(selection.quantity),box.count.x,box.count.y,30,box.count.color);
+    this.addModal('shop-quantity-count',String(selection.quantity),box.count.x+box.count.width/2,box.count.y+box.count.height/2,30,box.count.color,.5,.5,{width:box.count.width,align:'center'});
     // 数量数字本身也是入口：点它打开数字输入卡，两侧箭头继续做小步调整。
-    v.button('',214,field.y,90,field.height,()=>this.beginQuantityInput(selection),{bare:true}).setData('label','输入数量');
+    v.button('',box.count.x,box.count.y,box.count.width,box.count.height,()=>this.beginQuantityInput(selection),{bare:true}).setData('label','输入数量');
     v.textPlate(this.catalog.assets['text-plate-left'],this.catalog.assets['text-plate-right'],box.textPlate.x,box.textPlate.y,box.textPlate.width);
     this.quantityButtons={minus,plus};
     this.money(v,total,box.money.x,box.money.y,'shop-quantity-money',true);

@@ -187,12 +187,13 @@ test('shop layout keeps the native panel geometry',()=>{
   assert.deepEqual(DESCRIPTION_PANEL.scroll,{x:20,y:60,width:358,height:258});
   assert.deepEqual(DESCRIPTION_PANEL.close,{x:381,y:-6,size:67},'原版 349，本作右移到贴住右上角');
   assert.deepEqual(DESCRIPTION_PANEL.menu.offsets[1],126);
-  // 数量框的内容按原版摆：图标在计数区左侧，数量左对齐于其右侧，金额与文本底板左端对齐。
+  // 数量行依次为图标、减箭头、数量、加箭头。
   const quantity=tradeLayout.quantity;
   // 黑底是 `GRPX_FillRect(x+35, y+35, 宽−70, 高−70)`，不是九宫格边框的内区。
   assert.deepEqual(quantity.plate,{x:35,y:35,width:380,height:280});
-  assert.deepEqual(quantity.icon,{x:150,y:47,size:64});
-  assert.deepEqual(quantity.count,{x:233,y:56,color:'#e2cb9e'});
+  assert.ok(quantity.icon.x+quantity.icon.size<quantity.field.x);
+  assert.equal(quantity.count.x,quantity.field.x+quantity.step.width);
+  assert.equal(quantity.count.x+quantity.count.width,quantity.field.x+quantity.step.right);
   assert.deepEqual(quantity.textPlate,{x:63,y:168,width:323});
   assert.deepEqual(quantity.money,{x:63,y:165});
   // 确认框按原版 `UIPopupMsg_SetLayout` 定高：`max(文本高, 235) + 115`，
@@ -471,12 +472,14 @@ test('trade follows the native steps: description, quantity box, then confirmati
   assert.ok(itemIcon,'数量框画了物品图标');
   assert.deepEqual([itemIcon.width,itemIcon.height],[icon.size,icon.size]);
   const arrows=surface.calls.filter(call=>call.kind==='button'&&String((call.options as Record<string,unknown>|undefined)?.image??'').includes('count-'));
-  assert.deepEqual(arrows.map(call=>[call.x,call.y,call.width,call.height]),[[95,50,51,58],[95+209,50,51,58]]);
-  // 数量左对齐于计数区右侧、米色；金额与 323 宽的文本底板左端对齐。
+  assert.deepEqual(arrows.map(call=>[call.x,call.y,call.width,call.height]),[[field.x,field.y,step.width,step.height],[field.x+step.right,field.y,step.width,step.height]]);
+  // 数量与箭头垂直居中，文字和输入热区共用矩形。
   const count=texts.modal.find(spec=>spec.key==='shop-quantity-count')! as
     {x:number;y:number;style:{color?:string;anchorX?:number}};
-  assert.deepEqual([count.y,count.style.color],[56,'#e2cb9e']);
-  assert.deepEqual([count.style.anchorX],[0]);
+  assert.deepEqual([count.x,count.y,count.style.color],[tradeLayout.quantity.count.x+tradeLayout.quantity.count.width/2,field.y+field.height/2,'#e2cb9e']);
+  assert.equal(count.style.anchorX,.5);
+  const input=surface.calls.find(call=>call.kind==='button'&&call.node?.getData('label')==='输入数量')!;
+  assert.deepEqual([input.x,input.y,input.width,input.height],[tradeLayout.quantity.count.x,field.y,tradeLayout.quantity.count.width,field.height]);
   const moneyPlate=surface.calls.find(call=>call.kind==='textPlate'&&call.x===textPlate.x&&call.y===textPlate.y)!;
   assert.equal(moneyPlate.width,323);
   assert.deepEqual([boxButton(surface,'确定').x,boxButton(surface,'确定').y,boxButton(surface,'确定').width,boxButton(surface,'确定').height],

@@ -66,3 +66,5 @@ npm test -- tests/control-layout.test.ts tests/native-message-layout.test.ts
 - 调试发放道具或金币时更新数量和结果文字，保留道具网格与按钮。
 
 - 调试状态操作只更新受影响的数值、标记和按钮状态；异步上报返回时只影响仍打开的状态页。
+
+- 商店数量行按物品图标、减箭头、居中数量、加箭头排列；数量文字与输入热区共用 `shop-layout.ts` 的矩形。
