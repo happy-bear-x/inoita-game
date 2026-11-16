@@ -84,19 +84,43 @@ test('every story equipment item is rejected by bag grants and ground pickups be
   }
 });
 
-test('story equipment can be worn for a scene and is removed instead of returned to the bag',()=>{
-  const bag=new Bag(()=>{},items,'dark-knight');
-  const normalHead=Object.keys(items.items).find(id=>items.items[id].equipment?.slot==='head'&&!items.items[id].equipment?.locked)!;
-  const mask=bag.addEquipped('disguise-mask','head','player','dark-knight');
-  assert.equal(bag.equipmentItems().head,'disguise-mask');bag.verifyConsistency();
-  bag.add(normalHead);bag.equip(bag.entries.find(entry=>entry.item===normalHead)!.id,'head');
-  assert.equal(bag.get(mask),undefined);assert.equal(bag.entries.some(entry=>storyEquipment.has(entry.item)),false);
-  bag.verifyConsistency();
-  const second=bag.addEquipped('disguise-mask','head','player','dark-knight');bag.unequip('head');
-  assert.equal(bag.get(second),undefined);bag.verifyConsistency();
-  const third=bag.addEquipped('disguise-mask','head','player','dark-knight');
-  const invalid=bag.captureState();delete invalid.worn.head;
-  invalid.allCells.push(third);invalid.pouches.armor.push(third);
+test('every worn story item rejects manual removal and replacement for the hero and companions',()=>{
+  for(const owner of ['player','story-member'])for(const item of storyEquipment){
+    let notifications=0;const bag=new Bag(()=>notifications++,items,'dark-knight'),slot=items.items[item].equipment!.slot;
+    const worn=bag.addEquipped(item,slot,owner,'dark-knight');
+    const normal=Object.keys(items.items).find(id=>{const rule=items.items[id].equipment;return rule&&!rule.locked&&rule.slot===slot&&rule.classes.includes('dark-knight');})!;
+    assert.ok(normal,`存在对应槽位的普通装备：${item}`);bag.add(normal);
+    const replacement=bag.entries.find(entry=>entry.item===normal)!,before=bag.captureState(),count=notifications;
+    assert.match(bag.unequipProblem(slot,owner)!,/剧情专属装备/);
+    assert.throws(()=>bag.planUnequip(slot,owner),/剧情专属装备/);
+    assert.throws(()=>bag.unequip(slot,owner),/剧情专属装备/);
+    assert.match(bag.equipProblem(replacement.id,slot,owner,'dark-knight')!,/剧情专属装备/);
+    assert.throws(()=>bag.equip(replacement.id,slot,owner,'dark-knight'),/剧情专属装备/);
+    assert.deepEqual(bag.captureState(),before);assert.equal(notifications,count);
+    bag.unequipForStory(slot,owner);
+    assert.equal(bag.get(worn),undefined);assert.ok(bag.get(replacement.id));bag.verifyConsistency();
+  }
+});
+
+test('equipment changes cannot indirectly displace story weapons in either hand',()=>{
+  const bag=new Bag(()=>{},items,'warrior');
+  bag.addEquipped('dagger','main-hand','player','warrior');
+  const off=bag.addEquipped('the-promised-sword','off-hand','player','warrior');
+  bag.add('basic-greatsword');const greatsword=bag.entries.find(entry=>entry.item==='basic-greatsword')!;
+  const before=bag.captureState();
+  assert.throws(()=>bag.unequip('main-hand'),/剧情专属装备/);
+  assert.throws(()=>bag.equip(greatsword.id,'main-hand'),/剧情专属装备/);
+  assert.deepEqual(bag.captureState(),before);assert.ok(bag.get(off));
+  const other=new Bag(()=>{},items,'dark-knight');
+  other.addEquipped('dragon-tooth-2','main-hand','player','dark-knight');other.add('basic-shield');
+  const shield=other.entries.find(entry=>entry.item==='basic-shield')!,snapshot=other.captureState();
+  assert.throws(()=>other.equip(shield.id,'off-hand'),/剧情专属装备/);
+  assert.deepEqual(other.captureState(),snapshot);
+});
+
+test('bag restoration rejects loose story equipment while preserving the currently worn instance',()=>{
+  const bag=new Bag(()=>{},items,'dark-knight'),id=bag.addEquipped('disguise-mask','head','player','dark-knight');
+  const invalid=bag.captureState();delete invalid.worn.head;invalid.allCells.push(id);invalid.pouches.armor.push(id);
   assert.throws(()=>bag.restoreState(invalid),/剧情专属装备不能放入背包/);
   assert.equal(bag.equipmentItems().head,'disguise-mask');
 });

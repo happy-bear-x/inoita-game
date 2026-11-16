@@ -1448,6 +1448,25 @@ test('rings fill the first empty ring slot and ask which one to replace when bot
   assert.equal(f.session.bag.equipment['accessory'], third.id, '替换动作只改用户选择的槽位');
 });
 
+test('story equipment disables manual removal, replacement and drag-to-equip while story commands still remove it',async t=>{
+  const f=fixture();t.after(f.cleanup);f.hero.addExperience(Number.MAX_SAFE_INTEGER);
+  const equip={type:'equip',member:'player',item:'disguise-mask',slot:'head',create:true,ifPresent:false} as const;
+  f.session.applyStoryCommands([equip]);
+  const mask=f.session.bag.equipment.head!,headName=panels.equipmentSlots.find(slot=>slot.id==='head')!.name;
+  const normal=Object.keys(items.items).find(id=>{const rule=items.items[id].equipment;return rule?.slot==='head'&&!rule.locked&&rule.classes.includes('dark-knight');})!;
+  const replacement=f.add(normal);
+  f.menu.debugDescribe(mask);assert.equal(f.scene.button('卸下').input!.enabled,false);
+  await assert.rejects(f.app.changeEquipment!(undefined,'head',undefined,'player'),/剧情专属装备/);
+  assert.equal(f.session.bag.equipment.head,mask);
+  f.menu.debugDescribe(replacement.id);assert.equal(f.scene.button('装备').input!.enabled,false);
+  f.scene.click(f.scene.button('关闭'));f.menu.show('bag');
+  f.scene.press(f.scene.button(items.items[normal].name));f.scene.hold();f.scene.pointAt(f.scene.button(headName));
+  f.scene.input.activePointer.isDown=false;f.scene.input.emit('pointerup',f.scene.input.activePointer);
+  await Promise.resolve();assert.equal(f.session.bag.equipment.head,mask);assert.ok(f.session.bag.get(replacement.id));
+  f.session.applyStoryCommands([{type:'unequip-destroy',member:'player',item:'disguise-mask',ifPresent:false}]);
+  assert.equal(f.session.bag.equipment.head,undefined);assert.equal(f.session.bag.get(mask),undefined);
+});
+
 test('bag drags onto an equipment slot only equip what the selected member can use', async t => {
   const f = fixture(); t.after(f.cleanup); f.hero.addExperience(Number.MAX_SAFE_INTEGER);
   const dragTo = (id: string, label = '主手') => {

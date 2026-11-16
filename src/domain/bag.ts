@@ -525,12 +525,20 @@ export class Bag {
       // 双手主手被清掉后，副手武器同样失去「单手主武器」前提。
       if(rule.dualWield&&!next['main-hand'])return { problem:'请先装备一件单手主武器' };
     }
+    if(!allowLocked){const problem=this.equipmentChangeProblem(next,owner);if(problem)return {problem};}
     return { next };
   }
-  private planEquipStep(id: string, slot: EquipmentSlot, owner: string, classId: string, level?: number): { next?: Equipment; problem?: string } {
+
+  private equipmentChangeProblem(next:Equipment,owner:string):string|undefined{
+    for(const [slot,id] of Object.entries(this.equipmentFor(owner))){
+      if(id&&next[slot as EquipmentSlot]!==id&&this.catalog.items[this.instances.get(id)!.item]?.equipment?.locked)
+        return '剧情专属装备只能由剧情移除';
+    }
+  }
+  private planEquipStep(id: string, slot: EquipmentSlot, owner: string, classId: string, level?: number, forStory=false): { next?: Equipment; problem?: string } {
     const entry=this.instances.get(id);
     if(!entry || this.cellOf(id)<0)return { problem:'该物品不能装备在此位置' };
-    return this.equipStep(entry,slot,owner,classId,level);
+    return this.equipStep(entry,slot,owner,classId,level,forStory);
   }
   planEquip(id: string, slot: EquipmentSlot, owner = 'player', classId = this.classId, level?: number): Equipment {
     const step=this.planEquipStep(id,slot,owner,classId,level);
@@ -538,16 +546,36 @@ export class Bag {
     return step.next!;
   }
   planUnequip(slot: EquipmentSlot, owner = 'player'): Equipment {
+    const step=this.planUnequipStep(slot,owner);
+    if(step.problem)throw new Error(step.problem);
+    return step.next!;
+  }
+
+  unequipProblem(slot:EquipmentSlot,owner='player'):string|undefined{return this.planUnequipStep(slot,owner).problem;}
+  /** 剧情命令可以移除剧情装备；玩家操作使用 planUnequip / unequip。 */
+  unequipForStory(slot:EquipmentSlot,owner='player'):void{
+    const step=this.planUnequipStep(slot,owner,true);
+    if(step.problem)throw new Error(step.problem);
+    this.commitEquipment(step.next!,owner);
+  }
+  private planUnequipStep(slot:EquipmentSlot,owner:string,forStory=false):{next?:Equipment;problem?:string}{
     const current=this.equipmentFor(owner);
-    if(!current[slot])throw new Error('此装备槽为空');
+    if(!current[slot])return {problem:'此装备槽为空'};
     const next={...current};delete next[slot];
-    if(slot==='main-hand'&&next['off-hand']) {
+    if(slot==='main-hand'&&next['off-hand']){
       const off=this.catalog.items[this.instances.get(next['off-hand']!)!.item];
       if(off.equipment?.dualWield)delete next['off-hand'];
     }
-    return next;
+    const problem=forStory?undefined:this.equipmentChangeProblem(next,owner);
+    return problem?{problem}:{next};
   }
   equip(id: string, slot: EquipmentSlot, owner = 'player', classId = this.classId, level?: number): void { this.commitEquipment(this.planEquip(id,slot,owner,classId,level),owner); }
+
+  equipForStory(id:string,slot:EquipmentSlot,owner='player',classId=this.classId,level?:number):void{
+    const step=this.planEquipStep(id,slot,owner,classId,level,true);
+    if(step.problem)throw new Error(step.problem);
+    this.commitEquipment(step.next!,owner);
+  }
   unequip(slot: EquipmentSlot, owner = 'player'): void { this.commitEquipment(this.planUnequip(slot,owner),owner); }
   private commitEquipment(next: Equipment, owner = 'player'): void {
     const oldIds=new Set(Object.values(this.equipmentFor(owner))), newIds=new Set(Object.values(next));

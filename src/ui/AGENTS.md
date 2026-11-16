@@ -167,3 +167,5 @@ npm test -- tests/bag-layout.test.ts tests/choice-layout.test.ts
 - 调试状态操作保留原按钮与布局，异步上报结果只写回仍有效的页面。
 
 - 进入或退出商店清理模式保留货架、背包滚动区与未变化的装备格，清理工具单独显示和释放。
+
+- 剧情专属装备的卸下按钮按 `Bag.unequipProblem` 禁用；替换按钮与拖拽共用背包装备判定，保护当前穿戴的专属装备。

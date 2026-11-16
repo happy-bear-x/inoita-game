@@ -45,7 +45,8 @@ test('format 58 clears loose story equipment and its references while preserving
   assert.equal(candidate.session.captureState().groundLoot.drops.some(drop=>drop.id==='story-ground'),false);
   const current=captureSaveGame(candidate.session,candidate.world,saved.summary);
   assert.equal(current.format,59);prepareSavedGame(current,content).session.bag.verifyConsistency();
-  candidate.session.bag.unequip('head');assert.equal(candidate.session.bag.get(wornId),undefined);
+  assert.throws(()=>candidate.session.bag.unequip('head'),/剧情专属装备/);
+  candidate.session.bag.unequipForStory('head');assert.equal(candidate.session.bag.get(wornId),undefined);
 });
 
 test('format 57 preserves normal respawn deadlines and derives offscreen deadlines without changing the source',()=>{

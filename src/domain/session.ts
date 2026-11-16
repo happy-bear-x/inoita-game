@@ -1190,7 +1190,7 @@ export class Session {
         .map(([slot])=>[slot as import('./items.ts').EquipmentSlot,bag.equipmentFor(command.member)[slot as import('./items.ts').EquipmentSlot]] as const);
       for(const [slot,id] of targets) {
         if(!id)continue;
-        if(bag.equipmentFor(command.member)[slot]===id)bag.unequip(slot,command.member);
+        if(bag.equipmentFor(command.member)[slot]===id)bag.unequipForStory(slot,command.member);
         if(bag.get(id))bag.take(id,1);
       }
       return;
@@ -1201,12 +1201,12 @@ export class Session {
       const classId=actor?.classId??(command.member==='player'?this.character?.classId:undefined),level=actor?.player.level??fallback?.level;
       if(!classId)throw new Error('剧情装备拥有者不存在');
       if(command.create){
-        if(bag.equipmentFor(command.member)[command.slot])bag.unequip(command.slot,command.member);
+        if(bag.equipmentFor(command.member)[command.slot])bag.unequipForStory(command.slot,command.member);
         bag.addEquipped(command.item,command.slot,command.member,classId,level);return;
       }
       const entry=bag.entries.find(entry=>entry.item===command.item);
       if(!entry)throw new Error('剧情指定装备不在背包中');
-      bag.equip(entry.id,command.slot,command.member,classId,level);
+      bag.equipForStory(entry.id,command.slot,command.member,classId,level);
     }
   }
   private captureStoryCommandBaseline(touched:ReadonlySet<AtomicSubsystem>):StoryCommandBaseline {

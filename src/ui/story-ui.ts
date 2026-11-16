@@ -2212,7 +2212,7 @@ export class StoryUI {
   /** 底部操作行的内容与次序照原版 `UIEquip_SetDescMenu`：先装备态动作，再使用，最后丢弃。 */
   private bagMenu(entry:ItemInstance,worn?:EquipmentSlot):BagMenuAction[]{
     const bag=this.session!.bag,item=bag.catalog.items[entry.item],actions:BagMenuAction[]=[];
-    if(worn)actions.push({label:'卸下',run:()=>void this.changeEquipment(undefined,worn)});
+    if(worn)actions.push({label:'卸下',disabled:!!bag.unequipProblem(worn,this.selectedMemberId),run:()=>void this.changeEquipment(undefined,worn)});
     else{
       const member=this.member()!;
       const slots=bag.equippableSlots(entry.id,this.selectedMemberId,member.classId,member.level);

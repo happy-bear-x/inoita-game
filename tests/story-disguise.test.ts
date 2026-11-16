@@ -24,6 +24,18 @@ test('native disguise creates locked equipment, preserves displaced gear, and de
   if(original)assert.equal(session.itemCount(original),1);
   assert.equal(session.storyWorld.actorAppearance('story-eara-e221699c'),'story-eara-e221699c-disguise-mask');
   const checkpoint=session.captureState();session.restoreState(checkpoint);
+  const worn=session.captureState();
+  for(const member of ['player',olaf.id])assert.throws(()=>session.bag.unequip('head',member),/剧情专属装备/);
+  assert.deepEqual(session.captureState(),worn);
+  session.applyStoryCommands(commands('event-103'));
+  assert.equal(session.bag.equipmentItems().head,'disguise-mask','剧情仍能替换正在穿戴的专属装备');
+  hero.addExperience(Number.MAX_SAFE_INTEGER);
+  const head=Object.keys(items.items).find(id=>{const rule=items.items[id].equipment;return rule?.slot==='head'&&!rule.locked&&rule.classes.includes(hero.classId);})!;
+  session.bag.add(head);
+  session.applyStoryCommands([{type:'equip',member:'player',slot:'head',item:head,create:false,ifPresent:false}]);
+  assert.equal(session.bag.equipmentItems().head,head,'剧情也能用背包已有装备替换专属装备');
+  assert.equal(session.itemCount('disguise-mask'),0);
+  session.applyStoryCommands(commands('event-103'));
   session.applyStoryCommands(commands('event-108'));
   assert.equal(session.bag.equipmentItems().head,undefined);
   assert.equal(session.bag.equipmentItems(session.bag.equipmentFor(olaf.id)).head,undefined);
