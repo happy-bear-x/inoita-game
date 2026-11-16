@@ -203,6 +203,9 @@ test('a save past the minotaur scene drops the stale fishcake everywhere',()=>{
   assert.ok(!state.groundLoot.drops.some(drop=>drop.reward.kind==='item'&&drop.reward.item==='special-fishcake'),'地面掉落一起清掉');
   for(const [,row] of state.bag.shortcuts)assert.ok(!row.some(slot=>slot?.kind==='item'&&slot.id==='special-fishcake'),'快捷栏不再指向已清理的道具');
   assert.deepEqual(saved,before,'旧档修复不改写槽里的原件');
+  const second=prepareSavedGame(saved,content),secondState=second.session.captureState();
+  assert.equal(second.session.bag.count('special-fishcake'),0,'同一旧档连续读两次仍然干净');
+  assert.ok(!secondState.groundLoot.drops.some(drop=>drop.reward.kind==='item'&&drop.reward.item==='special-fishcake'),'第二次读取不会从原档恢复地面掉落');
 });
 
 test('a save before the minotaur scene keeps its fishcake',()=>{

@@ -412,6 +412,20 @@ test('opening the allocation input stops a running hold and Escape still closes 
   assert.equal(f.internals.page,'status','菜单保持打开');
 });
 
+test('allocation input closes on pagehide and when the menu closes',t=>{
+  const f=fixture();t.after(f.cleanup);f.hero.addExperience(f.hero.player.nextLevelExperience);
+  f.menu.show('status');f.scene.click(f.scene.button('查看属性加点'));
+  const root=()=>domWindow.children[0]!.children.find(node=>String(node.className).includes('number-prompt'));
+  f.scene.click(f.scene.button('输入力量加点'));
+  assert.ok(root(),'输入卡已打开');
+  domWindow.dispatchEvent(new Event('pagehide'));
+  assert.equal(root(),undefined,'pagehide 关闭输入卡');
+  f.scene.click(f.scene.button('输入力量加点'));
+  assert.ok(root());
+  f.menu.close();
+  assert.equal(root(),undefined,'关闭菜单摘掉输入卡');
+});
+
 test('holding an allocation arrow keeps adding points until released',t=>{
   const f=fixture();t.after(f.cleanup);f.hero.addExperience(f.hero.player.nextLevelExperience);
   f.menu.show('status');f.scene.click(f.scene.button('查看属性加点'));
@@ -2117,6 +2131,50 @@ test('shop quantity can be typed and stops above the money limit',async t=>{
   assert.equal((f.internals.shopPanel as any).selection.quantity,3,'输入值写回数量框');
   f.scene.click(f.scene.button('确定'));f.scene.click(f.scene.button('确定'));
   assert.equal(f.session.bag.count(offer.instance.item),before+3);
+});
+
+test('shop skips quantity at zero money and when only one is affordable',t=>{
+  const f=fixture();t.after(f.cleanup);
+  f.menu.openShop('merchandise-dealer-b09d9585','');
+  const store=f.internals.shopPanel!.store,offer=store.offers.find(value=>!value.limited&&items.items[value.instance.item].stackable)!;
+  const item=items.items[offer.instance.item],price=store.buyPrice(offer.id),before=f.session.bag.count(offer.instance.item);
+  assert.ok(price>0);
+  const openBuy=()=>{f.scene.click(f.scene.buttons(`购买 ${item.name}`)[0]!);f.scene.click(f.scene.button('购买'));};
+  openBuy();
+  assert.equal(f.scene.buttons('输入数量').length,0,'买不起时没有数量步骤');
+  assert.ok(visibleDomLabels(f).some(label=>label.text==='金币不足'));
+  assert.equal(f.scene.canHit(f.scene.button('确定')),false,'金币不足时确定不可用');
+  f.scene.click(f.scene.button('取消'));
+  f.session.gainMoney(price);
+  openBuy();
+  assert.equal(f.scene.buttons('输入数量').length,0,'只能买 1 件时直接确认');
+  assert.equal(f.scene.canHit(f.scene.button('确定')),true);
+  f.scene.click(f.scene.button('确定'));
+  assert.equal(f.session.bag.count(offer.instance.item),before+1);
+  assert.equal(f.session.money,0);
+});
+
+test('shop sell quantity can be typed and the card closes with the menu',t=>{
+  const f=fixture();t.after(f.cleanup);
+  const entry=f.add('healing-potion-s',3),item=items.items[entry.item],count=f.session.bag.count(entry.item),money=f.session.money;
+  f.menu.openShop('merchandise-dealer-b09d9585','');
+  const root=()=>domWindow.children[0]!.children.find(node=>String(node.className).includes('number-prompt'));
+  const openSell=()=>{f.scene.click(f.scene.button(`出售 ${item.name}`));f.scene.click(f.scene.button('出售'));};
+  openSell();f.scene.click(f.scene.button('输入数量'));
+  assert.ok(root(),'出售数量输入卡已打开');
+  const find=(node:any,predicate:(node:any)=>boolean):any=>
+    predicate(node)?node:[...node.children].map((child:any)=>find(child,predicate)).find(Boolean);
+  const input=find(root(),node=>node.inputMode==='numeric');
+  input.value='2';input.dispatchEvent(new Event('input',{bubbles:true}));
+  input.parentElement!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
+  assert.equal((f.internals.shopPanel as any).selection.quantity,2,'出售数量写回');
+  f.scene.click(f.scene.button('确定'));f.scene.click(f.scene.button('确定'));
+  assert.equal(f.session.bag.count(entry.item),count-2);
+  assert(f.session.money>money);
+  openSell();f.scene.click(f.scene.button('输入数量'));
+  assert.ok(root());
+  f.menu.close();
+  assert.equal(root(),undefined,'关闭菜单摘掉商店输入卡');
 });
 
 test('shop inventory quantity badges move with the scrolled grid', t => {
