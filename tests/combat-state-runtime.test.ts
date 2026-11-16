@@ -48,7 +48,7 @@ test('scene movement checks distinguish root from disabled actions and failed se
   const conditions=new CombatConditions();conditions.applyState('ally','immobilized',1000);
   const host={conditions,controlledId:'ally',controlledMember:{player:{health:10}},defeated:false};
   assert.equal(method('playerCannotMove').call(host),true);assert.equal(method('playerCannotAct').call(host),false);
-  method('selectEnemy').call({pendingDefeats:new Set(),combat:{selectTarget:()=>false},
+  method('selectEnemy').call({pendingDefeats:new Set(),isUnavailableEnemyTarget:()=>false,combat:{selectTarget:()=>false},
     focusTarget:()=>assert.fail('failed selection set focus'),scene:{refreshCombatTarget:()=>assert.fail('failed selection changed HUD')}},'hidden');
 });
 

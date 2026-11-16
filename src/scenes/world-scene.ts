@@ -2047,6 +2047,9 @@ export class WorldScene extends Phaser.Scene {
       globalThis.storyDiagnostics?.record('checkpoint-skipped-no-survivor',{map:this.map!.id});
       return false;
     }
+    // 检查点里不能留着 0 血、又没有死亡记录的敌人；先把死亡单结算掉。
+    // 普通快照（调试/GM/剧情基线）保持只读，剧情基线在 prepare 阶段已由 normalizeForStory 冲刷。
+    this.combat.settleForSnapshot();
     if(!this.app.checkpoint.capture(this.app.session,{map:this.map!.id,...this.movement!.position(this.player!)},this.captureStoryWorld()))return false;
     this.checkpointPending=false;
     return true;
@@ -2303,6 +2306,8 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
         if(!hasLivingParty(checkpoint.session))throw new Error('检查点里没有可战斗的队员');
         const signal=this.app.storySignal??this.request.signal;
         signal.throwIfAborted();this.resetInput();this.app.director.cancel();
+        // 回滚前放弃旧战斗的死亡单：旧场景稍后销毁时的结算不能写进还原后的会话。
+        this.combat?.discardPendingDefeats();
         const world=checkpoint.world.world?{...checkpoint.world,world:prepareCombatRestore(checkpoint.world.world,this.app.battleCatalog,checkpoint.session.party?.slots.filter((id):id is string=>!!id)??[])}:checkpoint.world;
         this.app.session.restoreState(checkpoint.session);
         await this.restoreStoryWorld(world,signal);

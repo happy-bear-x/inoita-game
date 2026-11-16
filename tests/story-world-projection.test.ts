@@ -185,7 +185,7 @@ test('a story checkpoint records a fallback when a story encounter is waiting an
   let captures=0;
   const player={},position={x:10,y:20};
   const scene=Object.setPrototypeOf({
-    map:{id:'home',name:'Home'},player,movement:{position:()=>position},combat:{},
+    map:{id:'home',name:'Home'},player,movement:{position:()=>position},combat:{settleForSnapshot(){}},
     captureStoryWorld:()=>({location:{map:'home',x:position.x,y:position.y,facing:'south'},generatedEntities:[]}),
     app:{session:{hasWaitingStoryRun:true,hasLivingMember:true},
       checkpoint:{available:false,capture(){captures++;return true;}}},

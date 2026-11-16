@@ -75,7 +75,7 @@ function fixture(action=skillAction(),basic?:ResolvedBasicAttack){
     hero:member,conditions,hitResolution:resolution,fallen,pendingDefeats:new PendingEnemyDefeats(),
     partyControllers:new Map(),partySkills:new Map(),soundedSkills:new WeakSet(),allies:[],
     arena:['enemy','other'].map(key=>({key,definition:catalog.enemies[0],visual:visuals.get(key)})),
-    app:{battleCatalog:catalog,session:{cooldowns:new CombatCooldownStore(()=>0),skills:configuration,party:{controlledId:'player'},isOneHitKill:()=>false},audio:{effect:(name:string)=>order.push(`sound:${name}`),
+    app:{battleCatalog:catalog,items:{dualWieldClasses:[]},session:{cooldowns:new CombatCooldownStore(()=>0),skills:configuration,party:{controlledId:'player'},isOneHitKill:()=>false},audio:{effect:(name:string)=>order.push(`sound:${name}`),
       playerSkill:()=>order.push('automatic-sound')}},
     scene:{facing:'east',refreshCombatTarget:()=>{},refreshSkillCooldowns:()=>{},
       events:{emit:(name:string)=>{if(name.startsWith('basic-attack-'))order.push(name);}}},
@@ -88,6 +88,7 @@ function fixture(action=skillAction(),basic?:ResolvedBasicAttack){
     enemyFighter:(id:string)=>conditions.fighter(id,base),equipmentAttack:()=>basic,
     canSelectSkill:()=>true,skillManaCost:()=>0,
     roster:{enemySnapshot:(id:string)=>({...base,health:enemyHealth.get(id),mana:0,maxMana:0}),
+      hasZeroHealth:(id:string)=>enemyHealth.get(id)===0,
       setEnemyHealth:(id:string,value:number)=>enemyHealth.set(id,value)},
     resolveHitReactions:()=>react(),showHit:(event:{targetId:string})=>order.push(`damage:${event.targetId}`),dropMana:()=>{},
     memberDefeated:(id:string)=>{

@@ -104,7 +104,7 @@ test('combat entry creates enemies once when loading a checkpoint',async()=>{
       const placed:unknown[]=[],groups:unknown[]=[];
       Object.assign(host,{
         prepareRestoredSkills:async()=>{},enemyAssets:()=>[],combatRuntime:{reset(){}},
-        pendingDefeats:{clear(){}},summonAwareness:undefined,combatEffects:{clear(){}},buffLoops:{clear(){}},
+        pendingDefeats:{clear(){},keys(){return [];}},summonAwareness:undefined,combatEffects:{clear(){}},buffLoops:{clear(){}},
         presenterFor:()=>undefined,deathTweens:new Map(),fallen:new Set(),clearEnemies(){},
         roster:{enemies:[],restoreState(state:any){this.enemies=state.enemies;},setPartySize(size:number){partySizes.push(size);}},
         conditions:{restoreState(){}},syncControlled(){},visualOf:()=>undefined,arena:[],

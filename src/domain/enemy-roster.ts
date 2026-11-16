@@ -5,6 +5,8 @@ import type { PlacedEnemy, EnemyDefinition } from './battle.ts';
 /** 管理地图敌人及召唤物的实例状态。 */
 export class EnemyRoster {
   enemies: PlacedEnemy[] = [];
+  /** 原始血量正好为 0 的实例；选敌查询走这个集合，不再逐敌 find 全名单。 */
+  private readonly zeroHealth = new Set<string>();
   private enemySeq = 0;
   private currentPartySize = 1;
   private enemyListeners = new Set<()=>void>();
@@ -13,10 +15,16 @@ export class EnemyRoster {
     return {enemies:structuredClone(this.enemies),sequence:this.enemySeq,partySize:this.currentPartySize};
   }
   restoreState(state:{enemies:PlacedEnemy[];sequence:number;partySize:number}):void{
-    this.enemies=structuredClone(state.enemies);this.enemySeq=state.sequence;this.currentPartySize=state.partySize;this.notifyEnemies();
+    this.enemies=structuredClone(state.enemies);this.enemySeq=state.sequence;this.currentPartySize=state.partySize;
+    this.zeroHealth.clear();
+    for(const enemy of this.enemies)if(enemy.health===0)this.zeroHealth.add(enemy.key);
+    this.notifyEnemies();
   }
   subscribeEnemies(listener:()=>void):()=>void { this.enemyListeners.add(listener);return ()=>{this.enemyListeners.delete(listener);}; }
   private notifyEnemies():void { for(const listener of this.enemyListeners)listener(); }
+  private trackZeroHealth(key:string,health:number|undefined):void {
+    if(health===0)this.zeroHealth.add(key);else this.zeroHealth.delete(key);
+  }
   /** 登记一个敌人并分配实例标识。 */
   placeEnemy(enemyId: string, x: number, y: number): PlacedEnemy {
     const placed: PlacedEnemy = { key: `enemy-${++this.enemySeq}`, enemyId, x, y };
@@ -25,10 +33,13 @@ export class EnemyRoster {
   /** Restore a world spawn with its stable instance key and saved resources. */
   restoreEnemy(placed:PlacedEnemy):void {
     if(this.enemies.some(enemy=>enemy.key===placed.key))return;
-    this.enemies.push({...placed});this.notifyEnemies();
+    this.enemies.push({...placed});
+    this.trackZeroHealth(placed.key,placed.health);
+    this.notifyEnemies();
   }
   /** 移出名单；外观由场景负责销毁。 */
   removeEnemy(key: string): void {
+    this.zeroHealth.delete(key);
     if(!this.enemies.some(enemy=>enemy.key===key))return;
     this.enemies = this.enemies.filter(enemy => enemy.key !== key);this.notifyEnemies();
   }
@@ -52,13 +63,17 @@ export class EnemyRoster {
     const {id,name,level,sceneLevel:usesSceneLevel,health,maxHealth}=snapshot;
     return {id,name,level,sceneLevel:usesSceneLevel,health,maxHealth,specialRank:definition.specialRank??0};
   }
+  /** 原始血量是否正好为 0；未写入过血量表示满血。 */
+  hasZeroHealth(key:string):boolean {
+    return this.zeroHealth.has(key);
+  }
   setEnemyHealth(key:string,value:number,definition:EnemyDefinition):void {
     const placed=this.enemies.find(enemy=>enemy.key===key&&enemy.enemyId===definition.id);
     const snapshot=this.enemySnapshot(key,definition);
     if(!placed||!snapshot)return;
     const health=boundedHealth(value,snapshot.maxHealth);
-    if(health===snapshot.health)return;
-    placed.health=health;this.notifyEnemies();
+    if(health===snapshot.health){this.trackZeroHealth(key,health);return;}
+    placed.health=health;this.trackZeroHealth(key,health);this.notifyEnemies();
   }
   setEnemyMana(key:string,value:number,definition:EnemyDefinition):void {
     const placed=this.enemies.find(enemy=>enemy.key===key&&enemy.enemyId===definition.id);
@@ -81,7 +96,7 @@ export class EnemyRoster {
       return {placed,health:placed.health===undefined?undefined:
         Math.max(minimumHealth,Math.trunc(before.health*maxHealth/before.maxHealth))};
     });
-    this.currentPartySize=size;for(const {placed,health} of changes)placed.health=health;
+    this.currentPartySize=size;for(const {placed,health} of changes){placed.health=health;this.trackZeroHealth(placed.key,health);}
     this.notifyEnemies();
   }
 }
