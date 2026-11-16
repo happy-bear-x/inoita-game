@@ -9,10 +9,41 @@ import type {Campaign} from '../src/domain/campaign.ts';
 import type {ItemCatalog} from '../src/domain/items.ts';
 import type {BattleCatalog} from '../src/domain/battle.ts';
 import {emptyShortcutRow} from '../src/domain/shortcut-bar.ts';
+import {validateCompanions} from '../src/application/content-validation.ts';
+import type {WorldIndex} from '../src/domain/content.ts';
+import {plainDescription} from '../src/domain/description-text.ts';
+import {skillLearningParts} from '../src/ui/skill-detail-lines.ts';
 
 const read=<T>(name:string):T=>JSON.parse(readFileSync(new URL(`../public/content/${name}.json`,import.meta.url),'utf8'));
 const stats=read<CharacterStatsCatalog>('character-stats'),items=read<ItemCatalog>('items'),battle=read<BattleCatalog>('battle'),
   companions=read<CompanionCatalog>('companions'),campaign=read<Campaign>('campaign');
+
+test('story companion next skill requirement matches automatic growth and respects the cap',()=>{
+  const skill='firestorm',progression=new CompanionSkillProgression({[skill]:4},companions.generation.training);
+  progression.updateLevel(87);
+  assert.equal(progression.skillLevels()[skill],3);
+  const next=progression.nextAutomaticLevel(skill);
+  assert.equal(next,88);
+  assert.match(plainDescription(skillLearningParts('火焰风暴',3,undefined,next)),/学习级别： LV 88/);
+  progression.updateLevel(88);
+  assert.equal(progression.skillLevels()[skill],4);
+  assert.equal(progression.nextAutomaticLevel(skill),undefined);
+  assert.equal(progression.book(skill,battle),5);
+  assert.equal(progression.nextAutomaticLevel(skill),undefined);
+  progression.unlockSkill('sword-of-hell',battle);
+  assert.equal(progression.nextAutomaticLevel('sword-of-hell'),undefined);
+});
+
+test('companion training rejects levels outside the character range',()=>{
+  const catalog=structuredClone(companions);
+  catalog.definitions={};
+  const training=catalog.generation.training['firestorm'];
+  training.requiredLevels[training.requiredLevels.length-1]=stats.maxLevel+1;
+  assert.throws(()=>validateCompanions(catalog,{} as WorldIndex,battle,stats),/伙伴技能成长等级超出角色等级范围/);
+  training.requiredLevels[training.requiredLevels.length-1]=88;
+  training.requiredLevels[0]=0;
+  assert.throws(()=>validateCompanions(catalog,{} as WorldIndex,battle,stats),/伙伴技能成长等级超出角色等级范围/);
+});
 function fixture(highLevel=true){
   const hero=new BattleCharacter('dark-knight',stats,items);
   if(highLevel)hero.addExperience(Number.MAX_SAFE_INTEGER);

@@ -1735,7 +1735,7 @@ export class StoryUI {
     if(level<maximum&&skill.ranks[level]){
       drawDescriptionSeparator(v,0,y+5,353,detail.content);y+=20;
       const learning=this.descriptionLayout(v,skillLearningParts(skill.name,level,progression?.learningRequirements(skill.id),
-        companion&&!progression?skill.ranks[level].requiredCharacterLevel:undefined),353,22);
+        companion&&!progression?companion.skills.nextAutomaticLevel(skill.id):undefined),353,22);
       this.addDescriptionText('skill-learn',learning,565,71,353,22,'description',clip,y);
       y+=learning.height+12;
       skillNextLevelPreview(skill.ranks,level,skill.kind,maximum,skill.display).forEach((row,index)=>{

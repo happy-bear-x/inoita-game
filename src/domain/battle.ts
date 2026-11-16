@@ -361,7 +361,6 @@ export interface SkillDisplayRow {
 export interface SkillRank {
   level: number;
   manaCost: number;
-  requiredCharacterLevel: number;
   pointCost: number;
   investedSkillPoints?: number;
   /** 作者态详情；构建产物里会被 display/displayValues 取代。 */

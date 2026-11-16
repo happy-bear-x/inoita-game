@@ -163,6 +163,7 @@ export function validateCompanions(catalog:CompanionCatalog,world:WorldIndex,bat
   for(const [id,skill] of Object.entries(catalog.generation.training)){
     requireValue(battle.classes.find(entry=>entry.id===skill.classId)?.skills.includes(id),id,'佣兵成长技能不存在');
     requireValue(skill.requiredLevels.length===skill.maxLevel&&skill.maxLevel<=battle.skills[id].normalMaxLevel,id,'佣兵技能成长不完整');
+    requireValue(skill.requiredLevels.every(level=>level>=1&&level<=stats.maxLevel),id,'伙伴技能成长等级超出角色等级范围');
     requireValue(skill.requiredLevels.every((level,index)=>index===0||level>skill.requiredLevels[index-1]),id,'佣兵技能成长等级需要递增');
   }
   for(const [id,emblem] of Object.entries(catalog.generation.emblems))requireValue(emblem.qualityWeights.length===4&&emblem.qualityWeights.reduce((sum,value)=>sum+value,0)===100,id,'徽章品质概率需要合计100');
@@ -952,7 +953,7 @@ const enemyAttributes=shape<EnemyAttributes>({maxMana:integer,physicalAttack:int
 const feedback=shape<CombatFeedbackDefinition>({digits:object({enemy:strings,enemyCritical:strings,party:strings,partyCritical:strings,miss:strings}),normalImpacts:strings,skillImpact:text,criticalImpact:text,criticalRing:text,criticalBursts:strings,missEffect:text,shakeOffsets:array(object({x:number,y:number}))});
 const skillDetail=object({label:text,value:text,kind:optional(oneOf('mana','cooldown','effect')),effectIndex:optional(integer),valueSpacing:optional(boolean),zeroValue:optional(text),valueParts:optional(descriptionParts)});
 const skillDisplayRow=object({label:text,kind:optional(oneOf('mana','cooldown','effect')),effectIndex:optional(integer),valueSpacing:optional(boolean),template:text,decimals:integer,highlight:boolean,zeroText:text});
-const skillRank=object({level:positive,manaCost:integer,requiredCharacterLevel:positive,pointCost:positive,investedSkillPoints:optional(integer),
+const skillRank=object({level:positive,manaCost:integer,pointCost:positive,investedSkillPoints:optional(integer),
   details:optional(array(skillDetail)),displayValues:optional(array(number))});
 const skillGrowthFields={requiredInvestedSkillPoints:optional(integer),ranks:array(skillRank),display:optional(array(skillDisplayRow)),
   action:nullable(skillAction),followUpAction:optional(skillAction),passiveUnits:optional(array(passiveUnit)),reactionsByRank:optional(array(array(skillReaction)))};
@@ -1216,7 +1217,6 @@ export function parseBattle(value:unknown,wardrobe?:WardrobeCatalog):BattleCatal
         requireValue(skill.normalMaxLevel<=skill.ranks.length,id,'技能普通等级上限无效');
         for(const [index,rank] of skill.ranks.entries()){
           requireValue(rank.level===index+1,id,'技能等级必须连续');
-          requireValue(index===0||rank.requiredCharacterLevel>=skill.ranks[index-1].requiredCharacterLevel,id,'技能角色等级门槛无效');
           if(rank.investedSkillPoints!==undefined)requireValue(rank.investedSkillPoints>=(index?skill.ranks[index-1].investedSkillPoints??0:0),id,'技能累计投入值必须递增');
           for(const detail of rank.details??[]){
             if(detail.effectIndex!==undefined)requireValue(detail.kind==='effect'&&detail.effectIndex<3,id,'技能效果行标识无效');

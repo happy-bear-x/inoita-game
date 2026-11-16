@@ -141,6 +141,13 @@ export class CompanionSkillProgression extends SkillConfiguration {
       .map(id=>[id,(this.pointState.allocations[id]??0)+(this.bookLevels[id]??0)]));
     return {...this.levels,...this.unlocked};
   }
+  nextAutomaticLevel(id:string):number|undefined{
+    if(this.manual||this.unlocked[id]!==undefined)return undefined;
+    const cap=this.caps[id];
+    if(cap===undefined)return undefined;
+    const natural=(this.levels[id]??0)-(this.bookLevels[id]??0);
+    return natural<cap?this.training[id]?.requiredLevels[natural]:undefined;
+  }
   private skill(id:string){
     const skill=this.context?.catalog?.skills[id],character=this.context?.catalog?.classes.find(value=>value.id===this.context?.classId);
     if(!skill||!character?.skills.includes(id))throw new Error('请选择本职业的技能');

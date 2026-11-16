@@ -82,6 +82,7 @@ npm run test:standalone
 - `party-follow.test.ts` 按连续移动推进角色，覆盖墙内站位、拐角、赶路、拉扯与离队边界和预算等待；跟随验收统计实际位移和拉回次数。
 
 - `mercenary-skills.test.ts`、`mercenary-skill-unlocks.test.ts`、存档和菜单测试覆盖佣兵手动加点、主角学习规则、招募上限、解锁资格、技能书突破、免费初始化、旧档补点与成员隔离；战斗缓存测试验证初始化只清理对应成员。主角初始化继续验证初始技能和快捷栏恢复。
+- `mercenary-skills.test.ts` 同时验证剧情伙伴自动成长提示与实际升级一致，以及成长门槛不超过角色等级范围。
 
 - `story-scene`、`story-stage-isolation` 与 `saved-game` 覆盖主角收放武器的正常/跳过路径、同图保留、地图重载恢复默认和上一版存档迁移。
 
