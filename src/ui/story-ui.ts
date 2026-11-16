@@ -1464,6 +1464,8 @@ export class StoryUI {
 
   /** 点属性数值打开输入卡；确定后一次性改这项的本轮投入。 */
   private beginAllocationInput(stat:PrimaryStat):void{
+    // 另一根手指可能还按着「+/-」；打开输入卡前先停掉后台连加，避免读到的上限马上过期。
+    this.allocationHeld=false;this.stopAllocationHold();this.allocationHoldSource=undefined;
     const allocation=this.allocation,member=this.member();
     if(this.busy||!allocation||!member)return;
     const character=this.app.storyClasses.classes.find(value=>value.id===member.classId);

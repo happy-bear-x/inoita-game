@@ -33,6 +33,19 @@ export class NumberPrompt {
     this.form.style.top=`${(viewport?.offsetTop ?? 0)+height/2}px`;
   };
 
+  /** Escape/Enter 挂在 document 上：焦点移到按钮或卡片外时也能退出和提交。 */
+  private readonly keydown=(event:KeyboardEvent)=>{
+    if(!this.root)return;
+    if(event.key==='Escape'){event.preventDefault();event.stopPropagation();this.cancel();return;}
+    if(event.key!=='Enter')return;
+    event.preventDefault();event.stopPropagation();
+    if(this.problem(this.value())){
+      this.input?.focus();
+      return;
+    }
+    this.confirm();
+  };
+
   get active():boolean { return !!this.root; }
 
   show(options:NumberPromptOptions):void {
@@ -94,12 +107,9 @@ export class NumberPrompt {
       }
       validate();
     });
-    input.addEventListener('keydown',event=>{
-      if(event.key==='Escape'){event.preventDefault();event.stopPropagation();this.cancel();return;}
-      if(event.key==='Enter'){event.preventDefault();event.stopPropagation();if(!validate())this.confirm();}
-    });
     form.addEventListener('submit',event=>{event.preventDefault();if(!validate())this.confirm();});
     cancel.addEventListener('click',()=>this.cancel());
+    if(typeof document!=='undefined'&&typeof document.addEventListener==='function')document.addEventListener('keydown',this.keydown,true);
     if(typeof window!=='undefined'&&typeof window.addEventListener==='function'){
       window.addEventListener('pagehide',this.cancelOnHide,{once:true});
       window.addEventListener('resize',this.place);
@@ -114,6 +124,7 @@ export class NumberPrompt {
 
   /** 摘掉输入框，不回调；菜单关闭或页面切走时用。 */
   close():void {
+    if(typeof document!=='undefined'&&typeof document.removeEventListener==='function')document.removeEventListener('keydown',this.keydown,true);
     if(typeof window!=='undefined'&&typeof window.removeEventListener==='function'){
       window.removeEventListener('pagehide',this.cancelOnHide);
       window.removeEventListener('resize',this.place);

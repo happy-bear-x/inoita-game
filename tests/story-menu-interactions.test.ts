@@ -395,6 +395,23 @@ test('allocation points can be typed and stop at the remaining points',t=>{
   assert.equal(allocation.remainingPoints,points);assert.equal(added(),undefined);
 });
 
+test('opening the allocation input stops a running hold and Escape still closes it',t=>{
+  const f=fixture();t.after(f.cleanup);f.hero.addExperience(f.hero.player.nextLevelExperience);
+  f.menu.show('status');f.scene.click(f.scene.button('查看属性加点'));
+  const added=()=>visibleDomLabels(f).find(label=>label.style.color==='#e1823b'&&label.text.startsWith('+'));
+  const documentRoot=domWindow.children[0]!,root=()=>documentRoot.children.find(node=>String(node.className).includes('number-prompt'));
+  f.scene.press(f.scene.button('增加力量'));f.scene.hold();
+  assert.equal(added()?.text,'+1');
+  f.scene.click(f.scene.button('输入力量加点'));
+  assert.ok(root(),'输入卡已打开');
+  f.scene.hold();
+  assert.equal(added()?.text,'+1','打开输入卡后长按不再加点');
+  const escape=new Event('keydown',{bubbles:true,cancelable:true});Object.assign(escape,{key:'Escape'});
+  documentRoot.dispatchEvent(escape);
+  assert.equal(root(),undefined,'失焦后 Escape 仍能关闭输入卡');
+  assert.equal(f.internals.page,'status','菜单保持打开');
+});
+
 test('holding an allocation arrow keeps adding points until released',t=>{
   const f=fixture();t.after(f.cleanup);f.hero.addExperience(f.hero.player.nextLevelExperience);
   f.menu.show('status');f.scene.click(f.scene.button('查看属性加点'));
@@ -2070,14 +2087,20 @@ test('buying from a shop keeps the remaining shelf and bag controls',t=>{
   if(!offer.limited)assert.equal(f.scene.buttons(`购买 ${item.name}`)[0],buy);
 });
 
-test('shop quantity can be typed and stops above the money limit',t=>{
+test('shop quantity can be typed and stops above the money limit',async t=>{
   const f=fixture();t.after(f.cleanup);
   f.menu.openShop('merchandise-dealer-b09d9585','');
   const store=f.internals.shopPanel!.store,offer=store.offers.find(value=>!value.limited&&items.items[value.instance.item].stackable)!;
   const price=store.buyPrice(offer.id),item=items.items[offer.instance.item],before=f.session.bag.count(offer.instance.item);
   f.session.gainMoney(price*3);
   f.scene.click(f.scene.buttons(`购买 ${item.name}`)[0]!);f.scene.click(f.scene.button('购买'));
+  const plus=(f.internals.shopPanel as any).quantityButtons.plus;
+  f.scene.press(plus);await new Promise(resolve=>setTimeout(resolve,380));
+  const heldQuantity=(f.internals.shopPanel as any).selection.quantity;
+  assert.ok(heldQuantity>=2,'长按已经加过数量');
   f.scene.click(f.scene.button('输入数量'));
+  await new Promise(resolve=>setTimeout(resolve,140));
+  assert.equal((f.internals.shopPanel as any).selection.quantity,heldQuantity,'打开输入卡后长按不再改数量');
   const documentRoot=domWindow.children[0]!,find=(node:any,predicate:(node:any)=>boolean):any=>
     predicate(node)?node:[...node.children].map((child:any)=>find(child,predicate)).find(Boolean);
   const root=documentRoot.children.filter(node=>String(node.className).includes('number-prompt')).at(-1)!;

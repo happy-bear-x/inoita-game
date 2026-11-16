@@ -753,6 +753,8 @@ export class ShopPanel {
 
   /** 点数量数字打开输入卡；确定后只更新数量和金额，不重画整页。 */
   private beginQuantityInput(selection:Selection):void{
+    // 打开输入卡时停掉仍按着的加减箭头，否则后台长按会继续改数量和金额。
+    this.quantityButtons?.minus.cancelPress();this.quantityButtons?.plus.cancelPress();
     if(this.selection!==selection)return;
     const buying=selection.kind==='buy',maximum=this.maximum(selection.kind),price=this.price(selection);
     this.numberPrompt.show({
