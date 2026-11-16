@@ -149,7 +149,12 @@ export class MovementWorld {
     // 会动角色保持常驻采样；静态角色只为这次移动意图临时加入，停步时先收敛再退出。
     if (this.movableRegistrations.has(registration)) return;
     // interpolation.remove 内部先用 reset 把前后采样收敛到当前脚点，再删掉采样。
-    if (this.temporaryRegistrations.delete(registration)) this.interpolation.remove(visual.container);
+    if (this.temporaryRegistrations.delete(registration)) {
+      this.interpolation.remove(visual.container);
+      // 静态内容角色可能在临时走位中换了位置；停步时同步内容桶和深度。
+      this.navigation.refreshActor(registration.actor);
+      this.writeDepth(visual);
+    }
   }
   /** 静态角色写移动意图时临时进入采样和深度更新；会动角色本来就常驻。 */
   private trackIntention(visual: CharacterVisual): Registration {

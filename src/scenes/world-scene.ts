@@ -1692,6 +1692,7 @@ export class WorldScene extends Phaser.Scene {
     const empty = this.springCatalog?.empty, actor = empty ? this.app.world.actors[empty] : undefined;
     if (!actor) throw new Error('泉水缺少喝空后的外观');
     character.actor = actor;
+    this.movement?.refreshShape(character);
     this.interactionRevision=(this.interactionRevision??0)+1;
     setCharacterClip(this, character, 'idle-south', true);
   }

@@ -89,6 +89,22 @@ test('nearby threat scan preserves candidate order when distances tie',()=>{
   assert.equal(build(true),'enemy2','附近查询必须保持同一顺序');
 });
 
+test('nearby threat scan keeps oversized boss bodies',()=>{
+  const build=(nearby:boolean)=>{
+    const run=setup();
+    run.member.position={x:32,y:32};run.leader.position={x:1000,y:1000};
+    // 脚点在 240px 外，但 400×400 的身体已经贴到成员，矩形攻击距离仍在范围内。
+    const boss:Combatant={id:'boss',team:'enemy',position:{x:240,y:32},
+      bounds:{x:-200,y:-200,width:400,height:400}};
+    run.actors.set(boss.id,boss);run.setTarget('boss','member');
+    if(nearby)enableNearby(run);
+    run.ai.update(60);
+    return run.ai.selectedTargetId();
+  };
+  assert.equal(build(false),'boss','全表扫描按矩形距离选中超大身体');
+  assert.equal(build(true),'boss','附近查询必须并入无法被脚点圆覆盖的大身体');
+});
+
 test('threat scan keeps party ids from the full candidate list',()=>{
   const run=setup();
   run.member.position={x:32,y:32};run.leader.position={x:200,y:200};

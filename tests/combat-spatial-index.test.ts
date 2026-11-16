@@ -49,6 +49,17 @@ test('spatial index matches a full scan for a deterministic set of union circles
   assert.deepEqual(index.within(circles).map(candidate => candidate.id), expected.map(candidate => candidate.id));
 });
 
+test('large bodies outside the query circle are always included', () => {
+  const boss: Combatant = { id: 'enemy-boss', team: 'hostile', position: { x: 10_000, y: 10_000 },
+    bounds: { x: -200, y: -200, width: 400, height: 400 } };
+  const candidates = [actor('party-a', 0, 0), boss, actor('enemy-b', 20, 0)];
+  const index = new CombatSpatialIndex(candidates);
+  assert.deepEqual(index.within([{ x: 0, y: 0, radius: 10 }]).map(candidate => candidate.id),
+    ['party-a', 'enemy-boss'], '脚点圆外的大型身体仍要并入，顺序按原候选数组');
+  assert.deepEqual(index.within([]), [], '没有查询圆时仍返回空集');
+  assert.deepEqual(index.within([{ x: 0, y: 0, radius: Number.NaN }]), [], '无效查询不凭空返回大型身体');
+});
+
 test('large query circles fall back to the same ordered result as a full scan', () => {
   const candidates = [actor('enemy-a', -1000, 50), actor('party-b', 0, 0), actor('enemy-c', 900, -50)];
   const index = new CombatSpatialIndex(candidates);

@@ -3,7 +3,7 @@ import type { ChestOpenResult } from './drops.ts';
 
 export const CHEST_OPEN_MS = 600;
 /** 原版实体的范围矩形是 16×16、锚在脚底（见 findings 49）。 */
-const FOOT_BOX_SIZE = 16;
+export const FOOT_BOX_SIZE = 16;
 /** `UTIL_GetRectDistance` 把两轴间隙之和右移 3 位，所以距离单位是 8 px。 */
 const RECT_DISTANCE_UNIT = 8;
 /** `GAMESTATE_PressKeyPlay` 要求 `CHAR_GetDistance` 不超过 6。 */
@@ -116,7 +116,7 @@ export function rollPlacement(entity: EntityPlacement, random: () => number): En
  * 原版挑「身边的可交互对象」用的距离（`PLAYER_DoCheckNearNPC` 0x1be0b0）：
  * 两个脚底坐标的曼哈顿距离不超过 24 px 才算身边；已经在手上的目标放宽到 25 px。
  */
-const NEAR_OBJECT_DISTANCE = 24;
+export const NEAR_OBJECT_DISTANCE = 24;
 
 /** 原版 `PLAYER_DoCheckNearNPC` 的距离判定。 */
 export function nearInteractable(from: {x:number;y:number}, target: {x:number;y:number}): boolean {

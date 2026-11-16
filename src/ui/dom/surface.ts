@@ -126,7 +126,7 @@ export class ScrollArea {
   private readonly controller=new AbortController();
   private offset=0;private extent=0;private shown=true;
   private press?:{id:number;y:number;offset:number};
-  private listeners=new Set<()=>void>();onScroll?:()=>void;moved=false;
+  onScroll?:()=>void;moved=false;
   guard=():boolean=>!this.moved&&this.visible&&this.surface.enabled()&&this.surface.root.shown;
   constructor(surface:UiSurface,x:number,y:number,width:number,height:number,bleed=0,bar?:ScrollBarOptions){
     this.surface=surface;this.x=x;this.y=y;this.width=width;this.height=height;this.bleed=bleed;
@@ -143,8 +143,7 @@ export class ScrollArea {
     this.bar=bar;this.layout();
   }
   private readonly bar?:ScrollBarOptions;
-  addScrollListener(listener:()=>void):void{this.listeners.add(listener);}
-  private scrolled():void{this.onScroll?.();for(const listener of this.listeners)listener();}
+  private scrolled():void{this.onScroll?.();}
   get visible():boolean{return this.shown;}set visible(value:boolean){this.shown=value;this.syncVisibility();}
   syncVisibility():void{const shown=this.shown&&this.surface.root.shown;this.layer.setVisible(shown);this.updateBar();if(!shown)this.cancelGesture();}
   get scrollTop():number{return this.offset;}set scrollTop(value:number){this.offset=Math.max(0,Math.min(value,Math.max(0,this.extent-this.height)));this.layout();}
@@ -155,5 +154,5 @@ export class ScrollArea {
   reveal(button:UiNode):void{const height=button.input?.hitArea.height??button.height;if(button.y<this.offset)this.scrollTop=button.y;else if(button.y+height>this.offset+this.height)this.scrollTop=button.y+height-this.height;this.scrolled();}
   layout():void{const m=this.surface.root.getWorldTransformMatrix(),p=m.transformPoint(this.x-this.bleed,this.y-this.bleed);this.layer.setPosition(p.x,p.y).setScale(m.scaleX,m.scaleY).setSize(this.width+this.bleed*2,this.height+this.bleed*2);this.content.setPosition(this.bleed,this.bleed-this.offset);this.syncVisibility();}
   private updateBar():void{const shown=this.shown&&this.surface.root.shown&&this.extent>this.height+.5;this.track.setVisible(shown);this.thumb.setVisible(shown);if(!shown)return;const m=this.surface.root.getWorldTransformMatrix(),p=m.transformPoint(this.x,this.y),scale=m.scaleX,width=Math.max(2,(this.bar?.width??4)*scale),height=Math.max(0,this.height*scale-(this.bar?.insetY??0)*scale*2),thumb=Math.min(height,Math.max(18*scale,height*this.height/this.extent)),x=p.x+this.width*scale-width-scale+(this.bar?.offset??0)*scale,y=p.y+(this.bar?.insetY??0)*scale;this.track.setPosition(x,y).setSize(width,height);this.thumb.setPosition(x,y+(height-thumb)*this.offset/(this.extent-this.height)).setSize(width,thumb);}
-  destroy():void{this.controller.abort();this.listeners.clear();this.layer.destroy();this.track.destroy();this.thumb.destroy();}
+  destroy():void{this.controller.abort();this.layer.destroy();this.track.destroy();this.thumb.destroy();}
 }

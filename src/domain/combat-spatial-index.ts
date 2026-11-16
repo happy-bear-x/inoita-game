@@ -19,7 +19,8 @@ export const CANDIDATE_QUERY_SAFETY_PX = 2;
 
 /**
  * 目标身体在脚点之外的预留半径。当前战斗内容最大的碰撞盒是 32×16，
- * 这个值连同自身身体一并计入攻击距离查询，保证不会漏掉身体先接触的目标。
+ * 这个值连同自身身体一并计入攻击距离查询。脚点外伸超过这个值的候选
+ * 由 `CombatSpatialIndex` 在每次查询中无条件并入，避免大型 Boss 被脚点圆漏掉。
  */
 export const CANDIDATE_QUERY_TARGET_BODY_PX = 64;
 
@@ -72,10 +73,14 @@ function bucketKey(cellX: number, cellY: number): number {
  * 桶只负责缩小范围，命中仍按候选脚点与查询圆的精确距离判断；
  * 多个圆重叠时用查询代号去重，结果按原候选数组下标升序返回，
  * 因此调用方看到的顺序与全表扫描完全一致。
+ *
+ * 脚点外伸超过 `CANDIDATE_QUERY_TARGET_BODY_PX` 的大型身体无法被按脚点
+ * 计算的圆可靠覆盖，每次查询都无条件并入结果，再由调用方的原有过滤决定去留。
  */
 export class CombatSpatialIndex {
   private readonly candidates: readonly Combatant[];
   private readonly buckets = new Map<number, number[]>();
+  private readonly largeBodies: number[] = [];
   private readonly marks: Uint32Array;
   private stamp = 0;
 
@@ -87,6 +92,7 @@ export class CombatSpatialIndex {
       const bucket = this.buckets.get(key);
       if (bucket) bucket.push(index);
       else this.buckets.set(key, [index]);
+      if (bodyReachFromFoot(candidate.bounds) > CANDIDATE_QUERY_TARGET_BODY_PX) this.largeBodies.push(index);
     });
   }
 
@@ -95,9 +101,11 @@ export class CombatSpatialIndex {
     if (!circles.length || !this.candidates.length) return [];
     const stamp = this.nextStamp();
     const matches: number[] = [];
+    let validCircles = 0;
     for (const circle of circles) {
       if (!Number.isFinite(circle.x) || !Number.isFinite(circle.y)
         || Number.isNaN(circle.radius) || circle.radius < 0) continue;
+      validCircles += 1;
       const minX = bucketCell(circle.x - circle.radius), maxX = bucketCell(circle.x + circle.radius);
       const minY = bucketCell(circle.y - circle.radius), maxY = bucketCell(circle.y + circle.radius);
       const radiusSquared = circle.radius * circle.radius;
@@ -114,6 +122,13 @@ export class CombatSpatialIndex {
           for (const index of bucket) this.include(index, circle, radiusSquared, stamp, matches);
         }
       }
+    }
+    if (!validCircles) return [];
+    // 大型身体不依赖查询圆：圆半径只按脚点计算，无法保证覆盖脚点外伸很远的碰撞盒。
+    for (const index of this.largeBodies) {
+      if (this.marks[index] === stamp) continue;
+      this.marks[index] = stamp;
+      matches.push(index);
     }
     matches.sort((a, b) => a - b);
     return matches.map(index => this.candidates[index]!);

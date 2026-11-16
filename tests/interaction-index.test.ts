@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
 import test from 'node:test';
+import { nearInteractive, SHOP_COUNTER_GAP } from '../src/domain/chests.ts';
 import type { CollisionBox } from '../src/domain/content.ts';
 import { InteractionTargetIndex } from '../src/scenes/interaction-index.ts';
 
@@ -92,6 +93,25 @@ test('a target covering several cells appears once in the queried cell', () => {
   const huge = subject('huge', 0, 0, { collision: { x: -64, y: -64, width: 128, height: 128 } });
   index.rebuild([huge]);
   assert.deepEqual(index.near(0, 0), [huge], '同一目标在一个桶里只登记一次');
+});
+
+test('every position accepted by nearInteractive is present in the index candidates', () => {
+  const cases: { target: FakeCharacter; x: number; y: number; reach?: number }[] = [
+    { target: subject('plain', 0, 24), x: 0, y: 0 },
+    { target: subject('shop', 0, 40, { collision: { x: -8, y: -8, width: 16, height: 16 } }),
+      x: 0, y: 0, reach: SHOP_COUNTER_GAP },
+    { target: subject('flipped', 12, 8, { collision: { x: -8, y: -8, width: 16, height: 16 } }), x: 0, y: 0 },
+    { target: subject('large', -60, 0, { collision: { x: 0, y: -20, width: 80, height: 40 } }), x: 0, y: 0 },
+  ];
+  for (const entry of cases) {
+    entry.target.entity.flip = entry.target.entity.id === 'flipped';
+    const accepted = nearInteractive({ x: entry.x, y: entry.y }, entry.target.container,
+      entry.target.actor.collision, !!entry.target.entity.flip, entry.reach);
+    assert.equal(accepted, true, `${entry.target.entity.id} 应满足 nearInteractive`);
+    const index = new InteractionTargetIndex<FakeCharacter>();
+    index.rebuild([entry.target]);
+    assert.ok(index.near(entry.x, entry.y).includes(entry.target), `${entry.target.entity.id} 应进入索引候选`);
+  }
 });
 
 test('a large collision box is indexed from the positions it can reach', () => {

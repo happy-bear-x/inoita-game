@@ -1,4 +1,4 @@
-import { SHOP_COUNTER_GAP } from '../domain/chests.ts';
+import { FOOT_BOX_SIZE, NEAR_OBJECT_DISTANCE, SHOP_COUNTER_GAP } from '../domain/chests.ts';
 import type { CollisionBox } from '../domain/content.ts';
 
 /** 参与交互检索的角色所需的最小结构；场景里的人物体也满足它。 */
@@ -14,12 +14,12 @@ export interface InteractionIndexTarget {
  */
 export const INTERACTION_CELL_SIZE = 32;
 
-/** 玩家脚底框半宽；`domain/chests.ts` 的 bodyGap 用同一个 16×16 脚底框。 */
-const PLAYER_FOOT_HALF = 8;
+/** 玩家脚底框半宽；和 `domain/chests.ts` 的 bodyGap 共用同一个脚底框尺寸。 */
+const PLAYER_FOOT_HALF = FOOT_BOX_SIZE / 2;
 /** 最宽的贴身档：商店/旅店的柜台距离，索引按它给所有目标留缓冲。 */
 const WIDEST_BODY_REACH = SHOP_COUNTER_GAP;
-/** 原版 `PLAYER_DoCheckNearNPC` 的曼哈顿距离。 */
-const NEAR_OBJECT_REACH = 24;
+/** 原版 `PLAYER_DoCheckNearNPC` 的曼哈顿距离，和 `nearInteractable` 共用。 */
+const NEAR_OBJECT_REACH = NEAR_OBJECT_DISTANCE;
 const EMPTY: readonly never[] = [];
 
 interface Bounds { left: number; right: number; top: number; bottom: number }

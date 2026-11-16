@@ -124,6 +124,9 @@ export class NavigationWorld {
   private readonly contentCells = new Map<number, NavigationActor[]>();
   /** 每个机关当前登记的格子键；刷新时先撤掉旧格，位置变化不会留下重复或过期登记。 */
   private readonly contentActorCells = new Map<NavigationActor, number[]>();
+  /** 候选去重标记：每轮查询取一个新号，同一机关跨多格只判一次；嵌套查询各自取号，不会串用。 */
+  private contentQueryStamp = 0;
+  private readonly contentQueryStamps = new WeakMap<NavigationActor, number>();
   private terrainComponents?: { cols: number; rows: number; labels: Int32Array };
   constructor(terrain: CollisionMap | { name: string; bounds: GameRectangle }) {
     this.name = terrain.name;
@@ -274,24 +277,28 @@ export class NavigationWorld {
   blockedByContent(shape: NavigationShape, point: Point, ignore?: NavigationActor): boolean {
     const box = collisionAt(shape, point);
     if (!box) return false;
-    // 查询盒覆盖的每一格都要收集，大机关可能从相邻格伸进来；同一机关占多格时只检查一次。
+    // 查询盒覆盖的每一格都要检查，大机关可能从相邻格伸进来；同一机关跨多格时用查询号去重。
+    // 查询号是本次调用的局部值，嵌套查询会取到新号，不会把外层的候选误当成已检查。
+    const stamp = ++this.contentQueryStamp;
+    let hit = false;
     const left = Math.floor(box.x / CONTENT_INDEX_CELL_SIZE);
     const right = Math.floor((box.x + box.width) / CONTENT_INDEX_CELL_SIZE);
     const top = Math.floor(box.y / CONTENT_INDEX_CELL_SIZE);
     const bottom = Math.floor((box.y + box.height) / CONTENT_INDEX_CELL_SIZE);
-    const candidates = new Set<NavigationActor>();
-    for (let row = top; row <= bottom; row++) for (let column = left; column <= right; column++) {
+    for (let row = top; row <= bottom && !hit; row++) for (let column = left; column <= right && !hit; column++) {
       const bucket = this.contentCells.get(occupancyCellKey(column, row));
-      if (bucket) for (const actor of bucket) candidates.add(actor);
+      if (!bucket) continue;
+      for (const actor of bucket) {
+        if (this.contentQueryStamps.get(actor) === stamp) continue;
+        this.contentQueryStamps.set(actor, stamp);
+        if (actor === ignore || !actor.content?.() || !actor.enabled()) continue;
+        if (ignore?.ghost?.() || actor.ghost?.()) continue;
+        if (ignore && !blocksActor(ignore, actor)) continue;
+        const other = actor.shape().collision;
+        if (other && overlapsAt(other, actor.position(), box)) { hit = true; break; }
+      }
     }
-    for (const actor of candidates) {
-      if (actor === ignore || !actor.content?.() || !actor.enabled()) continue;
-      if (ignore?.ghost?.() || actor.ghost?.()) continue;
-      if (ignore && !blocksActor(ignore, actor)) continue;
-      const other = actor.shape().collision;
-      if (other && overlapsAt(other, actor.position(), box)) return true;
-    }
-    return false;
+    return hit;
   }
   /**
    * 整组落位是否都站得住，**包括没动的那些**。判定「一次挪动之后这一组是否成立」用它。

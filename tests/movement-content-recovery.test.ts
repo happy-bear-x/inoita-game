@@ -194,6 +194,24 @@ test('a content actor spanning several buckets is checked once per query', () =>
   assert.equal(reads.get('large'), 1, '查询盒覆盖多格时，同一机关也只做一次精确判定');
 });
 
+test('nested content queries keep their own dedup marks', () => {
+  const navigation = new NavigationWorld({ name: 'index', bounds: { x: 0, y: 0, width: 128, height: 128 } });
+  const point = { x: 40, y: 40 }, box = { x: -8, y: -8, width: 16, height: 16 };
+  const query = { collision: { x: -4, y: -4, width: 8, height: 8 } };
+  const nested: boolean[] = [];
+  const trigger: NavigationActor = {
+    // 形状读取里再查同一位置，模拟热路径上的重入；忽略自己，避免无限递归。
+    shape: () => { nested.push(navigation.blockedByContent(query, point, trigger)); return { collision: box }; },
+    position: () => point, enabled: () => true, content: () => true,
+  };
+  navigation.register(trigger);
+  const blocker = contentActor('blocker', point, box, new Map());
+  navigation.register(blocker);
+  nested.length = 0;
+  assert.equal(navigation.blockedByContent(query, point), true, '嵌套查询结束后外层仍按自己的候选判定');
+  assert.deepEqual(nested, [true], '嵌套查询没有借用外层的已检查标记');
+});
+
 test('content index follows moves, unregistering and re-registering', () => {
   const navigation = new NavigationWorld({ name: 'index', bounds: { x: 0, y: 0, width: 320, height: 320 } });
   const point = { x: 40, y: 40 };
