@@ -188,7 +188,6 @@ export class WorldScene extends Phaser.Scene {
   /** 当前就绪任务是否承诺重建；让更强的重建请求不会复用只等待的任务。 */
   private readyRebuild = false;
   destroyed = false;
-  performing = false;
   /** 演出舞台已经铺满画面；正式世界这帧不更新、不渲染、物理也不步进。 */
   private stageOccluded = false;
   private readonly storyEntityAssets:AssetLease[]=[];
@@ -204,7 +203,7 @@ export class WorldScene extends Phaser.Scene {
   private refreshStateSignatureValue?:string;
   /** 上一次交互扫描的输入；逐字段比较，静止帧不拼名单。 */
   private lastInteractionScan?:{x:number;y:number;revision:number;quest:number;story:number;chests:number;
-    legendary:number;restore:number;performing:boolean;map:string;owner:string};
+    legendary:number;restore:number;map:string;owner:string};
   /** 地图角色只在投影、恢复或显隐改变时使交互结果失效。 */
   private interactionRevision=0;
   /** 地图角色集合的修订号；整图刷新摘要用它代替逐角色拼名单。 */
@@ -285,7 +284,7 @@ export class WorldScene extends Phaser.Scene {
     this.wardrobe=undefined;this.equippedActor=undefined;this.outfitRequest++;
     this.request.abort(); this.request = new AbortController();
     this.mapLayers?.destroy(); this.mapLayers = undefined;
-    this.performing = false; this.player = undefined; this.noclipVisual = undefined; this.map = undefined;
+    this.player = undefined; this.noclipVisual = undefined; this.map = undefined;
     this.options = options; this.characters = []; this.questMarkerCharacters?.clear(); this.near = null; this.loadingWorld = true; this.destroyed = false;
     // 新一代场景：上一代的重建任务立即结算，旧任务不能继续等在途的世界。
     this.readyTask = undefined; this.readyRebuild = false;
@@ -707,7 +706,7 @@ export class WorldScene extends Phaser.Scene {
       const character=this.pickupRecipients.get(id);
       if(!character?.container.active)return undefined;
       return {...this.movement!.displayPosition(character),headAnchor:character.actor.headAnchor??{x:0,y:0}};
-    },domUi:this.app.domUi,visible:()=>this.canCombatControl&&!this.performing&&!this.stageOccluded
+    },domUi:this.app.domUi,visible:()=>this.canCombatControl&&!this.stageOccluded
       &&!this.app.ui.loadingState});
     const mapNavigation = new NavigationWorld(map);
     mapNavigation.prepareTerrainRouting();
@@ -1392,14 +1391,13 @@ export class WorldScene extends Phaser.Scene {
   /** 整图角色显隐、任务标记和小地图重建只在这些输入变化时执行。 */
   private refreshStateSignature():string {
     const session=this.app.session;
-    return [this.map?.id??'',this.performing?1:0,this.combat?.controlledId??'player',this.charactersRevision,
+    return [this.map?.id??'',this.combat?.controlledId??'player',this.charactersRevision,
       session.questBook?.version??0,session.storyWorld?.revision??0,session.chests?.revision??0,
       session.legendaryWeapons?.revision??0,session.runtimeState?.sequence??0,session.restorationVersion??0,
       session.debugFocusQuest??''].join('|');
   }
   refreshState(): void {
     this.refreshLoadout();
-    this.combat?.setPerformanceActive(this.performing);
     const { session } = this.app;
     this.noticeQuestChanges();
     // 小地图创建前的那次刷新也会写签名；把「小地图是否已就绪」算进签名，
@@ -1413,7 +1411,7 @@ export class WorldScene extends Phaser.Scene {
       const opened = this.chestOpened(character), consumed = this.legendarySwordConsumed(character);
       // `actor-visibility` / `remove-character` 记在本图角色状态里；静态摆放也要立即隐藏并停碰撞。
       const present = !this.map || session.storyWorld.actorVisible(this.map.id, character.entity.actor, character.entity.characterId);
-      const visible = !this.performing && present && session.visible(character.entity) &&
+      const visible = present && session.visible(character.entity) &&
         (!opened || this.chestFades.has(character.entity.id)) && !consumed;
       character.container.setVisible(visible);
       this.movement?.setEnabled(character, visible && !opened && !consumed);
@@ -1513,12 +1511,8 @@ export class WorldScene extends Phaser.Scene {
   /** 流程接管输入时把摇杆放回中位。 */
   resetInput(): void {
     const controlled=this.combat?.controlledVisual??this.player;
-    if (controlled && this.movement) {
-      if (this.performing) this.movement.body(controlled).stop();
-      else this.movement.stop(controlled);
-    }
-    if(this.performing)this.combat?.suspendPartyActions();
-    else this.combat?.setPaused(!this.canCombatControl);
+    if (controlled && this.movement) this.movement.stop(controlled);
+    this.combat?.setPaused(!this.canCombatControl);
     this.controls?.resetInput(); this.stick?.reset(); this.syncHud();
   }
   trimTextures(): void {
@@ -1808,7 +1802,7 @@ export class WorldScene extends Phaser.Scene {
       && !this.app.ui.keyBindingEditing
       && !this.app.locked && !this.app.suspended && !this.app.director?.busy;
   }
-  get canCombatControl():boolean{return this.canControl&&!this.performing;}
+  get canCombatControl():boolean{return this.canControl;}
   /** 属性页读取当前战斗属性；战斗尚未建立时返回基础值。 */
   combatAttribute(id:string,attribute:BattleStatKey,base:number,passives:readonly PassiveModifier[]):number {
     return this.combat?.effectiveAttribute(id,attribute,base,passives)??base;
@@ -1834,7 +1828,7 @@ export class WorldScene extends Phaser.Scene {
         move: moveState,
       };
     }
-    return { map: this.map?.id, loading: this.loadingWorld, performing: this.performing,
+    return { map: this.map?.id, loading: this.loadingWorld,
       scene: { time: this.time.now, active: this.sys.isActive(), paused: this.sys.isPaused() },
       suspended: this.app.suspended, locked: this.app.locked, directorBusy: !!this.app.director?.busy,
       canControl: this.canControl, canCombatControl: this.canCombatControl,
@@ -2148,8 +2142,8 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
       // 人物装备由正式世界的 Wardrobe 重建；地图实体外观是可重新加载的静态资源。
       if(actor.appearance){character.actor=structuredClone(actor.appearance);this.movement.refreshShape(character);}
       this.setClip(character,`idle-${actor.facing}`);
-      character.container.setAlpha(actor.alpha??1).setVisible(actor.visible&&!this.performing);
-      placements.push({visual:character,position:{x:actor.x,y:actor.y},enabled:actor.visible&&!this.performing});
+      character.container.setAlpha(actor.alpha??1).setVisible(actor.visible);
+      placements.push({visual:character,position:{x:actor.x,y:actor.y},enabled:actor.visible});
     }
     this.movement.placeAll(placements,{evictOccupied:true,displaceable:this.player?[this.player]:[]});
     this.interactionRevision=(this.interactionRevision??0)+1;
@@ -2337,7 +2331,7 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     this.statusHud?.setVisible(backgroundVisible);
     this.overheadStatus?.setVisible(backgroundVisible);
     this.app.domUi?.setLayerVisible('hud', backgroundVisible);
-    this.app.domUi?.setLayerVisible('world', backgroundVisible && !this.performing && !this.stageOccluded);
+    this.app.domUi?.setLayerVisible('world', backgroundVisible && !this.stageOccluded);
     const target = this.near?.container.visible ? this.near : null;
     // 敌人数值只在逻辑帧里变化；同一战斗帧的多个渲染帧复用同一份目标状态。
     const tick=this.app.session?.combatTick,actorId=target?.entity.id??'';
@@ -2357,11 +2351,11 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     this.nameBanner?.sync(backgroundVisible, target ? target.entity.name || target.actor.name : null);
     // 方法同时承担「状态变化后立即同步」和「逐帧兜底」两种调用；决定文字与按钮的状态
     // 归一成摘要，摘要在变才写这些较贵的对象，逐帧调用就只剩几次只读检查。
-    const signature=`${enabled}|${this.performing}|${target?.entity.id??''}|${hostile}|${targetStatus?`${targetStatus.id}|${targetStatus.name}|${targetStatus.level}|${targetStatus.health}/${targetStatus.maxHealth}|${targetStatus.sceneLevel}`:''}`;
+    const signature=`${enabled}|${target?.entity.id??''}|${hostile}|${targetStatus?`${targetStatus.id}|${targetStatus.name}|${targetStatus.level}|${targetStatus.health}/${targetStatus.maxHealth}|${targetStatus.sceneLevel}`:''}`;
     if(signature===this.hudSignature)return;
     this.hudSignature=signature;
     for (const tween of this.chestFades.values()) {
-      if (enabled && !this.performing) tween.resume(); else tween.pause();
+      if (enabled) tween.resume(); else tween.pause();
     }
     this.controls?.setAttack(enabled && (!!target||hostile), false);
     this.statusHud?.setTarget(targetStatus);
@@ -2398,17 +2392,16 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     const chests=session.chests?.revision??0;
     const legendary=session.legendaryWeapons?.revision??0;
     const restore=session.restorationVersion??0;
-    const performing=!!this.performing;
     const map=this.map?.id??'';
     const owner=this.combat?.controlledId??'player';
     const scan=this.lastInteractionScan??(this.lastInteractionScan={x:Number.NaN,y:Number.NaN,revision:-1,quest:-1,
-      story:-1,chests:-1,legendary:-1,restore:-1,performing:false,map:'',owner:''});
+      story:-1,chests:-1,legendary:-1,restore:-1,map:'',owner:''});
     if(x===scan.x&&y===scan.y&&revision===scan.revision&&quest===scan.quest&&story===scan.story
       &&chests===scan.chests&&legendary===scan.legendary&&restore===scan.restore
-      &&performing===scan.performing&&map===scan.map&&owner===scan.owner)return;
+      &&map===scan.map&&owner===scan.owner)return;
     scan.x=x;scan.y=y;scan.revision=revision;scan.quest=quest;scan.story=story;
     scan.chests=chests;scan.legendary=legendary;scan.restore=restore;
-    scan.performing=performing;scan.map=map;scan.owner=owner;
+    scan.map=map;scan.owner=owner;
     let nearest: Character | null = null, distance = Number.POSITIVE_INFINITY, rank = 3;
     for (const character of this.characters) {
       if (!character.container.visible) continue;
@@ -2431,7 +2424,7 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
   override update(_time:number,delta:number): void {
     // 舞台已经铺满画面时，正式世界这帧不跑战斗、HUD、掉落和移动；
     // 自愈检查保证舞台被关闭或重建后不会永远停在这里。
-    this.app.domUi?.setLayerVisible('world', this.canControl && !this.performing && !this.stageOccluded);
+    this.app.domUi?.setLayerVisible('world', this.canControl && !this.stageOccluded);
     if (this.stageOccluded) {
       this.syncStageOcclusion();
       if (this.stageOccluded) return;
@@ -2443,10 +2436,9 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     if (!this.player || !this.movement) return;
     const controlled=this.combat?.controlledVisual??this.player;
     this.pickupMessages?.setPaused(!this.canCombatControl);
-    this.combat?.setPerformanceActive(this.performing);
     // 待抓取表示还缺一份安全基线：进图兜底失败，或换图后等恢复控制（由 init 排入）。
     // 抓取成功由 captureCheckpoint 清掉标记；失败则保留到下一次满足条件时重试。
-    if(this.checkpointPending&&this.canControl&&!this.performing&&!this.app.director.busy&&this.combat?.canCheckpoint)this.captureCheckpoint();
+    if(this.checkpointPending&&this.canControl&&!this.app.director.busy&&this.combat?.canCheckpoint)this.captureCheckpoint();
     this.combat?.update(stepDelta,this.canCombatControl);
     if(this.canCombatControl&&!this.app.director.busy)for(const encounter of this.combat?.completedStoryEncounters??[]){
       if(this.encounterResults.has(encounter.id))continue;
@@ -2458,7 +2450,7 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     if(this.canCombatControl&&this.map){const store=groundLootFor(this.app.session);store.advance(this.map.id,stepDelta);
       if(store.revision!==this.groundLootRevision){this.groundLootRevision=store.revision;this.groundLootView?.sync(store.dropsOnMap(this.map.id));}}
     this.refreshShortcutPageIfTickChanged();
-    if (!this.canControl) { if (!this.performing) this.movement.stop(controlled); return; }
+    if (!this.canControl) { this.movement.stop(controlled); return; }
     if(this.combat?.playerCannotMove()){this.movement.stop(controlled);return;}
     // 原版 GAMESTATE_PressKeyPlay：CHAR_IsSkillOn 时整段跳过方向输入。
     if(this.combat?.castingSkill)return;
@@ -2485,7 +2477,7 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     const pos = this.movement.position(controlled), previous = this.lastPlayerPosition ?? pos;
     const moving = Math.hypot(pos.x - previous.x, pos.y - previous.y) > .01;
     this.lastPlayerPosition = pos;
-    if (!this.canControl || this.performing) return;
+    if (!this.canControl) return;
     this.minimap?.updatePlayer(pos);
     const body = this.movement.body(controlled);
     const walking = isBodyWalking(body);

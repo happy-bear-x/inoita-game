@@ -68,7 +68,7 @@ function fixture(walledColumn?:number){
       Object.assign(positions.get(value)!,point);moved.push({visual:value,point:{...point}});
     }};
   let canAct=true,canMove=true;
-  const state={app:{session},scene:{movement,performing:false,map:{exits:[] as {x:number;y:number;width:number;height:number}[],entities:[] as Point[]}},
+  const state={app:{session},scene:{movement,map:{exits:[] as {x:number;y:number;width:number;height:number}[],entities:[] as Point[]}},
     arena,partyControllers,combatRuntime,summonAwareness:awareness,partyActionsSuspended:false,
     // observeSummonCombat 复用实例上的观察数组；绕过构造函数的替身要补上这个缓存字段。
     summonObservations:[],
@@ -142,7 +142,6 @@ test('recall waits for runtime work, pause, story takeover and movement restrict
   const cancel=f.combatRuntime.schedule('late-projectile',1,()=>{});
   assert.equal(f.recall(),false);cancel();
   f.combatRuntime.setPaused('menu',true);assert.equal(f.recall(),false);f.combatRuntime.setPaused('menu',false);
-  f.state.scene.performing=true;assert.equal(f.recall(),false);f.state.scene.performing=false;
   f.state.partyActionsSuspended=true;assert.equal(f.recall(),false);f.state.partyActionsSuspended=false;
   f.setCapabilities(false,false);assert.equal(f.recall(),false);
   f.setCapabilities(true,false);assert.equal(f.recall(),false);

@@ -105,7 +105,7 @@ test('combat entry creates enemies once when loading a checkpoint',async()=>{
   for(const restore of [false,true]){
     const created:string[]=[];
     const ring={setOrigin(){return this;},setVisible(){return this;},destroy(){}};
-    const scene:any={player:{actor:{}},combatEnemyIds:()=>[],entities:[],performing:false,refreshCombatTarget(){},
+    const scene:any={player:{actor:{}},combatEnemyIds:()=>[],entities:[],refreshCombatTarget(){},
       textures:{exists:()=>true,get:()=>({has:()=>true}),on(){},remove(){}},anims:{exists:()=>false},
       events:{once(){},off(){}},add:{image:()=>ring}};
     const host:any=Object.assign(Object.create(WorldCombat.prototype),{
@@ -115,8 +115,7 @@ test('combat entry creates enemies once when loading a checkpoint',async()=>{
       equipmentAttack:()=>({}),prepareCombatSounds(){},outcomes:{warm(){}},feedback:{warm(){}},
       refreshSkillAssets:async()=>{},playerSkillSignatureNow:()=>'',playerSkillGateNow:()=>'',
       extraSkillLeases:new Map([['player',{}]]),combatEffects:{},createPartyController:()=>({controller:{},port:{}}),
-      partySkills:new Map(),partySkillsFor:()=>[],syncAllies:async()=>{},spawnEnemy:(enemy:any)=>created.push(enemy.key),
-      setPerformanceActive(){}
+      partySkills:new Map(),partySkillsFor:()=>[],syncAllies:async()=>{},spawnEnemy:(enemy:any)=>created.push(enemy.key)
     });
     await host.start({restore});
     assert.deepEqual(created,restore?[]:['one','two']);
@@ -210,13 +209,13 @@ function partyAction(id:string,cooldowns:CombatCooldownStore) {
   return {controller,ai,port,fireOldFrame:()=>oldFrame?.(100),stats:()=>({stops,clears,hits,cancelled})};
 }
 
-function pauseFixture(performing=false) {
+function pauseFixture() {
   const time={frame:0},cooldowns=new CombatCooldownStore(()=>time.frame);
   const hero=partyAction('player',cooldowns),ally=partyAction('companion-1',cooldowns);
   const player={container:{active:true}},visual={container:{active:true}};
   const stopped:unknown[]=[],temporary:string[]=[];
   const state={
-    scene:{player,performing,movement:{stop:(value:unknown)=>stopped.push(value)}},
+    scene:{player,movement:{stop:(value:unknown)=>stopped.push(value)}},
     app:{session:{party:{activeIds:['player','companion-1'],controlledId:'companion-1',get:()=>undefined}}},
     partyActionsSuspended:false,lastSkillResets:new Map(),partyControllers:new Map([['player',hero.controller],['companion-1',ally.controller]]),
     heroAi:hero.ai,allies:[{id:'companion-1',visual,ai:ally.ai}],arena:[],
@@ -270,12 +269,11 @@ test('cinematic takeover cancels every party action and old callbacks once, keep
   for(const member of [f.hero,f.ally])assert.equal(member.controller.snapshot().cooldowns['dark-strike'].remainingMs,660);
 });
 
-test('the dialogue input lock cancels combat before the director takes ownership of player movement',()=>{
+test('a second dialogue input lock does not cancel or stop combat again',()=>{
   const f=pauseFixture();
   f.runtime.suspendPartyActions();
   assert.equal(f.hero.stats().cancelled,1);
   assert.equal(f.ally.stats().cancelled,1);
-  f.state.scene.performing=true;
   f.stopped.length=0;
   f.runtime.suspendPartyActions();
   f.hero.fireOldFrame();f.ally.fireOldFrame();

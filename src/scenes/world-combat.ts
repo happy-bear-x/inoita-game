@@ -287,7 +287,6 @@ export class WorldCombat {
   /** 同一目标多个敌人共享的流场，使用独立预算，避免和单位寻路互相饿死。 */
   private readonly flowFields=new FlowFieldStore();
   private partyActionsSuspended=false;
-  private performanceHidden=false;
   private closed=false;
   /** 读档/回滚跨 await 期间暂停战斗推进，旧死亡单不会落到已经替换的会话上。 */
   private restoring=false;
@@ -487,7 +486,6 @@ export class WorldCombat {
       cannotMove: this.playerCannotMove(),
       cannotAct: this.playerCannotAct(),
       defeated: this.defeated,
-      performanceHidden: this.performanceHidden,
       actionsSuspended: this.partyActionsSuspended,
       runtime: { paused: this.runtime.paused, pauseOwners: this.runtime.pauseOwners,
         idle: this.runtime.idle, pending: this.runtime.pendingCount },
@@ -529,7 +527,7 @@ adoptStoryPositions(actors:readonly SceneActorState[]):void {
       if(ally&&!ally.member.alive||enemy&&(!this.isActorAlive(enemy.key)||this.pendingDefeats.has(enemy.key)))continue;
       if(ally)ally.facing=actor.facing;if(enemy)enemy.facing=actor.facing;
       setCharacterClip(this.scene,visual,`idle-${actor.facing}`);
-      placements.push({visual,position:{x:actor.x,y:actor.y},enabled:actor.visible&&!this.performanceHidden});
+      placements.push({visual,position:{x:actor.x,y:actor.y},enabled:actor.visible});
     }
     this.movement.placeAll(placements,{evictOccupied:true,displaceable:[this.player]});
   }
@@ -618,7 +616,7 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
       this.focusTargetId=state.focusTargetId;
       for(const saved of state.party){const visual=this.visualOf(saved.id);if(!visual)continue;
         const alive=!!this.memberOf(saved.id)?.player.health;
-        visual.container.setAlpha(1).setVisible(alive&&!this.performanceHidden);this.movement.setEnabled(visual,alive);
+        visual.container.setAlpha(1).setVisible(alive);this.movement.setEnabled(visual,alive);
         this.relocateVisual(visual,saved.position);this.partyControllers.get(saved.id)?.restoreState(saved.combat);
         if(saved.ai)(saved.id==='player'?this.heroAi:combatActor(this.allies,saved.id,actor=>actor.id)?.ai)?.restoreState(saved.ai);
         if(saved.id==='player')this.scene.facing=saved.facing;else combatActor(this.allies,saved.id,actor=>actor.id)!.facing=saved.facing;
@@ -892,7 +890,7 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
   private tryRecallSummon(enemy:MapEnemy):boolean {
     const owner=enemy.summonedBy&&this.combatant(enemy.summonedBy),actor=this.combatant(enemy.key);
     if(!owner||!actor||!this.isActorAlive(owner.id)||!this.isActorAlive(actor.id)||this.runtime.paused||!this.runtime.idle||
-      !this.conditions.canAct(enemy.key)||!this.conditions.canMove(enemy.key)||this.scene.performing||this.partyActionsSuspended)return false;
+      !this.conditions.canAct(enemy.key)||!this.conditions.canMove(enemy.key)||this.partyActionsSuspended)return false;
     const now=(this.app.session.combatTick??0)*LOGIC_FRAME_MS;
     if(this.awareness.quietFor(now)<SUMMON_RECALL_QUIET_MS)return false;
     // 警戒覆盖还要检查隐身敌人；旧仇恨记录本身不代表仍在追击。
@@ -2437,12 +2435,10 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
       const position=landing??this.movement.position(this.player);
       const visual=createCharacter(this.scene,actor,{id,actor:actor.id,...position});
       const body=this.movement.register(visual,true,true,'party');
-      // 演出期间新加入的佣兵也要立刻隐藏；否则已经处于 performanceHidden 时不会再走一次显隐同步。
-      if(this.performanceHidden){visual.container.setVisible(false);this.movement.setEnabled(visual,false);}
       const presenter=new CombatPresenter(this.scene,this.app.battleCatalog,key=>this.visualOf(key),()=>this.combatants(),
         this.combatEffects);
       const overhead=new OverheadStatus(this.scene,visual,this.app.statusHud,()=>member.player,listener=>this.app.session.subscribe(listener));
-      overhead.setVisible(!this.performanceHidden);
+      overhead.setVisible(true);
       const attack=this.equipmentAttack(actor,id);
       const ally={} as MapAlly;ally.id=id;ally.member=member;ally.visual=visual;ally.body=body;ally.facing='south';ally.presenter=presenter;ally.overhead=overhead;ally.assets=lease;
       this.allies.push(ally);refreshCombatActors(this.allies);
@@ -2565,7 +2561,7 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
     const ally=combatActor(this.allies,id,actor=>actor.id);
     const visual=id==='player'?this.scene.player:ally?.visual,ai=id==='player'?this.heroAi:ally?.ai;
     if(!visual||!ai||!(id==='player'?this.hero:ally?.member)?.player.health||this.fallen.has(id)||!visual.container.active)return false;
-    if(this.performanceHidden||ai.actionState()!=='idle'||this.conditions&&!this.conditions.canMove(id))return false;
+    if(ai.actionState()!=='idle'||this.conditions&&!this.conditions.canMove(id))return false;
     const leader=this.controlledVisual;if(!leader)return false;
     const now=this.app.session.nowMs??0;
     if((this.regroupCooldowns.get(id)??0)>now)return false;
@@ -2666,7 +2662,6 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
       for(const placed of [...this.roster.enemies])this.spawnEnemy(placed);
       this.reconcileZeroHealthEnemies('restored');
     }
-    this.setPerformanceActive(this.scene.performing);
     this.scene.refreshCombatTarget();
     this.diagnosticStartedAt=performance.now();
     this.diagnosticElapsedMs=0;
@@ -2899,8 +2894,6 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
     if(this.partyActionsSuspended)return;
     this.partyActionsSuspended=true;
     for(const id of this.activeParty){
-      // 剧情导演接管主角的走位；只中止战斗拥有的路径和回调。
-      if(id==='player'&&this.scene.performing)continue;
       if(id===this.controlledId)this.partyControllers.get(id)?.cancel(true,false);
       else if(id==='player')this.heroAi?.cancel();
       else combatActor(this.allies,id,actor=>actor.id)?.ai.cancel();
@@ -3260,7 +3253,7 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
       ??this.movement.navigation.nearestBody(actor.shape(),origin,actor)
       ??this.movement.navigation.nearest(actor.shape(),origin,actor);
     this.relocateVisual(visual,landing);this.movement.setEnabled(visual,true);
-    visual.container.setAlpha(1).setVisible(!this.performanceHidden);setCharacterClip(this.scene,visual,'idle-south',true);
+    visual.container.setAlpha(1).setVisible(true);setCharacterClip(this.scene,visual,'idle-south',true);
     this.outcomes.recover(visual);
   }
   revive(id:string,item:string):ItemResult {
@@ -3290,30 +3283,6 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
     for(const id of result.memberIds)this.reviveMember(id,origin);
     this.syncControlled();this.app.audio?.ui('heal');
   }
-  setPerformanceActive(active:boolean):void{
-    if(this.performanceHidden===active||this.closed)return;
-    this.performanceHidden=active;
-    this.outcomes.setVisible(!active);
-    this.feedback.setVisible(!active);
-    this.feedback.setPaused(active||this.defeated||!this.scene.canCombatControl);
-    this.outcomes.setPaused(active||this.defeated||!this.scene.canCombatControl);
-    for(const ally of this.allies){ally.overhead.setVisible(!active);this.movement.stop(ally.visual);ally.visual.container.setVisible(!active&&ally.member.alive);this.movement.setEnabled(ally.visual,!active&&ally.member.alive);}
-    for(const enemy of this.arena){
-      if(this.pendingDefeats.has(enemy.key)){enemy.visual.container.setVisible(!active);continue;}
-      if(active){
-        this.movement.stop(enemy.visual);
-        enemy.visual.container.setVisible(false);
-        this.movement.setEnabled(enemy.visual,false);
-      }else{
-        const actor=this.movement.actor(enemy.visual);
-        const position=this.movement.navigation.nearestBody({collision:enemy.definition.actor.collision},this.movement.position(enemy.visual),actor)
-          ??this.movement.navigation.nearest(enemy.definition.actor,this.movement.position(enemy.visual),actor);
-        this.relocateVisual(enemy.visual,position);
-        this.movement.setEnabled(enemy.visual,true);
-        enemy.visual.container.setVisible(true);
-      }
-    }
-  }
   private syncBuffLoops():void {
     const actors=this.buffLoopActors??=new Set<string>(),appearances=this.conditions.activeAppearances();
     for(const id of actors)if(!appearances.get(id)?.loops){this.buffLoops.remove(id);actors.delete(id);}
@@ -3341,9 +3310,9 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
       }
     }
     this.feedback.setPaused(!enabled||this.defeated);
-    this.syncStateMarkers(enabled&&!this.performanceHidden&&!this.defeated);
+    this.syncStateMarkers(enabled&&!this.defeated);
     this.setPaused(!enabled||this.defeated);
-    this.syncFocusRings(enabled&&!this.performanceHidden&&!this.defeated,delta);
+    this.syncFocusRings(enabled&&!this.defeated,delta);
     if(!enabled||this.defeated){
       this.syncBuffLoops();
       // 队伍已全灭但死亡演出被暂停或重建清掉时，结算不能一直等下去。

@@ -54,7 +54,7 @@ test('live capture includes the physical scene with equipped party, props, enemy
     allies:[{id:'companion-1',member:{definition:{actor:'companion'},alive:true},visual:companion,facing:'east'},
       {id:'companion-2',member:{definition:{actor:'companion'},alive:false},visual:fallen,facing:'south'}],
     arena:[enemy('wolf-1',70),enemy('wolf-2',80),enemy('summon-1',90,'player'),enemy('dead-1',100)],
-    performanceHidden:true,isActorAlive:(id:string)=>id!=='dead-1',pendingDefeats:new Set<string>(),captureState:()=>undefined,settleForSave:()=>{},
+    isActorAlive:(id:string)=>id!=='dead-1',pendingDefeats:new Set<string>(),captureState:()=>undefined,settleForSave:()=>{},
     captureStoryVisit:()=>({roster:{enemies:[],sequence:0,partySize:1},breakableRolls:[['wolf-1','wolf']]})});
   const host=Object.assign(Object.create(WorldScene.prototype),{map:{id:'camp'},player,movement,combat,facing:'north',
     characters:[gate,chest,spring,hidden],baseEntities:[],chestOpened:(value:unknown)=>value===chest,
@@ -243,7 +243,7 @@ test('combat position handoff only updates living instances still present in the
   const scene={movement:{placeAll:(value:unknown[])=>placements.push(...value)},player:{}};
   const combat=Object.assign(Object.create(WorldCombat.prototype),{scene,
     allies:[{id:'ally',member:{alive:true},visual:active,facing:'south'},{id:'dead',member:{alive:false},visual:dead,facing:'south'}],
-    arena:[{key:'monster',visual:monster,facing:'south'}],performanceHidden:true,isActorAlive:()=>true,pendingDefeats:new Set<string>()});
+    arena:[{key:'monster',visual:monster,facing:'south'}],isActorAlive:()=>true,pendingDefeats:new Set<string>()});
   combat.adoptStoryPositions([
     {id:'member:ally',actor:'ally',memberId:'ally',x:20,y:30,facing:'east',visible:true},
     {id:'member:dead',actor:'ally',memberId:'dead',x:40,y:50,facing:'east',visible:true},
@@ -251,7 +251,7 @@ test('combat position handoff only updates living instances still present in the
     {id:'enemy:missing',actor:'wolf',enemyKey:'missing',x:80,y:90,facing:'west',visible:true}
   ]);
   assert.equal(placements.length,1);
-  assert.deepEqual(placements[0],{visual:active,position:{x:20,y:30},enabled:false});
+  assert.deepEqual(placements[0],{visual:active,position:{x:20,y:30},enabled:true});
   assert.equal(combat.allies[0].facing,'east');
 });
 

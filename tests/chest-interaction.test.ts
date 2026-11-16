@@ -85,13 +85,13 @@ function fixture(map:WorldMap,entity:EntityPlacement,session=new Session(campaig
   const combat={controlledVisual:undefined as {container:Display}|undefined,controlledMember:{level:100},
     facing:'south' as Facing,cannotAct:false,playerCannotAct:()=>combat.cannotAct,
     syncChestEnemies:()=>calls.push('enemies'),hasHostileTarget:()=>true,
-    attack:()=>calls.push('attack'),setPerformanceActive() {}};
+    attack:()=>calls.push('attack')};
   const state={
-    app:{world:visualWorld,items,session,campaign:{quests:[]},locked:false,suspended:false,characterStats:stats,
+    app:{world:visualWorld,items,session,campaign:{quests:[]},locked:false,suspended:false,director:{busy:false},characterStats:stats,
       ui:{ready:true,controlLayoutEditing:false},audio:{ui:(sound:string)=>calls.push(sound)}},
     map,dropCatalog:drops,player:{container:new Display()},characters:[] as Character[],near:null as Character|null,
     questStatuses:new Map(),questStatusVersion:undefined,
-    combat,autoAttack:new BasicAttackRepeat(),performing:false,loadingWorld:false,active:true,
+    combat,autoAttack:new BasicAttackRepeat(),loadingWorld:false,active:true,
     chestFades:new Map(),sys:{isActive:()=>state.active},
     add:{container:(x:number,y:number)=>new Display(x,y),sprite:()=>new Display()},
     anims:{exists:(key:string)=>animations.has(key),create:({key}:{key:string})=>animations.add(key),generateFrameNumbers:()=>[]},
@@ -236,11 +236,11 @@ test('all six scenery or story box placements stay outside the random treasure i
   assert.equal(checked,6);
 });
 
-test('menu, suspension, control editing, unavailable actors and loading reject stale opening events',t=>{
+test('menu, suspension, story takeover, control editing, unavailable actors and loading reject stale opening events',t=>{
   const {map,entity}=arena();
   const guards:((f:ReturnType<typeof fixture>)=>void)[]=[
     f=>{f.state.app.locked=true;},f=>{f.state.app.suspended=true;},f=>{f.state.app.ui.controlLayoutEditing=true;},
-    f=>{f.state.app.ui.ready=false;},f=>{f.state.loadingWorld=true;},f=>{f.state.performing=true;},
+    f=>{f.state.app.ui.ready=false;},f=>{f.state.loadingWorld=true;},f=>{f.state.app.director.busy=true;},
     f=>{f.state.active=false;},f=>{f.combat.cannotAct=true;},f=>{f.chest.container.visible=false;}
   ];
   for(const guard of guards) {
