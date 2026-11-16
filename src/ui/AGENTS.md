@@ -37,7 +37,7 @@
 - **页面坐标和弹层坐标可以在同一页混用。** 更新日志这类画在弹层上的文字给 `MenuTextSpec.space='modal'`，`MenuTextLayer` 用构造参数里的弹层坐标换算；页面文字保持默认页面坐标，`dim`/`occlude` 仍按页面坐标计算。
 - **菜单弹层的内容区一律不透明。** `drawPopupPanel` 的黑底、说明面板、确认横带和 `v.frame` 弹层都用 alpha 1；只有铺满全屏的遮罩可以半透明（65%）。正文超过可用高度时用 `ScrollArea` + DOM `clip` 滚动，标题和按钮固定在滚动区外。
 - **滚动文字用 `clip` 交给浏览器裁边。** `MenuTextLayer` 会为同一组上下边界建一个 `overflow:hidden` 的容器，滚动只移动标签；新增可滚动面板时同时给 `scroll` 和 `clip`，不要只靠 `y` 判断显隐。
-- **菜单滚动区由 `StoryUI.scroll` 统一登记。** 它建区时会给 `ScrollArea` 加一条自动刷新 DOM 文字的监听；面板的 `onScroll` 只负责记自己的偏移和状态，不要再为文字单独调用刷新，也不要在菜单页绕过 `StoryUI.scroll` 自建滚动区。
+- **菜单滚动区由 `StoryUI.scroll` 统一登记。** 每个滚动区只保留一个文字刷新入口：面板自己的 `onScroll` 负责刷新文字和自己的偏移/状态；没有面板 `onScroll` 的内部滚动区使用 `StoryUI.scroll` 放的默认 `onScroll`。不要再通过额外的 `addScrollListener` 重复刷新文字；`MenuTextLayer.refresh()` 会把同一帧的刷新合并为一次。不要绕过 `StoryUI.scroll` 自建滚动区。
 - **全屏遮罩用 `DomUi.setOccluded`。** 加载页、阵亡面板、跨图黑幕、横屏提示和挂起时，由 `uiOcclusion`（`game-ui.ts`）判断并收起 world/hud/screen 三层；加载页自己的文字放在 overlay 层。新增全屏界面时不要再让各页面各自猜显隐。
 - **跳过补画黑底与跨图重建黑幕分开。** `setSkipBackdrop` 只盖画面，不进入 `uiOcclusion`，也不隐藏任务窗和选择框：跳过到弹窗时先盖黑底、补画对应剧情画面、补完撤掉再弹窗。`setWorldRebuildCover` 继续按原规则隐藏这些弹层。
 - 文本宽度、换行、选项高度和滚动范围在交给显示组件前算完，绘制层只按结果摆放。
