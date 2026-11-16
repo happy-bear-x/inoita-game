@@ -12,6 +12,8 @@ import {validateSceneSnapshot,type SceneActorState} from '../domain/scene-snapsh
 import {duplicateVisibleActors} from '../domain/actor-census.ts';
 import {dedupeSkillShortcuts} from '../domain/shortcut-bar.ts';
 import {migrateMercenarySkills} from '../domain/companion-progression.ts';
+import {groundLootFor} from '../domain/ground-loot.ts';
+import type {Session} from '../domain/session.ts';
 
 export interface SavedGameContent {
   campaign:Campaign;world:WorldIndex;storyClasses:StoryClassCatalog;items:ItemCatalog;
@@ -295,6 +297,22 @@ function migrateLegacyItems(game:SaveGame<StoryWorldViewSnapshot>):SaveGame<Stor
   for(const [,offers] of s.shops.stock)offers.splice(0,offers.length,...offers.filter(offer=>!LEGACY_REMOVED_ITEMS.has(offer.instance.item)));
   return migrated;
 }
+/**
+ * 旧版牛头怪剧情在脚下多生成了一份鲤鱼饼，自动拾取后又回到背包。
+ * quest-252 只有在走过那段剧情后才会被接取，所以用它判断这份道具是否已经过期。
+ */
+const STALE_FISHCAKE_ITEM='special-fishcake';
+const STALE_FISHCAKE_QUEST='quest-252';
+function repairStaleFishcake(session:Session):boolean{
+  if(!session.questBook.accepted(STALE_FISHCAKE_QUEST))return false;
+  let repaired=false;
+  const count=session.bag.count(STALE_FISHCAKE_ITEM);
+  if(count>0&&session.bag.remove(STALE_FISHCAKE_ITEM,count))repaired=true;
+  const ground=groundLootFor(session),state=ground.captureState();
+  const drops=state.drops.filter(drop=>!(drop.reward.kind==='item'&&drop.reward.item===STALE_FISHCAKE_ITEM));
+  if(drops.length!==state.drops.length){ground.restoreState({...state,drops});repaired=true;}
+  return repaired;
+}
 /** 候选会话独立于当前游戏，坏记录在切换场景之前被拒绝。 */
 export function prepareSavedGame(game:SaveGame<StoryWorldViewSnapshot>,content:SavedGameContent){
   const upgraded=migrateLegacyItems(upgradeSavedGame(game,content));
@@ -324,6 +342,8 @@ export function prepareSavedGame(game:SaveGame<StoryWorldViewSnapshot>,content:S
   const session=newStorySession(content.campaign,content.world.actors[content.campaign.start.actor],selected,
     content.items,content.characterStats,content.battleCatalog,content.companions);
   restoreSaveGame(session,upgraded);
+  if(repairStaleFishcake(session))
+    globalThis.storyDiagnostics?.record('save-repaired-stale-quest-item',{quest:STALE_FISHCAKE_QUEST,item:STALE_FISHCAKE_ITEM},false);
   // 旧档已经拥有的解锁型道具补领取记录：不删除任何东西，只避免新掉落再给一份。
   const seeded=new Set<string>();
   for(const entry of session.bag.entries){

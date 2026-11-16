@@ -187,6 +187,32 @@ test('old saves containing removed items drop them and every reference',()=>{
   }
 });
 
+test('a save past the minotaur scene drops the stale fishcake everywhere',()=>{
+  const saved=record(),bag=saved.session.bag,id='legacy-fishcake';
+  bag.instances.push({id,item:'special-fishcake',quantity:1,enhancement:0,gems:[]});
+  bag.pouches.quest.push(id);bag.allCells.push(id);
+  const book=saved.session.questBook;
+  book.quests.find(([quest])=>quest==='quest-252')![1].status='active';
+  if(!book.runningQuestIds.includes('quest-252'))book.runningQuestIds.push('quest-252');
+  const map=saved.world.location.map;
+  saved.session.groundLoot.drops.push({id:'ground-fishcake',map,x:16,y:24,reward:{kind:'item',item:'special-fishcake',quantity:1}});
+  if(!bag.shortcuts.length)bag.shortcuts.push(['player',emptyShortcutRow()]);
+  bag.shortcuts[0]![1][bag.shortcuts[0]![1].length-1]={kind:'item',id:'special-fishcake'};
+  const before=structuredClone(saved),candidate=prepareSavedGame(saved,content),state=candidate.session.captureState();
+  assert.equal(candidate.session.bag.count('special-fishcake'),0,'背包里的过期任务道具被清掉');
+  assert.ok(!state.groundLoot.drops.some(drop=>drop.reward.kind==='item'&&drop.reward.item==='special-fishcake'),'地面掉落一起清掉');
+  for(const [,row] of state.bag.shortcuts)assert.ok(!row.some(slot=>slot?.kind==='item'&&slot.id==='special-fishcake'),'快捷栏不再指向已清理的道具');
+  assert.deepEqual(saved,before,'旧档修复不改写槽里的原件');
+});
+
+test('a save before the minotaur scene keeps its fishcake',()=>{
+  const saved=record(),bag=saved.session.bag,id='legacy-fishcake';
+  bag.instances.push({id,item:'special-fishcake',quantity:1,enhancement:0,gems:[]});
+  bag.pouches.quest.push(id);bag.allCells.push(id);
+  const candidate=prepareSavedGame(saved,content);
+  assert.equal(candidate.session.bag.count('special-fishcake'),1,'还没走过那段剧情时保留任务道具');
+});
+
 test('a save written with a wiped party is repaired before it enters the world',()=>{
   const saved=record();
   saved.session.hero!.health=0;

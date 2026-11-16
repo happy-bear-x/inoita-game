@@ -183122,14 +183122,6 @@
           ],
           "commands": [
             {
-              "type": "item-drop",
-              "item": "special-fishcake",
-              "quantity": 1,
-              "map": "purification-cave-3-f9fbfeae",
-              "x": 88,
-              "y": 264
-            },
-            {
               "type": "item-take",
               "item": "special-fishcake",
               "quantity": 1,

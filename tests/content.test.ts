@@ -39,6 +39,14 @@ test('the capital and camp use town poses, and the cave confrontation changes th
  assert.deepEqual(switches, [[true, 'wait'], [false, 'walk'], [true, 'wait']]);
 });
 
+test('the minotaur eats the fishcake without leaving a ground drop', () => {
+ const node = campaign.scripts['event-312'].nodes.find(node => node.id === 'scene-1')!;
+ assert.ok(!node.commands.some(command => command.type === 'item-drop' && command.item === 'special-fishcake'),
+  '不生成可拾取的地面鲤鱼饼');
+ assert.ok(node.commands.some(command => command.type === 'item-take' && command.item === 'special-fishcake' && command.quantity === 1),
+  '从背包扣掉牛头怪吃掉的那一份');
+});
+
 test('dialogue portraits resolve to exported files and player identity is separate from NPC professions',()=>{
  assert.equal(world.actors.kiyan.portrait,'kiyan');assert.equal(world.actors.saint.portrait,'saint');
  assert.equal(world.actors.darius.portrait,'darius');assert.equal(world.actors['shadow-soldier'].portrait,null);
