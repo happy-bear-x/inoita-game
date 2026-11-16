@@ -873,9 +873,10 @@ export class StoryUI {
   private scroll(name:string,x:number,y:number,w:number,h:number,surface=this.body!,bleed=0,
     bar?:Parameters<UiSurface['scroll']>[5]):ScrollArea{
     const scroll=surface.scroll(x,y,w,h,bleed,bar);this.scrollNames.set(name,scroll);
-    // DOM 文字浮在画布上，滚动位置变了必须重新换算坐标。登记放在统一的建区入口，
-    // 每个面板都自动跟随，不再依赖某处记得写 `onScroll`。
-    scroll.addScrollListener(()=>this.menuText?.refresh());return scroll;
+    // DOM 文字浮在画布上，滚动位置变了必须重新换算坐标。建区时先放一个默认入口；
+    // 面板设置自己的 `onScroll` 时会覆盖它，由面板回调保存偏移、收起详情并刷新文字。
+    // 同一次滚动只走一个刷新入口，不再让监听器和面板回调各算一遍整页文字。
+    scroll.onScroll=()=>this.menuText?.refresh();return scroll;
   }
   private finishScroll(name:string,scroll:ScrollArea,height:number):void{scroll.setHeight(height);scroll.scrollTop=this.scrollOffsets.get(`${this.page}:${name}`)??0;}
   /**

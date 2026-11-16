@@ -113,3 +113,35 @@ test('world labels share measurements within a frame and follow camera and viewp
   assert.equal(frameRead.mock.callCount(),3);assert.equal(canvasReads,3);
 });
 
+test('scroll refreshes share one animation frame and destroy cancels a queued layout',t=>{
+  const dom=new DomUi(),labels:ReturnType<DomUi['label']>[]=[];
+  let offset=0;
+  const layer=new MenuTextLayer({label:(...args)=>{const label=dom.label(...args);labels.push(label);return label;}},
+    (x,y)=>({x,y,scale:1}),(_page,scroll)=>scroll==='list'?offset:0);
+  layer.register('page',writer=>writer.add({key:'row',text:'第一行',x:10,y:10,style:{size:20},scroll:'list'}));
+  layer.renderPage('page');
+  const label=labels[0]!;
+  assert(label.element.style.transform.includes('10px, 10px'));
+  const previousFrame=Object.getOwnPropertyDescriptor(globalThis,'requestAnimationFrame');
+  const previousCancel=Object.getOwnPropertyDescriptor(globalThis,'cancelAnimationFrame');
+  let cancelled=0,destroyed=false;const pending:FrameRequestCallback[]=[];
+  Object.defineProperty(globalThis,'requestAnimationFrame',{configurable:true,
+    value:(callback:FrameRequestCallback)=>{pending.push(callback);return pending.length;}});
+  Object.defineProperty(globalThis,'cancelAnimationFrame',{configurable:true,value:()=>{cancelled++;}});
+  t.after(()=>{
+    if(!destroyed)layer.destroy();
+    for(const [name,descriptor] of [['requestAnimationFrame',previousFrame],['cancelAnimationFrame',previousCancel]] as const){
+      if(descriptor)Object.defineProperty(globalThis,name,descriptor);else Reflect.deleteProperty(globalThis,name);
+    }
+  });
+  offset=20;layer.refresh();layer.refresh();
+  assert.equal(pending.length,1,'同一帧只安排一次重算');
+  assert(label.element.style.transform.includes('10px, 10px'),'帧前保留旧位置');
+  pending[0]!(0);
+  assert(label.element.style.transform.includes('10px, -10px'),'帧回调按最新滚动位置重算');
+  offset=40;layer.refresh();
+  assert.equal(pending.length,2);
+  layer.destroy();destroyed=true;
+  assert.equal(cancelled,1,'销毁时撤掉待处理帧');
+});
+

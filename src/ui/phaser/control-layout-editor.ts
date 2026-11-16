@@ -5,7 +5,8 @@ import type Phaser from 'phaser';
 import { UI_EVENTS } from '../../application/ui-events.ts';
 import type { ControlSkin } from '../../domain/control-skin.ts';
 import { CONTROL_IDS, CONTROL_SCALE_MIN, CONTROL_SIZES, maxControlScale, normalizeControlPosition,
-  resolveControlLayout, type ControlId, type ControlLayoutOverrides, type ControlPlacement, type ControlPoint } from '../control-layout.ts';
+  resolveControlLayout, type ControlId, type ControlLayoutOverrides, type ControlPlacement, type ControlPoint,
+  type ControlViewport } from '../control-layout.ts';
 import type { ControlLayoutPreferences } from '../control-layout.ts';
 import { ITEM_ICON_SIZE, QUANTITY_BADGE, SLOT_ICON_SIZE, type ShortcutSlot } from './action-controls.ts';
 import { DPAD_ARROW_OFFSET, DPAD_ARROW_SCALE_NORM, DPAD_BASE_RADIUS, DPAD_RUNE_ALPHA, STICK_KNOB_RADIUS } from './move-stick.ts';
@@ -33,12 +34,22 @@ interface ScaleDrag {
   max: number;
 }
 
+/** 移动拖动开始时取一次屏幕视口、偏好和画框；拖动期间控件尺寸不变，直接复用。 */
+interface MoveDrag {
+  pointer: UiPointer;
+  point?: ControlPoint;
+  viewport: ControlViewport;
+  positions: ControlLayoutOverrides;
+  moveSize: {width: number; height: number};
+  placement: ControlPlacement;
+}
+
 /** 编辑的是独立预览；实际战斗控件继续由菜单锁暂停。 */
 export class ControlLayoutEditor {
   private readonly canvas: UiSurface;
   private readonly toolbar: UiSurface;
   private readonly controls = new Map<ControlId, UiNode>();
-  private readonly drags = new Map<ControlId, {pointer: UiPointer; point?: ControlPoint}>();
+  private readonly drags = new Map<ControlId, MoveDrag>();
   private readonly handles: UiNode[] = [];
   private selectionFrame?: UiNode;
   private selected?: ControlId;
@@ -49,6 +60,8 @@ export class ControlLayoutEditor {
   private moveButton?: UiNode;
   private scaleButton?: UiNode;
   private mode: EditMode = 'move';
+  /** 缩放拖动时把完整重排合并到下一帧；只在有待处理任务时安排，不常驻循环。 */
+  private layoutFrame?: number;
   private slots: readonly ShortcutSlot[] = [];
   private active = false;
   private viewportKey = '';
@@ -88,6 +101,8 @@ export class ControlLayoutEditor {
   }
 
   layout(): void {
+    // 同步重排时不再保留上一帧排队的任务，避免同一状态算两遍。
+    this.cancelLayoutFrame();
     const viewport=controlViewport(),key=JSON.stringify(viewport);
     if(key!==this.viewportKey) {this.viewportKey=key;this.cancelDrags();}
     const positions=this.resolve(viewport);
@@ -106,6 +121,22 @@ export class ControlLayoutEditor {
     this.paintSelection();
     this.placeToolbarText();
     this.placeQuantityText();
+  }
+
+  /** 缩放拖动期间同一帧的多个 pointermove 只触发一次完整重排。 */
+  private requestLayout(): void {
+    if (this.layoutFrame !== undefined) return;
+    if (typeof requestAnimationFrame !== 'function') { this.layout(); return; }
+    this.layoutFrame = requestAnimationFrame(() => {
+      this.layoutFrame = undefined;
+      this.layout();
+    });
+  }
+
+  private cancelLayoutFrame(): void {
+    if (this.layoutFrame === undefined) return;
+    if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(this.layoutFrame);
+    this.layoutFrame = undefined;
   }
 
   visible(value: boolean): void {
@@ -129,6 +160,7 @@ export class ControlLayoutEditor {
   }
 
   destroy(): void {
+    this.cancelLayoutFrame();
     this.close();this.unsubscribe();
     this.scene.game.events.off(UI_EVENTS.cancelInput,this.cancel,this);
     window.removeEventListener('blur',this.cancelNative);window.removeEventListener('pointercancel',this.cancelNative);
@@ -267,14 +299,20 @@ export class ControlLayoutEditor {
           if(placement)this.beginScale(pointer,id,placement);
           return;
         }
-        if(!this.drags.has(id))this.drags.set(id,{pointer});
+        if(this.drags.has(id))return;
+        // 拖动期间只移动一个控件：视口、偏好和本控件画框只在这里取一次。
+        const viewport=controlViewport(),positions=this.preferences.snapshot(),moveSize=this.moveSize();
+        const placement=this.placements?.[id]??resolveControlLayout(viewport,positions,moveSize)[id];
+        this.drags.set(id,{pointer,viewport,positions,moveSize,placement});
       });
       object.on('drag',(pointer:UiPointer,x:number,y:number)=>{
         if(this.scaleDrag?.id===id){this.updateScale(pointer);return;}
         const drag=this.drags.get(id);if(!drag||drag.pointer.id!==pointer.id)return;
-        const viewport=controlViewport(),positions=this.preferences.snapshot(),moveSize=this.moveSize();
-        drag.point=normalizeControlPosition(viewport,id,{x,y},positions,moveSize);
-        const position=resolveControlLayout(viewport,{...positions,[id]:drag.point},moveSize)[id];
+        // 归一化直接用缓存画框算尺寸，只解析一次整表拿到新位置。
+        drag.point=normalizeControlPosition(drag.viewport,id,{x,y},drag.positions,drag.moveSize,drag.placement);
+        const position=resolveControlLayout(drag.viewport,{...drag.positions,[id]:drag.point},drag.moveSize)[id];
+        drag.placement=position;
+        if(this.placements)this.placements[id]=position;
         object.setPosition(position.x,position.y);
         this.placeQuantityText();
         if(this.selected===id)this.drawSelection(position);
@@ -282,7 +320,7 @@ export class ControlLayoutEditor {
       object.on('dragend',(pointer:UiPointer)=>{
         if(this.scaleDrag?.id===id){this.endScale(pointer);return;}
         const drag=this.drags.get(id);if(!drag||drag.pointer.id!==pointer.id)return;
-        this.drags.delete(id);
+        this.drags.delete(id);this.cancelLayoutFrame();
         if(drag.point&&this.active&&this.canvas.root.visible)this.preferences.set(id,drag.point);
         else this.layout();
       });
@@ -346,12 +384,14 @@ export class ControlLayoutEditor {
     const distance=Math.hypot(pointer.x-drag.center.x,pointer.y-drag.center.y);
     const scale=Math.max(CONTROL_SCALE_MIN,Math.min(drag.max,distance/Math.max(1,drag.radius)));
     this.preview={id:drag.id,point:drag.point,scale};
-    this.layout();
+    this.requestLayout();
   }
 
   private endScale(pointer: UiPointer): void {
     const drag=this.scaleDrag;
     if(!drag||drag.pointer.id!==pointer.id)return;
+    // 松手当帧就按最后的预览倍率重排并提交，不能把旧位置留到下一帧。
+    this.cancelLayoutFrame();
     const scale=this.preview?.scale??1;
     this.scaleDrag=undefined;this.preview=undefined;
     if(this.active&&this.canvas.root.visible)this.preferences.set(drag.id,drag.point,scale);
@@ -359,6 +399,7 @@ export class ControlLayoutEditor {
   }
 
   private cancelDrags(): void {
+    this.cancelLayoutFrame();
     for(const [id] of this.drags) {
       // 先释放原生指针捕获，再恢复控件的命中区。
       const object=this.controls.get(id);object?.disableInteractive();object?.setInteractive();

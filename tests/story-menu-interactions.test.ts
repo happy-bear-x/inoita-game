@@ -181,6 +181,10 @@ interface MenuInternals {
   selectedItem?: string;
   itemResult?: unknown;
   keyboardFocus?: Display;
+  /** 菜单 DOM 文字层；滚动刷新次数的用例从这里取。 */
+  menuText?: { refresh(): void };
+  /** 控件布局编辑器；缩放合并重排的用例从这里取。 */
+  controlEditor?: { layout(): void };
   body: UiSurface;
   scrollNames: Map<string, ScrollArea>;
   bagPreview?:UiNode;
@@ -1687,6 +1691,76 @@ test('control editor switches between move and scale modes, defaulting to move',
   Object.assign(pointer,{x:object.x,y:object.y});
   object.emit('dragstart',pointer);object.emit('drag',pointer,600,300);object.emit('dragend',pointer);
   assert.equal(f.app.controlLayout.snapshot().attack?.scale,saved.scale,'移动不改倍率');
+});
+
+test('one scroll event refreshes menu text through one entry and keeps panel side effects',t=>{
+  const f=fixture();t.after(f.cleanup);f.session.accept('grafton-mission');f.menu.show('quests');
+  const list=f.internals.scrollNames.get('quest-list')!,detail=f.internals.scrollNames.get('quest-detail');
+  assert.ok(list&&detail,'任务页列表和详情都登记了滚动区');
+  list.setHeight(2000);
+  const original=f.internals.menuText!.refresh.bind(f.internals.menuText);
+  let refreshes=0;
+  t.mock.method(f.internals.menuText!,'refresh',()=>{refreshes++;original();});
+  domEvent(list.layer.element,'wheel',{id:1,x:0,y:0,isDown:true},120);
+  assert.ok(list.scrollTop>0,'滚动位置先更新');
+  assert.equal(refreshes,1,'面板 onScroll 与默认入口不再各刷新一次');
+  assert.equal(detail.visible,false,'面板自己的 onScroll 仍收起详情');
+  f.menu.show('settings');
+  const settings=f.internals.scrollNames.get('settings')!,before=refreshes;
+  settings.setHeight(2000);
+  domEvent(settings.layer.element,'wheel',{id:1,x:0,y:0,isDown:true},120);
+  assert.ok(settings.scrollTop>0);
+  assert.equal(refreshes,before+1,'没有面板 onScroll 的滚动区仍由默认入口刷新');
+});
+
+test('scale dragging lays out once per frame and commits the last preview on release',t=>{
+  const f=fixture();t.after(f.cleanup);f.app.controlLayout.set('attack',{x:.5,y:.5});openControls(f);
+  f.scene.click(f.scene.button('缩放'));
+  const object=editingControl(f,'attack'),pointer=f.scene.input.activePointer;
+  const placement=resolveControlLayout(controlViewport(),f.app.controlLayout.snapshot()).attack;
+  Object.assign(pointer,{x:placement.x,y:placement.y});
+  object.emit('dragstart',pointer);
+  const editor=f.internals.controlEditor!;
+  const previousFrame=Object.getOwnPropertyDescriptor(globalThis,'requestAnimationFrame');
+  const previousCancel=Object.getOwnPropertyDescriptor(globalThis,'cancelAnimationFrame');
+  let cancelled=0;const pending:FrameRequestCallback[]=[];
+  Object.defineProperty(globalThis,'requestAnimationFrame',{configurable:true,
+    value:(callback:FrameRequestCallback)=>{pending.push(callback);return pending.length;}});
+  Object.defineProperty(globalThis,'cancelAnimationFrame',{configurable:true,value:()=>{cancelled++;}});
+  t.after(()=>{
+    for(const [name,descriptor] of [['requestAnimationFrame',previousFrame],['cancelAnimationFrame',previousCancel]] as const){
+      if(descriptor)Object.defineProperty(globalThis,name,descriptor);else Reflect.deleteProperty(globalThis,name);
+    }
+  });
+  const layout=t.mock.method(editor,'layout');
+  for(const distance of [60,120,180]){
+    Object.assign(pointer,{x:placement.x+distance,y:placement.y+distance});
+    object.emit('drag',pointer,placement.x+distance,placement.y+distance);
+  }
+  assert.equal(pending.length,1,'一帧只安排一次完整重排');
+  assert.equal(layout.mock.callCount(),0,'排队期间不重排');
+  assert.equal(f.app.controlLayout.snapshot().attack?.scale,undefined,'拖动中不写存储');
+  pending[0]!(0);
+  assert.equal(layout.mock.callCount(),1,'帧回调只重排一次');
+  Object.assign(pointer,{x:placement.x+220,y:placement.y+220});
+  object.emit('drag',pointer,placement.x+220,placement.y+220);
+  assert.equal(pending.length,2,'下一帧再排一次');
+  object.emit('dragend',pointer);
+  assert.equal(cancelled,1,'松手清掉排队帧');
+  const saved=f.app.controlLayout.snapshot().attack!;
+  assert.ok(saved.scale!==undefined&&saved.scale>1.2,`松手提交最后倍率：${saved.scale}`);
+  const expected=resolveControlLayout(controlViewport(),f.app.controlLayout.snapshot()).attack;
+  assert.deepEqual([object.x,object.y],[expected.x,expected.y],'松手当帧落在最终位置');
+  // 取消排队中的缩放：撤掉待处理帧，也不把未松手的倍率写进偏好。
+  Object.assign(pointer,{x:placement.x,y:placement.y});
+  object.emit('dragstart',pointer);
+  Object.assign(pointer,{x:placement.x+60,y:placement.y+60});
+  object.emit('drag',pointer,placement.x+60,placement.y+60);
+  const beforeCancel=cancelled;
+  assert.equal(pending.length,3,'取消前有一帧排队');
+  f.scene.game.events.emit(UI_EVENTS.cancelInput);
+  assert.equal(cancelled,beforeCancel+1,'取消清掉排队帧');
+  assert.equal(f.app.controlLayout.snapshot().attack?.scale,saved.scale,'取消不提交新倍率');
 });
 
 test('settings cycles operation modes in place and shows the matching editor entry',t=>{

@@ -177,7 +177,11 @@ export function maxControlScale(viewport: ControlViewport, id: ControlId,
 
 /** 拖动点先限制图片完整留在安全区，再转为可跨尺寸保存的坐标。 */
 export function normalizeControlPosition(viewport: ControlViewport, id: ControlId, point: ControlPoint,
-  overrides: ControlLayoutOverrides = {}, moveSize: {width: number; height: number} = CONTROL_SIZES.move): ControlPoint {
-  const safe = safeArea(viewport), position = fitPoint(viewport, point, resolveControlLayout(viewport, overrides, moveSize)[id]);
+  overrides: ControlLayoutOverrides = {}, moveSize: { width: number; height: number } = CONTROL_SIZES.move,
+  placement?: ControlPlacement): ControlPoint {
+  const safe = safeArea(viewport);
+  // 拖动期间控件尺寸不变，传入缓存的本控件画框即可省掉一次整表解析。
+  const current = placement ?? resolveControlLayout(viewport, overrides, moveSize)[id];
+  const position = fitPoint(viewport, point, current);
   return {x: (position.x - safe.left) / safe.width, y: (position.y - safe.top) / safe.height};
 }

@@ -188,3 +188,15 @@ test('control viewport keeps screen dimensions and safe areas in CSS pixels', ()
     }
   }
 });
+
+test('a cached control frame normalizes drag points exactly like a fresh layout', () => {
+  const target: ControlViewport = {width: 1920, height: 1280, insets: {left: 80, right: 40, top: 20, bottom: 40}};
+  const overrides: ControlLayoutOverrides = {attack: {x: .7, y: .6, scale: 1.5}};
+  const cached = resolveControlLayout(target, overrides).attack;
+  for (const point of [{x: 900, y: 400}, {x: -100, y: 9000}]) {
+    assert.deepEqual(
+      normalizeControlPosition(target, 'attack', point, overrides, CONTROL_SIZES.move, cached),
+      normalizeControlPosition(target, 'attack', point, overrides),
+      '拖动期间缓存画框不能改变归一化结果');
+  }
+});

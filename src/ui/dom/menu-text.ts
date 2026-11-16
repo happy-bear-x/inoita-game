@@ -96,6 +96,8 @@ export class MenuTextLayer {
   private page = '';
   private shown = true;
   private signature = '';
+  /** 同一帧里的多次滚动/拖动只排一次整页重算；没有 rAF 的测试环境立即执行。 */
+  private refreshFrame?: number;
 
   constructor(
     dom: Pick<DomUi, 'label'>,
@@ -131,6 +133,8 @@ export class MenuTextLayer {
 
   /** 按登记的函数重建当前页文字；没有登记函数的页面只保留空层。 */
   renderPage(page: string): void {
+    // 新页面的正文马上要整体重排；上一帧排队的位置重算读到的也是同一份规格，直接合并掉。
+    this.cancelRefresh();
     this.beginPage(page);
     const specs: MenuTextSpec[] = [];
     this.renderers.get(page)?.({ add: spec => specs.push(spec) });
@@ -138,9 +142,23 @@ export class MenuTextLayer {
     this.apply();
   }
 
-  /** 滚动、窗口缩放后重新换算位置；不会重建标签。 */
+  /**
+   * 滚动、窗口缩放后重新换算位置；不会重建标签。
+   * 一次滚动事件可能有面板与滚动区两个调用方，同一帧也只做一次整页重算。
+   */
   refresh(): void {
-    this.apply();
+    if (this.refreshFrame !== undefined) return;
+    if (typeof requestAnimationFrame !== 'function') { this.apply(); return; }
+    this.refreshFrame = requestAnimationFrame(() => {
+      this.refreshFrame = undefined;
+      this.apply();
+    });
+  }
+
+  private cancelRefresh(): void {
+    if (this.refreshFrame === undefined) return;
+    if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(this.refreshFrame);
+    this.refreshFrame = undefined;
   }
 
   /** 菜单整体隐藏或让位给弹层时调用。 */
@@ -164,6 +182,7 @@ export class MenuTextLayer {
   }
 
   destroy(): void {
+    this.cancelRefresh();
     this.clearEntries();
     this.specs = [];
     this.renderers.clear();
