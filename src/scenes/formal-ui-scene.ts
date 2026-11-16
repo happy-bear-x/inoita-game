@@ -56,6 +56,8 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
   private blocker!:UiNode;
   /** 原版 `INSTANTMSG` 的屏幕提示；不进 surface，因为它要逐帧淡出而 surface 每次 sync 整体重建。 */
   private domInstant?:DomLabel;
+  /** 屏幕提示标签上次写入的文字与透明度；按标签缓存，标签重建后自然失效。 */
+  private readonly instantStyle=new WeakMap<DomLabel,{text:string;alpha:string}>();
   private domToast?:DomLabel;
   private domSpeaker?:DomLabel;
   /** 加载页的标题、状态行与两枚按钮文字；加载背景和进度条仍由 Phaser 画。 */
@@ -158,8 +160,13 @@ export class FormalUiScene extends Phaser.Scene implements GameUiView {
     const hidden=!message||!!ui.loadingState||ui.defeated||ui.suspended||ui.worldRebuildCover||!!ui.dialogueLine||!!ui.choices||!!ui.quest;
     if(!this.domInstant)return;
     this.domInstant.setVisible(!hidden);
-    if(hidden)return;
-    this.domInstant.setText(message!);this.domInstant.setStyle({opacity:String(ui.instant.alpha)});
+    // 隐藏后再显示时重新写一次透明度；新提示按文字变化失效，淡出按 alpha 变化失效。
+    if(hidden){this.instantStyle.delete(this.domInstant);return;}
+    this.domInstant.setText(message!);
+    const alpha=String(ui.instant.alpha),cached=this.instantStyle.get(this.domInstant);
+    if(cached?.text===message&&cached.alpha===alpha)return;
+    this.instantStyle.set(this.domInstant,{text:message!,alpha});
+    this.domInstant.setStyle({opacity:alpha});
   }
   private layoutDomText():void{
     const scale=this.surfacePoint(0,0).scale,frame=frameRect(),point=instantMessagePoint(frame.width,frame.height);

@@ -23,7 +23,9 @@ export class DomMinimap extends DomComponent {
   private readonly failed: (error: unknown) => void;
   private readonly cellSize: number;
   private readonly player: DomImage;
-  private playerKey = '';
+  /** 上次画到的整数格子；只在跨格时投影并写 left/top。 */
+  private playerCellX = Number.NaN;
+  private playerCellY = Number.NaN;
   private readonly tasks = new Map<string, Marker>();
   private readonly enemies = new Map<string, Marker>();
   private readonly interactions = new Map<string, Marker>();
@@ -76,15 +78,19 @@ export class DomMinimap extends DomComponent {
   layout(viewport: ControlViewport): void {
     const scale = uiUnitScale(viewport.width, viewport.height);
     this.placed = { x: viewport.insets.left + 12, y: viewport.insets.top, scale };
+    // 布局变化后重新写一次玩家点，避免缓存的格子跨过一次重排后仍被当成已画好。
+    this.playerCellX = Number.NaN; this.playerCellY = Number.NaN;
     Object.assign(this.element.style, { left: `${this.placed.x}px`, top: `${this.placed.y}px`, transformOrigin: '0 0', transform: `scale(${scale})` });
   }
   extent(): { x: number; y: number; width: number; height: number } {
     return { x: this.placed.x, y: this.placed.y, width: this.width * this.placed.scale, height: this.height * this.placed.scale };
   }
   updatePlayer(point: Point): void {
-    const at = this.project(point, 4), key = `${at.x}|${at.y}`;
-    if (key === this.playerKey) return;
-    this.playerKey = key;
+    // 直接比较整数格子：站立时不再投影、不建坐标对象、不拼 x|y 字符串。
+    const cellX = Math.floor(point.x / this.map.tileSize), cellY = Math.floor(point.y / this.map.tileSize);
+    if (cellX === this.playerCellX && cellY === this.playerCellY) return;
+    this.playerCellX = cellX; this.playerCellY = cellY;
+    const at = this.project(point, 4);
     this.player.element.style.left = `${at.x}px`; this.player.element.style.top = `${at.y}px`;
   }
   updateTasks(tasks: readonly MinimapTask[]): void {

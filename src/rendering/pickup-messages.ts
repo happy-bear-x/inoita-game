@@ -28,6 +28,13 @@ interface ActiveMessage {
   row:number;
   lift:number;
   tween?:Phaser.Tweens.Tween;
+  /** 上次写入网页的最终坐标、显隐和画框/缩放；这些都没变时不再碰 DOM。 */
+  screenX?:number;
+  screenY?:number;
+  display?:string;
+  frameWidth?:number;
+  frameHeight?:number;
+  zoom?:number;
 }
 
 /** Each pickup follows its recipient and keeps its own native lifetime. */
@@ -60,7 +67,8 @@ export class PickupMessages {
     this.paused=paused;
     if(this.next)this.next.paused=paused;
     for(const entry of this.active){
-      entry.dom.style.display=paused?'none':'flex';
+      const display=paused?'none':'flex';
+      entry.dom.style.display=display;entry.display=display;
       if(paused)entry.tween?.pause();else entry.tween?.resume();
     }
     if(!paused)this.startNext();
@@ -111,13 +119,19 @@ export class PickupMessages {
     if(!anchor){this.remove(entry);return;}
     if(!this.domUi)return;
     const camera=this.scene.cameras.main,point=this.domUi.worldToScreen(camera,anchor.x,anchor.y+anchor.headAnchor.y);
-    const zoom=camera.zoom,unit=this.domUi.storyUnit(camera),width=entry.width||entry.dom.getBoundingClientRect().width;
+    const zoom=camera.zoom,unit=this.domUi.storyUnit(camera),frame=this.domUi.frameSize(camera),width=entry.width||entry.dom.getBoundingClientRect().width;
     if(!entry.width)entry.width=width;
     const right=point.x+anchor.headAnchor.x*zoom+20*zoom;
-    const x=right+width>this.domUi.frameSize(camera).width-8?point.x-anchor.headAnchor.x*zoom-20*zoom-width:right;
+    const x=right+width>frame.width-8?point.x-anchor.headAnchor.x*zoom-20*zoom-width:right;
     const y=point.y+(entry.row*MESSAGE_ROW_STEP-37-entry.lift)*unit;
+    const display=this.visible()?'flex':'none';
+    // 投影每帧都算；最终坐标、显隐、画框和缩放都没变时，省掉字符串和两项样式写入。
+    if(entry.screenX===x&&entry.screenY===y&&entry.display===display&&entry.zoom===zoom
+      &&entry.frameWidth===frame.width&&entry.frameHeight===frame.height)return;
+    entry.screenX=x;entry.screenY=y;entry.display=display;entry.zoom=zoom;
+    entry.frameWidth=frame.width;entry.frameHeight=frame.height;
     entry.dom.style.transform=`translate3d(${x}px, ${y}px, 0)`;
-    entry.dom.style.display=this.visible()?'flex':'none';
+    entry.dom.style.display=display;
   }
   private update():void {for(const entry of this.active)this.position(entry);}
   private remove(entry:ActiveMessage):void {

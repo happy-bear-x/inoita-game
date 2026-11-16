@@ -90,11 +90,11 @@ const documentStub={createElement:(tag:string)=>new FakeElement(tag)};
 function sceneHarness(){
   const visuals:Visual[]=[],timers:Timer[]=[],tweens:Tween[]=[];
   const listeners=new Map<()=>void,()=>void>();
-  const domLayer=new FakeElement('div');
+  const domLayer=new FakeElement('div'),frame={width:800,height:480};
   const domUi={
     layer:()=>domLayer,
     storyUnit:()=>1,
-    frameSize:()=>({width:800,height:480}),
+    frameSize:()=>frame,
     worldToScreen:(_camera:unknown,x:number,y:number)=>({x,y}),
   } as unknown as DomUi;
   const create=(kind:string,x=0,y=0,value='')=>{const visual=new Visual(kind,value).setPosition(x,y);visuals.push(visual);return visual;};
@@ -118,7 +118,7 @@ function sceneHarness(){
     scale:{width:800,height:480},
     cameras:{main:{zoom:1,worldView:{x:0,y:0,width:320,height:213}}},
   };
-  return {scene:scene as unknown as Phaser.Scene,domUi,domLayer,visuals,timers,tweens,
+  return {scene:scene as unknown as Phaser.Scene,domUi,domLayer,frame,visuals,timers,tweens,
     update:()=>listeners.forEach(listener=>listener()),
     messages:()=>domLayer.children.filter(child=>child.className==='dom-pickup'&&!child.removed)};
 }
@@ -160,6 +160,27 @@ test('pickup messages remain separate, follow their own recipient, and reuse exp
   assert.ok(at(h.messages()[1],215,43));
   delete anchors.hero;h.update();assert.equal(h.messages().length,1);
   view.destroy();assert.equal(h.messages().length,0);
+});
+
+test('pickup messages stop writing styles while the projected position and visibility stay the same',()=>{
+  const h=sceneHarness(),anchor={x:100,y:100,headAnchor:{x:0,y:0}};
+  let shown=true;
+  const view=new PickupMessages(h.scene,items,{anchor:()=>anchor,domUi:h.domUi,visible:()=>shown});
+  view.enqueue([reward],'hero');
+  const message=h.messages()[0];
+  assert.ok(at(message,120,63));
+  message.style.transform=message.style.display='unchanged';
+  h.update();
+  assert.equal(message.style.transform,'unchanged','投影没变时不拼字符串、不写 transform');
+  assert.equal(message.style.display,'unchanged','显隐没变时不写 display');
+  shown=false;h.update();assert.equal(message.style.display,'none','可见性变化时立即更新');
+  shown=true;h.update();assert.ok(at(message,120,63));
+  // 画框变化后即使坐标刚好相同也要重新写一次，不能沿用旧缓存的“已画好”状态。
+  message.style.transform='stale';h.frame.width=900;h.update();
+  assert.ok(at(message,120,63));
+  message.style.transform='stale';h.scene.cameras.main.zoom=2;h.update();
+  assert.ok(at(message,140,63),'缩放变化后按新投影重写');
+  view.destroy();
 });
 
 test('pickup messages hide and stop timers while paused; destruction cancels queued rewards',()=>{

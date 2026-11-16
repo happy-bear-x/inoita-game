@@ -291,6 +291,31 @@ test('DOM minimap combines terrain, keeps native marker sizes and reuses or remo
   } finally { h.restore(); }
 });
 
+test('DOM minimap writes the player marker only when its integer cell changes', async () => {
+  const h = harness();
+  try {
+    const assets = new DomAssets({ image: async () => ({ width: 22, height: 20 }), atlas: async () => ({ frames: {} }) });
+    const files = Object.fromEntries(MINIMAP_ASSETS.map(part => [part, `${part}.png`]));
+    const map = { id: 'test', columns: 3, rows: 3, tileSize: 16, blocked: [true, true, false, false, false, false, true, false, true], exits: [] } as unknown as WorldMap;
+    const view = new DomMinimap(h.parent, map, files, () => {}, assets);
+    const root = view.element as unknown as Element;
+    const player = root.children.at(-1)!;
+    view.updatePlayer({ x: 0, y: 0 });
+    assert.deepEqual([player.style.left, player.style.top], ['3px', '-1px']);
+    player.style.left = player.style.top = 'stale';
+    view.updatePlayer({ x: 15, y: 15 });
+    assert.deepEqual([player.style.left, player.style.top], ['stale', 'stale'], '同一格不再投影或写样式');
+    view.updatePlayer({ x: 16, y: 15 });
+    assert.deepEqual([player.style.left, player.style.top], ['8px', '-1px'], '跨格才写 left/top');
+    player.style.left = 'stale';
+    view.layout({ width: 960, height: 640, insets: { left: 4, top: 2, right: 0, bottom: 0 } });
+    view.updatePlayer({ x: 16, y: 15 });
+    assert.equal(player.style.left, '8px', '布局变化后重置缓存并重写一次');
+    view.destroy(); await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(assets.size, 0);
+  } finally { h.restore(); }
+});
+
 test('DOM cooldown handles a full circle, fractional seconds, empty and zero-duration cooldowns', () => {
   const h = harness();
   try {
