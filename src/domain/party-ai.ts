@@ -1,4 +1,4 @@
-import { PartyFollow, type PartyTrail } from './party-follow.ts';
+import { PartyFollow } from './party-follow.ts';
 import { LOGIC_FRAME_MS, type EnemyPlayableSkill } from './battle.ts';
 import { attackDistance, targetDistance } from './basic-attack.ts';
 import { CombatController, canTargetCombatant, type Combatant, type CombatPort } from './combat.ts';
@@ -31,7 +31,6 @@ export interface PartyPort extends CombatPort {
   /** 每渲染帧共享的寻路扩展预算；缺省时按单次上限同步搜索（测试与无场景调用）。 */
   pathBudget?:{take(owner:string,limit:number):number};
   followPath(next: () => Point | undefined, speedScale?:number): void;
-  followTrail?:PartyTrail;
   followCanStand?(point:Point):boolean;
   followNavigationSnapshot?:PartyPort['navigationSnapshot'];
   /** 长时间没有位移或离得太远时，让宿主把佣兵放到队长身边；无场景调用可省略。 */

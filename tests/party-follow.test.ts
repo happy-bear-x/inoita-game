@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {PartyFollow,PartyTrail} from '../src/domain/party-follow.ts';
+import {PartyFollow} from '../src/domain/party-follow.ts';
 import type {PartyPort} from '../src/domain/party-ai.ts';
 import type {Point} from '../src/domain/navigation.ts';
 import {PathBudget} from '../src/domain/path-budget.ts';
@@ -8,15 +8,15 @@ import {PathBudget} from '../src/domain/path-budget.ts';
 function setup(blocked=(_p:Point)=>false){
   const bounds={x:-8,y:-8,width:16,height:16};
   const actor={id:'ally',team:'party',position:{x:64,y:176},bounds},leader={id:'hero',team:'party',position:{x:128,y:128},bounds};
-  const trail=new PartyTrail(),budget=new PathBudget(512);let next:(()=>Point|undefined)|undefined,rescues=0,scale=1;
+  const budget=new PathBudget(512);let next:(()=>Point|undefined)|undefined,rescues=0,scale=1;
   const free=(p:Point)=>p.x>=8&&p.x<=1000&&p.y>=8&&p.y<=1000&&!blocked(p);
-  const port={actor:()=>actor,followTrail:trail,followSlot:()=>0,canStand:free,navigationBounds:()=>({x:0,y:0,width:1024,height:1024}),
+  const port={actor:()=>actor,followSlot:()=>0,leaderFacing:()=>'east' as const,canStand:free,navigationBounds:()=>({x:0,y:0,width:1024,height:1024}),
     pathBudget:budget,followPath:(callback:()=>Point|undefined,speed=1)=>{next=callback;scale=speed;},stop:()=>{next=undefined;},
     regroup:()=>{rescues++;actor.position={...leader.position};return true;}} as unknown as PartyPort;
   const follower=new PartyFollow(actor.id,port);
-  const step=()=>{budget.reset();trail.record('hero',leader.position,60,'east');follower.tick(actor,leader,60);follower.move(actor,leader,'support',60);
+  const step=()=>{budget.reset();follower.tick(actor,leader,60);follower.move(actor,leader,'support',60);
     const p=next?.();if(p){const dx=p.x-actor.position.x,dy=p.y-actor.position.y,d=Math.hypot(dx,dy),n=Math.min(d,6*scale);if(d)actor.position={x:actor.position.x+dx/d*n,y:actor.position.y+dy/d*n};}};
-  return {actor,leader,trail,follower,port,step,rescues:()=>rescues};
+  return {actor,leader,follower,port,step,rescues:()=>rescues};
 }
 
 test('wall-hidden support formation walks to its leader without rescue',()=>{
@@ -24,17 +24,16 @@ test('wall-hidden support formation walks to its leader without rescue',()=>{
   for(let i=0;i<100;i++)f.step();
   assert(Math.hypot(f.actor.position.x-128,f.actor.position.y-128)<=24);assert.equal(f.rescues(),0);
 });
-test('a moving leader is followed continuously with bounded shared history and no path searches on open ground',()=>{
+test('a moving leader is followed continuously without path searches on open ground',()=>{
   const f=setup();f.actor.position={x:80,y:128};
   for(let i=0;i<120;i++){f.leader.position.x+=5;f.step();}
   assert(Math.hypot(f.actor.position.x-f.leader.position.x,f.actor.position.y-f.leader.position.y)<96);
   assert.equal(f.rescues(),0);assert.equal(f.follower.diagnostics.searches,0);
-  const trail=new PartyTrail();for(let i=0;i<2000;i++)trail.record('hero',{x:i*8,y:20},60,'east');assert.equal(trail.size,128);
 });
 test('kiting does not withdraw but sustained departure and extreme separation do',()=>{
   const f=setup();f.actor.position={x:200,y:200};let returning=false;
-  for(let i=0;i<100;i++){f.leader.position={x:200+100*Math.cos(i/8),y:200+100*Math.sin(i/8)};f.trail.record('hero',f.leader.position,60,'east');returning=f.follower.tick(f.actor,f.leader,60);assert.equal(returning,false);}
-  for(let i=0;i<70;i++){f.leader.position={x:300+i*5,y:200};f.trail.record('hero',f.leader.position,60,'east');returning=f.follower.tick(f.actor,f.leader,60);}
+  for(let i=0;i<100;i++){f.leader.position={x:200+100*Math.cos(i/8),y:200+100*Math.sin(i/8)};returning=f.follower.tick(f.actor,f.leader,60);assert.equal(returning,false);}
+  for(let i=0;i<70;i++){f.leader.position={x:300+i*5,y:200};returning=f.follower.tick(f.actor,f.leader,60);}
   assert.equal(returning,true);
   f.actor.position={...f.leader.position};for(let i=0;i<12;i++)returning=f.follower.tick(f.actor,f.leader,60);assert.equal(returning,false);
 });

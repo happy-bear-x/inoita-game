@@ -22,6 +22,13 @@ export function followOffset(facing: Facing, stance: CompanionStance, slot: 0 | 
     y: forward.y * distance * sign + right.y * lateral * side };
 }
 
+/** 站位点放不下时按槽位在队长身后错开，窄道里也能排成一列。 */
+export function narrowFollowOffset(facing: Facing, slot: 0 | 1 | undefined): Point {
+  const forward = FOLLOW_FORWARD[facing];
+  const behind = slot === 1 ? 44 : 24;
+  return { x: -forward.x * behind, y: -forward.y * behind };
+}
+
 /** 两个队伍单位按同一碰撞盒落位时是否重叠；边贴边不算重叠。 */
 export function partyBodyOverlaps(point: Point, other: Point, shape: NavigationShape): boolean {
   const box = shape.collision;

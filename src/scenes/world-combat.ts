@@ -1,4 +1,3 @@
-import { PartyTrail } from '../domain/party-follow.ts';
 import { settleCombatRewards } from '../domain/combat-rewards.ts';
 import { SummonLifecycle, advanceSummonLifetime, releasesSummonVitals, summonDurationMs, summonLifetimeExpired, summonedChildren } from '../domain/summon-lifecycle.ts';
 import { displaySettings } from '../application/display-settings.ts';
@@ -337,7 +336,6 @@ export class WorldCombat {
   private relocationFailures: { id: string; position: Point }[] = [];
   /** 跟随长时间没有进展、被传送到队长身边的次数；用于上报排查。 */
   private followerCatchUps = 0;
-  private readonly followTrail=new PartyTrail();
   private readonly regroupCooldowns = new Map<string,number>();
   constructor(scene:WorldScene,app:StoryContext,roster:WorldEnemyRoster,hero:BattleCharacter,drops:DropCatalog){
     this.scene=scene;this.app=app;this.roster=roster;this.hero=hero;this.drops=drops;
@@ -2294,8 +2292,7 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
       healScore:key=>this.healScoreFor(key),
       healCandidates:()=>this.healCandidates(),
       facing,
-      followTrail:this.followTrail,
-      followCanStand:point=>this.movement.navigation.bodyTerrainFree(this.movement.actor(visual).shape(),point)&&this.movement.canStand(visual,point),
+      followCanStand:point=>this.movement.canStand(visual,point),
       followNavigationSnapshot:()=>this.movement.navigation.captureStandability(this.movement.actor(visual),true),
       leader:()=>this.combatant(this.controlledId),leaderFacing:()=>this.facingOfControlled(),
       followSlot:()=>this.app.session.party?.followSlotOf(this.controlledId,id),focusTarget:()=>this.focusTargetId,
@@ -2593,7 +2590,6 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
    */
   private syncControlled(cancelActions=true):void{
     const id=this.controlledId;
-    this.followTrail.reset();
     this.feedback.cancelShake();
     this.combat=this.partyControllers.get(id);
     if(!this.combat&&id!=='player')return;
@@ -3342,8 +3338,6 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
     if(this.shouldSyncParty(this.scene.time.now))
       void this.syncAllies().catch(error=>this.app.ui.toast((error as Error).message));
     if(this.controlledId!==this.syncedControlledId&&this.partyControllers.has(this.controlledId))this.syncControlled(false);
-    const controlled=this.controlledVisual;
-    if(controlled)this.followTrail.record(this.controlledId,this.movement.position(controlled),delta,this.facingOfControlled());
     this.app.session.advanceCombatFrames(delta,frame=>{
       this.combatantsCache=undefined;
       // 名册按逻辑帧刷新；最多晚一帧（约 60ms）出现，不再每渲染帧全量扫描生成点。
