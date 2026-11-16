@@ -502,14 +502,20 @@ export class StoryUI {
     if(!this.open){this.open=true;this.app.ui.lock(true,'story-menu');}
     const signature=this.sessionDataSignature();
     const reuseBag=reopening&&page==='bag'&&this.bagPageCached&&signature!==undefined&&signature===this.sessionSignature;
+    const previousPage=this.page;
     if(this.page!==page){
       if(this.page==='party')this.app.releasePartyPreview?.();
       if(this.page==='debug')this.releaseDebugPanel();
+      if(this.page==='bag')this.clearBagTransientState();
       this.itemResult=undefined;this.cancelOperation();this.adjusting=false;this.notice='';
     }
     // 背包页的 DOM、静态图框和合成立绘都留着；数据没变时只把整层显示出来。
-    const previousPage=this.page;
     this.page=page;
+    // 背包的滚动位置只属于一次进入：切页回来或重新打开都从第一行开始。
+    if(page==='bag'&&(reopening||previousPage!=='bag')){
+      this.scrollOffsets.delete('bag:inventory');
+      if(reuseBag&&this.bagGrid)this.bagGrid.scrollTop=0;
+    }
     if(reopening||previousPage!==page)globalThis.storyDiagnostics?.record('menu-page',{page,open:true},false);
     if(reuseBag){this.sync();return;}
     // render() 末尾已经 sync 过；这里再调一次会把整层再排版一遍。
@@ -605,9 +611,13 @@ export class StoryUI {
     }
     if(this.page==='debug')this.releaseDebugPanel();this.controlEditor?.close();this.app.ui.setControlLayoutEditing(false);
     this.keyBindingEditor?.close();this.app.ui.setKeyBindingEditing(false);this.cancelOperation();this.modalActive=false;this.shortcutEdit=undefined;this.shortcutScreen?.clear();this.shortcutSlots=[];this.backTab?.clear();
-    const keepBag=this.page==='bag'&&this.bagPageCached;
+    // 背包的说明面板和使用结果不属于缓存页面；下次打开背包时应回到干净的列表。
+    const hadBagDetail=this.page==='bag'&&(!!this.selectedItem||!!this.itemResult);
+    if(this.page==='bag')this.clearBagTransientState();
+    const keepBag=this.page==='bag'&&this.bagPageCached&&!hadBagDetail;
     this.shopPanel=undefined;this.partyPanel?.destroyPreview();this.app.releasePartyPreview?.();this.craftingPanel=undefined;this.craftingActor=undefined;this.forge=undefined;this.skillBook=undefined;this.open=false;
     if(keepBag)this.bagPortrait?.visible(false);else this.bagPortrait?.destroy();
+    if(keepBag&&this.bagGrid)this.bagGrid.scrollTop=0;
     this.scrollNames.forEach((scroll,name)=>this.scrollOffsets.set(`${this.page}:${name}`,scroll.scrollTop));if(!keepBag)this.scrollNames.clear();
     if(!keepBag){
       this.body?.clear();this.description?.clear();
@@ -641,6 +651,12 @@ export class StoryUI {
     this.bagPageCached=false;this.scrollNames.clear();this.bagPortrait?.detach();
     this.body?.clear();this.description?.clear();
     if(this.surface&&this.body){this.surface.clear(this.body.root);}
+  }
+
+  /** 背包的选中详情和滚动位置是一次进入期间的临时状态，离开页面时一起丢掉。 */
+  private clearBagTransientState():void{
+    this.selectedItem=undefined;this.itemResult=undefined;this.bagDetailOpen=false;
+    this.scrollOffsets.delete('bag:inventory');this.scrollOffsets.delete('bag:item');
   }
   private cancelOperation():void{this.cancelDrag();this.request.abort();this.request=new AbortController();this.busy=false;this.operation=undefined;this.itemNotice=undefined;this.skillReset=false;this.savePage?.cancelPending();this.partyPanel?.close();this.craftingPanel?.close();this.forge=undefined;this.skillBook=undefined;this.modal?.clear();this.modal?.visible(false);}
   /** 返回是否消费这次按键；菜单关闭时把未消费的按键让给剧情层和世界。 */

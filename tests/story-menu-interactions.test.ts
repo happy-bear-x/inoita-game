@@ -2101,6 +2101,37 @@ test('changing bag categories keeps the grid, character controls and category bu
   assert.equal(f.scene.button('主手'),weapon);
 });
 
+test('entering the bag starts at the first row and drops the previous item detail',t=>{
+  const f=fixture();t.after(f.cleanup);
+  const supplies=Object.keys(items.items).filter(id=>items.items[id].category==='consumable'&&!items.items[id].pickup).slice(0,40);
+  supplies.forEach(id=>f.add(id));
+  f.menu.show('bag');
+  const grid=()=>f.internals.body.scrolls.find(scroll=>scroll.x===496+34)!;
+  const wheel=(distance:number)=>{
+    const scroll=grid(),point=scroll.surface.root.getWorldTransformMatrix().transformPoint(scroll.x+10,scroll.y+10);
+    Object.assign(f.scene.input.activePointer,point);f.scene.input.emit('wheel',f.scene.input.activePointer,[],0,distance);
+    return scroll.scrollTop;
+  };
+  const entry=f.session.bag.entries.find(value=>value.item===supplies[0])!;
+  f.scene.click(f.scene.button(items.items[entry.item].name));
+  assert.equal(f.internals.selectedItem,entry.id,'说明面板已打开');
+  assert(wheel(300)>0,'背包先滚动到下方');
+  f.scene.click(f.scene.button('人物'));
+  assert.equal(f.internals.page,'status');
+  f.scene.click(f.scene.button('背包'));
+  assert.equal(f.internals.page,'bag');
+  assert.equal(f.internals.selectedItem,undefined,'切页回来不保留物品说明');
+  assert.equal(grid().scrollTop,0,'切页回来从第一行开始');
+  assert(wheel(300)>0);
+  f.menu.close();f.menu.show('bag');
+  assert.equal(grid().scrollTop,0,'关闭菜单再打开从第一行开始');
+  f.scene.click(f.scene.button(items.items[entry.item].name));
+  assert.equal(f.internals.selectedItem,entry.id);
+  f.menu.close();f.menu.show('bag');
+  assert.equal(f.internals.selectedItem,undefined,'重新打开菜单不保留物品说明');
+  assert.equal(grid().scrollTop,0);
+});
+
 test('bag data changes reuse the grid and only touch changed slots', t => {
   const f=fixture();t.after(f.cleanup);
   const scroll=f.add('novice-weapon-scroll'),jewel=f.add('novice-jewel');
