@@ -127,6 +127,8 @@ export class MovementWorld {
   refreshShape(visual: CharacterVisual): void {
     this.restorePositions();
     this.body(visual).shape(this.actor(visual).shape()); this.interpolation.reset(visual.container);
+    // 外观可能带不同的碰撞盒；内容机关的索引要跟着当前形状走。
+    this.navigation.refreshActor(this.actor(visual));
   }
   setEnabled(visual: CharacterVisual, enabled: boolean): void {
     const body = this.body(visual), changed = body.enable !== enabled;
@@ -190,6 +192,8 @@ export class MovementWorld {
     this.stop(visual);
     this.body(visual).reset(position.x, position.y);
     this.body(visual).updateFromGameObject();
+    // 机关换了格子，内容索引按新脚点重建；查询仍在命中时读实时显隐与碰撞盒。
+    this.navigation.refreshActor(this.actor(visual));
     visual.container.setVisible(enabled);
     this.setEnabled(visual, enabled);
     this.interpolation.reset(visual.container);
@@ -266,6 +270,8 @@ export class MovementWorld {
     }
     for (const p of settled) {
       this.stop(p.visual); this.body(p.visual).reset(p.position.x, p.position.y); this.body(p.visual).updateFromGameObject();
+      // 整组落位后同步内容索引；会移动的单位不占内容桶，刷新同样幂等。
+      this.navigation.refreshActor(this.actor(p.visual));
       if (p.enabled !== undefined) { p.visual.container.setVisible(p.enabled); this.setEnabled(p.visual, p.enabled); }
       this.interpolation.reset(p.visual.container);
       p.visual.container.setDepth(p.position.y + CHARACTER_FOOT_DEPTH_OFFSET);

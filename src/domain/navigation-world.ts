@@ -7,6 +7,8 @@ const COLLISION_EPSILON = 1e-7;
 const PLACEMENT_SEARCH_BUDGET = 512;
 /** 占位广相的格子边长。和地图瓦片同尺寸；它只筛候选，相交仍由 `overlapsAt` 精确判定。 */
 const OCCUPANCY_CELL_SIZE = 16;
+/** 内容机关索引的格子边长；登记碰撞盒覆盖的每一格，查询也只收集查询盒覆盖的格子。 */
+const CONTENT_INDEX_CELL_SIZE = 16;
 /** 广相格子键的进位；地图坐标远小于这个范围，去掉字符串键的分配。 */
 const OCCUPANCY_CELL_STRIDE = 1 << 20;
 const TERRAIN_DIRECTIONS: readonly (readonly [number, number])[] = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
@@ -118,6 +120,10 @@ export class NavigationWorld {
   private readonly water?: Uint8Array;
   private readonly actors = new Set<NavigationActor>();
   private readonly contentActors = new Set<NavigationActor>();
+  /** 内容机关按 16px 格子索引：格子键 → 碰撞盒压在这格上的机关，供附近查询收集候选。 */
+  private readonly contentCells = new Map<number, NavigationActor[]>();
+  /** 每个机关当前登记的格子键；刷新时先撤掉旧格，位置变化不会留下重复或过期登记。 */
+  private readonly contentActorCells = new Map<NavigationActor, number[]>();
   private terrainComponents?: { cols: number; rows: number; labels: Int32Array };
   constructor(terrain: CollisionMap | { name: string; bounds: GameRectangle }) {
     this.name = terrain.name;
@@ -133,12 +139,47 @@ export class NavigationWorld {
   }
   register(actor: NavigationActor): () => void {
     this.actors.add(actor); this.refreshActor(actor);
-    return () => { this.actors.delete(actor); this.contentActors.delete(actor); };
+    return () => { this.actors.delete(actor); this.refreshActor(actor); };
   }
-  /** 注册用途发生变化时更新机关名单；坐标、形状和显隐继续在查询时实时读取。 */
+  /**
+   * 注册用途、位置或碰撞盒变化时更新机关名单和空间索引；显隐、ghost 和阵营仍在查询时实时读取。
+   * 重复调用是幂等的：先按上次登记的格子键撤掉旧位置，再按当前包围盒重新登记。
+   */
   refreshActor(actor: NavigationActor): void {
-    if (this.actors.has(actor) && actor.content?.()) this.contentActors.add(actor);
+    const content = this.actors.has(actor) && actor.content?.() === true;
+    if (content) this.contentActors.add(actor);
     else this.contentActors.delete(actor);
+    this.indexContentActor(actor, content);
+  }
+  private indexContentActor(actor: NavigationActor, content: boolean): void {
+    const previous = this.contentActorCells.get(actor);
+    if (previous) {
+      for (const key of previous) {
+        const bucket = this.contentCells.get(key);
+        if (!bucket) continue;
+        const index = bucket.indexOf(actor);
+        if (index >= 0) bucket.splice(index, 1);
+        if (!bucket.length) this.contentCells.delete(key);
+      }
+      this.contentActorCells.delete(actor);
+    }
+    if (!content) return;
+    // 没有碰撞盒的机关本来就不会挡住角色，不必登记。停用的机关仍登记：启用状态在查询时过滤，
+    // `setEnabled` 只改显隐和物理体，不会经过这里。
+    const box = actor.shape().collision;
+    if (!box) return;
+    const point = actor.position();
+    const left = Math.floor((point.x + box.x) / CONTENT_INDEX_CELL_SIZE);
+    const right = Math.floor((point.x + box.x + box.width) / CONTENT_INDEX_CELL_SIZE);
+    const top = Math.floor((point.y + box.y) / CONTENT_INDEX_CELL_SIZE);
+    const bottom = Math.floor((point.y + box.y + box.height) / CONTENT_INDEX_CELL_SIZE);
+    const keys: number[] = [];
+    for (let row = top; row <= bottom; row++) for (let column = left; column <= right; column++) {
+      const key = occupancyCellKey(column, row), bucket = this.contentCells.get(key);
+      if (bucket) bucket.push(actor); else this.contentCells.set(key, [actor]);
+      keys.push(key);
+    }
+    this.contentActorCells.set(actor, keys);
   }
   /**
    * 地图加载完调用：把 8 px 地形连通块的建表成本移出第一次召唤/落点查询。
@@ -233,7 +274,17 @@ export class NavigationWorld {
   blockedByContent(shape: NavigationShape, point: Point, ignore?: NavigationActor): boolean {
     const box = collisionAt(shape, point);
     if (!box) return false;
-    for (const actor of this.contentActors) {
+    // 查询盒覆盖的每一格都要收集，大机关可能从相邻格伸进来；同一机关占多格时只检查一次。
+    const left = Math.floor(box.x / CONTENT_INDEX_CELL_SIZE);
+    const right = Math.floor((box.x + box.width) / CONTENT_INDEX_CELL_SIZE);
+    const top = Math.floor(box.y / CONTENT_INDEX_CELL_SIZE);
+    const bottom = Math.floor((box.y + box.height) / CONTENT_INDEX_CELL_SIZE);
+    const candidates = new Set<NavigationActor>();
+    for (let row = top; row <= bottom; row++) for (let column = left; column <= right; column++) {
+      const bucket = this.contentCells.get(occupancyCellKey(column, row));
+      if (bucket) for (const actor of bucket) candidates.add(actor);
+    }
+    for (const actor of candidates) {
       if (actor === ignore || !actor.content?.() || !actor.enabled()) continue;
       if (ignore?.ghost?.() || actor.ghost?.()) continue;
       if (ignore && !blocksActor(ignore, actor)) continue;

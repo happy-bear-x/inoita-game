@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire, registerHooks } from 'node:module';
 import test from 'node:test';
 import type Phaser from 'phaser';
-import { NavigationWorld } from '../src/domain/navigation-world.ts';
+import { NavigationWorld, blocksActor, collisionAt, overlaps, type NavigationActor, type NavigationShape } from '../src/domain/navigation-world.ts';
 import type { CharacterVisual } from '../src/rendering/characters.ts';
 import type { MovementWorld as MovementWorldType } from '../src/rendering/movement-world.ts';
 
@@ -101,7 +101,7 @@ test('only content actors participate in content recovery', () => {
   assert.equal(navigation.blockedByContent(hero.shape(), point, hero), false, '普通单位不算内容机关');
 });
 
-test('content checks skip ordinary actors and track registration changes and live obstacle positions', () => {
+test('content checks skip ordinary actors and track registration changes and indexed obstacle positions', () => {
   const navigation = new NavigationWorld(map), point = { x: 568, y: 136 };
   let ordinaryChecks = 0, content = false;
   const obstacle = { shape: () => ({ collision: flameCollision }), position: () => point, enabled: () => true,
@@ -116,6 +116,134 @@ test('content checks skip ordinary actors and track registration changes and liv
   assert.equal(navigation.blockedByContent(shape, point), true);
   assert.equal(navigation.blockedByContent(shape, { x: 400, y: 300 }), false);
   point.x = 400; point.y = 300;
-  assert.equal(navigation.blockedByContent(shape, point), true, '机关被剧情移动后仍读实时位置');
+  navigation.refreshActor(obstacle);
+  assert.equal(navigation.blockedByContent(shape, point), true, '机关移动后刷新索引，查询按新位置命中');
+  assert.equal(navigation.blockedByContent(shape, { x: 568, y: 136 }), false, '旧位置的格子不再留下机关');
   unregister(); assert.equal(navigation.blockedByContent(shape, point), false);
+});
+
+interface ContentActorFlags {
+  enabled?: () => boolean;
+  ghost?: () => boolean;
+  faction?: () => 'party' | 'hostile' | 'neutral';
+}
+
+function contentActor(id: string, point: { x: number; y: number }, collision: { x: number; y: number; width: number; height: number },
+  reads: Map<string, number>, flags: ContentActorFlags = {}): NavigationActor {
+  return {
+    shape: () => { reads.set(id, (reads.get(id) ?? 0) + 1); return { collision }; },
+    position: () => point,
+    enabled: flags.enabled ?? (() => true),
+    ghost: flags.ghost,
+    faction: flags.faction,
+    content: () => true,
+  };
+}
+
+/** 未建索引时的全表扫描；查询结果必须与它一致。 */
+function fullContentScan(actors: readonly NavigationActor[], shape: NavigationShape, point: { x: number; y: number },
+  ignore?: NavigationActor): boolean {
+  const box = collisionAt(shape, point);
+  if (!box) return false;
+  for (const actor of actors) {
+    if (actor === ignore || !actor.content?.() || !actor.enabled()) continue;
+    if (ignore?.ghost?.() || actor.ghost?.()) continue;
+    if (ignore && !blocksActor(ignore, actor)) continue;
+    const other = actor.shape().collision;
+    if (!other) continue;
+    const at = actor.position();
+    if (overlaps({ ...other, x: at.x + other.x, y: at.y + other.y }, box)) return true;
+  }
+  return false;
+}
+
+test('content index only checks nearby buckets and agrees with a full scan', () => {
+  const navigation = new NavigationWorld({ name: 'index', bounds: { x: 0, y: 0, width: 384, height: 384 } });
+  const reads = new Map<string, number>();
+  const actors = [
+    contentActor('near', { x: 40, y: 40 }, { x: -8, y: -8, width: 16, height: 16 }, reads),
+    contentActor('far-east', { x: 320, y: 48 }, { x: -8, y: -8, width: 16, height: 16 }, reads),
+    contentActor('far-south', { x: 48, y: 320 }, { x: -8, y: -8, width: 16, height: 16 }, reads),
+    contentActor('diagonal', { x: 336, y: 336 }, { x: -8, y: -8, width: 16, height: 16 }, reads),
+  ];
+  for (const actor of actors) navigation.register(actor);
+  const query = { collision: { x: -4, y: -4, width: 8, height: 8 } };
+  reads.clear();
+  assert.equal(navigation.blockedByContent(query, { x: 40, y: 40 }), true);
+  assert.equal(reads.get('near'), 1, '命中附近的机关只读一次形状');
+  for (const id of ['far-east', 'far-south', 'diagonal']) {
+    assert.equal(reads.get(id) ?? 0, 0, `${id} 离查询很远，不应进入候选`);
+  }
+
+  for (const shape of [query, { collision: { x: -12, y: -12, width: 24, height: 24 } }]) {
+    for (let y = 8; y <= 376; y += 24) for (let x = 8; x <= 376; x += 24) {
+      assert.equal(navigation.blockedByContent(shape, { x, y }), fullContentScan(actors, shape, { x, y }),
+        `查询点 ${x},${y} 的结果应与全表扫描一致`);
+    }
+  }
+});
+
+test('a content actor spanning several buckets is checked once per query', () => {
+  const navigation = new NavigationWorld({ name: 'index', bounds: { x: 0, y: 0, width: 256, height: 256 } });
+  const reads = new Map<string, number>();
+  const large = contentActor('large', { x: 128, y: 128 }, { x: -32, y: -32, width: 64, height: 64 }, reads);
+  navigation.register(large);
+  reads.clear();
+  const query = { collision: { x: -12, y: -12, width: 24, height: 24 } };
+  assert.equal(navigation.blockedByContent(query, { x: 128, y: 128 }), true);
+  assert.equal(reads.get('large'), 1, '查询盒覆盖多格时，同一机关也只做一次精确判定');
+});
+
+test('content index follows moves, unregistering and re-registering', () => {
+  const navigation = new NavigationWorld({ name: 'index', bounds: { x: 0, y: 0, width: 320, height: 320 } });
+  const point = { x: 40, y: 40 };
+  const obstacle = contentActor('obstacle', point, { x: -8, y: -8, width: 16, height: 16 }, new Map());
+  const unregister = navigation.register(obstacle);
+  const query = { collision: { x: -4, y: -4, width: 8, height: 8 } };
+  assert.equal(navigation.blockedByContent(query, { x: 40, y: 40 }), true);
+  point.x = 200; point.y = 200;
+  navigation.refreshActor(obstacle);
+  assert.equal(navigation.blockedByContent(query, { x: 40, y: 40 }), false, '旧格子已撤销');
+  assert.equal(navigation.blockedByContent(query, { x: 200, y: 200 }), true);
+  unregister();
+  assert.equal(navigation.blockedByContent(query, { x: 200, y: 200 }), false, '注销后同步移除索引');
+  navigation.register(obstacle);
+  assert.equal(navigation.blockedByContent(query, { x: 200, y: 200 }), true, '重新注册按当前位置登记');
+  navigation.refreshActor(obstacle);
+  assert.equal(navigation.blockedByContent(query, { x: 200, y: 200 }), true, '重复刷新保持幂等');
+});
+
+test('content index keeps ignore, ghost, enabled and faction filters live', () => {
+  const navigation = new NavigationWorld({ name: 'index', bounds: { x: 0, y: 0, width: 256, height: 256 } });
+  const point = { x: 80, y: 80 };
+  let enabled = true, ghost = false;
+  const obstacle = contentActor('flame', point, { x: -8, y: -8, width: 16, height: 16 }, new Map(), {
+    enabled: () => enabled, ghost: () => ghost, faction: () => 'party',
+  });
+  navigation.register(obstacle);
+  const query = { collision: { x: -4, y: -4, width: 8, height: 8 } };
+  const ally: NavigationActor = {
+    shape: () => ({ collision: { x: -4, y: -4, width: 8, height: 8 } }),
+    position: () => point, enabled: () => true, faction: () => 'party',
+  };
+  const ghostQuery: NavigationActor = {
+    shape: () => ({ collision: { x: -4, y: -4, width: 8, height: 8 } }),
+    position: () => point, enabled: () => true, ghost: () => true,
+  };
+
+  assert.equal(navigation.blockedByContent(query, point, ally), false, '同阵营单位不互相阻挡');
+  assert.equal(navigation.blockedByContent(query, point, ghostQuery), false, 'ghost 查询者被忽略');
+  assert.equal(navigation.blockedByContent(query, point, obstacle), false, 'ignore 的机关不参与判定');
+  assert.equal(navigation.blockedByContent(query, point), true, '没有过滤条件时按实体相交');
+  ghost = true;
+  assert.equal(navigation.blockedByContent(query, point), false, 'ghost 机关在查询时被过滤');
+  ghost = false;
+  enabled = false;
+  assert.equal(navigation.blockedByContent(query, point), false, '停用机关在查询时被过滤');
+  enabled = true;
+  assert.equal(navigation.blockedByContent(query, point), true, '重新启用不需要刷新索引');
+  const shapeless: NavigationActor = { shape: () => ({}), position: () => point, enabled: () => true, content: () => true };
+  const empty = new NavigationWorld({ name: 'index', bounds: { x: 0, y: 0, width: 256, height: 256 } });
+  empty.register(shapeless);
+  assert.equal(empty.blockedByContent(query, point), false, '没有碰撞盒的机关本来就不挡人');
 });

@@ -147,6 +147,26 @@ test('content actors placed on blocked terrain are never relocated by physics',t
   assert.equal(visual.container.visible,false);
 });
 
+test('content placements and shape changes refresh the content index at the new footprint',t=>{
+  const h=harness();
+  t.after(()=>{h.movement.destroy();h.world.destroy();});
+  const torch=testVisual('torch',40,40);
+  h.movement.register(torch.visual,false);
+  const query={collision:{x:-4,y:-4,width:8,height:8}};
+  assert.equal(h.navigation.blockedByContent(query,{x:40,y:40}),true);
+  h.movement.placeContent(torch.visual,{x:120,y:120},true);
+  assert.equal(h.navigation.blockedByContent(query,{x:40,y:40}),false,'placeContent 撤销旧格子的登记');
+  assert.equal(h.navigation.blockedByContent(query,{x:120,y:120}),true,'placeContent 按新位置命中');
+  h.movement.placeAll([{visual:torch.visual,position:{x:200,y:200},enabled:true}]);
+  assert.equal(h.navigation.blockedByContent(query,{x:120,y:120}),false,'placeAll 撤销旧格子的登记');
+  assert.equal(h.navigation.blockedByContent(query,{x:200,y:200}),true,'placeAll 按新位置命中');
+  torch.visual.actor.collision={x:-16,y:-16,width:32,height:32};
+  h.movement.refreshShape(torch.visual);
+  assert.equal(h.navigation.blockedByContent(query,{x:212,y:200}),true,'换外观后新碰撞盒覆盖的格子已登记');
+  h.movement.remove(torch.visual);
+  assert.equal(h.navigation.blockedByContent(query,{x:212,y:200}),false,'注销后索引同步移除');
+});
+
 test('a movable actor without terrain recovery is not relocated when its start is illegal',t=>{
   const events=new EventEmitter();
   const group={scene:{},add(){},remove(){},destroy(){}};
