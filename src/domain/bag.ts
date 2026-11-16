@@ -25,6 +25,13 @@ export interface BagRules {
   odds?:(source:ItemInstance,target:ItemInstance)=>EnhancementOdds|undefined;
 }
 
+export interface SkillUnlockRules {
+  /** 共享技能记录与开封事务由会话装配，背包只负责抽取与消耗。 */
+  has(skill:string):boolean;
+  unlock(skill:string):string;
+  atomic<T>(operation:()=>T):T;
+}
+
 export interface BagState {
   instances: ItemInstance[];
   /** 五个背包袋各自的格位：下标是该袋自己的格位号，空格是显式 undefined。 */
@@ -113,7 +120,7 @@ function isStackableInstance(entry: ItemInstance, catalog: ItemCatalog): boolean
  * 不修改传入的状态；没有可合并的条目时原样返回。
  *
  * 旧存档在可叠加物品还是逐件存放时，会把同一件物品散在多个格位里；读档时用它收拢。
- * 带强化、宝石、词条等单件状态的实例各算一件；绑定同门技能的解锁书仍会合并。
+ * 带强化、宝石、词条等单件状态的实例各算一件；绑定技能相同的可叠加物品按同一个键合并。
  */
 export function mergeStackableInstances(state: BagState, catalog: ItemCatalog): BagState {
   const seen = new Set<string>();
@@ -174,6 +181,7 @@ export class Bag {
   get learnedRecipes(): string[] { return [...this.recipeBook]; }
   lastResult?: Readonly<ItemResult>;
   private rules?:BagRules;
+  private skillUnlocks?:SkillUnlockRules;
   private countsCache?:{revision:number;value:Map<string,number>};
   /** counts 整表重建次数；消耗走增量更新时不增加。测试用它确认没有退回整表重算。 */
   private countsRebuilds = 0;
@@ -190,6 +198,24 @@ export class Bag {
         this.worn = step.next!;
       }
     }
+  }
+
+  setSkillUnlockRules(rules:SkillUnlockRules):void{this.skillUnlocks=rules;}
+  private unsealSkill(source:ItemInstance,random:()=>number):ItemResult{
+    const unlocks=this.skillUnlocks;
+    if(!unlocks)throw new Error('佣兵技能解锁尚未就绪');
+    const classId=this.catalog.items[source.item].use!.classId!;
+    const skills=(this.catalog.classSkills[classId]??[]).filter(id=>!unlocks.has(id));
+    if(!skills.length)throw new Error('本职业技能已全部解锁');
+    const value=random();
+    if(!Number.isFinite(value)||value<0||value>=1)throw new Error('随机结果无效');
+    const skill=skills[Math.floor(value*skills.length)]!;
+    return unlocks.atomic(()=>{
+      const message=unlocks.unlock(skill);
+      this.consume(source.id);
+      const result:ItemResult={kind:'unseal',title:'技能已永久解锁',message,rewards:[],item:source.item,classId,skill};
+      this.lastResult=result;this.notify();return result;
+    });
   }
   /** 显式自检：测试用它确认当前背包自洽。正常流程由 `captureState`/`restoreState` 两个边界自动调用。 */
   verifyConsistency(): void { verifyBagState(this.snapshot(),this.catalog); }
@@ -579,12 +605,11 @@ export class Bag {
     if(!source||this.cellOf(id)<0)throw new Error('物品已不在背包中');
     const definition=this.catalog.items[source.item], use=definition.use;
     if(!use)throw new Error('此物品不能直接使用');
-    // 两类物品在这里拦下，都不消耗：入口在界面层的（回血、招募、复活）、
-    // 以及用途还没实现的（符文和多数 consume）。玩家能看到原因，
-    // 而不是拿到一句「已使用XX」却发现没效果。
+    // 回复、招募和复活由界面入口结算；用途尚未实现的物品保留并说明原因。
     if(USE_HANDLING[use.kind]==='ui')throw new Error(USE_INTERFACE_ONLY);
     const unimplemented=unimplementedItemUse(source.item,definition);
     if(unimplemented)throw new Error(unimplemented);
+    if(use.kind==='unseal')return this.unsealSkill(source,random);
     if(['enchant','socket','purify'].includes(use.kind)) {
       if(!target||!this.canApply(id,target))throw new Error('请选择可应用的装备');
       const problem=this.applicationProblem(id,target);
@@ -597,15 +622,13 @@ export class Bag {
     };
     const learnedSkill=source.skill||skill;
     if(use.kind==='learn'&&(!learnedSkill||(!memberId&&!this.catalog.classSkills[this.classId]?.includes(learnedSkill))))throw new Error('请选择本职业的技能');
-    if(use.kind==='unlock-skill'&&(!learnedSkill||!memberId))throw new Error('请选择要解锁技能的佣兵');
     const result:ItemResult={kind:use.kind,title:USE_LABELS[use.kind],message:`已使用${definition.name}`,rewards:[],target,item:source.item};
     const enchantOutcome=use.kind==='enchant'?this.rules?.enchant?.(source,this.instances.get(target!)!,random):undefined;
     const useMessage=this.rules?.applyUse(source,target?this.instances.get(target):undefined,learnedSkill,memberId);
     if(useMessage)result.message=useMessage;
-    if(use.kind==='unlock-skill'&&!useMessage)throw new Error('解锁书只能通过角色使用');
-    // 每种用途都要有一个 case：新增 ItemUseKind 时，`default` 的 `never` 兜底会在这里编译失败。
+    // 每种用途都要有一个 case；新增用途时，default 的 never 兜底会在编译时提示。
     switch(use.kind) {
-      // consume 与技能点类的结算由上面的 applyUse 完成；神灯在地图召唤事务中扣除物品，人物由世界场景准备。
+      // consume 与技能点类由 applyUse 结算；神灯在地图召唤事务中扣除。
       case 'consume': case 'merchant': break;
       case 'enchant': {
         const entry=this.instances.get(target!)!,outcome=enchantOutcome;
@@ -616,31 +639,22 @@ export class Bag {
       case 'socket': {const entry=this.instances.get(target!)!;entry.gems.push(source.item);result.message=`${this.catalog.items[entry.item].name}已镶嵌${definition.name}`;break;}
       case 'purify': {const entry=this.instances.get(target!)!;delete entry.numbers!.chaos;result.message=`${this.catalog.items[entry.item].name}的混沌属性已净化`;break;}
       case 'pack': result.rewards=use.rewards!.map(reward=>({...reward}));break;
-      case 'box': case 'unseal': {
+      case 'box': {
         const rewards=source.lootLevel===undefined?use.rewards!:use.rewards!.filter(reward=>{
           const level=this.catalog.items[reward.item]?.level;
           return level!==undefined&&level>=Math.max(1,source.lootLevel!-15)&&level<=source.lootLevel!;
         });
-        result.rewards=[{...pick(rewards)}];
-        if(use.kind==='unseal'){
-          const owned=new Set([...this.instances.values()].filter(entry=>entry.item==='skill-unlock-book').map(entry=>entry.skill));
-          const skills=(this.catalog.classSkills[use.classId!]??[]).filter(skill=>!owned.has(skill));
-          if(!skills.length)throw new Error('本职业的技能解锁书已经全部获得');
-          result.classId=use.classId;
-          result.skill=pick(skills);
-        }
-        break;
+        result.rewards=[{...pick(rewards)}];break;
       }
       case 'recipe': result.recipe=pick(use.recipes!);break;
       case 'learn': result.skill=learnedSkill;break;
-      case 'unlock-skill': result.skill=learnedSkill;break;
-      // 上面已按 USE_HANDLING 拒绝，走不到这几行；列出来只为让 switch 保持穷尽。
+      // 界面专用入口已在上方拒绝，这些 case 保持用途检查完整。
       case 'recover-health': case 'regenerate': case 'recruit': case 'revive': throw new Error(USE_INTERFACE_ONLY);
       case 'dungeon': throw new Error(USE_NOT_IMPLEMENTED);
       default: {const missing:never=use.kind;throw new Error(`未处理的物品用途：${missing}`);}
     }
-    if(use.kind!=='unlock-skill')this.consume(id);
-    for(const reward of result.rewards)this.add(reward.item,reward.quantity,use.kind==='unseal'?result.skill:undefined);
+    this.consume(id);
+    for(const reward of result.rewards)this.add(reward.item,reward.quantity);
     if(result.recipe)this.recipeBook.add(result.recipe);
     this.lastResult=result;this.notify();return result;
   }

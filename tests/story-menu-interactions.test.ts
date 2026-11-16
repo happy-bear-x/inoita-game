@@ -1238,45 +1238,37 @@ test('mercenary skill book keeps the selected skill icon and applies companion g
   assert.equal(f.session.bag.count('skillbook'),1);
 });
 
-test('unlock book page lists same-class mercenaries and keeps the book after unlocking',t=>{
+test('sealed books permanently unlock a skill in the bag and preserve the other controls',async t=>{
   const f=fixture();t.after(f.cleanup);
-  const member=f.recruit('warlock');
+  const member=f.recruit('warlock'),second=f.recruit('warlock');f.session.party!.reserve(second.id);
   const classSkills=battle.classes.find(value=>value.id===member.classId)!.skills;
-  const missing=classSkills.find(id=>!(id in member.skills.skillLevels()))!;
-  const book=f.add('skill-unlock-book',1,missing);f.select(member.id);f.menu.debugDescribe(book.id);
-  f.scene.click(f.scene.button('解锁技能'));
-  assert.equal(f.internals.page,'learn');
-  assert.equal(f.internals.skillBook?.title,'解锁技能');
-  assert(visibleDomLabels(f).some(label=>label.text===member.definition.name),'同职业佣兵出现在解锁页');
-  assert.equal(f.scene.button('解锁技能').input!.enabled,true);
-  f.scene.click(f.scene.button('解锁技能'));
-  assert.equal(member.skills.skillLevels()[missing],0,'解锁仅开放资格，仍需手动加点');
-  assert.equal(f.session.bag.get(book.id)?.item,'skill-unlock-book','解锁书使用后仍留在背包');
-  assert(visibleDomLabels(f).some(label=>label.text.includes(member.definition.name)&&label.text.includes('已开放')),'已开放的佣兵不能重复解锁');
-  assert.equal(f.scene.button('解锁技能').input!.enabled,false,'同一佣兵不能重复解锁');
-  assert.equal(f.internals.page,'learn','使用后仍停留在解锁页');
-  f.scene.click(f.scene.button('关闭技能书'));
-  f.menu.show('party');f.scene.click(f.scene.button(member.definition.name));f.scene.click(f.scene.button('技能目录'));
-  const unlockedIcon=f.scene.button(`${battle.skills[missing].name} 0 级`);
-  assert.ok(unlockedIcon,'解锁技能在队伍页显示为已开放');
-  f.scene.click(unlockedIcon);
-  assert(!visibleDomLabels(f).some(label=>label.text.includes('undefined')),'未开放上限不再显示 undefined');
-  assert(visibleDomLabels(f).some(label=>label.text.includes('技能书解锁')),'解锁技能标记为技能书解锁');
+  const missing=classSkills.find(id=>!member.skills.available(id))!;
+  t.mock.method(Math,'random',()=>(classSkills.indexOf(missing)+0.5)/classSkills.length);
+  const book=f.add('sealed-skillbook-warlock'),other=f.add('ferrule');f.select('player');f.menu.debugDescribe(book.id);
+  const organize=f.scene.button('整理'),otherSlot=f.scene.button(items.items[other.item].name),scroll=f.internals.scrollNames.get('inventory');
+  f.scene.click(f.scene.button('解除封印'));await f.internals.confirmOperation();
+  assert.equal(f.internals.page,'bag');assert.equal(f.internals.skillBook,undefined);
+  assert.equal(f.session.bag.get(book.id),undefined);
+  assert.equal(member.skills.available(missing),true);assert.equal(member.skills.level(missing),0);
+  assert.equal(second.skills.available(missing),true);
+  const text=visibleDomLabels(f).map(label=>label.text).join('\n');
+  assert(text.includes('已永久解锁'));assert(text.includes(battle.skills[missing].name));assert(text.includes('黑魔导'));
+  assert.equal(f.scene.button('整理'),organize);assert.equal(f.scene.button(items.items[other.item].name),otherSlot);
+  assert.equal(f.internals.scrollNames.get('inventory'),scroll);
+  f.scene.click(f.scene.button('关闭'));
+  assert.equal(f.scene.button('整理'),organize);assert.equal(f.internals.scrollNames.get('inventory'),scroll);
+  f.menu.show('party');f.scene.click(f.scene.buttons(member.definition.name)[0]!);f.scene.click(f.scene.button('技能目录'));
+  f.scene.click(f.scene.button(`${battle.skills[missing].name} 0 级`));
+  assert(visibleDomLabels(f).some(label=>label.text.includes('永久解锁')));
 });
 
-test('unlock member row paginates instead of overflowing',t=>{
+test('sealed books keep a completed collection in the bag and show the reason',async t=>{
   const f=fixture();t.after(f.cleanup);
-  const recruited:ReturnType<typeof f.recruit>[]=[];
-  for(let index=0;index<7;index++){const member=f.recruit('warlock');recruited.push(member);if(index>0)f.session.party!.reserve(member.id);}
-  const first=recruited[0]!;
-  const skill=battle.classes.find(value=>value.id==='warlock')!.skills.find(id=>!(id in first.skills.skillLevels()))!;
-  const book=f.add('skill-unlock-book',1,skill);f.select(first.id);f.menu.debugDescribe(book.id);
-  f.scene.click(f.scene.button('解锁技能'));
-  assert(visibleDomLabels(f).some(label=>label.text==='1/2'),'第一页页码');
-  assert.equal(f.scene.buttons('上一页').length,1);
-  assert.equal(f.scene.buttons('下一页').length,1);
-  f.scene.click(f.scene.button('下一页'));
-  assert(visibleDomLabels(f).some(label=>label.text==='2/2'),'翻到第二页');
+  for(const skill of items.classSkills.warlock!)f.session.party!.unlockSharedSkill(skill);
+  const book=f.add('sealed-skillbook-warlock');f.menu.debugDescribe(book.id);
+  f.scene.click(f.scene.button('解除封印'));await f.internals.confirmOperation();
+  assert.ok(f.session.bag.get(book.id));assert.equal(f.internals.page,'bag');
+  assert(visibleDomLabels(f).some(label=>label.text.includes('本职业技能已全部解锁')));
 });
 
 test('selecting a skill book entry keeps skill icons and frames',t=>{

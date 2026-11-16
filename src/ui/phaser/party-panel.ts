@@ -414,7 +414,7 @@ export class PartyPanel {
     v.image(skill.icon,35,25,75,75);
     this.modalEntry('skill-name',skill.name,135,30,26,GOLD,0,0,{width:550,wrap:'word'});
     this.modalEntry('skill-level',modal.id!=='player'&&(member as CompanionMember).source==='mercenary'&&cap?
-      `等级 ${level} / ${skill.ranks.length}${unlocked?'（技能书解锁）':`（普通学习上限 ${cap}）`}`:
+      `等级 ${level} / ${skill.ranks.length}${unlocked?'（永久解锁）':`（普通学习上限 ${cap}）`}`:
       level?`等级 ${level} / ${cap}`:cap?'尚未习得':'该佣兵未开放此技能',135,70,21,GOLD,0,0,{width:550,wrap:'word'});
     const scroll=this.scrollArea(v,'party-modal',35,124,648,197);
     scroll.onScroll=()=>this.refreshText();

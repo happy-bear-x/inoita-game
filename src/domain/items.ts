@@ -14,7 +14,7 @@ export type EquipmentSlot = typeof EQUIPMENT_SLOTS[number];
  */
 export const EQUIPMENT_SLOT_ORDER: readonly EquipmentSlot[] =
   ['head','neck','ring','accessory','body','back','main-hand','off-hand','hands','feet'];
-export const ITEM_USES = ['recover-health', 'consume', 'enchant', 'socket', 'purify', 'pack', 'box', 'unseal', 'learn', 'unlock-skill', 'regenerate',
+export const ITEM_USES = ['recover-health', 'consume', 'enchant', 'socket', 'purify', 'pack', 'box', 'unseal', 'learn', 'regenerate',
   'recruit', 'merchant', 'revive', 'recipe', 'dungeon'] as const;
 type ItemUseKind = typeof ITEM_USES[number];
 export interface ItemReward { item: string; quantity: number }
@@ -202,7 +202,7 @@ export interface ItemResult {
 export const USE_LABELS: Record<ItemUseKind, string> = {
   'recover-health': '使用',
   consume: '使用', enchant: '强化', socket: '镶嵌', purify: '净化', pack: '打开礼盒', box: '打开宝箱', unseal: '解除封印',
-  learn: '使用技能书', 'unlock-skill': '解锁技能', regenerate: '使用',
+  learn: '使用技能书', regenerate: '使用',
   recruit: '使用徽章', merchant: '召唤神灯商人', revive: '复活', recipe: '打开合成套装', dungeon: '使用符文'
 };
 
@@ -245,7 +245,7 @@ export const USE_HANDLING: Record<ItemUseKind, 'bag' | 'ui' | 'pending'> = {
   consume: 'bag',
   dungeon: 'pending',
   enchant: 'bag', socket: 'bag', purify: 'bag', pack: 'bag', box: 'bag', unseal: 'bag',
-  recipe: 'bag', learn: 'bag', 'unlock-skill': 'bag',
+  recipe: 'bag', learn: 'bag',
 };
 
 /**

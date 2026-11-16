@@ -5,6 +5,7 @@ export function itemResultDetails(result: ItemResult | undefined, catalog: ItemC
   skillName: (id: string) => string, className: (id: string) => string): string[] {
   if (!result) return [];
   const lines = result.rewards.map(reward => `${catalog.items[reward.item].name} × ${reward.quantity}`);
+  if (result.kind === 'unseal') lines.push('已永久解锁');
   if (result.skill) lines.push(`技能：${skillName(result.skill)}`);
   if (result.classId) lines.push(`职业：${className(result.classId)}`);
   if (result.recipe) {

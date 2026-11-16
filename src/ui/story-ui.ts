@@ -2281,8 +2281,7 @@ export class StoryUI {
       ()=>this.render(),()=>this.app.audio?.ui('select'),(message)=>this.closeSkillBook(message),
       (view,name,x,y,width,height)=>this.scroll(name,x,y,width,height,view),()=>this.menuText?.refresh(),()=>this.menuText?.renderPage('learn'),
       scroll=>{for(const [name,value] of this.scrollNames)if(value===scroll)this.scrollNames.delete(name);},
-      this.selectedMemberId==='player'?undefined:this.session!.party?.get(this.selectedMemberId),
-      this.session!.party?.ownedMembers().filter(member=>member.source==='mercenary')??[]);
+      this.selectedMemberId==='player'?undefined:this.session!.party?.get(this.selectedMemberId));
     this.skillBook.open();this.page='learn';this.render();
   }
   private closeSkillBook(message?:string):void {
@@ -2299,7 +2298,7 @@ export class StoryUI {
     if(kind==='use'&&this.itemUseProblem(instance))return;
     const use=this.session!.bag.catalog.items[instance.item].use;
     // 技能书不弹确认框：独立页本身就承担选择与确认。
-    if(kind==='use'&&(use?.kind==='learn'||use?.kind==='unlock-skill')){this.openSkillBook(entry);return;}
+    if(kind==='use'&&use?.kind==='learn'){this.openSkillBook(entry);return;}
     // 神灯的动作按钮直接召唤一名地图商人。
     if(kind==='use'&&use?.kind==='merchant'){
       this.operation={entry,kind,quantity:1};this.confirmOperation();return;

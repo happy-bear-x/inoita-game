@@ -90,6 +90,8 @@ interface CompanionState {
 interface PartyState {
   members:CompanionState[];rosterSlots:(string|null)[];slots:(string|null)[];selected:string;serial:number;
   heroAiFrequency:[string,number][];
+  /** 当前存档永久开放的佣兵技能，现有和未来同职业佣兵共用。 */
+  sharedUnlockedSkills:string[];
 }
 
 
@@ -236,6 +238,7 @@ export class PartyRoster {
   /** 招募会同时改名册、背包和任务事实，由会话层提供的 `atomic` 包成一次全成全退。 */
   private readonly atomic?:<T>(operation:()=>T)=>T;
   private readonly owned=new Map<string,CompanionMember>();
+  private readonly sharedUnlockedSkills=new Set<string>();
   private slots:(string|undefined)[]=[undefined,undefined];
   private selected='player';
   private serial=0;
@@ -253,6 +256,22 @@ export class PartyRoster {
     onRecruited?:(sourceItem:string,memberId:string)=>void,atomic?:<T>(operation:()=>T)=>T,battleCatalog?:BattleCatalog){
     this.hero=hero;this.bag=hero.bag;this.stats=stats;this.items=items;this.catalog=catalog;this.changed=changed;this.onMemberRemoved=onMemberRemoved;
     this.onRecruited=onRecruited;this.atomic=atomic;this.battleCatalog=battleCatalog;
+  }
+
+  hasSharedSkill(skill:string):boolean{return this.sharedUnlockedSkills.has(skill);}
+  unlockSharedSkill(skill:string):void{
+    if(!this.battleCatalog?.skills[skill]||!Object.values(this.items.classSkills).some(skills=>skills.includes(skill)))throw new Error('佣兵技能不存在');
+    if(this.hasSharedSkill(skill))throw new Error('该技能已永久解锁');
+    this.sharedUnlockedSkills.add(skill);
+    for(const member of this.owned.values())this.applySharedSkills(member);
+    this.changed();
+  }
+  private applySharedSkills(member:CompanionMember):void{
+    if(member.source!=='mercenary'||!this.battleCatalog)return;
+    const skills=this.items.classSkills[member.classId]??[];
+    for(const id of this.sharedUnlockedSkills){
+      if(skills.includes(id)&&!member.skills.available(id))member.skills.unlockSkill(id,this.battleCatalog);
+    }
   }
   /** 成员集合或成员等级变化：组队被动版本推进。 */
   private bumpGroupModifiers():void{this.groupModifierVersionValue++;}
@@ -330,6 +349,7 @@ export class PartyRoster {
     if(!this.catalog.growth[definition.classId])throw new Error('伙伴成长数据缺失');
     const member=new CompanionMember(id,definition,source,generated.level,this.stats,this.items,this.bag,
       this.catalog.growth[definition.classId],this.changed,generated,this.catalog.generation.training,()=>this.bumpGroupModifiers(),this.battleCatalog);
+    this.applySharedSkills(member);
     const gear=this.items.startingEquipment[definition.classId]??{},
       retired=source==='story'?this.bag.takeRetiredEquipment(id):undefined;
     try {
@@ -473,14 +493,15 @@ export class PartyRoster {
   }
   captureState():PartyState{return structuredClone({members:[...this.owned.values()].map(member=>member.captureState()),
     rosterSlots:this.rosterSlots,slots:this.slots.map(value=>value??null),selected:this.selected,serial:this.serial,
-    heroAiFrequency:[...this.heroAiFrequency]});}
+    heroAiFrequency:[...this.heroAiFrequency],sharedUnlockedSkills:[...this.sharedUnlockedSkills]});}
   restoreState(state:PartyState):void{
     const saved=structuredClone(state);this.owned.clear();
+    this.sharedUnlockedSkills.clear();for(const id of saved.sharedUnlockedSkills??[])this.sharedUnlockedSkills.add(id);
     for(const entry of saved.members){
       const definition=this.catalog.definitions[entry.definitionId];if(!definition)throw new Error('检查点中的伙伴不存在');
       const member=new CompanionMember(entry.id,definition,entry.source,entry.level,this.stats,this.items,this.bag,
         this.catalog.growth[definition.classId],this.changed,entry.generated,this.catalog.generation.training,()=>this.bumpGroupModifiers(),this.battleCatalog);
-      member.restoreState(entry);this.owned.set(entry.id,member);
+      member.restoreState(entry);this.applySharedSkills(member);this.owned.set(entry.id,member);
     }
     this.rosterSlots=saved.rosterSlots;this.slots=saved.slots.map(value=>value??undefined);this.selected=saved.selected;this.serial=saved.serial;
     this.invalidateActiveIds();

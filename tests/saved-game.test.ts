@@ -3,7 +3,7 @@ import test from 'node:test';
 import {readFileSync} from 'node:fs';
 import {prepareSavedGame,type SavedGameContent} from '../src/application/saved-game.ts';
 import {newStorySession} from '../src/domain/story-class.ts';
-import {captureSaveGame,saveSummary} from '../src/domain/save-game.ts';
+import {SAVE_FORMAT,captureSaveGame,saveSummary} from '../src/domain/save-game.ts';
 import type {StoryWorldViewSnapshot} from '../src/scenes/world-scene.ts';
 import {emptyShortcutRow} from '../src/domain/shortcut-bar.ts';
 import type {WorldMap} from '../src/domain/content.ts';
@@ -420,6 +420,67 @@ test('format 51 mercenaries gain empty skill book progress on upgrade',()=>{
   assert.equal(restored.skills.manual,true);
 });
 
+test('format 56 turns bound books and mercenary unlocks into shared knowledge without changing training or the source save',()=>{
+  const base=record(),character=content.storyClasses.classes[0],session=newStorySession(content.campaign,content.world.actors[content.campaign.start.actor],character,
+    content.items,content.characterStats,content.battleCatalog,content.companions);
+  session.hero!.addExperience(Number.MAX_SAFE_INTEGER);
+  session.bag.add('mercenary-emblem-black-knight');
+  const member=session.party!.recruit(session.bag.entries.find(entry=>entry.item==='mercenary-emblem-black-knight')!.id,()=>0).member;
+  const missing=content.items.classSkills[member.classId]!.filter(id=>!member.skills.available(id));
+  const learned=missing[0]!,bound=missing[1]!;
+  member.skills.unlockSkill(learned,content.battleCatalog);
+  const natural=Object.keys(member.generated.skillCaps)[0]!,cap=member.generated.skillCaps[natural];
+  while(member.skills.level(natural)<cap)member.skills.learn(natural);
+  session.bag.add('skillbook',1);
+  session.bag.use(session.bag.entries.find(entry=>entry.item==='skillbook')!.id,undefined,natural,Math.random,member.id);
+  session.bag.add('skillbook',2,bound);session.bag.add('sealed-skillbook-black-knight',3);
+  const saved=captureSaveGame(session,base.world,base.summary);saved.format=56;
+  delete (saved.session.party as Partial<NonNullable<typeof saved.session.party>>).sharedUnlockedSkills;
+  const book=saved.session.bag.instances.find(entry=>entry.item==='skillbook'&&entry.skill===bound)!;
+  book.item='skill-unlock-book';
+  const before=structuredClone(saved),candidate=prepareSavedGame(saved,content),restored=candidate.session.party!.get(member.id)!;
+  assert.deepEqual(saved,before,'迁移保留槽里的原存档');
+  assert.equal(candidate.session.bag.count('sealed-skillbook-black-knight'),3);
+  assert.equal(candidate.session.bag.get(book.id),undefined);
+  assert.equal(candidate.session.bag.allCells.some(entry=>entry?.id===book.id),false);
+  assert.equal(candidate.session.bag.pouchCells.consumable.some(entry=>entry?.id===book.id),false);
+  assert.deepEqual(new Set(candidate.session.party!.captureState().sharedUnlockedSkills),new Set([learned,bound]));
+  assert.deepEqual(restored.skills.pointsState(),member.skills.pointsState());
+  assert.deepEqual(restored.skills.bookState(),member.skills.bookState());
+  assert.equal(restored.skills.level(natural),member.skills.level(natural));
+  assert.equal(restored.skills.level(bound),0);assert.equal(restored.skills.available(bound),true);
+  candidate.session.bag.add('mercenary-emblem-black-knight');
+  const future=candidate.session.party!.recruit(candidate.session.bag.entries.find(entry=>entry.item==='mercenary-emblem-black-knight')!.id,()=>0).member;
+  assert.equal(future.skills.available(learned),true);assert.equal(future.skills.available(bound),true);
+  const current=captureSaveGame(candidate.session,candidate.world,saved.summary),again=prepareSavedGame(current,content).session;
+  assert.equal(current.format,57);assert.equal(again.party!.hasSharedSkill(bound),true);
+  assert.deepEqual(again.party!.get(member.id)!.skills.pointsState(),member.skills.pointsState());
+});
+
+test('format 56 preserves bound book knowledge even when no mercenaries have been recruited',()=>{
+  const saved=record(),skill=content.items.classSkills.ranger![0]!,groundSkill=content.items.classSkills.ranger![1]!,
+    id=`item-${++saved.session.bag.serial}`,legacyBook='skill-unlock-book';
+  saved.format=56;
+  delete (saved.session.party as Partial<NonNullable<typeof saved.session.party>>).sharedUnlockedSkills;
+  saved.session.bag.instances.push({id,item:legacyBook,quantity:4,enhancement:0,gems:[],skill});
+  saved.session.bag.allCells.push(id);saved.session.bag.pouches.consumable.push(id);
+  if(!saved.session.bag.shortcuts.length)saved.session.bag.shortcuts.push(['player',emptyShortcutRow()]);
+  saved.session.bag.shortcuts[0]![1][0]={kind:'item',id:legacyBook};
+  saved.session.groundLoot.drops.push({id:'legacy-ground-book',map:saved.world.location.map,x:16,y:24,
+    reward:{kind:'item',item:legacyBook,quantity:1,instance:{id:'legacy-ground-instance',item:legacyBook,quantity:1,enhancement:0,gems:[],skill:groundSkill}}});
+  saved.session.shops.stock.push(['legacy-shop',[{id:'legacy-book-offer',instance:{id:'legacy-offer-instance',item:legacyBook,quantity:1,enhancement:0,gems:[]},
+    limited:true,concealed:false,sold:false}]]);
+  const before=structuredClone(saved);
+  const restored=prepareSavedGame(saved,content).session;
+  assert.deepEqual(saved,before);
+  assert.deepEqual(new Set(restored.party!.captureState().sharedUnlockedSkills),new Set([skill,groundSkill]));
+  assert.equal(restored.bag.get(id),undefined);restored.bag.verifyConsistency();
+  const state=restored.captureState();
+  assert.equal(state.bag.shortcuts.some(([,row])=>row.some(slot=>slot?.kind==='item'&&slot.id===legacyBook)),false);
+  assert.equal(state.groundLoot.drops.some(drop=>drop.id==='legacy-ground-book'),false);
+  assert.equal(state.shops.stock.some(([,offers])=>offers.some(offer=>offer.instance.item===legacyBook)),false);
+});
+
 test('format 55 keeps mercenary ranks and book gains, funds historical ranks once and saves manual allocation',()=>{
   for(const level of [1,105]){
     const base=record(),character=content.storyClasses.classes[0],session=newStorySession(content.campaign,content.world.actors[content.campaign.start.actor],character,
@@ -443,7 +504,7 @@ test('format 55 keeps mercenary ranks and book gains, funds historical ranks onc
     const normalCost=Object.entries(state.allocations).reduce((sum,[id,rank])=>sum+content.battleCatalog.skills[id].ranks.slice(0,rank).reduce((total,value)=>total+value.pointCost,0),0);
     assert.equal(state.spentPoints,normalCost,'技能书等级不计入普通投入');
     const current=captureSaveGame(candidate.session,candidate.world,saved.summary);
-    assert.equal(current.format,56);
+    assert.equal(current.format,SAVE_FORMAT);
     const loaded=prepareSavedGame(current,content),again=loaded.session.party!.get(member.id)!;
     assert.deepEqual(again.skills.pointsState(),state);assert.deepEqual(again.skills.skillLevels(),expected);
     if(level===105){

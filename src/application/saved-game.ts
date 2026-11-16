@@ -35,6 +35,38 @@ function eventInProgress(runtime:SavedStoryRuntime|undefined,eventId:string):boo
   if(!runtime||runtime.completedEvents?.includes(eventId))return false;
   return (runtime.runs??[]).some(run=>run.eventId===eventId&&(run.status==='running'||run.status==='waiting'));
 }
+
+function migrateSharedSkillUnlocks(game:SaveGame<StoryWorldViewSnapshot>,content:SavedGameContent):void{
+  const session=game.session,party=session.party;
+  if(!party)return;
+  const valid=new Set(Object.values(content.items.classSkills).flat().filter(id=>!!content.battleCatalog.skills[id]));
+  const shared=new Set<string>();
+  const remember=(id:string|undefined)=>{if(id&&valid.has(id))shared.add(id);};
+  for(const member of party.members){
+    if(member.source!=='mercenary')continue;
+    const classId=content.companions.definitions[member.definitionId]?.classId;
+    for(const id of Object.keys(member.unlockedSkills??{}))
+      if(classId&&content.items.classSkills[classId]?.includes(id))remember(id);
+  }
+  const legacyBook='skill-unlock-book',removed=new Set<string>();
+  session.bag.instances=session.bag.instances.filter(entry=>{
+    if(entry.item!==legacyBook)return true;
+    remember(entry.skill);removed.add(entry.id);return false;
+  });
+  for(const cells of [session.bag.allCells,...Object.values(session.bag.pouches)])
+    for(let index=0;index<cells.length;index++)if(cells[index]&&removed.has(cells[index]!))cells[index]=undefined;
+  for(const [,row] of session.bag.shortcuts)
+    for(let index=0;index<row.length;index++)if(row[index]?.kind==='item'&&row[index]?.id===legacyBook)row[index]=null;
+  session.groundLoot.drops=session.groundLoot.drops.filter(drop=>{
+    if(drop.reward.kind!=='item'||drop.reward.item!==legacyBook)return true;
+    remember(drop.reward.instance?.skill);return false;
+  });
+  for(const [,offers] of session.shops.stock){
+    for(let index=offers.length-1;index>=0;index--)if(offers[index].instance.item===legacyBook)offers.splice(index,1);
+  }
+  for(const receipt of session.receipts)receipt.reward.items=receipt.reward.items.filter(entry=>entry.item!==legacyBook);
+  party.sharedUnlockedSkills=[...shared];
+}
 type LegacyScene = {actors?:unknown};
 function duplicateSceneActors(scene:unknown):SceneActorState[][] {
   if(!scene||typeof scene!=='object')return [];
@@ -59,6 +91,7 @@ function stageHasDuplicateActors(stage:unknown):boolean {
  * 如果带重复演员，丢弃舞台快照，让剧情从当前节点继续而不是拒绝整份存档。
  */
 const SAVE_UPGRADES:Record<number,SaveUpgrade>={
+  56:(game,content)=>{migrateSharedSkillUnlocks(game,content);game.format=57;},
   55:(game,content)=>{
     for(const member of game.session.party?.members??[]){
       if(member.source!=='mercenary')continue;

@@ -34,10 +34,10 @@ const pouchItems=(pouch:ReturnType<typeof pouchFor>,count:number)=>Object.entrie
 const weapons=(count:number)=>pouchItems('weapon',count);
 
 test('complete physical catalogue has every use flow and isolated starting equipment',()=>{
-  assert.equal(Object.keys(catalog.items).length,988);
+  assert.equal(Object.keys(catalog.items).length,987);
   assert.deepEqual(new Set(Object.values(catalog.items).flatMap(d=>d.use?[d.use.kind]:[])),new Set(ITEM_USES));
   const physical=Object.entries(catalog.items).filter(([,item])=>!item.pickup);
-  assert.equal(physical.length,987);
+  assert.equal(physical.length,986);
   for(const [item] of physical){
     const bag=new Bag(()=>{},catalog);bag.add(item);
     assert.equal(bag.entries.length,1,item);assert.equal(bag.entries[0].item,item);
@@ -138,7 +138,7 @@ test('enhancement and sockets belong to each instance; bad targets never consume
   assert.equal(bag.get(duplicate.id)!.gems.length,0);
 });
 
-test('packs, boxes, sealed books and recipes retain their actual rewards',()=>{
+test('packs, boxes and recipes retain their actual rewards',()=>{
   const bag=create();
   const pack=prepareItem(bag,d=>d.use?.kind==='pack'),rewards=catalog.items[pack.item].use!.rewards!;
   const counts=bag.counts;bag.use(pack.id);
@@ -147,17 +147,6 @@ test('packs, boxes, sealed books and recipes retain their actual rewards',()=>{
   assert.throws(()=>bag.use(box.id,undefined,undefined,()=>1),/随机/);assert.ok(bag.get(box.id));
   const result=bag.use(box.id,undefined,undefined,()=>0);
   assert.deepEqual(result.rewards,[catalog.items[box.item].use!.rewards![0]]);
-  const sealed=prepareItem(bag,d=>d.use?.kind==='unseal'&&d.use.classId==='dark-knight');
-  const bookResult=bag.use(sealed.id,undefined,undefined,()=>0);
-  assert.equal(bookResult.rewards[0]!.item,'skill-unlock-book');
-  const book=bag.entries.find(e=>e.skill===bookResult.skill)!;
-  assert.equal(book.item,'skill-unlock-book');
-  assert.throws(()=>bag.use(book.id),/佣兵/);assert.ok(bag.get(book.id));
-  const foreign=prepareItem(bag,d=>d.use?.kind==='unseal'&&d.use.classId==='ranger');
-  const foreignSkill=bag.use(foreign.id,undefined,undefined,()=>0).skill;
-  const foreignBook=bag.entries.find(e=>e.skill===foreignSkill)!;
-  assert.equal(foreignBook.item,'skill-unlock-book');
-  assert.throws(()=>bag.use(foreignBook.id),/佣兵/);assert.ok(bag.get(foreignBook.id));
   const recipe=prepareItem(bag,d=>d.use?.kind==='recipe'),learned=bag.use(recipe.id,undefined,undefined,()=>0).recipe!;
   assert.deepEqual(bag.learnedRecipes,[learned]);assert.ok(catalog.recipes[learned].materials.length);
 });

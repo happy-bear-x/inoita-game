@@ -257,7 +257,8 @@ export function parseItemCatalog(value:unknown):ItemCatalog {
       else requireValue(recovery.ratePercent>0&&recovery.ratePercent<=100,id,'药水回复比例无效');
     }
     if(use?.classId)requireValue(classes.includes(use.classId),id,'使用职业不存在');
-    if(use&&['pack','box','unseal'].includes(use.kind))requireValue(use.rewards?.length,id,'缺少物品产物');
+    if(use&&['pack','box'].includes(use.kind))requireValue(use.rewards?.length,id,'缺少物品产物');
+    if(use?.kind==='unseal')requireValue(use.classId&&result.classSkills[use.classId]?.length,id,'缺少可解锁的职业技能');
     for(const recipe of use?.recipes??[])requireValue(result.recipes[recipe],id,'配方不存在');
     if(use?.kind==='recipe')requireValue(use.recipes?.length,id,'缺少配方候选');
     if(use?.kind==='enchant')requireValue(use.target,id,'缺少强化目标类型');

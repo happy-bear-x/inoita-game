@@ -428,16 +428,6 @@ export class Session {
     this.skills = new StorySkillProgression(hero,battle);
     hero?.setSkillUseHandler((item,skill,memberId)=>{
       const definition=items?.items[item];
-      if(definition?.use?.kind==='unlock-skill'){
-        if(!memberId||memberId==='player')throw new Error('解锁书只能给佣兵使用');
-        const member=this.party?.get(memberId);
-        if(!member||member.source!=='mercenary'||!skill||!battle)throw new Error('无法为该成员使用解锁书');
-        const classSkills=items?.classSkills[member.classId]??battle.classes.find(entry=>entry.id===member.classId)?.skills??[];
-        if(!classSkills.includes(skill))throw new Error('该佣兵职业不符');
-        member.skills.unlockSkill(skill,battle);
-        this.recordPerformance(['party','bag']);this.emit();
-        return `${battle.skills[skill].name}已开放学习`;
-      }
       if(!memberId||memberId==='player')return this.skills.applyItem(item,skill);
       const member=this.party?.get(memberId);
       if(!member||member.source!=='mercenary'||definition?.use?.kind!=='learn'||!skill||!battle)throw new Error('无法为该成员使用技能书');
@@ -447,6 +437,11 @@ export class Session {
     this.party=hero&&items&&stats&&companions?new PartyRoster(hero,stats,items,companions,()=>{this.recordPerformance(['party','bag']);this.emit();},id=>{this.cooldowns.removeActor(id);this.frenzyAnimations.removeActor(id);this.lootPity.removeMember(id);},
       sourceItem=>this.recordQuestFact('recruit',sourceItem,'recruit'),operation=>this.atomic(operation,['bag','party','questBook']),battle):undefined;
     this.bag = hero?.bag ?? new Bag(()=>{this.recordPerformance(['bag']);this.emit();},items,character?.classId,items?'game':'none');
+    if(this.party&&battle)this.bag.setSkillUnlockRules({
+      has:skill=>this.party!.hasSharedSkill(skill),
+      unlock:skill=>{this.party!.unlockSharedSkill(skill);return `${battle.skills[skill].name}已永久解锁`;},
+      atomic:operation=>this.atomic(operation,['party','bag']),
+    });
     const inputs={events:new Set<string>(),choices:new Set<string>(),flags:new Set<string>(),world:new Set<string>()};
     for(const quest of campaign.quests){
       const references=storyConditionReferences(quest.availableWhen);
@@ -638,6 +633,9 @@ export class Session {
     validate(state.skills);
     if(state.hero&&this.stats&&(!Number.isSafeInteger(state.hero.level)||state.hero.level<1||state.hero.level>this.stats.maxLevel))throw new Error('检查点角色等级无效');
     if(state.party){
+      const shared=state.party.sharedUnlockedSkills;
+      if(!Array.isArray(shared)||new Set(shared).size!==shared.length||shared.some(id=>
+        typeof id!=='string'||!Object.values(this.bag.catalog.classSkills).some(skills=>skills.includes(id))||this.battle&&!this.battle.skills[id]))throw new Error('共享解锁技能记录无效');
       const ids=new Set<string>();
       for(const member of state.party.members){
         if(!member.id||ids.has(member.id)||!this.party?.catalog.definitions[member.definitionId])throw new Error('检查点伙伴引用无效');
