@@ -155,6 +155,38 @@ test('enemy health scales with deployed party size and survives a map reload',()
   assert.equal(revisited.maxHealth,scaled.maxHealth);
 });
 
+test('active revision follows deployed ids and order while activeIds stays frozen and cached',()=>{
+  const {party}=setup(),first=recruit(party),second=recruit(party);
+  const initial=party.activeRevision,deployed=party.activeIds;
+  assert.deepEqual(deployed,['player']);
+  assert.equal(party.activeIds,deployed,'版本不变时复用同一份数组');
+  assert.ok(Object.isFrozen(deployed),'共享数组只读');
+  party.deployFirstAvailable(first.id);
+  assert.ok(party.activeRevision>initial,'上阵推进版本');
+  assert.notEqual(party.activeIds,deployed);
+  assert.deepEqual(party.activeIds,['player',first.id]);
+  const afterFirstDeploy=party.activeRevision;
+  party.deployFirstAvailable(second.id);
+  assert.ok(party.activeRevision>afterFirstDeploy);
+  assert.deepEqual(party.activeIds,['player',first.id,second.id]);
+  const beforeSwap=party.activeRevision;
+  party.deploy(second.id,1);
+  assert.ok(party.activeRevision>beforeSwap,'交换上阵顺序也推进版本');
+  assert.deepEqual(party.activeIds,['player',second.id,first.id]);
+  const beforeReserve=party.activeRevision;
+  party.reserve(second.id);
+  assert.ok(party.activeRevision>beforeReserve,'退到候补推进版本');
+  assert.deepEqual(party.activeIds,['player',first.id]);
+  party.deployFirstAvailable(second.id);
+  const beforeRemove=party.activeRevision;
+  party.reserve(second.id);party.dismiss(second.id);
+  assert.ok(party.activeRevision>beforeRemove,'离队推进版本');
+  const state=party.captureState();const beforeRestore=party.activeRevision;
+  party.restoreState(state);
+  assert.ok(party.activeRevision>beforeRestore,'读档整份恢复推进版本');
+  assert.deepEqual(party.activeIds,['player',first.id]);
+});
+
 function setup(){const hero=new BattleCharacter('dark-knight',stats,items);return {hero,party:new PartyRoster(hero,stats,items,catalog,()=>{})};}
 function recruit(party:PartyRoster,item='mercenary-emblem-black-knight',random=()=>0){
   party.bag.add(item);return party.recruit(party.bag.entries.find(entry=>entry.item===item)!.id,random).member;

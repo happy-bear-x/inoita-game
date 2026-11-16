@@ -286,6 +286,34 @@ test('story encounter instances appear after a node commit, require every settle
   assert.equal(restored.refresh().added.some(enemy=>enemy.key===earl.id||enemy.key===guard.id),false);
 });
 
+test('completed encounter checks reuse their cache until settlement or encounter changes',()=>{
+  const session=new Session(campaign),map=content('maps/shadow-forest-west.json') as WorldMap;
+  const roster=new WorldEnemyRoster(session,map,[],1),enemyId=roster.spawns[0].enemyId;
+  const encounter={id:'cache-battle:run-1',map:map.id,status:'active' as const,spawns:[
+    {id:'first',enemyId,x:128,y:128},{id:'second',enemyId,x:160,y:128}
+  ]};
+  session.applyStoryCommands([{type:'encounter',encounter}]);
+  roster.refresh();
+  const unfinished=roster.completedEncounters();
+  assert.deepEqual(unfinished,[]);
+  assert.equal(roster.completedEncounters(),unfinished,'敌人和遭遇状态没变时复用缓存');
+  const first=roster.source(encounterSpawnId(encounter.id,'first'))!,second=roster.source(encounterSpawnId(encounter.id,'second'))!;
+  session.enemyDefeated(first);
+  const partial=roster.completedEncounters();
+  assert.notEqual(partial,unfinished,'死亡结算使缓存失效');
+  assert.deepEqual(partial,[]);
+  session.enemyDefeated(second);
+  const completed=roster.completedEncounters();
+  assert.deepEqual(completed.map(value=>value.id),[encounter.id]);
+  assert.equal(roster.completedEncounters(),completed);
+  const saved=session.captureState();
+  session.restoreState(saved);
+  const restored=new WorldEnemyRoster(session,map,[],1);
+  assert.deepEqual(restored.completedEncounters().map(value=>value.id),[encounter.id],'恢复状态后重新判定');
+  session.applyStoryCommands([{type:'world',command:{kind:'encounter-result',id:encounter.id,result:'won'}}]);
+  assert.deepEqual(restored.completedEncounters(),[],'遭遇结算使缓存失效');
+});
+
 test('loading a save taken during an active encounter restores its boss',()=>{
   const session=new Session(campaign),map=content('maps/shadow-forest-west.json') as WorldMap;
   const enemyId=(new WorldEnemyRoster(session,map,[],1)).spawns[0].enemyId;

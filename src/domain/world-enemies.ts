@@ -101,6 +101,11 @@ export class WorldEnemyRoster extends EnemyRoster {
   private spawnsCache?:{key:string;value:readonly WorldSpawn[]};
   private spawnIndex?:{spawns:readonly WorldSpawn[];byId:ReadonlyMap<string,WorldSpawn>};
   private membershipRevision=0;
+  /**
+   * 完成遭遇的判定缓存。遭遇增删/结算、敌人死亡或捕获、名册整份恢复都会改变对应修订号；
+   * 当前只按这些变化失效，不按渲染帧重算。
+   */
+  private completedCache?:{encounterRevision:number;enemySpawnRevision:number;membershipRevision:number;value:readonly StoryEncounter[]};
   private lastRefresh?:{spawns:readonly WorldSpawn[];enemyRevision:number;questVersion:number;membershipRevision:number;members:ReadonlySet<string>;nextSpawnAt:number};
   private questSourceRevision?:number;
   private questSourceIds?:ReadonlySet<string>;
@@ -202,9 +207,16 @@ capturePreparedState():{roster:ReturnType<EnemyRoster['captureState']>;breakable
     if(this.enemies.length!==before)this.membershipRevision++;
   }
   completedEncounters():readonly StoryEncounter[]{
-    return this.session.storyWorld.activeEncounters.filter(encounter=>encounter.map===this.mapId&&encounter.spawns.length>0&&
+    const encounterRevision=this.session.storyWorld.encounterRevision,enemySpawnRevision=this.session.enemySpawnRevision;
+    const cached=this.completedCache;
+    if(cached&&cached.encounterRevision===encounterRevision&&cached.enemySpawnRevision===enemySpawnRevision&&
+      cached.membershipRevision===this.membershipRevision)return cached.value;
+    // 判定仍是“死亡已结算且不是捕获”，不能只看血量是否为 0。
+    const value=Object.freeze(this.session.storyWorld.activeEncounters.filter(encounter=>encounter.map===this.mapId&&encounter.spawns.length>0&&
       encounter.spawns.every(spawn=>{const state=this.session.enemyVitals(encounterSpawnId(encounter.id,spawn.id));
-        return state.deadUntil!==undefined&&!state.capture;}));
+        return state.deadUntil!==undefined&&!state.capture;})));
+    this.completedCache={encounterRevision,enemySpawnRevision,membershipRevision:this.membershipRevision,value};
+    return value;
   }
   override setPartySize(size:number,definitions:readonly EnemyDefinition[]):void{
     if(size===this.partySize)return;

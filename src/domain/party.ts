@@ -241,6 +241,9 @@ export class PartyRoster {
   private serial=0;
   private rosterSlots:(string|null)[]=Array.from({length:MERCENARY_SLOT_COUNT},()=>null);
   private groupModifierVersionValue=0;
+  /** 队伍成员或槽位写入的版本；供战斗层判断是否需要重新同步队友。 */
+  private activeRevisionValue=0;
+  private activeIdsCache?:readonly string[];
   /**
    * 队伍光环/组队被动的输入版本：只在成员加入、离队、成员升级和读档时推进。
    * 换位、切人、掉血/回蓝都不改变 `groupModifiers()` 的结果。
@@ -254,7 +257,19 @@ export class PartyRoster {
   /** 成员集合或成员等级变化：组队被动版本推进。 */
   private bumpGroupModifiers():void{this.groupModifierVersionValue++;}
   get controlledId():string{return this.selected;}
-  get activeIds():string[]{return ['player',...this.slots.filter((id):id is string=>!!id)];}
+  /** 队伍成员或槽位写入的版本；`create/remove/deploy/reserve/restoreState` 都会推进。 */
+  get activeRevision():number{return this.activeRevisionValue;}
+  /**
+   * 上阵成员顺序：主角固定第一，其后是槽位 0、1。
+   * 结果缓存成冻结数组，版本不变时所有调用方共用同一份；需要可变副本时请自行复制。
+   */
+  get activeIds():readonly string[]{
+    const cached=this.activeIdsCache;
+    if(cached)return cached;
+    const value=Object.freeze(['player',...this.slots.filter((id):id is string=>!!id)]);
+    this.activeIdsCache=value;return value;
+  }
+  private invalidateActiveIds():void{this.activeRevisionValue++;this.activeIdsCache=undefined;}
   /** 已拥有伙伴的外观定义 id（不含主角）；返回只读拷贝，供素材规划使用。 */
   ownedDefinitionIds():string[]{return [...new Set([...this.owned.values()].map(member=>member.definition.id))];}
   /** 全部已拥有成员（含候补），供技能资源规划使用。 */
@@ -339,6 +354,7 @@ export class PartyRoster {
     member.recover();this.owned.set(id,member);
     if(source==='mercenary')this.rosterSlots[this.rosterSlots.indexOf(null)]=id;
     else {const slot=this.slots.findIndex(value=>!value);if(slot>=0)this.slots[slot]=id;}
+    this.invalidateActiveIds();
     this.bumpGroupModifiers();this.changed();return member;
   }
   recruit(itemInstanceId:string,random:()=>number=Math.random):{member:CompanionMember;result:ItemResult}{
@@ -402,6 +418,7 @@ export class PartyRoster {
   }
   private remove(id:string,returnEquipment:boolean,retireEquipment=false):void{
     this.owned.delete(id);this.onMemberRemoved?.(id);this.rosterSlots=this.rosterSlots.map(value=>value===id?null:value);this.slots=this.slots.map(value=>value===id?undefined:value);
+    this.invalidateActiveIds();
     if(this.selected===id)this.selected=this.livingIds[0]??'player';
     this.bag.removeOwner(id,returnEquipment,retireEquipment);this.bumpGroupModifiers();this.changed();
   }
@@ -413,6 +430,7 @@ export class PartyRoster {
     if(previous&&current<0)throw new Error('上阵位置已占用，请先移出队员');
     if(current>=0)this.slots[current]=previous;
     this.slots[index]=id;
+    this.invalidateActiveIds();
     if(previous&&current<0&&this.selected===previous)this.selected=this.livingIds[0]??'player';
     this.changed();
   }
@@ -426,6 +444,7 @@ export class PartyRoster {
     if(!this.owned.has(id)||!this.slots.includes(id))throw new Error('伙伴未上阵');
     if(!this.alive(id))throw new Error('阵亡队员无法移出队伍');
     this.slots=this.slots.map(value=>value===id?undefined:value);
+    this.invalidateActiveIds();
     if(this.selected===id)this.selected=this.livingIds[0]??'player';
     this.changed();
   }
@@ -464,6 +483,7 @@ export class PartyRoster {
       member.restoreState(entry);this.owned.set(entry.id,member);
     }
     this.rosterSlots=saved.rosterSlots;this.slots=saved.slots.map(value=>value??undefined);this.selected=saved.selected;this.serial=saved.serial;
+    this.invalidateActiveIds();
     this.heroAiFrequency.clear();for(const [id,value] of saved.heroAiFrequency)this.heroAiFrequency.set(id,value);
     // 读档整体替换名册：即使内容和当前一致，也要让按版本复用的展示与组队被动缓存失效。
     this.bumpGroupModifiers();

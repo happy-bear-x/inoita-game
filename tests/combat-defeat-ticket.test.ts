@@ -32,7 +32,8 @@ test('restore and spawn boundaries open a ticket only for zero-health enemies',(
   const live={key:'live',definition:{id:'enemy-wolf-1'},visual:{container:{x:0,y:0}}};
   const calls:[string,string][]=[];
   const host=Object.setPrototypeOf({
-    roster:{enemies:[{key:'zero',health:0},{key:'live'}]},
+    roster:{enemies:[{key:'zero',health:0},{key:'live'}],
+      enemy(key:string){return this.enemies.find((entry:{key:string})=>entry.key===key);}},
     arena:[zero,live],closed:false,
     beginEnemyDefeat:(enemy:{key:string},cause:string)=>{calls.push([enemy.key,cause]);return true;}
   },WorldCombat.prototype);

@@ -283,7 +283,7 @@ function pendingAllyFixture(){
   const actor=host.app.battleCatalog.classes.find((value:{id:string})=>value.id==='dark-knight')!.actor;
   const member={id:'ally',classId:'dark-knight',definition:{actor:actor.id},skills:{draft:()=>({levels:{'dark-strike':1}})}};
   const activeIds=['player','ally'];
-  host.app.session={party:{activeIds,activeSize:2,get:(id:string)=>id==='ally'?member:undefined}};
+  host.app.session={party:{activeIds,activeSize:2,activeRevision:0,get:(id:string)=>id==='ally'?member:undefined}};
   host.app.world={actors:{[actor.id]:actor}};
   host.allies=[];host.pendingAllies=new Set();host.allyWaiters=new Set();host.extraSkillLeases=new Map();
   host.roster={setPartySize(){}};host.prepareCombatSounds=()=>{};host.syncControlled=()=>{};
@@ -322,7 +322,7 @@ test('equipment changed during initial ally preparation defers spawning until a 
   await invoke('syncAllies');
   assert.equal(host.allies.length,0,'旧清单不能启动新装备的攻击控制器');
   assert.equal(host.pendingAllies.size,0);
-  assert.equal(host.partySignature,'');
+  assert.equal(host.partySyncPending,true,'准备期间装备变化保留待同步状态');
   assert.equal(host.nextPartySyncAt,100,'下次更新再重试，避免在同一轮不断补载');
 });
 
@@ -338,7 +338,7 @@ test('redeployed ally without a controller replaces its stale hidden visual',asy
   await invoke('syncAllies');
   assert.equal(destroyed,1);assert.equal(prepared,1);
   assert.equal(host.allies.length,0);
-  assert.equal(host.partySignature,'');
+  assert.equal(host.partySyncPending,true,'失败的队友准备保留待同步状态');
 });
 
 test('restore waits for all current party skill leases and rejects incomplete preparation',async()=>{

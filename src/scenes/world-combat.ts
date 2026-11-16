@@ -30,6 +30,7 @@ import Phaser from 'phaser';
 import { LOGIC_FRAME_MS, enemySkills, skillManaCost, skillForMember, memberSkillGrowth, type ResolvedBasicAttack, type BattleBuffEffect, type SkillFeedbackEvent, type ActionDispatchDefinition, type EnemyDefinition, type EnemyPlayableSkill, type PlacedEnemy, type SkillAction, type SkillDefinition, type CombatUnit, type SkillLoadout } from '../domain/battle.ts';
 import { CombatController,canTargetCombatant,resolveCueTargets, type Combatant, type ActionPlayback, type AttackContact, type BasicAreaContact, type BasicAttackSelection, type SkillUnitHit, type SkillUnitStart } from '../domain/combat.ts';
 import type { PartyBuffSlot } from '../domain/party-buff-targets.ts';
+import type { PartyRoster } from '../domain/party.ts';
 import { ENEMY_IDLE_THINK_FRAMES, EnemyController, type EnemyPort } from '../domain/enemy-ai.ts';
 import { enemyAwarenessRangeUnits } from '../domain/enemy-engagement.ts';
 import { FriendlySummonController } from '../domain/friendly-summon-ai.ts';
@@ -248,7 +249,12 @@ export class WorldCombat {
   private readonly pendingAllies=new Set<string>();
   private readonly allyWaiters=new Set<()=>void>();
   private allyLoadFailure?:unknown;
-  private partySignature='';
+  /** 已同步到的上阵 ID/顺序版本；版本未变时不再逐帧拼接成员名单。 */
+  private syncedPartyRevision=-1;
+  /** 素材失败或准备期间队伍变化时置位；即使版本没变也要再同步一轮。 */
+  private partySyncPending=false;
+  /** 正在进行的异步同步数量；完成前不能让版本判断重复拉起同一轮。 */
+  private partySyncInFlight=0;
   private nextPartySyncAt=0;
   private syncedControlledId='player';
   private focusTargetId?:string;
@@ -491,7 +497,7 @@ export class WorldCombat {
       enemies: this.arena.map(enemy => ({
         id: enemy.key, enemy: enemy.definition.id,
         // 与 `enemy` 不相等说明场上实例和名册身份已经错开，伤害与目标血条会一起失效。
-        rosterEnemy: this.roster.enemies.find(candidate => candidate.key === enemy.key)?.enemyId ?? null,
+        rosterEnemy: this.roster.enemy(enemy.key)?.enemyId ?? null,
         state: enemy.controller?.actionState() ?? null,
         position: this.movement.position(enemy.visual),
         health: this.roster.enemySnapshot(enemy.key, enemy.definition, this.hero.level)?.health ?? null,
@@ -604,7 +610,8 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
       this.clearEnemies(true,true);this.roster.restoreState(state.roster);this.conditions.restoreState(state.conditions);
       // 菜单里改队伍后立即保存时，名册人数可能还是旧值；读档以当前上阵人数为准重新缩放敌人。
       const party=this.app.session.party;
-      if(party){this.roster.setPartySize(party.activeSize,this.app.battleCatalog.enemies);this.partySignature=party.activeIds.join('|');}
+      if(party){this.roster.setPartySize(party.activeSize,this.app.battleCatalog.enemies);
+        this.syncedPartyRevision=party.activeRevision;this.partySyncPending=false;}
       // 恢复会换掉状态和增益；蓝耗缓存必须按新现场重算。
       this.aiSkillCostCache?.clear();
       this.syncControlled();
@@ -1452,7 +1459,7 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
    */
   private reconcileZeroHealthEnemies(cause:'restored'|'spawned',keys?:readonly string[]):void {
     for(const key of keys??this.roster.enemies.map(enemy=>enemy.key)){
-      const placed=this.roster.enemies.find(enemy=>enemy.key===key);
+      const placed=this.roster.enemy(key);
       if(placed?.health!==0)continue;
       const enemy=combatActor(this.arena,key,actor=>actor.key);
       if(enemy)this.beginEnemyDefeat(enemy,cause);
@@ -2378,9 +2385,19 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
   }
   private async syncAllies():Promise<void>{
     const party=this.app.session.party;if(!party||this.closed)return;
+    this.partySyncInFlight++;
+    try{
+      await this.syncPartyAllies(party);
+    }finally{
+      this.partySyncInFlight--;
+    }
+  }
+
+  private async syncPartyAllies(party:PartyRoster):Promise<void>{
+    const revision=party.activeRevision;
+    let retry=false;
     // 新加入的队友需要重新应用当前暂停状态。
     this.pausedValue=undefined;
-    this.partySignature=party.activeIds.join('|');
     const active=new Set(party.activeIds.slice(1));
     for(const ally of [...this.allies])if(!active.has(ally.id)||!this.partyControllers.has(ally.id)){
       this.deathTweens.get(ally.id)?.stop();this.deathTweens.delete(ally.id);this.fallen.delete(ally.id);
@@ -2404,12 +2421,12 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
         learned,{items:this.app.items,equipment:this.hero.bag.equipmentItems(this.hero.bag.equipmentFor(id))}),()=>{});
       if(this.closed||party.get(id)!==member||!party.activeIds.includes(id)){lease.release();continue;}
       if(this.allySkillSignatureNow(member)!==signature){
-        lease.release();this.partySignature='';this.nextPartySyncAt=this.scene.time.now+100;continue;
+        lease.release();this.partySyncPending=true;this.nextPartySyncAt=this.scene.time.now+100;retry=true;continue;
       }
       await this.scene.preparePartyMember(id,undefined,{full:true});
       if(this.closed||party.get(id)!==member||!party.activeIds.includes(id)){lease.release();continue;}
       if(this.allySkillSignatureNow(member)!==signature){
-        lease.release();this.partySignature='';this.nextPartySyncAt=this.scene.time.now+100;continue;
+        lease.release();this.partySyncPending=true;this.nextPartySyncAt=this.scene.time.now+100;retry=true;continue;
       }
       actor=this.scene.equipmentAppearance(id)??actor;
       // 上阵落点以主角为锚点，与当前操控者是谁无关；整盒判定避免身体压进地形。
@@ -2436,12 +2453,22 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
       this.allySkillSignatures.set(id,signature);
       this.allySkillGates.set(id,gate);
       if(!member.alive)this.markAlreadyFallen(id);
-      }catch(error){lease?.release();this.allyLoadFailure=error;this.partySignature='';this.nextPartySyncAt=this.scene.time.now+1000;if(!this.closed)throw error;}
+      }catch(error){lease?.release();this.allyLoadFailure=error;this.partySyncPending=true;this.nextPartySyncAt=this.scene.time.now+1000;if(!this.closed)throw error;}
       finally{this.pendingAllies.delete(id);if(!this.pendingAllies.size)for(const notify of [...this.allyWaiters])notify();}
     }
     this.combatantsCache=undefined;
     this.syncControlled();
     this.prepareCombatSounds();
+    // 同步期间队伍又变过就保留待同步状态，下一帧再补一轮，不能把新版本吞掉。
+    if(!retry&&party.activeRevision===revision){this.syncedPartyRevision=revision;this.partySyncPending=false;}
+    else this.partySyncPending=true;
+  }
+  /** 队伍版本变化或显式待同步时重新同步；失败重试仍由 `nextPartySyncAt` 延后。 */
+  private shouldSyncParty(now:number):boolean{
+    if(this.partySyncInFlight>0||now<this.nextPartySyncAt)return false;
+    if(this.partySyncPending)return true;
+    const party=this.app.session.party;
+    return !!party&&party.activeRevision!==this.syncedPartyRevision;
   }
   /** 以队长脚点为锚，按相对当前队长的跟随侧位偏到后排附近。 */
   private partyLanding(shape:NavigationShape,ignore?:NavigationActor,id?:string,
@@ -2928,7 +2955,7 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
     }
     for(const id of this.lastSkillResets.keys())if(!active.has(id))this.lastSkillResets.delete(id);
     for(const [id,controller] of this.partyControllers)if(!active.has(id)){
-      this.partySignature='';
+      this.partySyncPending=true;
       controller.cancel(true);this.runtime.removeActor(id);this.partyControllers.delete(id);this.conditions.remove(id);this.threat?.removeActor(id);
       this.allySkillSignatures.delete(id);this.forgetMemberCaches(id);
       for(const key of this.summons.removeOwner(id))this.removeEnemy(key);
@@ -3328,7 +3355,7 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
     this.diagnosticElapsedMs+=delta;
     if(this.diagnosticElapsedMs>=5000){this.diagnosticElapsedMs=0;this.reportCombatTick();}
     this.app.session.advanceGameTime(delta);
-    if(this.scene.time.now>=this.nextPartySyncAt&&this.app.session.party?.activeIds.join('|')!==this.partySignature)
+    if(this.shouldSyncParty(this.scene.time.now))
       void this.syncAllies().catch(error=>this.app.ui.toast((error as Error).message));
     if(this.controlledId!==this.syncedControlledId&&this.partyControllers.has(this.controlledId))this.syncControlled(false);
     const controlled=this.controlledVisual;

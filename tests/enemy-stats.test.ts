@@ -68,6 +68,45 @@ test('enemy movement and party scaling preserve resources, snapshots and unrelat
   config.removeEnemy(a.key);assert.equal(config.enemySnapshot(a.key,enemy),undefined);
 });
 
+test('roster key index follows place, restore, removal and whole-state restore',()=>{
+  const enemy=example(),roster=new EnemyRoster(),placed=roster.placeEnemy(enemy.id,1,2);
+  assert.equal(roster.enemy(placed.key),placed,'生成后按 key 直接取到同一实例');
+  roster.moveEnemy(placed.key,5,6);assert.deepEqual([placed.x,placed.y],[5,6]);
+  roster.setEnemyHealth(placed.key,7,enemy);
+  assert.equal(roster.enemySnapshot(placed.key,enemy)!.health,7);
+  const state=roster.captureState();roster.restoreState(state);
+  const restored=roster.enemy(placed.key)!;
+  assert.ok(restored);assert.notEqual(restored,placed);assert.deepEqual([restored.x,restored.y],[5,6]);
+  assert.equal(roster.enemySnapshot(placed.key,enemy)!.health,7,'整份恢复后索引仍按 key 取到快照');
+  const manaEnemy={...enemy,attributes:{...enemy.attributes,maxMana:20}};
+  roster.setEnemyMana(placed.key,3,manaEnemy);
+  assert.equal(roster.enemySnapshot(placed.key,manaEnemy)!.mana,3);
+  roster.removeEnemy(placed.key);
+  assert.equal(roster.enemy(placed.key),undefined);
+  assert.equal(roster.enemySnapshot(placed.key,enemy),undefined);
+  roster.restoreEnemy({key:'stable',enemyId:enemy.id,x:9,y:9,health:4});
+  assert.equal(roster.enemy('stable')?.health,4);
+  assert.equal(roster.enemySnapshot('stable',{...enemy,id:'other'}),undefined,'身份不一致时不返回快照');
+});
+
+test('same-frame hits are visible immediately even when stable stats are cached',()=>{
+  const enemy=example(),roster=new EnemyRoster(),placed=roster.placeEnemy(enemy.id,0,0);
+  roster.setEnemyHealth(placed.key,80,enemy);
+  const first=roster.enemySnapshot(placed.key,enemy)!;
+  assert.equal(first.health,80);
+  assert.equal(roster.enemySnapshot(placed.key,enemy),first,'稳定属性和血蓝都没变时复用快照');
+  roster.setEnemyHealth(placed.key,20,enemy);
+  const second=roster.enemySnapshot(placed.key,enemy)!;
+  assert.equal(second.health,20,'同一逻辑帧连续命中不能读到旧血量');
+  assert.notEqual(second,first);
+  roster.setEnemyMana(placed.key,0,enemy);
+  const third=roster.enemySnapshot(placed.key,enemy)!;
+  assert.equal(third.mana,0,'同一逻辑帧治疗/消耗后的法力也立即可见');
+  roster.setEnemyHealth(placed.key,0,enemy);
+  assert.equal(roster.enemySnapshot(placed.key,enemy)!.health,0);
+  assert.equal(roster.hasZeroHealth(placed.key),true);
+});
+
 test('enemy mana drains per instance, clamps to its source maximum, and disappears with the instance',()=>{
   const enemy={...example(),attributes:{...example().attributes,maxMana:73}};
   const config=new EnemyRoster(),a=config.placeEnemy(enemy.id,1,2),b=config.placeEnemy(enemy.id,4,5);
