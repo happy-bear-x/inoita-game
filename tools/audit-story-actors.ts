@@ -139,7 +139,9 @@ export function auditStoryActors(root=DEFAULT_ROOT){
     },
     ambiguous,
   };
-  return {...body,reportHash:createHash('sha256').update(JSON.stringify(body)).digest('hex')};
+  // source 只是内容版本诊断；台账哈希只覆盖身份结构，避免无关内容改动让基线失配。
+  const identityBody={schema:body.schema,summary:body.summary,selectors:body.selectors,mapFromWorld:body.mapFromWorld,identity:body.identity,places:body.places,ambiguous:body.ambiguous};
+  return {...body,reportHash:createHash('sha256').update(JSON.stringify(identityBody)).digest('hex')};
 }
 
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)
