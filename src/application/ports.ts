@@ -32,6 +32,8 @@ export interface StoryClassContext {
   prefetchStory?: () => void;
   returnToMenu?: () => void;
   syncLifecycle?: () => void;
+  /** 职业预览借住合成外观纹理的凭据；预览销毁时归还。 */
+  retainAppearance?:(actor:import('../domain/content.ts').ActorDefinition)=>import('./assets.ts').AssetLease|undefined;
 }
 
 type SceneUI = Pick<GameUI,'ready'|'locked'|'mode'|'loading'|'loaded'|'error'|'toast'|'showInstant'|'resetInput'|'setMode'|'showDefeat'|'closeDefeat'|'controlLayoutEditing'|'keyBindingEditing'|'preloadPortraits'|'setWorldRebuildCover'|'setSkipBackdrop'>;
@@ -118,6 +120,10 @@ export interface StoryUIContext {
   captureSaveThumbnail?: () => Promise<string | undefined>;
   changeEquipment?: (entry: string | undefined, slot: EquipmentSlot, signal?: AbortSignal, memberId?:string) => Promise<void>;
   equipmentAppearance?:(memberId:string)=>import('../domain/content.ts').ActorDefinition|undefined;
+  /** 菜单预览专用外观；世界角色正在用的整套外观另由 `equipmentAppearance` 提供。 */
+  previewAppearance?:(memberId:string)=>import('../domain/content.ts').ActorDefinition|undefined;
+  /** 预览角色借用一套外观时持有的租约；画面不再显示后归还。 */
+  retainAppearance?:(actor:import('../domain/content.ts').ActorDefinition)=>import('./assets.ts').AssetLease|undefined;
   readonly battleCatalog: BattleCatalog;
   /**
    * 属性页读取当前战斗属性：把常驻被动、Buff 和临时属性一起叠到基础值上。

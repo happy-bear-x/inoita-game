@@ -3,6 +3,7 @@ import { AssetPool } from '../application/assets.ts';
 import type { AssetLease } from '../application/assets.ts';
 import { versionedAsset } from '../application/asset-version.ts';
 import { releaseEffectAnimations } from './effect-animations.ts';
+import { cancelPendingTextureRemoval, releaseTextureWhenUnused } from './texture-lifecycle.ts';
 
 export type PendingAsset =
   | { kind: 'image'; key: string; file: string }
@@ -49,7 +50,10 @@ function poolFor(scene: Phaser.Scene): AssetPool {
     // 纹理和动画都属于全游戏共用的管理器；这里不能捕获某个具体 Scene，
     // 否则清理时会去错误的场景账本里找特效动画。
     const anims = scene.anims, textures = scene.textures;
-    const created = new AssetPool(key => removeTexture(anims, textures, key));
+    // 租约归零时画面里可能还有借用这张图的显示对象（菜单预览等），先确认没人再画；
+    // 新租约接管同一张图时取消排队，避免兜底队列删掉刚重新加载的纹理。
+    const created = new AssetPool(key => releaseTextureWhenUnused(textures, anims, key),
+      key => cancelPendingTextureRemoval(textures, key));
     pool = created;
     pools.set(textures, created);
     // Phaser 的 Loader 不保证在场景关闭时中止在途文件。晚到的纹理如果没有租约接管，

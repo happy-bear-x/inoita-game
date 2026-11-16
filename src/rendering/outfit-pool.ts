@@ -5,7 +5,7 @@ import type { ActorDefinition, AnimationClip, ClipName } from '../domain/content
 import type { EquipmentSlot, ItemCatalog } from '../domain/items.ts';
 import { costumeRecipe, type CostumePart, type CostumePiece, type CostumePose, type WardrobeCatalog } from '../domain/wardrobe.ts';
 import { retainLoadedSceneAssets } from './scene-assets.ts';
-import { releaseEffectAnimations } from './effect-animations.ts';
+import { releaseTextureWhenUnused } from './texture-lifecycle.ts';
 import { isWebGLContextLost, onWebGLRestore, waitForWebGLRestore, webGLTextureLimit } from './webgl-recovery.ts';
 
 export interface Outfit {
@@ -18,6 +18,8 @@ export interface WardrobePrepareOptions {
   townPose?: boolean;
   /** 菜单预览只需要 idle-south；省略表示整套动作。 */
   clipNames?: Iterable<string>;
+  /** 预览外观：只给菜单里的小人用，不替换世界角色当前外观。 */
+  preview?: boolean;
   /** 只合成这些技能的动作；省略表示该职业全部技能（构建期/测试）。 */
   learnedSkills?: ReadonlySet<string>;
   signal?: AbortSignal;
@@ -61,6 +63,29 @@ export class OutfitPool {
     this.offRestore = onWebGLRestore(this.host, () => { this.contextRevision++; this.redrawCached(); });
   }
   get available():boolean { return this.active; }
+  /**
+   * 预览角色直接持有的外观租约。预览在用期间，世界换装或关闭场景释放自己的租约
+   * 也不会把这张图删掉；预览销毁时归还。
+   */
+  rentByActor(actor: ActorDefinition): AssetLease | undefined {
+    if (!this.active) return undefined;
+    for (const [key, entry] of this.entries) {
+      if (entry.outfit?.actor !== actor) continue;
+      entry.users++;
+      let released = false;
+      return { release: () => {
+        if (released) return; released = true;
+        entry.users--;
+        if (!entry.users) {
+          if (this.entries.get(key) === entry) this.entries.delete(key);
+          entry.controller.abort(new DOMException('人物外观已无人使用', 'AbortError'));
+          if (entry.outfit) this.dispose(entry.outfit);
+        } else if (entry.retired && entry.outfit) this.dispose(entry.outfit);
+        this.trim();
+      } };
+    }
+    return undefined;
+  }
   key(base: ActorDefinition, equipment: Partial<Record<EquipmentSlot, string>>, classId?: string,
     options?: WardrobePrepareOptions): string {
     const recipe = costumeRecipe(this.catalog, this.items, equipment, classId, base.id, options?.learnedSkills, options?.townPose);
@@ -141,10 +166,9 @@ export class OutfitPool {
   private readonly sources = new WeakMap<Outfit, AssetLease>();
   private dispose(outfit: Outfit): void {
     for (const key of outfit.textures) {
-      // 合成外观的动画 key 是 `${key}#...`，不是纹理 key；按全局账本删掉引用它的动画。
-      releaseEffectAnimations(this.host.anims, key);
-      if (this.host.textures.exists(key)) this.host.textures.remove(key);
-      this.textureBytes.delete(key);
+      // 菜单预览可能仍在画这套外观；画面里还有人用时保留，等它切走后再删。
+      // 纹理真正删除时由 `removeNow` 清掉引用它的动画；保留期间继续计入显存预算。
+      if (releaseTextureWhenUnused(this.host.textures, this.host.anims, key)) this.textureBytes.delete(key);
     }
     this.sources.get(outfit)?.release(); this.sources.delete(outfit);
   }

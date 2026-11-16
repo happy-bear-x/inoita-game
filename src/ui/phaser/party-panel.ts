@@ -79,7 +79,7 @@ export class PartyPanel {
     this.updateSelection=updateSelection;this.removeScroll=removeScroll;this.modalChanged=modalChanged;this.runAction=runAction;
   }
   get modalOpen():boolean{return !!this.modal;}
-  /** 重绘前把合成立绘摘下来，避免被页面清理销毁后无法复用。 */
+  /** 重绘前收起并销毁合成角色，同时归还借用的外观纹理；下次显示时按当前外观重建。 */
   detachPreview():void{this.preview?.detach();}
   destroyPreview():void{this.preview?.destroy();}
   close():void{this.modal=undefined;this.preparation?.abort();}
@@ -319,7 +319,7 @@ export class PartyPanel {
   }
   private updatePreview():void{
     const slot=this.previewSlot;if(!slot?.parent.active||slot.id!==this.selected||this.tab!=='equipment')return;
-    const {surface:v,parent,id}=slot,appearance=this.app.equipmentAppearance?.(id),rect={x:623,y:124,width:127,height:114};
+    const {surface:v,parent,id}=slot,appearance=this.app.previewAppearance?.(id)??this.app.equipmentAppearance?.(id),rect={x:623,y:124,width:127,height:114};
     this.preview?.detach();parent.removeAll(true);
     if(appearance&&this.preview&&LiveCharacterPreview.available(v.scene,appearance))this.preview.show(v,appearance,rect);
     else v.imageContain(this.portrait(id),rect.x,rect.y,rect.width,rect.height,parent);
