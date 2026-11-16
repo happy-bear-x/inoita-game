@@ -34,22 +34,113 @@ class Effect extends EventEmitter {
   add(sprite:Sprite){this.list.push(sprite);return this;}removeAll(){this.list=[];return this;}
   destroy(){if(!this.active)return;this.active=false;this.emit('destroy');}
 }
+type FakeLoopContainer={active:boolean;x:number;y:number;list:Effect[];
+  add:(effect:Effect)=>void;bringToTop:(effect:Effect)=>void};
+function loopContainer(nodes:Effect[],order:Effect[]):FakeLoopContainer {
+  const list:Effect[]=[];
+  return {active:true,x:100,y:200,list,
+    add:(effect:Effect)=>{list.push(effect);nodes.push(effect);},
+    // 与 Phaser 一致：把已有子对象移到列表末尾，下一帧才能走层序已正确的快路径。
+    bringToTop:(effect:Effect)=>{
+      const index=list.indexOf(effect);if(index<0)return;
+      list.splice(index,1);list.push(effect);order.push(effect);
+    }};
+}
+function fakeVisual(nodes:Effect[],order:Effect[]):CharacterVisual {
+  return {layers:[{alpha:.5}],entity:{flip:true},container:loopContainer(nodes,order)} as unknown as CharacterVisual;
+}
 function fixture(){
   const nodes:Effect[]=[],order:Effect[]=[];
-  const target={layers:[{alpha:.5}],entity:{flip:true},container:{active:true,x:100,y:200,
-    add:(effect:Effect)=>nodes.push(effect),bringToTop:(effect:Effect)=>order.push(effect)}} as unknown as CharacterVisual;
+  const target=fakeVisual(nodes,order);
   const scene={add:{container:(x:number,y:number)=>new Effect(x,y),sprite:()=>new Sprite()},
     anims:{exists:()=>false,create:()=>{},generateFrameNumbers:()=>[]}} as unknown as Phaser.Scene;
   const renderer=new BuffLoopRenderer(scene,catalog),conditions=new CombatConditions();
   const sync=()=>renderer.sync('actor',target,conditions.buffLoopFrames('actor'));
+  const replaceContainer=()=>{
+    const nextNodes:Effect[]=[],nextOrder:Effect[]=[];
+    (target as unknown as {container:FakeLoopContainer}).container=loopContainer(nextNodes,nextOrder);
+    return {nodes:nextNodes,order:nextOrder};
+  };
   conditions.applyBuff('actor','dark-strike',rank.strength,rank.effect);
-  return {scene,nodes,order,target,renderer,conditions,sync};
+  return {scene,nodes,order,target,renderer,conditions,sync,replaceContainer};
 }
+
+test('loop sync reuses visuals, skips unchanged ages and avoids reordering an ordered tail',()=>{
+  const f=fixture();f.conditions.update(60);f.sync();
+  assert.equal(f.nodes.length,2);assert.equal(f.order.length,0,'创建时按顺序加入');
+  const [magic,soul]=f.nodes;
+  soul.list[0].anims.currentFrame={index:99};
+  f.sync();
+  assert.equal(f.nodes.length,2);assert.equal(f.nodes[0],magic);assert.equal(f.nodes[1],soul);
+  assert.equal(soul.list[0].anims.currentFrame.index,99,'同一帧龄不重设动画帧');
+  assert.equal(f.order.length,0,'层序正确时不重排');
+  f.conditions.update(60);f.sync();
+  assert.equal(f.nodes[0],magic);assert.equal(f.nodes[1],soul);
+  assert.equal(magic.list[0].anims.currentFrame.index,3,'帧龄推进时仍更新动画帧');
+  assert.equal(soul.list[0].anims.currentFrame.index,3);
+});
+
+test('temporary sync containers are reused across actors without sharing loop results',()=>{
+  const f=fixture(),allyNodes:Effect[]=[],allyOrder:Effect[]=[],ally=fakeVisual(allyNodes,allyOrder);
+  f.conditions.applyBuff('ally','dark-strike',rank.strength,rank.effect);
+  f.conditions.update(60);
+  f.sync();f.renderer.sync('ally',ally,f.conditions.buffLoopFrames('ally'));
+  assert.equal(f.nodes.length,2);assert.equal(allyNodes.length,2);
+  assert.ok(f.nodes.every((effect,index)=>effect!==allyNodes[index]),'每个角色持有自己的特效');
+  f.sync();f.renderer.sync('ally',ally,f.conditions.buffLoopFrames('ally'));
+  assert.equal(f.nodes.length,2);assert.equal(allyNodes.length,2);
+  assert.equal(f.order.length,0);assert.equal(allyOrder.length,0);
+});
+
+test('destroyed or incomplete loop visuals are recreated without rebuilding siblings',()=>{
+  const f=fixture();f.conditions.update(60);f.sync();
+  const [magic,soul]=f.nodes;
+  magic.destroy();f.sync();
+  assert.ok(!magic.active);
+  assert.equal(f.nodes.length,3);
+  assert.equal(f.nodes[1],soul,'未受影响的同组特效继续复用');
+  assert.equal(f.nodes[2].name,'buff-loop:soul-sword-magic');
+  assert.ok(f.nodes[2].active);
+  assert.deepEqual(f.order.map(effect=>effect.name),['buff-loop:soul-sword-magic','buff-loop:soul-sword']);
+  const replacement=f.nodes[2];
+  f.sync();assert.equal(f.nodes.length,3);assert.equal(f.nodes[2],replacement);
+  assert.equal(f.order.length,2,'重排后层序正确时不重复调用');
+  soul.list.pop();f.sync();
+  assert.ok(!soul.active,'层数不符的旧特效被销毁');
+  assert.equal(f.nodes.length,4);
+  assert.equal(f.nodes[3].name,'buff-loop:soul-sword');
+  assert.ok(f.nodes[3].active);
+});
+
+test('replacing the character visual moves loop membership to the new container',()=>{
+  const f=fixture();f.conditions.update(60);f.sync();
+  const old=f.nodes.slice();
+  const replacement=f.replaceContainer();f.sync();
+  assert.ok(old.every(effect=>!effect.active),'旧容器上的特效被销毁');
+  assert.equal(f.nodes.length,2,'旧容器不再接收新特效');
+  assert.equal(f.order.length,0,'旧容器不再重排');
+  assert.equal(replacement.nodes.length,2);
+  assert.deepEqual(replacement.nodes.map(effect=>effect.name),['buff-loop:soul-sword-magic','buff-loop:soul-sword']);
+  assert.ok(replacement.nodes.every(effect=>effect.active));
+  const first=replacement.nodes[0];f.sync();
+  assert.equal(replacement.nodes.length,2);assert.equal(replacement.nodes[0],first);
+  assert.equal(replacement.order.length,0,'新容器创建时按顺序加入，层序正确后不重排');
+});
+
+test('hidden character containers keep loop membership and keep advancing frames',()=>{
+  const f=fixture();f.conditions.update(60);f.sync();
+  const [magic,soul]=f.nodes;
+  (f.target.container as unknown as {visible:boolean}).visible=false;
+  f.conditions.update(60);f.sync();
+  assert.equal(f.nodes.length,2);assert.equal(f.nodes[0],magic);assert.equal(f.nodes[1],soul);
+  assert.equal(magic.list[0].anims.currentFrame.index,3);
+});
 
 test('buff loops use native age frames at the feet, preserve layer order and ignore actor stealth and facing',()=>{
   const f=fixture();f.sync();assert.equal(f.nodes.length,0);
   f.conditions.update(60);f.sync();assert.equal(f.nodes.length,2);
-  assert.deepEqual(f.order.map(effect=>effect.name),['buff-loop:soul-sword-magic','buff-loop:soul-sword']);
+  assert.deepEqual(f.nodes.map(effect=>effect.name),['buff-loop:soul-sword-magic','buff-loop:soul-sword']);
+  assert.equal(f.order.length,0,'创建时按顺序加入，层序正确不需要重排');
   for(const effect of f.nodes){
     assert.deepEqual([effect.x,effect.y],[0,0]);
     for(const layer of effect.list){
