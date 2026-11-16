@@ -28,9 +28,8 @@ body.ui-occluded .text-prompt,body.ui-occluded .cloud-credentials{display:none!i
 .text-prompt input:focus{border-color:currentColor;box-shadow:0 0 0 1px currentColor}
 .text-prompt input.number-prompt-invalid{border-color:var(--prompt-danger);box-shadow:0 0 0 1px var(--prompt-danger)}
 .text-prompt-actions{display:flex;gap:12px;flex-shrink:0}
-.text-prompt-actions button{position:relative;isolation:isolate;flex:1;min-width:0;height:var(--prompt-button-height,44px);padding:0 8px;border:0;background:transparent;color:inherit;font:inherit;font-size:20px;touch-action:manipulation}
-.text-prompt-actions button::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;border-style:solid;border-color:transparent;border-width:0 var(--prompt-button-cap,32px);border-image-source:var(--prompt-button);border-image-slice:var(--prompt-button-slice);border-image-repeat:stretch}
-.text-prompt-actions button:active::before{border-image-source:var(--prompt-button-pressed)}
+.text-prompt-actions button{position:relative;flex:1;min-width:0;height:var(--prompt-button-height,44px);padding:0 8px;appearance:none;-webkit-appearance:none;border-style:solid;border-color:transparent;border-width:0 var(--prompt-button-cap,32px);border-image-source:var(--prompt-button);border-image-slice:var(--prompt-button-slice);border-image-width:0 var(--prompt-button-cap,32px);border-image-repeat:stretch;background:transparent;color:inherit;font:inherit;font-size:20px;touch-action:manipulation}
+.text-prompt-actions button:active{border-image-source:var(--prompt-button-pressed)}
 .text-prompt-actions button[disabled]{opacity:.45}
 .text-prompt-actions button:focus-visible{outline:1px solid currentColor;outline-offset:2px}
 
