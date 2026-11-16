@@ -2038,6 +2038,32 @@ test('buying from a shop keeps the remaining shelf and bag controls',t=>{
   if(!offer.limited)assert.equal(f.scene.buttons(`购买 ${item.name}`)[0],buy);
 });
 
+test('shop quantity can be typed and stops above the money limit',t=>{
+  const f=fixture();t.after(f.cleanup);
+  f.menu.openShop('merchandise-dealer-b09d9585','');
+  const store=f.internals.shopPanel!.store,offer=store.offers.find(value=>!value.limited&&items.items[value.instance.item].stackable)!;
+  const price=store.buyPrice(offer.id),item=items.items[offer.instance.item],before=f.session.bag.count(offer.instance.item);
+  f.session.gainMoney(price*3);
+  f.scene.click(f.scene.buttons(`购买 ${item.name}`)[0]!);f.scene.click(f.scene.button('购买'));
+  f.scene.click(f.scene.button('输入数量'));
+  const documentRoot=domWindow.children[0]!,find=(node:any,predicate:(node:any)=>boolean):any=>
+    predicate(node)?node:[...node.children].map((child:any)=>find(child,predicate)).find(Boolean);
+  const root=documentRoot.children.filter(node=>String(node.className).includes('number-prompt')).at(-1)!;
+  assert.ok(root,'数量输入卡已打开');
+  const input=find(root,node=>node.inputMode==='numeric'),confirm=find(root,node=>node.textContent==='确定');
+  const error=find(root,node=>String(node.className).includes('text-prompt-error'));
+  assert.ok(input&&confirm&&error);
+  input.value=String(store.buyLimit(offer.id)+1);input.dispatchEvent(new Event('input',{bubbles:true}));
+  assert.equal(error.hidden,false,'超过金币可买数量时显示红字');assert.equal(confirm.disabled,true,'非法数量不能确定');
+  assert.ok(String(error.textContent).includes('金币不足'));
+  input.value='3';input.dispatchEvent(new Event('input',{bubbles:true}));
+  assert.equal(error.hidden,true);assert.equal(confirm.disabled,false,'合法数量恢复确定');
+  const form=input.parentElement!;form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
+  assert.equal((f.internals.shopPanel as any).selection.quantity,3,'输入值写回数量框');
+  f.scene.click(f.scene.button('确定'));f.scene.click(f.scene.button('确定'));
+  assert.equal(f.session.bag.count(offer.instance.item),before+3);
+});
+
 test('shop inventory quantity badges move with the scrolled grid', t => {
   const f = fixture(); t.after(f.cleanup);
   const supplies = Object.keys(items.items).filter(id => items.items[id].category === 'consumable'

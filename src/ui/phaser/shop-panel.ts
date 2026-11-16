@@ -5,6 +5,7 @@ import type { Session } from '../../domain/session.ts';
 import type { ItemInstance } from '../../domain/items.ts';
 import type { ShopCatalog, Storefront, EquipmentSaleQuote } from '../../domain/shop.ts';
 import { moneyText, splitMoney } from '../../domain/money.ts';
+import { NumberPrompt } from '../number-prompt.ts';
 import { itemDescriptionBody } from '../item-detail-lines.ts';
 import { INVENTORY_LABELS, INVENTORY_SIDE_FILTERS, matchesFilter, type InventoryFilter } from '../../domain/inventory.ts';
 
@@ -74,6 +75,7 @@ export class ShopPanel {
    * 加减只改它们三个，不触发整页重画——玩家明确要求过数量变化不能重刷界面。
    */
   private quantityButtons?:{minus:UiNode;plus:UiNode};
+  private readonly numberPrompt=new NumberPrompt();
   /** 这一轮绘制收集的文字；弹层打开时只输出后者。 */
   private pageText:MenuTextSpec[]=[];
   private modalText:MenuTextSpec[]=[];
@@ -124,8 +126,13 @@ export class ShopPanel {
   get modalOpen():boolean{return !!this.selection&&this.selection.step!=='description';}
   /** 有选中就存在，不管停在哪一步；批量模式同样算“在商店里”，关闭键据此逐级退回。 */
   get active():boolean{return !!this.selection||this.batch||this.cleaning;}
+  /** 数字输入卡打开时菜单键盘让路，Escape/Enter 由输入框自己处理。 */
+  get prompting():boolean{return this.numberPrompt.active;}
+  /** 菜单关闭时摘掉输入卡，避免它留在新页面上面。 */
+  destroy():void{this.numberPrompt.close();}
   captureScroll():void{this.bagOffset=this.pendingBagOffset??this.bagScroll?.scrollTop??this.bagOffset;this.pendingBagOffset=undefined;this.categoryOffset=this.categoryScroll?.scrollTop??this.categoryOffset;}
   cancel():void{
+    this.numberPrompt.close();
     if(this.batch&&!this.selection){this.toggleBatch();return;}
     if(this.cleaning){if(this.selection){this.selection=undefined;if(!this.refreshDescription())this.changed();}else this.leaveCleanup();return;}
     const selection=this.selection;
@@ -212,8 +219,7 @@ export class ShopPanel {
     const selection=this.selection!;
     if(kind==='sell')return this.session.bag.get(selection.id)?.quantity??1;
     const offer=this.store.offers.find(offer=>offer.id===selection.id&&!offer.sold);
-    const item=offer&&this.session.bag.catalog.items[offer.instance.item];
-    return offer&&item&&!offer.limited&&item.stackable?99:1;
+    return offer?this.store.buyLimit(offer.id):1;
   }
   private cleanupSettings(){return {maximumLevel:this.cleanupLevel,rarities:[...this.cleanupRarities]};}
   private enterCleanup():void {
@@ -720,6 +726,8 @@ export class ShopPanel {
     const plus=v.button('',field.x+step.right,field.y,step.width,step.height,()=>this.stepQuantity(1),
       {image:this.catalog.assets['count-right'],pressed:this.catalog.assets['count-right-pressed'],disabled:selection.quantity>=maximum,hold:QUANTITY_HOLD});
     this.addModal('shop-quantity-count',String(selection.quantity),box.count.x,box.count.y,30,box.count.color);
+    // 数量数字本身也是入口：点它打开数字输入卡，两侧箭头继续做小步调整。
+    v.button('',214,field.y,90,field.height,()=>this.beginQuantityInput(selection),{bare:true}).setData('label','输入数量');
     v.textPlate(this.catalog.assets['text-plate-left'],this.catalog.assets['text-plate-right'],box.textPlate.x,box.textPlate.y,box.textPlate.width);
     this.quantityButtons={minus,plus};
     this.money(v,total,box.money.x,box.money.y,'shop-quantity-money',true);
@@ -741,6 +749,28 @@ export class ShopPanel {
     if(next===selection.quantity)return;
     selection.quantity=next;
     this.syncQuantity();
+  }
+
+  /** 点数量数字打开输入卡；确定后只更新数量和金额，不重画整页。 */
+  private beginQuantityInput(selection:Selection):void{
+    if(this.selection!==selection)return;
+    const buying=selection.kind==='buy',maximum=this.maximum(selection.kind),price=this.price(selection);
+    this.numberPrompt.show({
+      title:buying?'购买数量':'出售数量',
+      hint:buying
+        ?(maximum<1?'当前金币不足':`单价 ${moneyText(price)} · 当前金币 ${moneyText(this.session.money)} · 最多 ${maximum} 件`)
+        :`最多可卖 ${maximum} 件`,
+      initial:selection.quantity,
+      minimum:1,
+      maximum,
+      overMessage:limit=>buying?(limit<1?'金币不足':`金币不足，最多可买 ${limit} 件`):`最多只能卖 ${limit} 件`,
+      onConfirm:value=>{
+        if(this.selection!==selection)return;
+        selection.quantity=value;
+        this.syncQuantity();
+      },
+      onCancel:()=>{},
+    });
   }
   /** 把当前数量刷到已经画好的数量框上；数量框还没画出来时什么都不做。 */
   private syncQuantity():void{

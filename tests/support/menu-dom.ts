@@ -7,7 +7,23 @@ export class MenuElement {
   children: MenuElement[] = [];
   parentElement?: MenuElement;
   hidden = false; textContent = ''; className = ''; id = ''; src = ''; draggable = false; alt = '';
-  classList = { add: (...names: string[]) => { this.className += ` ${names.join(' ')}`; } };
+  classList = {
+    add: (...names: string[]) => {
+      const current = new Set(this.className.split(/\s+/).filter(Boolean));
+      for (const name of names) current.add(name);
+      this.className = [...current].join(' ');
+    },
+    remove: (...names: string[]) => {
+      const drop = new Set(names);
+      this.className = this.className.split(/\s+/).filter(name => name && !drop.has(name)).join(' ');
+    },
+    toggle: (name: string, force?: boolean) => {
+      const next = force ?? !this.classList.contains(name);
+      if (next) this.classList.add(name); else this.classList.remove(name);
+      return next;
+    },
+    contains: (name: string) => this.className.split(/\s+/).includes(name),
+  };
   private captures = new Set<number>();
   private listeners = new Map<string, { run: (event:any)=>void; capture:boolean; once:boolean }[]>();
   get firstChild() { return this.children[0] ?? null; }
@@ -22,6 +38,10 @@ export class MenuElement {
   hasPointerCapture(id:number) { return this.captures.has(id); }
   releasePointerCapture(id:number) { this.captures.delete(id); }
   getBoundingClientRect() { return {x:0,y:0,left:0,top:0,width:1024,height:640,right:1024,bottom:640}; }
+  focus() {}
+  blur() {}
+  select() {}
+  setSelectionRange() {}
   addEventListener(name:string,run:(event:any)=>void,options:any={}) { if(options.signal?.aborted)return;const row={run,capture:options===true||!!options.capture,once:!!options.once};const rows=this.listeners.get(name)??[];rows.push(row);this.listeners.set(name,rows);options.signal?.addEventListener('abort',()=>this.removeEventListener(name,run,options),{once:true}); }
   removeEventListener(name:string,run:(event:any)=>void,options:any={}) { this.listeners.set(name,(this.listeners.get(name)??[]).filter(row=>row.run!==run||row.capture!==(options===true||!!options.capture))); }
   dispatchEvent(event:any) {
@@ -47,7 +67,7 @@ export function installMenuDom() {
   const previous=names.map(name=>Object.getOwnPropertyDescriptor(globalThis,name));
   Object.defineProperties(globalThis,{
     window:{configurable:true,value:domWindow},
-    document:{configurable:true,value:{documentElement:documentRoot,createElement:()=>new MenuElement(),createElementNS:()=>new MenuElement(),getElementById:(id:string)=>layers.get(id),addEventListener:documentRoot.addEventListener.bind(documentRoot),removeEventListener:documentRoot.removeEventListener.bind(documentRoot)}},
+    document:{configurable:true,value:{documentElement:documentRoot,body:documentRoot,createElement:()=>new MenuElement(),createElementNS:()=>new MenuElement(),getElementById:(id:string)=>layers.get(id),addEventListener:documentRoot.addEventListener.bind(documentRoot),removeEventListener:documentRoot.removeEventListener.bind(documentRoot)}},
     getComputedStyle:{configurable:true,value:()=>({paddingLeft:'0',paddingRight:'0',paddingTop:'0',paddingBottom:'0'})},
     Image:{configurable:true,value:class {onload?:()=>void;onerror?:()=>void;naturalWidth=0;naturalHeight=0;removeAttribute(){};set src(url:string){if(!url)return;const bytes=readFileSync(new URL(`../../public/${url.split('?')[0].replace(/^\//,'')}`,import.meta.url));this.naturalWidth=bytes.readUInt32BE(16);this.naturalHeight=bytes.readUInt32BE(20);queueMicrotask(()=>this.onload?.());}}},
     fetch:{configurable:true,value:async(url:string)=>({ok:true,json:async()=>JSON.parse(readFileSync(new URL(`../../public/${url.split('?')[0].replace(/^\//,'')}`,import.meta.url),'utf8'))})}

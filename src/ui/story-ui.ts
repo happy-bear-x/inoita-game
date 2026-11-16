@@ -605,7 +605,7 @@ export class StoryUI {
     this.debugOpenToken++;this.debugStoryOnOpen=false;this.debugStoryMessage='';
     if(!this.open){
       // 关闭态也可能已经创建了商店/合成/强化等子面板（例如 show() 的早退路径），一并丢掉。
-      this.shopPanel=undefined;this.craftingPanel=undefined;this.craftingActor=undefined;this.forge=undefined;this.skillBook=undefined;
+      this.shopPanel?.destroy();this.shopPanel=undefined;this.craftingPanel=undefined;this.craftingActor=undefined;this.forge=undefined;this.skillBook=undefined;
       this.partyPanel?.destroyPreview();this.app.releasePartyPreview?.();
       return;
     }
@@ -615,7 +615,7 @@ export class StoryUI {
     const hadBagDetail=this.page==='bag'&&(!!this.selectedItem||!!this.itemResult);
     if(this.page==='bag')this.clearBagTransientState();
     const keepBag=this.page==='bag'&&this.bagPageCached&&!hadBagDetail;
-    this.shopPanel=undefined;this.partyPanel?.destroyPreview();this.app.releasePartyPreview?.();this.craftingPanel=undefined;this.craftingActor=undefined;this.forge=undefined;this.skillBook=undefined;this.open=false;
+    this.shopPanel?.destroy();this.shopPanel=undefined;this.partyPanel?.destroyPreview();this.app.releasePartyPreview?.();this.craftingPanel=undefined;this.craftingActor=undefined;this.forge=undefined;this.skillBook=undefined;this.open=false;
     if(keepBag)this.bagPortrait?.visible(false);else this.bagPortrait?.destroy();
     if(keepBag&&this.bagGrid)this.bagGrid.scrollTop=0;
     this.scrollNames.forEach((scroll,name)=>this.scrollOffsets.set(`${this.page}:${name}`,scroll.scrollTop));if(!keepBag)this.scrollNames.clear();
@@ -673,8 +673,8 @@ export class StoryUI {
       }
       return false;
     }
-    // 改名输入框开着时键盘归系统输入法：Enter/Escape 由输入框自己处理。
-    if(this.savePage.renaming)return true;
+    // 改名或数量输入框开着时键盘归系统输入法：Enter/Escape 由输入框自己处理。
+    if(this.savePage.renaming||this.shopPanel?.prompting)return true;
     if(this.app.ui.controlLayoutEditing){if(event.key==='Escape'){event.preventDefault();this.closeControlEditor();}else this.controlEditor?.key(event);return true;}
     if(event.key==='Escape'&&this.itemNotice){event.preventDefault();this.itemNotice=undefined;this.updateItemNotice();return true;}
     if(this.savePage.handleEscape(event))return true;

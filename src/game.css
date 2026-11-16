@@ -22,6 +22,7 @@ body.ui-occluded .text-prompt,body.ui-occluded .cloud-credentials{display:none!i
 .text-prompt label{display:flex;flex-direction:column;gap:6px;font-size:13px;color:#b8ab92}
 .text-prompt .text-prompt-error{color:#ff8a80;font-size:13px;line-height:1.4;margin:-2px 0 0}
 .text-prompt input{font:inherit;font-size:16px;padding:10px 12px;border-radius:6px;border:1px solid #6b5a37;background:#0e171c;color:#f5f0df;touch-action:auto;-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
+.text-prompt input.number-prompt-invalid{border-color:#ff8a80;box-shadow:0 0 0 2px rgba(255,138,128,.18)}
 .text-prompt-actions{display:flex;gap:12px}
 .text-prompt-actions button{flex:1;padding:10px;border-radius:6px;border:1px solid #6b5a37;background:#2a3740;color:#e2c88d;touch-action:manipulation}
 .text-prompt-actions button[disabled]{opacity:.45}

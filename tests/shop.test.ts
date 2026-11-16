@@ -19,11 +19,12 @@ const offer=(store:Storefront,item:string)=>store.offers.find(offer=>!offer.sold
 
 test('ordinary merchant validates quantities and publishes one complete transaction',()=>{
   const s=session(),store=open(s),id=offer(store,'healing-potion-s').id;
-  assert.equal(store.buyPrice(id),15);assert.throws(()=>store.buy(id,1),/金币不足/);
+  assert.equal(store.buyPrice(id),15);assert.equal(store.buyLimit(id),0,'没有金币时买不了');
+  assert.throws(()=>store.buy(id,1),/金币不足/);
   assert.equal(s.bag.count('healing-potion-s'),5);
-  s.gainMoney(50);const snapshots:number[][]=[];
+  s.gainMoney(50);assert.equal(store.buyLimit(id),3,'50 铜最多买 3 件');const snapshots:number[][]=[];
   s.subscribe(()=>snapshots.push([s.money,s.bag.count('healing-potion-s')]));
-  assert.equal(store.buy(id,2),30);assert.deepEqual(snapshots,[[20,7]]);
+  assert.equal(store.buy(id,2),30);assert.equal(store.buyLimit(id),1,'花掉 30 铜后只剩 20 铜');assert.deepEqual(snapshots,[[20,7]]);
   const entry=s.bag.entries.find(item=>item.item==='healing-potion-s')!;
   assert.equal(store.sell(entry.id,3),9);assert.deepEqual(snapshots.at(-1),[29,4]);assert.equal(snapshots.length,2);
   for(const count of [0,-1,1.5,100])assert.throws(()=>store.buy(id,count),/数量无效/);
@@ -150,6 +151,7 @@ test('limited consumables sell once and cannot be bought as unlimited stacks',()
   profile.chances={generic:10000,equipment:0,consumable:0,upgrade:0,crafting:0,misc:0};
   profile.pools.generic=[{weight:10000,item:'healing-potion-s'}];
   const store=open(s,black,catalog),entry=store.offers.find(offer=>offer.limited)!;s.gainMoney(1000);
+  assert.equal(store.buyLimit(entry.id),1,'限量商品最多 1 件');
   assert.throws(()=>store.buy(entry.id,2),/数量无效/);store.buy(entry.id,1);assert.equal(entry.sold,true);
 });
 

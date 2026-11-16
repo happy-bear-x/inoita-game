@@ -214,6 +214,14 @@ export class Storefront {
     const discount=this.session.party?.groupModifiers()['buy-discount']??0;
     return price-whole(price*discount/1000);
   }
+
+  /** 当前金币和库存共同决定一次最多能买几件。 */
+  buyLimit(id: string): number {
+    const offer = this.offer(id), item = this.items.items[offer.instance.item];
+    const stock = !offer.limited && item.stackable ? 99 : 1;
+    const price = this.buyPrice(id);
+    return Math.min(stock, price > 0 ? Math.floor(this.session.money / price) : stock);
+  }
   sellPrice(entry: ItemInstance): number {
     const item = this.items.items[entry.item];
     if (!item || item.category === 'quest' || item.sellable === false) return 0;
