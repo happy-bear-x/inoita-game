@@ -713,7 +713,7 @@ export function createGmActions(ports: GmPorts): GmActions {
       const definitions = session.bag.catalog.items;
       const counts = session.bag.counts;
       const eligible = Object.entries(definitions).filter(([, definition]) =>
-        !definition.pickup && (filter === 'all' || definition.category === filter));
+        !definition.pickup && !definition.equipment?.locked && (filter === 'all' || definition.category === filter));
       // 装备先按种类分组、组内等级升序；其它物品保持「分类 → 中文自然序 → id」。
       return organizedDebugInventory(new Map(eligible.map(([id]) => [id, 1] as const)), definitions)
         .map(([id]) => {

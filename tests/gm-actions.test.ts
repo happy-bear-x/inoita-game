@@ -257,15 +257,21 @@ test('recoverParty heals living members and leaves fallen ones to the combat por
   assert.equal(member.player.health, 0, '没有战斗场景时不擅自复活');
 });
 
-test('items excludes pickup-only items, filters and reports owned counts', () => {
+test('items excludes pickup-only and story-locked equipment, filters and reports owned counts', () => {
   const { session, gm } = harness();
   const all = gm.items();
   assert.ok(!all.some(entry => entry.id === 'mana-gem'));
-  assert.equal(all.length, Object.values(items.items).filter(item => !item.pickup).length, '清单覆盖全部可直接发放的物品');
+  assert.equal(all.length, Object.values(items.items).filter(item => !item.pickup && !item.equipment?.locked).length);
+  assert.ok(items.storyEquipment?.length, '内容目录含剧情人物专属装备');
+  for (const id of items.storyEquipment!) assert.ok(!all.some(entry => entry.id === id), `${id} 不显示在调试清单`);
 
   const equipment = gm.items('equipment');
   assert.ok(equipment.length > 0);
   assert.ok(equipment.every(entry => entry.category === 'equipment'));
+  assert.ok(equipment.every(entry => !items.items[entry.id]!.equipment?.locked));
+  const foreign = equipment.find(entry => !items.items[entry.id]!.equipment!.classes.includes(session.hero!.classId));
+  assert.ok(foreign, '其他职业的可穿戴装备仍可见');
+  assert.equal(gm.giveItem(foreign.id, 1).ok, true, '可穿戴装备仍可发放');
 
   const potion = all.find(entry => entry.id === 'healing-potion-s')!;
   assert.equal(potion.owned, session.bag.count('healing-potion-s'));

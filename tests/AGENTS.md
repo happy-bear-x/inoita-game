@@ -51,6 +51,7 @@ npm run test:standalone
 - `basic-attack-repeat.test.ts` 与 `world-runtime-review.test.ts` 验证手动对敌技能自然结束后接普攻，以及无目标、辅助技能和切人时的边界。
 
 - `debug-mark-store.test.ts` 验证摘要分页不读取正文、跨实例读取及配额失败的原子覆盖；`gm-actions.test.ts` 验证持久标记的取消、损坏、现场回退与任务返回点。
+- `gm-actions.test.ts` 验证调试道具列表隐藏剧情人物专属装备，并保留其他职业的可穿戴装备。
 
 - `world-effects.test.ts` 验证飞弹转向和持续效果独立保留贴图到结束；`buff-loop-renderer.test.ts` 验证首次缺图后恢复。
 - `world-effects.test.ts` 还通过实际战斗装配与特效播放器验证地狱火在 1×/2×/3× 采样下的位置、数量和绘制层级一致，覆盖主角与佣兵。
