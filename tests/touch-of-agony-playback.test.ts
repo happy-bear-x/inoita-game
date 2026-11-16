@@ -32,7 +32,7 @@ test('生产生命查询区分伤害链中尚未移除的零生命角色，主�
   const host = {
     memberOf: (id: string) => id === 'enemy' || !states.has(id) ? undefined : { player: states.get(id) },
     arena: [{ key: 'enemy', definition: {} }], hero: { level: 1 }, hitResolution: resolution,
-    roster: { enemySnapshot: (id: string) => states.get(id) },
+    roster: { isPresent: () => true, enemySnapshot: (id: string) => states.get(id) },
   };
   const alive = (id: string) => Reflect.get(WorldCombat.prototype, 'isActorAlive').call(host, id);
   for (const id of states.keys()) {

@@ -83,6 +83,7 @@ function fixture(){
   const source={...fighter},target={...fighter},conditions=new CombatConditions(),hits:PhysicalHit[]=[],taunts:string[]=[];
   const member={level:10,panel:{attributes:primary},player:{health:100,maxHealth:100,mana:100,maxMana:100}};
   const host=Object.setPrototypeOf({hero:member,conditions,pendingDefeats:new Set(),
+    roster:{isPresent:()=>true},
     arena:[{key:'enemy',definition:{}}],threat:{taunt:(id:string)=>taunts.push(id)},
     memberOf:(id:string)=>id==='caster'?member:undefined,partyFighter:()=>source,enemyFighter:()=>target,
     // 背后渗透这一次读取不在这些朴素宿主的能力范围内：明确当作没学。

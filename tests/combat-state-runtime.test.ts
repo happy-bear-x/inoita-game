@@ -14,6 +14,7 @@ const method=(name:string)=>Reflect.get(WorldCombat.prototype,name);
 test('scene applies the actual state source and rejects weak buff refresh without interrupting the target',()=>{
   const conditions=new CombatConditions(),applied:string[][]=[];
   const host={conditions,pendingDefeats:new Set(),hero:{},arena:[],memberOf:()=>true,partyFighter:()=>({}),
+    isActorPresent:method('isActorPresent'),
     stateApplicationRequest:(_source:string,_target:string,state:string)=>({state,sourceRelation:'hostile'}),
     applyActorBuff:method('applyActorBuff'),syncCombatResourceLimits:()=>{},applyStateConsequences:(_id:string,states:string[])=>applied.push(states)};
   const state={effect:'state',state:'stun',ranks:[{chanceThreshold:1000,durationMs:2000}]};

@@ -52,7 +52,7 @@ test('zero-health and awaiting-defeat enemies stay out of the combatant list',()
     pendingDefeats:{has:()=>false},memberOf:()=>undefined,activeParty:[],allies:[],
     app:{session:{combatTick:0}},
     visualOf:(id:string)=>id==='zero'?visual:undefined,
-    roster:{hasZeroHealth:()=>zero},arena:[enemy],
+    roster:{hasZeroHealth:()=>zero,isPresent:()=>true},arena:[enemy],
     hitResolution:{isAwaitingDefeat:()=>awaiting},
     conditions:{revision:0,activeStates:()=>[]},
     movement:{position:()=>({x:0,y:0}),actor:()=>({shape:()=>({collision})})},
@@ -73,7 +73,7 @@ test('a lethal hit opens one defeat ticket through the shared entry',()=>{
     conditions:{canLoseHealth:()=>true,removeState(){}},
     app:{session:{storyWorld:{visible:()=>true},isOneHitKill:()=>false,enemyVitals:()=>({})},director:undefined},
     memberOf:()=>undefined,
-    roster:{enemySnapshot:()=>({...state}),setEnemyHealth:()=>{state.health=0;}},
+    roster:{isPresent:()=>true,enemySnapshot:()=>({...state}),setEnemyHealth:()=>{state.health=0;}},
     hitResolution:new CombatHitResolution(),
     beginEnemyDefeat:(enemy:{key:string},cause:string,before:unknown,caster:string)=>{
       calls.push([enemy.key,cause,before,caster]);return true;

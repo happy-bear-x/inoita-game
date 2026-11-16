@@ -27,7 +27,7 @@ test('Gunther capture preserves the animal, changes its appearance, and counts o
   await setImmediate();
   assert.equal(session.status(quest.id),'active');
   assert.equal(session.quests.get(quest.id)!.goals[quest.goals[0].id],0);
-  assert.equal(session.canSpawnEnemy({...source,enemyId:quest.targetChanges![0].enemyId}),false);
+  assert.equal(session.canRespawnEnemy({...source,enemyId:quest.targetChanges![0].enemyId}),false);
   const target=session.storyWorld.projectEntities(source.map,[]).find(entity=>entity.id==='quest-target:'+source.id)!;
   assert.equal(target.actor,quest.goals[0].target);
   assert.deepEqual([target.x,target.y],[120,88]);

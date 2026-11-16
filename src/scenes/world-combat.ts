@@ -324,7 +324,7 @@ export class WorldCombat {
   private skillAssetRefreshRunning=false;
   private skillAssetRefreshQueued=false;
   private attackProcs=new AttackProcExecutor();
-  private combatantsCache?:{tick:number;revision:number;value:Combatant[]};
+  private combatantsCache?:{tick:number;revision:number;presenceRevision:number;value:Combatant[]};
   /** 与 combatants 快照同一批对象；数组身份变化时重建，AI 只查附近的桶。 */
   private combatantsSpatialCache?:{source:Combatant[];index:CombatSpatialIndex};
   private effectExecutor?:CombatEffectExecutor;
@@ -927,11 +927,12 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
     // 同一逻辑帧内的 AI/技能查询共用一份候选快照；帧开始和结束时清空，避免跨帧读到旧位置。
     const tick=this.app.session.combatTick;
     const revision=this.conditions.revision;
-    if(this.combatantsCache?.tick===tick&&this.combatantsCache.revision===revision)return this.combatantsCache.value;
+    const presenceRevision=this.roster.presenceRevision;
+    if(this.combatantsCache?.tick===tick&&this.combatantsCache.revision===revision&&this.combatantsCache.presenceRevision===presenceRevision)return this.combatantsCache.value;
     const value=[...this.activeParty.map(id=>this.combatant(id)),...this.arena.map(enemy=>this.combatant(enemy.key))]
       // 敌对单位正在等死亡单或已经 0 血时不再进入候选；友方召唤物保留给治疗救援。
       .filter((actor):actor is Combatant=>!!actor&&(actor.team==='party'||!this.isUnavailableEnemyTarget(actor.id)));
-    this.combatantsCache={tick,revision,value};
+    this.combatantsCache={tick,revision,presenceRevision,value};
     return value;
   }
   /** 与 combatants 同源的空间查询；索引按快照数组身份复用，结果保持原候选顺序。 */
@@ -1035,6 +1036,7 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
   }
   private isActorAlive(id:string):boolean {
     const member=this.memberOf(id),enemy=combatActor(this.arena,id,actor=>actor.key);
+    if(enemy&&!this.roster.isPresent(id,enemy.definition.id))return false;
     return (member?.player.health??(enemy?this.roster.enemySnapshot(id,enemy.definition,this.hero.level)?.health:0)??0)>0;
   }
   /** 怪物释放条件用的当前生命与上限；生命按敌方快照读，上限走共用资源面板。 */
@@ -1181,7 +1183,7 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
     this.recordSummonContact?.(event.casterId,event.targetId);
     return (this.effectExecutor??=new CombatEffectExecutor({conditions:this.conditions,threat:this.threat,random:()=>Math.random(),
       run:work=>(this.hitResolution??=new CombatHitResolution()).run(work),
-      available:id=>!this.closed&&!this.defeated&&!this.pendingDefeats.has(id)&&!this.fallen?.has(id),
+      available:id=>!this.closed&&!this.defeated&&!this.pendingDefeats.has(id)&&!this.fallen?.has(id)&&this.isActorPresent(id),
       partySide:id=>!!this.memberOf(id)||!!this.memberOf(combatActor(this.arena,id,actor=>actor.key)?.summonedBy??''),
       fighter:id=>{const enemy=combatActor(this.arena,id,actor=>actor.key);return this.memberOf(id)?this.partyFighter(id):enemy&&this.enemyFighter(enemy.key,enemy.definition,this.hero.level);},
       position:id=>this.combatant(id)?.position,
@@ -1213,6 +1215,7 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
     (this.hitResolution??=new CombatHitResolution()).run(()=>{
       if(this.defeated||this.closed||this.fallen?.has(event.casterId)||this.fallen?.has(event.targetId)||
         this.pendingDefeats?.has(event.casterId)||this.pendingDefeats?.has(event.targetId))return;
+      if(!this.isActorPresent(event.casterId)||!this.isActorPresent(event.targetId))return;
       this.recordSummonContact?.(event.casterId,event.targetId);
       if(event.skillId){
         if(this.enemiesRunning&&!this.pendingDefeats.has(event.targetId))combatActor(this.arena,event.targetId,actor=>actor.key)?.controller?.onContact(event);
@@ -1301,7 +1304,7 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
   }
   private settleHit(event:AttackContact,hit:PhysicalHit,hero:BattleCharacter,targetEnemy?:MapEnemy,presentation:{style?:HitEffectStyle;periodic?:boolean;sound?:boolean}={}):void {
     if(this.pendingDefeats.has(event.targetId)||!this.conditions.canLoseHealth(event.targetId)
-      ||targetEnemy&&this.app.session.storyWorld?.visible(targetEnemy.key)===false)return;
+      ||targetEnemy&&!this.roster.isPresent(targetEnemy.key,targetEnemy.definition.id))return;
     this.diagnosticHits+=1;
     this.diagnosticTotalHits+=1;
     this.recordSummonContact?.(event.casterId,event.targetId);
@@ -1941,7 +1944,7 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
     this.aiSkillCostCache?.delete(id);
   }
   private enemyFighter(key:string,definition:EnemyDefinition,playerLevel:number):PhysicalFighter|undefined {
-    if(this.pendingDefeats.has(key))return;
+    if(this.pendingDefeats.has(key)||!this.roster.isPresent(key,definition.id))return;
     const stats=this.roster.enemySnapshot(key,definition,playerLevel);
     if(!stats||stats.health<=0)return;
     return this.conditions.fighter(key,{level:stats.level,physicalAttack:stats.physicalAttack,defense:stats.defense,defenseRate:stats.defenseRate,physicalResistanceBonus:stats.physicalResistanceBonus,magicAttack:stats.magicAttack,maxHealth:stats.maxHealth,hitBase:stats.hitBase,hitBonus:stats.hitBonus,
@@ -2795,15 +2798,21 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
   private visualOf(id:string):CharacterVisual|undefined{
     return id==='player'?this.scene.player:combatActor(this.allies,id,actor=>actor.id)?.visual??combatActor(this.arena,id,actor=>actor.key)?.visual;
   }
-  /** 敌对单位是否已经不能作为选敌目标：等死亡单、同串待结算、或 0 血。 */
+  /** 选敌同时遵守名册在场状态、死亡单与当前血量。 */
   private isUnavailableEnemyTarget(id:string):boolean {
-    return this.pendingDefeats.has(id)||!!this.hitResolution?.isAwaitingDefeat(id)||!!this.roster?.hasZeroHealth?.(id);
+    return !this.roster.isPresent(id)||this.pendingDefeats.has(id)||!!this.hitResolution?.isAwaitingDefeat(id)||!!this.roster?.hasZeroHealth?.(id);
+  }
+  private isActorPresent(id:string):boolean {
+    if(this.memberOf(id))return true;
+    const enemy=combatActor(this.arena,id,actor=>actor.key);
+    return !!enemy&&this.roster.isPresent(id,enemy.definition.id);
   }
   private combatant(id:string):Combatant|undefined{
     if(this.pendingDefeats.has(id)||this.memberOf(id)&&!this.activeParty.includes(id))return;
     const visual=this.visualOf(id);
     if(!visual?.container.active||!visual.actor.collision)return;
     const enemy=combatActor(this.arena,id,actor=>actor.key);
+    if(enemy&&!this.roster.isPresent(id,enemy.definition.id))return;
     const ally=combatActor(this.allies,id,actor=>actor.id);
     if((id==='player'||ally)&&!this.memberOf(id)?.player.health&&!this.hitResolution?.isAwaitingDefeat(id))return;
     return {id,team:id==='player'||ally||(enemy?.summonedBy&&this.memberOf(enemy.summonedBy))?'party':'hostile',

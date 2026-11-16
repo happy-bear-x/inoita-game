@@ -47,7 +47,7 @@ function fixture(targets:Combatant[]=[]){
     scene:{events:{emit:()=>{}}},memberOf:(id:string)=>id==='player'?member:undefined,partyPassives:()=>[],
     combatant:(id:string)=>{const value=actors.get(id);return value&&!fallen.has(id)?{...value,states:conditions.activeStates(id)}:undefined;},
     visualOf:(id:string)=>visuals.get(id),
-    roster:{enemySnapshot:(id:string)=>stats.get(id),setEnemyHealth:(id:string,value:number)=>{stats.get(id)!.health=value;}},
+    roster:{isPresent:()=>true,enemySnapshot:(id:string)=>stats.get(id),setEnemyHealth:(id:string,value:number)=>{stats.get(id)!.health=value;}},
     resolveHitReactions:()=>{},dropMana:()=>{},syncCombatResourceLimits:()=>{},applyStateConsequences:()=>{},
     showHit:(event:SkillUnitHit,hit:PhysicalHit)=>{hits.push({event,hit});order.push(`hit:${event.targetId}:${hit.kind}:${hit.damage}`);afterHit(event,hit);},
     feedback:{startShake:()=>order.push('shake'),vibrate:(duration:number)=>order.push(`vibration:${duration}`)},

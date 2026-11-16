@@ -22,6 +22,7 @@ function fixture(){
   const member={level:1,panel:{attributes:primary},player:{health:100,maxHealth:100,mana:0,maxMana:100},setHealth:()=>{}};
   const enemy={key:'enemy',definition:{},controller:{}};
   const host=Object.setPrototypeOf({hero:member,conditions,arena:[enemy],threat:{taunt:()=>phases.push('taunt'),state:()=>{}},pendingDefeats:new Set(),fallen:new Set(),
+    roster:{isPresent:()=>true},
     memberOf:(id:string)=>id==='player'?member:undefined,partyFighter:()=>fighter,enemyFighter:()=>defender,
     actorAttribute:(_id:string,key:string)=>['physicalAttack','magicAttack','maxHealth'].includes(key)?100:0,
     actorAttributes:()=>({physicalAttack:100,magicAttack:100,maxHealth:100,physicalDamageRate:0,magicDamageRate:0,

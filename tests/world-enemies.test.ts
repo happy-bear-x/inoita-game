@@ -66,8 +66,8 @@ test('spawn projection is reused until the story world or generated spawns chang
 test('unchanged enemy spawn eligibility does not rescan the map on every battle tick',()=>{
   const session=new Session(campaign),map=content('maps/shadow-forest-west.json') as WorldMap;
   const roster=new WorldEnemyRoster(session,map,[],1),spawn=roster.spawns[0]!;
-  const canSpawn=session.canSpawnEnemy.bind(session);let checks=0;
-  session.canSpawnEnemy=value=>{checks++;return canSpawn(value);};
+  const canSpawn=session.canRespawnEnemy.bind(session);let checks=0;
+  session.canRespawnEnemy=value=>{checks++;return canSpawn(value);};
   const revision=session.enemySpawnRevision;
   for(let tick=0;tick<100;tick++){
     session.setEnemyVitals(spawn.id,100-tick,0);session.advanceGameTime(60);
@@ -229,7 +229,7 @@ test('native quest spirits use ordinary map spawns and deaths alone do not grant
   assert.equal(spirits.length,5);
   for(const spawn of spirits){
     session.enemyDefeated(spawn);
-    assert.equal(session.canSpawnEnemy(spawn),false);
+    assert.equal(session.canRespawnEnemy(spawn),false);
     assert.equal(session.enemyDefeated(spawn),false);
     assert.equal(roster.refresh().removed.includes(spawn.id),true);
   }
@@ -406,8 +406,8 @@ test('re-entering a different map respawns ordinary enemies but not permanent on
   const first=new WorldEnemyRoster(session,mapA,[],1);
   const normal=first.source('map-a-spawn-1')!,permanent=first.source('map-a-spawn-2')!;
   session.enemyDefeated(normal);session.enemyDefeated(permanent);
-  assert.equal(session.canSpawnEnemy(normal),false);
-  assert.equal(session.canSpawnEnemy(permanent),false);
+  assert.equal(session.canRespawnEnemy(normal),false);
+  assert.equal(session.canRespawnEnemy(permanent),false);
 
   new WorldEnemyRoster(session,mapB,[],1);
   const back=new WorldEnemyRoster(session,mapA,[],1);

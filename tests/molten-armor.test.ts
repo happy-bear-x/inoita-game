@@ -119,7 +119,7 @@ function fixture(){
       stealthDamageRate:0,primaryAttributes:primary}),
     combatants:()=>actors.filter(value=>!host.pendingDefeats.has(value.id)&&!removed.has(value.id)),
     combatant:(id:string)=>actors.find(value=>value.id===id&&!host.pendingDefeats.has(id)&&!removed.has(id)),
-    roster:{enemySnapshot:(id:string)=>({...states.get(id)!}),setEnemyHealth:(id:string,health:number)=>{
+    roster:{isPresent:()=>true,enemySnapshot:(id:string)=>({...states.get(id)!}),setEnemyHealth:(id:string,health:number)=>{
       states.get(id)!.health=Math.max(0,Math.min(states.get(id)!.maxHealth,health));},source:()=>undefined},
     movement:{stop:()=>{},setEnabled:()=>{}},scene:{events:{emit:()=>order.push('contact')},map:{id:'test'},refreshCombatTarget:()=>{}},
     outcomes:{cancelDeath:()=>{},vanish:(_id:string,_visual:unknown,finish:()=>void)=>finish()},

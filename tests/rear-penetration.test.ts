@@ -27,6 +27,7 @@ const magicProfile=Object.values(catalog.basicAttacks).find(attack=>attack.damag
 function fixture({rank=8,targetTarget='someone-else',magic=false}={}){
   const conditions=new CombatConditions(),hits:{damageKind:string;extra:number}[]=[];
   const host=Object.setPrototypeOf({app:{battleCatalog:catalog,session:{skills:{draft:()=>({levels:{'rear-penetration':rank}})}}},
+    roster:{isPresent:()=>true},
     conditions,arena:[{key:'enemy',definition:{basicAttack:{profileId:'a'},commandAction:undefined}}],
     activeParty:['caster'],fallen:new Set(),pendingDefeats:new Set(),
     memberOf:(id:string)=>id==='caster'?{classId:'assassin',skills:{draft:()=>({levels:{'rear-penetration':rank}})}}:undefined,

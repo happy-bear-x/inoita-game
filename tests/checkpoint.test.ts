@@ -58,7 +58,7 @@ test('restoring rolls back dropped rewards, opened chests, store stock and remai
   const loot=groundLootFor(session);loot.add(map,100,120,[{kind:'money',amount:25}]);
   const checkpoint=new SessionCheckpoint();checkpoint.capture(session,{map,x:80,y:80},undefined);
   const before=session.captureState(),cooldown=session.recovery.cooldown;
-  session.advanceGameTime(10000);assert.equal(session.canSpawnEnemy(spawn),true);
+  session.advanceGameTime(10000);assert.equal(session.canRespawnEnemy(spawn),true);
   stock[0].sold=true;loot.collectNearby(map,100,120,reward=>{if(reward.kind==='money')session.gainMoney(reward.amount);});
   session.chests.open(map,'second-chest',{x:24,y:24},()=>({rewards:[],enemies:[]}));
   let updates=0;session.subscribe(()=>updates++);checkpoint.restore(session);
@@ -68,8 +68,8 @@ test('restoring rolls back dropped rewards, opened chests, store stock and remai
   assert.equal(session.shops.open('fixture-shop',()=>{throw new Error('stock should be restored');})[0].sold,false);
   const collect=()=>loot.collectNearby(map,100,120,reward=>{if(reward.kind==='money')session.gainMoney(reward.amount);});
   assert.equal(collect().length,1);assert.equal(collect().length,0);assert.equal(session.money,75);
-  session.advanceGameTime(3999);assert.equal(session.canSpawnEnemy(spawn),false);
-  session.advanceGameTime(1);assert.equal(session.canSpawnEnemy(spawn),true);
+  session.advanceGameTime(3999);assert.equal(session.canRespawnEnemy(spawn),false);
+  session.advanceGameTime(1);assert.equal(session.canRespawnEnemy(spawn),true);
 });
 
 test('restoring recreates dismissed companions without regenerating their gear, skills or identifiers',()=>{

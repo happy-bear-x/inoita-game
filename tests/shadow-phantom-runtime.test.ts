@@ -37,7 +37,7 @@ function fixture(){
     pendingDefeats:new Set<string>(),fallen:new Set<string>(),allies:[],arena:[{key:'target',definition:catalog.enemies[0]}],
     app:{battleCatalog:catalog,items:{items:{}},session:{skills:configuration('player'),party:{controlledId:'player',groupModifiers:()=>({})}},audio:{effect:()=>{}}},
     scene:{events:{emit:()=>{}}},memberOf:(id:string)=>members.get(id),
-    roster:{enemySnapshot:()=>stats},combatant:(id:string)=>actors.get(id),visualOf:()=>undefined,
+    roster:{isPresent:()=>true,enemySnapshot:()=>stats},combatant:(id:string)=>actors.get(id),visualOf:()=>undefined,
     resolveHitReactions:()=>{},dropMana:()=>{},react:()=>{},
     settleHit:(_event:AttackContact,hit:PhysicalHit)=>hits.push(hit),showHit:(_event:AttackContact,hit:PhysicalHit)=>hits.push(hit),
   },WorldCombat.prototype);

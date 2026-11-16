@@ -52,6 +52,7 @@ test('a summon that lands a magic skill hit reaches the same owner reaction',()=
     ranks:[{fixedAddition:0,operation:{kind:'keep'}}]};
   const host=Object.setPrototypeOf({
     hero:{level:10},conditions:new CombatConditions(),pendingDefeats:new Set(),allies:[],
+    roster:{isPresent:()=>true},
     arena:[{key:'pawn',summonedBy:'warlock',definition:{},visual:{}}],
     memberOf:(id:string)=>['warlock','player'].includes(id)
       ?{classId:'warlock',skills:{draft:()=>({levels:{'mage-s-claw':8}})}}:undefined,

@@ -109,8 +109,8 @@ test('capture metadata is validated while ordinary enemy death keeps its normal 
     captured[1].capture!.visit=saved.storyWorld.mapVisit+1;
     assert.throws(()=>createSession().restoreState(saved),/捕捉来源无效/);
     const ordinary:EnemySpawn={id:'ordinary-control',enemyId,x:40,y:40};
-    session.enemyDefeated(ordinary);assert.equal(session.canSpawnEnemy(ordinary),false);
-    session.advanceGameTime(DEFAULT_ENEMY_RESPAWN_MS);assert.equal(session.canSpawnEnemy(ordinary),true);
+    session.enemyDefeated(ordinary);assert.equal(session.canRespawnEnemy(ordinary),false);
+    session.advanceGameTime(DEFAULT_ENEMY_RESPAWN_MS);assert.equal(session.canRespawnEnemy(ordinary),true);
     assert.equal(ratCount(roster(session)),5,'普通死亡的计时不解除捕捉槽绑定');
   }finally{story.dispose();}
 });

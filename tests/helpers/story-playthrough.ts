@@ -516,7 +516,7 @@ export function playthrough(saved?:SessionState){
   const defeat=async(enemyId:string)=>{
     const map=maps.get(session.storyWorld.currentLocation!.map)!;
     const roster=new WorldEnemyRoster(session,map,[],session.hero!.level,questEnemies);
-    const spawn=roster.spawns.find(spawn=>spawn.enemyId===enemyId&&session.canSpawnEnemy(spawn));assert.ok(spawn,'当前地图敌人 '+enemyId);
+    const spawn=roster.spawns.find(spawn=>spawn.enemyId===enemyId&&roster.isPresent(spawn.id,enemyId));assert.ok(spawn,'当前地图敌人 '+enemyId);
     const hero=session.hero!,killer=session.party?.controlledId??'player';
     const member=killer==='player'?hero:session.party?.get(killer);
     assert.ok(member?.player.health,'击杀者必须是存活的受控队员');

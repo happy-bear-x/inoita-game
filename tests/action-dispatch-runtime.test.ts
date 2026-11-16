@@ -87,7 +87,7 @@ function fixture(action=skillAction(),basic?:ResolvedBasicAttack){
     partyPassives:()=>[],partyFighter:()=>conditions.fighter('player',member.panel),
     enemyFighter:(id:string)=>conditions.fighter(id,base),equipmentAttack:()=>basic,
     canSelectSkill:()=>true,skillManaCost:()=>0,
-    roster:{enemySnapshot:(id:string)=>({...base,health:enemyHealth.get(id),mana:0,maxMana:0}),
+    roster:{isPresent:()=>true,enemySnapshot:(id:string)=>({...base,health:enemyHealth.get(id),mana:0,maxMana:0}),
       hasZeroHealth:(id:string)=>enemyHealth.get(id)===0,
       setEnemyHealth:(id:string,value:number)=>enemyHealth.set(id,value)},
     resolveHitReactions:()=>react(),showHit:(event:{targetId:string})=>order.push(`damage:${event.targetId}`),dropMana:()=>{},

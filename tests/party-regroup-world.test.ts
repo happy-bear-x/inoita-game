@@ -65,6 +65,7 @@ function fixture(options:{sealed?:boolean;wall?:boolean}={}){
   const allies=[ally('companion',{x:64,y:64}),ally('second',{x:600,y:600})];
   const state={app:{session:{party}},scene:{player:hero,facing:'south'},movement,allies,
     regroupCooldowns:new Map(),
+    roster:{isPresent:()=>true},
     arena:[] as TestEnemy[],pendingDefeats:new Set<string>(),fallen:new Set<string>(),closed:false};
   const combat=Object.setPrototypeOf(state,WorldCombat.prototype) as unknown as InstanceType<typeof WorldCombat>;
   return {combat,navigation,movement,positions,actors,party,hero,allies,moved,cancelled,fallen:state.fallen,app:state.app,

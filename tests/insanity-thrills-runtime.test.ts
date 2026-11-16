@@ -52,7 +52,7 @@ function fixture(targets:Combatant[],stance='dagger:empty'){
     scene:{events:{emit:()=>{}}},memberOf:(id:string)=>id==='player'?member:undefined,partyPassives:()=>[],
     combatant:(id:string)=>{const value=actors.get(id);return value&&!fallen.has(id)?{...value,states:conditions.activeStates(id)}:undefined;},
     visualOf:(id:string)=>id==='player'?visual:undefined,
-    roster:{enemySnapshot:(id:string)=>stats.get(id),setEnemyHealth:(id:string,value:number)=>{stats.get(id)!.health=value;}},
+    roster:{isPresent:()=>true,enemySnapshot:(id:string)=>stats.get(id),setEnemyHealth:(id:string,value:number)=>{stats.get(id)!.health=value;}},
     enemyFighter:(id:string)=>conditions.fighter(id,stats.get(id)!),
     equipmentRecovery:()=>({lifeDrainPerThousand:0,manaRecoveryPerPulse:0,manaCostReductionRate:0}),
     syncCombatResourceLimits:()=>{},applyStateConsequences:()=>{},showBuffApplication:()=>{},attackProc:()=>{},

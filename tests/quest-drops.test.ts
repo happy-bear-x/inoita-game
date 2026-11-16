@@ -86,9 +86,9 @@ test('a failed spirit roll leaves the task active and the same native spawn can 
   run.accept('knight-uniform');run.enemyDefeated(spawn);
   assert.deepEqual(rollQuestDrops(catalog,enemy,run.questDropRequirements(),()=>79/99),[]);
   assert.equal(run.status('knight-uniform'),'active');
-  assert.equal(run.canSpawnEnemy(spawn),false);
+  assert.equal(run.canRespawnEnemy(spawn),false);
   run.advanceGameTime(DEFAULT_ENEMY_RESPAWN_MS);
-  assert.equal(run.canSpawnEnemy(spawn),true);
+  assert.equal(run.canRespawnEnemy(spawn),true);
   run.enemyDefeated(spawn);
   assert.deepEqual(rollQuestDrops(catalog,enemy,run.questDropRequirements(),()=>0),[reward]);
   assert.equal(run.itemCount('ectoplasm'),0);

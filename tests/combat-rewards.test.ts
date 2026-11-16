@@ -85,6 +85,7 @@ function harness(options: HarnessOptions = {}) {
   let syncs = 0, enemyHealth = 1;
   const spawn = { id: `spawn-${enemyId}`, enemyId, x: 10, y: 20 };
   const roster = {
+    isPresent: () => true,
     enemySnapshot: () => ({ health: enemyHealth, maxHealth: 1000, level, elite: options.elite ?? false }),
     source: () => spawn,
     setEnemyHealth: (_key: string, value: number) => { enemyHealth = value; },

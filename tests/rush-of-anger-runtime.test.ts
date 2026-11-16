@@ -58,7 +58,7 @@ function fixture(entry:Entry,weapon:Weapon,canStand:(position:{x:number;y:number
       ui:{toast:()=>assert.fail('valid equipment rejected')}},
     feedback:{startShake:()=>events.push('shake'),vibrate:(duration:number)=>events.push(`vibration:${duration}`)},
     arena:[{key:'enemy',definition:{}}],memberOf:(id:string)=>id===casterId?member:id==='player'?hero:undefined,
-    partyPassives:()=>[],enemyFighter:()=>targetFighter,roster:{enemySnapshot:()=>({...targetFighter,health:10000,mana:100,maxMana:100})},
+    partyPassives:()=>[],enemyFighter:()=>targetFighter,roster:{isPresent:()=>true,enemySnapshot:()=>({...targetFighter,health:10000,mana:100,maxMana:100})},
     combatant:(id:string)=>actors.get(id),resolveHitReactions:()=>{},dropMana:()=>{},
     settleHit:(_hit:SkillUnitHit,value:PhysicalHit)=>{hits.push(value);events.push(`hit:${value.kind}:${value.damage}`);},
     applyStateConsequences:(id:string,states:string[])=>events.push(`state:${id}:${states.join(',')}`),

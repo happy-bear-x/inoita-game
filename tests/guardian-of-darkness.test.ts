@@ -38,12 +38,13 @@ function fixture(){
   const party={activeIds:['player','caster','third'],get:(id:string)=>members.get(id)};
   const order:string[]=[],attempts:SkillUnitHit[]=[];let passives:PassiveModifier[]=[];
   const host=Object.setPrototypeOf({app:{session:{party,combatTick:0}},hero:members.get('player'),conditions,hitResolution,
+    roster:{presenceRevision:0,isPresent:()=>true},
     passivesCache:new Map(),skillTableCache:new Map(),equipmentRecoveryCache:new Map(),combatProcsCache:new Map(),
     aiSkillCostCache:new Map(),
     scene:{facing:'east',tweens:{add:()=>({})}},pendingDefeats:new Set(),fallen:new Set(),
     partyControllers:new Map(),deathTweens:new Map(),
     allies:[{id:'caster',facing:'east',ai:{disable:()=>{}}},{id:'third',facing:'east',ai:{disable:()=>{}}}],
-    arena:[{key:'summon',summonedBy:'player',facing:'east'}],
+    arena:[{key:'summon',definition:{id:'summon'},summonedBy:'player',facing:'east'}],
     visualOf:(id:string)=>visuals.get(id),partyPassives:()=>passives,
     movement:{position:(visual:{container:{x:number;y:number}})=>({x:visual.container.x,y:visual.container.y}),
       actor:()=>({shape:()=>({collision})}),stop:()=>{},setEnabled:()=>{}},

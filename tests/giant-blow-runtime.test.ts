@@ -33,7 +33,7 @@ function fixture(targets:Combatant[]=[],rank=1,plan:SkillAction=action){
     arena:targets.map(actor=>({key:actor.id,definition:{}})),
     memberOf:(id:string)=>id==='caster'?member:undefined,partyPassives:()=>[],
     partyFighter:()=>conditions.fighter('caster',member.panel),enemyFighter:(id:string)=>conditions.fighter(id,stats.get(id)!),
-    roster:{enemySnapshot:(id:string)=>stats.get(id)},combatant:(id:string)=>actors.get(id),
+    roster:{isPresent:()=>true,enemySnapshot:(id:string)=>stats.get(id)},combatant:(id:string)=>actors.get(id),
     applyStateConsequences:()=>{},resolveHitReactions:()=>{},showHit:()=>{},settleHit:(event:SkillUnitHit,hit:PhysicalHit)=>{hits.push({event,hit});afterHit?.(event);},dropMana:()=>{},
   },WorldCombat.prototype);
   const presenter=Object.setPrototypeOf({pose:()=>{},visualEffect:(cue:{effect:string})=>order.push(`effect:${cue.effect}`),

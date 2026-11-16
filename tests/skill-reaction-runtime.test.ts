@@ -67,7 +67,7 @@ test('basic attack resolves reaction healing before the fatal main damage is com
   const fighter={level:1,physicalAttack:100,hitBase:100,hitBonus:1000,evasionBase:0,evasionBonus:0,
     criticalRate:0,criticalResistance:0,criticalDamage:0,criticalDamageResistance:0,weaponBlock:0,shieldBlock:0,physicalResistance:0};
   const host={hero:{level:1},conditions:new CombatConditions(),arena:[],memberOf:()=>({}),partyFighter:()=>fighter,combatant:()=>({position:{x:0,y:0}}),actorAttribute:()=>0,rearPenetrationBonus:()=>0,
-    visualOf:()=>({actor:{}}),equipmentAttack:()=>catalog.basicAttacks[catalog.classes[0].basicAttack.profileId],
+    isActorPresent:method('isActorPresent'),visualOf:()=>({actor:{}}),equipmentAttack:()=>catalog.basicAttacks[catalog.classes[0].basicAttack.profileId],
     actorAttributes:()=>({...fighter,magicAttack:0,maxHealth:1000,physicalDamageRate:0,magicDamageRate:0,stealthDamageRate:0,
       primaryAttributes:{strength:0,dexterity:0,vitality:0,intelligence:0,mentality:0}}),
     resolveHitReactions:()=>order.push('reactions'),settleHit:(_event:unknown,hit:PhysicalHit)=>{assert.ok(hit.damage>0);order.push('damage');},
@@ -124,7 +124,7 @@ test('contact uses the equipped attack formula and its physical or magical settl
   let stance='longsword:empty';
   const hits:{kind:string,amount:number}[]=[];
   const host={hero:{level:1},conditions:new CombatConditions(),arena:[],memberOf:()=>({}),partyFighter:()=>fighter,actorAttribute:()=>0,rearPenetrationBonus:()=>0,
-    combatant:()=>({position:{x:0,y:0}}),visualOf:()=>({actor:{}}),
+    isActorPresent:method('isActorPresent'),combatant:()=>({position:{x:0,y:0}}),visualOf:()=>({actor:{}}),
     equipmentAttack:()=>wardrobe.attacks[stance],
     actorAttributes:()=>({physicalAttack:100,magicAttack:200,physicalDamageRate:500,magicDamageRate:0,
       stealthDamageRate:0,maxHealth:1000,primaryAttributes:{strength:0,dexterity:0,vitality:0,intelligence:0,mentality:0}}),

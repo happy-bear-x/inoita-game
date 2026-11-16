@@ -57,7 +57,7 @@ function fixture(){
     arena:[...stats.keys()].map(key=>({key,definition:catalog.enemies[0]})),
     app:{battleCatalog:catalog,session:{party:{controlledId:'player'}},audio:{effect:(name:string)=>order.push(`sound:${name}`)}},
     scene:{events:{emit:()=>{}}},memberOf:(id:string)=>members.get(id),partyPassives:()=>[],
-    roster:{enemySnapshot:(id:string)=>stats.get(id)},combatant:(id:string)=>actors.get(id),visualOf:()=>undefined,
+    roster:{isPresent:()=>true,enemySnapshot:(id:string)=>stats.get(id)},combatant:(id:string)=>actors.get(id),visualOf:()=>undefined,
     resolveHitReactions:()=>{},dropMana:()=>{},react:()=>order.push('stealth-break'),
     settleHit:(event:AttackContact,hit:PhysicalHit)=>{hits.push({event,hit});order.push(`hit:${hit.damage}`);},
     showHit:(event:AttackContact,hit:PhysicalHit)=>{hits.push({event,hit});order.push(`immune:${hit.damage}`);},

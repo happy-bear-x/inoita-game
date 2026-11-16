@@ -35,7 +35,7 @@ function fixture(targets:Combatant[]=[]){
     arena:targets.map(actor=>({key:actor.id,definition:{}})),threat:{taunt:(_source:string,target:string)=>taunts.push(target)},
     memberOf:(id:string)=>id==='caster'?member:undefined,partyPassives:()=>[],
     partyFighter:()=>conditions.fighter('caster',member.panel),enemyFighter:(id:string)=>conditions.fighter(id,stats.get(id)!),
-    roster:{enemySnapshot:(id:string)=>stats.get(id)},combatant:(id:string)=>actors.get(id),
+    roster:{isPresent:()=>true,enemySnapshot:(id:string)=>stats.get(id)},combatant:(id:string)=>actors.get(id),
     resolveHitReactions:()=>{},settleHit:(event:SkillUnitHit,hit:PhysicalHit)=>hits.push({event,hit}),dropMana:()=>{},
     applyStateConsequences:()=>{},syncCombatResourceLimits:()=>{},
   },WorldCombat.prototype);

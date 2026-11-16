@@ -74,6 +74,7 @@ test('a defeated breakable rolls once, skips experience and pity, and keeps ques
   const hero = { level: 10 };
   let enemyHealth = 1;
   const roster = {
+    isPresent: () => true,
     enemySnapshot: () => ({ health: enemyHealth, maxHealth: 1000, level: 1, elite: false }),
     source: () => spawn, setEnemyHealth: (_key: string, value: number) => { enemyHealth = value; }
   };

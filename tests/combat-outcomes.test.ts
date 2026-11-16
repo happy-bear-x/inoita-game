@@ -76,7 +76,7 @@ test('a pending quest enemy gives its material once when shutdown precedes anima
   assert.deepEqual(store.forMap(dungeon.id), []);
   pending.flush(); pending.complete(spawn.id); pending.flush();
   assert.equal(store.forMap(dungeon.id).length, 1);
-  assert.equal(session.canSpawnEnemy(spawn), false);
+  assert.equal(session.canRespawnEnemy(spawn), false);
   store.collectNearby(dungeon.id, spawn.x, spawn.y, reward => { if (reward.kind === 'item') session.bag.add(reward.item, reward.quantity); });
   assert.equal(session.itemCount('ectoplasm'), 1);
   assert.deepEqual(store.forMap(dungeon.id), []);

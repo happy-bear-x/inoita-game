@@ -32,7 +32,7 @@ function fixture(count=1){
     actorAttributes:()=>({physicalAttack:hero.panel.physicalAttack,magicAttack:hero.panel.magicAttack,physicalDamageRate:0,magicDamageRate:0,
       stealthDamageRate:0,primaryAttributes:primary,maxHealth:1000}),
     combatant:(id:string)=>actors.find(value=>value.id===id),combatants:()=>actors,
-    roster:{enemySnapshot:(id:string)=>states.get(id),setEnemyHealth:(id:string,health:number)=>{states.get(id)!.health=health;}},
+    roster:{isPresent:()=>true,enemySnapshot:(id:string)=>states.get(id),setEnemyHealth:(id:string,health:number)=>{states.get(id)!.health=health;}},
     threat:{damage:(_source:string,id:string,damage:number)=>order.push(`hate:${id}:${damage}`)},
     showHit:(event:{targetId:string},hit:{damage:number})=>order.push(`damage:${event.targetId}:${hit.damage}`),
   },WorldCombat.prototype);

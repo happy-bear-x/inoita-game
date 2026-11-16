@@ -67,6 +67,7 @@ npm run test:standalone
 
 - 装备清理由 shop、shop-panel、story-menu-interactions 用例覆盖等级与独立品质筛选、保护条件、报价变化、上锁入口和长按释放；saved-game 覆盖 44 → 45 迁移及锁定状态读回。
 - `texture-lifecycle.test.ts` 覆盖纹理退役：可见对象仍引用时不删、隐藏对象不算引用、容器内角色计入，以及引用消失后在帧后检查里补删。
+- `enemy-presence-runtime.test.ts` 使用正式任务、怪物和掉落，验证剧情清场后的任务怪从旧档恢复、普攻和技能扣血、单次死亡结算、任务掉落、刷新与换图、任务结束后的同帧退场、重复接取及捕捉；在场与生成资格查询保持只读。
 
 - `party.test.ts` 与 `story-menu-interactions.test.ts` 验证佣兵能力点、旧成长保留和人物页加点。
 

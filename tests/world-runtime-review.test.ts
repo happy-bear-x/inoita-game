@@ -67,6 +67,7 @@ test('combat candidates reflect stealth applied during the same frame',()=>{
   const conditions=new CombatConditions();
   const host:any=Object.assign(Object.create(WorldCombat.prototype),{
     app:{session:{combatTick:1,party:{activeIds:['player']}}},conditions,arena:[],
+    roster:{presenceRevision:0,isPresent:()=>true},
     combatant:(id:string)=>({id,team:'party',position:{x:0,y:0},bounds:{x:0,y:0,width:8,height:8},states:conditions.activeStates(id)})
   });
   assert.deepEqual(host.combatants()[0].states,[]);
@@ -80,6 +81,7 @@ test('removing an enemy invalidates the same-frame combatant snapshot',()=>{
   const host:any=Object.assign(Object.create(WorldCombat.prototype),{
     app:{session:{combatTick:1,party:{activeIds:[]}}},
     conditions:{revision:0,remove(){removed=true;}},
+    roster:{presenceRevision:0,isPresent:()=>!removed},
     arena:[enemy],pendingDefeats:new Set(),partyControllers:new Map(),
     summonAwareness:{forget(){}},summons:{remove(){}},scene:{refreshCombatTarget(){}},
     destroyEnemy(){},

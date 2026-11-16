@@ -98,7 +98,8 @@ export class WorldEnemyRoster extends EnemyRoster {
   private readonly staticSpawnIds:ReadonlySet<string>;
   /** 可破坏物替换结果的版本：缓存重建后必须重新掷骰。 */
   private breakableRevision=0;
-  private spawnsCache?:{key:string;value:readonly WorldSpawn[]};
+  private spawnsCache?:{sources:ReadonlyMap<string,WorldSpawn>;revision:number;value:readonly WorldSpawn[]};
+  private sourceProjection?:{story:number;chests:number;quests:number;sources:ReadonlySet<string>|undefined;size:number;byId:ReadonlyMap<string,WorldSpawn>};
   private spawnIndex?:{spawns:readonly WorldSpawn[];byId:ReadonlyMap<string,WorldSpawn>};
   private membershipRevision=0;
   /**
@@ -110,31 +111,14 @@ export class WorldEnemyRoster extends EnemyRoster {
   private questSourceRevision?:number;
   private questSourceIds?:ReadonlySet<string>;
   private emptyReported=false;
+  private presenceVersion=0;
+  private presenceInputs?:{story:number;quest:number;deaths:number;members:number;chests:number;breakables:number;sources:ReadonlySet<string>|undefined};
   get spawns(): readonly WorldSpawn[] {
-    const questRevision=this.collectQuestSpawns();
-    const cacheKey=`${this.session.storyWorld.revision}|${this.session.chests.revision}|${questRevision}|${this.questSpawnIds.size}|${this.breakableRevision}`;
+    const sources=this.projectedSources();
     const cached=this.spawnsCache;
-    if(cached?.key===cacheKey)return cached.value;
-    const extras=this.questSpawnIds.size
-      ? this.rawMapSpawns.filter(spawn=>this.questSpawnIds.has(spawn.enemyId)&&!this.mapSpawnIds.has(spawn.id))
-      : [];
-    // 遭遇点落在常驻怪身上时，常驻那只让位：原版是让地图上现有的怪直接仇恨玩家，
-    // 不是在同一格再生成一只。同格同敌人的两份摆位只保留遭遇那一份。
-    const encounters=this.session.storyWorld.activeEncounters.filter(encounter=>encounter.map===this.mapId);
-    const claimed=new Set(encounters.flatMap(encounter=>encounter.spawns.map(spawn=>
-      occupiedKey(spawn.enemyId,spawn.x,spawn.y))));
-    const resident=[...this.bandSpawns.filter(spawn=>this.spawnAvailable(spawn))
-      .map(spawn=>this.breakableSpawnFor(spawn)),
-      ...extras.filter(spawn=>this.spawnAvailable(spawn))
-        .map(spawn=>this.breakableSpawnFor(spawn)),
-      ...this.session.storyWorld.enemySpawns(this.mapId),...this.session.chests.spawns];
-    const value=[...resident.filter(spawn=>!claimed.has(occupiedKey(spawn.enemyId,spawn.x,spawn.y))),
-      ...encounters.flatMap(encounter=>encounter.spawns.map(spawn=>({
-        ...spawn,id:encounterSpawnId(encounter.id,spawn.id),respawn:false as const
-      })))];
-    // 第一次生成可破坏物替换时版本会变，缓存键按生成后的版本记录，下一次可以直接命中。
-    this.spawnsCache={key:`${this.session.storyWorld.revision}|${this.session.chests.revision}|${questRevision}|${this.questSpawnIds.size}|${this.breakableRevision}`,
-      value};
+    if(cached?.sources===sources&&cached.revision===this.breakableRevision)return cached.value;
+    const value=[...sources.values()].map(spawn=>this.staticSpawnIds.has(spawn.id)?this.breakableSpawnFor(spawn):spawn);
+    this.spawnsCache={sources,revision:this.breakableRevision,value};
     return value;
   }
   private readonly sources = new Map<string,WorldSpawn>();
@@ -195,6 +179,31 @@ capturePreparedState():{roster:ReturnType<EnemyRoster['captureState']>;breakable
   }
 
   source(id:string):WorldSpawn|undefined{return this.sources.get(id);}
+  /** 当前实例的有效在场状态；读取不会复活敌人或改写剧情记录。 */
+  isPresent(id:string,enemyId?:string):boolean {
+    const placed=this.enemy(id);
+    if(!placed||enemyId!==undefined&&placed.enemyId!==enemyId)return false;
+    const state=this.session.enemyVitals(id);
+    if(state.capture||state.deadUntil!==undefined)return false;
+    const source=this.sources.get(id);
+    if(!source)return this.session.storyWorld.visible(id);
+    const current=this.projectedSources().get(id);
+    if(!current||this.spawnPresence(current)==='absent')return false;
+    const identity=this.questSpawnIds.has(current.enemyId)?current.enemyId:this.breakableRolls.get(id)??current.enemyId;
+    return identity===placed.enemyId;
+  }
+  /** 候选名单缓存同时跟随剧情、任务、死亡与名册变化。 */
+  get presenceRevision():number {
+    this.collectQuestSpawns();
+    const story=this.session.storyWorld.revision,quest=this.session.questBook.version;
+    const deaths=this.session.enemySpawnRevision,members=this.membershipRevision,sources=this.questSourceIds;
+    const chests=this.session.chests.revision,breakables=this.breakableRevision;
+    const old=this.presenceInputs;
+    if(!old||old.story!==story||old.quest!==quest||old.deaths!==deaths||old.members!==members||old.chests!==chests||old.breakables!==breakables||old.sources!==sources){
+      this.presenceInputs={story,quest,deaths,members,chests,breakables,sources};this.presenceVersion++;
+    }
+    return this.presenceVersion;
+  }
   override placeEnemy(enemyId:string,x:number,y:number):PlacedEnemy {
     const placed=super.placeEnemy(enemyId,x,y);this.membershipRevision++;return placed;
   }
@@ -325,10 +334,9 @@ capturePreparedState():{roster:ReturnType<EnemyRoster['captureState']>;breakable
     }
     return snapshot?.revision??0;
   }
-  /** 剧情资格：active 任务槽、剧情可见性、敌人可用性；刻意不看死亡/刷新计时。 */
+  /** 有效剧情资格含静态任务恢复；死亡与刷新计时由刷新入口处理。 */
   private storySpawnable(spawn:WorldSpawn):boolean{
-    if('activeQuest' in spawn&&this.session.status(spawn.activeQuest)!=='active')return false;
-    return this.session.storyWorld.visible(spawn.id)&&this.session.storyWorld.enemyAvailable(this.mapId,spawn.enemyId);
+    return this.spawnPresence(spawn)!=='absent';
   }
 
   /** 当前 active 任务的目标怪；任务目标集合由 `collectQuestSpawns` 在每次投影前更新。 */
@@ -338,7 +346,30 @@ capturePreparedState():{roster:ReturnType<EnemyRoster['captureState']>;breakable
   }
   /** 剧情禁用不压当前任务目标；任务结束后 `enemyAvailable` 重新生效。 */
   private spawnAvailable(spawn:WorldSpawn):boolean {
-    return this.session.storyWorld.enemyAvailable(this.mapId,spawn.enemyId)||this.questTarget(spawn);
+    return this.spawnPresence(spawn)!=='absent';
+  }
+  private spawnPresence(spawn:WorldSpawn):'story'|'quest'|'absent' {
+    if('activeQuest' in spawn&&this.session.status(spawn.activeQuest)!=='active')return 'absent';
+    if(this.session.storyWorld.visible(spawn.id)&&(!this.staticSpawnIds.has(spawn.id)||this.session.storyWorld.enemyAvailable(this.mapId,spawn.enemyId)))return 'story';
+    return this.staticSpawnIds.has(spawn.id)&&this.questTarget(spawn)?'quest':'absent';
+  }
+  private projectedSources():ReadonlyMap<string,WorldSpawn> {
+    const questRevision=this.collectQuestSpawns();
+    const story=this.session.storyWorld.revision,chests=this.session.chests.revision,sources=this.questSourceIds,size=this.questSpawnIds.size;
+    const old=this.sourceProjection;
+    if(old?.story===story&&old.chests===chests&&old.quests===questRevision&&old.sources===sources&&old.size===size)return old.byId;
+    const extras=this.questSpawnIds.size
+      ?this.rawMapSpawns.filter(spawn=>this.questSpawnIds.has(spawn.enemyId)&&!this.mapSpawnIds.has(spawn.id)):[];
+    const encounters=this.session.storyWorld.activeEncounters.filter(encounter=>encounter.map===this.mapId);
+    // 遭遇占用同格同身份的地图槽时，地图实例让位给这次遭遇。
+    const claimed=new Set(encounters.flatMap(encounter=>encounter.spawns.map(spawn=>occupiedKey(spawn.enemyId,spawn.x,spawn.y))));
+    const resident=[...this.bandSpawns.filter(spawn=>this.spawnAvailable(spawn)),
+      ...extras.filter(spawn=>this.spawnAvailable(spawn)),
+      ...this.session.storyWorld.enemySpawns(this.mapId),...this.session.chests.spawns];
+    const value=[...resident.filter(spawn=>!claimed.has(occupiedKey(spawn.enemyId,spawn.x,spawn.y))),
+      ...encounters.flatMap(encounter=>encounter.spawns.map(spawn=>({...spawn,id:encounterSpawnId(encounter.id,spawn.id),respawn:false as const})))];
+    const byId=new Map(value.map(spawn=>[spawn.id,spawn]));
+    this.sourceProjection={story,chests,quests:questRevision,sources,size,byId};return byId;
   }
   /**
    * 只豁免被剧情永久移除（`remove-enemy` 留下 `visible` false）的任务目标槽位：
@@ -346,14 +377,13 @@ capturePreparedState():{roster:ReturnType<EnemyRoster['captureState']>;breakable
    * `enemy-availability` 的豁免在 `spawnAvailable` 里，其他永久死亡仍按原规则。
    */
   private spawnAllowed(spawn:WorldSpawn):boolean {
-    if(this.session.canSpawnEnemy(spawn))return true;
-    // 只豁免地图静态槽；剧情遭遇和剧情临时放置的槽由剧情自己管理，不能被任务刷回来。
-    if(!this.staticSpawnIds.has(spawn.id)||!this.questTarget(spawn))return false;
-    // 剧情没有把这个槽标成不可见时，按普通永久死亡处理，不因任务目标而复活。
-    if(this.session.storyWorld.visible(spawn.id))return false;
-    const deadUntil=this.session.enemyVitals(spawn.id).deadUntil;
-    // 普通击杀的刷新计时还没到时继续等待，不能借任务豁免无限复活。
-    if(typeof deadUntil==='number'&&this.session.nowMs<deadUntil)return false;
+    const presence=this.spawnPresence(spawn);
+    if(presence==='absent')return false;
+    if(!this.session.canRespawnEnemy(spawn)){
+      // 永久死亡只在剧情移除的静态任务槽上解除；捕捉记录由清理入口继续保护。
+      if(presence!=='quest'||this.session.storyWorld.visible(spawn.id)||this.session.enemyVitals(spawn.id).deadUntil!=='permanent')return false;
+    }
+    // 清理死亡记录只发生在刷新入口，查询保留原始记录。
     return this.session.clearEnemyDefeat(spawn.id);
   }
   private recordEmptyDiagnostic(spawns:readonly WorldSpawn[]):void{

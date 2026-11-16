@@ -782,13 +782,13 @@ export class Session {
   setEnemyVitals(id:string,health:number,mana:number):void {
     this.setEnemyState(id,{...this.enemyStates.get(id),health,mana});
   }
-  canSpawnEnemy(spawn:EnemySpawn|CampaignEnemyPlacement):boolean {
-    if('activeQuest' in spawn&&this.status(spawn.activeQuest)!=='active')return false;
-    if(!this.storyWorld.visible(spawn.id))return false;
+  /** 只读死亡刷新资格；剧情与任务的在场规则由敌人名册处理。 */
+  canRespawnEnemy(spawn:EnemySpawn|CampaignEnemyPlacement):boolean {
     const state=this.enemyStates.get(spawn.id);
+    if(state?.capture)return false;
     if(state?.deadUntil===undefined)return true;
     if(state.deadUntil==='permanent'||this.gameTimeMs<state.deadUntil)return false;
-    this.deleteEnemyState(spawn.id);return true;
+    return true;
   }
   /** 类型 3 任务把低血量的怪物变成同格可交互角色，交互之后才记目标次数。 */
   weakenQuestTarget(enemyId:string,source:{id:string;map:string;x:number;y:number}):boolean {
@@ -796,7 +796,9 @@ export class Session {
       ?(quest.targetChanges??[]).filter(change=>change.enemyId===enemyId&&
         (this.questBook.state(quest.id)?.goals[change.goal]??0)<(quest.goals.find(goal=>goal.id===change.goal)?.quantity??0))
         .map(change=>({quest,change})):[])[0];
-    if(!match||!this.canSpawnEnemy({...source,enemyId}))return false;
+    // 调用方已验证这是正在受击的实例；捕捉只检查本实例是否已经结束。
+    const state=this.enemyStates.get(source.id);
+    if(!match||state?.capture||state?.deadUntil!==undefined)return false;
     this.batchNotifications(()=>{
       this.applyStoryCommands([
         // 捕捉目标只在这次进图有效：`place` 按 `scope` 决定访问寿命，传进命令里的 `mapVisit`

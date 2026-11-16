@@ -83,6 +83,7 @@
 - 仇恨账本以 owner→source 索引为准，记录数组只用于快照与容量淘汰；增删必须同时维护两边。
 - 剧情世界的进行中遭遇以 `StoryWorldState` 的 active 索引为准，`encounters` 表只用于历史、快照和完整状态查询；新增、结算和整份恢复必须同时维护索引，每帧读取只走索引。
 - 地图敌人生成点索引按投影复用；任务、剧情、生成资格或名册身份变化及复活期限到达后才重新计算增删。`Session.enemySpawnRevision` 只跟踪死亡期限与恢复/回滚，血量和法力变化继续推进存档用的 `enemyRevision`，不会触发生成扫描。
+- `WorldEnemyRoster.isPresent` 统一提供当前实例的有效在场状态，综合当前生成投影、剧情、进行中任务、死亡和捕捉记录；刷怪与战斗使用同一份生成资格规则。静态任务怪恢复期间保留剧情原始记录，任务待交付后恢复剧情退场。`Session.canRespawnEnemy` 只读死亡刷新资格，死亡记录由名册刷新入口清理；捕捉承接已验证的受击实例，并检查重复捕捉与死亡状态。
 - **敌人名册按 key 索引，快照分层缓存。** `EnemyRoster` 维护 `Map<key, PlacedEnemy>`，在 place/restore/remove/restoreState 同步；稳定派生属性可按逻辑帧/版本缓存，生命法力必须按当前实例实时读取，不能只按 `combatTick` 缓存整份快照。`hasZeroHealth` 继续用 Set。
 - **遭遇完成按修订号缓存。** `completedEncounters` 的缓存键覆盖 `encounterRevision`、`enemySpawnRevision`、`membershipRevision`；死亡结算、捕获、遭遇增删和恢复会推进这些修订号。判定仍是 `deadUntil !== undefined && !capture`。
 - **AI 候选按控制器分别查询。** 敌人 `map-wide` 回退全量，普通警戒用附近圆；队友用自身+队长联合圆，但 `partyIds` 仍从全量收集；召唤物用主人+自身联合圆。附近查询只做预筛，后置过滤和候选顺序不变。

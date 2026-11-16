@@ -46,6 +46,7 @@ function fixture(){
     session:{skills,party:{activeIds:ids,controlledId:'player'}}},conditions,hitResolution,fallen:new Set(),pendingDefeats:new Set(),arena:[],allies:[],
     passivesCache:new Map(),skillTableCache:new Map(),equipmentRecoveryCache:new Map(),combatProcsCache:new Map(),
     aiSkillCostCache:new Map(),
+    roster:{isPresent:()=>true},
     scene:{events:{emit:()=>{}}},memberOf:(id:string)=>members.get(id),partyPassives:()=>[],syncCombatResourceLimits:()=>{},applyStateConsequences:()=>{},
     equipmentRecovery:()=>({lifeDrainPerThousand:0}),showBuffApplication:()=>assert.fail('these buffs have no application effect'),
     presenter:{showEffects:(_id:string,effects:{effect:string}[])=>effects.forEach(effect=>order.push(effect.effect))},

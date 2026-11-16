@@ -73,7 +73,7 @@ function fixture(){
     app:{audio:{monsterDeath:()=>order.push('enemy-death-sound')},session:{enemyVitals:()=>({}),isOneHitKill:()=>false,questDropRequirements:()=>[]}},
     passivesCache:new Map(),skillTableCache:new Map(),equipmentRecoveryCache:new Map(),combatProcsCache:new Map(),
     aiSkillCostCache:new Map(),drops:{enemies:{},questItems:{}},
-    roster:{enemySnapshot:()=>({...enemyState}),setEnemyHealth:(_id:string,value:number)=>{enemyState.health=Math.max(0,Math.min(100,value));},source:()=>undefined,
+    roster:{isPresent:()=>true,enemySnapshot:()=>({...enemyState}),setEnemyHealth:(_id:string,value:number)=>{enemyState.health=Math.max(0,Math.min(100,value));},source:()=>undefined,
       refresh:()=>({added:[],removed:[]})},
     outcomes:{cancelDeath:()=>{},vanish:(_id:string,_visual:unknown,finish:()=>void)=>finish()},
     removeEnemy:()=>order.push('enemy-removed'),dropMana:()=>order.push('mana'),
@@ -254,7 +254,7 @@ test('a native story threshold keeps a lethal hit at one HP until the story has 
 
 test('hits queued after a creature becomes an interaction target cannot kill it or grant death effects',()=>{
   const run=fixture();
-  Reflect.set(run.host.app.session,'storyWorld',{visible:()=>false});
+  Reflect.set(run.host.roster,'isPresent',()=>false);
   run.direct('enemy',200);
   assert.equal(run.enemyState.health,100);
   assert.equal(run.order.includes('enemy-removed'),false);

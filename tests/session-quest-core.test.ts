@@ -390,7 +390,8 @@ test('ordinary deaths share defeat goals, duplicate death callbacks do not count
   session.accept('hunt');const spawn={id:'spawn',enemyId:'bear',x:10,y:10};
   session.enemyDefeated(spawn,10);session.enemyDefeated(spawn,10);assert.equal(session.quests.get('hunt')!.goals.bears,1);
   const capture=session.captureState();session.restoreState(capture);session.enemyDefeated(spawn,10);assert.equal(session.quests.get('hunt')!.goals.bears,1);
-  session.advanceGameTime(10);assert.equal(session.canSpawnEnemy(spawn),true);session.enemyDefeated(spawn,10);
+  session.advanceGameTime(10);assert.equal(session.canRespawnEnemy(spawn),true);
+  session.clearEnemyDefeat(spawn.id);session.enemyDefeated(spawn,10);
   assert.equal(session.status('hunt'),'ready');assert.equal(session.quests.get('hunt')!.goals.bears,2);
 });
 

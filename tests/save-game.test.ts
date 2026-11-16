@@ -179,10 +179,10 @@ test('defeated bosses and removed story enemies survive JSON slots while ordinar
   const loaded=createSession();restoreSaveGame(loaded,saved.game);
   assert.deepEqual(loaded.captureState(),session.captureState());
   assert.equal(loaded.enemyVitals(boss.id).deadUntil,'permanent');
-  assert.equal(loaded.canSpawnEnemy(boss),false);assert.equal(loaded.canSpawnEnemy(ordinary),false);
-  assert.equal(loaded.canSpawnEnemy({...ordinary,id:'removed-by-story'}),false);
+  assert.equal(loaded.canRespawnEnemy(boss),false);assert.equal(loaded.canRespawnEnemy(ordinary),false);
+  assert.equal(loaded.canRespawnEnemy({...ordinary,id:'removed-by-story'}),false);
   loaded.advanceGameTime(DEFAULT_ENEMY_RESPAWN_MS);
-  assert.equal(loaded.canSpawnEnemy(ordinary),true);assert.equal(loaded.canSpawnEnemy(boss),false);
+  assert.equal(loaded.canRespawnEnemy(ordinary),true);assert.equal(loaded.canRespawnEnemy(boss),false);
   for(const invalid of [null,Infinity,-Infinity,-1]){
     const broken=structuredClone(loaded.captureState());
     (broken.enemies.find(([id])=>id===boss.id)![1] as {deadUntil:unknown}).deadUntil=invalid;

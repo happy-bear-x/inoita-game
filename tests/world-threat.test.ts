@@ -33,7 +33,7 @@ function fixture(){
     memberOf:(id:string)=>members.get(id),partyPassives:()=>[],partyFighter:()=>({}),actorAttributes:()=>attributes,
     actorAttribute:(_id:string,key:BattleStatKey)=>key==='physicalAttack'?attributes.physicalAttack:key==='threatGenerationRate'||key==='healingPowerRate'?1000:0,
     threatActor:(id:string)=>{const value=actors.get(id);return value&&{...value,states:conditions.activeStates(id)};},
-    roster:{enemySnapshot:()=>enemyState,setEnemyHealth:(_id:string,value:number)=>{enemyState.health=Math.max(0,Math.min(100,value));}},
+    roster:{isPresent:()=>true,enemySnapshot:()=>enemyState,setEnemyHealth:(_id:string,value:number)=>{enemyState.health=Math.max(0,Math.min(100,value));}},
     stateApplicationRequest:(_source:string,_target:string,state:BattleStateKey)=>({state,sourceRelation:'hostile'}),
     applyStateConsequences:()=>{},showHit:()=>events.push('feedback'),
     memberDefeated:(id:string)=>events.push(`death:${id}`),

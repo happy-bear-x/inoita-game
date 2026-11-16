@@ -39,13 +39,14 @@ function fixture(rate=333){
     memberOf:(id:string)=>id==='source'?source:id==='target'?target:undefined,
     partyFighter:()=>({}),actorAttributes:()=>attributes,
     prepareSkillUnit:Reflect.get(WorldCombat.prototype,'prepareSkillUnit'),
+    isActorPresent:Reflect.get(WorldCombat.prototype,'isActorPresent'),
     unitValueSourceId:Reflect.get(WorldCombat.prototype,'unitValueSourceId'),
     actorAttribute:(id:string,key:string)=>{
       if(key==='physicalAttack')return attributes.physicalAttack;
       reads.push(`${id}:${key}`);return id==='source'?rate:9000;
     },
     conditions:{canReceiveDamage:()=>true},readResourceCapacity:()=>1000,restoreHealth:Reflect.get(WorldCombat.prototype,'restoreHealth'),react:()=>{},
-    roster:{enemySnapshot:()=>enemyState,setEnemyHealth:(_id:string,value:number)=>{writes.push(value);enemyState.health=Math.min(1000,value);}},
+    roster:{isPresent:()=>true,enemySnapshot:()=>enemyState,setEnemyHealth:(_id:string,value:number)=>{writes.push(value);enemyState.health=Math.min(1000,value);}},
   };
   const heal=(targetId='target')=>Reflect.get(WorldCombat.prototype,'skillUnit').call(host,
     {casterId:'source',targetId,cueIndex:0,skill:{id:'healing-test',action:{combatUnits:[unit]}}});
