@@ -159,6 +159,26 @@ test('DOM wheel dispatches skills and items, respects cooldowns and cancels held
   } finally { h.restore(); }
 });
 
+test('a skill cooldown carried by the shortcut page blocks the wheel without a separate cooldown feed', async () => {
+  const h = harness();
+  try {
+    const assets = new DomAssets({ image: async () => ({ width: 94, height: 94 }), atlas: async () => ({ frames: {} }) });
+    const skin = Object.fromEntries(CONTROL_PARTS.map(part => [part, `${part}.png`])) as ControlSkin;
+    const calls: string[] = [];
+    const wheel = new DomActionControls(h.parent, skin, { attack: () => {}, skill: id => calls.push(id), item: () => {}, swap: () => {} }, () => {}, assets);
+    wheel.visible(true);
+    const slot = (wheel.element as unknown as Element).children[2] as unknown as HTMLElement;
+    wheel.setShortcutPage([{ entry: { kind: 'skill', id: 'skill' }, icon: 'skill.png', quantity: 0, enabled: true }]);
+    pointer(slot, 'pointerdown', 1); pointer(slot, 'pointerup', 1);
+    assert.deepEqual(calls, ['skill']);
+    wheel.setShortcutPage([{ entry: { kind: 'skill', id: 'skill' }, icon: 'skill.png', quantity: 0, enabled: true, cooldown: { remainingMs: 500, durationMs: 1000 } }]);
+    pointer(slot, 'pointerdown', 2); pointer(slot, 'pointerup', 2);
+    assert.deepEqual(calls, ['skill'], '快捷页自带冷却时不再需要单独的 setCooldowns');
+    assert.equal(wheel.snapshot()[0].cooldown?.remainingMs, 500);
+    wheel.destroy(); await new Promise(resolve => setTimeout(resolve, 0));
+  } finally { h.restore(); }
+});
+
 test('wheel cooldown stays aligned with the current shortcut icon when its size changes', async () => {
   const h = harness();
   try {
@@ -350,6 +370,10 @@ test('computer skill row updates native icons, item counts and cooldown seconds 
     assert.equal(Number.parseFloat(center.style.left) + Number.parseFloat(overlay.style.left), Number.parseFloat(icon.style.left));
     assert.equal(Number.parseFloat(center.style.top) + Number.parseFloat(overlay.style.top), Number.parseFloat(icon.style.top));
     assert.equal(overlay.style.width, icon.style.width); assert.equal(overlay.style.height, icon.style.height);
+    row.setPage([{ entry: { kind: 'skill', id: 'skill' }, icon: 'skill.png', quantity: 0, enabled: true, cooldown: { remainingMs: 500, durationMs: 1000 } }]);
+    assert.equal(icon.style.opacity, '.45', '快捷页自带的技能冷却直接生效');
+    row.setPage([{ entry: { kind: 'skill', id: 'skill' }, icon: 'skill.png', quantity: 0, enabled: true }]);
+    assert.equal(icon.style.opacity, '1');
     assert.equal(root.style.pointerEvents, 'auto', '技能行阻止点击穿透到游戏世界');
     row.destroy(); await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(assets.size, 0); assert.deepEqual(errors, []);

@@ -45,7 +45,8 @@ export class DomComputerSkillHud extends DomComponent {
   private paint(): void {
     this.cells.forEach((cell, index) => {
       const slot = this.page[index], entry = slot?.entry, item = entry?.kind === 'item';
-      const cooldown = entry?.kind === 'skill' ? this.cooldowns[entry.id] : slot?.cooldown;
+      // 场景统一刷新时冷却随快捷页一起送来；独立调用 `setCooldowns` 的旧入口继续从那份快照取。
+      const cooldown = slot?.cooldown ?? (entry?.kind === 'skill' ? this.cooldowns[entry.id] : undefined);
       cell.cooldown.update(cooldown, ICON_SIZE / 2, true);
       const cooling = !!cooldown && cooldown.remainingMs > 0;
       const usable = !!entry && !cooling && (item ? slot.quantity > 0 : slot.enabled);

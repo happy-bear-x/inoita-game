@@ -21,7 +21,7 @@ test('the real party frame port plays explicit sound for the hero and mercenarie
   const action:ActionPlayback={caster:{id:'player',team:'party',position:{x:0,y:0},bounds:{x:0,y:0,width:8,height:8}},
     facing:'south',basicAttack:null,skill:{id:'sword-of-hell',action:{...catalog.skills['sword-of-hell'].action!,
       events:[{kind:'units',frame:10,cues:[]},event]}}};
-  const host=Object.setPrototypeOf({presentActionFrame:(presenter:object,...args:Parameters<typeof dispatchFrame> extends [object,...infer Rest]?Rest:never)=>dispatchFrame(presenter,...args),scene:{refreshCombatTarget:()=>{},refreshSkillCooldowns:()=>{}},
+  const host=Object.setPrototypeOf({presentActionFrame:(presenter:object,...args:Parameters<typeof dispatchFrame> extends [object,...infer Rest]?Rest:never)=>dispatchFrame(presenter,...args),scene:{refreshCombatTarget:()=>{},refreshCombatHud:()=>{}},
     app:{session:{cooldowns:new CombatCooldownStore(()=>0)},audio:{playerSkill:()=>order.push('automatic-sound'),effect:(name:string)=>order.push(name)}},
     feedback:{startShake:()=>order.push('shake'),vibrate:(ms:number)=>order.push(`vibrate:${ms}`)},partyControllers:new Map(),soundedSkills:new WeakSet(),
     memberOf:(id:string)=>id==='player'||id==='companion'?{id}:undefined,

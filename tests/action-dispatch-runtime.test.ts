@@ -77,7 +77,7 @@ function fixture(action=skillAction(),basic?:ResolvedBasicAttack){
     arena:['enemy','other'].map(key=>({key,definition:catalog.enemies[0],visual:visuals.get(key)})),
     app:{battleCatalog:catalog,items:{dualWieldClasses:[]},session:{cooldowns:new CombatCooldownStore(()=>0),skills:configuration,party:{controlledId:'player'},isOneHitKill:()=>false},audio:{effect:(name:string)=>order.push(`sound:${name}`),
       playerSkill:()=>order.push('automatic-sound')}},
-    scene:{facing:'east',refreshCombatTarget:()=>{},refreshSkillCooldowns:()=>{},
+    scene:{facing:'east',refreshCombatTarget:()=>{},refreshCombatHud:()=>{},
       events:{emit:(name:string)=>{if(name.startsWith('basic-attack-'))order.push(name);}}},
     feedback:{startShake:()=>order.push('shake'),vibrate:(ms:number)=>order.push(`vibrate:${ms}`)},
     memberOf:(id:string)=>id==='player'?member:undefined,

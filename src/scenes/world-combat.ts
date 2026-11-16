@@ -11,6 +11,7 @@ export type {WorldCombatState} from '../domain/combat-snapshot.ts';
 import {resolveHitReactionPipeline} from '../domain/combat-reaction-pipeline.ts';
 import {CombatEffectExecutor} from '../domain/combat-effect-executor.ts';
 import {CombatRuntime} from '../domain/combat-runtime.ts';
+import {CombatSpatialIndex,type CombatQueryCircle} from '../domain/combat-spatial-index.ts';
 import {CombatActionDispatcher} from '../domain/combat-action-dispatcher.ts';
 import {executeSkillUnits} from '../domain/combat-unit-execution.ts';
 import {runActionDispatch as executeActionDispatch} from '../domain/action-dispatch.ts';
@@ -325,6 +326,8 @@ export class WorldCombat {
   private skillAssetRefreshQueued=false;
   private attackProcs=new AttackProcExecutor();
   private combatantsCache?:{tick:number;revision:number;value:Combatant[]};
+  /** 与 combatants 快照同一批对象；数组身份变化时重建，AI 只查附近的桶。 */
+  private combatantsSpatialCache?:{source:Combatant[];index:CombatSpatialIndex};
   private effectExecutor?:CombatEffectExecutor;
   private readonly soundedSkills=new WeakSet<object>();
   private unsubscribeHero?:()=>void;
@@ -720,7 +723,7 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
           const actor=this.combatant(enemy.key),target=this.combatant(targetId);
           if(actor&&target)this.awareness.contact(actor,target,(this.app.session.combatTick??0)*LOGIC_FRAME_MS);
         },
-        actor: id => this.combatant(id), candidates: () => this.combatants(), partySlots:()=>this.partyBuffSlots(),
+        actor: id => this.combatant(id), candidates: () => this.combatants(), nearbyCandidates:circles=>this.nearbyCandidates(circles), partySlots:()=>this.partyBuffSlots(),
         isAlive:id=>this.isActorAlive(id),health:id=>this.actorHealth(id),
       rangeBonusUnits:key=>this.actorAttribute(key,'attackRangeBonusUnits'), facing: () => enemy.facing,
         home: () => home,
@@ -835,7 +838,7 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
   }
   private clearEnemies(preserveCooldown=false,keepSummonStates=false): void {
     for (const enemy of this.arena) this.destroyEnemy(enemy,preserveCooldown,keepSummonStates);
-    this.arena = [];this.threat?.clear();this.combatantsCache=undefined;
+    this.arena = [];this.threat?.clear();this.combatantsCache=undefined;this.combatantsSpatialCache=undefined;
   }
   /**
    * 技能强制位移的整盒落点。位移是瞬时的，不能像走路那样只检查脚点：
@@ -932,6 +935,16 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
       .filter((actor):actor is Combatant=>!!actor&&(actor.team==='party'||!this.isUnavailableEnemyTarget(actor.id)));
     this.combatantsCache={tick,revision,value};
     return value;
+  }
+  /** 与 combatants 同源的空间查询；索引按快照数组身份复用，结果保持原候选顺序。 */
+  private nearbyCandidates(circles: readonly CombatQueryCircle[]): Combatant[] {
+    const candidates=this.combatants();
+    let cached=this.combatantsSpatialCache;
+    if(cached?.source!==candidates){
+      cached={source:candidates,index:new CombatSpatialIndex(candidates)};
+      this.combatantsSpatialCache=cached;
+    }
+    return cached.index.within(circles);
   }
   private createThreatSystem():CombatThreatSystem {
     return new CombatThreatSystem({
@@ -2273,7 +2286,7 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
     const port:PartyPort={
       isPaused:()=>this.runtime.paused,cooldowns:this.app.session.cooldowns.forActor(id),
       selectBasicAttack:(normal,step)=>this.selectBasicAttack(id,visual.actor,normal,step),
-      actor:key=>this.combatant(key),candidates:()=>this.combatants(),partySlots:()=>this.partyBuffSlots(),
+      actor:key=>this.combatant(key),candidates:()=>this.combatants(),nearbyCandidates:circles=>this.nearbyCandidates(circles),partySlots:()=>this.partyBuffSlots(),
       isAlive:key=>this.isActorAlive(key),
       rangeBonusUnits:key=>this.actorAttribute(key,'attackRangeBonusUnits'),
       healScore:key=>this.healScoreFor(key),
@@ -2339,7 +2352,7 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
         },clearEffects:()=>{this.runtime.cancel(id);presenter.clear();}
     };
     const controller=new CombatController(id,attack,port);
-    controller.subscribe(snapshot=>{if(this.controlledId===id){this.scene.refreshCombatTarget();this.scene.refreshSkillCooldowns(snapshot.cooldowns);}});
+    controller.subscribe(snapshot=>{if(this.controlledId===id){this.scene.refreshCombatTarget();this.scene.refreshCombatHud(snapshot.cooldowns);}});
     this.partyControllers.set(id,controller);this.runtime.registerActor(id,controller);
     return {controller,port};
   }
@@ -3329,7 +3342,6 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
     if(this.controlledId!==this.syncedControlledId&&this.partyControllers.has(this.controlledId))this.syncControlled(false);
     const controlled=this.controlledVisual;
     if(controlled)this.followTrail.record(this.controlledId,this.movement.position(controlled),delta,this.facingOfControlled());
-    const tickBefore=this.app.session.combatTick;
     this.app.session.advanceCombatFrames(delta,frame=>{
       this.combatantsCache=undefined;
       // 名册按逻辑帧刷新；最多晚一帧（约 60ms）出现，不再每渲染帧全量扫描生成点。
@@ -3358,8 +3370,7 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
       this.recoverResources();
       this.combatantsCache=undefined;
     });
-    // 冷却读数按战斗帧变化；这一渲染帧没推进逻辑帧时不必重新取快照、重算签名。
-    if(tickBefore!==this.app.session.combatTick)this.scene.refreshSkillCooldowns(this.cooldowns);
+    // 快捷栏和冷却由 WorldScene 在每个逻辑帧变化后统一绘制；这里不再重复取快照。
     this.syncBuffLoops();
   }
   private syncFocusRings(shown:boolean,delta:number):void{
@@ -3436,7 +3447,7 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
     this.stateMarkers.clear();this.conditionVisuals?.clear();
     for(const ally of [...this.allies]){ally.ai.dispose();ally.overhead.destroy();this.movement.remove(ally.visual);ally.visual.container.destroy();ally.assets?.release();}
     this.allies=[];this.partyControllers.clear();this.partySkills.clear();this.lastSkillResets.clear();
-    this.passivesCache.clear();this.skillTableCache.clear();this.equipmentRecoveryCache.clear();this.combatProcsCache.clear();this.aiSkillCostCache?.clear();this.combatantsCache=undefined;
+    this.passivesCache.clear();this.skillTableCache.clear();this.equipmentRecoveryCache.clear();this.combatProcsCache.clear();this.aiSkillCostCache?.clear();this.combatantsCache=undefined;this.combatantsSpatialCache=undefined;
     this.reactionSkillCache?.clear();
     this.combat=undefined;
     this.focusRings?.destroy();this.focusRings=undefined;

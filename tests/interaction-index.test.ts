@@ -1,0 +1,165 @@
+import assert from 'node:assert/strict';
+import { registerHooks } from 'node:module';
+import test from 'node:test';
+import type { CollisionBox } from '../src/domain/content.ts';
+import { InteractionTargetIndex } from '../src/scenes/interaction-index.ts';
+
+// 场景层只替 Phaser 的模块边界；目标选择跑生产代码（同 `world-frame-work.test.ts` 的做法）。
+const phaser = registerHooks({ resolve(specifier, context, next) {
+  return specifier === 'phaser' ? { shortCircuit: true, url: `data:text/javascript,${encodeURIComponent(
+    'export default {Geom:{Rectangle:class{}},BlendModes:{NORMAL:0,ADD:1,SCREEN:2,MULTIPLY:3},Scene:class{},Physics:{Arcade:{Body:class{}}}};')}` }
+    : next(specifier, context);
+} });
+const { WorldScene } = await import('../src/scenes/world-scene.ts');
+phaser.deregister();
+
+interface FakeContainer {
+  x: number; y: number; visible: boolean;
+  setAlpha(value: number): FakeContainer;
+  setVisible(value: boolean): FakeContainer;
+}
+interface FakeCharacter {
+  entity: { id: string; actor: string; flip?: boolean; spring?: boolean };
+  actor: { id: string; collision?: CollisionBox };
+  container: FakeContainer;
+  rank?: number;
+}
+
+function box(x: number, y: number, visible = true): FakeContainer {
+  const value: FakeContainer = {
+    x, y, visible,
+    setAlpha() { return value; },
+    setVisible(next) { value.visible = next; return value; },
+  };
+  return value;
+}
+
+function subject(id: string, x: number, y: number,
+  options: { rank?: number; collision?: CollisionBox; visible?: boolean } = {}): FakeCharacter {
+  return {
+    entity: { id, actor: id },
+    actor: { id, collision: options.collision },
+    container: box(x, y, options.visible ?? true),
+    rank: options.rank,
+  };
+}
+
+function scene(characters: FakeCharacter[], playerX = 0, playerY = 0) {
+  const state = {
+    app: { session: {
+      questBook: { version: 0 }, storyWorld: { revision: 0 }, chests: { revision: 0 },
+      legendaryWeapons: { revision: 0 }, restorationVersion: 0,
+    } },
+    map: { id: 'map' },
+    player: { container: { x: playerX, y: playerY } },
+    characters,
+    near: null as FakeCharacter | null,
+    interactionRevision: 0,
+    charactersRevision: 0,
+    chestOpened: () => false,
+    legendarySwordConsumed: () => false,
+    interactionCandidate: (character: FakeCharacter) => character.rank ?? 2,
+    setClip() {},
+    refreshMinimapInteractions() {},
+    movement: {
+      placeAll(placements: { visual: FakeCharacter; position: { x: number; y: number } }[]) {
+        for (const placement of placements) Object.assign(placement.visual.container, placement.position);
+      },
+    },
+  };
+  return Object.setPrototypeOf(state, WorldScene.prototype) as typeof state & { updateInteractionTarget(): void };
+}
+
+const invoke = (host: object, name: string, ...args: unknown[]) =>
+  Reflect.get(WorldScene.prototype, name).call(host, ...args);
+
+test('only the player cell is queried, so distant characters do not take part', () => {
+  const near = subject('near', 10, 0), far = subject('far', 500, 0);
+  let farReads = 0;
+  Object.defineProperty(far, 'container', { get() { farReads++; return box(500, 0); } });
+  const host = scene([near, far]);
+  host.updateInteractionTarget();
+  assert.equal(host.near, near, '近处目标仍然选中');
+  farReads = 0;
+  host.player.container.x = 8;
+  host.updateInteractionTarget();
+  assert.equal(host.near, near, '玩家在同一格内移动不影响结果');
+  assert.equal(farReads, 0, '远处实体没有进入候选，也没有读取位置');
+});
+
+test('a target covering several cells appears once in the queried cell', () => {
+  const index = new InteractionTargetIndex<FakeCharacter>();
+  const huge = subject('huge', 0, 0, { collision: { x: -64, y: -64, width: 128, height: 128 } });
+  index.rebuild([huge]);
+  assert.deepEqual(index.near(0, 0), [huge], '同一目标在一个桶里只登记一次');
+});
+
+test('a large collision box is indexed from the positions it can reach', () => {
+  const counter = subject('counter', 0, -80, { collision: { x: 0, y: 0, width: 16, height: 160 } });
+  const host = scene([counter]);
+  host.updateInteractionTarget();
+  assert.equal(host.near, counter, '碰撞盒覆盖玩家脚底时，脚点再远也能交互');
+});
+
+test('same distance still ranks task targets first and keeps original list order on ties', () => {
+  const plain = subject('plain', 0, 20, { rank: 2 });
+  const task = subject('task', 0, 20, { rank: 1 });
+  const ranked = scene([plain, task]);
+  ranked.updateInteractionTarget();
+  assert.equal(ranked.near, task, '同距离时任务目标优先');
+
+  const first = subject('first', 0, 20, { rank: 2 });
+  const second = subject('second', 0, 20, { rank: 2 });
+  const tied = scene([first, second]);
+  tied.updateInteractionTarget();
+  assert.equal(tied.near, first, '档位和距离都相同时保留原列表顺序');
+});
+
+test('moving a character through scene restore rebuilds the index', () => {
+  const npc = subject('npc', 10, 0);
+  const host = scene([npc]);
+  host.updateInteractionTarget();
+  assert.equal(host.near, npc);
+  invoke(host, 'restoreScenePositions', {
+    map: 'map', actors: [{ worldEntityId: 'npc', x: 500, y: 0, facing: 'south', visible: true }],
+  });
+  host.updateInteractionTarget();
+  assert.equal(host.near, null, '角色移走后索引跟随新位置');
+  invoke(host, 'restoreScenePositions', {
+    map: 'map', actors: [{ worldEntityId: 'npc', x: 10, y: 0, facing: 'south', visible: true }],
+  });
+  host.updateInteractionTarget();
+  assert.equal(host.near, npc, '角色移回来后重新选中');
+});
+
+test('a direct position change is caught when either revision advances', () => {
+  const first = subject('first', 500, 0);
+  const interaction = scene([first]);
+  interaction.updateInteractionTarget();
+  first.container.x = 10;
+  interaction.interactionRevision++;
+  interaction.updateInteractionTarget();
+  assert.equal(interaction.near, first, 'interactionRevision 变化时重建索引');
+
+  const second = subject('second', 500, 0);
+  const characters = scene([second]);
+  characters.updateInteractionTarget();
+  second.container.x = 10;
+  characters.charactersRevision++;
+  characters.player.container.x = 1;
+  characters.updateInteractionTarget();
+  assert.equal(characters.near, second, 'charactersRevision 变化时重建索引');
+});
+
+test('replacing the map character list rebuilds the index for the new map', () => {
+  const previous = subject('previous', 10, 0);
+  const host = scene([previous]);
+  host.updateInteractionTarget();
+  assert.equal(host.near, previous);
+  const current = subject('current', 10, 0);
+  host.characters = [current];
+  host.charactersRevision++;
+  host.interactionRevision++;
+  host.updateInteractionTarget();
+  assert.equal(host.near, current, '旧地图的角色不留在候选里');
+});

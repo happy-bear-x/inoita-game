@@ -33,6 +33,7 @@ import { createEffect } from '../rendering/effects.ts';
 import type { StoryContext } from '../application/ports.ts';
 import { WorldEnemyRoster } from '../domain/world-enemies.ts';
 import { WorldCombat, type WorldCombatState } from './world-combat.ts';
+import { InteractionTargetIndex } from './interaction-index.ts';
 import { QuestEnemyWatch } from '../domain/quest-enemies.ts';
 import { cachedDropCatalog, rollChestLoot, type DropCatalog, type DropReward } from '../domain/drops.ts';
 import { resolveInteraction } from '../domain/interaction.ts';
@@ -204,6 +205,11 @@ export class WorldScene extends Phaser.Scene {
   /** 上一次交互扫描的输入；逐字段比较，静止帧不拼名单。 */
   private lastInteractionScan?:{x:number;y:number;revision:number;quest:number;story:number;chests:number;
     legendary:number;restore:number;map:string;owner:string};
+  /** 交互候选的空间索引；只收当前地图角色，查询后再逐项判定。 */
+  private interactionIndex?: InteractionTargetIndex<Character>;
+  /** 索引上次重建时的修订号；未单独挂接的位置或外观入口由修订号兜底重建。 */
+  private interactionIndexRevision?: number;
+  private interactionIndexCharactersRevision?: number;
   /** 地图角色只在投影、恢复或显隐改变时使交互结果失效。 */
   private interactionRevision=0;
   /** 地图角色集合的修订号；整图刷新摘要用它代替逐角色拼名单。 */
@@ -309,7 +315,7 @@ export class WorldScene extends Phaser.Scene {
     this.questStatuses.clear();this.questStatusVersion=undefined;this.questNoticesReady=false;
     this.prefetchTarget = undefined; this.prefetchTask = undefined;
     this.prefetchFailedTarget = undefined; this.prefetchRetryAt = 0;
-    this.baseEntities=[];this.occupiedRegions.clear();this.encounterResults.clear();this.triggerIndex=undefined;this.refreshStateSignatureValue=undefined;this.lastInteractionScan=undefined;this.interactionRevision=0;this.charactersRevision=0;
+    this.baseEntities=[];this.occupiedRegions.clear();this.encounterResults.clear();this.triggerIndex=undefined;this.refreshStateSignatureValue=undefined;this.lastInteractionScan=undefined;this.interactionRevision=0;this.charactersRevision=0;this.interactionIndex=undefined;this.interactionIndexRevision=undefined;this.interactionIndexCharactersRevision=undefined;
     this.projectedActorIds.clear();
   }
   create(): void {
@@ -369,6 +375,7 @@ export class WorldScene extends Phaser.Scene {
       this.companionAssets.clear();
       this.projectedMemberEquipment.clear(); this.projectedActorIds.clear();
       this.characters = []; this.entities = []; this.baseEntities = []; this.player = undefined; this.map = undefined;
+      this.interactionIndex = undefined; this.interactionIndexRevision = undefined; this.interactionIndexCharactersRevision = undefined;
       this.near = null; this.noclipVisual = undefined; this.equippedActor = undefined; this.triggerIndex = undefined;
       this.targetStatusCache = undefined; this.shortcutPageCache = undefined; this.unsubscribe = undefined;
       this.entryStoryStarted = undefined; this.prefetchTask = undefined; this.questStatuses.clear(); this.questStatusVersion=undefined; this.questNoticesReady=false; this.encounterResults.clear();
@@ -1220,35 +1227,44 @@ export class WorldScene extends Phaser.Scene {
     setCharacterClip(this, character, name);
   }
   /** 当前操控者、它的技能配置与当前技能组。快捷栏与 HUD 都按这一份读。 */
-  private controlledContext(){
-    const {session}=this.app,member=this.combat?.controlledMember??session.hero!,owner=this.combat?.controlledId??'player';
+  private controlledContext() {
+    const session=this.app.session,member=this.combat?.controlledMember??session?.hero;
+    if(!session||!member)return undefined;
+    const owner=this.combat?.controlledId??'player';
     const configuration=owner==='player'?session.skills:(member as import('../domain/party.ts').CompanionMember).skills;
     return {member,owner,configuration,page:configuration.shortcutPage(member.classId)};
   }
   /** 某位成员的十二格快捷栏。技能与物品共用同一排槽，见 `domain/shortcut-bar.ts`。 */
-  private shortcutBar(owner:string,classId:string,configuration:ReturnType<WorldScene['controlledContext']>['configuration']):ShortcutBar {
+  private shortcutBar(owner:string,classId:string,configuration:SkillConfiguration):ShortcutBar {
     const bag=this.app.session.bag;
     return ShortcutBar.for(bag,owner,configuration.activeSkills(this.app.battleCatalog,classId),
       owner==='player'?bag.catalog.startingShortcut:undefined);
   }
-  /** 一格快捷位要画什么：技能看图标与起手条件，物品看图标、数量与恢复冷却。 */
-  private shortcutSlot(entry:ShortcutEntry|null,mana:number,level:number):ShortcutSlot {
+  /** 一格快捷位要画什么：技能看图标、起手条件与冷却，物品看图标、数量与恢复冷却。 */
+  private shortcutSlot(entry:ShortcutEntry|null,mana:number,level:number,cooldowns:Readonly<Record<string,Cooldown>>):ShortcutSlot {
     if(!entry)return {entry:null,quantity:0,enabled:false};
     const combat=this.combat;
     if(entry.kind==='skill'){
       const state=combat?.skillShortcutState(entry.id,level);
       return {entry,icon:this.app.battleCatalog.skills[entry.id]?.icon,quantity:0,
-        enabled:!!state?.enabled&&mana>=(state?.cost??0)};
+        enabled:!!state?.enabled&&mana>=(state?.cost??0),cooldown:cooldowns[entry.id]};
     }
     const item=this.app.items.items[entry.id],quantity=this.app.session.bag.count(entry.id);
     return {entry,icon:item?.icon,quantity,enabled:quantity>0,
       cooldown:item?.use?.kind==='recover-health'?this.app.session.recovery.cooldown:undefined};
   }
-  /** 按当前组重画六格。战斗帧也会调它，所以每步只算状态、不重建资源。 */
-  refreshShortcutPage():void {
+  /**
+   * 统一战斗 HUD 绘制入口：一次取好冷却快照和快捷页数据，再分别交给触摸轮盘与键盘技能行。
+   * 两个组件在一次调用里同时拿到技能冷却和格子内容，冷却不再单独触发第二遍绘制。
+   */
+  refreshCombatHud(cooldowns?:Readonly<Record<string,Cooldown>>):void {
     if(!this.controls)return;
+    const context=this.controlledContext();
+    // 没有战斗或还没有操控角色时没有可画的快捷栏；等事件或下一个逻辑帧再来。
+    if(!context)return;
+    cooldowns??=this.combat?.cooldowns??{};
     const {battleCatalog,session}=this.app;
-    const {member,owner,configuration,page}=this.controlledContext();
+    const {member,owner,configuration,page}=context;
     let cache=this.shortcutPageCache;
     if(!cache||cache.configuration!==configuration||cache.version!==configuration.version||cache.bagRevision!==session.bag.revision||
       cache.owner!==owner||cache.classId!==member.classId||cache.page!==page){
@@ -1257,7 +1273,7 @@ export class WorldScene extends Phaser.Scene {
       cache={configuration,version:configuration.version,bagRevision:session.bag.revision,owner,classId:member.classId,page,entries,levels};
       this.shortcutPageCache=cache;
     }
-    const slots=cache.entries.map(entry=>this.shortcutSlot(entry,member.player.mana,cache.levels[entry?.id??'']??0));
+    const slots=cache.entries.map(entry=>this.shortcutSlot(entry,member.player.mana,cache.levels[entry?.id??'']??0,cooldowns));
     const slotsSignature=slots.map(s=>s.entry?`${s.entry.kind}:${s.entry.id}:${s.quantity}:${s.enabled?1:0}:${s.cooldown?.remainingMs??0}/${s.cooldown?.durationMs??0}`:'_').join('|');
     // 签名没变时连 HUD 喂数据都省掉；切组、切人和冷却读数变化才重绘。
     if(cache.slotsSignature===slotsSignature)return;
@@ -1266,23 +1282,27 @@ export class WorldScene extends Phaser.Scene {
     this.controls.setShortcutPage(slots);
   }
 
-  /** 战斗钟走一格才重算快捷栏；切人、翻页、背包变化等事件路径仍会立即刷新。 */
-  private refreshShortcutPageIfTickChanged():void {
-    const tick=this.app.session.combatTick;
-    if(this.shortcutTick===tick)return;
+  /** 战斗逻辑帧推进后统一画一次；同一 tick 内重复调用直接跳过。 */
+  private refreshCombatHudIfTickChanged():void {
+    const tick=this.app.session?.combatTick;
+    if(tick===undefined||this.shortcutTick===tick)return;
     this.shortcutTick=tick;
-    this.refreshShortcutPage();
+    this.refreshCombatHud();
   }
+  /**
+   * 事件驱动路径：换人、换页、背包或快捷位变化后立即绘制，不等战斗时钟。
+   * 冷却快照在这里只取一次，随后由两个 HUD 共用。
+   */
   private refreshLoadout(): void {
-    this.refreshShortcutPage();
-    // 同时喂操作按钮和电脑模式技能行；切人后两边都不会漏掉当前操控者的冷却。
-    this.refreshSkillCooldowns(this.combat?.cooldowns??{});
+    this.refreshCombatHud(this.combat?.cooldowns??{});
   }
 
   /** 数字键放当前轮组的快捷位；格子里是物品就用物品，是技能就放技能。 */
   private triggerShortcutSlot(slot:number):void {
     if(!this.canControl)return;
-    const {member,owner,configuration,page}=this.controlledContext();
+    const context=this.controlledContext();
+    if(!context)return;
+    const {member,owner,configuration,page}=context;
     const entry=this.shortcutBar(owner,member.classId,configuration).page(page)[slot-1];
     if(!entry)return;
     if(entry.kind==='item')this.useShortcutItem(entry.id);
@@ -1292,7 +1312,9 @@ export class WorldScene extends Phaser.Scene {
   /** 切组按钮与 Q 键共用同一条路径。 */
   private cycleShortcutPage():void {
     if(!this.canControl)return;
-    const {member,configuration}=this.controlledContext();
+    const context=this.controlledContext();
+    if(!context)return;
+    const {member,configuration}=context;
     configuration.nextShortcutPage(member.classId);
     this.refreshLoadout();
   }
@@ -1387,7 +1409,20 @@ export class WorldScene extends Phaser.Scene {
   private rebuildTriggerIndex():void {
     this.interactionRevision=(this.interactionRevision??0)+1;
     this.triggerIndex=this.map?buildStoryTriggerIndex(this.app.campaign,this.map.id,this.characters):undefined;
+    this.rebuildInteractionIndex();
   }
+  /**
+   * 角色集合、站位或外观碰撞盒变化后重建交互候选索引。进图、剧情投影和召唤商人
+   * 都走 `rebuildTriggerIndex`；恢复现场单独调用。只有显隐或任务状态变化时不必重建，
+   * 查询仍按原规则过滤。
+   */
+  private rebuildInteractionIndex(): void {
+    const index=this.interactionIndex??(this.interactionIndex=new InteractionTargetIndex<Character>());
+    index.rebuild(this.characters);
+    this.interactionIndexRevision=this.interactionRevision??0;
+    this.interactionIndexCharactersRevision=this.charactersRevision;
+  }
+
   /** 整图角色显隐、任务标记和小地图重建只在这些输入变化时执行。 */
   private refreshStateSignature():string {
     const session=this.app.session;
@@ -2003,10 +2038,6 @@ export class WorldScene extends Phaser.Scene {
     this.combat?.reviveForDebug(id);
     return {ok:true};
   }
-  refreshSkillCooldowns(cooldowns:Readonly<Record<string,Cooldown>>):void{
-    this.controls?.setCooldowns(cooldowns);
-    this.skillHud?.setCooldowns(cooldowns);
-  }
   /** 压测入口：先补载刷怪用的敌人资源，再每 0.9 秒尝试生成一只。 */
   async startPressureSpawner():Promise<void> {
     if(!this.app.pressureMode||this.pressureSpawner||!this.combat)return;
@@ -2147,6 +2178,7 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     }
     this.movement.placeAll(placements,{evictOccupied:true,displaceable:this.player?[this.player]:[]});
     this.interactionRevision=(this.interactionRevision??0)+1;
+    this.rebuildInteractionIndex();
     this.refreshMinimapInteractions();
   }
 
@@ -2403,7 +2435,17 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     scan.chests=chests;scan.legendary=legendary;scan.restore=restore;
     scan.map=map;scan.owner=owner;
     let nearest: Character | null = null, distance = Number.POSITIVE_INFINITY, rank = 3;
-    for (const character of this.characters) {
+    // 索引只负责把候选缩到玩家所在格；顺序沿用原 `characters`，距离、优先级和状态过滤都不变。
+    // 这里直接维护索引，不依赖另一个场景方法，轻量测试宿主也能复用同一段选择逻辑。
+    let index=this.interactionIndex;
+    if(!index||this.interactionIndexRevision!==revision
+      ||this.interactionIndexCharactersRevision!==this.charactersRevision){
+      index=this.interactionIndex=new InteractionTargetIndex<Character>();
+      index.rebuild(this.characters);
+      this.interactionIndexRevision=revision;
+      this.interactionIndexCharactersRevision=this.charactersRevision;
+    }
+    for (const character of index.near(x, y)) {
       if (!character.container.visible) continue;
       if (this.chestOpened(character)) continue;
       if (this.legendarySwordConsumed(character)) continue;
@@ -2449,7 +2491,7 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     this.groundLootView?.setPaused(!this.canCombatControl);
     if(this.canCombatControl&&this.map){const store=groundLootFor(this.app.session);store.advance(this.map.id,stepDelta);
       if(store.revision!==this.groundLootRevision){this.groundLootRevision=store.revision;this.groundLootView?.sync(store.dropsOnMap(this.map.id));}}
-    this.refreshShortcutPageIfTickChanged();
+    this.refreshCombatHudIfTickChanged();
     if (!this.canControl) { this.movement.stop(controlled); return; }
     if(this.combat?.playerCannotMove()){this.movement.stop(controlled);return;}
     // 原版 GAMESTATE_PressKeyPlay：CHAR_IsSkillOn 时整段跳过方向输入。

@@ -8,6 +8,7 @@ import { needsTarget } from './skill-action.ts';
 import type { GameRectangle, Point } from './navigation.ts';
 import { canTraverse, createPathSearch, PATH_GRID_SIZE, type PathSearch } from './pathfinding.ts';
 import { enemyAwarenessRangeUnits } from './enemy-engagement.ts';
+import { awarenessRangeQueryRadius, bodyReachFromFoot, type CombatQueryCircle } from './combat-spatial-index.ts';
 
 export interface EnemyPort extends CombatPort {
   /** 物理系统每步读取下一个路径点；行为决策仍按原版逻辑帧执行。 */
@@ -16,6 +17,8 @@ export interface EnemyPort extends CombatPort {
   followDistancePx?:number;
   focusTarget?():string|undefined;
   counterattack?():boolean;
+  /** 按脚点圆查询附近候选；结果去重并保持原候选顺序。省略时调用方回退全量扫描。 */
+  nearbyCandidates?(circles: readonly CombatQueryCircle[]): Combatant[];
   /** 锁定目标时上报一次，供召唤物立刻知道这里开战了；目标清空后可再次上报。 */
   engaged?(targetId:string):void;
   /** 当前生命与上限；用于原版释放条件的 HP 阈值判定。 */
@@ -246,6 +249,17 @@ export class EnemyController {
   private inAwareness(actor:Combatant,target:Combatant):boolean{
     return Math.floor(targetDistance(actor.position,target.position)/RANGE_UNIT_PX)<=enemyAwarenessRangeUnits(this.behavior,this.mapWide?this.port.navigationBounds():undefined);
   }
+  /**
+   * 需要按警戒范围扫描的候选。全图警戒必须保留全量；普通警戒按 8px 量化距离
+   * 换算成脚点圆，再交给场景的空间索引预筛。后置的警戒距离和可选中过滤仍在原处执行。
+   */
+  private awarenessCandidates(actor:Combatant):Combatant[] {
+    const nearby=this.port.nearbyCandidates;
+    if(this.mapWide||!nearby)return this.port.candidates();
+    const rangeUnits=enemyAwarenessRangeUnits(this.behavior,undefined);
+    return nearby([{x:actor.position.x,y:actor.position.y,
+      radius:awarenessRangeQueryRadius(rangeUnits,bodyReachFromFoot(actor.bounds))}]);
+  }
   /** 全图交战只停止当前追近，保留已有仇恨及寻路重试截止时间。 */
   private awaitTarget():void {
     this.heldSearch=undefined;this.directView=undefined;
@@ -301,7 +315,7 @@ export class EnemyController {
       // 每个决策点扫描候选：接战后召唤物中途登场，也能在下一次决策点抢到仇恨。
       // `has` 保证同一来源只 notice 一次；被动敌人只在已经打到人时扫描，不主动开战。
       if(this.behavior.aggression==='active'||(this.threatCombatActive&&this.combat.selectedTargetId()!==undefined)){
-        for(const candidate of this.port.candidates()){
+        for(const candidate of this.awarenessCandidates(actor)){
           if(candidate.id===this.id||candidate.team===actor.team)continue;
           // 已经记过仇恨的来源直接跳过；这一步放最前面，避免每帧重复算距离和隐身。
           if(this.port.threat.has(candidate.id))continue;
@@ -319,7 +333,7 @@ export class EnemyController {
       if(focused&&focused.team!==actor.team&&this.inAwareness(actor,focused)&&canTargetCombatant(actor,focused))this.targetId=focused.id;
     }
     if(!this.port.threat&&!this.targetId&&this.behavior.aggression==='active'){
-      this.targetId=this.port.candidates().filter(target=>target.id!==this.id&&target.team!==actor.team&&this.inAwareness(actor,target)&&canTargetCombatant(actor,target))
+      this.targetId=this.awarenessCandidates(actor).filter(target=>target.id!==this.id&&target.team!==actor.team&&this.inAwareness(actor,target)&&canTargetCombatant(actor,target))
         .sort((a,b)=>targetDistance(actor.position,a.position)-targetDistance(actor.position,b.position)||a.id.localeCompare(b.id))[0]?.id;
     }
     const target=this.targetId?this.port.actor(this.targetId):undefined;

@@ -7,6 +7,7 @@ import { needsTarget } from './skill-action.ts';
 import type { Facing } from './content.ts';
 import { type CompanionStance } from './party-placement.ts';
 import { canTraverse, createPathSearch, PATH_GRID_SIZE, type PathQuery } from './pathfinding.ts';
+import { attackRangeQueryRadius, quantizedDistanceQueryRadius, type CombatQueryCircle } from './combat-spatial-index.ts';
 import type { GameRectangle, Point } from './navigation.ts';
 
 export type PartySkillKind = 'chance' | 'combat-chance' | 'heal' | 'ally-combat' | 'emergency-heal';
@@ -17,6 +18,8 @@ export interface PartyPort extends CombatPort {
   /** 上阵槽位：0 左、1 右；主角被 AI 接管时没有槽位。 */
   followSlot?(): 0 | 1 | undefined;
   focusTarget(): string | undefined;
+  /** 按脚点圆查询附近候选；结果去重并保持原候选顺序。省略时调用方回退全量扫描。 */
+  nearbyCandidates?(circles: readonly CombatQueryCircle[]): Combatant[];
   /** 主操作角色当前的战斗目标；软集火，只影响优先级。 */
   partyTarget?(): string | undefined;
   /** 敌人当前正在打谁；用来找正在攻击玩家/队友的敌人。 */
@@ -237,6 +240,19 @@ export class PartyController {
     if(attackDistance(actor.position,actor.bounds,target.position,target.bounds)<=this.port.attackRange())return true;
     return targetDistance(target.position,leader.position)<=PARTY_CHASE_LEASH_PX;
   }
+  /**
+   * withinLeash 的两种接受方式各对应一个圆：自身攻击距离、队长周围追击范围。
+   * 两圆的并集覆盖全部可接受敌人；没有队长时 withinLeash 不做距离限制，必须回退全量。
+   */
+  private threatCandidates(actor:Combatant,leader:Combatant|undefined,full:readonly Combatant[]):readonly Combatant[] {
+    const nearby=this.port.nearbyCandidates;
+    if(!leader||!nearby)return full;
+    const circles:CombatQueryCircle[]=[
+      {x:actor.position.x,y:actor.position.y,radius:attackRangeQueryRadius(this.port.attackRange(),actor.bounds)},
+      {x:leader.position.x,y:leader.position.y,radius:quantizedDistanceQueryRadius(PARTY_CHASE_LEASH_PX)},
+    ];
+    return nearby(circles);
+  }
   private rememberTarget(target:Combatant):Combatant {
     if(this.targetId!==target.id){this.targetId=target.id;this.chaseProgress=undefined;}
     this.targetSince=this.clock;return target;
@@ -245,9 +261,11 @@ export class PartyController {
   private nearestThreatTarget(actor:Combatant,leader:Combatant|undefined):Combatant|undefined {
     const targetOf=this.port.targetOf;
     if(!targetOf)return undefined;
+    // 队伍 ID 必须从完整候选收集：远处队友也可能正被这名敌人攻击。
+    // 敌人本身按 withinLeash 的联合圆预筛，随后仍走原来的阵营、可选中和 leash 过滤。
     const candidates=this.port.candidates(),partyIds=this.partyIds(candidates,actor.team);
     let best:Combatant|undefined,bestDistance=Infinity;
-    for(const candidate of candidates){
+    for(const candidate of this.threatCandidates(actor,leader,candidates)){
       if(candidate.team===actor.team||!canTargetCombatant(actor,candidate))continue;
       const targetId=targetOf(candidate.id);
       if(!targetId||!partyIds.has(targetId))continue;
@@ -267,6 +285,7 @@ export class PartyController {
     return value;
   }
   private trySkill(actor:Combatant,target:Combatant|undefined):boolean {
+    // 治疗和协同技能会扫描远处队友（例如谁正在战斗），不能换成附近敌人查询。
     const skills=this.sortedSkills(),candidates=this.port.candidates();
     for(const skill of skills){
       const frequency=skill.frequency??1,kind=this.port.skillKind(skill.id);
@@ -322,6 +341,7 @@ export class PartyController {
   private needsFlank(actor:Combatant,target:Combatant):boolean {
     if(this.clock<this.flankFailedUntil)return false;
     const leaderId=this.port.leader()?.id;
+    // 判断是否和队友挤在一起属于协同扫描，保留完整队伍，避免附近查询改变让位结果。
     const crowded=this.port.candidates().some(other=>other.id!==actor.id&&other.id!==leaderId
       &&other.team===actor.team&&targetDistance(other.position,actor.position)<PARTY_ALLY_CLEAR_PX);
     if(!crowded)return false;

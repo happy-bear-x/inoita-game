@@ -90,42 +90,68 @@ test('shortcut pages reuse layout snapshots while mana, eligibility, quantity an
     controls:{setShortcutPage:(value:readonly ShortcutSlot[])=>{slots=value;}},
     combat:{controlledMember:hero,controlledId:'player',
       skillShortcutState:(_skill:string,rank:number)=>{seenRank=rank;return {cost,enabled:allowed};}}});
-  invoke(host,'refreshShortcutPage');assert.equal(slots[0].enabled,true);assert.equal(seenRank,1);
+  invoke(host,'refreshCombatHud');assert.equal(slots[0].enabled,true);assert.equal(seenRank,1);
   const draft=t.mock.method(session.skills,'draft');
-  for(let frame=0;frame<10;frame++)invoke(host,'refreshShortcutPage');
+  for(let frame=0;frame<10;frame++)invoke(host,'refreshCombatHud');
   assert.equal(draft.mock.callCount(),0,'unchanged frames reuse the learned levels and shortcut row');
-  hero.setMana(0);invoke(host,'refreshShortcutPage');assert.equal(slots[0].enabled,false);
-  cost=0;invoke(host,'refreshShortcutPage');assert.equal(slots[0].enabled,true);
-  allowed=false;invoke(host,'refreshShortcutPage');assert.equal(slots[0].enabled,false);
-  recoveryCooldown={remainingMs:20,durationMs:200};invoke(host,'refreshShortcutPage');
+  hero.setMana(0);invoke(host,'refreshCombatHud');assert.equal(slots[0].enabled,false);
+  cost=0;invoke(host,'refreshCombatHud');assert.equal(slots[0].enabled,true);
+  allowed=false;invoke(host,'refreshCombatHud');assert.equal(slots[0].enabled,false);
+  recoveryCooldown={remainingMs:20,durationMs:200};invoke(host,'refreshCombatHud');
   assert.equal(slots[5].cooldown?.remainingMs,20);assert.equal(draft.mock.callCount(),0);
   const potion=items.startingShortcut!,quantity=session.bag.count(potion);
-  session.bag.add(potion);invoke(host,'refreshShortcutPage');assert.equal(slots[5].quantity,quantity+1);
+  session.bag.add(potion);invoke(host,'refreshCombatHud');assert.equal(slots[5].quantity,quantity+1);
   hero.grantSkillPoint();hero.grantSkillPoint();session.skills.learn('dark-strike');
-  invoke(host,'refreshShortcutPage');assert.equal(seenRank,2);
+  invoke(host,'refreshCombatHud');assert.equal(seenRank,2);
   const saved=session.skills.captureState();session.skills.nextShortcutPage(hero.classId);
-  invoke(host,'refreshShortcutPage');assert(slots.every(slot=>slot.entry===null));
-  session.skills.restoreState(saved);invoke(host,'refreshShortcutPage');assert.equal(slots[0].entry?.id,'dark-strike');
+  invoke(host,'refreshCombatHud');assert(slots.every(slot=>slot.entry===null));
+  session.skills.restoreState(saved);invoke(host,'refreshCombatHud');assert.equal(slots[0].entry?.id,'dark-strike');
   const companion={classId:hero.classId,player:{mana:10},skills:new SkillConfiguration()};
   host.combat.controlledMember=companion;host.combat.controlledId='companion';
-  invoke(host,'refreshShortcutPage');assert.equal(seenRank,1);
+  invoke(host,'refreshCombatHud');assert.equal(seenRank,1);
   host.combat.controlledMember=hero;host.combat.controlledId='player';
-  invoke(host,'refreshShortcutPage');assert.equal(seenRank,2);
-  session.bag.remove(potion,session.bag.count(potion));invoke(host,'refreshShortcutPage');assert.equal(slots[5].entry,null);
+  invoke(host,'refreshCombatHud');assert.equal(seenRank,2);
+  session.bag.remove(potion,session.bag.count(potion));invoke(host,'refreshCombatHud');assert.equal(slots[5].entry,null);
 });
 
-test('shortcut refresh follows combat ticks instead of every render frame',()=>{
-  let refreshed=0;
+test('one combat tick paints the shortcut wheel and keyboard skill row once, while event refreshes stay immediate',()=>{
+  const configuration={version:0,shortcutPage:()=>0,activeSkills:()=>['skill'],draft:()=>({levels:{skill:1}})};
+  const bag={revision:0,catalog:{startingShortcut:undefined},ensureShortcuts:(_owner:string,row:unknown)=>row,count:()=>0};
+  const paints:string[]=[];
+  let cooldownReads=0;
+  let cooldowns:Readonly<Record<string,{remainingMs:number;durationMs:number}>>={'skill':{remainingMs:1000,durationMs:2000}};
   const host=Object.assign(Object.create(WorldScene.prototype),{
-    app:{session:{combatTick:0}},
-    refreshShortcutPage:()=>{refreshed++;}
+    app:{session:{combatTick:0,bag,skills:configuration},battleCatalog:{skills:{skill:{icon:'skill.png'}}},items:{items:{}}},
+    controls:{setCooldowns:()=>assert.fail('冷却应随快捷页一次绘制'),setShortcutPage:()=>paints.push('controls')},
+    skillHud:{setCooldowns:()=>assert.fail('冷却应随快捷页一次绘制'),setPage:()=>paints.push('skillHud')},
+    combat:{controlledMember:{classId:'dark-knight',player:{mana:10},skills:configuration},controlledId:'player',
+      get cooldowns(){cooldownReads++;return cooldowns;},
+      skillShortcutState:()=>({cost:0,enabled:true})}
   });
-  invoke(host,'refreshShortcutPageIfTickChanged');
-  invoke(host,'refreshShortcutPageIfTickChanged');
-  assert.equal(refreshed,1,'同一逻辑帧只刷新一次');
+  invoke(host,'refreshCombatHudIfTickChanged');
+  invoke(host,'refreshCombatHudIfTickChanged');
+  assert.equal(cooldownReads,1,'同一逻辑帧只取一次冷却快照');
+  assert.deepEqual(paints,['skillHud','controls'],'同一逻辑帧两个快捷栏各只绘制一次');
+  cooldowns={'skill':{remainingMs:900,durationMs:2000}};
   host.app.session.combatTick=1;
-  invoke(host,'refreshShortcutPageIfTickChanged');
-  assert.equal(refreshed,2,'逻辑帧前进后重新刷新');
+  invoke(host,'refreshCombatHudIfTickChanged');
+  assert.equal(cooldownReads,2,'逻辑帧前进后才重新取冷却快照');
+  assert.deepEqual(paints,['skillHud','controls','skillHud','controls']);
+  cooldowns={'skill':{remainingMs:800,durationMs:2000}};
+  invoke(host,'refreshLoadout');
+  assert.deepEqual(paints,['skillHud','controls','skillHud','controls','skillHud','controls'],'换人、换页和背包事件不等逻辑帧');
+  invoke(host,'refreshCombatHudIfTickChanged');
+  assert.equal(paints.length,6,'事件已经刷新过的同一逻辑帧不再重画');
+  const withoutCombat=Object.assign(Object.create(WorldScene.prototype),{
+    app:{session:{combatTick:0}},controls:{setShortcutPage:()=>assert.fail('没有战斗和操控者时不应绘制')}
+  });
+  invoke(withoutCombat,'refreshCombatHudIfTickChanged');
+  invoke(withoutCombat,'refreshCombatHud');
+  const withoutSession=Object.assign(Object.create(WorldScene.prototype),{
+    app:{},controls:{setShortcutPage:()=>assert.fail('没有会话时不应绘制')}
+  });
+  invoke(withoutSession,'refreshCombatHudIfTickChanged');
+  invoke(withoutSession,'refreshCombatHud');
 });
 
 test('companion skill growth, saved configurations and restores advance the shortcut input version',()=>{

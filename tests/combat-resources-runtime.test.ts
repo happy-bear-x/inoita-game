@@ -177,7 +177,7 @@ test('the controlled skill slot reads the live mana cost after resource changes'
     controls:{setShortcutPage:(slots:unknown[])=>shown.push(slots[0] as {entry:unknown;enabled:boolean})}};
   // 刷新会顺路问场景当前操控者是谁，所以桩要挂在 WorldScene 的原型上。
   Object.setPrototypeOf(scene,WorldScene.prototype);
-  const refresh=Reflect.get(WorldScene.prototype,'refreshShortcutPage');refresh.call(scene);
+  const refresh=Reflect.get(WorldScene.prototype,'refreshCombatHud');refresh.call(scene);
   member.player.mana=4;refresh.call(scene);
   // 每次都用当前这一帧的实时耗蓝重新判定：50 点蓝付得起 38，掉到 4 点就该置灰。
   assert.deepEqual(shown.map(slot=>({entry:slot.entry,enabled:slot.enabled})),

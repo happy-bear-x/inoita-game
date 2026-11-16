@@ -7,6 +7,7 @@ import type { EnemyPort } from './enemy-ai.ts';
 import type { GameRectangle, Point } from './navigation.ts';
 import { canTraverse, createPathSearch, PATH_GRID_SIZE, type PathSearch } from './pathfinding.ts';
 import { stableSeed } from './stable-seed.ts';
+import { awarenessRangeQueryRadius, bodyReachFromFoot, CANDIDATE_QUERY_SAFETY_PX, type CombatQueryCircle } from './combat-spatial-index.ts';
 
 export type FriendlySummonRole = 'hell-soldier' | 'beast';
 export interface FriendlySummonTactics {
@@ -259,10 +260,29 @@ export class FriendlySummonController {
     const bounds=this.behavior.engagement==='map-wide'?this.port.navigationBounds?.():undefined;
     return Math.floor(targetDistance(actor.position,target.position)/8)<=enemyAwarenessRangeUnits(this.behavior,bounds);
   }
+  /**
+   * 协战查询圆：主人周围 192px 已覆盖 128px 协战和 192px 承诺目标两种范围；
+   * 再用召唤物自身警戒圆覆盖主动发现。validTarget 对每个候选都要求主人距离
+   * 不超过 192px，所以这个并集是最终候选的上界。全图警戒不再额外放大召唤物圆，
+   * 因为承诺目标仍受主人 192px 限制。
+   */
+  private nearbyCandidates(actor:Combatant,owner:Combatant):Combatant[] {
+    const nearby=this.port.nearbyCandidates;
+    if(!nearby)return this.port.candidates();
+    const circles:CombatQueryCircle[]=[
+      {x:owner.position.x,y:owner.position.y,radius:FRIENDLY_SUMMON_AI.leashPx+CANDIDATE_QUERY_SAFETY_PX},
+    ];
+    if(this.behavior.engagement!=='map-wide'){
+      const rangeUnits=enemyAwarenessRangeUnits(this.behavior,undefined);
+      circles.push({x:actor.position.x,y:actor.position.y,
+        radius:awarenessRangeQueryRadius(rangeUnits,bodyReachFromFoot(actor.bounds))});
+    }
+    return nearby(circles);
+  }
   private candidates(actor:Combatant,owner:Combatant,tactics:FriendlySummonTactics):Candidate[] {
     const admitted=new Set(tactics.engagedTargetIds);
     const active=this.behavior.aggression==='active';
-    return this.port.candidates().flatMap(target=>{
+    return this.nearbyCandidates(actor,owner).flatMap(target=>{
       const engaged=admitted.has(target.id);
       // 原版 CHAR_LookAroundEnemy：主动型角色按自身警戒范围发现敌人，不要求战斗已经发生。
       // 展示型场景物仍由世界侧 autonomousTarget 排除。

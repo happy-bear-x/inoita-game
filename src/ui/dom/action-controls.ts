@@ -103,7 +103,10 @@ export class DomActionControls extends DomComponent {
   snapshot(): readonly ShortcutSlot[] {
     return this.page.map(slot => { const cooldown = this.cooldown(slot); return { ...slot, entry: slot.entry ? { ...slot.entry } : null, cooldown: cooldown ? { ...cooldown } : undefined }; });
   }
-  private cooldown(slot: ShortcutSlot): Cooldown | undefined { return slot.entry?.kind === 'skill' ? this.cooldowns[slot.entry.id] : slot.cooldown; }
+  /** 场景统一刷新时冷却随快捷页一起送来；独立调用 `setCooldowns` 的旧入口继续从那份快照取。 */
+  private cooldown(slot: ShortcutSlot): Cooldown | undefined {
+    return slot.cooldown ?? (slot.entry?.kind === 'skill' ? this.cooldowns[slot.entry.id] : undefined);
+  }
   setAttack(enabled: boolean, dimUnavailable = true): void {
     this.attack.usable = enabled; this.attack.button.element.style.opacity = enabled || !dimUnavailable ? '1' : '.4';
   }
