@@ -1,3 +1,4 @@
+import { skinPrompt, placePrompt } from './dom/prompt-shell.ts';
 import {
   CLOUD_NEW_PASSWORD_SAME_MESSAGE,
   CLOUD_PASSWORD_MAX_LENGTH,
@@ -40,15 +41,8 @@ export class PasswordChangePrompt {
   private error?: HTMLParagraphElement;
   private options?: PasswordChangePromptOptions;
   private readonly cancelOnHide = () => { if (this.options) this.cancel(); };
-  private readonly place = () => {
-    if (!this.form || typeof window === 'undefined') return;
-    const viewport = window.visualViewport;
-    const width = viewport?.width ?? window.innerWidth;
-    const height = viewport?.height ?? window.innerHeight;
-    this.form.style.left = `${(viewport?.offsetLeft ?? 0) + width / 2}px`;
-    this.form.style.top = `${(viewport?.offsetTop ?? 0) + height / 2}px`;
-    this.form.style.maxHeight = `${Math.max(240, height - 24)}px`;
-  };
+  private releaseSkin?:()=>void;
+  private readonly place=()=>placePrompt(this.form);
 
   get active(): boolean { return !!this.root; }
 
@@ -81,6 +75,7 @@ export class PasswordChangePrompt {
     cancel.textContent = '取消';
     actions.append(submit, cancel);
     form.append(title, hint, current.wrap, next.wrap, confirm.wrap, error, actions);
+    this.releaseSkin=skinPrompt(form,title,actions);
     root.append(form);
     document.body.append(root);
     this.root = root; this.form = form;
@@ -115,6 +110,7 @@ export class PasswordChangePrompt {
     for (const input of [this.currentInput, this.newInput, this.confirmInput]) {
       if (input) { try { input.blur(); } catch { /* 页面正在销毁 */ } }
     }
+    this.releaseSkin?.();this.releaseSkin=undefined;
     this.root?.remove();
     this.root = undefined; this.form = undefined;
     this.currentInput = undefined; this.newInput = undefined; this.confirmInput = undefined;

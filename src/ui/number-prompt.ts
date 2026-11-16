@@ -1,3 +1,4 @@
+import { skinPrompt, placePrompt } from './dom/prompt-shell.ts';
 interface NumberPromptOptions {
   title:string;
   /** 常驻说明，例如「最多可买 3 件」。 */
@@ -25,13 +26,8 @@ export class NumberPrompt {
   private input?:HTMLInputElement;
   private options?:NumberPromptOptions;
   private readonly cancelOnHide=()=>{ if(this.options)this.cancel(); };
-  private readonly place=()=>{
-    if(!this.form||typeof window==='undefined')return;
-    const viewport=window.visualViewport;
-    const width=viewport?.width ?? window.innerWidth, height=viewport?.height ?? window.innerHeight;
-    this.form.style.left=`${(viewport?.offsetLeft ?? 0)+width/2}px`;
-    this.form.style.top=`${(viewport?.offsetTop ?? 0)+height/2}px`;
-  };
+  private releaseSkin?:()=>void;
+  private readonly place=()=>placePrompt(this.form);
 
   /** Escape/Enter 挂在 document 上：焦点移到按钮或卡片外时也能退出和提交。 */
   private readonly keydown=(event:KeyboardEvent)=>{
@@ -85,6 +81,7 @@ export class NumberPrompt {
     form.append(title);
     if(options.hint)form.append(hint);
     form.append(input,error,actions);
+    this.releaseSkin=skinPrompt(form,title,actions);
     root.append(form);
     document.body.append(root);
     this.root=root;this.form=form;this.input=input;
@@ -133,6 +130,7 @@ export class NumberPrompt {
     }
     const input=this.input;
     if(input){try{input.blur();}catch{}}
+    this.releaseSkin?.();this.releaseSkin=undefined;
     this.root?.remove();
     this.root=undefined;this.form=undefined;this.input=undefined;this.options=undefined;
   }

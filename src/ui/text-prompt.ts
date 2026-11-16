@@ -1,3 +1,4 @@
+import { skinPrompt, placePrompt } from './dom/prompt-shell.ts';
 import { SAVE_NAME_MAX_LENGTH, sanitizeSaveName } from '../domain/save-game.ts';
 
 interface TextPromptOptions {
@@ -23,13 +24,8 @@ export class TextPrompt {
    * 手机键盘弹出时 `visualViewport` 会缩小：把卡片放在可视区中心，
    * 输入框才不会被键盘盖住。没有 `visualViewport` 时退回窗口尺寸。
    */
-  private readonly place=()=>{
-    if(!this.form||typeof window==='undefined')return;
-    const viewport=window.visualViewport;
-    const width=viewport?.width ?? window.innerWidth, height=viewport?.height ?? window.innerHeight;
-    this.form.style.left=`${(viewport?.offsetLeft ?? 0)+width/2}px`;
-    this.form.style.top=`${(viewport?.offsetTop ?? 0)+height/2}px`;
-  };
+  private releaseSkin?:()=>void;
+  private readonly place=()=>placePrompt(this.form);
 
   get active():boolean { return !!this.root; }
 
@@ -62,6 +58,7 @@ export class TextPrompt {
     cancel.textContent='取消';
     actions.append(confirm,cancel);
     form.append(title,input,actions);
+    this.releaseSkin=skinPrompt(form,title,actions);
     root.append(form);
     document.body.append(root);
     this.root=root;this.form=form;this.input=input;
@@ -95,6 +92,7 @@ export class TextPrompt {
     }
     const input=this.input;
     if(input){try{input.blur();}catch{}}
+    this.releaseSkin?.();this.releaseSkin=undefined;
     this.root?.remove();
     this.root=undefined;this.form=undefined;this.input=undefined;this.options=undefined;
   }

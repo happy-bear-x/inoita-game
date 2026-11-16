@@ -88,3 +88,5 @@ npm run test:standalone
 - `mercenary-skill-unlocks.test.ts` 覆盖六职业封印书的永久共享、候补与未来佣兵继承、抽取去重、失败回滚和检查点恢复；存档与菜单用例覆盖旧书转换、等级保留和背包控件复用。
 
 - `story-equipment.test.ts` 覆盖剧情装备发放与拾取拦截、手动穿脱与连带替换保护、剧情移除与离队销毁、正常装备退回；`story-disguise.test.ts` 验证剧情伪装穿脱，`saved-game.test.ts` 验证 58 → 59 清理散装实例并保留正在穿戴的剧情装备。
+
+- `prompt-shell.test.ts` 覆盖独立输入弹窗的图片释放、系统键盘可见范围与密码表单校验及提交。

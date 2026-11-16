@@ -3,7 +3,7 @@ import type { ItemCatalog } from '../domain/items.ts';
 import type { MenuPanels } from '../domain/menu-panels.ts';
 import type { StoryInterface } from '../domain/story-interface.ts';
 import type { ShopCatalog } from '../domain/shop.ts';
-import { COMMON_BUTTON_IMAGES } from '../ui/common-button.ts';
+import { PROMPT_IMAGES } from '../ui/prompt-assets.ts';
 
 const titleRoot = '/assets/ui/title-menu/';
 /**
@@ -13,7 +13,7 @@ const titleRoot = '/assets/ui/title-menu/';
 export const TITLE_MESSAGE_ASSETS: Record<string, string> = Object.fromEntries(
   ['message-edge', 'message-ok', 'message-ok-pressed', 'message-yes', 'message-yes-pressed', 'message-no', 'message-no-pressed']
     .map(name => [name, `/assets/ui/menus/${name}.png`]));
-export const titleMenuImages = [...COMMON_BUTTON_IMAGES, ...Object.values(TITLE_MESSAGE_ASSETS), ...[
+export const titleMenuImages = [...PROMPT_IMAGES, ...Object.values(TITLE_MESSAGE_ASSETS), ...[
   'background.png', 'logo.png', 'subtitle-left.png', 'subtitle-right.png',
   'back.png', 'slot.png', 'slot-empty.png'
 ].map(name => titleRoot + name), '/assets/ui/menus/close.png', '/assets/ui/menus/close-pressed.png'];
@@ -25,7 +25,7 @@ export const titleMenuImages = [...COMMON_BUTTON_IMAGES, ...Object.values(TITLE_
  */
 export function gameMenuImageGroups(panels: MenuPanels, items: ItemCatalog, battle: BattleCatalog, story: StoryInterface, shops:ShopCatalog): {core:string[];extra:string[]} {
   const core = [
-    ...COMMON_BUTTON_IMAGES,
+    ...PROMPT_IMAGES,
     ...Object.values(panels.assets),
     ...panels.equipmentSlots.map(slot => slot.emptyIcon),
     ...Object.values(panels.classes).map(character => character.preview),
