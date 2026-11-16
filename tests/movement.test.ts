@@ -61,7 +61,8 @@ function fixture(terrain: CollisionMap | { name: string; bounds: { x: number; y:
     body.initialize(navigation, actor, movable); body.setSize(8, 8, false).setOffset(-4, -4); body.updateFromGameObject(); body.shape(shape); body.setImmovable(!movable);
     object.body = body; world.add(body); objects.push(object);
     const unregister = navigation.register(actor);
-    interpolation.register(object, actor.position, actor.enabled);
+    const positionInto = (out: Point) => body.footPositionInto(out);
+    interpolation.register(object, actor.position, actor.enabled, positionInto);
     const entry = { body, actor, object, dispose: () => { interpolation.remove(object); unregister(); world.remove(body); objects.splice(objects.indexOf(object), 1); entries.splice(entries.indexOf(entry), 1); } };
     entries.push(entry); return entry;
   };
@@ -83,6 +84,54 @@ function fixture(terrain: CollisionMap | { name: string; bounds: { x: number; y:
   return { world, navigation, interpolation, add, step, check };
 }
 const empty = { name: 'arena', bounds: { x: 0, y: 0, width: 192, height: 192 } };
+
+test('footPositionInto writes into the caller point and matches footPosition', () => {
+  const f = fixture(empty), player = f.add({ x: 40, y: 40 });
+  const out = { x: 0, y: 0 };
+  assert.equal(player.body.footPositionInto(out), out);
+  assert.deepEqual(out, player.body.footPosition());
+});
+
+test('physics-step sampling uses the non-allocating reader and one shared point', () => {
+  const interpolation = new MovementInterpolation();
+  const points = [{ x: 1, y: 2 }, { x: 3, y: 4 }];
+  const outs: Point[] = [];
+  let allocatingReads = 0;
+  const visuals = points.map(() => ({ active: true, x: 0, y: 0 }));
+  points.forEach((point, index) => {
+    interpolation.register(visuals[index]!, () => { allocatingReads++; return { ...point }; }, () => true,
+      out => { outs.push(out); out.x = point.x; out.y = point.y; return out; });
+  });
+  assert.equal(allocatingReads, 2, '注册时各读一次当前位置');
+  allocatingReads = 0; outs.length = 0;
+  interpolation.beginFrame(16); interpolation.completeStep(16);
+  assert.equal(allocatingReads, 0, '物理步只调用写入式读取');
+  assert.equal(outs.length, 2);
+  assert.equal(outs[0], outs[1], '所有采样共用同一块临时坐标');
+});
+
+test('stopping, disabling and teleporting converge display reads to the live foot point', () => {
+  const interpolation = new MovementInterpolation();
+  const position = { x: 0, y: 0 };
+  let enabled = true;
+  const visual = { active: true, x: 0, y: 0 };
+  interpolation.register(visual, () => ({ ...position }), () => enabled,
+    out => { out.x = position.x; out.y = position.y; return out; });
+  const step = () => { interpolation.beginFrame(16); interpolation.completeStep(16); };
+  step();
+  position.x = 10; step();
+  assert.deepEqual(interpolation.position(visual), { x: 0, y: 0 }, '移动后显示仍插值在上一位置');
+  step();
+  assert.deepEqual(interpolation.position(visual), { x: 10, y: 0 }, '停步后前后两个采样都收敛到当前位置');
+  position.x = 14; enabled = false; step();
+  assert.deepEqual(interpolation.position(visual), { x: 14, y: 0 }, '禁用时同样收敛到当前脚点');
+  enabled = true; position.x = 15; step();
+  assert.deepEqual(interpolation.position(visual), { x: 14, y: 0 }, '重新启用后从上一采样出发，不滑回旧位置');
+  position.x = 100; interpolation.reset(visual);
+  assert.deepEqual(interpolation.position(visual), { x: 100, y: 0 }, '瞬移后读到新位置');
+  position.x = 110; step();
+  assert.deepEqual(interpolation.position(visual), { x: 100, y: 0 }, '瞬移后的下一段从新位置插值，不拖旧尾');
+});
 
 test('stationary visuals incur no interpolation writes and moving samples tolerate a reused position object', () => {
   const interpolation = new MovementInterpolation();

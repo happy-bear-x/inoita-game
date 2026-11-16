@@ -12,7 +12,10 @@ const Body = movementBodyClass(Phaser.Physics.Arcade.Body);
 const CORRECTION_HISTORY_LIMIT = 8;
 /** 落位互相压住时最多修正 4 轮；仍不成立就记录现场并保留当前位置。 */
 const SETTLE_ATTEMPTS = 4;
-interface Registration { body: MovementBody; actor: Placement['actor']; ghost:{value:boolean}; unregister(): void; destroy(): void }
+interface Registration {
+  visual: CharacterVisual; body: MovementBody; actor: Placement['actor']; ghost:{value:boolean};
+  positionInto(out: Point): Point; unregister(): void; destroy(): void;
+}
 
 /** 每个场景持有一个移动世界，所有人物共享同一个持久碰撞关系。 */
 export class MovementWorld {
@@ -22,6 +25,10 @@ export class MovementWorld {
   private readonly collider: Phaser.Physics.Arcade.Collider;
   private readonly registrations = new Map<CharacterVisual, Registration>();
   private readonly bodyRegistrations = new WeakMap<object,Registration>();
+  /** 只包含会自己移动的登记；静态内容在注册和落位时写一次深度，不参与每帧遍历。 */
+  private readonly movableRegistrations = new Set<Registration>();
+  /** 静态角色拿到移动意图时的临时成员；停步后移除，恢复为静态。 */
+  private readonly temporaryRegistrations = new Set<Registration>();
   private readonly interpolation = new MovementInterpolation();
   /** 最近被整盒校验改正的队伍单位落位；诊断用，正常流程应为空。 */
   private readonly corrections: { id: string; from: Point; to: Point }[] = [];
@@ -58,6 +65,25 @@ export class MovementWorld {
     if (current) {
       current.actor.faction = faction ? () => faction : undefined;
       current.body.setMovable(movable, terrainRecovery); current.body.setImmovable(!movable);
+      // 同一演员会被剧情舞台重复登记，movable 可能在登记之间切换；采样成员和深度更新成员都要跟着变。
+      if (movable) {
+        if (!this.movableRegistrations.has(current)) {
+          const wasTemporary = this.temporaryRegistrations.delete(current);
+          this.movableRegistrations.add(current);
+          if (!wasTemporary) this.startSampling(current);
+        }
+      } else {
+        const wasMovable = this.movableRegistrations.delete(current);
+        const wasTemporary = this.temporaryRegistrations.delete(current);
+        if (current.body.hasIntention) {
+          // 走在半路被改为静态：意图还在，保留采样，等 stop 时再收敛并移除。
+          this.temporaryRegistrations.add(current);
+          if (!wasMovable && !wasTemporary) this.startSampling(current);
+        } else {
+          if (wasMovable || wasTemporary) this.interpolation.remove(visual.container);
+          this.writeDepth(visual);
+        }
+      }
       this.navigation.refreshActor(current.actor); return current.body;
     }
     const body = new Body(this.scene.physics.world, visual.container);
@@ -81,9 +107,13 @@ export class MovementWorld {
     body.shape(actor.shape()); body.setImmovable(!movable);
     const unregister = this.navigation.register(actor);
     const destroy = () => this.remove(visual);
-    const registration={body,actor,ghost,unregister,destroy};
+    const positionInto = (out: Point) => body.footPositionInto(out);
+    const registration={visual,body,actor,ghost,positionInto,unregister,destroy};
     this.registrations.set(visual,registration);this.bodyRegistrations.set(body,registration);
-    this.interpolation.register(visual.container, actor.position, actor.enabled);
+    if (movable) {
+      this.movableRegistrations.add(registration);
+      this.startSampling(registration);
+    } else this.writeDepth(visual);
     this.scene.physics.world.add(body); this.group.add(visual.container);
     visual.container.once('destroy', destroy);
     return body;
@@ -100,7 +130,8 @@ export class MovementWorld {
   }
   setEnabled(visual: CharacterVisual, enabled: boolean): void {
     const body = this.body(visual), changed = body.enable !== enabled;
-    if (!enabled) body.halt(); body.enable = enabled;
+    if (!enabled) this.stop(visual);
+    body.enable = enabled;
     if (changed) this.interpolation.reset(visual.container);
   }
   /** 演出走位：开启后不与其他人或机关发生物理碰撞，寻路也只按地形。 */
@@ -109,17 +140,39 @@ export class MovementWorld {
     if (registration) registration.ghost.value = ghost;
   }
   setPaused(visual:CharacterVisual,paused:boolean):void {this.body(visual).setPaused(paused);}
-  stop(visual: CharacterVisual): void { this.registrations.get(visual)?.body.halt(); }
+  stop(visual: CharacterVisual): void {
+    const registration = this.registrations.get(visual);
+    if (!registration) return;
+    registration.body.halt();
+    // 会动角色保持常驻采样；静态角色只为这次移动意图临时加入，停步时先收敛再退出。
+    if (this.movableRegistrations.has(registration)) return;
+    // interpolation.remove 内部先用 reset 把前后采样收敛到当前脚点，再删掉采样。
+    if (this.temporaryRegistrations.delete(registration)) this.interpolation.remove(visual.container);
+  }
+  /** 静态角色写移动意图时临时进入采样和深度更新；会动角色本来就常驻。 */
+  private trackIntention(visual: CharacterVisual): Registration {
+    const registration = this.registrations.get(visual);
+    if (!registration) throw new Error('人物未接入移动世界');
+    if (!this.movableRegistrations.has(registration) && !this.temporaryRegistrations.has(registration)) {
+      this.temporaryRegistrations.add(registration);
+      this.startSampling(registration);
+    }
+    return registration;
+  }
+  private startSampling(registration: Registration): void {
+    this.interpolation.register(registration.visual.container, registration.actor.position, registration.actor.enabled, registration.positionInto);
+    this.writeDepth(registration.visual);
+  }
   position(visual: CharacterVisual): Point { return this.body(visual).footPosition(); }
   displayPosition(visual: CharacterVisual): Point { return this.interpolation.position(visual.container); }
-  drive(visual: CharacterVisual, axis: Point, speed: number): void { this.body(visual).drive(axis, speed); }
-  toward(visual: CharacterVisual, point: Point, speed: number): void { this.body(visual).toward(point, speed); }
+  drive(visual: CharacterVisual, axis: Point, speed: number): void { this.trackIntention(visual).body.drive(axis, speed); }
+  toward(visual: CharacterVisual, point: Point, speed: number): void { this.trackIntention(visual).body.toward(point, speed); }
   followPath(visual: CharacterVisual, nextWaypoint: () => Point | undefined, speed: number): void {
-    this.body(visual).walk({ next: nextWaypoint }, speed);
+    this.trackIntention(visual).body.walk({ next: nextWaypoint }, speed);
   }
   walkTo(visual: CharacterVisual, point: Point, speed: number): WalkRoute {
     const route = new WalkRoute(this.navigation, this.actor(visual), point, speed);
-    this.body(visual).walk(route, speed); return route;
+    this.trackIntention(visual).body.walk(route, speed); return route;
   }
   canStand(visual: CharacterVisual, point: Point): boolean { return this.navigation.canStand(this.actor(visual), point); }
   /** 移动体诊断：暂停、固定、速度、脚点与当前意图（走路/被驱赶/追目标）。 */
@@ -236,6 +289,8 @@ export class MovementWorld {
   }
   remove(visual: CharacterVisual): void {
     const r = this.registrations.get(visual); if (!r) return;
+    this.movableRegistrations.delete(r);
+    this.temporaryRegistrations.delete(r);
     this.interpolation.remove(visual.container);
     this.registrations.delete(visual);this.bodyRegistrations.delete(r.body); r.unregister(); visual.container.off('destroy', r.destroy);
     if (this.group.scene) this.group.remove(visual.container);
@@ -254,12 +309,14 @@ export class MovementWorld {
   private restorePositions(): void { this.interpolation.restore(); }
   private syncDepth(): void {
     if (this.scene.physics.world.isPaused) return;
-    for (const visual of this.registrations.keys()) {
-      if (!visual.container.active) continue;
-      const depth = visual.container.y + CHARACTER_FOOT_DEPTH_OFFSET;
-      // Phaser 的 setDepth 每次都会把 display list 标脏并重排；值没变就别写。
-      if (visual.container.depth !== depth) visual.container.setDepth(depth);
-    }
+    for (const registration of this.movableRegistrations) this.writeDepth(registration.visual);
+    for (const registration of this.temporaryRegistrations) this.writeDepth(registration.visual);
+  }
+  private writeDepth(visual: CharacterVisual): void {
+    if (!visual.container.active) return;
+    const depth = visual.container.y + CHARACTER_FOOT_DEPTH_OFFSET;
+    // Phaser 的 setDepth 每次都会把 display list 标脏并重排；值没变就别写。
+    if (visual.container.depth !== depth) visual.container.setDepth(depth);
   }
   destroy(): void {
     this.interpolation.destroy();

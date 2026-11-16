@@ -35,6 +35,8 @@ export function movementBodyClass(Base: typeof Phaser.Physics.Arcade.Body) {
     get recoversTerrain():boolean{return this.terrainRecovery;}
     /** 内容摆放的机关（火焰、路障、宝箱）：不会自己移动，卡住自愈可以作为落点判断的障碍。 */
     get contentActor():boolean{return !this.movable;}
+    /** 是否正在推进一个移动意图；静态角色拿到意图后也要临时参与插值采样。 */
+    get hasIntention():boolean{return this.intention!==undefined;}
     /** 被物理分离挤进阻挡格后拉回来的次数与最近一次的前后位置；卡墙排查用。 */
     private wallRecoveries=0;
     private lastWallRecovery?: { from: Point; to: Point };
@@ -65,7 +67,9 @@ export function movementBodyClass(Base: typeof Phaser.Physics.Arcade.Body) {
       this.setSize(box.width, box.height, false).setOffset(box.x, box.y);
       this.reset(position.x, position.y); this.updateFromGameObject();
     }
-    footPosition(): Point { return { x: this.x - this.collision.x, y: this.y - this.collision.y }; }
+    /** 把脚点写进调用方给的坐标，物理步采样时不再每人新建一个点。 */
+    footPositionInto(out: Point): Point { out.x = this.x - this.collision.x; out.y = this.y - this.collision.y; return out; }
+    footPosition(): Point { return this.footPositionInto({ x: 0, y: 0 }); }
     drive(axis: Point, speed: number): void {
       const length = Math.hypot(axis.x, axis.y);
       this.intention = { velocity: { x: axis.x / (length || 1) * speed, y: axis.y / (length || 1) * speed } };

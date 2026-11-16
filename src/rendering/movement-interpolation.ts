@@ -6,6 +6,8 @@ const DEFAULT_STEP_MS = 1000 / 60;
 interface MovingVisual extends Point { active: boolean }
 interface MotionSample {
   position(): Point;
+  /** 写入调用方给的坐标；物理步采样共用一块临时点，避免每人每步新建对象。 */
+  positionInto(out: Point): Point;
   enabled(): boolean;
   previous: Point;
   current: Point;
@@ -19,10 +21,15 @@ export class MovementInterpolation {
   private readonly samples = new Map<MovingVisual, MotionSample>();
   private readonly restoredPositions = new Map<MovingVisual, Point>();
   private readonly moving = new Set<MovingVisual>();
+  /** 物理步采样共用这一块坐标；`positionInto` 当场写满后立刻读取。 */
+  private readonly scratch: Point = { x: 0, y: 0 };
 
-  register(visual: MovingVisual, position: () => Point, enabled: () => boolean): void {
+  register(visual: MovingVisual, position: () => Point, enabled: () => boolean, positionInto?: (out: Point) => Point): void {
     const current = position();
-    this.samples.set(visual, { position, enabled, previous: { ...current }, current: { ...current }, saved: { ...current } });
+    const into = positionInto ?? ((out: Point) => {
+      const point = position(); out.x = point.x; out.y = point.y; return out;
+    });
+    this.samples.set(visual, { position, positionInto: into, enabled, previous: { ...current }, current: { ...current }, saved: { ...current } });
   }
 
   beginFrame(deltaMs: number): void {
@@ -34,13 +41,26 @@ export class MovementInterpolation {
   completeStep(durationMs: number): void {
     this.stepMs = durationMs;
     this.remainingMs -= durationMs;
+    const scratch = this.scratch;
     for (const [visual, sample] of this.samples) {
-      const current = sample.position();
+      sample.positionInto(scratch);
+      const x = scratch.x, y = scratch.y;
+      if (!sample.enabled()) {
+        // 禁用期间也收敛到当前脚点，重新启用时不会从旧位置滑一段。
+        sample.previous.x = x; sample.previous.y = y;
+        sample.current.x = x; sample.current.y = y;
+        this.moving.delete(visual);
+        continue;
+      }
+      if (x === sample.current.x && y === sample.current.y) {
+        // position() 也会读取 previous；停步后必须把两次采样都收敛到当前点。
+        sample.previous.x = x; sample.previous.y = y;
+        this.moving.delete(visual);
+        continue;
+      }
       sample.previous.x = sample.current.x; sample.previous.y = sample.current.y;
-      sample.current.x = current.x; sample.current.y = current.y;
-      if (!sample.enabled()) { sample.previous.x = current.x; sample.previous.y = current.y; }
-      if (sample.previous.x !== current.x || sample.previous.y !== current.y) this.moving.add(visual);
-      else this.moving.delete(visual);
+      sample.current.x = x; sample.current.y = y;
+      this.moving.add(visual);
     }
   }
 

@@ -5,6 +5,9 @@ import test from 'node:test';
 import type Phaser from 'phaser';
 import {NavigationWorld} from '../src/domain/navigation-world.ts';
 import type {CharacterVisual} from '../src/rendering/characters.ts';
+import {CHARACTER_FOOT_DEPTH_OFFSET} from '../src/rendering/depths.ts';
+import type {MovementBody} from '../src/rendering/arcade-movement.ts';
+import type {MovementWorld as MovementWorldType} from '../src/rendering/movement-world.ts';
 
 const require=createRequire(import.meta.url);
 const World=require('../node_modules/phaser/src/physics/arcade/World.js') as typeof Phaser.Physics.Arcade.World;
@@ -14,6 +17,38 @@ const hook=registerHooks({resolve(specifier,context,next){return specifier==='ph
   ?{url:`data:text/javascript,${encodeURIComponent(shim)}`,shortCircuit:true}:next(specifier,context);}});
 const {MovementWorld}=await import('../src/rendering/movement-world.ts');hook.deregister();
 type CollisionObject=Parameters<NonNullable<Phaser.Physics.Arcade.Collider['processCallback']>>[0];
+
+function harness(){
+  const events=new EventEmitter(),members=new Set<unknown>();
+  const group={scene:{},add(value:unknown){members.add(value)},remove(value:unknown){members.delete(value)},destroy(){members.clear()}};
+  const scene={sys:{scale:{width:640,height:480}},events,add:{group:()=>group}} as unknown as Phaser.Scene;
+  const world=new World(scene,{gravity:{x:0,y:0},debug:false});
+  scene.physics={world,add:{collider:(...args:Parameters<typeof world.addCollider>)=>world.addCollider(...args)}} as Phaser.Physics.Arcade.ArcadePhysics;
+  const navigation=new NavigationWorld({name:'arena',bounds:{x:0,y:0,width:400,height:400}});
+  const movement=new MovementWorld(scene,navigation);
+  return {events,world,navigation,movement,members};
+}
+
+function testVisual(id:string,x:number,y:number,depthWrites:number[]=[]){
+  const container=Object.assign(new EventEmitter(),{
+    x,y,depth:0,scaleX:1,scaleY:1,angle:0,rotation:0,displayOriginX:0,displayOriginY:0,active:true,visible:true,
+    setPosition(nx:number,ny:number){this.x=nx;this.y=ny;return this;},
+    setDepth(value:number){this.depth=value;depthWrites.push(value);return this;},
+    setVisible(value:boolean){this.visible=value;return this;}
+  });
+  return {visual:{actor:{collision:{x:-4,y:-4,width:8,height:8}},entity:{id},container} as unknown as CharacterVisual,container,depthWrites};
+}
+
+function samplesOf(movement:MovementWorldType):Map<unknown,unknown>{
+  return (movement as unknown as {interpolation:{samples:Map<unknown,unknown>}}).interpolation.samples;
+}
+function settle(movement:MovementWorldType):void{
+  (movement as unknown as {settleStep(delta:number):void}).settleStep(16);
+}
+/** 直接模拟一个物理步后的脚点；物理层正常会用 postUpdate 把容器同步到同一位置。 */
+function moveFoot(body:MovementBody,container:{x:number;y:number},x:number,y:number):void{
+  body.position.set(x-4,y-4);body.updateCenter();container.x=x;container.y=y;
+}
 
 test('the installed collision filter follows registered bodies, current visibility and shape, and removal',t=>{
   const members=new Set<unknown>(),events=new EventEmitter();
@@ -172,4 +207,148 @@ test('placeAll keeps the performance alive when the map has no legal body spot',
   assert.doesNotThrow(()=>movement.placeAll([{visual,position:{x:40,y:88},enabled:true}]),
     '没有合法落点时保持原位并记录，不中断剧情');
   assert.deepEqual(movement.position(visual),{x:40,y:88});
+});
+
+test('movable actors sample their steps and stop at the live position; static actors join physics and write depth once',t=>{
+  const h=harness();
+  t.after(()=>{h.movement.destroy();h.world.destroy();});
+  const hero=testVisual('hero',40,40);
+  const heroWrites=hero.depthWrites;
+  const body=h.movement.register(hero.visual,true);
+  assert.equal(h.movement.body(hero.visual),body);
+  assert.equal(h.members.has(hero.container),true,'会动角色仍进入物理 group');
+  assert.equal(samplesOf(h.movement).has(hero.container),true,'会动角色进入采样表');
+
+  moveFoot(body,hero.container,50,40);settle(h.movement);
+  moveFoot(body,hero.container,60,40);settle(h.movement);
+  settle(h.movement);
+  assert.deepEqual(h.movement.position(hero.visual),{x:60,y:40});
+  assert.deepEqual(h.movement.displayPosition(hero.visual),{x:60,y:40},'停步后显示读当前位置，不回退到 50');
+
+  h.movement.setEnabled(hero.visual,false);
+  moveFoot(body,hero.container,70,40);settle(h.movement);
+  assert.deepEqual(h.movement.displayPosition(hero.visual),{x:70,y:40},'禁用时也收敛到当前脚点');
+  h.movement.setEnabled(hero.visual,true);
+  moveFoot(body,hero.container,80,40);settle(h.movement);
+  assert.deepEqual(h.movement.displayPosition(hero.visual),{x:70,y:40},'重新启用后从 70 出发，不滑回 40');
+
+  h.movement.place(hero.visual,{x:160,y:120});
+  assert.deepEqual(h.movement.displayPosition(hero.visual),{x:160,y:120},'瞬移后立即读新位置');
+  moveFoot(body,hero.container,170,120);settle(h.movement);
+  assert.deepEqual(h.movement.displayPosition(hero.visual),{x:160,y:120},'瞬移后的下一段从新位置插值，不拖旧尾');
+  hero.container.y=60;
+  (h.movement as unknown as {syncDepth():void}).syncDepth();
+  assert.equal(heroWrites.at(-1),60+CHARACTER_FOOT_DEPTH_OFFSET,'会动角色仍每帧同步深度');
+
+  const torchWrites:number[]=[];
+  const torch=testVisual('torch',40,80,torchWrites);
+  h.movement.register(torch.visual,false);
+  assert.equal(h.members.has(torch.container),true,'静态角色仍进入物理 group');
+  assert.equal(samplesOf(h.movement).has(torch.container),false,'静态角色不进采样表');
+  assert.deepEqual(torchWrites,[80+CHARACTER_FOOT_DEPTH_OFFSET],'静态角色注册时写一次深度');
+  // 静态角色不再每帧遍历：直接改容器 y 不会被 POST_UPDATE 的深度同步发现，落位时会补写。
+  torch.container.y=128;
+  (h.movement as unknown as {syncDepth():void}).syncDepth();
+  assert.deepEqual(torchWrites,[80+CHARACTER_FOOT_DEPTH_OFFSET],'静态深度不再每帧遍历');
+  h.movement.place(torch.visual,{x:40,y:128});
+  assert.equal(torchWrites.at(-1),128+CHARACTER_FOOT_DEPTH_OFFSET,'落位时写一次深度');
+});
+
+test('repeated register toggles sampling membership and resumes smoothly from the current position',t=>{
+  const h=harness();
+  t.after(()=>{h.movement.destroy();h.world.destroy();});
+  const actor=testVisual('actor',40,40);
+  const body=h.movement.register(actor.visual,false);
+  const samples=samplesOf(h.movement);
+  assert.equal(samples.has(actor.container),false);
+
+  h.movement.register(actor.visual,true);
+  assert.equal(samples.has(actor.container),true,'静态转动态重新加入采样');
+  moveFoot(body,actor.container,50,40);settle(h.movement);
+  assert.deepEqual(h.movement.displayPosition(actor.visual),{x:40,y:40},'从登记位置平滑开始');
+  h.movement.register(actor.visual,true);
+  assert.deepEqual(h.movement.displayPosition(actor.visual),{x:40,y:40},'重复登记为会动不会重置当前插值');
+
+  h.movement.register(actor.visual,false);
+  assert.equal(samples.has(actor.container),false,'动态转静态移除采样');
+  assert.deepEqual(h.movement.displayPosition(actor.visual),{x:50,y:40},'静态直接读容器当前位置');
+
+  h.movement.register(actor.visual,true);
+  moveFoot(body,actor.container,60,40);settle(h.movement);
+  assert.deepEqual(h.movement.displayPosition(actor.visual),{x:50,y:40},'再次转动态从 50 出发，不跳回 40');
+});
+
+test('a static actor with a walk intention is sampled and depth-sorted until it stops',t=>{
+  const h=harness();
+  t.after(()=>{h.movement.destroy();h.world.destroy();});
+  const writes:number[]=[];
+  const walker=testVisual('walker',40,40,writes);
+  const body=h.movement.register(walker.visual,false);
+  const samples=samplesOf(h.movement);
+  assert.equal(samples.has(walker.container),false,'没有移动意图的静态角色不进采样');
+  assert.deepEqual(writes,[40+CHARACTER_FOOT_DEPTH_OFFSET],'注册时写一次深度');
+
+  // 剧情走位会临时取消固定；MovementWorld.walkTo 本身负责采样和深度成员。
+  body.setImmovable(false);
+  const route=h.movement.walkTo(walker.visual,{x:40,y:120},120);
+  assert.equal(samples.has(walker.container),true,'walkTo 给静态角色临时加入采样');
+
+  let time=0;
+  const beginFrame=(delta:number)=>(h.movement as unknown as {beginFrame(time:number,delta:number):void}).beginFrame(time,delta);
+  const syncDepth=()=>(h.movement as unknown as {syncDepth():void}).syncDepth();
+  const step=(delta=1000/60)=>{
+    time+=delta;
+    beginFrame(delta);
+    h.world.update(time,delta);
+    h.world.postUpdate();
+    syncDepth();
+  };
+  step();
+  const firstPhysical=h.movement.position(walker.visual);
+  const firstDisplay=h.movement.displayPosition(walker.visual);
+  assert.ok(firstPhysical.y>40,'走位路线开始推进');
+  assert.ok(firstDisplay.y>=40&&firstDisplay.y<firstPhysical.y,'显示位置仍在起终点之间，不平移跳到最新脚点');
+  assert.ok(writes.length>1&&writes.at(-1)!>40+CHARACTER_FOOT_DEPTH_OFFSET,'走位时深度继续更新');
+
+  for(let i=0;i<300&&route.state==='walking';i++)step();
+  assert.equal(route.state,'arrived');
+  const end=h.movement.position(walker.visual);
+  assert.ok(end.y>40);
+  h.movement.stop(walker.visual);
+  assert.equal(samples.has(walker.container),false,'停步后移出临时采样');
+  assert.deepEqual(h.movement.displayPosition(walker.visual),end,'停步后显示停在当前脚点，不回到旧位置');
+  const depthAfterStop=writes.at(-1);
+  syncDepth();
+  assert.equal(writes.at(-1),depthAfterStop,'停步后不再进入动态深度遍历');
+});
+
+test('drive, toward and followPath give a static actor temporary sampling until stop',t=>{
+  const h=harness();
+  t.after(()=>{h.movement.destroy();h.world.destroy();});
+  const actor=testVisual('actor',80,80);
+  h.movement.register(actor.visual,false);
+  const samples=samplesOf(h.movement);
+  for(const start of [
+    ()=>h.movement.drive(actor.visual,{x:1,y:0},60),
+    ()=>h.movement.toward(actor.visual,{x:120,y:80},60),
+    ()=>h.movement.followPath(actor.visual,()=>undefined,60)
+  ]){
+    start();
+    assert.equal(samples.has(actor.container),true,'移动意图让静态角色临时进入采样');
+    h.movement.stop(actor.visual);
+    assert.equal(samples.has(actor.container),false,'stop 移出临时采样');
+  }
+});
+
+test('re-registering a walking actor as static keeps temporary sampling until stop',t=>{
+  const h=harness();
+  t.after(()=>{h.movement.destroy();h.world.destroy();});
+  const actor=testVisual('actor',80,80);
+  h.movement.register(actor.visual,true);
+  const samples=samplesOf(h.movement);
+  h.movement.drive(actor.visual,{x:1,y:0},60);
+  h.movement.register(actor.visual,false);
+  assert.equal(samples.has(actor.container),true,'走位中改为静态仍保留临时采样');
+  h.movement.stop(actor.visual);
+  assert.equal(samples.has(actor.container),false,'停步后移出临时采样');
 });
