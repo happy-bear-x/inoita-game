@@ -758,6 +758,7 @@ export class ShopPanel {
     if(this.selection!==selection)return;
     const buying=selection.kind==='buy',maximum=this.maximum(selection.kind),price=this.price(selection);
     this.numberPrompt.show({
+      scale:()=>this.view?.root.getWorldTransformMatrix().scaleX??1,
       title:buying?'购买数量':'出售数量',
       hint:buying
         ?(maximum<1?'当前金币不足':`单价 ${moneyText(price)} · 当前金币 ${moneyText(this.session.money)} · 最多 ${maximum} 件`)

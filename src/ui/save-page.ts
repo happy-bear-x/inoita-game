@@ -34,6 +34,8 @@ export interface SavePageHost {
   world(): WorldIndex | undefined;
   /** 当前剧情界面的素材表，和菜单页共用同一份存档槽图。 */
   contentAssets(): Record<string, string>;
+  /** 菜单画布的屏幕倍率；改名输入卡的按钮与同屏确认框同尺寸。 */
+  uiScale?(): number;
   render(): void;
   updateConfirmation(): void;
   updateSaveTitle?(key:string,title:string):void;
@@ -308,6 +310,7 @@ export class SavePage {
     }
     this.host.sync();
     this.prompt.show({ title: '存档名称', initial: reading.summary.name ?? '',
+      scale: () => this.host.uiScale?.() ?? 1,
       onConfirm: value => apply(value), onCancel: () => apply(undefined) });
     // 没有 DOM（测试或极端环境）时输入框起不来，别让菜单一直处于「让出输入」状态。
     if (!this.prompt.active) { this.renameRef = undefined; this.host.sync(); }

@@ -10,6 +10,8 @@ interface PasswordChangePromptOptions {
   onCancel(): void;
   /** 覆盖默认提示。 */
   hint?: string;
+  /** 当前菜单画布的屏幕倍率；确认/取消据此和同屏菜单按钮同尺寸。 */
+  scale?:()=>number;
 }
 
 function field(labelText: string, autocomplete: string): { wrap: HTMLLabelElement; input: HTMLInputElement } {
@@ -75,7 +77,7 @@ export class PasswordChangePrompt {
     cancel.textContent = '取消';
     actions.append(submit, cancel);
     form.append(title, hint, current.wrap, next.wrap, confirm.wrap, error, actions);
-    this.releaseSkin=skinPrompt(form,title,actions);
+    this.releaseSkin=skinPrompt(form,title,actions,options.scale);
     root.append(form);
     document.body.append(root);
     this.root = root; this.form = form;

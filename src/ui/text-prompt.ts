@@ -4,6 +4,8 @@ import { SAVE_NAME_MAX_LENGTH, sanitizeSaveName } from '../domain/save-game.ts';
 interface TextPromptOptions {
   title:string;
   initial:string;
+  /** 当前菜单画布的屏幕倍率；确认/取消据此和同屏菜单按钮同尺寸。 */
+  scale?:()=>number;
   onConfirm(value:string):void;
   onCancel():void;
 }
@@ -58,7 +60,7 @@ export class TextPrompt {
     cancel.textContent='取消';
     actions.append(confirm,cancel);
     form.append(title,input,actions);
-    this.releaseSkin=skinPrompt(form,title,actions);
+    this.releaseSkin=skinPrompt(form,title,actions,options.scale);
     root.append(form);
     document.body.append(root);
     this.root=root;this.form=form;this.input=input;

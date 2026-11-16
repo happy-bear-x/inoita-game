@@ -3,8 +3,17 @@ import { FONT, TEXT_COLORS } from '../text-style.ts';
 import { domAssets, type DomImageSource } from './assets.ts';
 import { paintCommonButtonFace } from './common-button-face.ts';
 
+/**
+ * 输入卡沿用原版确认框的 450 宽画布：按钮 125×55、左 45、右 280。
+ * `scale` 返回当前菜单画布的屏幕倍率，输入卡据此和同屏的确认框保持一样大。
+ */
+const PROMPT_DIALOG_WIDTH=450, PROMPT_BUTTON_HEIGHT=55;
+export type PromptScale=()=>number;
+const promptScales=new WeakMap<HTMLFormElement,PromptScale>();
+
 /** 原生表单共用游戏皮肤；销毁时中止本次图片持有。 */
-export function skinPrompt(form:HTMLFormElement, title:HTMLElement, actions:HTMLElement):()=>void {
+export function skinPrompt(form:HTMLFormElement, title:HTMLElement, actions:HTMLElement, scale:PromptScale=()=>1):()=>void {
+  promptScales.set(form,scale);
   const controller=new AbortController(), signal=controller.signal;
   form.style.fontFamily=FONT;
   form.style.color=TEXT_COLORS.primary;
@@ -52,7 +61,7 @@ export function skinPrompt(form:HTMLFormElement, title:HTMLElement, actions:HTML
   }
   for(const [file,layers] of faces){
     load(file,source=>{
-      const cap=`calc(var(--prompt-button-height,44px) * ${COMMON_BUTTON.cap/source.frame.height})`;
+      const cap=`calc(var(--prompt-unit,1px) * ${PROMPT_BUTTON_HEIGHT*COMMON_BUTTON.cap/source.frame.height})`;
       for(const layer of layers)paintCommonButtonFace(layer,source.url,cap);
     });
   }
@@ -66,8 +75,11 @@ export function placePrompt(form:HTMLFormElement|undefined):void {
   const width=viewport?.width??window.innerWidth, height=viewport?.height??window.innerHeight;
   form.classList.toggle('text-prompt-compact',height<280);
   form.classList.toggle('text-prompt-scroll',height<180);
+  // 按菜单画布倍率摆放整张 450 宽输入卡；屏幕更窄时等比缩小，按钮位置和大小一起跟着变。
+  const dialogWidth=Math.max(1,Math.min(PROMPT_DIALOG_WIDTH*(promptScales.get(form)?.()??1),width-24));
   form.style.left=`${(viewport?.offsetLeft??0)+width/2}px`;
   form.style.top=`${(viewport?.offsetTop??0)+height/2}px`;
-  form.style.width=`${Math.min(420,Math.max(0,width-24))}px`;
+  form.style.setProperty('--prompt-unit',`${dialogWidth/PROMPT_DIALOG_WIDTH}px`);
+  form.style.width=`${dialogWidth}px`;
   form.style.maxHeight=`${Math.max(0,height-24)}px`;
 }

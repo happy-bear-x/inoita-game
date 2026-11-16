@@ -774,6 +774,7 @@ export class MenuScene extends Phaser.Scene {
     if(this.app.promptText){void this.app.promptText(reading.summary.name??'').then(apply,()=>apply(undefined));return;}
     this.layout();
     this.prompt?.show({title:'存档名称',initial:reading.summary.name??'',
+      scale:()=>this.surface?.root.getWorldTransformMatrix().scaleX??1,
       onConfirm:value=>apply(value),onCancel:()=>apply(undefined)});
   }
   private showConfirmation():void{
@@ -907,6 +908,7 @@ export class MenuScene extends Phaser.Scene {
       return;
     }
     this.passwordPrompt?.show({
+      scale:()=>this.surface?.root.getWorldTransformMatrix().scaleX??1,
       onConfirm:(currentPassword,newPassword)=>{void this.submitPasswordChange(currentPassword,newPassword);},
       onCancel:()=>{},
     });

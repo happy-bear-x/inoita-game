@@ -10,6 +10,8 @@ interface NumberPromptOptions {
   overMessage?(maximum:number):string;
   /** 低于下限时的提示；默认「最少 N」。 */
   underMessage?(minimum:number):string;
+  /** 当前菜单画布的屏幕倍率；确认/取消据此和同屏菜单按钮同尺寸。 */
+  scale?:()=>number;
   onConfirm(value:number):void;
   onCancel():void;
 }
@@ -81,7 +83,7 @@ export class NumberPrompt {
     form.append(title);
     if(options.hint)form.append(hint);
     form.append(input,error,actions);
-    this.releaseSkin=skinPrompt(form,title,actions);
+    this.releaseSkin=skinPrompt(form,title,actions,options.scale);
     root.append(form);
     document.body.append(root);
     this.root=root;this.form=form;this.input=input;

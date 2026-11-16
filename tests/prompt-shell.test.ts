@@ -60,6 +60,30 @@ test('prompt placement fits the visual viewport above the keyboard',t=>{
   assert.equal(form.classList.contains('text-prompt-scroll'),false,'键盘收起恢复固定操作行');
 });
 
+test('prompt actions follow the menu canvas scale and the original 450-wide confirm geometry',async t=>{
+  t.after(installMenuDom());
+  const target=domWindow as unknown as {visualViewport?:unknown};
+  const previous=target.visualViewport;t.after(()=>{target.visualViewport=previous;});
+  const viewport=(width:number,height:number)=>({width,height,offsetLeft:0,offsetTop:0,addEventListener(){},removeEventListener(){}});
+  target.visualViewport=viewport(1000,700);
+  const controller=new AbortController();t.after(()=>controller.abort());
+  const lease=await domAssets.preloadFiles(PROMPT_IMAGES,controller.signal,()=>{});
+  t.after(()=>lease.release());
+  const prompt=new NumberPrompt();t.after(()=>prompt.close());
+  prompt.show({title:'数量',initial:1,minimum:1,maximum:99,scale:()=>2,onConfirm(){},onCancel(){}});
+  const root=domWindow.children[0]!.children.find(node=>node.className.includes('number-prompt'))!;
+  const form=root.children[0]! as any;
+  assert.equal(form.style.width,'900px','输入卡按菜单倍率保持原版 450 宽');
+  assert.equal(form.style['--prompt-unit'],'2px','按钮几何共用同一个画布单位');
+  const actions=form.children.find((node:any)=>node.className==='text-prompt-actions');
+  const face=actions.children[0]!.children.find((node:any)=>node.className.includes('text-prompt-button-face'));
+  assert.ok(String(face.style.borderImageWidth).startsWith('0 calc(var(--prompt-unit,1px) *'),'按钮图边框按同一画布单位缩放');
+  target.visualViewport=viewport(320,700);
+  placePrompt(form);
+  assert.equal(form.style.width,'296px','窄屏整张卡等比缩小，按钮不会被挤出屏幕');
+  assert.equal(form.style['--prompt-unit'],`${296/450}px`);
+});
+
 test('password prompt preserves mismatch validation and native form submission',async t=>{
   t.after(installMenuDom());
   const prompt=new PasswordChangePrompt();t.after(()=>prompt.close());

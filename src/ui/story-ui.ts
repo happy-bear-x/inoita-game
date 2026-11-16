@@ -239,6 +239,7 @@ export class StoryUI {
       session:()=>this.session,
       world:()=>this.world,
       contentAssets:()=>this.content?.assets??{},
+      uiScale:()=>this.surface?.root.getWorldTransformMatrix().scaleX??1,
       render:()=>this.render(),
       updateSaveRows:specs=>{
         this.saveTextSpecs=this.saveTextSpecs.filter(spec=>!spec.key.startsWith('save-slot-')).concat(specs.map(spec=>this.saveBoardText(spec)));
@@ -1472,6 +1473,7 @@ export class StoryUI {
     const name=character?.attributes[PRIMARY_STATS.indexOf(stat)]?.name??stat;
     const maximum=allocation.pending[stat]+allocation.remainingPoints;
     this.allocationPrompt.show({
+      scale:()=>this.surface?.root.getWorldTransformMatrix().scaleX??1,
       title:`${name} · 本次加点`,
       hint:maximum<1?'没有可分配的能力点':`本次最多可加 ${maximum} 点`,
       initial:allocation.pending[stat],
