@@ -6,8 +6,8 @@ export const UI_ATLAS_PAGES: readonly UiAtlasPage[] = [
     "file": "assets/ui/menu-ui-0.png",
     "data": "assets/ui/menu-ui-0.json",
     "frame": "assets/ui/shop/category-divider.png",
-    "width": 2047,
-    "height": 1594,
+    "width": 2048,
+    "height": 1574,
     "group": "menu/core"
   },
   {
@@ -50,9 +50,9 @@ export const UI_ATLAS_PAGES: readonly UiAtlasPage[] = [
     "key": "interface:assets/ui/menu-ui-5.png",
     "file": "assets/ui/menu-ui-5.png",
     "data": "assets/ui/menu-ui-5.json",
-    "frame": "assets/ui/title-menu/slot.png",
-    "width": 1688,
-    "height": 188,
+    "frame": "assets/ui/menus/edge-vertical.png",
+    "width": 1828,
+    "height": 415,
     "group": "title"
   }
 ];
@@ -272,26 +272,6 @@ export const UI_ATLAS_FRAMES: Readonly<Record<string, { key: string; frame: stri
     "frame": "assets/ui/menus/confirm.png",
     "page": 0
   },
-  "assets/ui/menus/corner-ne.png": {
-    "key": "interface:assets/ui/menu-ui-0.png",
-    "frame": "assets/ui/menus/corner-ne.png",
-    "page": 0
-  },
-  "assets/ui/menus/corner-nw.png": {
-    "key": "interface:assets/ui/menu-ui-0.png",
-    "frame": "assets/ui/menus/corner-nw.png",
-    "page": 0
-  },
-  "assets/ui/menus/corner-se.png": {
-    "key": "interface:assets/ui/menu-ui-0.png",
-    "frame": "assets/ui/menus/corner-se.png",
-    "page": 0
-  },
-  "assets/ui/menus/corner-sw.png": {
-    "key": "interface:assets/ui/menu-ui-0.png",
-    "frame": "assets/ui/menus/corner-sw.png",
-    "page": 0
-  },
   "assets/ui/menus/craft-button-disabled.png": {
     "key": "interface:assets/ui/menu-ui-0.png",
     "frame": "assets/ui/menus/craft-button-disabled.png",
@@ -320,16 +300,6 @@ export const UI_ATLAS_FRAMES: Readonly<Record<string, { key: string; frame: stri
   "assets/ui/menus/craft-money-silver.png": {
     "key": "interface:assets/ui/menu-ui-0.png",
     "frame": "assets/ui/menus/craft-money-silver.png",
-    "page": 0
-  },
-  "assets/ui/menus/edge-horizontal.png": {
-    "key": "interface:assets/ui/menu-ui-0.png",
-    "frame": "assets/ui/menus/edge-horizontal.png",
-    "page": 0
-  },
-  "assets/ui/menus/edge-vertical.png": {
-    "key": "interface:assets/ui/menu-ui-0.png",
-    "frame": "assets/ui/menus/edge-vertical.png",
     "page": 0
   },
   "assets/ui/menus/equipment-empty-back.png": {
@@ -1577,6 +1547,36 @@ export const UI_ATLAS_FRAMES: Readonly<Record<string, { key: string; frame: stri
     "frame": "assets/ui/menus/close.png",
     "page": 5
   },
+  "assets/ui/menus/corner-ne.png": {
+    "key": "interface:assets/ui/menu-ui-5.png",
+    "frame": "assets/ui/menus/corner-ne.png",
+    "page": 5
+  },
+  "assets/ui/menus/corner-nw.png": {
+    "key": "interface:assets/ui/menu-ui-5.png",
+    "frame": "assets/ui/menus/corner-nw.png",
+    "page": 5
+  },
+  "assets/ui/menus/corner-se.png": {
+    "key": "interface:assets/ui/menu-ui-5.png",
+    "frame": "assets/ui/menus/corner-se.png",
+    "page": 5
+  },
+  "assets/ui/menus/corner-sw.png": {
+    "key": "interface:assets/ui/menu-ui-5.png",
+    "frame": "assets/ui/menus/corner-sw.png",
+    "page": 5
+  },
+  "assets/ui/menus/edge-horizontal.png": {
+    "key": "interface:assets/ui/menu-ui-5.png",
+    "frame": "assets/ui/menus/edge-horizontal.png",
+    "page": 5
+  },
+  "assets/ui/menus/edge-vertical.png": {
+    "key": "interface:assets/ui/menu-ui-5.png",
+    "frame": "assets/ui/menus/edge-vertical.png",
+    "page": 5
+  },
   "assets/ui/title-menu/back.png": {
     "key": "interface:assets/ui/menu-ui-5.png",
     "frame": "assets/ui/title-menu/back.png",
@@ -1643,34 +1643,34 @@ export const UI_ATLAS_FRAMES: Readonly<Record<string, { key: string; frame: stri
     "page": 0
   },
   "assets/ui/story/edge-horizontal.png": {
-    "key": "interface:assets/ui/menu-ui-0.png",
+    "key": "interface:assets/ui/menu-ui-5.png",
     "frame": "assets/ui/menus/edge-horizontal.png",
-    "page": 0
+    "page": 5
   },
   "assets/ui/story/edge-vertical.png": {
-    "key": "interface:assets/ui/menu-ui-0.png",
+    "key": "interface:assets/ui/menu-ui-5.png",
     "frame": "assets/ui/menus/edge-vertical.png",
-    "page": 0
+    "page": 5
   },
   "assets/ui/story/corner-nw.png": {
-    "key": "interface:assets/ui/menu-ui-0.png",
+    "key": "interface:assets/ui/menu-ui-5.png",
     "frame": "assets/ui/menus/corner-nw.png",
-    "page": 0
+    "page": 5
   },
   "assets/ui/story/corner-ne.png": {
-    "key": "interface:assets/ui/menu-ui-0.png",
+    "key": "interface:assets/ui/menu-ui-5.png",
     "frame": "assets/ui/menus/corner-ne.png",
-    "page": 0
+    "page": 5
   },
   "assets/ui/story/corner-sw.png": {
-    "key": "interface:assets/ui/menu-ui-0.png",
+    "key": "interface:assets/ui/menu-ui-5.png",
     "frame": "assets/ui/menus/corner-sw.png",
-    "page": 0
+    "page": 5
   },
   "assets/ui/story/corner-se.png": {
-    "key": "interface:assets/ui/menu-ui-0.png",
+    "key": "interface:assets/ui/menu-ui-5.png",
     "frame": "assets/ui/menus/corner-se.png",
-    "page": 0
+    "page": 5
   },
   "assets/ui/story/slot.png": {
     "key": "interface:assets/ui/menu-ui-0.png",
