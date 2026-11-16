@@ -3,6 +3,7 @@ import { UI_EVENTS } from '../../application/ui-events.ts';
 import { frameRect, readSafeArea } from '../viewport.ts';
 import { COMMON_BUTTON } from '../common-button.ts';
 import { domAssets } from './assets.ts';
+import { paintCommonButtonFace } from './common-button-face.ts';
 import { UiNode,UiImage,UiText,uiMount,uiPointer,type UiPointer } from './node.ts';
 import { VolumeSlider } from './volume-slider.ts';
 
@@ -73,9 +74,7 @@ export class UiSurface {
       const frame=source.frame,scale=Math.min(height/frame.height,width/(COMMON_BUTTON.cap*2));
       const cap=COMMON_BUTTON.cap*scale,faceHeight=frame.height*scale;
       const face=this.container(0,(height-faceHeight)/2,group).setSize(width,faceHeight).setData('file',file);
-      Object.assign(face.element.style,{boxSizing:'border-box',borderStyle:'solid',borderColor:'transparent',
-        borderWidth:`0 ${cap}px`,borderImageSource:`url(${JSON.stringify(source.url)})`,
-        borderImageSlice:`0 ${COMMON_BUTTON.cap} fill`,borderImageWidth:`0 ${cap}px`,borderImageRepeat:'stretch'});
+      paintCommonButtonFace(face.element,source.url,`${cap}px`);
     };
     const cached=domAssets.peek(file);if(cached)draw(cached);
     void domAssets.acquire(file,controller.signal).then(lease=>{

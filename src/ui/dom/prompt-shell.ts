@@ -1,6 +1,7 @@
 import { COMMON_BUTTON } from '../common-button.ts';
 import { FONT, TEXT_COLORS } from '../text-style.ts';
 import { domAssets, type DomImageSource } from './assets.ts';
+import { paintCommonButtonFace } from './common-button-face.ts';
 
 /** 原生表单共用游戏皮肤；销毁时中止本次图片持有。 */
 export function skinPrompt(form:HTMLFormElement, title:HTMLElement, actions:HTMLElement):()=>void {
@@ -37,11 +38,22 @@ export function skinPrompt(form:HTMLFormElement, title:HTMLElement, actions:HTML
       tile.append(image);
     });
   }
-  for(const [file,property] of [[COMMON_BUTTON.image,'--prompt-button'],[COMMON_BUTTON.pressed,'--prompt-button-pressed']] as const){
+  const faces=new Map<string,HTMLElement[]>();
+  for(const button of [...actions.children] as HTMLButtonElement[]){
+    const label=document.createElement('span');label.className='text-prompt-button-label';
+    label.textContent=button.textContent;button.textContent='';
+    for(const [file,pressed] of [[COMMON_BUTTON.image,false],[COMMON_BUTTON.pressed,true]] as const){
+      const face=document.createElement('span');
+      face.className=`text-prompt-button-face${pressed?' text-prompt-button-pressed':''}`;
+      face.setAttribute('aria-hidden','true');button.append(face);
+      const list=faces.get(file)??[];list.push(face);faces.set(file,list);
+    }
+    button.append(label);
+  }
+  for(const [file,layers] of faces){
     load(file,source=>{
-      form.style.setProperty(property,`url(${JSON.stringify(source.url)})`);
-      form.style.setProperty('--prompt-button-cap',`calc(var(--prompt-button-height,44px) * ${COMMON_BUTTON.cap/source.frame.height})`);
-      form.style.setProperty('--prompt-button-slice',`0 ${COMMON_BUTTON.cap} fill`);
+      const cap=`calc(var(--prompt-button-height,44px) * ${COMMON_BUTTON.cap/source.frame.height})`;
+      for(const layer of layers)paintCommonButtonFace(layer,source.url,cap);
     });
   }
   return ()=>controller.abort();

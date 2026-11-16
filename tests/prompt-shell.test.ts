@@ -5,8 +5,31 @@ import { NumberPrompt } from '../src/ui/number-prompt.ts';
 import { PasswordChangePrompt } from '../src/ui/password-change-prompt.ts';
 import { domAssets } from '../src/ui/dom/assets.ts';
 import { placePrompt } from '../src/ui/dom/prompt-shell.ts';
+import { PROMPT_IMAGES } from '../src/ui/prompt-assets.ts';
+import { COMMON_BUTTON } from '../src/ui/common-button.ts';
 
 const settle=async()=>{for(let n=0;n<20;n++)await Promise.resolve();};
+
+test('both native prompt actions paint the shared normal and pressed button images',async t=>{
+  t.after(installMenuDom());
+  const controller=new AbortController();t.after(()=>controller.abort());
+  const lease=await domAssets.preloadFiles(PROMPT_IMAGES,controller.signal,()=>{});
+  t.after(()=>lease.release());
+  const prompt=new NumberPrompt();t.after(()=>prompt.close());
+  prompt.show({title:'数量',initial:1,minimum:1,maximum:99,onConfirm(){},onCancel(){}});
+  const root=domWindow.children[0]!.children.find(node=>node.className.includes('number-prompt'))!;
+  const actions=root.children[0]!.children.find(node=>node.className==='text-prompt-actions')!;
+  assert.equal(actions.children.length,2);
+  for(const [index,button] of actions.children.entries()){
+    const faces=button.children.filter(node=>node.className.includes('text-prompt-button-face'));
+    assert.equal(faces.length,2,'两个操作按钮都具有正常和按下图片');
+    for(const [faceIndex,file] of [COMMON_BUTTON.image,COMMON_BUTTON.pressed].entries()){
+      assert.equal(faces[faceIndex]!.style.borderImageSource,`url(${JSON.stringify(domAssets.peek(file)!.url)})`,'图片直接画在节点上，地址不经过外部样式表变量');
+      assert.equal(faces[faceIndex]!.style.borderImageSlice,`0 ${COMMON_BUTTON.cap} fill`);
+    }
+    assert.equal(button.children.at(-1)!.textContent,index===0?'确定':'取消');
+  }
+});
 
 test('closing a prompt releases pending and loaded artwork, including on reopen',async t=>{
   t.after(installMenuDom());

@@ -371,7 +371,7 @@ test('allocation points can be typed and stop at the remaining points',t=>{
     const documentRoot=domWindow.children[0]!,find=(node:any,predicate:(node:any)=>boolean):any=>
       predicate(node)?node:[...node.children].map((child:any)=>find(child,predicate)).find(Boolean);
     const root=documentRoot.children.filter(node=>String(node.className).includes('number-prompt')).at(-1)!;
-    return {root,input:find(root,node=>node.inputMode==='numeric'),confirm:find(root,node=>node.textContent==='确定'),
+    return {root,input:find(root,node=>node.inputMode==='numeric'),confirm:find(root,node=>node.type==='submit'),
       error:find(root,node=>String(node.className).includes('text-prompt-error'))};
   };
   const added=()=>visibleDomLabels(f).find(label=>label.style.color==='#e1823b'&&label.text.startsWith('+'));
@@ -2130,7 +2130,7 @@ test('shop quantity can be typed and stops above the money limit',async t=>{
     predicate(node)?node:[...node.children].map((child:any)=>find(child,predicate)).find(Boolean);
   const root=documentRoot.children.filter(node=>String(node.className).includes('number-prompt')).at(-1)!;
   assert.ok(root,'数量输入卡已打开');
-  const input=find(root,node=>node.inputMode==='numeric'),confirm=find(root,node=>node.textContent==='确定');
+  const input=find(root,node=>node.inputMode==='numeric'),confirm=find(root,node=>node.type==='submit');
   const error=find(root,node=>String(node.className).includes('text-prompt-error'));
   assert.ok(input&&confirm&&error);
   input.value=String(store.buyLimit(offer.id)+1);input.dispatchEvent(new Event('input',{bubbles:true}));
