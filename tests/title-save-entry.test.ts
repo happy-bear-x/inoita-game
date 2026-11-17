@@ -6,14 +6,15 @@ import type {MenuContext} from '../src/application/ports.ts';
 import type {StoryWorldViewSnapshot} from '../src/scenes/world-scene.ts';
 import type {CloudSaveEntry,CloudSavePort,CloudSession} from '../src/application/cloud-save.ts';
 import {CLOUD_PAGE} from '../src/ui/cloud-save-layout.ts';
+import {EventEmitter} from 'node:events';
 import {InputRouter} from '../src/application/input-router.ts';
 import {MenuTextLayer,type MenuTextOcclude,type MenuTextSpec} from '../src/ui/dom/menu-text.ts';
 import type {DomUi} from '../src/ui/dom/dom-ui.ts';
 import {installMenuDom,menuFrame} from './support/menu-dom.ts';
 after(installMenuDom());
 menuFrame.width=1200;
-const hook=registerHooks({resolve(specifier,context,next){return specifier==='phaser'?{url:'data:text/javascript,export default {Scene:class{},BlendModes:{}}',shortCircuit:true}:next(specifier,context);}});
-const {MenuScene}=await import('../src/scenes/menu-scene.ts');
+const hook=registerHooks({resolve(specifier,context,next){return specifier==='phaser'?{url:'data:text/javascript,export default {Scene:class{},Scenes:{Events:{RESUME:"resume",PAUSE:"pause"}},BlendModes:{}}',shortCircuit:true}:next(specifier,context);}});
+const {TitleMenuController}=await import('../src/ui/title-menu-controller.ts');
 const {UiSurface}=await import('../src/ui/phaser/widgets.ts');hook.deregister();
 class Button {
   readonly visible=true;readonly shown=true;readonly input:{enabled:boolean};
@@ -102,7 +103,7 @@ function fixture(gmMode?:MenuContext['gmMode'],cloud?:CloudSavePort){
     enterGame:async()=>{events.push('new');},resumeSlot:async(slot,signal)=>{events.push(`load:${slot}`);if(signal)signals.push(signal);}};
   Object.defineProperty(app,'domUi',{value:domUi});
   const view=fakeView(1200,640),modal=fakeView(1024,640);
-  // 直接借用 MenuScene.prototype 的假场景不会跑字段初始化；这里补上新加的私有状态，
+  // 直接借用 TitleMenuController.prototype 的假场景不会跑字段初始化；这里补上新加的私有状态，
   // 尤其是 cloudSerial（`++undefined` 会变成 NaN，后续请求代次比较全部失败）。
   const state={app,surface:view,modal,page:'home',cloudSerial:0,cloudBusy:false,cloudAccountInput:'',cloudPassword:'',
     // 场景缩放通知与屏幕布局分别提供。
@@ -116,8 +117,8 @@ function fixture(gmMode?:MenuContext['gmMode'],cloud?:CloudSavePort){
     changelogOffsets:[] as number[],changelogSpecs:[] as MenuTextSpec[],changelogScroll:undefined as FakeScroll|undefined,
     changelogScrollTop:0,changelogRequest:undefined as AbortController|undefined,changelogError:'',
     sys:{isActive:()=>true},textures:{exists:()=>true}};
-  const scene=Object.setPrototypeOf(state,MenuScene.prototype);
-  const call=(name:string,...args:unknown[])=>Reflect.get(MenuScene.prototype,name).call(scene,...args);
+  const scene=Object.setPrototypeOf(Object.assign(state,{scene:{scale:state.scale,sys:state.sys,textures:state.textures}}),TitleMenuController.prototype);
+  const call=(name:string,...args:unknown[])=>Reflect.get(TitleMenuController.prototype,name).call(scene,...args);
   const menuText=new MenuTextLayer(domUi as unknown as Pick<DomUi,'label'>,(x,y)=>({x,y,scale:1}),
     (page,scroll)=>call('menuScrollTop',page,scroll) as number|undefined);
   // 与场景注册保持一致：确认框压暗页面文字，更新日志的正文使用弹层坐标。
@@ -791,4 +792,22 @@ test('a network error during renewal still lets the list run',async()=>{
   assert.ok(cloud.calls.includes('refresh'));
   assert.ok(cloud.calls.includes('list'));
   assert(f.view.buttons.some(button=>button.getData('label')==='导入本机存档'));
+});
+
+
+test('disposed title UI ignores resident assets arriving after shutdown',async()=>{
+  const f=fixture();
+  let finish!:()=>void,loaded=0;
+  f.app.ui.menuLoaded=()=>{loaded++;};
+  const events=new EventEmitter(),scale=Object.assign(new EventEmitter(),{width:1200,height:640});
+  const runtime={events,scale,sys:{isActive:()=>true}};
+  const assets={preloadResident:()=>new Promise<void>(resolve=>{finish=resolve;})};
+  const page=new TitleMenuController(runtime as never,f.app,assets as never);
+  page.open();
+  assert.equal(events.listenerCount('resume'),1);
+  page.dispose();page.dispose();
+  assert.equal(events.listenerCount('resume'),0);
+  assert.equal(scale.listenerCount('resize'),0);
+  finish();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(loaded,0,'迟到素材不能重新创建已经关闭的标题页');
 });

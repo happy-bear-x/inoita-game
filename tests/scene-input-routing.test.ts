@@ -27,8 +27,11 @@ const hook = registerHooks({ resolve(specifier, context, next) {
   `)}` } : next(specifier, context);
 } });
 const { FormalUiScene } = await import('../src/scenes/formal-ui-scene.ts');
-const { MenuScene } = await import('../src/scenes/menu-scene.ts');
-const { StoryClassScene } = await import('../src/scenes/story-class-scene.ts');
+const { FormalUiView } = await import('../src/ui/formal-ui-view.ts');
+const { FormalChoiceView } = await import('../src/ui/formal-choice-view.ts');
+const { FormalModalView } = await import('../src/ui/formal-modal-view.ts');
+const { TitleMenuController } = await import('../src/ui/title-menu-controller.ts');
+const { ClassSelectionPage } = await import('../src/ui/class-selection-page.ts');
 hook.deregister();
 
 test('class selection plays live previews and retains the page when changing classes',async t=>{
@@ -44,23 +47,24 @@ test('class selection plays live previews and retains the page when changing cla
       layer.file=replacement[0];
     }
   const app={storyClasses:catalog,ui:{ready:true,loading(){},loaded(){},error(){}},suspended:false};
-  const scene=new StoryClassScene(app as never) as any;
-  scene.events=new EventEmitter();scene.scale=Object.assign(new EventEmitter(),{width:1024,height:640});
-  scene.game={events:new EventEmitter(),canvas:{getBoundingClientRect:()=>({...menuFrame})}};
+  const runtime={} as any;
+  const scene=new ClassSelectionPage(runtime,app as never) as any;
+  runtime.events=new EventEmitter();runtime.scale=Object.assign(new EventEmitter(),{width:1024,height:640});
+  runtime.game={events:new EventEmitter(),canvas:{getBoundingClientRect:()=>({...menuFrame})}};
   const filters:string[]=[],animations=new Map<string,any>(),played:string[]=[],containers:any[]=[];
-  scene.textures=Object.assign(new EventEmitter(),{exists:()=>true,get:(key:string)=>({has:()=>true,setFilter:()=>filters.push(key)}),remove(){}});
-  scene.anims={exists:(key:string)=>animations.has(key),get:(key:string)=>animations.get(key),
+  runtime.textures=Object.assign(new EventEmitter(),{exists:()=>true,get:(key:string)=>({has:()=>true,setFilter:()=>filters.push(key)}),remove(){}});
+  runtime.anims={exists:(key:string)=>animations.has(key),get:(key:string)=>animations.get(key),
     generateFrameNumbers:(key:string,{start,end}:{start:number;end:number})=>Array.from({length:end-start+1},(_,i)=>({key,frame:start+i})),
     create:(config:any)=>{animations.set(config.key,config);},remove:(key:string)=>animations.delete(key)};
   const background={width:0,height:0,setOrigin(){return this;},setScrollFactor(){return this;},setDepth(){return this;},
     setPosition(x:number,y:number){Object.assign(this,{x,y});return this;},setDisplaySize(width:number,height:number){Object.assign(this,{width,height});return this;},destroy(){}};
-  scene.add={image:()=>background,container:()=>{
+  runtime.add={image:()=>background,container:()=>{
     const container={list:[] as any[],destroyed:false,visible:true,x:0,y:0,scale:1,
       setDepth(){return this;},setScrollFactor(){return this;},setVisible(value:boolean){this.visible=value;return this;},
       setScale(value:number){this.scale=value;return this;},setPosition(x:number,y:number){this.x=x;this.y=y;return this;},
       addAt(sprite:any,index:number){this.list.splice(index,0,sprite);return this;},destroy(){this.destroyed=true;}};
     containers.push(container);return container;
-  },sprite:()=>({scene,alpha:1,anims:{timeScale:1,accumulator:0},
+  },sprite:()=>({scene:runtime,alpha:1,anims:{timeScale:1,accumulator:0},
     setOrigin(){return this;},setBlendMode(){return this;},setScale(){return this;},play(config:{key:string}){played.push(config.key);return this;}})};
   await scene.open(new AbortController().signal);
   const page=[...scene.surface.root.list],preview=scene.preview,first=containers[0];
@@ -89,15 +93,15 @@ test('class selection plays live previews and retains the page when changing cla
   assert.equal(first.destroyed,true,'切换职业释放旧角色');
   app.suspended=true;scene.update();assert.equal(containers.at(-1).visible,false);
   app.suspended=false;scene.update();assert.equal(containers.at(-1).visible,true);
-  Object.assign(menuFrame,{width:800,height:480});scene.scale.width=800;scene.scale.height=480;scene.layout();
+  Object.assign(menuFrame,{width:800,height:480});runtime.scale.width=800;runtime.scale.height=480;scene.layout();
   assert.equal(containers.at(-1).scale,3*scene.surface.root.scaleX,'窗口变化时角色跟随页面缩放');
   assert.equal(background.width,800*scene.surface.root.scaleX);
   const cssScale=scene.surface.root.scaleX;
-  scene.scale.width=2400;scene.scale.height=1440;scene.layout();
+  runtime.scale.width=2400;runtime.scale.height=1440;scene.layout();
   assert.equal(scene.surface.root.scaleX,cssScale,'采样提高后 DOM 页面尺寸不变');
   assert.ok(Math.abs(containers.at(-1).scale-9*cssScale)<1e-6,'画布里的角色按采样倍率放大');
   assert.equal(background.width,2400*cssScale,'画布背景与角色一起换算');
-  scene.preview.destroy();scene.background.destroy();scene.surface.destroy();scene.events.emit('shutdown');
+  scene.dispose();
   await new Promise(resolve=>setTimeout(resolve,0));
 });
 
@@ -106,18 +110,20 @@ test('dialogue and choice text stays above its shade and hides during occlusion'
   const dom=new DomUi();
   dom.layer=name=>document.getElementById(`ui-${name}`) as HTMLDivElement;
   dom.setOccluded=()=>{};
-  const ui={mode:'game',ready:true,suspended:false,worldRebuildCover:false,defeated:false,canSkip:false,
+  const ui={mode:'game',ready:true,suspended:false,worldRebuildCover:false,defeated:false,canSkip:false,toastMessage:'',
     dialogueLine:{speaker:'说话人',actor:'npc',text:'对白内容'},page:'对白内容',get dialoguePageMarkup(){return this.page;},revealed:4,
     choices:undefined as undefined|{prompt:string;options:never[];choose:()=>void},quest:undefined,
     pressDialogue:()=>{},releaseDialogue:()=>{},resetInput:()=>{}};
   const app={ui,domUi:dom,storyInterface:{assets:{}},director:{canSkip:false}};
-  const scene=new FormalUiScene(app as never) as any;
-  scene.events=new EventEmitter();scene.scale=Object.assign(new EventEmitter(),{width:1024,height:640});
-  scene.game={events:new EventEmitter(),canvas:{getBoundingClientRect:()=>({left:0,top:0,width:1024,height:640})}};
-  scene.surface=new UiSurface(scene,960,640,1000,'overlay');
-  scene.background=new UiNode(scene,scene.surface.mount);scene.blocker=new UiNode(scene,scene.surface.mount).setInteractive();
+  const host=new FormalUiScene(app as never) as any;
+  const scene=new FormalUiView(host,app as never,{} as never) as any;
+  host.events=new EventEmitter();host.scale=Object.assign(new EventEmitter(),{width:1024,height:640});
+  host.game={events:new EventEmitter(),canvas:{getBoundingClientRect:()=>({left:0,top:0,width:1024,height:640})}};
+  scene.surface=new UiSurface(host,960,640,1000,'overlay');
+  scene.choiceView=new FormalChoiceView(host,dom);scene.modalView=new FormalModalView(host,app as never);
+  scene.background=new UiNode(host,scene.surface.mount);scene.blocker=new UiNode(host,scene.surface.mount).setInteractive();
   scene.questPopup={sync:()=>{}};scene.domSpeaker=dom.label('overlay','dom-speaker');
-  t.after(()=>{scene.surface.destroy();scene.background.destroy();scene.blocker.destroy();scene.events.emit('shutdown');});
+  t.after(()=>{scene.surface.destroy();scene.background.destroy();scene.blocker.destroy();scene.choiceView.destroy();scene.modalView.destroy();host.events.emit('shutdown');});
   scene.sync(ui);
   const overlay=document.getElementById('ui-overlay') as unknown as MenuElement;
   const speaker=scene.domSpeaker.element as unknown as MenuElement,run=scene.dialogueDomRuns[0].element as unknown as MenuElement;
@@ -134,8 +140,12 @@ test('dialogue and choice text stays above its shade and hides during occlusion'
   ui.worldRebuildCover=true;scene.sync(ui);assert.equal(speaker.hidden,true);assert.equal(run.hidden,true);
   ui.worldRebuildCover=false;scene.sync(ui);assert.equal(run.hidden,false);
   ui.choices={prompt:'选择',options:[],choose:()=>{}};scene.sync(ui);
-  const choice=scene.choiceDom.prompt[0].element as MenuElement;
+  const choice=scene.choiceView.choiceDom.prompt[0].element as MenuElement;
   assert.equal(choice.parentElement,overlay);assert.equal(choice.hidden,false);assert.equal(run.hidden,true);
+  const choiceNodes=scene.choiceView.surface.root.list.slice(),choiceScroll=scene.choiceView.choiceDom.list.scroll;
+  ui.toastMessage='提示变化';scene.sync(ui);
+  assert.deepEqual(scene.choiceView.surface.root.list,choiceNodes,'提示变化保留选项按钮');
+  assert.equal(scene.choiceView.choiceDom.list.scroll,choiceScroll,'提示变化保留选项滚动区');
   ui.suspended=true;scene.sync(ui);assert.equal(choice.hidden,true);
   ui.suspended=false;scene.sync(ui);assert.equal(choice.hidden,false);
 });
@@ -159,12 +169,14 @@ function formalFixture(menuOpen = false) {
     ui, storyUI: { menuOpen },
     inputRouter: new InputRouter({ textInputFocused: () => false })
   };
-  const scene = new FormalUiScene(app as never) as unknown as {
-    routeKey(event: FakeEvent): boolean;
+  const host=new FormalUiScene(app as never) as any;
+  const scene = new FormalUiView(host,app as never,{} as never) as unknown as {
+    key(event: FakeEvent): boolean;
     bridgeKey(event: FakeEvent): void;
     surface: { key(event: FakeEvent): boolean };
     questPopup: { key(event: FakeEvent): void };
   };
+  scene.bridgeKey=event=>host.bridgeKey(event);
   let surfaceResult = false;
   scene.surface = { key: () => surfaceResult };
   scene.questPopup = { key: () => calls.push('quest-popup') };
@@ -173,43 +185,43 @@ function formalFixture(menuOpen = false) {
 
 test('正式界面弹层按原守卫顺序处理键盘', () => {
   const f = formalFixture();
-  assert.equal(f.scene.routeKey(press('Escape')), false, '普通按键交给更低层');
+  assert.equal(f.scene.key(press('Escape')), false, '普通按键交给更低层');
   assert.deepEqual(f.calls, []);
 
   f.ui.suspended = true;
-  assert.equal(f.scene.routeKey(press('Enter')), false);
+  assert.equal(f.scene.key(press('Enter')), false);
   f.ui.suspended = false;
 
   f.ui.keyBindingEditing = true;
-  assert.equal(f.scene.routeKey(press('Enter')), false, '键位捕获时让给设置面板');
+  assert.equal(f.scene.key(press('Enter')), false, '键位捕获时让给设置面板');
   f.ui.keyBindingEditing = false;
 
   f.ui.defeated = true;
   const escape = press('Escape');
-  assert.equal(f.scene.routeKey(escape), true);
+  assert.equal(f.scene.key(escape), true);
   assert.equal(escape.prevented, 1);
   assert.deepEqual(f.calls, ['cancel-defeat']);
   f.ui.defeated = false;
 
   f.ui.quest = { kind: 'start' };
-  assert.equal(f.scene.routeKey(press('Enter')), true);
+  assert.equal(f.scene.key(press('Enter')), true);
   assert.deepEqual(f.calls, ['cancel-defeat', 'quest-popup'], '任务窗打开时其他层不重复消费');
   f.ui.quest = undefined;
 
   f.ui.canSkip = true;
   const enter = press('Enter');
-  assert.equal(f.scene.routeKey(enter), true);
+  assert.equal(f.scene.key(enter), true);
   assert.equal(enter.prevented, 1);
   assert.deepEqual(f.calls, ['cancel-defeat', 'quest-popup', 'advance']);
 
   f.setSurfaceResult(true);
-  assert.equal(f.scene.routeKey(press('Tab')), true, '界面按钮聚焦由 surface 消费');
+  assert.equal(f.scene.key(press('Tab')), true, '界面按钮聚焦由 surface 消费');
 });
 
 test('游戏内菜单打开时正式界面先让路，避免 Tab/Enter 被两层抢走', () => {
   const f = formalFixture(true);
   f.ui.canSkip = true;
-  assert.equal(f.scene.routeKey(press('Enter')), false);
+  assert.equal(f.scene.key(press('Enter')), false);
   assert.deepEqual(f.calls, []);
 });
 
@@ -224,7 +236,7 @@ test('正式界面场景只把原始按键桥接给 router', () => {
 test('标题页的 Escape 先关确认框，再返回上一页', () => {
   const inputRouter = new InputRouter({ textInputFocused: () => false });
   const app = { inputRouter, ui: { suspended: false } };
-  const scene = new MenuScene(app as never) as unknown as {
+  const scene = new TitleMenuController({} as never,app as never,{} as never) as unknown as {
     routeKey(event: FakeEvent): boolean;
     page: string;
     confirmAction?: { cancel(): void };
@@ -266,14 +278,14 @@ test('确认框文字使用弹层的屏幕坐标，不再减页面原点', () =>
     surface: { root: { getWorldTransformMatrix: () => matrix(100, 50, .5) } },
     menuTextPoint: () => { throw new Error('弹层文字不能回退到页面坐标'); },
   };
-  const point = Reflect.get(MenuScene.prototype, 'modalTextPoint').call(host, 10, 20) as { x: number; y: number; scale: number };
+  const point = Reflect.get(TitleMenuController.prototype, 'modalTextPoint').call(host, 10, 20) as { x: number; y: number; scale: number };
   assert.deepEqual(point, { x: 149, y: 10, scale: .5 }, '弹层原点加本地偏移后直接就是屏幕坐标');
 });
 
 test('职业选择页的 Escape 回标题，其他按键交给页面按钮', () => {
   const app = { inputRouter: new InputRouter({ textInputFocused: () => false }), suspended: false,
     returnToMenu: () => { app.returned += 1; }, returned: 0 };
-  const scene = new StoryClassScene(app as never) as unknown as {
+  const scene = new ClassSelectionPage({} as never,app as never) as unknown as {
     routeKey(event: FakeEvent): boolean;
     surface: { key(event: FakeEvent): boolean };
   };

@@ -16,7 +16,7 @@ const hook = registerHooks({ resolve(specifier, context, next) {
     };
   `)}` } : next(specifier, context);
 } });
-const { FormalUiScene } = await import('../src/scenes/formal-ui-scene.ts');
+const { FormalUiView } = await import('../src/ui/formal-ui-view.ts');
 hook.deregister();
 
 class FakeLabel {
@@ -49,7 +49,7 @@ function fixture() {
     choices: undefined,
     quest: undefined,
   };
-  const scene = new FormalUiScene({ ui } as never) as unknown as {
+  const scene = new FormalUiView({} as never,{ ui } as never,{} as never) as unknown as {
     domInstant: FakeLabel;
     update(time: number, delta: number): void;
   };
