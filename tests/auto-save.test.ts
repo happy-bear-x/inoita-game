@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { AutoSaver } from '../src/application/auto-save.ts';
-import type { SaveGame } from '../src/domain/save-game.ts';
+import { SAVE_FORMAT, type SaveGame } from '../src/domain/save-game.ts';
 
 const wait=(ms:number)=>new Promise<void>(resolve=>setTimeout(resolve,ms));
-const save=(id:string)=>({ format:1, summary:{ classId:'x', className:'x', portrait:'x', level:1, mapId:'m', mapName:'m' },
+const save=(id:string)=>({ format:SAVE_FORMAT, summary:{ classId:'x', className:'x', portrait:'x', level:1, mapId:'m', mapName:'m' },
   session:{} as never, world:{ id } }) as SaveGame<{ id:string }>;
 
 function harness(options:{enabled?:boolean;locked?:boolean;game?:SaveGame<{id:string}>|undefined;writeThrows?:boolean}={}) {

@@ -3,7 +3,7 @@ import type { Session, SessionState } from './session.ts';
 /** 手动存档槽：原版三个，体验版扩到十个，方便反复测任务时保进度。 */
 export const MANUAL_SAVE_SLOT_COUNT = 10;
 /** 存档格式版本。正式版只读取当前格式；旧格式按空槽或过旧处理。 */
-export const SAVE_FORMAT = 1;
+export const SAVE_FORMAT = 59;
 export function isReadableSaveFormat(format: unknown): format is number {
   return format === SAVE_FORMAT;
 }
