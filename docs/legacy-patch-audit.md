@@ -10,12 +10,12 @@
 - 基准提交时全部可达历史共 **1079 条提交**，起于 [7f5578b6](https://github.com/sunflower9264/inoita-game/commit/7f5578b6)；当前 HEAD 为 1081 条（多出本审计文档与 README 改名两次提交）。扫描全部提交标题与正文，并结合相关文件历史、关键差异和当前符号调用核对候选项；不是逐条人工审阅全部提交的完整差异。
 - 枚举 `src/`、`tools/`、`android/`、`public/content/` 下 **844 个**受 Git 管理的 TS、MJS、Java、JSON 文件。对 `src/` TypeScript 做语法结构扫描，检查恢复函数中的缺省值、迁移与清理调用，再读取候选实现。另外解析了 435 份内容 JSON，12 个旧道具 ID（4 个背包、7 个删除道具及独立解锁书）均未作为道具定义键或可获取引用出现；`resurrection-prayer` 仅作为 18 处地面贴图的共用路径出现在字符串值里。工具及 Android 结合引用和提交检查；枚举数不代表逐文件完成语义证明。
 - 当前 `SAVE_FORMAT = 59`，接受旧格式 33～58，共 **27 种可读格式、26 步迁移**。其中 **6 步只改格式号，20 步实际修改数据**。
-- 下文共 **61 个审计单元**。同一机制的多次修订合并记录；26 步迁移包含在 S01 内，不与单元数相加。此数是本次确认和待确认项目的数量，不是“全仓库所有 bug 修复”的数量。2026-11-17 复核补入了 18 个读档、装备、平台和本机偏好单元，并修正了部分提交引用。
+- 下文共 **65 个审计单元**。同一机制的多次修订合并记录；26 步迁移包含在 S01 内，不与单元数相加。此数是本次确认和待确认项目的数量，不是“全仓库所有 bug 修复”的数量。2026-11-17 复核补入了 18 个读档、装备、平台和本机偏好漏项，并把 4 个混写单元拆出读档部分，共 65 个单元。
 
 | 判定 | 数量 | 含义 |
 | --- | ---: | --- |
-| A 条件清理 | 14 | 以承接 59 为前提，具备退出方向；仍需完成该项列出的数据与入口验证 |
-| B 保留 | 30 | 当前玩法、持久数据或资源生命周期仍使用，停止旧格式兼容不能作为删除理由 |
+| A 条件清理 | 19 | 以承接 59 为前提，具备退出方向；仍需完成该项列出的数据与入口验证 |
+| B 保留 | 29 | 当前玩法、持久数据或资源生命周期仍使用，停止旧格式兼容不能作为删除理由 |
 | C 收拢 | 12 | 缺省值或适配散在恢复流程；应先明确写入契约，再决定统一入口或严格校验 |
 | D 待确认 | 5 | 删除条件尚无充分证据，单独列出需要补充的验证 |
 
@@ -60,6 +60,15 @@ S01 的退出还要同步处理本地槽位、云端上传下载的格式分类�
 
 表中的测试是后续清理的验证入口，不表示本次运行过。符号名用于准确定位；提交可用 `git show <提交> -- <文件>` 检查。A 项仅是有条件的清理候选，没有宣称相关 59 格式数据已经实测为零。
 
+**先分清当前规则和读档修补。** 同一个机制常有两层：
+
+1. **产生新数据时执行的规则**：正常入包、正常写档、正常战斗时执行的校验、合并、上限和拒绝非法状态。这是当前玩法或 bug 修复本身，保留。
+2. **读档/恢复时对已写进存档的数据做事后改写**：补字段、去重、收拢实例、删除残留、重算派生值。这才是遗留补丁的清理对象。
+
+判断方法：问“新游戏、正常入包、正常写档时，这个分支会不会执行？”会，就是当前规则；只有读回旧档才会命中的，才是读档修补。
+
+例如同类物品堆叠：E05 的同 ID 堆叠键和入包合并规则要保留；S03 在每次恢复时把旧档里分散的同 ID 实例收拢成一条，才是要删的读档改写。E06 的正常设置去重与 S24 的读档写入去重、S13 的正常结算防重与 S25 的旧轮次裁剪、S14 的生成时覆盖与 S26 的恢复时去重、S16 的运行期限长与 S27 的恢复时裁剪，都按同一方法拆开。B 项如果包含会改写玩家旧数据的读档分支，应拆成 B（规则）+ A（修补），不能整项保留。
+
 ### 3.1 读档与恢复
 
 | 编号与判定 | 位置与历史依据 | 当前触发与处理建议 | 验证入口 |
@@ -76,10 +85,10 @@ S01 的退出还要同步处理本地槽位、云端上传下载的格式分类�
 | S10 C | [domain/party.ts](../src/domain/party.ts)：CompanionMember.restoreState / PartyRoster.restoreState；[e4fea344](https://github.com/sunflower9264/inoita-game/commit/e4fea344)、[500c3893](https://github.com/sunflower9264/inoita-game/commit/500c3893)、[b9ea068f](https://github.com/sunflower9264/inoita-game/commit/b9ea068f)、[718e6b64](https://github.com/sunflower9264/inoita-game/commit/718e6b64) | 成长基准、能力分配、技能书、个人/共享解锁分别缺省。59 写入已具有这些状态，但领域快照的可选声明和调用者还需统一。`Bag.writeState` 仍保留 `retiredEquipment??[]` 读档兜底，见 E02 | party、mercenary-skills、saved-game、bag |
 | S11 C | [domain/combat-conditions.ts](../src/domain/combat-conditions.ts)：restoreState；[domain/enemy-ai.ts](../src/domain/enemy-ai.ts)：restoreState；字段在当前历史中追溯到初始提交 [7f5578b6](https://github.com/sunflower9264/inoita-game/commit/7f5578b6)；[73bd2d32](https://github.com/sunflower9264/inoita-game/commit/73bd2d32) 改的是 resourceCapacityInputs 的类型与性能路径，[940f38a1](https://github.com/sunflower9264/inoita-game/commit/940f38a1) 改的是一次性技能记账时机 | 战斗容量缓存、帧余数、交战标记、一次性技能消耗表可缺省。派生缓存可以重建，一次性技能记录是玩法数据；两者先分开定义 | combat-snapshot、combat-condition-frames、enemy-ai |
 | S12 C | [domain/story-world.ts](../src/domain/story-world.ts)：restoreState；[rendering/story-presenter.ts](../src/rendering/story-presenter.ts)：restoreStage；stage.scenes 缺省和 restoreStage 本身追溯到初始提交 [7f5578b6](https://github.com/sunflower9264/inoita-game/commit/7f5578b6)；[31ee6930](https://github.com/sunflower9264/inoita-game/commit/31ee6930) 新增的是 town-pose 动作处理，姿态缺省实际在 [scenes/world-scene.ts](../src/scenes/world-scene.ts) 的 `playerTownPose ?? map.townPose`，54→55 只升格式号 | partyBuffs、enemyRemovals、appearances、enemyLocations、舞台 scenes 和姿态缺省。明确正式存档与临时舞台各自契约后收拢 | story-world、story-stage-isolation、saved-game |
-| S13 B | [domain/session.ts](../src/domain/session.ts)：restoreReceipts；[1bd2075e](https://github.com/sunflower9264/inoita-game/commit/1bd2075e) | 恢复按任务保留最大周期，正常结算也覆盖旧周期。保持奖励防重和记录上限；可让严格读档拒绝重复，但不能移除运行期上限 | session-quest-core、save-game |
-| S14 B | [domain/chests.ts](../src/domain/chests.ts)：restoreState / 生成记录覆盖；[74ca8d41](https://github.com/sunflower9264/inoita-game/commit/74ca8d41) | 恢复按完整生成 ID 去重，`consumed??[]` 每次补空；可破坏物生成时先删同 ID 再写入，泉水出怪仍直接追加，实际靠出怪后立即清空泉水，重复概率低。这是记录有界和身份规则。只读旧档的“重复容忍”可独立评估，当前覆盖逻辑保留 | chests、breakable-drops |
-| S15 B | [domain/session.ts](../src/domain/session.ts)：pruneBreakableEnemyStates；[74ca8d41](https://github.com/sunflower9264/inoita-game/commit/74ca8d41) | 恢复时删除永久死亡的 breakable 及生成记录；chest/spring 保留。删除整个机制会混淆不同对象寿命；若移出读档需证明当前生产和回滚路径持续清理 | chests、world-enemies、saved-game |
-| S16 B | [domain/story-world.ts](../src/domain/story-world.ts)：pruneCompletedEncounters；`Session.forgetPrunedEncounterEnemies`；[fab7c60d](https://github.com/sunflower9264/inoita-game/commit/fab7c60d) | 已完成遭遇最多保留 64 条，并联动删除敌人历史。旧档裁剪和正常运行期容量上限共用，活动遭遇保留；运行期部分继续使用 | story-world、session、world-enemies |
+| S13 B | [domain/session.ts](../src/domain/session.ts)：正常结算的奖励防重与周期上限；[1bd2075e](https://github.com/sunflower9264/inoita-game/commit/1bd2075e) | **正常结算**按任务周期防重复，只读最新一张收据。这是奖励规则，保留。读档时丢弃旧轮次的裁剪见 S25；事务回滚也复用同一恢复函数，拆分时要保留回滚正确性 | session-quest-core、save-game |
+| S14 B | [domain/chests.ts](../src/domain/chests.ts)：生成记录覆盖；[74ca8d41](https://github.com/sunflower9264/inoita-game/commit/74ca8d41) | **可破坏物生成时**先删同 ID 再写入，保证同一槽位只有一条记录；泉水出怪仍直接追加，靠出怪后立即清空泉水。这是当前生成规则，保留。读档时去重和 `consumed??[]` 补空见 S26 | chests、breakable-drops |
+| S15 A | [domain/session.ts](../src/domain/session.ts)：pruneBreakableEnemyStates；[74ca8d41](https://github.com/sunflower9264/inoita-game/commit/74ca8d41) | **读档时删除**永久死亡的 `breakable:` 记录和生成记录；chest/spring 保留。对象寿命规则本身保留；先证明 59 的死亡结算和回滚路径会持续清掉这些记录，再把读档清理退出，不能连寿命规则一起删 | chests、world-enemies、saved-game |
+| S16 B | [domain/story-world.ts](../src/domain/story-world.ts)：正常运行时的完成遭遇上限；[fab7c60d](https://github.com/sunflower9264/inoita-game/commit/fab7c60d) | **正常运行期**已完成遭遇最多保留 64 条，活动遭遇保留。这是容量规则，保留。恢复时对旧档无界历史的裁剪和 `forgetPrunedEncounterEnemies` 见 S27 | story-world、session、world-enemies |
 | S17 A | [domain/session.ts](../src/domain/session.ts)：restoreUnchecked 的 lootPity 成员清理；[7a2a6ac2](https://github.com/sunflower9264/inoita-game/commit/7a2a6ac2) | **每次恢复都执行**。删除非主角、且已不在队伍里的 `lootPity.members` 记录。放逐成功时已同步清理；若确认 59 写档和放逐路径不会再留下这类记录，可改为严格校验或退出 | session-cooldowns-party、session、save-game |
 | S18 B | [domain/quest-book.ts](../src/domain/quest-book.ts)：prepareRestore；追溯到初始提交 [7f5578b6](https://github.com/sunflower9264/inoita-game/commit/7f5578b6) | **每次恢复都执行**。把当前内容目录中存在、但存档里缺失的任务补成初始进度。内容更新新增任务时仍需，保留；如要收紧，先证明正式版不再新增任务，或改由内容版本迁移处理 | session-quest-core、saved-game、content |
 | S19 C | [domain/combat-snapshot.ts](../src/domain/combat-snapshot.ts)：prepareCombatRestore 的焦点与缓存处理；[scenes/world-combat.ts](../src/scenes/world-combat.ts) 的恢复入口 | 恢复时清掉指向不存在角色的 `focusTargetId`，清空 `temporary/resourceCapacities/resourceCapacityInputs` 派生缓存，并把 AI 重置为 idle。派生缓存必须重建；焦点清理属于旧数据修复，先明确写入契约再决定严格校验还是保留 | combat-snapshot、world-runtime-review、world-enemies |
@@ -87,6 +96,10 @@ S01 的退出还要同步处理本地槽位、云端上传下载的格式分类�
 | S21 A | [scenes/world-combat.ts](../src/scenes/world-combat.ts)：恢复名册后的 setPartySize；[fdbd3042](https://github.com/sunflower9264/inoita-game/commit/fdbd3042) | **读档后按当前上阵人数重算敌人强度基准**。若确认 59 写档总写当前人数、且菜单改队伍后一定写档，可退出；否则保留为读档修正 | world-runtime-review、party、save-game |
 | S22 A | [domain/story-world.ts](../src/domain/story-world.ts)：登记接管与投影过滤；35→36 迁移 [9ba9e40c](https://github.com/sunflower9264/inoita-game/commit/9ba9e40c) | **旧档重复演员由投影收敛成一个实例**，测试直接覆盖旧档重复实例。停止读取 33～58 后，先确认运行时也不会产生同角色重复实例，再决定保留收敛还是改为严格校验 | story-world、story-world-projection、saved-game |
 | S23 A | [scenes/world-scene.ts](../src/scenes/world-scene.ts)：恢复舞台时读取 `actor.appearance`；[scenes/world-combat.ts](../src/scenes/world-combat.ts)：`captureStoryActors` 的 `includeEnemyAppearance`；36→37 [c5e6774e](https://github.com/sunflower9264/inoita-game/commit/c5e6774e)、48→49 [9b509bc2](https://github.com/sunflower9264/inoita-game/commit/9b509bc2) | **旧档演员外观读取**。36 版舞台快照带完整外观，48 版存档带敌人外观；新档写档会剥离。停止读取 33～58 后退出这些读取分支，保留当前外观解析路径 | saved-game、story-stage-isolation、world-assets |
+| S24 A | [domain/bag.ts](../src/domain/bag.ts)：writeState 的快捷栏去重；[b2970691](https://github.com/sunflower9264/inoita-game/commit/b2970691) | **每次恢复都执行**。`writeState` 对每个快捷栏行再跑一次 `dedupeSkillShortcuts`。正常设置入口已经去重，59 写档不应产生重复；确认旧档重复只来自 34 版以前后，可退出读档调用（34→35 迁移在 S01 内单独处理） | shortcut-bar、bag、saved-game |
+| S25 A | [domain/session.ts](../src/domain/session.ts)：restoreReceipts 的旧轮次裁剪；[1bd2075e](https://github.com/sunflower9264/inoita-game/commit/1bd2075e) | **每次恢复都执行**。同一任务只保留周期最新的收据，代码注释明确写的是丢弃旧存档的历史轮次。正常结算已按周期覆盖；确认 59 写档只留最新一张后，可退出读档裁剪。事务回滚复用同一函数，拆分时保留回滚路径 | session-quest-core、save-game |
+| S26 A | [domain/chests.ts](../src/domain/chests.ts)：restoreState 的生成记录去重与 `consumed??[]` 补空 | **每次恢复都执行**。旧档里同一生成 ID 可能因槽位重生被追加多次，恢复时保留最后一条；`consumed` 缺失时补空。生成时已按完整 ID 覆盖；确认 59 写档不再产生重复后，可退出读档去重，只保留生成规则 | chests、breakable-drops、save-game |
+| S27 A | [domain/story-world.ts](../src/domain/story-world.ts)：restoreState 的 pruneCompletedEncounters；[fab7c60d](https://github.com/sunflower9264/inoita-game/commit/fab7c60d) | **恢复时裁剪旧档无界历史**，并联动 `Session.forgetPrunedEncounterEnemies` 删除敌人状态。正常运行时的 64 条上限在 S16；确认 59 写档不会超过上限后，可退出恢复时裁剪 | story-world、session、world-enemies |
 
 ### 3.2 数值与培养
 
@@ -109,7 +122,7 @@ S01 的退出还要同步处理本地槽位、云端上传下载的格式分类�
 | E03 B | [domain/items.ts](../src/domain/items.ts)、[domain/bag.ts](../src/domain/bag.ts)、[domain/session.ts](../src/domain/session.ts) 的剧情装备入口；[9335c554](https://github.com/sunflower9264/inoita-game/commit/9335c554)、[debdcf87](https://github.com/sunflower9264/inoita-game/commit/debdcf87)、[84f6c70a](https://github.com/sunflower9264/inoita-game/commit/84f6c70a) | 普通入包拒绝、剧情直接穿戴、手动换装限制、离身销毁属于现有玩法；仅 58→59 的残留清理可退出 | story-equipment、bag、gm-actions |
 | E04 B | [domain/bag.ts](../src/domain/bag.ts)：unsealSkill；[domain/party.ts](../src/domain/party.ts) 的共享技能表；[718e6b64](https://github.com/sunflower9264/inoita-game/commit/718e6b64) | 永久解锁共享给现有、候补和未来佣兵，失败时背包与队伍一起恢复。独立解锁书转换是旧迁移，当前共享规则保留 | mercenary-skill-unlocks、bag |
 | E05 B | [domain/bag.ts](../src/domain/bag.ts)：stackKey / instanceStackKey / isStackableInstance 与入包；[ada233c0](https://github.com/sunflower9264/inoita-game/commit/ada233c0)、[de07e527](https://github.com/sunflower9264/inoita-game/commit/de07e527) | 同 ID 同绑定技能才能叠加，强化、宝石、词条、锁定等参与排除；当前入包规则保留，只处理 S03 的旧实例收拢 | bag-stacking、bag |
-| E06 B | [domain/bag.ts](../src/domain/bag.ts)：setShortcuts / writeState → dedupeSkillShortcuts；[b2970691](https://github.com/sunflower9264/inoita-game/commit/b2970691) | 正常设置和恢复都保证技能仅占一格；物品仍可多格。不能删掉整个去重函数，只可收紧旧数据接纳方式 | shortcut-bar、bag |
+| E06 B | [domain/bag.ts](../src/domain/bag.ts)：setShortcuts → dedupeSkillShortcuts；[b2970691](https://github.com/sunflower9264/inoita-game/commit/b2970691) | **正常设置时**技能只占一格；物品仍可多格。这是当前写入规则，保留。`dedupeSkillShortcuts` 函数同时被读档和 34→35 迁移调用，但那些调用分别见 S24、S01，不能因为共享函数就整块保留或删除 | shortcut-bar、bag |
 | E07 B | [domain/session.ts](../src/domain/session.ts) 任务物品剩余需求；[application/quest-item-grants.ts](../src/application/quest-item-grants.ts)；[c2011993](https://github.com/sunflower9264/inoita-game/commit/c2011993) | 运行时只有怪物掉落、地图生成点和地面拾取按任务需求封顶；`quest-item-grants.ts` 是构建期的超发校验，不限制接取发放。与特定旧物品清理 S04 分开保留 | quest-item-generation、quest-item-grants、content |
 | E08 B | [domain/items.ts](../src/domain/items.ts)：blockedNormalAcquisitionIds；商店、掉落与合成消费者；[585352c8](https://github.com/sunflower9264/inoita-game/commit/585352c8)、[29347316](https://github.com/sunflower9264/inoita-game/commit/29347316)、[718e6b64](https://github.com/sunflower9264/inoita-game/commit/718e6b64) | 保留道具、剧情装备、常备药水显式放行和封印书例外属于当前获取规则。保留；不据此恢复已撤销的旧货架清空 | reserved-items、shop、crafting |
 | E09 B | [domain/bag.ts](../src/domain/bag.ts)：封印盒开盒分支；[docs/drops.md](../docs/drops.md) | 旧存档里的封印盒没有来源等级 `lootLevel` 时沿用盒子原有奖励表。旧盒子仍需可开；新盒写档总带来源等级，若确认旧盒可清空再退出 | bag、drops、breakable-drops |
@@ -160,7 +173,7 @@ S01 的退出还要同步处理本地槽位、云端上传下载的格式分类�
 
 ### 第二批 退出每次读档的历史修复
 
-逐项处理 S02～S07，以及新增的 S17、S21；S19 里的失效焦点清理也在这里先明确写入契约。先找清当前写入者，验证“新产生的数据已满足约束”，再移除读档扫描。每个独立机制单独改、单独验证、单独提交。
+逐项处理 S02～S07、S15、S17、S21、S24～S27；S19 里的失效焦点清理也在这里先明确写入契约。先找清当前写入者，验证“新产生的数据已满足约束”，再移除读档扫描。每个独立机制单独改、单独验证、单独提交。
 
 验证样本至少有新档，以及从旧流程升级后重新保存的 59 档。背包样本保留不同绑定技能、锁定与强化实例；任务样本覆盖鲤鱼饼事件前后；召唤样本覆盖主人离场和子召唤。不能仅用全新空背包证明所有 59 档都不需要修复。必要时可用匿名化测试样本或只读统计补足证据，本次没有读取玩家私人存档或声称这些残留为零。
 
