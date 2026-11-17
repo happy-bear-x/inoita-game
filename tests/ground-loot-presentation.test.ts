@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import type Phaser from 'phaser';
 import { groundLootAssets, GroundLootView } from '../src/rendering/ground-loot.ts';
+import type { GroundDrop } from '../src/domain/ground-loot.ts';
 import { pickupMessageAssets, PickupMessages, type PickupAnchor } from '../src/rendering/pickup-messages.ts';
 import type { DomUi } from '../src/ui/dom/dom-ui.ts';
 import { parseItemCatalog } from '../src/application/content-validation.ts';
@@ -137,6 +138,30 @@ test('ground rewards draw preloaded native sprites in a layer below all characte
   assert.ok(h.visuals[0].depth<.5);
   view.sync([drops[1]]);assert.equal(images[0].active,false);assert.equal(images[1].active,true);
   view.destroy();assert.equal(images[1].active,false);
+});
+
+test('flying pickup effects replay the effect animation, not the atlas page',()=>{
+  const h=sceneHarness();
+  const plays:{key:string;startFrame:number;repeat:number}[]=[];
+  const animation='mana-gem-drop#effects-atlas:24#clip:9:16.666666666666668';
+  const sprite={
+    texture:{key:'effects-atlas:24'},
+    anims:{currentAnim:{key:animation},pause(){},resume(){}},
+    play(config:{key:string;startFrame:number;repeat:number}){plays.push(config);return this;}
+  };
+  const container={list:[sprite],destroy(){}} as unknown as Phaser.GameObjects.Container;
+  const view=new GroundLootView(h.scene,items,()=>container);
+  const direction=0,clip=items.items['mana-gem'].pickup!.hitDrop.directions[direction].clip;
+  const drop:GroundDrop={id:'flight',map:'cave',x:0,y:0,reward:{kind:'item',item:'mana-gem',quantity:1},
+    flight:{x:20,y:30,direction,remainingMs:300,durationMs:1200}};
+  view.sync([drop]);
+  const expected=Math.floor((drop.flight!.durationMs-drop.flight!.remainingMs)*clip.frameRate/1000)%clip.frames;
+  assert.equal(plays.length,1);
+  assert.equal(plays[0]!.key,animation);
+  assert.notEqual(plays[0]!.key,'effects-atlas:24','不能把图集页键当动画键');
+  assert.equal(plays[0]!.startFrame,expected);
+  assert.equal(plays[0]!.repeat,-1,'飞行期间循环播放');
+  view.destroy();
 });
 
 const reward={kind:'item' as const,item:'ectoplasm',quantity:1 as const};

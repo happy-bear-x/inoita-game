@@ -42,8 +42,12 @@ export class GroundLootView {
         const clip=this.items.items[drop.reward.item].pickup!.hitDrop.directions[drop.flight.direction].clip;
         const visual=this.createFlight(clip,drop.flight.x,drop.flight.y);
         const elapsed=drop.flight.durationMs-drop.flight.remainingMs;
+        const startFrame=clip.frames>0?Math.max(0,Math.floor(elapsed*clip.frameRate/1000)%clip.frames):0;
         for(const child of visual.list){const sprite=child as Phaser.GameObjects.Sprite;
-          sprite.play({key:sprite.texture.key,startFrame:Math.min(clip.frames-1,Math.floor(elapsed*clip.frameRate/1000)),repeat:0});}
+          // 纹理键是图集页（如 effects-atlas:24），不是动画键；必须重播 createEffect 建好的动画。
+          const key=sprite.anims.currentAnim?.key;
+          if(!key){globalThis.storyDiagnostics?.record('ground-loot-flight-animation-missing',{texture:sprite.texture.key},false);continue;}
+          sprite.play({key,startFrame,repeat:-1});}
         if(this.paused)for(const child of visual.list)(child as Phaser.GameObjects.Sprite).anims.pause();
         this.layer.add(visual);this.visuals.set(drop.id,visual);this.flying.add(drop.id);continue;
       }
