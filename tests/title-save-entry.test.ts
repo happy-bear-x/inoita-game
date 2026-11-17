@@ -804,10 +804,7 @@ test('disposed title UI ignores resident assets arriving after shutdown',async()
   const assets={preloadResident:()=>new Promise<void>(resolve=>{finish=resolve;})};
   const page=new TitleMenuController(runtime as never,f.app,assets as never);
   page.open();
-  assert.equal(events.listenerCount('resume'),1);
   page.dispose();page.dispose();
-  assert.equal(events.listenerCount('resume'),0);
-  assert.equal(scale.listenerCount('resize'),0);
   finish();await new Promise(resolve=>setImmediate(resolve));
   assert.equal(loaded,0,'迟到素材不能重新创建已经关闭的标题页');
 });

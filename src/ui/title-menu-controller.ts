@@ -1,7 +1,7 @@
 import { UiNode, UiImage, type UiText } from './dom/node.ts';
 import { notifyBootReady } from '../application/live-update.ts';
 import { fullscreenActive, fullscreenStatus, onFullscreenChange, setFullscreen } from '../application/fullscreen.ts';
-import Phaser from 'phaser';
+import type Phaser from 'phaser';
 import type { MenuContext } from '../application/ports.ts';
 import { TITLE_MESSAGE_ASSETS, titleMenuImages } from '../application/menu-images.ts';
 import { GOLD, UiSurface, type ScrollArea } from './phaser/widgets.ts';
@@ -122,21 +122,19 @@ export class TitleMenuController {
   private cloudScroll?:ScrollArea;
   private cloudRenderedBranch?:string;
   private cloudControls:UiNode[]=[];
-  private renderOnResume():void {
+  renderOnResume():void {
     if(this.surface&&this.scene.sys.isActive())this.render();
   }
-  private readonly hideCredentials=():void=>{this.credentials?.hide();};
-  constructor(scene:Phaser.Scene,app:MenuContext,titleAssets:SceneUiAssets){this.scene=scene;this.app=app;this.titleAssets=titleAssets;}
+  readonly hideCredentials=():void=>{this.credentials?.hide();};
+  private readonly retry:()=>void;
+  constructor(scene:Phaser.Scene,app:MenuContext,titleAssets:SceneUiAssets,retry:()=>void=()=>{}){this.scene=scene;this.app=app;this.titleAssets=titleAssets;this.retry=retry;}
   open(options:{page?:'home'|'slots'}={}):void {
     this.page='home';this.app.ui.setMode('menu');this.app.ui.loading('正在准备主菜单…');
     const controller=this.request;
 
     // 标题页整屏独占键盘；原始事件由正式界面场景那一处桥接进 router。
     this.unregisterInput?.();this.unregisterInput=this.app.inputRouter.register('menu',this.routeKey,{exclusive:()=>true});
-    this.scene.events.on(Phaser.Scenes.Events.RESUME,this.renderOnResume,this);
-    this.scene.events.on(Phaser.Scenes.Events.PAUSE,this.hideCredentials);
     this.resizeViewport=JSON.stringify(controlViewport());
-    this.scene.scale.on('resize',this.resize,this);
     // 浏览器自身的退出（Esc、手势）不会走设置页的按钮，靠事件把开关状态同步回来。
     this.releaseFullscreen=onFullscreenChange(()=>this.syncFullscreenSetting());
     void this.titleAssets.preloadResident(titleMenuImages,controller.signal,()=>{}).then(()=>{
@@ -168,7 +166,7 @@ export class TitleMenuController {
       // 确认框打开时页面整块不响应，确认框自己也只在有确认时响应。
       this.modal.enabled=()=>this.app.ui.ready&&!this.app.ui.suspended&&this.scene.sys.isActive()&&(this.confirmAction!==undefined||this.changelogOpen);
       this.app.ui.menuLoaded();if(options.page==='slots')this.openSlots();else this.render();this.app.syncLifecycle?.();notifyBootReady();this.app.prefetchCommon?.();
-    },error=>{if(!controller.signal.aborted)this.app.ui.error(String(error),()=>this.scene.scene.restart());});
+    },error=>{if(!controller.signal.aborted)this.app.ui.error(String(error),()=>this.retry());});
   }
   dispose():void {
     if(this.disposed)return;
@@ -210,9 +208,6 @@ export class TitleMenuController {
     this.modal=undefined;
     this.popupMask?.destroy();
     this.popupMask=undefined;
-    this.scene.events.off(Phaser.Scenes.Events.RESUME,this.renderOnResume,this);
-    this.scene.events.off(Phaser.Scenes.Events.PAUSE,this.hideCredentials);
-    this.scene.scale.off('resize',this.resize,this);
     this.backdrop?.destroy();
     this.backdrop=undefined;
   }
@@ -1159,7 +1154,7 @@ export class TitleMenuController {
     this.prompt?.close();
     this.passwordPrompt?.close();
   }
-  private resize():void {
+  resize():void {
     const viewport=JSON.stringify(controlViewport()),changed=viewport!==this.resizeViewport;
     this.resizeViewport=viewport;this.layout();
     if(changed&&(this.confirmAction||this.changelogOpen))this.render();

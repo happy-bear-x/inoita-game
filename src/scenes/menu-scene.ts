@@ -13,9 +13,24 @@ export class MenuScene extends Phaser.Scene {
   constructor(app:MenuContext){super(SCENE_KEYS.menu);this.app=app;this.titleAssets=new SceneUiAssets(this);}
   create(options:{page?:'home'|'slots'}={}):void {
     if(!this.assetsBound){this.assetsBound=true;this.events.once(Phaser.Scenes.Events.DESTROY,()=>this.titleAssets.releaseResident());}
-    this.page?.dispose();
-    const page=new TitleMenuController(this,this.app,this.titleAssets);this.page=page;
-    this.events.once('shutdown',()=>{page.dispose();if(this.page===page)this.page=undefined;});
+    const previous=this.page;
+    if(previous){
+      this.events.off(Phaser.Scenes.Events.RESUME,previous.renderOnResume,previous);
+      this.events.off(Phaser.Scenes.Events.PAUSE,previous.hideCredentials);
+      this.scale.off('resize',previous.resize,previous);
+      previous.dispose();
+    }
+    const page=new TitleMenuController(this,this.app,this.titleAssets,()=>this.scene.restart());this.page=page;
+    // 场景层负责恢复、暂停与尺寸变化；页面 controller 只处理自己的状态和 DOM。
+    this.events.on(Phaser.Scenes.Events.RESUME,page.renderOnResume,page);
+    this.events.on(Phaser.Scenes.Events.PAUSE,page.hideCredentials);
+    this.scale.on('resize',page.resize,page);
+    this.events.once('shutdown',()=>{
+      this.events.off(Phaser.Scenes.Events.RESUME,page.renderOnResume,page);
+      this.events.off(Phaser.Scenes.Events.PAUSE,page.hideCredentials);
+      this.scale.off('resize',page.resize,page);
+      page.dispose();if(this.page===page)this.page=undefined;
+    });
     page.open(options);
   }
 }
