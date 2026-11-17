@@ -2817,7 +2817,7 @@ test('openDebugStory returns to the story tab without opening a completion dialo
   gm.previewStory=async target=>({ok:true,preview:{quest:target.quest,phase:'available',location:campaign.start}});
   Object.defineProperty(f.app,'gm',{value:gm,configurable:true});
   f.menu.show('debug');f.scene.click(f.scene.button('调试页 人物'));
-  assert.equal(f.scene.buttons('调试页 剧情').length,0,'剧情页签保持隐藏');
+  assert.equal(f.scene.buttons('调试页 剧情').length,1,'剧情页签应可用');
   f.menu.openDebugStory();
   const texts=()=>visibleDomLabels(f).map(label=>label.text).join(' ');
   assert.ok(f.scene.button('分类 主线'),'应回到剧情页');
@@ -2874,7 +2874,7 @@ test('closing the debug page releases its catalog, text and stale preview; reope
   finish({ok:false,reason:'迟到的预览'});await new Promise(resolve=>setImmediate(resolve));
   assert.equal(visibleDomLabels(f).length,0,'迟到结果不能重新显示已经关闭的界面');
   f.menu.show('debug');await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(acquired,2);assert.equal(f.scene.buttons('调试页 剧情').length,0,'剧情页签保持隐藏');
+  assert.equal(acquired,2);assert.equal(f.scene.buttons('调试页 剧情').length,1,'剧情页签应可用');
   f.menu.releaseSession(f.session);
   assert.equal(released,2);
   assert.equal((f.menu as unknown as {session?:unknown}).session,undefined,'回标题释放旧会话引用');
