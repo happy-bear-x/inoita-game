@@ -15,12 +15,8 @@ interface QuestJournalGroup {
 
 /**
  * 运行中的任务组保留同组已交付的步骤，整组离开运行池后不再显示。
- * `focus` 是 GM 任务调试的焦点：只显示这一条任务，不管它所在组是否还有其他进展，
- * 也覆盖日志外/内部任务规则——现场表可能停在开幕演出之前，此时任务还是「可接取」，
- * 任务日志仍要显示它，演出接取后自然变成进行中。
  */
-export function questJournal(campaign: Campaign, states: ReadonlyMap<string, Readonly<QuestProgress>>,
-  focus?: string): QuestJournalGroup[] {
+export function questJournal(campaign: Campaign, states: ReadonlyMap<string, Readonly<QuestProgress>>): QuestJournalGroup[] {
   const definitions = new Map(campaign.quests.map(quest => [quest.id, quest]));
   const progression = new Map(campaign.quests.map((quest, index) => [quest.id, index]));
   const groupIndex = (definition: QuestGroupDefinition): number =>
@@ -29,11 +25,10 @@ export function questJournal(campaign: Campaign, states: ReadonlyMap<string, Rea
     const entries = definition.questIds.flatMap(id => {
       const state = states.get(id), quest = definitions.get(id);
       if (!quest || !state) return [];
-      if (focus) return id === focus && state.status !== 'locked' ? [{ quest, state }] : [];
       return questInJournal(quest) && ACCEPTED_QUEST_STATUSES.includes(state.status) ? [{ quest, state }] : [];
     }).reverse();
     if (!entries.length) return [];
-    if (!focus && !entries.some(entry => entry.state.status === 'active' || entry.state.status === 'ready')) return [];
+    if (!entries.some(entry => entry.state.status === 'active' || entry.state.status === 'ready')) return [];
     return [{ definition, entries, ready: entries.some(entry => entry.state.status === 'ready') }];
   }).sort((a, b) => {
     const byKind = Number(b.definition.kind === 'main') - Number(a.definition.kind === 'main');

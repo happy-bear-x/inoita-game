@@ -41,38 +41,6 @@ test('journal follows the opening native quest group, keeping history only in th
   assert.equal(groups[0].ready, false);
 });
 
-test('a GM focus keeps only the selected quest in the journal', () => {
-  const progress = states({
-    'grafton-mission': questProgress('active'),
-    'cardinal-summons': questProgress('ready'),
-    'meet-portia': questProgress('completed'),
-  });
-  assert.ok(questJournal(campaign, progress).length > 1, '没有焦点时保留多个任务组');
-  const focused = questJournal(campaign, progress, 'meet-portia');
-  assert.deepEqual(focused.flatMap(group => group.entries.map(entry => entry.quest.id)), ['meet-portia']);
-  assert.equal(focused[0].definition.id, campaign.questGroups.find(group => group.questIds.includes('meet-portia'))!.id);
-  assert.deepEqual(questJournal(campaign, progress, 'knight-uniform'), [], '焦点任务未接取时不显示空组');
-});
-
-test('a GM focus shows the task even when it is journal-external or only available', () => {
-  const progress = states({
-    'grafton-mission': questProgress('available'),
-    'knight-uniform': questProgress('active'),
-  });
-  // 普通日志只收已接取任务；现场表可能停在开幕演出之前，此时焦点任务还是可接取。
-  assert.deepEqual(questJournal(campaign, progress).flatMap(group => group.entries.map(entry => entry.quest.id)),
-    ['knight-uniform']);
-  assert.deepEqual(questJournal(campaign, progress, 'grafton-mission').flatMap(group => group.entries.map(entry => entry.quest.id)),
-    ['grafton-mission']);
-  // 日志外任务的可见性规则同样由焦点覆盖。
-  const journalExternal = structuredClone(campaign);
-  journalExternal.quests.find(quest => quest.id === 'grafton-mission')!.journal = false;
-  assert.deepEqual(questJournal(journalExternal, progress, 'grafton-mission').flatMap(group => group.entries.map(entry => entry.quest.id)),
-    ['grafton-mission']);
-  // 未解锁任务没有现场可显示。
-  assert.deepEqual(questJournal(campaign, states({ 'grafton-mission': questProgress('locked') }), 'grafton-mission'), []);
-});
-
 test('main and side groups follow game progression rather than quest-group id order', () => {
   const groups = questJournal(campaign, states({
     'quest-18': questProgress('active'),

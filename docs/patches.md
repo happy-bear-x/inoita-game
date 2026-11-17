@@ -40,7 +40,7 @@
 3. 同一提交删除临时诊断、死代码、注释掉的旧实现、未使用导入；不留“已废弃/不要 XXX”墓碑。
 4. 确实需要兜底或兼容代码时：命名、测试、登记退役条件；否则不进主干。
 5. 同步对应 `AGENTS.md`、`docs/` 和 `public/content/changelog.json`。
-6. 验证：`npm run typecheck` + 相关测试；内容改动跑 `validate:content`；调试现场跑 `debug-start:check`。
+6. 验证：`npm run typecheck` + 相关测试；内容改动跑 `validate:content`。
 7. 高风险修复做 code review；运行时补丁在 4002/APK 实测；不主动部署、不主动开浏览器。
 8. 合并后删除修复分支；不长期保留补丁分支，登记表才是长期记录。
 

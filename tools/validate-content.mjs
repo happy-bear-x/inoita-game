@@ -2,10 +2,8 @@ import {parseCrafting,validateCrafting} from '../src/domain/crafting.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {parseStatusHud, parseCharacterStats,validateCharacterStats,validateItemSkills,parseItemCatalog,parseWardrobe,validateWardrobe,parseMenuPanels,validateMenuClasses,parseStoryClasses,parseWorld,parseMap,parseBattle,parseCampaign,parseStoryInterface,parseControlSkin,validateStoryItems,validateStoryPortraits,parseShops,validateShops,parseCompanions,validateCompanions,parseStoryDebugCatalog,parseChangelog} from '../src/application/content-validation.ts';
-import {validateStoryDebug} from '../src/domain/story-debug.ts';
+import {parseStatusHud, parseCharacterStats,validateCharacterStats,validateItemSkills,parseItemCatalog,parseWardrobe,validateWardrobe,parseMenuPanels,validateMenuClasses,parseStoryClasses,parseWorld,parseMap,parseBattle,parseCampaign,parseStoryInterface,parseControlSkin,validateStoryItems,validateStoryPortraits,parseShops,validateShops,parseCompanions,validateCompanions,parseChangelog} from '../src/application/content-validation.ts';
 import {contentDigest} from '../src/application/content-hash.ts';
-import {validateDebugCatalog} from '../src/debug/catalog-validation.ts';
 import {validateContentRelations} from '../src/application/content-relations.ts';
 import {validateSpriteSheet} from './validate-spritesheet.ts';
 import {parseDrops} from '../src/domain/drops.ts';
@@ -168,15 +166,6 @@ export function validateContent(root=fileURLToPath(new URL('../public/',import.m
  for(const reference of world.maps){const map=parseMap(read(reference.file));maps.set(map.id,map);documents.push(map);}
  for(const map of maps.values())for(const feature of map.features)
   if(!propKeys.has(feature.texture))throw new Error(`地图 ${map.id} 的场景物件缺少资源：${feature.texture}`);
- // 调试现场表是独立产物：先校验新鲜度，再挂回 campaign 让跨文件规则照常检查。
- const debug=parseStoryDebugCatalog(read('content/debug/start.json'));
- const sources={campaign:contentDigest(campaignJson),items:contentDigest(itemsJson),
-  maps:contentDigest([...maps].map(([id,map])=>[id,map]))};
- for(const [name,value] of Object.entries(sources))if(debug.meta?.sources?.[name]!==value)
-  throw new Error(`调试现场表已过期（${name}）；运行 npm run debug-start`);
- if(debug.meta?.sourceHash!==contentDigest(debug.meta.sources))
-  throw new Error('调试现场表来源哈希不一致；运行 npm run debug-start');
- campaign.debugStory=debug;validateStoryDebug(campaign);validateDebugCatalog({campaign,maps,catalog:debug});
  validateContentRelations({world,battle,campaign,items,wardrobe,audio,maps});
  // 以下两项需要文件系统，留在构建侧：资源存在性与图集头。
  const propFileKeys=new Map((world.props??[]).map(prop=>[prop.file,prop.key]));

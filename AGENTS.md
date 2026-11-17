@@ -33,7 +33,7 @@ Phaser 4.2.1 + TypeScript 的艾诺迪亚4重制版。源码、内容、素材�
 
 - **工程自包含**。运行、测试和普通构建只读取本目录的源码、`public/`、`asset-source/` 和测试。
 - **素材优先用原版**。素材缺失时先查 `../inoita` 工程的原版图集与切片表；没有就用该工程里的逆向技能从原版 APK 提取；确实没有时单独汇报缺口，不用临时生成图或职业图冒充。取到的素材复制进本仓库，构建仍只读本仓库。
-- **内容直接在本仓库维护**。`public/content/` 是剧情、任务、地图和战斗数据的唯一源文件。发现和原版不一致时，去 `../inoita` 对照原版实现和素材，然后把修正直接写进本仓库对应的 JSON、类型或代码；后续内容变更也以本仓库的 JSON 和代码为起点。增删物品定义时，同步核对剧情与掉落引用、背包分类统计和调试现场表。
+- **内容直接在本仓库维护**。`public/content/` 是剧情、任务、地图和战斗数据的唯一源文件。发现和原版不一致时，去 `../inoita` 对照原版实现和素材，然后把修正直接写进本仓库对应的 JSON、类型或代码；后续内容变更也以本仓库的 JSON 和代码为起点。增删物品定义时，同步核对剧情与掉落引用和背包分类统计。
 - **剧情独立创作**。`public/content/campaign.json` 是剧情、任务和角色摆放的源文件；新增字段先定义游戏含义、单位和消费方式，内容加载和构建共用校验器。
 - **名字用游戏里的概念**。动画叫 `walk-east`、`idle-south`，地图属性叫 `blocked`、`exits`、`entities`，剧情行为叫 `dialogue`、`choice`。
 - **存档只读当前格式**。正式版只接受当前 `SAVE_FORMAT`（59）；更旧的格式按空槽处理，更新的格式按不可读取处理。结构变化时升格式，同时保留上一版为可读并在读取入口迁移，补当前格式到新格式的迁移和旧档测试。读取范围在 `src/domain/save-game.ts`，读取校验在 `src/application/saved-game.ts`。
@@ -95,7 +95,7 @@ src/                   游戏源码（规则见 src/AGENTS.md）
   domain/              内容类型、会话状态、剧情调度、通行、战斗规则（AGENTS.md）
   rendering/           角色、世界、战斗与特效表现（AGENTS.md）
   ui/                  菜单、HUD、对话、DOM 组件与界面逻辑（AGENTS.md）
-  debug/               GM 动作层与剧情跳转（AGENTS.md）
+  debug/               GM 动作层与调试开关（AGENTS.md）
   generated/           图集常量，生成物（AGENTS.md）
 public/                运行时静态资源和内容（图集页、地图、音频、未进图集的例外图片）
   content/             剧情、任务、地图、战斗、物品、音频等内容 JSON
@@ -104,7 +104,7 @@ config/                环境服务根地址（AGENTS.md；网页固定同源，
 asset-source/          图集生成与内容去重的源素材（进 Git；原图不再放 public）
 asset-archive/         构建裁剪出的运行时旧图副本（不进 Git）
 tests/                 单元测试（AGENTS.md；helpers、support 另有）
-tools/                 构建、校验、调试现场表生成、静态服务、APK 打包（AGENTS.md；debug-start 另有）
+tools/                 构建、校验、静态服务、APK 打包（AGENTS.md）
 deploy/                nginx 站点等部署配置
 docs/                  架构、模块原理、剧情创作、音频、掉落、云存档、部署、服务地址、热更新、调试与诊断
 android/               Android 自带 Chromium 156 的壳（minSdk 29，规则见 AGENTS.md）
@@ -123,8 +123,6 @@ npm run validate:content           # 内容、校验器或素材引用变化时
 npm run audit:assets               # 只检查素材保留集，不裁剪
 npm run atlas:all                  # 重新生成图标/道具/界面/特效/角色全部图集
 npm run test:content-build         # 真实内容编译后跑最小战斗与剧情节点
-npm run debug-start                # 内容改动后重新生成 GM 任务现场表
-npm run debug-start:check          # 只检查 GM 任务现场表是否过期
 npm run diag:list                  # 查看最近的诊断会话
 npm run diag:session -- <会话 id>   # 查看单个会话的完整时间线
 npm run test:all                   # 用户明确要求全量单元测试时

@@ -31,7 +31,7 @@ export class QuestPanel {
   /** 这一页要显示的文字；图框、按钮和滚动仍由 Phaser 画。 */
   private textSpecs: MenuTextSpec[] = [];
   /** 面板开着时每次 `emit` 都会重画，但任务只在版本变化时才变；按版本记住上一次的分组结果。 */
-  private groups?: { questVersion: number; focus?: string; value: ReturnType<typeof questJournal> };
+  private groups?: { questVersion: number; value: ReturnType<typeof questJournal> };
 
   constructor(session: Session, world: WorldIndex, panels: MenuPanels, changed: () => void,
     scrollArea?: ScrollFactory, refreshText: () => void = () => {}, rerenderText: () => void = () => {}) {
@@ -85,9 +85,9 @@ export class QuestPanel {
 
   render(view: UiSurface): void {
     this.textSpecs = []; this.view=view; this.rows.clear();
-    const questVersion = this.session.questBook.version, focus = this.session.debugFocusQuest, cached = this.groups;
-    const groups = cached?.questVersion === questVersion && cached.focus === focus ? cached.value
-      : (this.groups = { questVersion, focus, value: questJournal(this.session.campaign, this.session.quests, focus) }).value;
+    const questVersion = this.session.questBook.version, cached = this.groups;
+    const groups = cached?.questVersion === questVersion ? cached.value
+      : (this.groups = { questVersion, value: questJournal(this.session.campaign, this.session.quests) }).value;
     const assets = this.panels.assets;
     // 打开任务页时默认选中第一个任务组并展示详情；滚动列表只暂时收起详情，不改变选中项。
     if (!groups.some(group => group.definition.id === this.selectedGroup)) {

@@ -21,13 +21,12 @@
 
 - `story-gated-interaction.test.ts` 覆盖七组剧情确认入口的取消后再次点击、普通交付保护与剧情结算，使用真实结界石内容验证石魔生成、击败后的主线推进，以及正常存档恢复。
 
-- `bag.test.ts` 与 `inventory.test.ts` 覆盖完整物品目录、分类数量和装备数据；任务物品来源由 `quest-drops.test.ts` 与 `story-side-item-quests.test.ts` 验证。
+- `bag.test.ts` 与 `inventory.test.ts` 覆盖完整物品目录、分类数量和装备数据；任务物品来源由 `quest-drops.test.ts` 验证。
 - `loot-redesign.test.ts` 覆盖来源等级筛选、全队黄紫装保底和封印盒存档。
 - `material-gifts.test.ts` 覆盖六种材料礼盒的全部奖励、重复开盒消耗、等级门槛和精英/Boss 来源限制。
 - `dom-text-layout.test.ts` 验证菜单仅移动时文字跟随、锚点即时更新；`dom-surface.test.ts` 验证输入守卫、原生拖动、取消、嵌套长按、滚动后点击、静态按钮键盘导航、嵌套菜单滚动层坐标、图片裁边翻转、实时角色预览与预载信号；3× 采样下滚动、滑条与拖动沿用屏幕输入坐标，预览在画布内随采样倍率换算，DOM 遮罩留出的区域保持屏幕尺寸。
 - 职业选择的实时预览和页面复用由 `scene-input-routing.test.ts` 验证；`character-animation-reuse.test.ts` 验证六个职业的待机动作循环播放和角色释放。
 - `story-menu-interactions.test.ts` 使用真实 DOM 菜单组件和原生事件，验证交易、加点、背包拖放、存读档、布局编辑与弹层输入隔离；屏幕尺寸与画布采样倍率分别设置，覆盖 1×／2×／3×、小数倍率和横竖屏下的遮罩、横带、文字及点击一致性。
-- 调试菜单用例覆盖可见行复用、滚动到列表末尾、关闭释放、迟到预览和重新打开；`resident-combat-lifecycle.test.ts` 覆盖调试现场表的持有、释放和异步加载竞态。
 - `game-timing.test.ts` 验证 30 / 60 帧限帧切换、120 帧限帧器压力、实际耗时和战斗寻路额度；`movement.test.ts` 验证移动平滑；`display-settings.test.ts` 验证画面偏好的默认值和持久化。
 - `dom-assets.test.ts` 覆盖共享图集、独立取消与失败重试；`dom-components.test.ts` 覆盖裁剪、父子清理、轮盘技能/物品、多指互斥及隐藏后释放按键。
 - `status-color-renderer.test.ts` 验证受击闪光结束后恢复原色和最新状态颜色。
@@ -52,15 +51,12 @@ npm run test:standalone
 - `world-skill-cache.test.ts` 验证共享技能贴图在原使用者离队后仍由后学会的主角持有，最后释放时回收；覆盖退队失败清理、迟到失败、自动反应等待资源，入队期间换装的重试，以及读档等待全队技能资源、准备失败保留原战斗现场。
 - `basic-attack-repeat.test.ts` 与 `world-runtime-review.test.ts` 验证手动对敌技能自然结束后接普攻，以及无目标、辅助技能和切人时的边界。
 
-- `debug-mark-store.test.ts` 验证摘要分页不读取正文、跨实例读取及配额失败的原子覆盖；`gm-actions.test.ts` 验证持久标记的取消、损坏、现场回退与任务返回点。
 - `gm-actions.test.ts` 验证调试道具列表隐藏剧情人物专属装备，并保留其他职业的可穿戴装备。
 
 - `world-effects.test.ts` 验证飞弹转向和持续效果独立保留贴图到结束；`buff-loop-renderer.test.ts` 验证首次缺图后恢复。
 - `world-effects.test.ts` 还通过实际战斗装配与特效播放器验证地狱火在 1×/2×/3× 采样下的位置、数量和绘制层级一致，覆盖主角与佣兵。
 
 - `resident-combat-lifecycle.test.ts` 验证回标题后的会话资源与回调释放，以及迟到退出回调不能清理新会话；`session-lifecycle.test.ts` 验证退出先取消本局工作，场景 shutdown 后才释放资源。
-
-- 持久标记预校验失败不通知或修改原会话；会话销毁后迟到结果不安装，退出恢复原位置后才恢复保存，并拒绝并发退出。
 
 - 状态表现优化由 `combat-conditions.test.ts`、`world-skill-cache.test.ts` 和 `buff-loop-renderer.test.ts` 验证名单失效、暂停颜色、显隐、倒下/复活、恢复与纹理迟到；`enrage-runtime.test.ts` 验证血蓝共用输入且保留读取时序；`combat.test.ts` 验证已解析普攻距离随换装更新。
 

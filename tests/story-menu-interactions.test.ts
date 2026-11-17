@@ -171,7 +171,6 @@ function labelScreenHeight(label: FakeDomLabel, scale = 1): number {
 const read = <T>(name: string): T => JSON.parse(readFileSync(new URL(`../public/content/${name}.json`, import.meta.url), 'utf8')) as T;
 const items = read<ItemCatalog>('items'), stats = read<CharacterStatsCatalog>('character-stats'), battle = read<BattleCatalog>('battle');
 const campaign = read<Campaign>('campaign'), companions = read<CompanionCatalog>('companions'), world = read<WorldIndex>('world');
-campaign.debugStory = read<Campaign['debugStory']>('debug/start');
 const panels = read<MenuPanels>('menu-panels'), content = read<StoryInterface>('story-interface');
 interface MenuInternals {
   selectedMemberId: string;
@@ -1158,8 +1157,6 @@ test('quest page redraws only when the quest book version changes', t => {
   assert.equal(render.mock.callCount(),0,'任务状态没变不重复重绘');
   assert.equal(f.session.accept('grafton-mission'),true);
   assert.equal(render.mock.callCount(),1,'任务簿版本变化触发一次重绘');
-  f.session.focusDebugQuest('grafton-mission');
-  assert.equal(render.mock.callCount(),2,'调试焦点变化也重绘任务页');
 });
 
 test('equipment actions wrap without shrinking after adding manual lock', async t => {
@@ -2597,12 +2594,8 @@ test('saving without a loaded world reports the original refusal and leaves the 
   assert.deepEqual(f.app.saves.inspect(0),{kind:'empty'});
 });
 
-test('save refusal distinguishes a debug scene, map loading, a missing world and a wiped party', t => {
+test('save refusal distinguishes map loading, a missing world and a wiped party', t => {
   const f=fixture();t.after(f.cleanup);
-  f.app.captureSaveWorld=()=>({ok:false,reason:'debug'});
-  f.menu.show('save');f.scene.click(f.scene.button('存档槽 1'));
-  assert(domTexts(f).includes('调试现场不能存档，请先在调试面板点「结束本次调试」。'));
-  f.scene.click(f.scene.button('确认'));
   f.app.captureSaveWorld=()=>({ok:false,reason:'loading'});
   f.menu.show('save');f.scene.click(f.scene.button('存档槽 1'));
   assert(domTexts(f).includes('地图正在载入，请稍后再存档。'));
@@ -2762,152 +2755,6 @@ test('the defeat load option opens the real load page and closing it returns to 
   assert.equal(f.controls.defeatState.busy,false);
   assert.equal(f.controls.locked,true);
 });
-
-test('the GM story page lists tasks and enters the selected one without exposing identifiers', async t => {
-  const f=fixture();t.after(f.cleanup);
-  const gm=createGmActions({session:f.session,campaign,report:async()=>true});
-  gm.previewStory=async target=>({ok:true,preview:{quest:target.quest,phase:'available',location:campaign.start}});
-  Object.defineProperty(f.app,'gm',{value:gm,configurable:true});
-  f.menu.show('debug');f.menu.openDebugStory();
-  assert.equal(f.scene.buttons('分类 全部').length,0,'不再提供混合全部栏');
-  assert.ok(f.scene.button('分类 主线')&&f.scene.button('分类 支线'));
-  const texts=()=>visibleDomLabels(f).map(label=>label.text).join(' ');
-  const taskButtons=()=>f.scene.nodes.filter(node=>node.shown&&node.getData('uiAction')&&String(node.getData('label')).startsWith('任务 '));
-  assert(taskButtons().length>0,'剧情页没有列出任务');
-  assert.ok(taskButtons().length<=8,'剧情列表只创建可见范围附近的行');
-  const list=f.internals.body.scrolls.find(scroll=>scroll.x===60&&scroll.y===100)!;
-  const firstLabel=taskButtons()[0]!.getData('label');
-  list.scrollTop=54*20;list.onScroll?.();
-  assert.notEqual(taskButtons()[0]!.getData('label'),firstLabel,'滚动后复用行并显示新的任务');
-  assert.ok(taskButtons().length<=8);
-  list.scrollTop=1e9;list.onScroll?.();
-  assert.ok(taskButtons().length>0&&taskButtons().length<=8,'滚动到底部仍保留最后一屏');
-  list.scrollTop=0;list.onScroll?.();
-  assert(!/event-\d|scene-\d|quest-\d|shadow-camp/.test(texts()));
-  assert.equal(f.scene.buttons('任务 向卓拉德报告').length,0);
-  await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(f.internals.body.scrolls.find(scroll=>scroll.x===60&&scroll.y===100),list,'预览返回保留任务列表');
-  const second=taskButtons()[1]!;const secondName=String(second.getData('label')).slice(3);
-  f.scene.click(second);
-  assert.equal(f.internals.body.scrolls.find(scroll=>scroll.x===60&&scroll.y===100),list,'选任务保留列表');
-  assert.equal(taskButtons()[1],second);assert(texts().includes(secondName));
-  await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(f.internals.body.scrolls.find(scroll=>scroll.x===60&&scroll.y===100),list);
-  const main=f.scene.button('分类 主线'),side=f.scene.button('分类 支线');f.scene.click(side);
-  assert.equal(f.scene.button('分类 主线'),main);assert.equal(f.scene.button('分类 支线'),side);
-  assert.equal(f.internals.body.scrolls.find(scroll=>scroll.x===60&&scroll.y===100),list);
-  f.scene.click(main);await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(f.internals.body.scrolls.find(scroll=>scroll.x===60&&scroll.y===100),list);
-  assert(f.scene.button('进入任务').input?.enabled);
-  assert(texts().includes('调试现场：'));
-  assert(texts().includes('默认起点：'));
-  f.scene.click(f.scene.button('进入任务'));
-  await new Promise(resolve=>setImmediate(resolve));
-  const last=gm.actions().at(-1)!;
-  assert.equal(last.call,'jumpStory');
-  assert.equal(last.ok,false);
-  const target=last.args[0] as {quest:string};
-  assert(campaign.debugStory!.tasks.some(task=>task.quest===target.quest));
-  assert(texts().includes('未能进入任务：当前会话还没有装配剧情导演'));
-});
-
-test('openDebugStory returns to the story tab without opening a completion dialog', async t => {
-  const f=fixture();t.after(f.cleanup);
-  const gm=createGmActions({session:f.session,campaign,report:async()=>true});
-  gm.previewStory=async target=>({ok:true,preview:{quest:target.quest,phase:'available',location:campaign.start}});
-  Object.defineProperty(f.app,'gm',{value:gm,configurable:true});
-  f.menu.show('debug');f.scene.click(f.scene.button('调试页 人物'));
-  assert.equal(f.scene.buttons('调试页 剧情').length,1,'剧情页签应可用');
-  f.menu.openDebugStory();
-  const texts=()=>visibleDomLabels(f).map(label=>label.text).join(' ');
-  assert.ok(f.scene.button('分类 主线'),'应回到剧情页');
-  assert.ok(f.scene.button('进入任务'),'剧情页操作仍可用');
-  assert(!texts().includes('调试已结束'),'不应弹出调试结束提示');
-  assert(!texts().includes('自动承接'),'不应自动承接下一任务');
-});
-
-test('task previews keep late results on their own selection and disable unprepared entries',async t=>{
-  const f=fixture();t.after(f.cleanup);
-  const gm=createGmActions({session:f.session,campaign});
-  const requests:{target:{quest:string};resolve:(result:Awaited<ReturnType<typeof gm.previewStory>>)=>void}[]=[];
-  gm.previewStory=target=>new Promise(resolve=>requests.push({target,resolve}));
-  Object.defineProperty(f.app,'gm',{value:gm,configurable:true});
-  f.menu.show('debug');f.menu.openDebugStory();
-  const taskButtons=()=>f.scene.nodes.filter(node=>node.shown&&node.getData('uiAction')&&String(node.getData('label')).startsWith('任务 '));
-  assert.equal(requests.length,1,'选中第一个任务时只准备这一个现场');
-  assert.equal(f.scene.button('进入任务').input?.enabled,false);
-  const first=requests[0]!;
-  f.scene.click(taskButtons()[1]!);
-  assert.equal(requests.length,2);
-  first.resolve({ok:true,preview:{quest:first.target.quest,phase:'available',location:campaign.start}});
-  await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(f.scene.button('进入任务').input?.enabled,false,'旧任务的完成不能启用新任务');
-  requests[1]!.resolve({ok:false,reason:'测试现场缺少前置人物'});
-  await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(f.scene.button('进入任务').input?.enabled,false);
-  assert(visibleDomLabels(f).some(label=>label.text.includes('测试现场缺少前置人物')));
-  f.scene.click(taskButtons()[2]??taskButtons()[0]!);
-  assert.equal(requests.length,3);
-  requests[2]!.resolve({ok:true,preview:{quest:requests[2]!.target.quest,phase:'active',location:campaign.start}});
-  await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(f.scene.button('进入任务').input?.enabled,true);
-  f.scene.click(f.scene.button('调试页 人物'));
-  assert.equal(requests.length,3,'离开剧情页不再发预览');
-});
-
-test('closing the debug page releases its catalog, text and stale preview; reopening reacquires it',async t=>{
-  const f=fixture();t.after(f.cleanup);
-  const gm=createGmActions({session:f.session,campaign});
-  let finish!:(result:Awaited<ReturnType<typeof gm.previewStory>>)=>void;
-  gm.previewStory=()=>new Promise(resolve=>{finish=resolve;});
-  Object.defineProperty(f.app,'gm',{value:gm,configurable:true});
-  let acquired=0,released=0,requested=0;
-  Object.defineProperty(f.app,'acquireDebugCatalog',{configurable:true,value:async()=>{acquired++;return ()=>{released++;};}});
-  Object.defineProperty(f.app,'releaseDebugCatalog',{configurable:true,value:()=>{requested++;}});
-  f.menu.show('debug');await new Promise(resolve=>setImmediate(resolve));
-  f.menu.openDebugStory();
-  assert.equal(acquired,1);assert(visibleDomLabels(f).length>0);
-  f.menu.close();
-  assert.equal(released,1);assert.equal(requested,1);
-  assert.equal((f.menu as unknown as {gmPanel?:unknown}).gmPanel,undefined);
-  assert.equal(visibleDomLabels(f).length,0);
-  finish({ok:false,reason:'迟到的预览'});await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(visibleDomLabels(f).length,0,'迟到结果不能重新显示已经关闭的界面');
-  f.menu.show('debug');await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(acquired,2);assert.equal(f.scene.buttons('调试页 剧情').length,1,'剧情页签应可用');
-  f.menu.releaseSession(f.session);
-  assert.equal(released,2);
-  assert.equal((f.menu as unknown as {session?:unknown}).session,undefined,'回标题释放旧会话引用');
-});
-
-test('closing the menu while debug data loads does not reopen it when the load completes',async t=>{
-  const f=fixture();t.after(f.cleanup);
-  const gm=createGmActions({session:f.session,campaign});
-  Object.defineProperty(f.app,'gm',{value:gm,configurable:true});
-  let finish!:(release:()=>void)=>void,released=0,requested=0;
-  Object.defineProperty(f.app,'acquireDebugCatalog',{configurable:true,value:()=>new Promise<()=>void>(resolve=>{finish=resolve;})});
-  Object.defineProperty(f.app,'releaseDebugCatalog',{configurable:true,value:()=>{requested++;}});
-  f.menu.show('system');f.menu.show('debug');f.menu.close();
-  finish(()=>{released++;});await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(f.menu.menuOpen,false);assert.equal(released,1);assert.equal(requested,1);
-  assert.equal(f.scene.buttons('调试页 剧情').length,0);
-});
-
-test('a failed story jump reacquires the catalog before showing its error',async t=>{
-  const f=fixture();t.after(f.cleanup);
-  const gm=createGmActions({session:f.session,campaign});
-  gm.previewStory=async target=>({ok:true,preview:{quest:target.quest,phase:'available',location:campaign.start}});
-  Object.defineProperty(f.app,'gm',{value:gm,configurable:true});
-  let acquired=0,released=0;
-  Object.defineProperty(f.app,'acquireDebugCatalog',{configurable:true,value:async()=>{acquired++;return ()=>{released++;};}});
-  Object.defineProperty(f.app,'releaseDebugCatalog',{configurable:true,value:()=>{}});
-  f.menu.show('debug');await new Promise(resolve=>setImmediate(resolve));
-  f.menu.openDebugStory();await new Promise(resolve=>setImmediate(resolve));
-  f.scene.click(f.scene.button('进入任务'));await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(released,1);assert.equal(acquired,2);
-  assert.ok(visibleDomLabels(f).some(label=>label.text.includes('未能进入任务：当前会话还没有装配剧情导演')));
-});
-
 
 test('the GM character page levels, heals and toggles the debug switches', async t => {
   const f = fixture(); t.after(f.cleanup);
@@ -3102,8 +2949,6 @@ test('session notifications redraw at most once and skip unchanged pages', t => 
   f.menu.show('quests');renders=0;
   f.session.emit();
   assert.equal(renders,0,'任务没变化时不重绘任务页');
-  f.session.focusDebugQuest('grafton-mission');
-  assert.equal(renders,1,'调试焦点变化重绘一次任务页');
 });
 
 test('bag chrome is reused across rerenders and replaced when the page changes', t => {

@@ -58,7 +58,7 @@ StoryDirector.project → WorldScene 把结果投影回正式地图
 ```
 
 关键点：**演出期间舞台是临时工作区；只有节点提交时才修改正式世界。**  
-这也是为什么调试剧情时，不能靠“画面上看起来对”来判断任务状态，必须看 `Session` 里的真实状态。
+这也是为什么检查剧情演出时，不能靠“画面上看起来对”来判断任务状态，必须看 `Session` 里的真实状态。
 
 ## 启动与装配
 
@@ -85,8 +85,7 @@ StoryDirector.project → WorldScene 把结果投影回正式地图
 
 - 世界地图和人物外观；
 - 剧情脚本、事件、任务；
-- 战斗、技能、物品、商店；
-- 调试任务目录。
+- 战斗、技能、物品、商店。
 
 加载后先做结构化校验，再做跨文件引用校验：任务目标是否存在、舞台演员是否能找到、地图出口是否指向有效地图、素材文件是否存在等。校验实际上分三层，越往后越接近“这段剧情真的能演”：
 
@@ -99,8 +98,6 @@ StoryDirector.project → WorldScene 把结果投影回正式地图
 内容校验不是“启动时的装饰”。它把许多运行时会变成“找不到人/黑屏/卡死”的问题提前到构建或启动阶段。
 
 生产环境不在每次启动时重跑这三层校验。构建会写一份很小的 `content-manifest.json`，记下编译后内容的版本和 `campaign.json`、`battle.json` 的必需顶层键；运行时只核对这份清单，版本或键对不上就明确报错并要求刷新/更新。开发服务、Node 测试和 `?gm` 仍走完整校验，`npm run test:content-build` 则用真实内容编译后跑一场最小战斗和一个剧情节点，证明编译产物真的能运行。
-
-`public/content/debug/start.json` 是独立的调试任务目录。它记录每条任务“开演前世界是什么样”，由 `tools/debug-start` 生成；改过内容后要重新生成，否则现场表会过期。
 
 ## Session：游戏事实的总账本
 
@@ -323,43 +320,21 @@ story  + runId + instanceId
 
 ## 调试与 GM
 
-主要文件：`src/debug/gm-actions.ts`、`src/debug/story-jump.ts`、`src/domain/story-debug.ts`、`src/ui/phaser/gm-panel.ts`、`src/main.ts`
+主要文件：`src/debug/gm-actions.ts`、`src/ui/phaser/gm-panel.ts`、`src/main.ts`
 
-任务调试的入口是 `debugStory.tasks`：
+`gm-actions.ts` 是 GM 动作的唯一实现：面板、无浏览器测试和 `globalThis.gm` 共用同一份代码。它不能 import Phaser/UI；面板只负责显示和收集点击。
 
-- 每条任务有 `entry`（默认落点）、`start`（开演前世界）和 `play`（要播的剧情）；
-- `prepareTaskStart()` 在隔离沙箱里把现场表展开成完整会话；
-- `jumpStory()` 安装现场、切图、播放开幕演出；
-- 进入调试后自动存档暂停，检查点跳过。
-
-单任务调试现在的收尾规则：
-
-- 开幕演出播完不结束，玩家继续移动/触发/战斗；
-- 当前任务真正完成后，恢复进入调试前的会话和世界；
-- 恢复自动存档、抓一次检查点、回到调试剧情页；
-- 不自动接下一任务，不额外弹完成提示。
-
-GM 面板是动作层的 UI 外壳。`gm-actions.ts` 不能 import Phaser/UI；面板、无浏览器测试和 `globalThis.gm` 共用同一份动作实现。
-
-## 无头剧情：不画一帧的排练
-
-主要文件：`src/debug/headless-story.ts`、`tests/helpers/story-playthrough.ts`、`tools/debug-start/`
-
-测试里经常需要“把一段剧情从头跑到尾”，但不想启动 Phaser。无头剧情用真实的 `Session`、真实的 `StoryDirector`、真实的 `StoryRuntime` 和真实的场景归约来跑，只是不画画面。它和正式游戏共用同一套提交与投影规则，所以测试通过基本能代表游戏里也通过。
-
-一个硬规则是：遇到需要玩家选择的地方，必须由测试显式给出选哪一项，不允许默认选第一个。否则剧情增删一个选项，测试就可能悄悄走到另一条分支。
-
-GM 任务现场表也是用这条通道生成的：从新游戏开始，用真实运行时回放到某条任务开演前，把那一刻的会话和世界记下来，就是 `public/content/debug/start.json`。
+GM 提供完成任务、穿墙、倍速、角色数值与技能、发放道具和金币、脱困、状态上报。无敌、技能无 CD、穿墙和倍速是运行时开关，不写存档。
 
 ## 测试与发布
 
-主要文件：`tests/`、`tools/test.ts`、`tools/validate-content.mjs`、`tools/audit-story-actors.ts`、`tools/debug-start/`
+主要文件：`tests/`、`tools/test.ts`、`tools/validate-content.mjs`、`tools/audit-story-actors.ts`
 
 测试分几类：
 
 - 领域单元测试：任务、剧情、战斗、存档、AI；
 - 场景/界面交互测试：菜单、GM 面板、Phaser 替身；
-- 内容审计：全部舞台、支线开幕、支线全流程；
+- 内容审计：身份台账、舞台演员、全部舞台动作；
 - 主线完整回放：从新游戏到结局；
 - 存档往返；
 - 构建与独立安装验收。
@@ -377,7 +352,7 @@ npm run build
 npm run deploy
 ```
 
-发布前建议用 `npm run release:story`：内容校验、GM 现场表、剧情审计、主线回放和构建一条链跑完。
+发布前建议用 `npm run release:story`：内容校验、剧情审计、主线回放和构建一条链跑完。
 
 ## 修改时先看哪里
 
@@ -391,9 +366,9 @@ npm run deploy
 | 战斗/技能 | `combat.ts`、`combat-runtime.ts`、`world-combat.ts`、`battle.json` |
 | 佣兵/召唤 AI | `party-ai.ts`、`friendly-summon-ai.ts` |
 | 存档/检查点 | `save-game.ts`、`saved-game.ts`、`session-checkpoint.ts`、`auto-save.ts` |
-| GM/任务调试 | `gm-actions.ts`、`story-jump.ts`、`gm-panel.ts` |
+| GM/调试 | `gm-actions.ts`、`gm-panel.ts` |
 | 内容校验 | `content-validation.ts`、`content-relations.ts`、`story-reference-validation.ts`、`story-performance-validation.ts` |
-| 无头剧情/剧情审计 | `debug/headless-story.ts`、`tests/helpers/story-playthrough.ts`、`tools/audit-story-actors.ts` |
+| 剧情审计 | `tests/helpers/story-playthrough.ts`、`tools/audit-story-actors.ts` |
 | 进图彩排与场景快照 | `scene-visit.ts`、`scene-snapshot.ts`、`world-scene.ts` |
 
 ## 最重要的几条边界
@@ -402,5 +377,4 @@ npm run deploy
 2. **人物编号不是实例编号。** 需要唯一实例时用 `ActorRef`/`worldEntityId`/`memberId`/`enemyKey`。
 3. **任务完成看 `QuestBook`，不看演出是否播完。**
 4. **实时位置和规则位置分开。** 画面坐标不能替代会话状态。
-5. **调试现场不写玩家存档。** 进入前快照、恢复、检查点顺序都不能乱。
-6. **内容改动要跑校验和对应回放。** 能静态发现的问题不要留到运行时。
+5. **内容改动要跑校验和对应回放。** 能静态发现的问题不要留到运行时。

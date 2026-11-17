@@ -173,22 +173,6 @@ test('defeated bosses and removed story enemies survive JSON slots while ordinar
   }
 });
 
-test('a debug-pinned quest is stripped from the player save and restores at its natural status',()=>{
-  const session=createSession();
-  // 收集目标已满足；实验钉住仅影响现场状态。
-  assert.equal(session.accept('quest-197'),true);
-  for(const goal of session.definition('quest-197')!.goals)session.bag.add(goal.target,goal.quantity);
-  session.refresh();
-  assert.equal(session.status('quest-197'),'ready');
-  session.pinDebugQuest('quest-197');
-  assert.equal(session.status('quest-197'),'active');
-  const saved=record(session);
-  assert.equal(saved.session.questBook.debugPins,undefined,'调试钉住不写进玩家存档');
-  const loaded=createSession();
-  restoreSaveGame(loaded,saved);
-  assert.equal(loaded.status('quest-197'),'ready','读回来是正常任务模型的状态');
-});
-
 test('current saves keep playback state but resolve actor appearances again on load',()=>{
   const session=createSession(),script=Object.keys(campaign.scripts)[0],definition=campaign.scripts[script];
   const portalAppearance:ActorDefinition={id:'portal',name:'传送门',description:'',clips:{},portrait:null};

@@ -1,4 +1,3 @@
-import { validateStoryDebug } from '../domain/story-debug.ts';
 import {ITEM_NOTICES} from '../domain/item-application.ts';
 import {buffEffectNames} from '../domain/buff-effects.ts';
 import { feedbackEffects, type CombatFeedbackDefinition } from '../domain/combat-feedback.ts';
@@ -680,67 +679,8 @@ const storyPlace=variant('type',{
   current:object({type:oneOf('current')}),
   unavailable:object({type:oneOf('unavailable'),reason:text}),
 });
-const debugPair=(first:Check,second:Check):Check=>(v,p)=>{
-  requireValue(Array.isArray(v)&&v.length===2,p,'需要二元组');
-  first(v[0],`${p}[0]`);second(v[1],`${p}[1]`);
-};
-const debugSequence=array(debugPair(text,count));
-const debugEntity=object({id:text,map:optional(text),actor:optional(text),characterId:optional(text),authority:optional(oneOf('registered','npc','story','static')),mapVisit:optional(integer),
-  x:optional(number),y:optional(number),facing:optional(facing),visible:optional(boolean),removed:optional(boolean),hint:optional(text)});
-const debugEncounter=object({id:text,definitionId:optional(text),map:text,mapFromStage:optional(boolean),
-  status:oneOf('prepared','active','won','lost'),spawns:array(object({id:text,enemyId:text,x:number,y:number}))});
-/** 现场表的世界差量；与 `StoryWorldSnapshot` 同形，另加结构化的缺场登记。 */
-const debugWorld=object({
-  location:object({map:text,x:number,y:number,facing}),
-  entities:optional(array(debugEntity)),
-  exits:optional(array(debugPair(text,boolean))),
-  flags:optional(strings),
-  choices:optional(array(debugPair(text,text))),
-  encounters:optional(array(debugEncounter)),
-  mapVisit:optional(integer),
-  enemyRemovals:optional(array(object({enemyId:text,map:optional(text),all:boolean}))),
-  enemyLocations:optional(array(object({id:text,enemyId:text,map:text,x:number,y:number,
-    mapVisit:optional(integer),respawn:optional((v,p)=>requireValue(v===false,p,'只能为 false')),mapFromStage:optional(boolean)}))),
-  appearances:optional(array(debugPair(text,text))),
-  partyBuffs:optional(array(object({buff:text,strength:integer}))),
-  absentActors:optional(array(object({map:text,actor:text,characterId:optional(text)}))),
-  absentEnemies:optional(array(object({map:text,enemyId:text}))),
-});
-const debugItem=object({item:text,quantity:count,e:optional(integer)});
-const debugStart=object({
-  quests:optional(array(object({id:text,status:oneOf('locked','available','active','ready','completed'),
-    cycle:optional(integer),completedCycles:optional(integer),goals:optional(record(integer)),e:optional(integer)}))),
-  running:optional(strings),
-  world:optional(debugWorld),
-  items:optional(array(debugItem)),
-  itemReset:optional(strings),
-  party:optional(object({join:optional(strings),leave:optional(strings),control:optional(text)})),
-  completedEvents:optional(array(object({id:text,e:optional(integer)}))),
-  occurrenceSequences:optional(debugSequence),
-  factSequences:optional(debugSequence),
-  requiresProfile:optional(object({items:optional(array(debugItem)),money:optional(integer)})),
-});
-const debugPlay=object({script:text,node:optional(text),event:optional(text),cut:oneOf('before-opening','after-accept','event-end')});
-const debugGap=object({quest:text,title:optional(text),kind:text,detail:text,evidence:optional(text),fixHint:optional(text)});
-const debugCoverage=object({eligible:integer,verified:integer,gaps:integer,excludedNoIntake:integer,
-  excludedUnreachableEvents:integer,unreachableNodes:integer,byGapKind:record(integer)});
-const debugMeta=object({generator:optional(text),interpreterVersion:count,semanticsVersion:count,sourceHash:text,
-  generatedAt:text,sources:optional(record(text)),coverage:debugCoverage});
-const debugTask=object({
-  quest:text,phase:oneOf('available','active'),
-  entry:object({type:oneOf('fixed'),map:text,x:number,y:number,source:text}),
-  scripts:optional(strings),
-  start:optional(debugStart),play:optional(debugPlay),
-  sourceHash:optional(text),
-  basis:optional((v,p)=>requireValue(!!v&&typeof v==='object'&&!Array.isArray(v),p,'需要对象')),
-});
-const debugStory=object({schema:optional((v,p)=>requireValue(v===1,p,'需要版本 1')),meta:optional(debugMeta),
-  tasks:array(debugTask),gaps:optional(array(debugGap))});
-/** 调试现场表是独立产物，只有 GM 模式才加载；形状与旧 `campaign.debugStory` 相同。 */
-export function parseStoryDebugCatalog(value:unknown):import('../domain/story-debug.ts').StoryDebugCatalog{
-  debugStory(value,'debugStory');return value as import('../domain/story-debug.ts').StoryDebugCatalog;
-}
-const campaign=shape<Campaign>({debugStory:optional(debugStory),version:(v,p)=>requireValue(v===2,p,'剧情内容需要版本 2'),contentVersion:count,
+
+const campaign=shape<Campaign>({version:(v,p)=>requireValue(v===2,p,'剧情内容需要版本 2'),contentVersion:count,
   start:object({map:text,x:number,y:number,actor:text,facing,script:text}),
   scripts:record(object({entry:text,nodes:array(object({id:text,presentation:array(presentation),commands:array(storyCommand),stage:optional(performanceChecks.stage),exit:nodeExit}))})),
   questGroups:array(object({id:text,title:text,kind:oneOf('main','side'),questIds:strings})),
@@ -1069,7 +1009,6 @@ export function parseCampaign(value:unknown):Campaign {
   for(const entity of [...result.placements,...result.mapEntryPlacements??[]]) entity.authority??=placementAuthority(entity);
   for(const script of Object.values(result.scripts))for(const node of script.nodes)for(const command of node.commands)
     if(command.type==='world'&&command.command.kind==='place')command.command.entity.authority??=placementAuthority(command.command.entity);
-  validateStoryDebug(result);
   return result;
 }
 function unique(ids:string[],path:string):void{requireValue(new Set(ids).size===ids.length,path,'标识重复');}

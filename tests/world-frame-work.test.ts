@@ -8,7 +8,6 @@ import type {BattleCatalog} from '../src/domain/battle.ts';
 import type {Campaign} from '../src/domain/campaign.ts';
 import type {ItemCatalog} from '../src/domain/items.ts';
 import {SkillConfiguration} from '../src/domain/skill-configuration.ts';
-import {NavigationWorld} from '../src/domain/navigation-world.ts';
 import {CompanionSkillProgression} from '../src/domain/companion-progression.ts';
 import {SCENE_KEYS} from '../src/application/scene-keys.ts';
 import {groundLootFor} from '../src/domain/ground-loot.ts';
@@ -160,26 +159,6 @@ test('companion skill growth, saved configurations and restores advance the shor
   const lower=skills.version;skills.updateLevel(5);assert(skills.version>lower);assert.equal(skills.draft(catalog,'priest').levels.heal,2);
   const grown=skills.version;skills.save(catalog,'priest',skills.draft(catalog,'priest'));assert(skills.version>grown);
   const saved=skills.captureState(),version=skills.version;skills.restoreState(saved);assert(skills.version>version);
-});
-
-test('gm travel snaps a blocked destination point and reports why a map cannot be entered',async()=>{
- const read=(name:string)=>JSON.parse(readFileSync(new URL(`../public/content/${name}.json`,import.meta.url),'utf8'));
- const campaign=read('campaign'),world=read('world'),map=read('maps/shadow-camp');
- const commands:{type:string;destination:{x:number;y:number}}[][]=[];let restarts=0;
- const host:any=Object.assign(Object.create(WorldScene.prototype),{
-  app:{world,campaign,content:{map:async()=>map},ui:{loading:()=>{}},
-   session:{applyStoryCommands:(value:{type:string;destination:{x:number;y:number}}[])=>commands.push(value)}},
-  loadingWorld:false,destroyed:false,equippedActor:world.actors[campaign.start.actor],scene:{}});
- // 场景重启会走 `open()`，结束时把加载标志放回去；夹具照这个语义复位。
- host.scene.restart=(options:{onReady?:()=>void})=>{restarts++;host.loadingWorld=false;options.onReady?.();};
- const result=await invoke(host,'gmTravel','shadow-camp',{x:8,y:8});
- assert.deepEqual(result,{ok:true});assert.equal(restarts,1);
- // 没这张图时要说清是地图不对，而不是笼统地失败。
- assert.deepEqual(await invoke(host,'gmTravel','missing-map'),{ok:false,reason:'地图不存在：missing-map'});
- const travel=commands[0]!.find(command=>command.type==='travel')!;
- const [x,y]=[travel.destination.x,travel.destination.y];
- assert.notDeepEqual([x,y],[8,8],'站不住的坐标要被吸附');
- assert.equal(new NavigationWorld(map).terrainFree({x,y}),true);
 });
 
 test('entry loading stays up until the entry performance draws its first frame',async()=>{

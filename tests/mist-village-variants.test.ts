@@ -56,7 +56,7 @@ test('mist village variants switch visibility by quest phase', () => {
   assert.equal(visible(monicaStaticId, 'completed', 'ready', 'locked'), false, '莫妮卡的静态版在 quest-334 就绪后应隐藏');
   assert.equal(visible('quest-npc-npc-483', 'completed', 'ready', 'locked'), true, 'quest-360 的任务版在 quest-334 就绪后应可见');
 
-  // quest-335 已接取也代表 event-384 已经切换过，即使调试现场没有写 quest-334 状态。
+  // quest-335 已接取也代表 event-384 已经切换过，即使 quest-334 尚未完成。
   assert.equal(visible('claude-654192ed-002', 'completed', 'active', 'active'), true, 'quest-335 接取后静态版应可见');
   assert.equal(visible('claude-e6e221a8-017', 'completed', 'active', 'active'), false, 'quest-335 接取后剧情版应隐藏');
 });

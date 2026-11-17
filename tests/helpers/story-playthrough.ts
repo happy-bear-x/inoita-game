@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { parseBattle, parseCampaign, parseCharacterStats, parseCompanions, parseItemCatalog, parseStoryClasses, parseStoryDebugCatalog, parseWorld } from '../../src/application/content-validation.ts';
+import { parseBattle, parseCampaign, parseCharacterStats, parseCompanions, parseItemCatalog, parseStoryClasses, parseWorld } from '../../src/application/content-validation.ts';
 import type { EntityPlacement, MapExit, WorldMap } from '../../src/domain/content.ts';
 import { registerHooks } from 'node:module';
 import { NavigationWorld } from '../../src/domain/navigation-world.ts';
@@ -34,15 +34,13 @@ const {WorldScene}=await import('../../src/scenes/world-scene.ts');phaserHook.de
 
 const read=(name:string)=>JSON.parse(readFileSync(new URL('../../public/content/'+name+'.json',import.meta.url),'utf8'));
 const campaign=parseCampaign(read('campaign')),world=parseWorld(read('world'));
-// 调试现场表是独立产物；测试与 GM 一样显式挂载，普通游玩不会加载它。
-campaign.debugStory=parseStoryDebugCatalog(read('debug/start'));
 const items=parseItemCatalog(read('items')),stats=parseCharacterStats(read('character-stats')),battle=parseBattle(read('battle'));
 const classes=parseStoryClasses(read('story-classes')),companions=parseCompanions(read('companions'));
 const drops=parseDrops(read('drops'),items,battle.enemies.map(enemy=>enemy.id));
 const springs=parseSprings(read('springs'));
 const maps=new Map(world.maps.map(ref=>[ref.id,read('maps/'+ref.id) as WorldMap]));
 const tick=()=>new Promise<void>(resolve=>setImmediate(resolve));
-/** 无头回放与现场表测试共用同一份解析后的内容。 */
+/** 无头回放测试共用同一份解析后的内容。 */
 export const headlessContent={campaign,world,maps,items,battle,stats,storyClasses:classes,companions};
 
 /** Runs the real director and session. Only elapsed presentation time and combat damage are omitted. */

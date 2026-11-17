@@ -73,8 +73,6 @@ import type { PendingAsset } from '../rendering/scene-assets.ts';
 
 /** 卡顿时最多补 2 个逻辑帧；补 3 帧会把 AI、寻路和状态的尖峰叠成三倍。 */
 const MAX_FRAME_DELTA_MS = 120;
-/** GM 等场景重建的等待上限；既没报错也没就绪时不能让调用方永远等下去。 */
-const DEBUG_MAP_WAIT_TIMEOUT_MS = 20_000;
 /** 剧情世界静默重建的等待上限；超时同时中止新场景的加载。 */
 const STORY_WORLD_SWITCH_TIMEOUT_MS = 30_000;
 /** 压测模式每 0.9 秒尝试补一只怪。 */
@@ -742,7 +740,7 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
     this.app.session.setStoryWorldContext(()=>this.storyWorldContext());
     // 进图时补齐本图这段演出要用的立绘与音效。地图素材不在这里预取：
     // 换图时由目标图自己的入口加载，进图只对落脚图负责。
-    // `suppressEntry` 的入口（GM 传送、读档恢复）由调用方接管后续演出，不在这里抢跑。
+    // `suppressEntry` 的入口（读档恢复）由调用方接管后续演出，不在这里抢跑。
     if (!options.silentEntry && !options.suppressEntry && plan.scripts.length) {
       try { await this.ensureStoryAssets(plan.scripts, signal); }
       catch (error) {
@@ -1402,8 +1400,7 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
     const session=this.app.session;
     return [this.map?.id??'',this.combat?.controlledId??'player',this.charactersRevision,
       session.questBook?.version??0,session.storyWorld?.revision??0,session.chests?.revision??0,
-      session.legendaryWeapons?.revision??0,session.runtimeState?.sequence??0,session.restorationVersion??0,
-      session.debugFocusQuest??''].join('|');
+      session.legendaryWeapons?.revision??0,session.runtimeState?.sequence??0,session.restorationVersion??0].join('|');
   }
   refreshState(): void {
     this.refreshLoadout();
@@ -1722,45 +1719,6 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
     this.beginWorldSwitch();
     this.scene.restart({ map: exit.destination, x: exit.spawn.x, y: exit.spawn.y, facing: exit.facing });
   }
-  /**
-   * GM 调试传送：切到目标地图并等场景就绪，让后续剧情在该图的地形和实体上开演。
-   * 落点优先用调用方给的剧情坐标，没给就在地图中心找最近可站点；两种情况都按玩家体积
-   * 吸附一次——内容里的坐标可能落在墙里，直接交出去等于把人放到地图角落。
-   */
-  async gmTravel(destination: string, spawn?: { x: number; y: number }): Promise<{ ok: boolean; reason?: string }> {
-    if (this.loadingWorld || this.destroyed) return { ok: false, reason: '正在切换地图' };
-    const reference = this.app.world.maps.find(entry => entry.id === destination);
-    if (!reference) return { ok: false, reason: `地图不存在：${destination}` };
-    let point: { x: number; y: number };
-    try {
-      const data = await this.app.content.map(reference.file);
-      if (this.destroyed) return { ok: false, reason: '场景已关闭' };
-      const appearance = this.equippedActor ?? this.app.session.character?.appearance ?? this.app.world.actors[this.app.campaign.start.actor];
-      const navigation = new NavigationWorld(data), shape = { collision: appearance.collision };
-      const requested = spawn ?? { x: data.width / 2, y: data.height / 2 };
-      point = navigation.nearestBody(shape, requested) ?? navigation.nearest(shape, requested);
-    } catch (error) {
-      return { ok: false, reason: error instanceof Error ? error.message : String(error) };
-    }
-    this.prepareToLeaveWorld();
-    this.app.session.applyStoryCommands([{ type: 'travel', destination: { map: destination, ...point, facing: 'south' } }]);
-    this.loadingWorld = true; this.near = null; this.app.ui.loading('正在前往新的地方…');
-    // 用场景回调结算，而不是轮询 `loadingWorld`：加载失败时那个标志不会回落，
-    // 轮询只能白等超时，也说不清失败原因。GM 播放自己启动指定剧情，所以这里
-    // 抑制自动入场触发——否则进图剧情先占住运行时队列，点了节点先看到别的事件。
-    return new Promise(resolve => {
-      let finished = false;
-      const done = (result: { ok: boolean; reason?: string }) => {
-        if (finished) return;
-        finished = true; clearTimeout(timer); resolve(result);
-      };
-      const timer = setTimeout(() => done({ ok: false, reason: '切图等待超时' }), DEBUG_MAP_WAIT_TIMEOUT_MS);
-      this.beginWorldSwitch();
-      this.scene.restart({ map: destination, x: point.x, y: point.y, facing: 'south', suppressEntry: true,
-        onReady: () => done({ ok: true }),
-        onError: (error: unknown) => done({ ok: false, reason: error instanceof Error ? error.message : String(error) }) } satisfies SceneOptions);
-    });
-  }
   private get canControl(): boolean {
     // 剧情导演在接管期间即使锁的记账还没落地，玩家也不该拿到操作权：
     // 摇杆、技能键和移动都以导演的忙碌状态为准。
@@ -1862,7 +1820,7 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
     const visual=this.combat?.controlledVisual??this.player;
     const session=this.app.session,store=groundLootFor(session);
     // 宝石只要求存在存活接收者；满蓝也会收取。任务需求、背包和读档变化再重试原地掉落。
-    const availability=`${session.bag.revision}|${session.questBook.version}|${session.storyWorld.revision}|${session.restorationVersion}|${session.debugFocusQuest??''}|${!!this.combat}|${session.hasLivingMember}`;
+    const availability=`${session.bag.revision}|${session.questBook.version}|${session.storyWorld.revision}|${session.restorationVersion}|${!!this.combat}|${session.hasLivingMember}`;
     const picked=store.collectNearby(this.map.id,position.x,position.y,reward=>this.receiveGroundReward(reward),availability);
     if(!picked.length)return;
     globalThis.storyDiagnostics?.record('pickup', { map: this.map.id, count: picked.length,
@@ -1882,7 +1840,7 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
    * 放在 `combat.normalizeForStory` 之后，先让 `pendingDefeats.flush()` 把最后一杀的掉落落进 store。
    */
   private collectMapGroundLoot():void {
-    if(!this.map||this.loadingWorld||this.destroyed||this.app.session.debugFocusQuest)return;
+    if(!this.map||this.loadingWorld||this.destroyed)return;
     const session=this.app.session,mapId=this.map.id,store=groundLootFor(session);
     let picked:import('../domain/ground-loot.ts').GroundDrop[]=[];
     session.batchNotifications(()=>{
@@ -1995,8 +1953,8 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
     this.pressureSpawner=this.time.addEvent({delay:PRESSURE_SPAWN_INTERVAL_MS,loop:true,callback:()=>{void spawn();}});
   }
   private captureCheckpoint():boolean {
-    // 调试现场和压测现场都不是玩家进度：不覆盖检查点。
-    if(this.app.pressureMode||this.app.session.debugFocusQuest||this.app.gm?.storyDebug().autoSavePaused)return false;
+    // 压测现场不是玩家进度：不覆盖检查点。
+    if(this.app.pressureMode)return false;
     // 遭遇正在等待战斗结果时，已有检查点就保留：死亡回滚才不会直接落回同一场战斗。
     // 没有检查点时必须记一次兜底：读档会清空内存检查点，而读档可能正落在等待战斗的现场，
     // 这时再拒绝就会让整场战斗没有可回退的检查点。
@@ -2014,7 +1972,7 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
       return false;
     }
     // 检查点里不能留着 0 血、又没有死亡记录的敌人；先把死亡单结算掉。
-    // 普通快照（调试/GM/剧情基线）保持只读，剧情基线在 prepare 阶段已由 normalizeForStory 冲刷。
+    // 普通快照和剧情基线保持只读，剧情基线在 prepare 阶段已由 normalizeForStory 冲刷。
     this.combat.settleForSnapshot();
     if(!this.app.checkpoint.capture(this.app.session,{map:this.map!.id,...this.movement!.position(this.player!)},this.captureStoryWorld()))return false;
     this.checkpointPending=false;
@@ -2063,12 +2021,11 @@ captureStoryScene(includeEnemyAppearance=true):SceneSnapshot {
   }
   /**
    * 存档要连世界一起带走。换图途中（`loadingWorld`）与还没进图时没有完整的落点，
-   * 返回带原因的失败结果让界面给出准确提示；调试现场也走同一条失败分支。
+   * 返回带原因的失败结果让界面给出准确提示。
    */
   captureSaveWorld(): SaveWorldResult {
-    // 调试现场和压测现场禁手动存档，返回失败由界面给具体提示。
+    // 压测现场禁手动存档，返回失败由界面给具体提示。
     if(this.app.pressureMode)return {ok:false,reason:'pressure'};
-    if(this.app.session.debugFocusQuest||this.app.gm?.storyDebug().autoSavePaused)return {ok:false,reason:'debug'};
     // 场景关闭时字段可能还没清完，不能把正在拆掉的世界当成可存档现场。
     if(!this.worldObjectsReady||this.destroyed)return {ok:false,reason:'not-ready'};
     if(this.loadingWorld)return {ok:false,reason:'loading'};

@@ -63,8 +63,6 @@ export interface SessionState {
   receipts:QuestSettlement[];
   factSequences:[string,number][];
   trackedQuest?:string;
-  /** GM 任务调试的焦点：任务日志只显示这一条；不写进玩家存档。 */
-  debugFocusQuest?:string;
   player?:StoryPlayerState;
   money:number;
   gameTimeMs:number;
@@ -133,7 +131,7 @@ function storyCommandSubsystems(command:StoryCommand):readonly StorySubsystem[]{
     case 'interaction':case 'talk':return ['questBook'];
     case 'quest':{
       switch(command.command.type){
-        case 'fact':case 'pin-active':case 'unpin-active':case 'refresh':case 'reset':case 'script-ready':
+        case 'fact':case 'refresh':case 'reset':case 'script-ready':
           return ['questBook'];
         case 'accept':return ['questBook','bag','reservedDrops'];
         case 'complete':case 'script-complete':return ['questBook','bag','hero','skills','coins','receipts','reservedDrops'];
@@ -349,17 +347,13 @@ export class Session {
     if(this.enemyStates.delete(id))this.enemyRevisionValue++;
   }
   private trackedQuest?: string;
-  private debugFocusQuestValue?: string;
   /** 任务组的主线／支线归属；NPC 任务槽按原版先主线后支线的顺序取。 */
   private readonly questGroupKinds: ReadonlyMap<string, 'main' | 'side'>;
-  private questSlotProjection?: { version: number; focus?: string; values: Map<string, CampaignQuest | undefined> };
+  private questSlotProjection?: { version: number; values: Map<string, CampaignQuest | undefined> };
   /** 角色头顶的任务标记按任务簿版本缓存；版本不变时交互候选不必重扫全部任务。 */
-  private markerActorProjection?: { version: number; focus?: string; values: Map<string, boolean> };
+  private markerActorProjection?: { version: number; values: Map<string, boolean> };
   /** 进行中任务的 talk/interact 目标标记；任务目标完成后失效。 */
-  private goalMarkerProjection?: { version: number; focus?: string; values: Map<string, boolean> };
-  /** GM 任务调试的焦点；任务面板据此只列出当前任务。 */
-  get debugFocusQuest():string|undefined { return this.debugFocusQuestValue; }
-  focusDebugQuest(id:string|undefined):void { this.debugFocusQuestValue=id; this.emit(); }
+  private goalMarkerProjection?: { version: number; values: Map<string, boolean> };
   private playerState?: Readonly<StoryPlayerState>;
   get player():Readonly<StoryPlayerState>|undefined { return this.hero?.player ?? this.playerState; }
   /** 上阵队伍是否至少还有一人活着；没有队伍时看主角。存档和检查点用它挡住全灭状态。 */
@@ -382,8 +376,7 @@ export class Session {
    */
   questDropRequirements(pending:ReadonlyMap<string,number>=groundLootFor(this).pendingItemCounts()):readonly (readonly QuestDropRequirement[])[] {
     this.refresh();
-    const focus=this.debugFocusQuestValue;
-    return this.questBook.runningQuestIds.filter(id=>!focus||id===focus).flatMap(id=>{
+    return this.questBook.runningQuestIds.flatMap(id=>{
       const quest=this.definition(id)!;
       if(this.questBook.status(id)!=='active'||quest.completion!=='all')return [];
       const goals=quest.goals.filter(goal=>goal.kind==='item')
@@ -517,13 +510,9 @@ export class Session {
   }
 
   captureState():SessionState { return this.captureStateWith(this.questBook.captureState()); }
-  /** 存档用：GM 调试钉住只是现场状态；舞台演员外观也不是持久数据，写档前剥离。 */
+  /** 存档用：舞台演员外观不是持久数据，写档前剥离。 */
   capturePersistentState():SessionState {
     const state=this.captureStateWith(undefined,true);
-    if(state.questBook.debugPins?.length){
-      const questBook={...state.questBook};delete questBook.debugPins;state.questBook=questBook;
-    }
-    delete state.debugFocusQuest;
     state.runtime=toPlaybackCheckpoint(state.runtime);
     return state;
   }
@@ -574,7 +563,7 @@ export class Session {
     return {classId:this.hero?.classId??this.character?.classId,
       questBook:questBookState,storyWorld,runtime:this.runtimeSnapshot,
       receipts,
-      factSequences:[...this.factSequences],trackedQuest:this.trackedQuest,debugFocusQuest:this.debugFocusQuestValue,player:this.playerState,money:this.coins,gameTimeMs:this.gameTimeMs,
+      factSequences:[...this.factSequences],trackedQuest:this.trackedQuest,player:this.playerState,money:this.coins,gameTimeMs:this.gameTimeMs,
       enemies,bag,hero:this.hero?.captureState(),skills:this.skills.captureState(),
       party:this.party?.captureState(),recovery:this.recovery.captureState(),resourceRecovery:this.resourceRecovery.captureState(),
       combatClock:this.combatClock.captureState(),cooldowns:this.cooldowns.captureState(),frenzyAnimations:this.frenzyAnimations.captureState(),chests,springs:this.springs.captureState(),legendaryWeapons:this.legendaryWeapons.captureState(),shops:this.shops.captureState(),
@@ -601,7 +590,7 @@ export class Session {
     this.restoreReceipts(restored.receipts);
     this.factSequences.clear();for(const [source,sequence]of restored.factSequences)this.factSequences.set(source,sequence);
     this.enemyStates.clear();for(const [id,enemy] of restored.enemies)this.enemyStates.set(id,enemy);this.enemyRevisionValue++;this.enemySpawnRevisionValue++;
-    this.trackedQuest=restored.trackedQuest;this.debugFocusQuestValue=restored.debugFocusQuest;this.playerState=restored.player?Object.freeze({...restored.player}):undefined;
+    this.trackedQuest=restored.trackedQuest;this.playerState=restored.player?Object.freeze({...restored.player}):undefined;
     this.coins=restored.money;this.gameTimeMs=restored.gameTimeMs;
     this.recovery.restoreState(restored.recovery);this.chests.restoreState(restored.chests);this.springs.restoreState(restored.springs);this.legendaryWeapons.restoreState(restored.legendaryWeapons);this.shops.restoreState(restored.shops);
     const clock=restored.combatClock??{frame:Math.floor(restored.resourceRecovery.elapsedMs/LOGIC_FRAME_MS),remainderMs:restored.resourceRecovery.elapsedMs%LOGIC_FRAME_MS};
@@ -698,7 +687,6 @@ export class Session {
     new QuestItemGenerators().restoreState(restored.questItemGeneration,ground);
     this.validateStoryLinks(restored.storyWorld,restored.runtime);
     if(restored.trackedQuest&&!this.definition(restored.trackedQuest))throw new Error('检查点追踪未知任务');
-    if(restored.debugFocusQuest&&!this.definition(restored.debugFocusQuest))throw new Error('检查点焦点未知任务');
     const rewardKeys=new Set<string>();
     const questProgress=new Map(restored.questBook.quests);
     for(const receipt of restored.receipts){
@@ -1105,13 +1093,9 @@ export class Session {
   }
   complete(id:string):boolean {
     if(this.definition(id)?.interactionEvent)return false;
-    if(this.questBook.pinned(id))this.unpinDebugQuest(id);
     this.refresh();if(this.status(id)!=='ready')return false;
     this.applyStoryCommands([{type:'quest',command:{type:'complete',quest:id,cycle:this.questBook.state(id)!.cycle}}]);return true;
   }
-  /** GM 调试：把已接取任务钉在进行中，refresh 不再把它提升为待交付。 */
-  pinDebugQuest(id:string):void { this.recordPerformance(['questBook']);this.questBook.pinDebug(id); this.refresh(); }
-  unpinDebugQuest(id:string):void { this.recordPerformance(['questBook']);this.questBook.unpinDebug(id); this.refresh(); }
   mark(flag:string):void {this.applyStoryCommands([{type:'flag',flag}]);}
   visible(entity:VisibilityRules & {condition?:StoryCondition}):boolean {
     if(!this.storyWorld.visible(entity.id))return false;
@@ -1125,10 +1109,10 @@ export class Session {
   }
   forActor(actor:string,characterId?:string):CampaignQuest[] {
     this.refresh();
-    const focus=this.debugFocusQuestValue,priority:Record<QuestStatus,number>={ready:0,available:1,active:2,locked:3,completed:4};
-    return this.campaign.quests.filter(quest=>(!focus||quest.id===focus)
-      &&this.matchesQuestActor(quest,actor,characterId,this.status(quest.id)!=='available')
-      &&(!!focus||this.questBook.journalVisible(quest.id))&&['ready','available','active'].includes(this.status(quest.id)))
+    const priority:Record<QuestStatus,number>={ready:0,available:1,active:2,locked:3,completed:4};
+    return this.campaign.quests.filter(quest=>
+      this.matchesQuestActor(quest,actor,characterId,this.status(quest.id)!=='available')
+      &&this.questBook.journalVisible(quest.id)&&['ready','available','active'].includes(this.status(quest.id)))
       .sort((a,b)=>priority[this.status(a.id)]-priority[this.status(b.id)]);
   }
   /**
@@ -1145,15 +1129,13 @@ export class Session {
    */
   npcQuestSlot(actor:string,characterId?:string):CampaignQuest|undefined {
     this.refresh();
-    const version=this.questBook.version,focus=this.debugFocusQuestValue,cached=this.questSlotProjection;
-    if(!cached||cached.version!==version||cached.focus!==focus)this.questSlotProjection={version,focus,values:new Map()};
+    const version=this.questBook.version,cached=this.questSlotProjection;
+    if(!cached||cached.version!==version)this.questSlotProjection={version,values:new Map()};
     const values=this.questSlotProjection!.values,key=actor+'\0'+(characterId??'');
     if(!values.has(key))values.set(key,this.computeQuestSlot(actor,characterId));
     return values.get(key);
   }
   private computeQuestSlot(actor:string,characterId?:string):CampaignQuest|undefined {
-    const focus=this.debugFocusQuestValue;
-    if(focus)return this.forActor(actor,characterId)[0];
     // 待交付包含日志外任务：它们同样在运行池里，原版第一段循环不会因为日志不可见而跳过。
     for(const id of this.questBook.runningQuestIds){
       if(this.status(id)!=='ready')continue;
@@ -1184,9 +1166,7 @@ export class Session {
    */
   deliverablesFor(actor:string,characterId?:string):CampaignQuest[] {
     this.refresh();
-    const focus=this.debugFocusQuestValue;
-    return this.campaign.quests.filter(quest=>(!focus||quest.id===focus)
-      &&this.status(quest.id)==='ready'&&this.matchesQuestActor(quest,actor,characterId,true)
+    return this.campaign.quests.filter(quest=>this.status(quest.id)==='ready'&&this.matchesQuestActor(quest,actor,characterId,true)
       &&!this.questBook.journalVisible(quest.id));
   }
   marker(actor:string,characterId?:string):QuestStatus|null {
@@ -1198,18 +1178,17 @@ export class Session {
    *
    * 日志外任务只表示不进任务日志；它们和日志内任务共用同一套场景标记，
    * 可接、进行中、待交付都要提示；进行中任务的 `talk` / `interact` 目标也算。
-   * 不要再用 `questBook.journalVisible()` 过滤一次。调试焦点只看焦点任务：前置任务的人物不挂标记。
+   * 不要再用 `questBook.journalVisible()` 过滤一次。
    */
   markerActor(actor:string,characterId?:string):boolean {
-    const version=this.questBook.version,focus=this.debugFocusQuestValue,cached=this.markerActorProjection;
-    if(!cached||cached.version!==version||cached.focus!==focus)this.markerActorProjection={version,focus,values:new Map()};
+    const version=this.questBook.version,cached=this.markerActorProjection;
+    if(!cached||cached.version!==version)this.markerActorProjection={version,values:new Map()};
     const values=this.markerActorProjection!.values,key=actor+'\0'+(characterId??'');
     if(!values.has(key)){
       values.set(key,this.campaign.quests.some(quest=>{
         const status=this.status(quest.id);
         if(!['available','active','ready'].includes(status))return false;
-        return (!focus||quest.id===focus)
-          &&this.matchesQuestActor(quest,actor,characterId,status!=='available');
+        return this.matchesQuestActor(quest,actor,characterId,status!=='available');
       }));
     }
     return values.get(key)!||this.activeGoalMarker(actor,characterId);
@@ -1219,12 +1198,12 @@ export class Session {
    * 只标记还没记满的目标；目标完成后图标消失。日志外任务同样参与，不按任务日志可见性过滤。
    */
   private activeGoalMarker(actor:string,characterId?:string):boolean {
-    const version=this.questBook.version,focus=this.debugFocusQuestValue,cached=this.goalMarkerProjection;
-    if(!cached||cached.version!==version||cached.focus!==focus)this.goalMarkerProjection={version,focus,values:new Map()};
+    const version=this.questBook.version,cached=this.goalMarkerProjection;
+    if(!cached||cached.version!==version)this.goalMarkerProjection={version,values:new Map()};
     const values=this.goalMarkerProjection!.values,key=actor+'\0'+(characterId??'');
     if(!values.has(key)){
       values.set(key,this.campaign.quests.some(quest=>{
-        if(this.status(quest.id)!=='active'||(focus&&quest.id!==focus))return false;
+        if(this.status(quest.id)!=='active')return false;
         const progress=this.questBook.state(quest.id)?.goals;
         return quest.goals.some(goal=>(goal.kind==='talk'||goal.kind==='interact')
           &&(characterId!==undefined&&goal.characterId!==undefined?goal.characterId===characterId:goal.target===actor)
@@ -1235,19 +1214,12 @@ export class Session {
   }
 
   currentQuest():CampaignQuest|undefined {
-    const focus=this.debugFocusQuestValue;
-    if(focus){
-      const quest=this.definition(focus);
-      return quest&&['active','ready','available'].includes(this.status(focus))?quest:undefined;
-    }
     if(this.trackedQuest&&this.questBook.journalVisible(this.trackedQuest)&&['active','ready'].includes(this.status(this.trackedQuest)))return this.definition(this.trackedQuest);
     return this.campaign.quests.find(quest=>this.questBook.journalVisible(quest.id)&&['active','ready'].includes(this.status(quest.id)))??
       this.campaign.quests.find(quest=>this.questBook.journalVisible(quest.id)&&this.status(quest.id)==='available');
   }
   trackQuest(id:string):boolean {
-    const focus=this.debugFocusQuestValue;
-    if(focus&&id!==focus)return false;
-    if((!focus&&!this.questBook.journalVisible(id))||!['active','ready'].includes(this.status(id)))return false;
+    if(!this.questBook.journalVisible(id)||!['active','ready'].includes(this.status(id)))return false;
     this.trackedQuest=id;this.emit();return true;
   }
   private applyActorCommand(command:StoryCommand,bag:Bag,hero:BattleCharacter|undefined,party:PartyRoster|undefined,fallback:StoryPlayerState|undefined):void {
@@ -1358,7 +1330,7 @@ export class Session {
   }
   /**
    * 内部剧情检查点：由 `StoryRuntime` 自己产出，只接收引用并做廉价检查；开发/测试模式再全量校验。
-   * 读档、检查点恢复和调试跳转仍走 `prepareRuntime`。
+   * 读档和检查点恢复仍走 `prepareRuntime`。
    */
   adoptRuntime(snapshot:StoryRuntimeSnapshot):void {
     const runtime=this.runtimeValidator??=this.createRuntimeValidator();

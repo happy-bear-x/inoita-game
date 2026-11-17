@@ -72,11 +72,6 @@ export interface QuestBookState {
   runningQuestIds: string[];
   /** Each producer emits facts in ascending order; history takes one number per producer. */
   factSequences: [string, number][];
-  /**
-   * GM 调试兜底：这些已接取任务在 refresh 时强制保持 active。
-   * 只由调试准备产生，玩家存档在 `capturePersistentState` 里剥除。
-   */
-  debugPins?: string[];
 }
 export interface QuestFact {
   kind: 'talk' | 'interact' | 'defeat' | 'recruit';
@@ -89,8 +84,6 @@ export type QuestCommand =
   | { type: 'accept'; quest: string; cycle?: number; source?: 'interaction' | 'script' }
   | { type: 'complete' | 'script-ready' | 'script-complete' | 'reset'; quest: string; cycle?: number }
   | { type: 'fact'; fact: QuestFact }
-  /** GM 调试：把已接取任务钉在进行中，refresh 不再把它提升为待交付。 */
-  | { type: 'pin-active' | 'unpin-active'; quest: string }
   /** 把所有已接取的支线任务重置：收回它要收集的物品并把状态写回未接取。原版事件命令 `0x4a`。 */
   | { type: 'reset-side-quests' }
   | { type: 'refresh' };
@@ -109,7 +102,6 @@ export interface QuestBookCheckpoint {
   readonly states: ReadonlyMap<string, QuestProgress>;
   readonly runningIds: readonly string[];
   readonly factSequences: ReadonlyMap<string, number>;
-  readonly debugPins: ReadonlySet<string>;
 }
 
 interface QuestRefreshChanges {
@@ -125,7 +117,6 @@ interface QuestEvaluationView {
   conditionContext: StoryConditionContext;
   itemCount(item: string): number;
   equippedItemCount?(item: string): number;
-  pinned(id: string): boolean;
 }
 function integer(value: number, minimum: number, description: string): void {
   if (!Number.isSafeInteger(value) || value < minimum) throw new Error(`${description}无效`);
@@ -157,8 +148,6 @@ function evaluateProgress(quest: QuestRules, state: QuestProgress, view: QuestEv
       ready = false; break;
     }
     status = ready ? 'ready' : 'active';
-    // GM 调试钉住：目标已满足也留在进行中；脚本结算命令会在批次开始时先解除。
-    if (view.pinned(quest.id)) status = 'active';
   }
   if (status === state.status && goals === state.goals) return state;
   return frozenProgress({ ...state, status, goals });
@@ -191,17 +180,11 @@ function sameNumbers(a: ReadonlyMap<string, number>, b: ReadonlyMap<string, numb
   for (const [key, value] of a) if (b.get(key) !== value) return false;
   return true;
 }
-function sameStringSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
-  if (a.size !== b.size) return false;
-  for (const value of a) if (!b.has(value)) return false;
-  return true;
-}
 /** 计划内部的私有状态；提交时由 `commit` 接管。 */
 interface PlanEntry {
   states: Map<string, QuestProgress>;
   runningIds: string[];
   factSequences: Map<string, number>;
-  debugPins: Set<string>;
   changed: boolean;
   snapshot?: QuestBookState;
 }
@@ -298,8 +281,6 @@ export class QuestBook {
   private states: Map<string, QuestProgress>;
   private runningIds: string[] = [];
   private factSequences = new Map<string, number>();
-  /** GM 调试钉住的任务：只影响调试准备态，正常玩法不会写入。 */
-  private debugPins = new Set<string>();
   private revision = 0;
   /** 计划内部的私有状态，提交时由 `commit` 接管；`nextState` 从这里按需物化。 */
   private readonly plans = new WeakMap<QuestPlan, PlanEntry>();
@@ -317,7 +298,7 @@ export class QuestBook {
     this.questDependents = prepared.dependents;
     // 派生沙盒：与来源共享同一份不可变状态根，不克隆、也不跑初始 refresh。
     const source = options?.shareFrom;
-    if (source) { this.states = source.states; this.runningIds = [...source.runningIds]; this.factSequences = new Map(source.factSequences); this.debugPins = new Set(source.debugPins); this.revision = source.revision; return; }
+    if (source) { this.states = source.states; this.runningIds = [...source.runningIds]; this.factSequences = new Map(source.factSequences); this.revision = source.revision; return; }
     this.states = new Map([...this.definitions].map(([id, quest]) => [id, initialProgress(quest)]));
     // 已知初态时直接安装：调用方（预演沙盒）拿的就是本类产出的状态，不必再刷新一遍。
     if (options?.state) { this.installTrustedState(options.state); return; }
@@ -328,24 +309,19 @@ export class QuestBook {
   /** 单条进度；条目本身已冻结，直接交出去即可，不必克隆。 */
   state(id: string): Readonly<QuestProgress> | undefined { return this.states.get(id); }
   status(id: string): QuestStatus { return this.states.get(id)?.status ?? 'locked'; }
-  /** 该任务是否被 GM 调试钉在进行中。 */
-  pinned(id: string): boolean { return this.debugPins.has(id); }
-  /** GM 调试专用：让已接取任务保持进行中，直到显式解除或脚本结算。 */
-  pinDebug(id: string): void { this.commit(this.plan({ type: 'pin-active', quest: id })); }
-  unpinDebug(id: string): void { this.commit(this.plan({ type: 'unpin-active', quest: id })); }
   accepted(id: string): boolean { return ACCEPTED_QUEST_STATUSES.includes(this.status(id)); }
   completedCycles(id: string): number { return this.states.get(id)?.completedCycles ?? 0; }
   journalVisible(id: string): boolean { const definition=this.definitions.get(id); return !!definition && questInJournal(definition); }
   get runningQuestIds(): readonly string[] { return [...this.runningIds]; }
   captureState(): QuestBookState {
     return structuredClone({ version: QUEST_BOOK_STATE_VERSION, quests: [...this.states], runningQuestIds: this.runningIds,
-      factSequences: [...this.factSequences], ...(this.debugPins.size ? { debugPins: [...this.debugPins].sort() } : {}) });
+      factSequences: [...this.factSequences] });
   }
   /** 某个来源已经记到的事实序号。比 `captureState()` 克隆整本任务簿再读一个数字便宜得多。 */
   factSequence(source: string): number { return this.factSequences.get(source) ?? 0; }
   /** 批次回滚用的 O(1) 检查点：只记状态根，不复制条目。 */
   checkpoint(): QuestBookCheckpoint {
-    return { states: this.states, runningIds: [...this.runningIds], factSequences: new Map(this.factSequences), debugPins: new Set(this.debugPins) };
+    return { states: this.states, runningIds: [...this.runningIds], factSequences: new Map(this.factSequences) };
   }
   /**
    * 换回检查点记下的状态根。
@@ -356,7 +332,7 @@ export class QuestBook {
    */
   rollbackTo(checkpoint: QuestBookCheckpoint): void {
     this.states = new Map(checkpoint.states); this.runningIds = [...checkpoint.runningIds];
-    this.factSequences = new Map(checkpoint.factSequences); this.debugPins = new Set(checkpoint.debugPins); this.revision++;
+    this.factSequences = new Map(checkpoint.factSequences); this.revision++;
   }
 
   /** 一条变化键对应的任务集合；空集合时不建临时 Set。 */
@@ -391,7 +367,7 @@ export class QuestBook {
     const view: QuestEvaluationView = {
       conditionContext: this.conditionContextFor(context, { get: current }),
       itemCount: item => { const value = context.itemCount(item); integer(value, 0, '背包物品数量'); return value; },
-      equippedItemCount: context.equippedItemCount, pinned: id => this.debugPins.has(id) };
+      equippedItemCount: context.equippedItemCount };
     let steps = 0;
     // 上限和全量刷新的 pass 上限同量级：每条任务最多重算 definitions.size * 2 次。
     while (queue.length && steps++ < this.definitions.size * 2) {
@@ -424,7 +400,6 @@ export class QuestBook {
     // 写时复制：只拷容器、不拷条目。条目不可变，所以未改动的部分在批次之间按身份共享，
     // 成本从「O(任务数) 的深拷贝」降到「O(改动) 的换条目」。
     const states = new Map(this.states), runningIds = [...this.runningIds], factSequences = new Map(this.factSequences);
-    const debugPins = new Set(this.debugPins);
     const actions = Array.isArray(command) ? command : [command];
     const context = this.context();
     const dirty = new Set<string>();
@@ -454,7 +429,7 @@ export class QuestBook {
     const grant = (item: string, quantity: number): void => { add(grants, item, quantity); const value = count(item) + quantity; integer(value, 0, '物品总量'); balances.set(item, value); };
     const conditionContext: StoryConditionContext = this.conditionContextFor(context, states);
     const view: QuestEvaluationView = {
-      conditionContext, itemCount: count, equippedItemCount: context.equippedItemCount, pinned: id => debugPins.has(id) };
+      conditionContext, itemCount: count, equippedItemCount: context.equippedItemCount };
     const refreshAll = (): void => {
       // Unlocking can depend on another quest becoming available in the same batch.
       for (let pass = 0; pass <= states.size; pass++) {
@@ -523,15 +498,6 @@ export class QuestBook {
         write(quest.id, { completedCycles: state.completedCycles + 1, cycle: state.cycle + 1, status: 'locked', goals: initialProgress(quest).goals });
       } else write(quest.id, { completedCycles: state.completedCycles + 1, status: 'completed' });
     };
-    // 结算/重置命令先解除调试钉住，再让 refresh 按真实目标重算状态；
-    // 否则 `complete` 看到的是 pinned active，永远过不了 ready 检查。
-    for (const action of actions) {
-      if (action.type === 'reset-side-quests') {
-        for (const id of debugPins) if (this.sideQuests.has(id)) debugPins.delete(id);
-      } else if (action.type === 'complete' || action.type === 'script-ready' || action.type === 'script-complete' || action.type === 'reset') {
-        debugPins.delete(action.quest);
-      }
-    }
     // 调用方保证状态已是最新时跳过开头的全表刷新；剧情提交在批次开始前和每条任务命令前都会刷新。
     if (!options.stateIsCurrent) refreshAll();
     for (const action of actions) {
@@ -578,19 +544,6 @@ export class QuestBook {
         }
         // 收回支线交付物会改变所有进行中任务的物品目标，收尾按物品变化刷新。
         if (affected.size) refreshAffected(withDependents(affected), { items: true }); continue;
-      }
-      if (action.type === 'pin-active') {
-        const quest = this.definitions.get(action.quest), state = states.get(action.quest);
-        if (!quest || !state) throw new Error(`未知任务 ${action.quest}`);
-        if (quest.completion !== 'all') throw new Error('只有目标计数任务能钉住进行中');
-        if (!['active', 'ready'].includes(state.status)) throw new Error('只能钉住已接取的任务');
-        if (!debugPins.has(action.quest)) { debugPins.add(action.quest); refreshQuest(action.quest); }
-        continue;
-      }
-      if (action.type === 'unpin-active') {
-        if (!this.definitions.has(action.quest)) throw new Error(`未知任务 ${action.quest}`);
-        if (debugPins.delete(action.quest)) refreshQuest(action.quest);
-        continue;
       }
       const quest = this.definitions.get(action.quest), state = states.get(action.quest);
       if (!quest || !state) throw new Error(`未知任务 ${action.quest}`);
@@ -646,18 +599,16 @@ export class QuestBook {
     // 变更判断改为结构比较：只逐字段比「被写过的条目」，不做全量序列化。
     // 写成 no-op 的条目（同批先改后改回）最终与批前相等，所以这里仍会判成没变。
     const changed = !sameList(runningIds, this.runningIds) || !sameNumbers(factSequences, this.factSequences)
-      || !sameStringSet(debugPins, this.debugPins)
       || [...dirty].some(id => !sameProgress(states.get(id)!, this.states.get(id)!));
     const delta = new Map([...new Set([...grants.keys(), ...removals.keys()])].map(item => [item, (grants.get(item) ?? 0) - (removals.get(item) ?? 0)]));
-    const entry: PlanEntry = { states, runningIds, factSequences, debugPins, changed };
+    const entry: PlanEntry = { states, runningIds, factSequences, changed };
     // 计划对象浅冻即可：条目自己已冻结，`nextState` 是 getter，递归冻结会把它提前物化。
     const plan: QuestPlan = Object.freeze({ baseRevision: this.revision, changed,
       itemGrants: Object.freeze([...delta].filter(([, quantity]) => quantity > 0).map(([item, quantity]) => Object.freeze({ item, quantity }))),
       itemRemovals: Object.freeze([...delta].filter(([, quantity]) => quantity < 0).map(([item, quantity]) => Object.freeze({ item, quantity: -quantity }))),
       rewards: Object.freeze(rewards.map(reward => Object.freeze(reward))),
       get nextState(): QuestBookState {
-        return entry.snapshot ??= freeze({ version: QUEST_BOOK_STATE_VERSION, quests: [...states], runningQuestIds: [...runningIds], factSequences: [...factSequences],
-          ...(debugPins.size ? { debugPins: [...debugPins].sort() } : {}) });
+        return entry.snapshot ??= freeze({ version: QUEST_BOOK_STATE_VERSION, quests: [...states], runningQuestIds: [...runningIds], factSequences: [...factSequences] });
       } });
     this.plans.set(plan, entry); return plan;
   }
@@ -668,7 +619,7 @@ export class QuestBook {
     if (!entry.changed) return;
     // 直接接管计划那份容器：条目不可变，所以没有「谁还会再写它」的问题，连浅拷贝都不用做。
     this.states = entry.states; this.runningIds = entry.runningIds;
-    this.factSequences = entry.factSequences; this.debugPins = entry.debugPins; this.revision++;
+    this.factSequences = entry.factSequences; this.revision++;
   }
   /**
    * 派生一个**共享同一份不可变状态根**的沙盒：不克隆状态、也不跑初始 refresh。
@@ -704,15 +655,6 @@ export class QuestBook {
       throw new Error(`任务运行池缺少任务：${id}`);
     if (new Set(next.factSequences.map(([source]) => source)).size !== next.factSequences.length) throw new Error('任务事实来源重复');
     for (const [source, sequence] of next.factSequences) { if (!source) throw new Error('任务事实来源为空'); integer(sequence, 1, '事实序号'); }
-    const pins = next.debugPins ?? [];
-    if (!Array.isArray(pins) || new Set(pins).size !== pins.length) throw new Error('任务快照调试钉住无效');
-    for (const id of pins) {
-      const quest = this.definitions.get(id), state = states.get(id);
-      if (!quest || !state) throw new Error(`任务快照调试钉住引用未知任务 ${id}`);
-      if (quest.completion !== 'all') throw new Error('任务快照调试钉住只适用于目标计数任务');
-      if (!['active', 'ready'].includes(state.status)) throw new Error(`任务快照调试钉住引用未接取任务 ${id}`);
-    }
-    if (pins.length) next.debugPins = [...pins].sort(); else delete next.debugPins;
     next.quests = [...states];
     // `next` 已经是入参的私有克隆，`freeze` 会连它一起冻住，不必再克隆一次。
     const plan: QuestRestorePlan = freeze({ baseRevision: this.revision, nextState: next });
@@ -734,7 +676,7 @@ export class QuestBook {
     // 就地把条目冻上：安装进来的对象此后归本对象所有，冻结是「共享而非别名」这条不变量的闭合点。
     for (const progress of states.values()) freeze(progress);
     this.states = states; this.runningIds = [...state.runningQuestIds];
-    this.factSequences = new Map(state.factSequences); this.debugPins = new Set(state.debugPins ?? []); this.revision++;
+    this.factSequences = new Map(state.factSequences); this.revision++;
   }
   commitRestore(plan: QuestRestorePlan): void {
     const next = this.restores.get(plan);
@@ -743,7 +685,7 @@ export class QuestBook {
     const states = new Map(structuredClone(next.quests));
     for (const progress of states.values()) freeze(progress);
     this.states = states; this.runningIds = [...next.runningQuestIds];
-    this.factSequences = new Map(next.factSequences); this.debugPins = new Set(next.debugPins ?? []); this.revision++;
+    this.factSequences = new Map(next.factSequences); this.revision++;
   }
   restoreState(state: QuestBookState): void { this.commitRestore(this.prepareRestore(state)); }
 }

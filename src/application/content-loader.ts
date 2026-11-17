@@ -2,7 +2,7 @@ import {parseCrafting} from '../domain/crafting.ts';
 import type { WorldIndex, WorldMap } from '../domain/content.ts';
 import type { Campaign } from '../domain/campaign.ts';
 import type { BattleCatalog } from '../domain/battle.ts';
-import { parseStatusHud, parseCharacterStats, parseMenuPanels, parseBattle, parseCampaign, parseMap, parseWorld, parseStoryInterface, parseControlSkin, parseStoryClasses, parseItemCatalog, parseWardrobe, parseShops, parseShopEquipment, parseCompanions, parseStoryDebugCatalog, parseChangelog } from './content-validation.ts';
+import { parseStatusHud, parseCharacterStats, parseMenuPanels, parseBattle, parseCampaign, parseMap, parseWorld, parseStoryInterface, parseControlSkin, parseStoryClasses, parseItemCatalog, parseWardrobe, parseShops, parseShopEquipment, parseCompanions, parseChangelog } from './content-validation.ts';
 import type { ChangelogCatalog } from '../domain/changelog.ts';
 import type { StoryInterface } from '../domain/story-interface.ts';
 import type { ShopCatalog } from '../domain/shop.ts';
@@ -247,9 +247,6 @@ export class ContentLoader {
   controlSkin(signal?:AbortSignal){return this.read('content/control-skin.json',parseControlSkin,signal);}
   world(signal?:AbortSignal):Promise<WorldIndex>{return this.read('content/world.json',parseWorld,signal);}
   campaign(signal?:AbortSignal):Promise<Campaign>{return this.read('content/campaign.json',parseCampaign,signal);}
-  /** GM 现场表按需加载；普通游玩不请求这个文件。 */
-  storyDebug(signal?:AbortSignal){return this.read('content/debug/start.json',parseStoryDebugCatalog,signal);}
-  releaseStoryDebug():void { this.requests.delete('content/debug/start.json'); }
   /** 标题页更新日志：点开弹窗才请求，不和主菜单一起加载。 */
   changelog(signal?:AbortSignal):Promise<ChangelogCatalog>{return this.read('content/changelog.json',parseChangelog,signal);}
   releaseChangelog():void { this.requests.delete('content/changelog.json'); }

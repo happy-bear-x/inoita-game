@@ -62,4 +62,4 @@
 
 ## 验证
 
-`tests/loot-redesign.test.ts` 覆盖怪物等级、共享保底和封印盒。相关用例还包括 `drops.test.ts`、`drops-pity.test.ts`、`drops-epic.test.ts`、`combat-rewards.test.ts`、`chests.test.ts`、`reserved-drop-system.test.ts` 和 `saved-game.test.ts`。内容或地图等级改动后运行 `npm run validate:content`，地图改动后更新 GM 剧情现场表。
+`tests/loot-redesign.test.ts` 覆盖怪物等级、共享保底和封印盒。相关用例还包括 `drops.test.ts`、`drops-pity.test.ts`、`drops-epic.test.ts`、`combat-rewards.test.ts`、`chests.test.ts`、`reserved-drop-system.test.ts` 和 `saved-game.test.ts`。内容或地图等级改动后运行 `npm run validate:content`。

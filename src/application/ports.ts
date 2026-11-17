@@ -36,7 +36,6 @@ export interface StoryClassContext {
 
 type SceneUI = Pick<GameUI,'ready'|'locked'|'mode'|'loading'|'loaded'|'error'|'toast'|'showInstant'|'resetInput'|'setMode'|'showDefeat'|'closeDefeat'|'controlLayoutEditing'|'keyBindingEditing'|'preloadPortraits'|'setWorldRebuildCover'|'setSkipBackdrop'>;
 export interface StoryContext {
-  readonly gm?: Pick<import('../debug/gm-actions.ts').GmActions, 'storyDebug'>;
   /** 压测模式：不写存档/检查点，世界持续刷怪并自动复活队伍。 */
   readonly pressureMode?: boolean;
   readonly inputRouter: InputRouter;
@@ -142,8 +141,6 @@ export interface StoryUIContext {
   returnToMenu?: () => void;
   /** GM（调试）动作层。**只在开关打开时存在**：关闭时没有它，系统页也就没有「调试」入口。 */
   readonly gm?: import('../debug/gm-actions.ts').GmActions;
-  acquireDebugCatalog?:()=>Promise<()=>void>;
-  releaseDebugCatalog?:()=>void;
   /** 当前操控角色卡死时搬回主可行走区域；由 main.ts 接到世界场景。 */
   rescuePlayer?: () => { ok: boolean; reason?: string; moved?: boolean };
 }
@@ -152,8 +149,6 @@ export interface MenuContext {
   readonly ui: Pick<GameUI,'setMode'|'loading'|'menuLoaded'|'error'|'ready'|'suspended'>;
   /** GM（调试）开关：标题页的隐藏手势与角落指示读它，见 `docs/debugging.md`。 */
   readonly gmMode?: { readonly on: boolean; toggle(): boolean };
-  /** GM 在菜单里临时打开时补载调试现场表；普通启动不请求。 */
-  loadDebugCatalog?: () => Promise<void>;
   /** 标题页更新日志：点开弹窗才请求，关闭后释放缓存。 */
   loadChangelog?: (signal?: AbortSignal) => Promise<import('../domain/changelog.ts').ChangelogCatalog>;
   releaseChangelog?: () => void;

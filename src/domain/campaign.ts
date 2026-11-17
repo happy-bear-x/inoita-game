@@ -36,7 +36,6 @@ export interface CampaignPlacement extends EntityPlacement {
   condition:StoryCondition;
 }
 export interface Campaign extends StoryGraph {
-  debugStory?: import('./story-debug.ts').StoryDebugCatalog;
   contentVersion:number;
   start:StartPlacement;
   quests:CampaignQuest[];

@@ -1,9 +1,7 @@
-import type { Campaign, CampaignQuest } from '../../domain/campaign.ts';
-import { storyDebugEvidenceCount, type StoryDebugTask, type StoryDebugTarget } from '../../domain/story-debug.ts';
+import type { Campaign } from '../../domain/campaign.ts';
 import type { GmActions, GmCharacterState, GmItemEntry, GmItemFilter } from '../../debug/gm-actions.ts';
 import { INVENTORY_LABELS } from '../../domain/inventory.ts';
 import { GOLD, type ScrollArea, type UiSurface } from './widgets.ts';
-import { measureQuestText, QUEST_TEXT_COLORS } from './quest-text.ts';
 import type { MenuTextClip, MenuTextSpec, MenuTextWriter } from '../dom/menu-text.ts';
 import type { UiNode } from '../dom/node.ts';
 
@@ -11,10 +9,7 @@ import type { UiNode } from '../dom/node.ts';
  * 游戏内的 GM 面板——`gm-actions` 的人类通道，只负责显示与收集点击，不做任何动作逻辑。
  * agent 走 `work/tools/gm.mjs` 或 `globalThis.gm`，调的是同一个动作层，所以两边语义一致。
  *
- * 剧情页用 Phaser 的滚动区和可视行渲染：左侧列出可调试任务，右侧说明地点、进度与进入入口。
- * 进度只属于任务，在任务详情显示一次。
- *
- * 版面按菜单 body 的可用高度（约 468）排：子页签 8、过滤 54、双栏 100–436、提示 452。
+ * 版面按菜单 body 的可用高度（约 468）排：子页签 8、过滤 54、内容区 100–436、提示 452。
  */
 interface GmPanelHooks {
   /** 关掉菜单，让剧情接管画面。 */
@@ -22,14 +17,10 @@ interface GmPanelHooks {
   /** 重画整个菜单。 */
   render(): void;
   runAction?<T>(action:()=>T):T;
-  /** 播放失败时重新打开面板，让原因当场可见，而不是等下一条操作。 */
-  reopen?(message:string): void;
 }
 
 /** 把内容里的编号翻成名字；缺省时使用中文场景说明。 */
 interface GmReferences {
-  mapName?(id: string): string | undefined;
-  actorName?(id: string): string | undefined;
   /** 背包物品格底图，来自 `content/menu-panels.json` 的 `inventory-slot`。 */
   itemSlot?: string;
   /** 背包选中框，来自 `content/menu-panels.json` 的 `inventory-selected`。 */
@@ -37,23 +28,18 @@ interface GmReferences {
   /** 道具详情层：装配方用背包同一套说明面板画，关闭时回调清掉状态。 */
   itemDetail?(itemId: string, close: () => void): void;
   updateItemDetail?(itemId:string|undefined,close:()=>void):void;
-  /** 大任务名：原版任务组（`questGroups`）的标题。 */
-  questGroup?(id: string): string | undefined;
-  /** 小任务进度：完成量/总量与当前状态，在任务详情显示一次。 */
-  questProgress?(id: string): { status: string; done: number; total: number } | undefined;
   /** 把页面里的滚动区登记给菜单文字层，滚轮和拖动时 DOM 文字才能跟着走。 */
   registerScroll?(name: string, scroll: ScrollArea): void;
   removeScroll?(scroll: ScrollArea): void;
-  updateStoryDetail?(specs:MenuTextSpec[]):void;
   active?():boolean;
   /** 滚动后重算 DOM 文字位置。 */
   refresh?(): void;
   setText?(key:string,text:string):void;
 }
 
-type GmPage = 'status' | 'character' | 'items' | 'story';
+type GmPage = 'status' | 'character' | 'items';
 const PAGES: readonly [GmPage, string][] = [
-  ['status', '状态'], ['character', '人物'], ['items', '道具'], ['story', '剧情'],
+  ['status', '状态'], ['character', '人物'], ['items', '道具'],
 ];
 /** 道具页：每页 40 格，按背包同款底图与选中框显示。 */
 const ITEM_FILTERS: readonly GmItemFilter[] = ['all', 'equipment', 'consumable', 'material', 'quest'];
@@ -67,67 +53,9 @@ const ITEM_MAX = 999;
 const clipText = (value: string, limit: number): string =>
   value.length > limit ? `${value.slice(0, limit)}…` : value;
 
-/** 原内容中的战斗标记与未汉化占位文案转成可读的面板文字。 */
-const readableStoryText = (value:string):string => {
-  const translated=value.replaceAll('보류_베스킨의 목걸이','贝斯金的项链')
-    .replaceAll('보류_뒷골목의 무법자들','后巷的不法之徒').replaceAll('보류_위험한 연구','危险的研究');
-  if(/[가-힣]/.test(translated))return '这段任务的中文说明尚未补全。';
-  return translated.replace(/[·_]EP\d+[A-Z]?/g,'').replace(/_BOSS战/g,'：首领战').replace(/BOSS/g,'首领').replaceAll('_',' · ');
-};
-
-type StoryCategory = 'main' | 'side' | 'journal-external';
-const CATEGORY_LABELS: Record<StoryCategory, string> = { main: '主线', side: '支线', 'journal-external': '日志外' };
-const STORY_FILTERS: readonly (readonly [StoryCategory, string])[] = [
-  ['main', '主线'], ['side', '支线'], ['journal-external', '日志外'],
-];
-const QUEST_STATUS_LABELS: Record<string, string> = {
-  locked: '未解锁', available: '可接取', active: '进行中', ready: '待交付', completed: '已完成',
-};
-const PHASE_LABELS: Record<'available' | 'active', string> = { available: '可接取', active: '进行中' };
-const CUT_LABELS: Record<string, string> = {
-  'before-opening': '开幕前', 'after-accept': '接取后', 'event-end': '事件末',
-};
-const DEBUG_SCENE_NOTE = '调试现场：任务状态、物品和前置会由 GM 直接补齐，不代表正常流程可到达。';
-const DEBUG_PAUSED_NOTE = '调试现场：自动存档已暂停';
-
-/** 预览成功时动作层给出的现场；面板只读，不在本地推算。 */
-interface TaskPreview {
-  quest: string;
-  phase: 'available' | 'active';
-  location: { map: string; x: number; y: number };
-  sourceHash?: string;
-  play?: { script?: string; node?: string; event?: string; cut?: string };
-  evidence?: number;
-}
-interface PreviewResult { ok: boolean; reason?: string; preview?: TaskPreview }
-
-const readTaskPreview = (value: unknown): TaskPreview | undefined => {
-  const preview = value as Partial<TaskPreview> | undefined;
-  const location = preview?.location as Partial<TaskPreview['location']> | undefined;
-  const phase = preview?.phase;
-  return preview && typeof preview.quest === 'string' && (phase === 'available' || phase === 'active')
-    && location && typeof location.map === 'string'
-    ? preview as TaskPreview : undefined;
-};
-
-interface StoryTaskRow {
-  task: StoryDebugTask;
-  quest: CampaignQuest;
-  title: string;
-  category: StoryCategory;
-}
-
 export class GmPanel {
   private page: GmPage = 'status';
-  private filter: StoryCategory = 'main';
   private result = '';
-  private ending = false;
-  private selectedQuest?: string;
-  private storyCatalog?: StoryTaskRow[];
-  /** 当前选中任务的预览请求；换任务就作废旧结果，迟到的响应不覆盖新选择。 */
-  private previewQuest?: string;
-  private previewResult?: PreviewResult;
-  private previewToken = 0;
   private characterId = 'player';
   private itemFilter: GmItemFilter = 'all';
   private itemQuantity = 1;
@@ -136,19 +64,12 @@ export class GmPanel {
   private itemDetail?: string;
   /** 道具网格的滚动位置：选物品、发放和重画都不应该把列表跳回顶部。 */
   private itemScroll = 0;
-  /** 选中任务和换筛选会重画整页，列表与说明各存一份滚动位置。 */
-  private storyScroll = 0;
-  private storyIntroScroll = 0;
   /** 本次重画的 DOM 文字出口；GM 页的文字全部按内容块坐标登记。 */
   private writer?: MenuTextWriter;
   private tabButtons=new Map<GmPage,UiNode>();
   private tabText:MenuTextSpec[]=[];
   private contentNodes:UiNode[]=[];
   private contentScrolls:ScrollArea[]=[];
-  private storyDetailNodes:UiNode[]=[];
-  private storyDetailScrolls:ScrollArea[]=[];
-  private storyBody?:UiSurface;
-  private storyRow?:StoryTaskRow;
   private refreshItemPage?:()=>void;
   private refreshStatusPage?:()=>void;
   private reportSerial=0;
@@ -168,16 +89,9 @@ export class GmPanel {
     this.gm = gm; this.campaign = campaign; this.hooks = hooks; this.references = references;
   }
 
-  /** 收尾成功后由装配层调用：保留筛选与选中任务，只切回剧情页。 */
-  showStoryPage(message = ''): void {
-    this.page = 'story';
-    this.result = message;
-    this.hooks.render();
-  }
-
   dispose():void {
-    this.previewToken++;this.reportSerial++;
-    this.previewQuest=undefined;this.previewResult=undefined;this.storyCatalog=undefined;this.writer=undefined;
+    this.reportSerial++;
+    this.writer=undefined;
   }
 
   /** GM 页文字统一走 DOM；`writer` 由菜单提供，图框、按钮和滚动仍由 Phaser 画。 */
@@ -204,9 +118,8 @@ export class GmPanel {
     this.textSerial=this.tabText.length;this.renderContent(body,writer);
   }
   private renderContent(body:UiSurface,writer?:MenuTextWriter):void{
-    this.reportSerial++;this.writer=writer;this.storyBody=undefined;this.storyRow=undefined;this.characterControls=undefined;this.refreshItemPage=undefined;this.refreshStatusPage=undefined;const before=new Set(body.root.list),scrolls=new Set(body.scrolls);
-    const hint = this.page === 'story' ? this.renderStory(body)
-      : this.page === 'character' ? this.renderCharacter(body)
+    this.reportSerial++;this.writer=writer;this.characterControls=undefined;this.refreshItemPage=undefined;this.refreshStatusPage=undefined;const before=new Set(body.root.list),scrolls=new Set(body.scrolls);
+    const hint = this.page === 'character' ? this.renderCharacter(body)
       : this.page === 'items' ? this.renderItems(body)
       : this.renderStatus(body);
     this.resultTextKey=`gm-text-${this.textSerial}`;
@@ -237,7 +150,7 @@ export class GmPanel {
     return button;
   }
 
-  /** 状态页：摘要 + 上报 + 命名标记。 */
+  /** 状态页：摘要、上报、脱困与常用开关。 */
   private renderStatus(body: UiSurface): string {
     const text=(value:string,y:number,size:number,width=0)=>{const key=`gm-text-${this.textSerial}`;this.text(value,60,y,width,size);return key;};
     const button=(label:string,x:number,y:number,width:number,height:number,action:()=>void,options:Parameters<UiSurface['button']>[6]={})=>{
@@ -249,10 +162,7 @@ export class GmPanel {
     const questKey=text(`任务 进行中 ${quests.active.length} · 待交付 ${quests.ready.length}`,102,20);
     const storyKey=text(`剧情 已完成 ${story.completedEvents} 个事件 · 在跑 ${story.runs.length} 段`,134,20);
     button('上报当前状态',60,180,220,52,()=>void this.onReport()).button.setData('label','上报当前状态');
-    button('记一个状态标记',300,180,220,52,()=>this.onMark()).button.setData('label','记一个状态标记');
-    const marks=this.gm.marks(),recall=button(marks.length?`回到「${marks.at(-1)}」`:'回到状态标记',540,180,220,52,()=>this.onRecall(),{disabled:!marks.length});recall.button.setData('label','回到状态标记');
-    button('脱困',780,180,180,52,()=>this.onRescue()).button.setData('label','脱困');
-    const marksKey=text(marks.length?`已有标记：${marks.join('、')}`:'还没有状态标记。',244,16,900);
+    button('脱困',300,180,220,52,()=>this.onRescue()).button.setData('label','脱困');
     const actionsKey=text(`最近操作：${this.gm.actions().slice(-3).map(entry=>entry.call).join(' → ')||'（还没有）'}`,276,16,900);
     const currentId=quests.current??quests.active[0]?.id,current=currentId?this.campaign.quests.find(q=>q.id===currentId):undefined;
     const quest=button(current?`完成任务：「${clipText(current.title,8)}」`:'立刻完成当前任务',60,316,360,48,()=>this.onCompleteCurrentQuest(),{disabled:!current});quest.button.setData('label','立刻完成当前任务');
@@ -261,12 +171,10 @@ export class GmPanel {
     this.refreshStatusPage=()=>{
       const set=this.references.setText;if(!set){this.hooks.render();return;}
       const data=this.gm.digest(),q=data.quests as {active:{id:string;title:string}[];ready:unknown[];current?:string};
-      const place=data.location as {map:string;x:number;y:number}|null,storyState=data.story as {completedEvents:number;runs:unknown[]},allMarks=this.gm.marks();
+      const place=data.location as {map:string;x:number;y:number}|null,storyState=data.story as {completedEvents:number;runs:unknown[]};
       set(locationKey,`地图 ${place?`${place.map} (${place.x},${place.y})`:'还没进图'}`);
       set(questKey,`任务 进行中 ${q.active.length} · 待交付 ${q.ready.length}`);set(storyKey,`剧情 已完成 ${storyState.completedEvents} 个事件 · 在跑 ${storyState.runs.length} 段`);
-      set(marksKey,allMarks.length?`已有标记：${allMarks.join('、')}`:'还没有状态标记。');
       set(actionsKey,`最近操作：${this.gm.actions().slice(-3).map(entry=>entry.call).join(' → ')||'（还没有）'}`);
-      set(recall.key,allMarks.length?`回到「${allMarks.at(-1)}」`:'回到状态标记');recall.button.getData('setEnabled')?.(!!allMarks.length);
       const id=q.current??q.active[0]?.id,task=id?this.campaign.quests.find(item=>item.id===id):undefined;
       set(quest.key,task?`完成任务：「${clipText(task.title,8)}」`:'立刻完成当前任务');quest.button.getData('setEnabled')?.(!!task);
       const wall=this.gm.isNoclip(),fast=this.gm.isDoubleSpeed();set(noclip.key,`穿墙：${wall?'开':'关'}`);set(speed.key,`2倍速度：${fast?'开':'关'}`);
@@ -494,202 +402,10 @@ export class GmPanel {
     if(this.refreshItemPage)this.refreshItemPage();else this.hooks.render();
   }
 
-  /** 剧情页只有任务列表一层；Escape 交给菜单继续处理。 */
-
-  private renderStory(body: UiSurface): string {
-    const debug = this.gm.storyDebug();
-    let rows = this.storyTasks();
-    if (!rows.some(row => row.task.quest === this.selectedQuest)) {
-      this.selectedQuest = rows[0]?.task.quest;
-      this.storyIntroScroll = 0;
-    }
-    const row = rows.find(row => row.task.quest === this.selectedQuest);
-    body.rect(60,100,352,336,0x120d08,.72); body.rect(430,100,490,336,0x120d08,.72);
-    let changeFilter=(_value:StoryCategory)=>{};
-    const filters=new Map<StoryCategory,UiNode>();
-    STORY_FILTERS.forEach(([value,label],index)=>{
-      const button=this.button(body,label,60+index*110,54,104,30,()=>changeFilter(value),
-        {selected:this.filter===value,fontSize:17}).setData('label',`分类 ${label}`);
-      filters.set(value,button);
-    });
-    if (debug.focus) this.button(body, this.ending ? '正在结束调试…' : '结束本次调试',660,54,150,30,
-      ()=>this.onEndDebug(),{disabled:this.ending}).setData('label','结束本次调试');
-    const list=body.scroll(60,100,352,336);this.references.registerScroll?.('gm-story-list',list);
-    let refreshSelection=()=>{};
-    list.setHeight(rows.length*54);
-    const cells=Array.from({length:Math.ceil(336/54)+1},()=>{
-      let item:StoryTaskRow|undefined;
-      const background=body.rect(0,0,352,52,0x241a10,.46,list.content);
-      const button=this.button(body,'',0,0,352,52,()=>{
-        if(!item)return;
-        if(item.task.quest===this.selectedQuest)return;
-        this.selectedQuest=item.task.quest;this.storyIntroScroll=0;refreshSelection();this.refreshStoryDetail(body,item);
-      },{bare:true,parent:list.content,guard:list.guard});
-      const title=body.text('',12,5,328,18,GOLD,button);
-      const subtitle=body.text('',12,29,328,15,'#b8ab92',button);
-      return {set:(value:StoryTaskRow|undefined,index:number)=>{
-        item=value;background.setVisible(!!value);button.setVisible(!!value);if(!value)return;
-        const y=index*54,selected=value.task.quest===this.selectedQuest;
-        background.setPosition(0,y).setFillStyle(selected?0x6f5232:0x241a10,selected?.74:.46);
-        button.setPosition(0,y).setData('label',`任务 ${value.title}`).setData('category',value.category);
-        title.setText(clipText(value.title,17)).setColor(selected?'#fff':GOLD);
-        const progress=this.references.questProgress?.(value.quest.id);
-        subtitle.setText([CATEGORY_LABELS[value.category],progress?QUEST_STATUS_LABELS[progress.status]??'':undefined].filter(Boolean).join(' · '));
-      }};
-    });
-    list.scrollTop=this.storyScroll;
-    let firstRow=-1;
-    const updateRows=()=>{const first=Math.floor(list.scrollTop/54);if(first===firstRow)return;firstRow=first;cells.forEach((cell,index)=>cell.set(rows[first+index],first+index));};
-    list.onScroll=()=>{this.storyScroll=list.scrollTop;updateRows();this.references.refresh?.();};
-    updateRows();refreshSelection=()=>{firstRow=-1;updateRows();};
-    changeFilter=value=>{
-      if(this.filter===value)return;
-      this.filter=value;this.storyScroll=0;this.storyIntroScroll=0;this.result='';
-      if(!this.references.updateStoryDetail||!this.references.setText){this.hooks.render();return;}
-      rows=this.storyTasks();this.selectedQuest=rows[0]?.task.quest;list.setHeight(rows.length*54);list.scrollTop=0;
-      for(const [key,button] of filters)(button.getData('setSelected') as (value:boolean)=>void)(key===value);
-      refreshSelection();this.refreshStoryDetail(body,rows[0]);
-      if(this.resultTextKey)this.references.setText(this.resultTextKey,`可调任务 ${rows.length} 个${debug.focus?` · ${DEBUG_PAUSED_NOTE}`:''}`);
-    };
-    this.buildStoryDetail(body,row);
-    return `可调任务 ${rows.length} 个${debug.focus?` · ${DEBUG_PAUSED_NOTE}`:''}`;
-  }
-
-  /** 选中任务的详情：进度、说明、现场表来源与开幕演出；预览完成前不开放进入。 */
-  private buildStoryDetail(body:UiSurface,row:StoryTaskRow|undefined):MenuTextSpec[]{
-    const before=new Set(body.root.list),scrolls=new Set(body.scrolls),writer=this.writer,specs:MenuTextSpec[]=[];
-    this.writer={add:spec=>{const mapped={...spec,key:`gm-story-detail-${specs.length}`};specs.push(mapped);writer?.add(mapped);}};
-    this.storyBody=body;this.storyRow=row;
-    if(row)this.renderTaskDetail(body,row);else{this.previewToken++;this.previewQuest=undefined;this.text('没有符合筛选条件的任务',442,112,466,19);}
-    this.writer=writer;
-    this.storyDetailNodes=body.root.list.filter(node=>!before.has(node));
-    this.storyDetailScrolls=body.scrolls.filter(scroll=>!scrolls.has(scroll));
-    return specs;
-  }
-  private refreshStoryDetail(body:UiSurface,row:StoryTaskRow|undefined):void{
-    if(!this.references.updateStoryDetail){this.hooks.render();return;}
-    const oldNodes=new Set(this.storyDetailNodes),oldScrolls=new Set(this.storyDetailScrolls);
-    for(const scroll of oldScrolls){this.references.removeScroll?.(scroll);scroll.destroy();const index=body.scrolls.indexOf(scroll);if(index>=0)body.scrolls.splice(index,1);}
-    for(const node of oldNodes)node.destroy();body.pruneDestroyed();
-    this.contentNodes=this.contentNodes.filter(node=>!oldNodes.has(node));
-    this.contentScrolls=this.contentScrolls.filter(scroll=>!oldScrolls.has(scroll));
-    const specs=this.buildStoryDetail(body,row);
-    this.contentNodes.push(...this.storyDetailNodes);this.contentScrolls.push(...this.storyDetailScrolls);
-    this.references.updateStoryDetail(specs);
-  }
-  private renderTaskDetail(body: UiSurface, row: StoryTaskRow): void {
-    const progress=this.references.questProgress?.(row.quest.id);
-    const progressLabel=progress
-      ?`${QUEST_STATUS_LABELS[progress.status]??progress.status}${progress.total?` · 进度 ${progress.done}/${progress.total}`:''}`
-      :CATEGORY_LABELS[row.category];
-    this.text(clipText(row.title,22),442,108,466,20,GOLD);
-    this.text(progressLabel,442,136,466,16,'#b8ab92');
-    this.drawStoryDescription(body,row.quest.description,68);
-    const prepared=this.previewFor(row.task.quest);
-    const preview=prepared.result?.preview;
-    const map=preview?.location.map??row.task.entry.map;
-    const mapName=this.references.mapName?.(map)??'剧情发生地';
-    const phase=preview?.phase??row.task.phase;
-    this.text(clipText(`地点：${mapName}`,28),442,234,466,15,'#b8ab92');
-    this.text(`默认起点：${PHASE_LABELS[phase]}`,442,254,466,15,'#b8ab92');
-    this.text(clipText(this.startSourceLabel(row.task,preview),58),442,274,466,15,'#b8ab92');
-    this.text(clipText(this.playLabel(row.task,preview),58),442,314,466,15,'#b8ab92');
-    const failure=!prepared.result?'正在准备任务现场…'
-      :!prepared.result.ok?prepared.result.reason??'预览失败，原因未记录'
-      :!preview?'预览没有返回任务现场':undefined;
-    if(failure)this.text(clipText(failure,56),442,338,466,15,
-      prepared.result&&!prepared.result.ok?'#ffd8a0':'#b8ab92');
-    this.text(clipText(DEBUG_SCENE_NOTE,54),442,362,466,15,'#b8ab92');
-    this.button(body, '进入任务',442,392,466,40,()=>this.onPlay({quest:row.task.quest}),
-      {disabled:!prepared.ready,fontSize:20}).setData('label','进入任务');
-  }
-
-  /** 现场表来源：显示证据条数与摘要。 */
-  private startSourceLabel(task: StoryDebugTask, preview?: TaskPreview): string {
-    const evidence = preview?.evidence ?? storyDebugEvidenceCount(task);
-    const hash = task.sourceHash ?? preview?.sourceHash;
-    return `现场表：已核查 · 证据 ${evidence} 条${hash?` · 摘要 ${hash.slice(0,10)}`:''}`;
-  }
-
-  private playLabel(task: StoryDebugTask, preview?: TaskPreview): string {
-    const play = task.play ?? preview?.play;
-    if (!play) return '开幕演出：无（只落现场）';
-    const cut = CUT_LABELS[play.cut ?? 'before-opening'] ?? '剧情演出';
-    return `开幕演出：${cut}${play.node?' · 指定节点':''}`;
-  }
-
-  /** 预览只对当前选中任务发起一次；换任务后迟到的结果直接丢弃。 */
-  private previewFor(quest: string): { result?: PreviewResult; ready: boolean } {
-    if(this.previewQuest!==quest){
-      this.previewQuest=quest;this.previewResult=undefined;
-      const token=++this.previewToken;
-      const settle=(result:PreviewResult)=>{
-        if(this.previewToken!==token||this.previewQuest!==quest)return;
-        this.previewResult=result;
-        if(this.page==='story'){
-          if(this.storyBody&&this.storyRow&&this.references.updateStoryDetail&&this.references.active?.())this.refreshStoryDetail(this.storyBody,this.storyRow);
-          else if(!this.references.updateStoryDetail)this.hooks.render();
-        }
-      };
-      void this.gm.previewStory({quest}).then(result=>{
-        const preview=readTaskPreview(result.preview);
-        settle(result.ok&&preview?{ok:true,preview}
-          :result.ok?{ok:false,reason:'预览没有返回任务现场'}
-          :{ok:false,reason:result.reason??'预览失败，原因未记录'});
-      },error=>settle({ok:false,reason:error instanceof Error?error.message:String(error)}));
-    }
-    return {result:this.previewResult,ready:!!this.previewResult?.ok&&!!this.previewResult.preview};
-  }
-
-  private drawStoryDescription(body: UiSurface, text: string, height = 92): void {
-    const scroll=body.scroll(442,162,466,height);this.references.registerScroll?.('gm-story-desc',scroll);
-    scroll.onScroll=()=>{this.storyIntroScroll=scroll.scrollTop;this.references.refresh?.();};
-    const layout=measureQuestText(body,readableStoryText(text),452,18);
-    const clip={top:162,bottom:162+height};
-    layout.lines.forEach((line,index)=>line.runs.forEach(run=>{
-      this.writer?.add({key:`gm-text-${this.textSerial++}`,text:run.text,x:442+run.x,y:162+index*layout.lineHeight,
-        style:{size:18,color:QUEST_TEXT_COLORS[run.tone]},scroll:'gm-story-desc',clip});
-    }));
-    scroll.setHeight(layout.height);scroll.scrollTop=this.storyIntroScroll;
-  }
-
-  /** 目录只含算得出固定落点的任务；任务信息从 `campaign.quests` 关联，显示不用内部标识。 */
-  private storyTasks(): StoryTaskRow[] {
-    if(!this.storyCatalog){
-      const side=new Set(this.campaign.questGroups.filter(group=>group.kind==='side').flatMap(group=>group.questIds));
-      const quests=new Map(this.campaign.quests.map(quest=>[quest.id,quest]));
-      // 目录顺序由现场表生成器按剧情依赖排好；这里保持目录顺序，不按任务定义顺序重排。
-      this.storyCatalog=(this.campaign.debugStory?.tasks??[]).flatMap((task):StoryTaskRow[]=>{
-        const quest=quests.get(task.quest);
-        if(!quest)return [];
-        const group=this.references.questGroup?.(quest.id);
-        return [{
-          task,quest,
-          title:readableStoryText(group&&group!==quest.title?`${group} · ${quest.title}`:quest.title),
-          category:quest.journal===false?'journal-external':side.has(quest.id)?'side':'main',
-        }];
-      });
-    }
-    return this.storyCatalog.filter(row=>row.category===this.filter);
-  }
-
   private async onReport(): Promise<void> {
     const serial=++this.reportSerial,result = await this.gm.report();
     if(serial!==this.reportSerial||this.references.active&&(!this.references.active()||this.page!=='status'))return;
     this.result = result.ok ? '已上报：服务器 .diagnostics/client-errors.jsonl 里能查到。' : `上报失败：${result.reason}`;
-    if(this.refreshStatusPage)this.refreshStatusPage();else this.hooks.render();
-  }
-  private onMark(): void {
-    const name = `标记${this.gm.marks().length + 1}`;
-    const result = this.perform(()=>this.gm.mark(name));
-    this.result = result.ok ? `已记下「${name}」` : `记录失败：${result.reason}`;
-    if(this.refreshStatusPage)this.refreshStatusPage();else this.hooks.render();
-  }
-  private onRecall(): void {
-    const name = this.gm.marks().at(-1);
-    if (!name) return;
-    const result = this.perform(()=>this.gm.recall(name));
-    this.result = result.ok ? `已回到「${name}」` : `回退失败：${result.reason}`;
     if(this.refreshStatusPage)this.refreshStatusPage();else this.hooks.render();
   }
   private onCompleteCurrentQuest(): void {
@@ -719,21 +435,5 @@ export class GmPanel {
       : result.moved ? `已从 ${place(result.from)} 搬到 ${place(result.to)}`
       : '当前位置整个碰撞盒站得住，不需要脱困';
     if(this.refreshStatusPage)this.refreshStatusPage();else this.hooks.render();
-  }
-  private onPlay(target: StoryDebugTarget): void {
-    this.result='';const pending=this.gm.jumpStory(target);this.hooks.close();
-    void pending.then(result=>{
-      // 失败原因直接写出来：多半是内容缺地点或切图被拒，只报「未能进入」没法复现。
-      if(!result.ok)this.hooks.reopen?.(`未能进入任务：${result.reason??'原因未记录'}`);
-    });
-  }
-  private onEndDebug(): void {
-    if(this.ending)return;
-    this.ending=true;this.result='正在恢复进入调试前的状态…';this.hooks.render();
-    void this.gm.endStoryDebug().then(result=>{
-      this.ending=false;
-      this.result=result.ok?'已结束调试，自动存档恢复':`结束调试失败：${result.reason}`;
-      this.hooks.render();
-    });
   }
 }

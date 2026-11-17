@@ -48,8 +48,6 @@ export class StoryDirector {
   readonly runtime: StoryRuntime;
   private manualBusy = false;
   private manual = new AbortController();
-  private manualSettled: Promise<void> = Promise.resolve();
-  private debugJumpPending = false;
   private skipping = false;
   private choosing = false;
   private confirming = false;
@@ -263,7 +261,7 @@ export class StoryDirector {
         try { await this.presentation?.release?.(); }
         finally {
           this.presenting = false; this.presentationRun = undefined;
-          if (!this.runtime.busy && !this.manualBusy && !this.debugJumpPending) {
+          if (!this.runtime.busy && !this.manualBusy) {
             this.context = undefined; this.choosing = false; this.confirming = false;
             this.ui.closeDialogue(); this.setLocked(false); this.onSkipProgress?.('released');
           }
@@ -273,24 +271,6 @@ export class StoryDirector {
     // Keep cleanup observable by request(), without an unhandled rejection on cancellation.
     void this.cleanup.catch(() => {});
   }
-  async debugJump<T>(work:()=>Promise<T>):Promise<T> {
-    this.debugJumpPending = true;
-    this.deferredTriggers.length = 0;
-    this.setLocked(true);
-    try {
-      this.cancel();
-      await this.manualSettled;
-      await this.cleanup;
-      this.context = undefined; this.choosing = false; this.confirming = false;
-      this.recovery=undefined;this.completedEventPending=undefined;this.projectionStage=undefined;this.travelPending=undefined;this.travelApplied=false;
-      this.prefetchedScripts.clear();this.prefetchedRun=undefined;
-      return await work();
-    } finally {
-      this.debugJumpPending = false;
-      if(!this.runtime.busy && !this.manualBusy)this.setLocked(false);
-    }
-  }
-
   cancel(): void {
     this.onSkipProgress?.('cancelled');
     this.manual.abort(); this.runtime.cancel(); this.ui.closeDialogue();
@@ -584,7 +564,6 @@ export class StoryDirector {
    * 演出等于在弹窗背后跑完。排到这次手动播放完全收起之后再派发。
    */
   private triggerAfterManual(run: () => void): void {
-    if (this.debugJumpPending) return;
     if (!this.manualBusy) { run(); return; }
     this.deferredTriggers.push(run);
   }
@@ -619,12 +598,9 @@ export class StoryDirector {
     if (event) return this.request(this.runtime.start(event.script, event.id));
     return this.request(this.runtime.start(trigger.script)).then(played => { if (played) this.session.mark(trigger.id); return played; });
   }
-  /** `node` 只给调试入口用：从指定节点开始，正常触发始终从脚本 entry 开始。 */
-  async script(name?: string | null, node?: string): Promise<void> { if (name) await this.request(this.runtime.start(name, undefined, undefined, node)); }
+  async script(name?: string | null): Promise<void> { if (name) await this.request(this.runtime.start(name)); }
   async run(work: () => Promise<void>): Promise<boolean> {
     if (this.busy || this.disposed) return false;
-    let settled!: () => void;
-    this.manualSettled = new Promise<void>(resolve => { settled = resolve; });
     this.manual = new AbortController(); this.manualBusy = true; this.resetPlayback(); this.setLocked(true);
     try { await work(); this.manual.signal.throwIfAborted(); return true; }
     catch (error) { if (this.manual.signal.aborted || error instanceof DOMException && error.name === 'AbortError') return false; throw error; }
@@ -632,7 +608,7 @@ export class StoryDirector {
       this.manualBusy = false; this.release();
       try { await this.cleanup; }
       // 即使收尾报错，排队的触发也要落地：它的错误走 onError，而不是留一个永远不演的队列。
-      finally { try { this.flushDeferredTriggers(); } finally { settled(); } }
+      finally { this.flushDeferredTriggers(); }
     }
   }
   visitHealer(actor: ActorDefinition, revive: () => void): Promise<boolean> {

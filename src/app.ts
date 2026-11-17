@@ -129,31 +129,6 @@ export class StoryApp {
   openCrafting:(actorId:string)=>void = () => { throw new Error('合成面板尚未装配'); };
   openShop:(shopId:string,mapId:string)=>void = () => { throw new Error('商店尚未装配'); };
   readonly content = new ContentLoader();
-  private debugCatalogUsers=0;
-  private debugCatalogReleaseRequested=false;
-  private debugCatalogRevision=0;
-  /** 标题页临时打开 GM 时补载现场表；普通游玩不会调用。 */
-  async loadDebugCatalog(): Promise<void> {
-    if (!this.campaign || this.campaign.debugStory) return;
-    const campaign=this.campaign,revision=this.debugCatalogRevision;
-    const catalog=await this.content.storyDebug();
-    if(this.campaign===campaign&&revision===this.debugCatalogRevision)campaign.debugStory=catalog;
-  }
-  async acquireDebugCatalog():Promise<()=>void>{
-    this.debugCatalogUsers++;
-    let released=false;
-    const release=()=>{if(released)return;released=true;if(--this.debugCatalogUsers===0&&this.debugCatalogReleaseRequested)this.clearDebugCatalog();};
-    try{await this.loadDebugCatalog();return release;}catch(error){release();throw error;}
-  }
-  releaseDebugCatalog():void{
-    this.debugCatalogReleaseRequested=true;
-    if(this.debugCatalogUsers===0)this.clearDebugCatalog();
-  }
-  private clearDebugCatalog():void{
-    this.debugCatalogRevision++;
-    if(this.campaign)delete this.campaign.debugStory;
-    this.content.releaseStoryDebug();
-  }
   /** 标题页更新日志只在点按钮时加载，关闭弹窗后释放请求缓存。 */
   loadChangelog(signal?:AbortSignal):Promise<import('./domain/changelog.ts').ChangelogCatalog>{
     return this.content.changelog(signal);
@@ -239,7 +214,6 @@ export class StoryApp {
     if (this.session !== expected) return false;
     this.storyUI?.releaseSession(expected);
     this.gm?.dispose(); this.gm = undefined;
-    this.releaseDebugCatalog();
     this.director?.dispose();
     this.checkpoint.clear();
     this.releaseResidentCombat(); this.clearMapPrefetch(); this.clearStoryPrefetch(); this.clearMapHistory();

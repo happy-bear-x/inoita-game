@@ -208,7 +208,7 @@ try {
   const indexOnDisk = fs.readFileSync(path.join(dist, 'index.html'), 'utf8');
   check('入口 index.html 与 dist 一致', indexInApk === indexOnDisk);
 
-  for (const required of ['assets/bundles/', 'assets/assets/ui/app-icon.png', 'assets/content/campaign.json', 'assets/content/debug/start.json', 'assets/diagnostics.js', 'assets/manifest.webmanifest']) {
+  for (const required of ['assets/bundles/', 'assets/assets/ui/app-icon.png', 'assets/content/campaign.json', 'assets/diagnostics.js', 'assets/manifest.webmanifest']) {
     const present = required.endsWith('/')
       ? apkAssets.some(name => name.startsWith(required.slice('assets/'.length)))
       : apkSet.has(required.slice('assets/'.length));

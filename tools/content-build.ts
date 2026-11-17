@@ -88,8 +88,8 @@ function assetKindOf(file: string): string {
  *
  * 处理所有会在运行时成为角色动作的文档：battle.json、world.json 和
  * story-classes.json。职业选择页的 `playerActor` 开局后会合并进英雄动作，
- * 漏掉它就会让角色请求已归档的原图。去重只改编译输出，不改源文件，
- * 调试现场表的来源哈希不受影响；地图 JSON 用 prop 键，不在这里处理。
+ * 漏掉它就会让角色请求已归档的原图。去重只改编译输出，不改源文件；
+ * 地图 JSON 用 prop 键，不在这里处理。
  */
 async function dedupeClipLayers(_sourceDir: string, files: SourceFile[], assetRoot = SOURCE_ASSETS): Promise<ClipDedupe> {
   const docs = new Map<string, unknown>();

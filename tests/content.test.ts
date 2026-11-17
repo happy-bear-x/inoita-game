@@ -26,7 +26,14 @@ const root=fileURLToPath(new URL('../public/',import.meta.url));
 const read=<T = WorldMap>(file: string): T=>JSON.parse(fs.readFileSync(path.join(root,file),'utf8')) as T;
 const world=read<WorldIndex>('content/world.json'),campaign=read<Campaign>('content/campaign.json');
 const storyInterface=read<{portraits:Record<string,string>}>('content/story-interface.json');
-const sourceMap=JSON.parse(fs.readFileSync(fileURLToPath(new URL('../tools/debug-start/data/source-map.json',import.meta.url)),'utf8')) as {actors:Record<string,number>};
+// 原版 PORTRAITBASE 身份；只保留有立绘的人物。
+const originalActorIdentities:Record<string,string>={
+ darius:'2:40','azad-053':'2:53',portia:'2:54',janus:'2:55',shinty:'2:56','alexander-057':'2:57',
+ 'eara-058':'2:58',saint:'2:79','eara-142':'2:142','cornette-199':'2:199','olaf-249':'2:249',
+ 'eara-302':'2:302','eara-492':'2:492','veteran-498':'2:498','stranger-of-hwagan-509':'2:509',
+ 'azad-510':'2:510','shin-587':'2:587','portia-599':'2:599',
+ 'enemy-dragon-alexander-1':'1:350','enemy-dark-forces-of-evil-1':'1:356',
+};
 
 test('the capital and camp use town poses, and the cave confrontation changes them before walking', () => {
  for (const id of ['shadow-camp', 'berkel-capital']) {
@@ -89,12 +96,9 @@ test('every speaking actor with an original portrait identity has an exported po
   '2:492':'saint','2:199':'cornette-199','2:249':'olaf','2:498':'veteran-498',
   '1:350':'red-dragon','1:523':'red-dragon','1:356':'purple-demon','1:526':'purple-demon',
  };
- // debug-start 的怪物记录号带 2000 偏移：enemy-dark-forces-of-evil-1 是 2356 = 2000 + 356。
  const originalIdentity=(actorId:string):string|undefined=>{
   if(actorId==='kiyan')return '0:0';
-  const record=sourceMap.actors[actorId];
-  if(record===undefined)return undefined;
-  return record>=2000?`1:${record-2000}`:`2:${record}`;
+  return originalActorIdentities[actorId];
  };
  const actorsByName=new Map<string,string[]>();
  for(const [actorId,actor] of Object.entries(world.actors)) {

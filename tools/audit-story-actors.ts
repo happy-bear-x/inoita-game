@@ -20,7 +20,6 @@ export function auditStoryActors(root=DEFAULT_ROOT){
   const readBytes=(file:string)=>readFileSync(root+file);
   const campaign=read('content/campaign.json');
   const world=read('content/world.json');
-  const debug=read('content/debug/start.json');
   const maps=new Map<string,MapDocument>();
   for(const reference of world.maps as Row[]){
     maps.set(reference.id,JSON.parse(readFileSync(`${root}${reference.file}`,'utf8')) as MapDocument);
@@ -113,14 +112,12 @@ export function auditStoryActors(root=DEFAULT_ROOT){
     stages:stages.length,
     castMembers:castRows.length,
     placeIds:placeIds.size,
-    debugTasks:(debug.tasks as Row[]).length,
   };
   const body={
     schema:1,
     source:{
       campaign:createHash('sha256').update(readBytes('content/campaign.json')).digest('hex').slice(0,16),
       world:createHash('sha256').update(readBytes('content/world.json')).digest('hex').slice(0,16),
-      debug:createHash('sha256').update(readBytes('content/debug/start.json')).digest('hex').slice(0,16),
     },
     summary,
     selectors:selectorCounts,

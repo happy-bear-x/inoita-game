@@ -592,27 +592,3 @@ test('resetting side quests refreshes other running item goals after taking item
   assert.equal(h.book.status('other'), 'active');
 });
 
-test('experimental pins hold completed objectives active and settlement releases them', () => {
-  const definition=rules('hunt',{completion:'all',goals:[{id:'kill',kind:'defeat',target:'wolf',quantity:1}]});
-  const {book,commit}=fixture([definition]);
-  commit({type:'accept',quest:'hunt'});
-  commit({type:'fact',fact:{kind:'defeat',target:'wolf',occurrence:{source:'combat',sequence:1}}});
-  assert.equal(book.status('hunt'),'ready');
-  book.pinDebug('hunt');
-  commit({type:'refresh'});
-  assert.equal(book.status('hunt'),'active');
-  const checkpoint=book.checkpoint(),saved=book.captureState();
-  book.unpinDebug('hunt');
-  assert.equal(book.status('hunt'),'ready');
-  book.rollbackTo(checkpoint);
-  assert.equal(book.status('hunt'),'active');
-  const restored=fixture([definition]).book;
-  restored.restoreState(saved);
-  assert.equal(restored.status('hunt'),'active');
-  assert.throws(()=>restored.prepareRestore({...saved,debugPins:['ghost']}),/未知任务/);
-  commit({type:'complete',quest:'hunt'});
-  assert.equal(book.status('hunt'),'completed');
-  assert.equal(book.captureState().debugPins,undefined);
-  const talk=fixture([rules('talk')]);talk.commit({type:'accept',quest:'talk'});
-  assert.throws(()=>talk.book.pinDebug('talk'),/只有目标计数任务/);
-});

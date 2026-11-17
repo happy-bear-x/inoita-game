@@ -11,7 +11,7 @@ export interface StoryWorldViewSnapshot {
   scene?:SceneSnapshot;
   audio?:StoryAudioState;
 }
-export type SaveWorldReason = 'debug' | 'pressure' | 'loading' | 'not-ready' | 'no-survivors';
+export type SaveWorldReason = 'pressure' | 'loading' | 'not-ready' | 'no-survivors';
 export type SaveWorldResult =
   | { ok:true; map:{id:string;name:string}; world:StoryWorldViewSnapshot }
   | { ok:false; reason:SaveWorldReason };

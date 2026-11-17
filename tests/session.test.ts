@@ -72,21 +72,6 @@ test('talk and interact goal markers disappear once the goal is complete',()=>{
  assert.equal(session.markerActor('target','target-instance'),false);
 });
 
-test('a GM focus restricts quest projections to the focused task',()=>{
- const session=new Session(campaign);
- assert.equal(session.accept('grafton-mission'),true);
- assert.equal(session.accept('cardinal-summons'),true);
- assert.deepEqual(session.forActor('janus','npc-55').map(quest=>quest.id),['cardinal-summons']);
- session.focusDebugQuest('grafton-mission');
- assert.equal(session.currentQuest()?.id,'grafton-mission');
- assert.deepEqual(session.forActor('janus','npc-55'),[],'焦点之外的任务不参与 HUD 投影');
- assert.equal(session.markerActor('janus','npc-55'),false);
- assert.equal(session.markerActor('darius','npc-40'),true,'焦点任务自己的交付人仍要挂标记');
- assert.equal(session.trackQuest('cardinal-summons'),false);
- assert.equal(session.trackQuest('grafton-mission'),true);
- session.focusDebugQuest(undefined);
- assert.equal(session.forActor('janus','npc-55')[0]?.id,'cardinal-summons','结束调试后恢复完整投影');
-});
 test('an arrival next to an exit does not re-trigger before the player walks clear',()=>{
  const exits=[{x:32,y:32,width:16,height:16,destination:'next'},{x:32,y:48,width:16,height:16,destination:'next'}];
  // 落点离出口只有 8 像素：向东一步就压住出口，也不能立刻回上一张图。
@@ -159,9 +144,6 @@ test('actor markers reuse the quest book version instead of rescanning every que
   const base=scans;
   session.markerActor('darius','npc-40');session.markerActor('darius','npc-40');
   assert.equal(scans,base,'任务簿版本不变时不再扫描任务表');
-  session.focusDebugQuest('grafton-mission');
-  session.markerActor('darius','npc-40');
-  assert.ok(scans>base,'调试焦点变化后重新扫描');
 });
 
 /** 创建一条一次性遭遇、记录它的怪物永久死亡，并结算。 */

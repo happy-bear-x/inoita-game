@@ -14,10 +14,7 @@ import {StoryPresenter} from './rendering/story-presenter.ts';
 import {OutfitPool} from './rendering/outfit-pool.ts';
 import {StoryDirector} from './domain/story-director.ts';
 import {installStorySkipDiagnostics} from './application/game-diagnostics.ts';
-import {createGmActions,consoleGmActions} from './debug/gm-actions.ts';
-import {IndexedDbDebugMarkStore} from './application/debug-mark-store.ts';
-import {prepareDebugMark} from './application/debug-mark-preparation.ts';
-import {persistentDebugWorld,prepareDebugWorld} from './application/debug-world.ts';
+import {createGmActions} from './debug/gm-actions.ts';
 
 interface SessionLifecycleHooks {
   lifetime: {current:AbortController};
@@ -213,19 +210,12 @@ export function createSessionLifecycle(app:StoryApp,hooks:SessionLifecycleHooks)
     // GM 动作层在会话装配好之后才建（它要 session 与 director）；开关关闭时**不建也不挂**，
     // 这样「默认关闭」是结构上的保证，而不是靠调用方自觉。
     app.gm = gmOn() ? createGmActions({
-      session, campaign, director, markStore: new IndexedDbDebugMarkStore(),
-      acquireStoryCatalog:()=>app.acquireDebugCatalog(),
-      prepareMark: async (mark, requestSignal) => { signal.throwIfAborted();requestSignal.throwIfAborted(); const prepared = prepareDebugMark(mark, app); signal.throwIfAborted();requestSignal.throwIfAborted(); return prepared; },
+      session, campaign, director,
       status: () => runtimeDiagnostics(),
-      onStoryPreparation: preparing => { if(signal.aborted)return;if(preparing)app.ui.loading('正在准备剧情…');else app.ui.loaded(); },
       rescue: () => {
         const scene = worldScene();
         if (!scene) return { ok: false, reason: '不在游戏场景里' };
         return scene.rescuePlayer();
-      },
-      travel: async (map, position) => {
-        const scene = worldScene();
-        return scene ? scene.gmTravel(map, position) : { ok: false, reason: '不在游戏场景里' };
       },
       setNoclip: enabled => {
         signal.throwIfAborted();app.gmNoclip = enabled;
@@ -241,41 +231,6 @@ export function createSessionLifecycle(app:StoryApp,hooks:SessionLifecycleHooks)
         return { ok: true };
       },
       getSpeedMultiplier: () => app.gmSpeedMultiplier ?? 1,
-      persistence: {
-        // 调试现场不写玩家存档：停掉待写与重试。
-        suspend: () => hooks.autoSaver()?.suspend(),
-        // 结束调试：恢复自动存档、把当前现场记成检查点，再按正常节奏请求一次存档。
-        resume: () => {
-          hooks.autoSaver()?.resume();
-          worldScene()?.checkpointStoryWorld();
-          hooks.autoSaver()?.request();
-        },
-        // 回滚流程（死亡回检查点）接管调试现场：此刻画面还停在调试现场，只能恢复写入，不能记检查点。
-        resumeAfterRollback: () => hooks.autoSaver()?.resume(),
-      },
-      debugWorld: {
-        capture: () => {
-          try { return worldScene()?.captureStoryWorld(); }
-          catch { return undefined; }
-        },
-        capturePersistent: () => {
-          try { const scene = worldScene(); return scene ? persistentDebugWorld(scene.captureStoryWorld()) : undefined; }
-          catch { return undefined; }
-        },
-        restore: async (snapshot, requestSignal = signal) => {
-          const scene = worldScene();
-          if (!scene) return { ok: false, reason: '不在游戏场景里' };
-          try {
-            signal.throwIfAborted();
-            await scene.restoreStoryWorld(prepareDebugWorld(snapshot, app), requestSignal);
-            signal.throwIfAborted();
-            return { ok: true };
-          } catch (error) {
-            return { ok: false, reason: error instanceof Error ? error.message : String(error) };
-          }
-        },
-      },
-      onDebugStory: () => app.storyUI.openDebugStory(),
       ui: () => app.storyUI.diagnosticState(),
       combat: {
         setInvincible: (id, enabled) => {
@@ -295,7 +250,7 @@ export function createSessionLifecycle(app:StoryApp,hooks:SessionLifecycleHooks)
         },
       },
     }) : undefined;
-    if (app.gm) globalThis.gm = consoleGmActions(app.gm); else delete globalThis.gm;
+    if (app.gm) globalThis.gm = app.gm; else delete globalThis.gm;
     app.audio?.enterStory();
     // 会话装好之后再开自动存档：它要绑定这一份会话的任务状态。
     startAutoSave(session);

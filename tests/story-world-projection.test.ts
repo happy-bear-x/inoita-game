@@ -19,7 +19,7 @@ function fixture(){
   const state={map:{id:'home',name:'Home'},player,baseEntities:[],characters:[] as unknown[],entities:[],storyEntityAssets:[],projectedActorIds:new Set(),encounterResults:new Set<string>(),loadingWorld:false,destroyed:false,readyAbort:new AbortController(),
     app:{director:{},campaign:{placements:[]},session:{storyWorld:{get currentLocation(){return location;},projectEntities:()=>projected,actorAppearance:(actor:string)=>actor,entity:()=>undefined},visible:()=>true},world:{actors:{} as Record<string,unknown>},ui:{setWorldRebuildCover:(covered:boolean)=>{coverCalls.push(covered);}}},
     movement,
-    combat:{regroupPartyAroundHero(){regroups++;},async projectStoryEnemies(){},async restoreState(){},adoptStoryPositions(actors:unknown[]){adopted.push(actors);}},
+    combat:{regroupPartyAroundHero(){regroups++;},async projectStoryEnemies(){},async restoreState(){},adoptStoryPositions(actors:unknown[]){adopted.push(actors);},finishMapVisit(){},discardPendingDefeats(){}},
     loadAssets:async(...args:unknown[])=>{assetLoads.push(args);return {release(){}};},refreshState(){},syncHud(){},setClip(){},syncControlledCharacter(){},
     scene:{isActive(){return stageActive;},get(){return {worldCovered};},restart(options:SceneOptions){restarts++;lastRestart=options;options.onReady?.();},stop(){stops++;}}
   };
@@ -195,7 +195,7 @@ test('a story checkpoint records a fallback when a story encounter is waiting an
 });
 
 test('saving refuses a party whose active members are all down',()=>{
-  const scene=Object.setPrototypeOf({app:{session:{debugFocusQuest:undefined,hasLivingMember:false}},map:{id:'home'},player:{},movement:{}},WorldScene.prototype) as unknown as InstanceType<typeof WorldScene>;
+  const scene=Object.setPrototypeOf({app:{session:{hasLivingMember:false}},map:{id:'home'},player:{},movement:{}},WorldScene.prototype) as unknown as InstanceType<typeof WorldScene>;
   assert.deepEqual(scene.captureSaveWorld(),{ok:false,reason:'no-survivors'});
 });
 

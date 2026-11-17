@@ -257,9 +257,7 @@ export class TitleMenuController {
     view.root.add(zone);
     zone.on('pointerdown',()=>{
       if(!this.app.ui.ready||this.app.ui.suspended||!this.scene.sys.isActive())return;
-      // 开关状态先同步画出来；目录是可选依赖，没有它也不能让「调试：开」一直不出现。
-      if(gm.toggle()){this.render();void this.app.loadDebugCatalog?.().then(()=>this.render(),error=>console.error(error));}
-      else this.render();
+      gm.toggle();this.render();
     });
     if(gm.on)texts.push({key:'gm-on',text:'调试：开',x:8,y:610,style:{size:18}});
   }

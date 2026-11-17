@@ -72,7 +72,6 @@ interface StoryMenuViewModel {
   bagRevision?: number;
   money?: number;
   questBookVersion?: number;
-  debugFocusQuest?: string;
   skillsVersion?: number;
   memberLevel?: number;
   memberSkillsVersion?: number;
@@ -169,7 +168,7 @@ export function storyMenuViewModel(source: StoryMenuViewModelSource): StoryMenuV
     case 'party':
       return { page, bagRevision, party: `${partyShape(session)}|${partyDetail(session)}|${partyRosterShape(session)}` };
     case 'quests':
-      return { page, questBookVersion: session.questBook.version, debugFocusQuest: session.debugFocusQuest };
+      return { page, questBookVersion: session.questBook.version };
     case 'shop':
       return { page, selectedMemberId: source.selectedMemberId, bagRevision, money, party: partyShape(session) };
     case 'crafting':
@@ -189,7 +188,7 @@ export function storyMenuViewModel(source: StoryMenuViewModelSource): StoryMenuV
     case 'debug': {
       const detail = memberShape(session, source.selectedMemberId);
       return { page, selectedMemberId: source.selectedMemberId, bagRevision, money,
-        questBookVersion: session.questBook.version, debugFocusQuest: session.debugFocusQuest,
+        questBookVersion: session.questBook.version,
         memberLevel: detail.level, memberPlayer: detail.player,
         skillPoints: session.hero?.skillPoints ?? 0, statPoints: session.hero?.statPoints ?? 0,
         party: `${partyShape(session)}|${partyDetail(session)}|${partyRosterShape(session)}`, groupModifiers: groupShape(session),

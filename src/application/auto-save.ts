@@ -35,7 +35,6 @@ export class AutoSaver<World = unknown> {
   private interval?:ReturnType<typeof setInterval>;
   private lastWrite=-Infinity;
   private waiting=false;
-  private suspended=false;
   private writeSequence=0;
 
   constructor(ports:AutoSavePorts<World>, options:{debounceMs?:number;minGapMs?:number;retryMs?:number}={}) {
@@ -45,28 +44,15 @@ export class AutoSaver<World = unknown> {
     this.retryMs=options.retryMs ?? DEFAULT_RETRY_MS;
   }
 
-  /** 调试现场期间暂停写入：清掉待写与重试，之后的触发也不再排队。 */
-  suspend():void {
-    this.suspended=true;
-    this.writeSequence++;
-    if(this.debounce)clearTimeout(this.debounce);
-    this.debounce=undefined;
-    this.waiting=false;
-  }
-
-  /** 结束调试后恢复；不主动写，调用方按正常时机再触发一次。 */
-  resume():void { this.suspended=false; }
-  get isSuspended():boolean { return this.suspended; }
-
   /** 记一次待写；窗口内的重复触发合并。 */
   request():void {
-    if(this.suspended||!this.ports.enabled()||this.debounce)return;
+    if(!this.ports.enabled()||this.debounce)return;
     this.debounce=setTimeout(()=>{ this.debounce=undefined; this.flush(); },this.debounceMs);
   }
 
   /** 立即尝试写入；条件不满足时安排重试。`stop()` 之后不再重试。 */
   flush():void {
-    if(this.suspended||!this.ports.enabled())return;
+    if(!this.ports.enabled())return;
     const now=this.ports.now?.() ?? Date.now();
     if((this.ports.locked?.() ?? false)||now-this.lastWrite<this.minGapMs){
       this.retry();
@@ -90,7 +76,7 @@ export class AutoSaver<World = unknown> {
    * 跳过去抖与最小间隔，也不安排重试；调用方负责在进入挂起状态之前调用。
    */
   flushForBackground():void {
-    if(this.suspended||!this.ports.enabled())return;
+    if(!this.ports.enabled())return;
     if(this.debounce){clearTimeout(this.debounce);this.debounce=undefined;}
     this.waiting=false;
     if(this.ports.locked?.() ?? false)return;
@@ -142,7 +128,7 @@ export class AutoSaver<World = unknown> {
   }
 
   private retry():void {
-    if(this.suspended||this.waiting||this.debounce)return;
+    if(this.waiting||this.debounce)return;
     this.waiting=true;
     this.debounce=setTimeout(()=>{ this.debounce=undefined; this.waiting=false; this.flush(); },this.retryMs);
   }

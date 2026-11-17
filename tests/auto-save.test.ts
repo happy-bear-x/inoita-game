@@ -97,24 +97,6 @@ test('stop cancels a pending write',async ()=>{
   assert.equal(f.writes.length,0);
 });
 
-test('suspend stops writes until resume, including an already pending one',async t=>{
-  const f=harness();t.after(()=>f.saver.stop());
-  // 已经排队的待写在暂停时被清掉：调试现场的安装不该补写一份存档。
-  f.saver.request();
-  f.saver.suspend();
-  assert.equal(f.saver.isSuspended,true);
-  await wait(20);
-  assert.equal(f.writes.length,0,'暂停期间不写');
-  f.saver.request();
-  await wait(20);
-  assert.equal(f.writes.length,0,'暂停期间的新触发也不排队');
-  f.saver.resume();
-  assert.equal(f.saver.isSuspended,false);
-  f.saver.request();
-  await wait(20);
-  assert.equal(f.writes.length,1,'恢复后按正常节奏写一次');
-});
-
 test('background flush writes immediately and cancels the queued write',async t=>{
   const f=harness();t.after(()=>f.saver.stop());
   f.saver.request();
@@ -124,15 +106,10 @@ test('background flush writes immediately and cancels the queued write',async t=
   assert.equal(f.writes.length,1,'排队中的那次不会重复写');
 });
 
-test('background flush respects paused, locked and not-ready states',()=>{
+test('background flush respects disabled, locked and not-ready states',()=>{
   const disabled=harness({enabled:false});
   disabled.saver.flushForBackground();
   assert.equal(disabled.writes.length,0,'不可存档时不写');
-
-  const suspended=harness();
-  suspended.saver.suspend();
-  suspended.saver.flushForBackground();
-  assert.equal(suspended.writes.length,0,'调试暂停时不写');
 
   const locked=harness({locked:true});
   locked.saver.flushForBackground();

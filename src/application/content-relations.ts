@@ -126,41 +126,6 @@ export function validateContentRelations(input: ContentRelations): void {
     else if (place?.type === 'alternatives') place.spots.forEach((spot, index) => checkSpot(spot, `${owner}[${index}]`));
   };
   for (const event of campaign.events) checkPlace(event.place, event.id);
-  for (const task of campaign.debugStory?.tasks ?? []) {
-    checkSpot(task.entry, `debug:${task.quest}`);
-    const start = task.start;
-    if (!start) continue;
-    const startWorld = start.world;
-    ensure(!!startWorld, `调试现场缺少世界落点 ${task.quest}`);
-    // 落点地图必须存在、坐标在地图内；「是否与 entry 一致」只对不是开幕前的切点要求：
-    // `cut = before-opening` 的现场停在开幕事件的开场图，和旧目录的接取落点本来就可能不同。
-    checkSpot({ ...startWorld!.location, source: 'debug-start' }, `debug-start:${task.quest}`);
-    if (task.play?.cut !== 'before-opening')
-      ensure(startWorld!.location.map === task.entry.map && startWorld!.location.x === task.entry.x
-        && startWorld!.location.y === task.entry.y, `调试现场落点与任务入口不一致 ${task.quest}`);
-    for (const entity of startWorld!.entities ?? []) {
-      ensure(!entity.map || ids.has(entity.map), `调试现场人物地图缺失 ${task.quest}:${entity.id}`);
-      ensure(!entity.actor || world.actors[entity.actor], `调试现场人物角色缺失 ${task.quest}:${entity.id}`);
-      if (!entity.map || entity.x === undefined || entity.y === undefined) continue;
-      const map = maps.get(entity.map) as WorldMap | undefined;
-      ensure(!!map && entity.x >= 0 && entity.x < map.width && entity.y >= 0 && entity.y < map.height,
-        `调试现场人物坐标超出地图 ${task.quest}:${entity.id}`);
-    }
-    for (const spawn of startWorld!.enemyLocations ?? []) {
-      const map = maps.get(spawn.map) as WorldMap | undefined;
-      ensure(!!map && spawn.x >= 0 && spawn.x < map.width && spawn.y >= 0 && spawn.y < map.height,
-        `调试现场敌人坐标超出地图 ${task.quest}:${spawn.id}`);
-    }
-    for (const item of [...start.items ?? [], ...start.requiresProfile?.items ?? []])
-      ensure(!!items.items[item.item], `调试现场物品缺失 ${task.quest}:${item.item}`);
-    for (const id of start.itemReset ?? []) ensure(!!items.items[id], `调试现场待清物品缺失 ${task.quest}:${id}`);
-    for (const absent of startWorld!.absentActors ?? [])
-      ensure(ids.has(absent.map) && !!world.actors[absent.actor], `调试现场缺场人物缺失 ${task.quest}:${absent.actor}`);
-    for (const absent of startWorld!.absentEnemies ?? []) {
-      ensure(ids.has(absent.map), `调试现场缺场敌人地图缺失 ${task.quest}`);
-      ensure(enemyIds.has(absent.enemyId), `调试现场缺场敌人不存在 ${task.quest}:${absent.enemyId}`);
-    }
-  }
   for (const quest of campaign.quests)
     for (const phase of ['available', 'active', 'ready'] as const) checkPlace(quest.places?.[phase], `${quest.id}:${phase}`);
   for (const event of campaign.events) ensure((!event.map || ids.has(event.map)) && campaign.scripts[event.script], `剧情事件缺失 ${event.id}`);

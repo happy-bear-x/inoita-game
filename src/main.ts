@@ -42,7 +42,7 @@ import { displaySettings, parallelTextureUnits } from './application/display-set
 import { currentRefreshRate, detectRefreshRate, refreshRateKnown, resolveFrameLimit, setRefreshRate } from './application/frame-pacing.ts';
 import { requestNativeFrameRate } from './application/native-frame-rate.ts';
 import { installDiagnosticMetrics, installDiagnosticSnapshot, FrameStats } from './application/game-diagnostics.ts';
-import { type ConsoleGmActions } from './debug/gm-actions.ts';
+import { type GmActions } from './debug/gm-actions.ts';
 import { DomUi } from './ui/dom/dom-ui.ts';
 
 declare global {
@@ -50,7 +50,7 @@ declare global {
   var storyApp: StoryApp | undefined;
   var render_game_to_text: (() => string) | undefined;
   /** GM 打开时才挂上的调试动作层，agent 经 CDP 驱动它（与游戏内面板同一份实现）。 */
-  var gm: ConsoleGmActions | undefined;
+  var gm: GmActions | undefined;
 }
 
 /** 启动后第一次补测刷新率的延迟；启动初期 rAF 可能还没按高刷回调。 */
@@ -149,8 +149,7 @@ function startAutoSave(session:Session):void {
   stopAutoSave();
   const generation=autoSaveGeneration;
   const saver=new AutoSaver<StoryWorldViewSnapshot>({
-    // 调试现场不写玩家存档：focus 存在时自动存档整个停掉，结束调试后由 GM 动作恢复。
-    enabled:()=>app.mode==='game'&&!app.suspended&&!!app.session&&!app.pressureMode&&!app.session.debugFocusQuest&&!app.gm?.storyDebug().autoSavePaused,
+    enabled:()=>app.mode==='game'&&!app.suspended&&!!app.session&&!app.pressureMode,
     // 演出与菜单锁着时不抢写：等解锁后再写，免得存到一半的状态。
     locked:()=>app.locked||!!app.director?.busy,
     capture:()=>{const captured=app.storyUI.captureSaveRecord(lastSaveThumbnail);return captured.ok?captured.record:undefined;},
@@ -282,10 +281,7 @@ function prepareStory(_signal: AbortSignal): Promise<void> {
     });
     signal.throwIfAborted();
     recordStartPhase('story-fetched');
-    // 调试现场表是独立产物：只有 GM 会话加载，普通游玩不请求 1.35MB 的调试数据。
-    if (gmOn()) campaign.debugStory = await app.content.storyDebug(signal);
     signal.throwIfAborted();
-    recordStartPhase('story-debug-ready');
     await app.content.prepareTownPoses(wardrobe, signal);
     // 生产构建信任构建期校验：不重复跑语义校验，也不为校验 fetch 281 张剧情地图。
     // dev/测试/?gm 仍走完整路径。
@@ -706,7 +702,7 @@ function runtimeDiagnostics(): Record<string, unknown> {
     session: session ? {
       nowMs: session.nowMs, combatTick: session.combatTick, money: session.money,
       partyItemChance: session.partyItemChance, currentQuest: session.currentQuest()?.id ?? null,
-      debugFocusQuest: session.debugFocusQuest ?? null, bagEntries: session.bag.entries.length,
+      bagEntries: session.bag.entries.length,
       party: party ? { controlled: party.controlledId, active: party.activeIds,
         reserves: party.snapshot().reserves, rosterSlots: party.snapshot().rosterSlots } : null,
     } : null,
@@ -732,7 +728,7 @@ function boot(): void {
   app.resumeSlot = resumeSlot;
   app.prefetchCommon = prefetchCommon;
   app.captureSaveWorld = () => app.pressureMode ? {ok:false,reason:'pressure'}
-    : app.gm?.storyDebug().autoSavePaused ? {ok:false,reason:'debug'} : worldScene()?.captureSaveWorld() ?? {ok:false,reason:'not-ready'};
+    : worldScene()?.captureSaveWorld() ?? {ok:false,reason:'not-ready'};
   // 只读 Phaser 画布，存档页和其他 DOM 界面不在快照里。
   app.captureSaveThumbnail = () => captureSaveThumbnail(app.game)
     .then(screenshot => { if (screenshot) lastSaveThumbnail = screenshot; return screenshot; });

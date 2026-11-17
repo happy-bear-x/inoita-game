@@ -118,7 +118,7 @@ test('rollback discards pending defeats without settling them',()=>{
 test('checkpoints settle pending defeats before capturing session and world',()=>{
   let flushed=0,captured=0;
   const host=Object.setPrototypeOf({
-    app:{pressureMode:false,session:{debugFocusQuest:false,hasWaitingStoryRun:false,hasLivingMember:true},
+    app:{pressureMode:false,session:{hasWaitingStoryRun:false,hasLivingMember:true},
       gm:undefined,checkpoint:{available:false,capture:()=>{captured++;return true;}}},
     combat:{settleForSnapshot:()=>{flushed++;}},
     worldReady:()=>true,map:{id:'camp'},movement:{position:()=>({x:0,y:0})},player:{},

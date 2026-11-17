@@ -32,12 +32,12 @@ function fixture() {
   };
   const session = {
     bag: { revision: 7 }, money: 123, skills: { version: 4 },
-    questBook: { version: 9 }, debugFocusQuest: 'q1',
+    questBook: { version: 9 },
     hero, party
   } as unknown as Session;
   const mutable = session as unknown as {
     bag: { revision: number }; money: number; skills: { version: number };
-    questBook: { version: number }; debugFocusQuest?: string;
+    questBook: { version: number };
   };
   let slotsRead = 0;
   const readings = new Map<number | 'auto', SlotSummaryReading>([
@@ -96,7 +96,7 @@ test('队伍页把候补名册也纳入签名', () => {
   assert.notEqual(storyMenuSignature(f.source('party')), after, '上阵队员血量变化要重绘队伍页');
 });
 
-test('任务页只依赖任务簿版本和调试焦点', () => {
+test('任务页只依赖任务簿版本', () => {
   const f = fixture();
   const before = storyMenuSignature(f.source('quests'));
   f.hero.player.health -= 1;
@@ -104,9 +104,6 @@ test('任务页只依赖任务簿版本和调试焦点', () => {
   assert.equal(storyMenuSignature(f.source('quests')), before, '战斗与背包通知不重绘任务页');
   f.mutable.questBook.version += 1;
   assert.notEqual(storyMenuSignature(f.source('quests')), before, '任务版本变化要重绘');
-  const afterVersion = storyMenuSignature(f.source('quests'));
-  f.mutable.debugFocusQuest = 'q2';
-  assert.notEqual(storyMenuSignature(f.source('quests')), afterVersion, '调试焦点变化要重绘');
 });
 
 test('存档页把每个槽的摘要算进签名，其他页不读存档', () => {

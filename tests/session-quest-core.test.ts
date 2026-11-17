@@ -220,8 +220,6 @@ test('NPC interaction executes one native quest slot instead of listing every re
   assert.equal(session.npcQuestSlot('npc')?.id,'side-offer','可接支线仍优先于进行中的任务');
   session.accept('side-offer');
   assert.equal(session.npcQuestSlot('npc')?.id,'side-offer');
-  session.focusDebugQuest('ongoing');
-  assert.equal(session.npcQuestSlot('npc')?.id,'ongoing','GM 焦点只认焦点任务');
 });
 
 test('multiple pending deliveries keep the native running-pool order',()=>{
