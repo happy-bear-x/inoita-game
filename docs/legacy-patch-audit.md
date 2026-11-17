@@ -54,7 +54,7 @@
 | 57→58 | 从正常死亡期限推导画面外提前复活期限 | [fec73e09](https://github.com/sunflower9264/inoita-game/commit/fec73e09) | 删除步骤，保留新刷新机制 W03 |
 | 58→59 | 清理未穿戴的剧情专属装备、格位、退役引用、快捷栏和地面残留 | [debdcf87](https://github.com/sunflower9264/inoita-game/commit/debdcf87) | 删除 migrateStoryEquipmentInventory；保留当前装备限制 E03 |
 
-S01 的退出还要同步处理本地槽位、云端上传下载的格式分类、旧格式测试、`SavedGameContent` 中仅供迁移读取的依赖，以及规则文件和长期文档中的旧范围说明。除各级 `AGENTS.md` 外，`docs/module-guide.md`、`docs/architecture.md`、`docs/cloud-save.md`、`docs/story-content.md` 仍在描述旧格式或旧升级链，退出时要一起改。不能只删表、留下仍宣称可读的版本列表。35→36 的重复演员收敛和 48→49 的旧敌人外观读取分别见 S22、S23。
+S01 的退出还要同步处理本地槽位、云端上传下载的格式分类、旧格式测试、`SavedGameContent` 中仅供迁移读取的依赖，以及规则文件和长期文档中的旧范围说明。除各级 `AGENTS.md` 外，`docs/module-guide.md` 和 `docs/architecture.md` 曾把当前格式写成 44、56，已在本次复核中改成 59；`docs/cloud-save.md` 和 `docs/story-content.md` 仍描述旧格式读取，退出时要一起改。不能只删表、留下仍宣称可读的版本列表。35→36 的重复演员收敛和 48→49 的旧敌人外观读取分别见 S22、S23。
 
 ## 3 当前代码中的审计清单
 
