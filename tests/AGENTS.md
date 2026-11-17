@@ -105,3 +105,4 @@ npm run test:standalone
 - 图片加载测试显式登记下载宿主，覆盖业务场景取消后共用下载继续、同键接管、图集子文件、迟到回收，以及进度回调取消时拒绝交付。
 
 - `menu-item-drag.test.ts` 覆盖长按阈值、移动取消、多指隔离、失效定时器和拖拽资源释放；背包异步操作的关闭、换人和换会话隔离由 `story-menu-interactions.test.ts` 验证。
+- `combat-outcomes.test.ts` 覆盖死亡单在 settle/present 抛错时的清除、失败回调和 flush 不向战斗帧抛错。

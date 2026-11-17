@@ -277,15 +277,17 @@ test('defeat notifications isolate observer exceptions after committing the kill
   assert.notEqual(run.session.enemyVitals(run.spawn.id).deadUntil,undefined);
 });
 
-test('a defeat ticket commits before removal and never repeats presentation failures',()=>{
-  const tickets=new PendingEnemyDefeats();let fail=true,commits=0;
-  tickets.add('enemy',()=>{assert.equal(tickets.has('enemy'),true);if(fail)throw new Error('commit');commits++;},()=>{
-    assert.equal(tickets.has('enemy'),false);throw new Error('presentation');
-  });
-  assert.throws(()=>tickets.complete('enemy'),/commit/);
-  assert.equal(tickets.has('enemy'),true);fail=false;
-  assert.throws(()=>tickets.complete('enemy'),/presentation/);
-  tickets.complete('enemy');assert.equal(commits,1);
+test('a defeat ticket clears before settle and reports presentation failures once',()=>{
+  const tickets=new PendingEnemyDefeats();const failures:('settle'|'present')[]=[];
+  let commits=0,presentations=0;
+  tickets.add('enemy',()=>{assert.equal(tickets.has('enemy'),false);commits++;},()=>{
+    presentations++;throw new Error('presentation');
+  },(_error,_render,phase)=>{failures.push(phase);});
+  assert.doesNotThrow(()=>tickets.complete('enemy'));
+  assert.equal(tickets.has('enemy'),false);
+  assert.equal(commits,1);assert.equal(presentations,1);
+  assert.deepEqual(failures,['present']);
+  tickets.complete('enemy');assert.equal(commits,1);assert.equal(presentations,1);
 });
 
 test('a breakable spawn error restores chest visit and the death record',t=>{

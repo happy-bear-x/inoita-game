@@ -1419,6 +1419,16 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
           if(visual?.container.active){this.outcomes.levelUp(visual);this.app.audio?.playerLevelUp();}
         }
       }
+    },(error,render,phase)=>{
+      // 结算或表现失败时也要清掉死亡单和 0 血敌人，保存/检查点/换图入口不能再抛。
+      globalThis.storyDiagnostics?.record(phase==='settle'?'enemy-defeat-settlement-error':'enemy-defeat-presentation-error',{
+        enemy:targetEnemy.definition.id,key,map,render,
+        message:error instanceof Error?error.message:String(error)},false);
+      try{this.runtime.cancel(`defeat:${key}`);}catch{}
+      try{this.outcomes.cancelDeath(key);}catch{}
+      try{result?.notify();}catch{}
+      if(spawn){try{session.enemyDefeated(spawn);}catch{}}
+      try{this.removeEnemy(key);}catch{}
     }))return false;
     this.combatantsCache=undefined;
     let scheduled=false;
