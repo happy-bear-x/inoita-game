@@ -149,7 +149,7 @@ function startAutoSave(session:Session):void {
   stopAutoSave();
   const generation=autoSaveGeneration;
   const saver=new AutoSaver<StoryWorldViewSnapshot>({
-    enabled:()=>app.mode==='game'&&!app.suspended&&!!app.session&&!app.pressureMode,
+    enabled:()=>app.mode==='game'&&!app.suspended&&!!app.session&&!app.pressureMode&&!app.storyDebugActive,
     // 演出与菜单锁着时不抢写：等解锁后再写，免得存到一半的状态。
     locked:()=>app.locked||!!app.director?.busy,
     capture:()=>{const captured=app.storyUI.captureSaveRecord(lastSaveThumbnail);return captured.ok?captured.record:undefined;},

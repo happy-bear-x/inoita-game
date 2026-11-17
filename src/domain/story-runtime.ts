@@ -69,6 +69,8 @@ export interface StoryRuntimePort {
   rollback(baseline: unknown, context: StoryPlaybackContext): void;
   evaluate(condition: StoryCondition): boolean;
   validOccurrence?(occurrence: StoryOccurrence): boolean;
+  /** 调试焦点：返回 false 的自动事件不参与这次发生；显式 `start` 不经过此判断。 */
+  eventAllowed?(event: StoryEvent): boolean;
   onBusy?(busy: boolean): void;
 }
 interface PendingWork { work: (signal: AbortSignal, epoch: number) => Promise<boolean>; resolve: (value: boolean) => void; reject: (error: unknown) => void }
@@ -336,6 +338,9 @@ export class StoryRuntime {
       // 存储剩余候选；当前节点由 runs 独立恢复。
       this.install({ ...this.state, pendingOccurrences: this.state.pendingOccurrences.map(pending =>
         this.occurrenceKey(pending.occurrence) === key ? { ...pending, nextEventIndex: index + 1 } : pending) });
+      // 调试焦点只影响自动派发；显式 start/script 不经过这里。被过滤的事件也推进游标，
+      // 之后解除过滤时同一发生不会回头补演。
+      if (this.port.eventAllowed?.(event) === false) continue;
       const expectedKey=event.key??(event.source==='near'?event.nearCharacterId??event.near:event.source==='region'?event.id:undefined);
       if ((expectedKey !== undefined && expectedKey !== occurrence.key) || (event.map !== undefined && event.map !== occurrence.map)
         || (event.entity !== undefined && event.entity !== occurrence.entity) || this.handled(event, occurrence)

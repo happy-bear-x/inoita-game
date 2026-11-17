@@ -2424,7 +2424,8 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
       this.playStory(()=>this.app.director.enterRegion(event.id,event.map!).then(played=>{
         // 没播成、且事件还没结束（导演这一刻不收、或运行时不认这次触发）就放下这块占用，
         // 让还站在区域里的玩家下一帧能再试一次。已经播完的事件保持占用，不再反复触发。
-        if(!played&&!this.app.director.runtime.snapshot().completedEvents.includes(event.id))this.occupiedRegions.delete(event.id);
+        if(!played&&this.app.director.allowsAutomaticEvent(event)
+          &&!this.app.director.runtime.snapshot().completedEvents.includes(event.id))this.occupiedRegions.delete(event.id);
         return played;
       }));return;
     }
@@ -2447,7 +2448,8 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     if (near) {
       const { event, beside } = near;
       this.playStory(() => this.app.director.approach(event.near!, this.map?.id, beside.entity.characterId).then(played => {
-        if (!played && !this.app.director.runtime.snapshot().completedEvents.includes(event.id)) this.occupiedRegions.delete(event.id);
+        if (!played && this.app.director.allowsAutomaticEvent(event)
+          && !this.app.director.runtime.snapshot().completedEvents.includes(event.id)) this.occupiedRegions.delete(event.id);
         return played;
       }));
       return;

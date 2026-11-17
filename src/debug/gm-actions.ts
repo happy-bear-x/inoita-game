@@ -15,14 +15,52 @@
  * 脚本要继续跑，三种需求都靠这个形状满足。
  */
 import type { Campaign } from '../domain/campaign.ts';
-import type { Session } from '../domain/session.ts';
+import type { Session, SessionState } from '../domain/session.ts';
 import type { StoryDirector } from '../domain/story-director.ts';
+import type { QuestStatus, TravelDestination } from '../domain/content.ts';
 import type { ItemCategory } from '../domain/story-interface.ts';
+import { buildQuestCatalog, projectQuestCatalog, type QuestCatalogGroup } from './quest-catalog.ts';
+import { applyQuestStartPlan, planQuestStart, questFocusEventIds, type QuestAcceptCandidate, type QuestStartMode, type QuestStartPlan } from './quest-jump.ts';
 import { organizedDebugInventory } from '../domain/inventory.ts';
 import { encounterSpawnId } from '../domain/world-enemies.ts';
 import { DIAGNOSTICS_REPORT_PATH, diagnosticsReportUrl } from '../application/endpoints.ts';
 
 interface GmResult { ok: boolean; reason?: string }
+
+/** 调试任务页的状态；`active` 为假时其余字段可以省略。 */
+export interface GmQuestDebugState {
+  active: boolean;
+  questId?: string;
+  title?: string;
+  status?: QuestStatus;
+  goals?: { id: string; label: string; current: number; quantity: number }[];
+  completed: boolean;
+  lastError?: string;
+}
+
+/** 跳转前快照；world/checkpoint 的字段由装配方解释，动作层不依赖 application。 */
+export interface GmStoryDebugSnapshot {
+  session: SessionState;
+  world: unknown;
+  checkpoint?: unknown;
+}
+
+/** 场景侧提供的任务调试能力；动作层只负责流程和状态，不碰 Phaser。 */
+export interface GmStoryDebugPort {
+  ready(): boolean;
+  capture(): GmStoryDebugSnapshot;
+  begin(): void;
+  /** 状态设置和传送完成后恢复普通触发，让接取剧情能真正开演。 */
+  releaseTriggers(): void;
+  closeMenu(): void;
+  travel(destination: TravelDestination): Promise<void>;
+  /** 返回是否真的开始播放；不要求等整段剧情结束。 */
+  play(accept: QuestAcceptCandidate): Promise<boolean>;
+  restore(snapshot: GmStoryDebugSnapshot): Promise<void>;
+  finish(): void;
+  dispose(): void;
+}
+
 /** 脱困结果带前后位置，面板与 agent 都能确认搬到了哪里。 */
 interface GmRescueResult extends GmResult { from?: unknown; to?: unknown; moved?: boolean }
 
@@ -100,6 +138,10 @@ interface GmPorts {
   getSpeedMultiplier?: () => number;
   /** 菜单显示对象的诊断快照；正式 UI 场景提供，headless 省略。 */
   ui?: () => unknown;
+  /** 任务调试跳转的场景侧能力；headless/纯 Node 测试可以省略。 */
+  storyDebug?: GmStoryDebugPort;
+  /** 保留调试进度后补一次自动存档请求；装配方接现有的 AutoSaver。 */
+  requestAutoSave?: () => void;
 }
 
 /** 诊断上报地址由 application/endpoints.ts 统一解析；网页无注入时回退同源固定路径。 */
@@ -148,6 +190,18 @@ export interface GmActions {
   dispose(): void;
   /** 立刻完成指定或当前追踪/进行中的任务。 */
   completeCurrentQuest(questId?: string): GmResult;
+  /** 全部任务组，按故事顺序混排主线/支线；任务页左栏使用。 */
+  questCatalog(): QuestCatalogGroup[];
+  /** 预览一次任务跳转：补哪些前置、接取剧情、目的地和警告。 */
+  previewQuestDebug(questId: string): GmResult & { plan?: QuestStartPlan };
+  /** 从可接取（或指定的进行中）状态开始调试一个任务。 */
+  startQuestDebug(questId: string, mode?: QuestStartMode): Promise<GmResult & { plan?: QuestStartPlan }>;
+  /** 当前调试任务的状态与完成情况。 */
+  questDebugState(): GmQuestDebugState;
+  /** 回到跳转前，恢复任务、位置、自动存档和检查点。 */
+  returnFromQuestDebug(): Promise<GmResult>;
+  /** 保留当前调试进度，只结束调试标记并恢复自动存档。 */
+  keepQuestDebugProgress(): GmResult;
   /** 穿墙（无视地形与单位碰撞）。 */
   setNoclip(enabled: boolean): GmResult;
   isNoclip(): boolean;
@@ -164,6 +218,19 @@ export function createGmActions(ports: GmPorts): GmActions {
   const { session, campaign, director } = ports;
   const log: GmActionLogEntry[] = [];
   let combatSettlementSerial = 0;
+  const questCatalogIndex = buildQuestCatalog(campaign);
+  let questCatalogCache: { version: number; value: QuestCatalogGroup[] } | undefined;
+  let questDebugStarting = false;
+  let questDebugFinishing = false;
+  let questDebugRun: {
+    questId: string;
+    before: GmStoryDebugSnapshot;
+    baselineCompletedCycles: number;
+    acceptScript?: string;
+    startedAt: number;
+    lastError?: string;
+    warnings: string[];
+  } | undefined;
 
   const record = (call: string, args: readonly unknown[], result: GmResult): void => {
     log.push({ at: new Date().toISOString(), call, args, ok: result.ok, ...(result.reason ? { reason: result.reason } : {}) });
@@ -173,6 +240,14 @@ export function createGmActions(ports: GmPorts): GmActions {
   const run = <T extends GmResult>(call: string, args: readonly unknown[], work: () => T): T => {
     let result: T;
     try { result = work(); }
+    catch (error) { result = { ok: false, reason: error instanceof Error ? error.message : String(error) } as T; }
+    record(call, args, result);
+    return result;
+  };
+  /** 异步动作同样只返回结果、不抛错；日志在 await 完成后写。 */
+  const runAsync = async <T extends GmResult>(call: string, args: readonly unknown[], work: () => Promise<T>): Promise<T> => {
+    let result: T;
+    try { result = await work(); }
     catch (error) { result = { ok: false, reason: error instanceof Error ? error.message : String(error) } as T; }
     record(call, args, result);
     return result;
@@ -353,6 +428,138 @@ export function createGmActions(ports: GmPorts): GmActions {
     } catch { return false; }
   };
 
+  const currentQuestCatalog = (): QuestCatalogGroup[] => {
+    const version = session.questBook.version;
+    if (questCatalogCache?.version === version) return questCatalogCache.value;
+    const value = projectQuestCatalog(questCatalogIndex, session.quests);
+    questCatalogCache = { version, value };
+    return value;
+  };
+
+  const questDebugState = (): GmQuestDebugState => {
+    if (!questDebugRun) return { active: false, completed: false };
+    const quest = campaign.quests.find(entry => entry.id === questDebugRun!.questId);
+    const progress = session.quests.get(questDebugRun.questId);
+    const status = progress?.status ?? 'locked';
+    const completed = status === 'completed' || (progress?.completedCycles ?? 0) > questDebugRun.baselineCompletedCycles;
+    const goals = quest?.goals.map(goal => ({
+      id: goal.id,
+      label: goal.label ?? goal.target,
+      current: Math.min(progress?.goals[goal.id] ?? 0, goal.quantity),
+      quantity: goal.quantity,
+    }));
+    return {
+      active: true,
+      questId: questDebugRun.questId,
+      title: quest?.title ?? questDebugRun.questId,
+      status,
+      ...(goals ? { goals } : {}),
+      completed,
+      ...(questDebugRun.lastError ? { lastError: questDebugRun.lastError } : {}),
+    };
+  };
+
+  const previewQuestDebug = (questId: string) => run('previewQuestDebug', [questId], (): GmResult & { plan?: QuestStartPlan } => {
+    try { return { ok: true, plan: planQuestStart(campaign, session, questId) }; }
+    catch (error) { return { ok: false, reason: error instanceof Error ? error.message : String(error) }; }
+  });
+
+  const startQuestDebug = (questId: string, mode?: QuestStartMode): Promise<GmResult & { plan?: QuestStartPlan }> => {
+    if (questDebugStarting || questDebugFinishing) return Promise.resolve({ ok: false, reason: '正在准备或结束任务调试' });
+    questDebugStarting = true;
+    return runAsync('startQuestDebug', [questId, mode], async (): Promise<GmResult & { plan?: QuestStartPlan }> => {
+    if (questDebugRun) return { ok: false, reason: `已有调试任务「${questDebugRun.questId}」，先回到跳转前或保留进度` };
+    const storyDebug = ports.storyDebug;
+    if (!storyDebug) return { ok: false, reason: '当前环境没有任务调试能力' };
+    if (!storyDebug.ready()) return { ok: false, reason: '请等待地图加载完成' };
+    if (director?.busy) return { ok: false, reason: '剧情正在播放，请先结束当前剧情' };
+    if (director?.runtime.snapshot().runs.some(run => run.status === 'running' || run.status === 'waiting'))
+      return { ok: false, reason: '当前有未结束的剧情运行，请先处理' };
+    let plan: QuestStartPlan;
+    try { plan = planQuestStart(campaign, session, questId, mode); }
+    catch (error) { return { ok: false, reason: error instanceof Error ? error.message : String(error) }; }
+    if (plan.mode === 'available' && plan.conditionPatch.unsatisfied.length) {
+      const fallback = plan.quest.completion === 'talk' ? '从待交付开始' : '从进行中开始';
+      return { ok: false, reason: `接取剧情条件无法自动补齐：${plan.conditionPatch.unsatisfied.join('；')}；可改用“${fallback}”`, plan };
+    }
+    const baselineCompletedCycles = session.quests.get(questId)?.completedCycles ?? 0;
+    let before: GmStoryDebugSnapshot;
+    try { before = storyDebug.capture(); }
+    catch (error) { return { ok: false, reason: error instanceof Error ? error.message : String(error), plan }; }
+    const focusEvents = questFocusEventIds(campaign, plan.quest, plan.accept?.eventId);
+    director?.setAutomaticEventFilter(event => focusEvents.has(event.id));
+    try {
+      storyDebug.begin();
+      applyQuestStartPlan(session, plan);
+      director?.runtime.restore(session.runtimeState);
+      if (plan.destination) await storyDebug.travel(plan.destination);
+      // 设置期间挡住的任务变化现在可以放行；接取剧情必须在这个保持之外开演。
+      storyDebug.releaseTriggers();
+      questDebugRun = {
+        questId, before, baselineCompletedCycles, startedAt: Date.now(), warnings: plan.warnings,
+        ...(plan.accept?.script ? { acceptScript: plan.accept.script } : {}),
+      };
+      if (plan.accept) {
+        void storyDebug.play(plan.accept).then(started => {
+          if (!started && questDebugRun) questDebugRun.lastError = '接取剧情没有开演';
+        }).catch(error => {
+          if (questDebugRun) questDebugRun.lastError = error instanceof Error ? error.message : String(error);
+        });
+      } else {
+        storyDebug.closeMenu();
+      }
+      return { ok: true, plan, ...(plan.warnings.length ? { reason: plan.warnings.join('；') } : {}) };
+    } catch (error) {
+      // 先清掉调试覆盖再恢复：强制进度会把已完成状态钉住，恢复后再清就回不去了。
+      session.questBook.clearDebugOverrides();
+      try { await storyDebug.restore(before); } catch { /* 保留原始错误 */ }
+      storyDebug.finish();
+      director?.setAutomaticEventFilter(undefined);
+      return { ok: false, reason: error instanceof Error ? error.message : String(error), plan };
+    }
+    }).finally(() => { questDebugStarting = false; });
+  };
+
+  const returnFromQuestDebug = (): Promise<GmResult> => {
+    if (questDebugFinishing) return Promise.resolve({ ok: false, reason: '正在结束当前任务调试' });
+    questDebugFinishing = true;
+    return runAsync('returnFromQuestDebug', [], async (): Promise<GmResult> => {
+    const run = questDebugRun;
+    if (!run) return { ok: false, reason: '当前没有调试任务' };
+    const storyDebug = ports.storyDebug;
+    if (!storyDebug) return { ok: false, reason: '当前环境没有任务调试能力' };
+    if (director?.busy) return { ok: false, reason: '剧情正在播放，请先结束当前剧情' };
+    session.questBook.clearDebugOverrides();
+    try {
+      await storyDebug.restore(run.before);
+      storyDebug.finish();
+      questDebugRun = undefined;
+      director?.setAutomaticEventFilter(undefined);
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+    }
+    }).finally(() => { questDebugFinishing = false; });
+  };
+
+  const keepQuestDebugProgress = (): GmResult => {
+    if (questDebugFinishing) return { ok: false, reason: '正在结束当前任务调试' };
+    questDebugFinishing = true;
+    try {
+      return run('keepQuestDebugProgress', [], (): GmResult => {
+        if (!questDebugRun) return { ok: false, reason: '当前没有调试任务' };
+        if (director?.busy) return { ok: false, reason: '剧情正在播放，请先结束当前剧情' };
+        session.questBook.clearDebugOverrides();
+        session.emit();
+        ports.storyDebug?.finish();
+        director?.setAutomaticEventFilter(undefined);
+        ports.requestAutoSave?.();
+        questDebugRun = undefined;
+        return { ok: true };
+      });
+    } finally { questDebugFinishing = false; }
+  };
+
   return {
     digest,
     rescue: () => {
@@ -473,7 +680,13 @@ export function createGmActions(ports: GmPorts): GmActions {
       return { ok: true, money: session.money };
     }),
     money: () => session.money,
-    dispose: () => { log.length = 0; },
+    dispose: () => {
+      session.questBook.clearDebugOverrides();
+      director?.setAutomaticEventFilter(undefined);
+      ports.storyDebug?.dispose();
+      questDebugRun = undefined;
+      log.length = 0;
+    },
     completeCurrentQuest: (questId?: string) => run('completeCurrentQuest', [questId], () => {
       const waitingCombats = waitingStoryCombatState();
       const activeList = questDigest().active;
@@ -519,6 +732,12 @@ export function createGmActions(ports: GmPorts): GmActions {
         ? `已结算 ${settled.count} 场剧情战斗，任务「${quest.title}」等待剧情完成`
         : `已完成任务「${quest.title}」${settled.count ? `；已结算 ${settled.count} 场剧情战斗` : ''}` };
     }),
+    questCatalog: currentQuestCatalog,
+    previewQuestDebug,
+    startQuestDebug,
+    questDebugState,
+    returnFromQuestDebug,
+    keepQuestDebugProgress,
     setNoclip: enabled => run('setNoclip', [enabled], () => {
       if (ports.setNoclip) return ports.setNoclip(enabled);
       return { ok: true };

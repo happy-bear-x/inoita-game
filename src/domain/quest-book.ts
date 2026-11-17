@@ -117,6 +117,10 @@ interface QuestEvaluationView {
   conditionContext: StoryConditionContext;
   itemCount(item: string): number;
   equippedItemCount?(item: string): number;
+  /** 调试跳转期间强制保持可接取的任务；不参与状态快照。 */
+  forcedAvailable?: ReadonlySet<string>;
+  /** 调试跳转期间强制钉住的完整任务进度；优先于普通的可用/完成度重算。 */
+  forcedProgress?: ReadonlyMap<string, QuestProgress>;
 }
 function integer(value: number, minimum: number, description: string): void {
   if (!Number.isSafeInteger(value) || value < minimum) throw new Error(`${description}无效`);
@@ -128,7 +132,11 @@ const EMPTY_IDS: ReadonlySet<string> = new Set();
  * 这是全量刷新、增量刷新和 `plan` 动作后刷新共用的唯一规则，避免三处写法漂移。
  */
 function evaluateProgress(quest: QuestRules, state: QuestProgress, view: QuestEvaluationView): QuestProgress {
-  const available = quest.completion !== 'internal' && evaluateStoryCondition(quest.availableWhen, view.conditionContext);
+  // 调试接取条件要求 ready/active 时，普通的物品目标重算会把状态改回去；钉住的进度优先。
+  const forced = view.forcedProgress?.get(quest.id);
+  if (forced) return forced;
+  const available = quest.completion !== 'internal'
+    && (evaluateStoryCondition(quest.availableWhen, view.conditionContext) || view.forcedAvailable?.has(quest.id) === true);
   // 只有「可接取 ⇄ 锁定」会翻转；已接取的任务不会因为条件失效而退回。
   let status = state.status;
   if (status === 'available' && !available) status = 'locked';
@@ -287,6 +295,10 @@ export class QuestBook {
   private readonly restores = new WeakMap<QuestRestorePlan, QuestBookState>();
   private readonly context: () => QuestContext;
   private readonly sideQuests: ReadonlySet<string>;
+  /** 调试跳转期间强制保持可接取的任务；只活在内存里，不进状态快照、不进存档。 */
+  private readonly forcedAvailable = new Set<string>();
+  /** 调试接取条件要求的精确任务进度；只活在内存里，不进状态快照、不进存档。 */
+  private readonly forcedProgress = new Map<string, QuestProgress>();
 
   constructor(definitions: readonly QuestRules[], context: () => QuestContext, sideQuests: ReadonlySet<string>,
     options?: { state?: QuestBookState; shareFrom?: QuestBook }) {
@@ -312,6 +324,27 @@ export class QuestBook {
   accepted(id: string): boolean { return ACCEPTED_QUEST_STATUSES.includes(this.status(id)); }
   completedCycles(id: string): number { return this.states.get(id)?.completedCycles ?? 0; }
   journalVisible(id: string): boolean { const definition=this.definitions.get(id); return !!definition && questInJournal(definition); }
+  /** 调试用：让任务无视 `availableWhen` 保持可接取；集合变化后立即全量重算一次。 */
+  forceAvailable(id: string, enabled: boolean): void {
+    if (enabled) this.forcedAvailable.add(id); else this.forcedAvailable.delete(id);
+    this.commit(this.plan({ type: 'refresh' }));
+  }
+  /** 清空调试强制并重算：原本靠强制解锁的任务会在这次刷新里按 `availableWhen` 回到锁定。 */
+  clearForcedAvailable(): void {
+    this.forcedAvailable.clear();
+    this.commit(this.plan({ type: 'refresh' }));
+  }
+  /** 调试用：把任务进度钉在指定值，避免物品目标重算把 ready 改回 active。 */
+  forceProgress(id: string, progress: QuestProgress): void {
+    this.forcedProgress.set(id, structuredClone(progress));
+    this.commit(this.plan({ type: 'refresh' }));
+  }
+  /** 一次性清掉任务调试的两种内存覆盖，并重算回真实状态。 */
+  clearDebugOverrides(): void {
+    this.forcedAvailable.clear();
+    this.forcedProgress.clear();
+    this.commit(this.plan({ type: 'refresh' }));
+  }
   get runningQuestIds(): readonly string[] { return [...this.runningIds]; }
   captureState(): QuestBookState {
     return structuredClone({ version: QUEST_BOOK_STATE_VERSION, quests: [...this.states], runningQuestIds: this.runningIds,
@@ -367,7 +400,8 @@ export class QuestBook {
     const view: QuestEvaluationView = {
       conditionContext: this.conditionContextFor(context, { get: current }),
       itemCount: item => { const value = context.itemCount(item); integer(value, 0, '背包物品数量'); return value; },
-      equippedItemCount: context.equippedItemCount };
+      equippedItemCount: context.equippedItemCount, forcedAvailable: this.forcedAvailable,
+      forcedProgress: this.forcedProgress };
     let steps = 0;
     // 上限和全量刷新的 pass 上限同量级：每条任务最多重算 definitions.size * 2 次。
     while (queue.length && steps++ < this.definitions.size * 2) {
@@ -429,7 +463,8 @@ export class QuestBook {
     const grant = (item: string, quantity: number): void => { add(grants, item, quantity); const value = count(item) + quantity; integer(value, 0, '物品总量'); balances.set(item, value); };
     const conditionContext: StoryConditionContext = this.conditionContextFor(context, states);
     const view: QuestEvaluationView = {
-      conditionContext, itemCount: count, equippedItemCount: context.equippedItemCount };
+      conditionContext, itemCount: count, equippedItemCount: context.equippedItemCount,
+      forcedAvailable: this.forcedAvailable, forcedProgress: this.forcedProgress };
     const refreshAll = (): void => {
       // Unlocking can depend on another quest becoming available in the same batch.
       for (let pass = 0; pass <= states.size; pass++) {

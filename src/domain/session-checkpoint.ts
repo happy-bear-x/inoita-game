@@ -1,13 +1,17 @@
 import type { Session, SessionState } from './session.ts';
 
-interface CheckpointLocation { map:string; x:number; y:number }
-interface CheckpointSnapshot<WorldState> { session:SessionState; location:CheckpointLocation; world:WorldState }
+export interface CheckpointLocation { map:string; x:number; y:number }
+export interface CheckpointSnapshot<WorldState> { session:SessionState; location:CheckpointLocation; world:WorldState }
 
 /** One in-memory checkpoint. Scene code supplies only its explicit, serializable world state. */
 export class SessionCheckpoint<WorldState = undefined> {
   private snapshot?:CheckpointSnapshot<WorldState>;
   get available():boolean { return !!this.snapshot; }
   peek():CheckpointSnapshot<WorldState>|undefined { return this.snapshot?structuredClone(this.snapshot):undefined; }
+  /** 装回一份先前 `peek()` 出来的快照（调试跳转前后恢复）；传 `undefined` 等价于清空。 */
+  install(snapshot:CheckpointSnapshot<WorldState>|undefined):void {
+    this.snapshot=snapshot?structuredClone(snapshot):undefined;
+  }
   capture(session:Session,location:CheckpointLocation,world:WorldState):boolean {
     // 全灭状态不是安全点：保留上一份快照，别让死亡面板恢复回来又立刻全灭。
     if(!session.hasLivingMember)return false;

@@ -57,6 +57,10 @@ export class StoryDirector {
   private presentationStarted = false;
   /** 手动播放（交付、对话）期间产生的会话变化，等这次播放完全收起后再开演。 */
   private readonly deferredTriggers: (()=>void)[] = [];
+  /** 调试跳转设置期间暂停触发开演；观察表仍更新，恢复后不会把设置过程中的变化补演一遍。 */
+  private triggersHeld = false;
+  /** 调试运行只允许与目标任务相关的自动事件开演；显式 trigger/script 不受影响。 */
+  private automaticEventFilter?: (event: StoryEvent) => boolean;
   private skipRequest = new AbortController();
   private context?: StoryPlaybackContext;
   private locked = false;
@@ -148,6 +152,7 @@ export class StoryDirector {
       evaluate: condition => this.session.evaluateCondition(condition),
       validOccurrence: occurrence => (!occurrence.map || !this.session.storyWorld.currentLocation || occurrence.map === this.session.storyWorld.currentLocation.map)
         && (occurrence.mapVisit === undefined || occurrence.mapVisit === this.session.storyWorld.visit),
+      eventAllowed: event => this.allowsAutomaticEvent(event),
       onBusy: busy => {
         if (busy) { if (!this.manualBusy) this.resetPlayback(); this.setLocked(true); }
         else if (!this.manualBusy) this.release();
@@ -230,11 +235,12 @@ export class StoryDirector {
       this.observedEvents = completedSet;
       this.observedCompletedEvents = completedEvents;
     }
-    if (!dispatch || !changes.length) return;
+    // 触发保持期间照常算变化、更新观察表，只是不派发：恢复后这些变化不会被当成新变化重演。
+    if (!dispatch || !changes.length || this.triggersHeld) return;
     const version = this.session.restorationVersion;
     // Session publishes while the runtime is still finishing its synchronous commit.
     queueMicrotask(() => {
-      if (this.disposed || this.session.restorationVersion !== version) return;
+      if (this.disposed || this.triggersHeld || this.session.restorationVersion !== version) return;
       for (const change of changes) if (this.eventCandidates(change.source, change.key).length) {
         this.triggerAfterManual(() => {
           void this.notify(change.source, change.key, change.source==='choice'?undefined:this.session.storyWorld.currentLocation?.map).catch(error => {
@@ -276,7 +282,7 @@ export class StoryDirector {
     this.manual.abort(); this.runtime.cancel(); this.ui.closeDialogue();
     if (!this.runtime.busy && !this.manualBusy) this.release();
   }
-  dispose(): void { this.disposed = true; this.deferredTriggers.length = 0; this.unsubscribe(); this.unsubscribeDefeats(); this.cancel(); }
+  dispose(): void { this.disposed = true; this.deferredTriggers.length = 0; this.automaticEventFilter = undefined; this.unsubscribe(); this.unsubscribeDefeats(); this.cancel(); }
   private async request(result: Promise<boolean>): Promise<boolean> {
     this.presentationStarted = false;
     try {
@@ -546,7 +552,8 @@ export class StoryDirector {
     }
     const key = 'health-below-30:' + enemy;
     const currentMap = this.session.storyWorld.currentLocation?.map;
-    const event = (this.eventsByKey.get(`battle\0${key}`) ?? []).find(event => (!event.map || !currentMap || event.map === currentMap)
+    const event = (this.eventsByKey.get(`battle\0${key}`) ?? []).find(event => this.allowsAutomaticEvent(event)
+      && (!event.map || !currentMap || event.map === currentMap)
       && (!event.condition || this.session.evaluateCondition(event.condition))
       && (this.runtime.eventStatus(event.id) !== 'completed' || event.repeat));
     if (!event) return false;
@@ -570,8 +577,17 @@ export class StoryDirector {
   private flushDeferredTriggers(): void {
     for (const run of this.deferredTriggers.splice(0)) run();
   }
+  /**
+   * 调试跳转用：暂停新的触发开演，并丢掉已经排队的手动播放后触发。
+   * 只影响 `notify` / `trigger` 与 `observeChanges` 的派发，不进入 `busy`。
+   */
+  holdTriggers(): void { this.triggersHeld = true; this.deferredTriggers.length = 0; }
+  releaseTriggers(): void { this.triggersHeld = false; }
+  /** 调试运行用：只允许指定事件自动开演；显式 `trigger` / `script` 不受过滤影响。 */
+  setAutomaticEventFilter(filter?: (event: StoryEvent) => boolean): void { this.automaticEventFilter = filter; }
+  allowsAutomaticEvent(event: StoryEvent): boolean { return this.automaticEventFilter?.(event) !== false; }
   notify(source: StoryTriggerSource, key?: string, map?: string, entity?: string): Promise<boolean> {
-    if (this.disposed) return Promise.resolve(false);
+    if (this.disposed || this.triggersHeld) return Promise.resolve(false);
     return this.request(this.runtime.dispatch(this.occurrence(source, key, map, entity)));
   }
   start(): Promise<boolean> { return this.notify('start'); }
@@ -593,7 +609,7 @@ export class StoryDirector {
     return Promise.resolve(true);
   }
   trigger(trigger: Pick<StoryTrigger, 'id' | 'script'> & Partial<StoryTrigger>): Promise<boolean> {
-    if (this.busy || this.session.flags.has(trigger.id)) return Promise.resolve(false);
+    if (this.triggersHeld || this.busy || this.session.flags.has(trigger.id)) return Promise.resolve(false);
     const event = this.campaign.events.find(event => event.id === trigger.id);
     if (event) return this.request(this.runtime.start(event.script, event.id));
     return this.request(this.runtime.start(trigger.script)).then(played => { if (played) this.session.mark(trigger.id); return played; });
