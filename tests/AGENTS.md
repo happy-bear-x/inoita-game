@@ -96,7 +96,7 @@ npm run test:standalone
 
 - `combat-defeat-ticket.test.ts` 覆盖正常离图先结算再提交地图移动、恢复世界先丢弃旧死亡单，以及销毁战斗只释放死亡单、不发放奖励。
 
-- `combat-rewards.test.ts` 通过真实 `Session.settleEnemyDefeat` 验证普通、首杀、保底、任务、压测与景物奖励；故障注入覆盖地面掉落裁剪、经验与宝箱衍生怪的原子回滚，并验证死亡单提交后移除、提交后的监听者错误隔离。
+- `combat-rewards.test.ts` 通过真实 `Session.settleEnemyDefeat` 验证普通、首杀、保底、任务、压测与景物奖励；故障注入覆盖地面掉落裁剪、经验与宝箱衍生怪的原子回滚，并验证死亡单在结算前移除、提交后的监听者错误隔离。
 
 - `combat-rewards.test.ts` 覆盖击杀结算失败后的伙伴原地回滚：成员与技能对象保持身份，原有世界绑定和血条查询继续读取恢复后的状态。
 
