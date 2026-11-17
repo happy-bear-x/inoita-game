@@ -25,7 +25,7 @@ QQ 内置 WebView 不支持 WebGL、UC 浏览器 `navigator.vibrate` 赋值错�
 
 技能书跨职业校验不适用：当前内容只产出不绑定具体技能的通用技能书，以及随机解锁一门技能的封印书；日志里的 2 次跨职业错误来自旧档或调试数据。正式版只读格式 1，旧档不会进入。
 
-修复进度（2026-11-17）：3.1 `event-158` 已修（提交 `020d4ee6`）；3.2 `effects-atlas:24` 已修（提交 `ec1413e2`）；3.3 iOS 音频已修（提交 `a4760b49`）。其余 1 个待修：3.4 纹理重复竞态。
+修复进度（2026-11-17）：3.1 `event-158` 已修（提交 `020d4ee6`）；3.2 `effects-atlas:24` 已修（提交 `ec1413e2`）；3.3 iOS 音频已修（提交 `a4760b49`）；3.4 纹理重复竞态已修（提交 `3d71d767`）。清单内不再有待修项。
 
 其余高频日志主要是噪声或设计状态，不建议当 bug 修：
 
@@ -68,13 +68,13 @@ QQ 内置 WebView 不支持 WebGL、UC 浏览器 `navigator.vibrate` 赋值错�
 - 建议：所有 `resume()` 接 `.catch(()=>{})`；只在 `!document.hidden` 且确有用户触摸时重试；ready 后移除 Phaser 的 `VISIBLE` 处理器，用带 catch 的自己的可见/触摸恢复；连续失败提示“点屏幕恢复声音”。
 - 正式版分支状态：已修（提交 `a4760b49`）：新增 `resumeAudioContext` 接住同步/异步拒绝，只在可见、未锁、未运行时恢复；`ready` 后摘掉 Phaser 的 `VISIBLE` 处理器；首次失败记录 `audio-resume-failed` 诊断。
 
-### 3.4 `Texture key already in use` 重复纹理键（P2，高概率竞态）
+### 3.4 `Texture key already in use` 重复纹理键（P2，已修）
 
 - 现象：过滤后约 390 条、45 个会话（统计期间日志仍在增长）。按纹理族分：地图 ground/canopy 157 条（66 个不同键）、`characters-atlas` 页 120 条、技能图标 90 条、特效页 24 条（`effects-atlas:14/15/19`）。平台以 Android APK 和 iOS Safari 为主。
 - 证据：报错栈为 Phaser `TextureManager.addImage → checkKey`（`node_modules/phaser/src/textures/TextureManager.js:273`）；项目通过 `loadSceneAssets` 的 `scene.load.image/atlas` 发起加载（`src/rendering/scene-assets.ts:212-217`）。约一半报错发生在 `story-entry-prefetch`、`map-enter` 后 5 秒内；有 5 次连续突发正好各含一整套 24 个键，和一次进图计划的完整资源集吻合。
 - 根因：Phaser Loader 不保证随 JS 取消而停止在途文件（`scene-assets.ts:226-230`）。取消后新请求立即取得租约并开始加载（`scene-assets.ts:183-184`）；旧文件晚到时，`addtexture` 对账只检查“有没有租约”（`scene-assets.ts:62-66`），而新请求在下载前就已持有租约，于是旧纹理被保留，新文件随后写入同键就触发 `checkKey`。加载队列按纹理库串行（`scene-assets.ts:14-15,192-220`），不是普通同帧并发。
 - 建议：优先让剧情预取换目标时“停止等待但不中止底层加载”，完成后无主再释放；或在取消时按纹理库登记待结算键，新请求在 `needed` 检查前等待这些键落定；或给每代加载用独立临时纹理键，完成后再收敛。回归测试放在 `tests/scene-assets.test.ts`：第一个请求 pending → 取消 → 第二个同键请求开始 → 旧文件先 `addtexture` → 新文件完成，断言不出现重复写键且只保留一张纹理。现有 `tests/scene-assets.test.ts:181-195` 没覆盖“新请求仍在下载”的窗口。
-- 正式版分支状态：相关加载/生命周期文件未改，仍存在。
+- 正式版分支状态：已修（提交 `3d71d767`）。`loadSceneAssets` 按纹理管理器登记在途写入，同一纹理键同一时刻只允许一个写入者；取消只解除调用方的等待，后来者先等这次写入落定、失败或兜底到期，再决定复用还是自己下载。没有租约接管的迟到纹理统一走 `releaseTextureWhenUnused`，保留可见引用优先和 500ms 延迟复查，不提前删正在画的图。`tests/scene-assets.test.ts` 的假纹理库补上了 Phaser 的二次注册语义，新增 7 条竞态用例，覆盖“预取取消后进图同键只写一次”“可见引用仍在时不删”“兜底到期不永久锁键”。
 
 ## 4. 噪声、设计状态或可忽略
 
@@ -147,7 +147,7 @@ QQ 内置 WebView 不支持 WebGL、UC 浏览器 `navigator.vibrate` 赋值错�
 1. `event-158` 内容坐标/动态地图走位校验（P0，已修）。
 2. `ground-loot.ts:46` 播放正确动画键（P1，已修）。
 3. iOS 音频 `resume()` catch（P1，已修）。
-4. 纹理重复竞态（P2，待修；先补回归测试，再调整取消/租约策略）。
+4. 纹理重复竞态（P2，已修，提交 `3d71d767`）。
 5. 可选项：WebGL 丢失遮罩/低端机 2×、暂停守卫、`session-recovered` 判定修正、空图诊断区分剧情清场。
 
 ## 7. 验证入口
