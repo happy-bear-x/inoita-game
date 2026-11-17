@@ -43,6 +43,8 @@ export interface QuestRules {
   goals: QuestGoal[];
   availableWhen?: StoryCondition;
   completion: 'talk' | 'all' | 'story' | 'internal';
+  /** 对象交互交给此剧情事件；完成状态由剧情命令提交。 */
+  interactionEvent?: string;
   /** 缺省 true；false 表示日志外任务：不进任务日志，也不弹任务面板与任务提示。 */
   journal?: boolean;
   repeat?: boolean;
@@ -614,7 +616,10 @@ export class QuestBook {
           if (quest.completion === 'talk') write(quest.id, { status: 'ready' });
           break;
         }
-        case 'complete': if (state.status !== 'ready') throw new Error('任务目标尚未达成'); settle(quest, state); break;
+        case 'complete':
+          if (quest.interactionEvent) throw new Error('任务由剧情事件处理交互与结算');
+          if (state.status !== 'ready') throw new Error('任务目标尚未达成');
+          settle(quest, state); break;
         case 'script-ready': {
           if (state.status === 'ready') break;
           if (quest.completion === 'all') throw new Error('常规任务通过目标进度达成');

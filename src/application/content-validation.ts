@@ -750,7 +750,7 @@ const campaign=shape<Campaign>({debugStory:optional(debugStory),version:(v,p)=>r
     goals:array(object({id:text,kind:oneOf('talk','item','interact','defeat','recruit'),target:text,characterId:optional(text),quantity:count,label:optional(text),feedbackText:optional(nonEmptyText)})),
     availableWhen:optional(storyCondition),completion:oneOf('talk','all','story','internal'),journal:optional(boolean),repeat:optional(boolean),
     onAcceptItems:optional(array(object({item:text,quantity:count}))),handoverItems:optional(array(object({item:text,quantity:count,removal:optional(oneOf('quantity','all-matching'))}))),
-    itemCompletion:optional(oneOf('all','equipped-item-shortcut')),acceptance:optional(oneOf('automatic','optional')),
+    itemCompletion:optional(oneOf('all','equipped-item-shortcut')),acceptance:optional(oneOf('automatic','optional')),interactionEvent:optional(nonEmptyText),
     rewards:optional(object({experience:integer,money:integer,items:array(object({item:text,quantity:count,classIds:optional(strings)}))})),
     offerScript:optional(nullable(text)),completeScript:optional(nullable(text)),progressText:text,completeText:text})),
   placements:array(object({...entity,condition:storyCondition,map:text,facing:optional(facing)})),mapEntryPlacements:optional(array(object({...entity,condition:storyCondition,map:text,facing:optional(facing)}))),enemyPlacements:optional(array(object(campaignEnemy))),
@@ -1019,6 +1019,15 @@ export function parseCampaign(value:unknown):Campaign {
   for(const quest of result.quests){
     conditions.push({owner:quest.id,value:quest.availableWhen});
     for(const id of [quest.offerScript,quest.completeScript])if(id)requireValue(result.scripts[id],quest.id,`剧情缺失 ${id}`);
+    const gates=result.events.filter(event=>event.source==='near'&&event.repeat
+      && (quest.deliveryCharacterId&&event.nearCharacterId
+        ? quest.deliveryCharacterId===event.nearCharacterId : (quest.delivery??quest.giver)===event.near)
+      && storyConditionReferences(event.condition).quests.has(quest.id));
+    if(quest.completion==='talk'&&gates.length)requireValue(quest.interactionEvent,quest.id,'剧情交互入口需要声明事件');
+    if(quest.interactionEvent){
+      requireValue(gates.some(event=>event.id===quest.interactionEvent),quest.id,'剧情交互事件缺失或目标不匹配');
+      requireValue(!quest.completeScript,quest.id,'剧情交互事件与交付脚本只能指定一个');
+    }
   }
   for(const event of result.events){
     conditions.push({owner:event.id,value:event.condition});

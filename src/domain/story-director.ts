@@ -691,6 +691,11 @@ export class StoryDirector {
       return;
     }
     const status = this.session.status(quest.id);
+    if (quest.interactionEvent) {
+      const event = this.campaign.events.find(event => event.id === quest.interactionEvent)!;
+      await this.approach(event.near!, this.session.storyWorld.currentLocation?.map, event.nearCharacterId);
+      return;
+    }
     if (status === 'available') {
       if (quest.offerScript) await this.script(quest.offerScript);
       else { this.session.accept(quest.id); await this.notice('start', quest); }

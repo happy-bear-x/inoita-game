@@ -311206,6 +311206,7 @@
     {
       "id": "quest-164",
       "title": "第1章选择地",
+      "interactionEvent": "event-186",
       "description": "第1章选择地",
       "guidance": {
         "available": "第1章选择地",
@@ -311309,6 +311310,7 @@
     {
       "id": "quest-165",
       "title": "第3章选择地",
+      "interactionEvent": "event-189",
       "description": "第3章选择地",
       "guidance": {
         "available": "第3章选择地",
@@ -311436,6 +311438,7 @@
     {
       "id": "quest-166",
       "title": "第4章选择地",
+      "interactionEvent": "event-192",
       "description": "第4章选择地",
       "guidance": {
         "available": "第4章选择地",
@@ -317349,6 +317352,7 @@
     {
       "id": "quest-220",
       "title": "网络任务结束_EP8",
+      "interactionEvent": "event-259",
       "description": "网络任务结束_EP8",
       "guidance": {
         "available": "网络任务结束_EP8",
@@ -324240,6 +324244,7 @@
     {
       "id": "quest-283",
       "title": "第10章选择地",
+      "interactionEvent": "event-319",
       "description": "第10章选择地",
       "guidance": {
         "available": "第10章选择地",
@@ -333201,6 +333206,7 @@
     {
       "id": "quest-371",
       "title": "网络任务结束_EP9",
+      "interactionEvent": "event-443",
       "description": "网络任务结束_EP9",
       "guidance": {
         "available": "网络任务结束_EP9",
@@ -338232,6 +338238,7 @@
     {
       "id": "quest-415",
       "title": "第11章选择地",
+      "interactionEvent": "event-389",
       "description": "第11章选择地",
       "guidance": {
         "available": "第11章选择地",

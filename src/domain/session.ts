@@ -1008,6 +1008,7 @@ export class Session {
     }
   }
   complete(id:string):boolean {
+    if(this.definition(id)?.interactionEvent)return false;
     if(this.questBook.pinned(id))this.unpinDebugQuest(id);
     this.refresh();if(this.status(id)!=='ready')return false;
     this.applyStoryCommands([{type:'quest',command:{type:'complete',quest:id,cycle:this.questBook.state(id)!.cycle}}]);return true;

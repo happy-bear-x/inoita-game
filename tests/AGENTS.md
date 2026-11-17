@@ -19,6 +19,8 @@
 
 ## 验证
 
+- `story-gated-interaction.test.ts` 覆盖七组剧情确认入口的取消后再次点击、普通交付保护与剧情结算，使用真实结界石内容验证石魔生成、击败后的主线推进，以及正常存档恢复。
+
 - `bag.test.ts` 与 `inventory.test.ts` 覆盖完整物品目录、分类数量和装备数据；任务物品来源由 `quest-drops.test.ts` 与 `story-side-item-quests.test.ts` 验证。
 - `loot-redesign.test.ts` 覆盖来源等级筛选、全队黄紫装保底和封印盒存档。
 - `material-gifts.test.ts` 覆盖六种材料礼盒的全部奖励、重复开盒消耗、等级门槛和精英/Boss 来源限制。
