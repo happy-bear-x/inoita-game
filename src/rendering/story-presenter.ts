@@ -49,6 +49,8 @@ export class StoryPresenter implements StoryPresentationPort {
   private scenes = new Map<string, SceneSnapshot>();
   private committedScenes = new Map<string, SceneSnapshot>();
   private epoch = 0;
+  /** 当前舞台是否使用动态地图；动态地图的固定走位可能落在别的图上不存在的格子。 */
+  private dynamicStage = false;
   private closing?: Promise<void>;
   private opening?: Promise<void>;
   private curtain?: Phaser.GameObjects.Rectangle;
@@ -311,6 +313,7 @@ export class StoryPresenter implements StoryPresentationPort {
     this.toneFilter.setActive(enabled);
   }
   private async stage(declaration: StoryStage | StoryStageSnapshot, signal: AbortSignal, pendingEntrances?: readonly string[], skipSignal?: AbortSignal): Promise<void> {
+    this.dynamicStage = declaration.mapFromWorld === true;
     const epoch = ++this.epoch;
     const snapshot = await this.resolveStage(declaration, signal, pendingEntrances, !!skipSignal?.aborted);
     signal.throwIfAborted();
@@ -482,8 +485,8 @@ export class StoryPresenter implements StoryPresentationPort {
     const scene = this.scene(), actor = this.actor(action.target), visual = actor.visual, movement = scene.movement!;
     actor.clearPose?.(); delete actor.storyPoseHold;
     if(actor.unpositioned)return;
-    const destination = { x: action.x, y: action.y };
-    const finalFacing = faceTarget(movement.position(visual), destination);
+    let destination = { x: action.x, y: action.y };
+    let finalFacing = faceTarget(movement.position(visual), destination);
     // 停用的角色不会被移动世界推进：`MovementBody.update` 在 `!actor.enabled()` 时提前返回，而
     // `WalkRoute` 的状态只在 `next()` 里推进，等它到站就是永远等——演出卡在这一条上，只能靠玩家
     // 跳过解开。看不见的角色走位只影响位置（原版照走，只是没画出来），所以落点照写、过程省略。
@@ -520,7 +523,18 @@ export class StoryPresenter implements StoryPresentationPort {
         scene.events.on(Phaser.Scenes.Events.POST_UPDATE, update); update();
         return () => { scene.events.off(Phaser.Scenes.Events.POST_UPDATE, update); movement.stop(visual); body.setImmovable(immovable); };
       }, () => { if (!failed) settle(); });
-      if (failed) throw new Error(`剧情${route.error?.message ?? '道路不可达'}：${action.target} → (${action.x}, ${action.y})`);
+      if (failed) {
+        const fallback = this.dynamicStage ? movement.nearestWalkable(visual, destination) : undefined;
+        if (fallback && (fallback.x !== destination.x || fallback.y !== destination.y)) {
+          destination = fallback;
+          finalFacing = faceTarget(movement.position(visual), destination);
+          settle();
+          globalThis.storyDiagnostics?.record('story-walk-fallback', { target: action.target,
+            wanted: { x: action.x, y: action.y }, used: fallback, map: this.scene().map?.id }, false);
+          return;
+        }
+        throw new Error(`剧情${route.error?.message ?? '道路不可达'}：${action.target} → (${action.x}, ${action.y})`);
+      }
     } finally { movement.stop(visual); body.setImmovable(immovable); }
   }
   async parallel(actions: PerformanceAction[], playback: PerformancePlayback): Promise<void> {

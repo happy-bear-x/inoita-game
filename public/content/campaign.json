@@ -97422,15 +97422,6 @@
               "durationMs": 600
             },
             {
-              "type": "walk",
-              "target": "player",
-              "ensure": true,
-              "x": 136,
-              "y": 216,
-              "speedPxPerSecond": 133.33333333333334,
-              "followCamera": true
-            },
-            {
               "type": "face",
               "target": "player",
               "ensure": true,

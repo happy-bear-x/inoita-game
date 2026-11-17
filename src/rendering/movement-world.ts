@@ -182,6 +182,12 @@ export class MovementWorld {
     this.trackIntention(visual).body.walk(route, speed); return route;
   }
   canStand(visual: CharacterVisual, point: Point): boolean { return this.navigation.canStand(this.actor(visual), point); }
+  /** 剧情走位兜底：从当前脚点找最近的整盒可站、地形可达点。 */
+  nearestWalkable(visual: CharacterVisual, point: Point): Point | undefined {
+    const actor=this.actor(visual), shape=actor.shape();
+    return this.navigation.nearestReachableBody(shape, actor.position(), point, actor)
+      ?? this.navigation.nearestBody(shape, point, actor);
+  }
   /** 移动体诊断：暂停、固定、速度、脚点与当前意图（走路/被驱赶/追目标）。 */
   state(visual: CharacterVisual): ReturnType<MovementBody['describe']> | undefined {
     return this.registrations.get(visual)?.body.describe();

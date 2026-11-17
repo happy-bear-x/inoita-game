@@ -360,6 +360,30 @@ test('drive, toward and followPath give a static actor temporary sampling until 
   }
 });
 
+test('nearestWalkable finds a reachable tile when the story target is blocked',t=>{
+  const events=new EventEmitter();
+  const group={scene:{},add(){},remove(){},destroy(){}};
+  const scene={sys:{scale:{width:640,height:480}},events,add:{group:()=>group}} as unknown as Phaser.Scene;
+  const world=new World(scene,{gravity:{x:0,y:0},debug:false});
+  scene.physics={world,add:{collider:(...args:Parameters<typeof world.addCollider>)=>world.addCollider(...args)}} as Phaser.Physics.Arcade.ArcadePhysics;
+  const blocked=new Array(144).fill(false);for(let col=0;col<12;col++)blocked[5*12+col]=true;
+  const navigation=new NavigationWorld({name:'arena',tileSize:16,columns:12,rows:12,blocked});
+  const movement=new MovementWorld(scene,navigation);
+  t.after(()=>{movement.destroy();world.destroy();});
+  const collision={x:-8,y:-8,width:16,height:16};
+  const visual={actor:{collision},entity:{id:'hero'},container:Object.assign(new EventEmitter(),{
+    x:40,y:40,scaleX:1,scaleY:1,angle:0,rotation:0,displayOriginX:0,displayOriginY:0,active:true,visible:true,
+    setPosition(x:number,y:number){this.x=x;this.y=y;return this;},setDepth(){return this;},setVisible(value:boolean){this.visible=value;return this;}
+  })} as unknown as CharacterVisual;
+  movement.register(visual,true);
+  movement.place(visual,{x:40,y:40});
+  const result=movement.nearestWalkable(visual,{x:40,y:88});
+  assert.ok(result,'墙带目标应能找到最近可站点');
+  assert.ok(navigation.terrainFree(result),`兜底脚点不可站：${JSON.stringify(result)}`);
+  assert.ok(navigation.bodyTerrainFree({collision},result),`兜底整盒压墙：${JSON.stringify(result)}`);
+  assert.ok(result.y<80||result.y>=96,'兜底点不能落回墙带');
+});
+
 test('re-registering a walking actor as static keeps temporary sampling until stop',t=>{
   const h=harness();
   t.after(()=>{h.movement.destroy();h.world.destroy();});
