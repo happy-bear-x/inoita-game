@@ -24,7 +24,7 @@
 
 QQ 内置 WebView 不支持 WebGL、UC 浏览器 `navigator.vibrate` 赋值错误，按产品决定不处理，归入“浏览器兼容限制”；UC 明确不加提示，QQ 也不做专门提示。
 
-修复进度（2026-11-17）：3.1 `event-158` 已修（提交 `020d4ee6`）；3.2 `effects-atlas:24` 已修（提交 `ec1413e2`）。其余 3 个待修。
+修复进度（2026-11-17）：3.1 `event-158` 已修（提交 `020d4ee6`）；3.2 `effects-atlas:24` 已修（提交 `ec1413e2`）；3.3 iOS 音频已修（提交 `a4760b49`）。其余 2 个待修。
 
 其余高频日志主要是噪声或设计状态，不建议当 bug 修：
 
@@ -65,7 +65,7 @@ QQ 内置 WebView 不支持 WebGL、UC 浏览器 `navigator.vibrate` 赋值错�
 - 现象：iOS Safari 4 个会话、5 条 `unhandled-rejection`，错误为 `InvalidStateError: Failed to start the audio device`；发生在 `hidden`/`visible`/转屏前后。
 - 根因：`src/main.ts:1140-1143` 的 `void sound.context.resume()` 没有 catch；Phaser `onGameVisible`（dist `phaser.esm.js:226919-226931`）在 `VISIBLE` 后 100ms 执行 `suspend(); resume();` 也没有 catch。页面再次隐藏、没有用户手势或音频会话被系统占用时，Safari 拒绝 resume。
 - 建议：所有 `resume()` 接 `.catch(()=>{})`；只在 `!document.hidden` 且确有用户触摸时重试；ready 后移除 Phaser 的 `VISIBLE` 处理器，用带 catch 的自己的可见/触摸恢复；连续失败提示“点屏幕恢复声音”。
-- 正式版分支状态：`src/main.ts` 音频代码未改。
+- 正式版分支状态：已修（提交 `a4760b49`）：新增 `resumeAudioContext` 接住同步/异步拒绝，只在可见、未锁、未运行时恢复；`ready` 后摘掉 Phaser 的 `VISIBLE` 处理器；首次失败记录 `audio-resume-failed` 诊断。
 
 ### 3.4 技能书页跨职业绑定书抛错（P1）
 
