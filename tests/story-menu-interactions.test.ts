@@ -1,3 +1,4 @@
+import { AttributeAllocation } from '../src/domain/attribute-allocation.ts';
 import { installMenuDom, menuFrame, domEvent, domWindow } from './support/menu-dom.ts';
 import { domAssets } from '../src/ui/dom/assets.ts';
 import { UI_ATLAS_FRAMES } from '../src/generated/ui-atlas.ts';
@@ -195,7 +196,7 @@ interface MenuInternals {
   modalBox: { width: number; height: number };
   busy: boolean;
   notice?: string;
-  shortcutEdit?: { page: number };
+  shortcutEditor?: { readonly active:boolean };
   shortcutScreen: UiSurface;
   shopPanel?: { store: Storefront; bagScroll?: ScrollArea };
   confirmOperation(): void;
@@ -337,8 +338,7 @@ test('allocation failure preserves the page and confirmation controls',t=>{
   f.menu.show('status');f.scene.click(f.scene.button('查看属性加点'));f.scene.click(f.scene.button('增加力量'));
   f.scene.click(f.scene.button('确认属性加点'));
   const confirm=f.scene.button('确定'),cancel=f.scene.button('取消'),tab=f.scene.button('人物');
-  const state=f.menu as unknown as {allocation:{commit():void}};
-  t.mock.method(state.allocation,'commit',()=>{throw new Error('加点失败');});f.scene.click(confirm);
+  t.mock.method(AttributeAllocation.prototype,'commit',()=>{throw new Error('加点失败');});f.scene.click(confirm);
   assert.ok(f.scene.button('确定')===confirm);assert.ok(f.scene.button('取消')===cancel);assert.ok(f.scene.button('人物')===tab);
   assert.ok(visibleDomLabels(f).some(label=>label.text==='加点失败'));
 });
@@ -398,27 +398,25 @@ test('allocation points can be typed and stop at the remaining points',t=>{
   view.input.value=String(points);view.input.dispatchEvent(new Event('input',{bubbles:true}));
   assert.equal(view.error.hidden,true);assert.equal(view.confirm.disabled,false);
   view.input.parentElement!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
-  const allocation=(f.menu as any).allocation;
-  assert.equal(allocation.pending.strength,points,'输入值写回本轮加点');
-  assert.equal(allocation.remainingPoints,0);
+  assert.ok(visibleDomLabels(f).some(label=>label.text===`${panels.character.labels.statPoints} 0`));
   assert.equal(added()?.text,`+${points}`);
   f.scene.click(f.scene.button('输入力量加点'));
   view=prompt();view.input.value='0';view.input.dispatchEvent(new Event('input',{bubbles:true}));
   view.input.parentElement!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
-  assert.equal(allocation.pending.strength,0,'输入 0 清掉本轮投入');
-  assert.equal(allocation.remainingPoints,points);assert.equal(added(),undefined);
+  assert.ok(visibleDomLabels(f).some(label=>label.text===`${panels.character.labels.statPoints} ${points}`));assert.equal(added(),undefined);
 });
 
 test('opening the allocation input stops a running hold and Escape still closes it',t=>{
+  t.mock.timers.enable({apis:['setTimeout']});
   const f=fixture();t.after(f.cleanup);f.hero.addExperience(f.hero.player.nextLevelExperience);
   f.menu.show('status');f.scene.click(f.scene.button('查看属性加点'));
   const added=()=>visibleDomLabels(f).find(label=>label.style.color==='#e1823b'&&label.text.startsWith('+'));
   const documentRoot=domWindow.children[0]!,root=()=>documentRoot.children.find(node=>String(node.className).includes('number-prompt'));
-  f.scene.press(f.scene.button('增加力量'));f.scene.hold();
+  f.scene.press(f.scene.button('增加力量'));t.mock.timers.tick(400);
   assert.equal(added()?.text,'+1');
   f.scene.click(f.scene.button('输入力量加点'));
   assert.ok(root(),'输入卡已打开');
-  f.scene.hold();
+  t.mock.timers.tick(90);
   assert.equal(added()?.text,'+1','打开输入卡后长按不再加点');
   const escape=new Event('keydown',{bubbles:true,cancelable:true});Object.assign(escape,{key:'Escape'});
   documentRoot.dispatchEvent(escape);
@@ -441,19 +439,20 @@ test('allocation input closes on pagehide and when the menu closes',t=>{
 });
 
 test('holding an allocation arrow keeps adding points until released',t=>{
+  t.mock.timers.enable({apis:['setTimeout']});
   const f=fixture();t.after(f.cleanup);f.hero.addExperience(f.hero.player.nextLevelExperience);
   f.menu.show('status');f.scene.click(f.scene.button('查看属性加点'));
   const added=()=>visibleDomLabels(f).find(label=>label.style.color==='#e1823b'&&label.text.startsWith('+'));
   const arrow=f.scene.button('增加力量'),portrait=f.internals.body.root.list[0];
   f.scene.press(arrow);
   assert.equal(added(),undefined,'还没到长按阈值时不加点');
-  f.scene.hold();
+  t.mock.timers.tick(400);
   assert.equal(added()?.text,'+1','按住到阈值后开始自动加点');
-  f.scene.hold();
+  t.mock.timers.tick(90);
   assert.equal(added()?.text,'+2','按住期间每一拍再加一点');
   assert.equal(f.scene.button('增加力量'),arrow);assert.equal(f.internals.body.root.list[0],portrait);
   f.scene.release(f.scene.button('增加力量'));
-  f.scene.hold();
+  t.mock.timers.tick(90);
   assert.equal(added()?.text,'+2','松开后停止连加');
   f.scene.click(arrow);assert.equal(added()?.text,'+3','松开后下一次点击仍可加点');
 });
@@ -1423,7 +1422,7 @@ test('a skill moves to the last registered shortcut and clicking that slot again
   assert.deepEqual(row()[1],{kind:'skill',id});
   f.scene.click(f.scene.button('快捷位 2'));
   assert.equal(row()[1],null,'再次点击已登记技能的槽位会取消');
-  assert.ok(f.internals.shortcutEdit,'取消后仍留在登记屏');
+  assert.ok(f.internals.shortcutEditor?.active,'取消后仍留在登记屏');
   f.scene.click(f.scene.button('快捷位 3'));
   f.scene.click(f.scene.button('切换技能组'));
   assert.ok(f.scene.button('快捷位 1')===slot);assert.ok(f.scene.button('切换技能组')===swap);assert.ok(f.scene.button('返回')===back);
@@ -1672,13 +1671,13 @@ test('keyboard operates every shortcut slot, switches groups, returns and cancel
     const row = f.session.bag.captureState().shortcuts.find(([owner]) => owner === 'player')![1];
     assert.deepEqual(row[slot - 1], { kind: 'item', id: item });
   }
-  keyboardFocus(f, '切换技能组'); assert(f.scene.key('Enter')); assert.equal(f.internals.shortcutEdit?.page, 1);
+  keyboardFocus(f, '切换技能组'); assert(f.scene.key('Enter')); assert.equal(f.internals.shortcutEditor?.active, true);
   keyboardFocus(f, '快捷位 6', true); assert(f.scene.key(' '));
   assert.deepEqual(f.session.bag.captureState().shortcuts.find(([owner]) => owner === 'player')![1][11], { kind: 'item', id: item });
-  keyboardFocus(f, '返回', true); assert(f.scene.key('Enter')); assert.equal(f.internals.shortcutEdit, undefined);
+  keyboardFocus(f, '返回', true); assert(f.scene.key('Enter')); assert.equal(f.internals.shortcutEditor?.active, false);
   assert(f.scene.buttons('背包').length);
   f.menu.debugDescribe(source.id); f.scene.click(f.scene.button('取消快捷键')); f.scene.click(f.scene.button('快捷键'));
-  assert(f.scene.key('Escape')); assert.equal(f.internals.shortcutEdit, undefined); assert(f.scene.buttons('背包').length);
+  assert(f.scene.key('Escape')); assert.equal(f.internals.shortcutEditor?.active, false); assert(f.scene.buttons('背包').length);
 });
 
 function editingControl(f: ReturnType<typeof fixture>, id: ControlId) {
@@ -3805,4 +3804,13 @@ test('using recovery items merges synchronous session notifications into one pag
   assert.equal(render.mock.callCount(),1);
   assert.equal(f.scene.button('整理'),organize);
   assert.equal(f.session.bag.get(entry.id)?.quantity,quantity-1);
+});
+
+test('releasing a session disposes pending allocation without prompting',t=>{
+ const f=fixture();t.after(f.cleanup);f.hero.addExperience(f.hero.player.nextLevelExperience);
+ f.menu.show('status');f.scene.click(f.scene.button('查看属性加点'));f.scene.click(f.scene.button('增加力量'));
+ const before=f.hero.panel.attributes.strength;f.menu.releaseSession(f.session);
+ assert.equal(f.menu.menuOpen,false);assert.equal(f.hero.panel.attributes.strength,before);
+ assert.equal(f.internals.surface.root.visible,false);
+ f.menu.releaseSession(f.session);assert.equal(f.menu.menuOpen,false);
 });

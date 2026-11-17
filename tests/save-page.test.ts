@@ -20,7 +20,7 @@ const { SavePage } = await import('../src/ui/save-page.ts');
 hook.deregister();
 
 function fixture() {
-  let renders = 0, confirmations = 0, syncs = 0, busy = false, notice = '';
+  let renders = 0, confirmations = 0, syncs = 0, notice = '';
   const written: string[] = [];
   const app = {
     saves: {
@@ -49,9 +49,7 @@ function fixture() {
     updateConfirmation:()=>{confirmations += 1;},
     render: () => { renders += 1; },
     sync: () => { syncs += 1; },
-    busy: () => busy,
-    setBusy: value => { busy = value; },
-    activeRequest: () => new AbortController(),
+    busy: () => false,
     setItemNotice: message => { notice = message; },
     modal: () => { throw new Error('测试不画弹层'); },
     modalWriter: () => ({ add: () => {} }),
@@ -150,4 +148,17 @@ test('存档快照与摘要仍由同一入口生成', () => {
   assert.equal(captured.record.summary.mapName, '地图');
   assert.equal(captured.record.summary.level, 5);
   assert.deepEqual(captured.record.world, { location: {} });
+});
+
+test('存档页独立取消读档，旧结果不会覆盖新请求',async()=>{
+  const f=fixture(),requests:{signal:AbortSignal;reject:(reason:unknown)=>void;resolve:()=>void}[]=[];
+  f.app.resumeSlot=(_ref,signal)=>new Promise<void>((resolve,reject)=>requests.push({signal:signal!,resolve,reject}));
+  const load=(f.page as unknown as {loadFromSlot(ref:number):Promise<void>}).loadFromSlot.bind(f.page);
+  const first=load(1);await load(2);
+  assert.equal(requests.length,1);assert.equal(f.page.isBusy,true);
+  f.page.cancelPending();assert.equal(requests[0].signal.aborted,true);assert.equal(f.page.isBusy,false);
+  const second=load(2);requests[0].reject(new Error('旧读档失败'));await first;
+  assert.equal(f.notice(),'');assert.equal(f.page.isBusy,true);
+  requests[1].resolve();await second;assert.equal(f.page.isBusy,false);
+  f.page.destroy();f.page.destroy();
 });

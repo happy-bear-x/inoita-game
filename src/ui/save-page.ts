@@ -29,7 +29,7 @@ const saveUnavailableNotice = (reason: SaveWorldReason): string => reason === 'd
  * 整页重绘、忙碌标记、弹层定位和滚动区位置仍由菜单统一管理。
  */
 export interface SavePageHost {
-  readonly app: StoryUIContext;
+  readonly app: Pick<StoryUIContext,'saves'|'saveSlot'|'menuPanels'|'audio'|'captureSaveThumbnail'|'captureSaveWorld'|'promptText'|'resumeSlot'>;
   session(): Session | undefined;
   world(): WorldIndex | undefined;
   /** 当前剧情界面的素材表，和菜单页共用同一份存档槽图。 */
@@ -42,8 +42,6 @@ export interface SavePageHost {
   updateSaveRows?(specs:readonly SaveBoardTextSpec[]):void;
   sync(): void;
   busy(): boolean;
-  setBusy(value: boolean): void;
-  activeRequest(): AbortController;
   setItemNotice(message: string): void;
   updateNotice?():void;
   modal(): UiSurface;
@@ -61,6 +59,9 @@ export interface SavePageHost {
 export class SavePage {
   /** 一次只处理一个保存请求：截图要等下一帧，期间重复点击不能写两次。 */
   private saving = false;
+  private loadRequest?:AbortController;
+  get isBusy():boolean{return this.saving||!!this.loadRequest;}
+  get isLoading():boolean{return !!this.loadRequest;}
   /** 保存请求代次；关页、切页或新请求让迟到的截图结果失效。 */
   private saveSerial = 0;
   private saveConfirm?: SaveSlotRef;
@@ -77,7 +78,7 @@ export class SavePage {
 
   /** 页面自身有确认框或改名输入时，底层按钮不再接收输入。 */
   get blocksPage(): boolean {
-    return this.saving || this.saveConfirm !== undefined || this.loadConfirm !== undefined
+    return this.isBusy || this.saveConfirm !== undefined || this.loadConfirm !== undefined
       || this.deleteConfirm !== undefined || this.renameRef !== undefined;
   }
 
@@ -159,6 +160,7 @@ export class SavePage {
 
   /** 切换页面或关闭菜单时清掉确认框和改名输入，并让在途保存结果失效。 */
   cancelPending(): void {
+    this.loadRequest?.abort();this.loadRequest=undefined;
     this.saveSerial++;this.renameSerial++;
     this.saving = false;
     this.saveConfirm = undefined;
@@ -207,19 +209,25 @@ export class SavePage {
   }
 
   private requestLoad(ref: SaveSlotRef): void {
-    if (this.saving || this.host.busy() || this.host.app.saves.peek(ref).kind !== 'ok') return;
+    if (this.isBusy || this.host.busy() || this.host.app.saves.peek(ref).kind !== 'ok') return;
     this.loadConfirm = ref; this.host.updateConfirmation();
   }
 
   private async loadFromSlot(ref: SaveSlotRef): Promise<void> {
     const load = this.host.app.resumeSlot;
-    if (!load || this.host.busy()) return;
-    const request = this.host.activeRequest(), session = this.host.session();
-    this.host.setBusy(true); this.host.updateConfirmation();
-    const stillCurrent = () => !request.signal.aborted && this.host.activeRequest() === request && this.host.session() === session;
+    if (!load || this.isBusy || this.host.busy()) return;
+    const request = new AbortController(), session = this.host.session();
+    this.loadRequest = request; this.host.updateConfirmation();
+    const stillCurrent = () => !request.signal.aborted && this.loadRequest === request && this.host.session() === session;
     try { await load(ref, request.signal); }
     catch (error) { if (stillCurrent()) this.host.setItemNotice(error instanceof Error ? error.message : String(error)); }
-    finally { if (stillCurrent()) { this.host.setBusy(false); if(this.host.updateNotice)this.host.updateNotice();else this.host.render();this.host.sync(); } }
+    finally {
+      if (stillCurrent()) {
+        this.loadRequest = undefined;
+        if(this.host.updateNotice)this.host.updateNotice();else this.host.render();
+        this.host.sync();
+      } else if (this.loadRequest === request) this.loadRequest = undefined;
+    }
   }
 
   /** 点一个手动槽：空槽直接存，已有存档先问一次再覆盖（原版对不可逆操作用是／否确认）。 */

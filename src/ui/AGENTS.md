@@ -6,7 +6,7 @@
 
 - 布局：`bag-layout.ts`（背包格位）、`skill-book-layout.ts`（技能书页的图标格与右栏）、`choice-layout.ts`（选项竖排）、`control-layout.ts`（控件键位）、`item-layout.ts`（物品格与货币）、`shop-layout.ts`（商店两栏）、`quest-popup-layout.ts`（任务窗）、`description-text-layout.ts`（说明断行）、`text-layout.ts`（通用换行）、`cloud-save-layout.ts`（云存档页状态、颜色与几何）、`changelog-layout.ts`（标题页更新日志弹窗与可视窗口）、`portrait-fit.ts`（头像等比裁剪）、`viewport.ts`（屏幕尺寸、安全区、画布采样倍率与参考分辨率；`screenRectToCanvas` 将菜单预览的屏幕矩形交给游戏画布）。
 - 文本与样式：`text-style.ts`（共用字体）、`text-prompt.ts`（系统键盘输入，用于存档改名）、`number-prompt.ts`（商店数量与能力点数字输入卡，负责范围校验和红色提示）、`cloud-credentials-input.ts`（云存档页内嵌的账号/密码输入框）、`password-change-prompt.ts`（修改密码的当前/新/确认三项表单）、`dialogue-text.ts`（对白分页、断行与逐字显示）、`item-detail-lines.ts`（物品说明行）、`skill-detail-lines.ts`（技能说明行）、`item-result-details.ts`（操作结果说明）、`enhancement-odds-lines.ts`（强化结果句与混沌结果表）、`item-name-color.ts`（品质颜色与装备格边框）、`character-values.ts`（角色数值）。
-- 接口与交互：`game-ui.ts`（UI 能力与视图接口）、`story-ui.ts`（剧情与菜单 UI 的接口、页面枚举和提示文案）、`story-ui-signature.ts`（菜单页面 viewModel 与显式签名）、`save-page.ts`（存档/读档页 controller）、`bag-page.ts`（背包状态、绘制与操作）、`menu-item-drag.ts`（背包与合成共用长按拖拽）、`action-press-gate.ts`（动作按钮互斥）、`common-button.ts`（通用按钮素材）、`instant-message.ts`（屏幕提示）、`quest-progress.ts`（任务完成/进度提示的纯函数）、`slot-frame.ts`（格子底图）。
+- 接口与交互：`game-ui.ts`（UI 能力与视图接口）、`story-ui.ts`（剧情与菜单 UI 的接口、页面枚举和提示文案）、`story-ui-signature.ts`（菜单页面 viewModel 与显式签名）、`save-page.ts`（存档/读档页 controller，自行取消读档请求）、`bag-page.ts`（背包状态、绘制与操作）、`status-page.ts`（人物与加点）、`skills-page.ts`（技能学习与自动使用设置）、`settings-page.ts`（游戏设置）、`system-page.ts`（系统菜单）、`shortcut-editor.ts`（快捷栏登记）、`menu-item-drag.ts`（背包与合成共用长按拖拽）、`action-press-gate.ts`（动作按钮互斥）、`common-button.ts`（通用按钮素材）、`instant-message.ts`（屏幕提示）、`quest-progress.ts`（任务完成/进度提示的纯函数）、`slot-frame.ts`（格子底图）。
 - DOM 组件：`dom/node.ts`、`dom/surface.ts` 提供菜单图片、文本、按钮、裁剪、滚动与原生指针；`dom/volume-slider.ts` 提供音量条。
 - DOM 文字：`dom/dom-ui.ts`（标签创建、层与坐标换算）、`dom/menu-text.ts`（菜单页、滚动与裁剪）。
 
@@ -22,7 +22,7 @@
 - **屏幕 UI 统一用画框内的 CSS 像素。** `UiSurface` 按 `#game-frame` 的宽高与安全区将设计尺寸适配一次，节点变换后的坐标直接用于文字、图片与输入；`controlViewport()` 为 HUD、编辑器和快捷键登记提供同一份屏幕视口。采样倍率只调整游戏画布，屏幕 UI 的位置、大小和命中区域保持一致。菜单动态角色通过 `screenRectToCanvas` 接入画布，世界提示通过 `DomUi.worldToScreen` 投影到屏幕。
 - 安卓手机浏览器与安装包横屏时，界面顶部以画面顶边为起点；左右和底部继续使用安全边距，竖屏及其他平台按系统提供的安全区布局。
 - 左侧存档和菜单按钮与小地图共用安全区起点及缩放，从小地图下沿开始排；静态层容器不参与按钮排序。
-- `story-ui.ts` 的长按加点与背包拖放接收窗口原生移动、松手、取消和失焦事件；正文重绘后仍能结束手势。侧边按钮按实际内容节点判断是否已创建。
+- 人物页的加点按钮复用 `UiSurface.button` 的长按，400ms 开始、每 90ms 重复；页面离开、数字输入、失焦和取消时停止。背包拖放接收窗口原生移动、松手、取消和失焦事件；正文重绘后仍能结束手势。侧边按钮按实际内容节点判断是否已创建。
 - `story-ui.ts` 只在 `attach` 时向 `app.inputRouter` 注册一个 `menu` 作用域，菜单打开时独占键盘；场景不再单独订阅 `keydown`。
 - 游戏菜单切换页签时复用顶部导航按钮、图标和文字，只更新选中状态与页面正文；存读档确认框打开和取消时保留底层列表；物品操作弹层的打开、取消和数量变化保留背景页面，数量变化只更新数量文字。
 - **背包的滚动位置和物品详情只属于一次进入。** 离开背包页或关闭菜单时清掉选中物品、使用结果以及背包和详情滚动缓存，重新进入从第一行开始；页内切换分类仍回顶部，切换队员和数据刷新仍保留滚动位置。
@@ -176,3 +176,14 @@ npm test -- tests/bag-layout.test.ts tests/choice-layout.test.ts
 - 独立输入弹窗（数量、能力点、存档改名、修改密码）通过 `dom/prompt-shell.ts` 共用原版图框、按钮皮肤及字体；普通高度下标题和按钮固定，中间表单按系统键盘上方的可见高度滚动；极短空间整张表单滚动。确认/取消沿用原版确认框的 450 宽画布几何（125×55，左 45、右 280）；调用方通过 `scale` 传入当前菜单画布的屏幕倍率，窄屏时整张卡等比缩小。
 
 - `prompt-assets.ts` 集中登记独立输入表单的原版边框与按钮素材，供标题页和游戏菜单预载。
+
+## 页面与场景的职责
+
+- `status-page.ts` 持有固定会话的人物页、加点草稿、数字输入和确认流程；普通离开先处理草稿，释放会话直接丢弃草稿并清理页面。
+- `title-menu-controller.ts` 管理标题页面树、存档槽、云存档、设置和更新日志的状态、请求与 DOM；`class-selection-page.ts` 管理职业选择和预览。场景连接启动、恢复与关闭，页面关闭后忽略迟到资源。
+- `formal-ui-view.ts` 连接剧情显示组件；`formal-presentation.ts` 只计算显示优先关系；`formal-choice-view.ts` 独立持有选项按钮与滚动；`formal-modal-view.ts` 管理加载、阵亡和横屏提示。剧情等待和完成继续由 `GameUI` 管理。
+- `world-hud.ts` 持有一次地图访问的屏幕控件、布局、操作模式订阅和释放；状态订阅绑定装配时的会话，旧地图输入不能操作新会话。地图规则和角色头顶显示仍由世界层处理。
+- 页面清理可重复调用；请求取消后不能更新新页面，已提交的游戏操作仍以领域对象的结果为准。
+
+- `skills-page.ts` 持有固定会话的技能选择、学习和初始化确认；`settings-page.ts`、`system-page.ts` 各自管理页面节点与文字；`shortcut-editor.ts` 持有一次登记的对象、分组和槽位。菜单只提供公共显示设施与导航。
+- `SavePage` 持有读档请求及忙碌状态；离开页面取消请求，迟到的旧读档失败不能覆盖新的请求或提示。
