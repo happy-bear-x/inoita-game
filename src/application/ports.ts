@@ -20,7 +20,7 @@ import type { ShopCatalog } from '../domain/shop.ts';
 import type { ControlLayoutPreferences } from '../ui/control-layout.ts';
 import type { KeyBindingPreferences } from './key-bindings.ts';
 import type { InputRouter } from './input-router.ts';
-import type { SaveWorldResult } from '../scenes/world-scene.ts';
+import type { SaveWorldResult } from './world-snapshot.ts';
 import type { DomUi } from '../ui/dom/dom-ui.ts';
 
 export interface StoryClassContext {
@@ -47,7 +47,7 @@ export interface StoryContext {
   readonly keyBindings:KeyBindingPreferences;
   gmNoclip?: boolean;
   gmSpeedMultiplier?: number;
-  readonly checkpoint:import('../domain/session-checkpoint.ts').SessionCheckpoint<import('../scenes/world-scene.ts').StoryWorldViewSnapshot>;
+  readonly checkpoint:import('../domain/session-checkpoint.ts').SessionCheckpoint<import('./world-snapshot.ts').StoryWorldViewSnapshot>;
   readonly storySignal?:AbortSignal;
   useRecoveryItem?: (entry:string,memberId?:string)=>RecoveryResult;
   readonly audio?: GameAudio;
@@ -112,7 +112,7 @@ export interface StoryUIContext {
   useRecoveryItem?: (entry:string,memberId?:string)=>RecoveryResult;
   readonly audio?: GameAudio;
   /** 存档槽读写；三个槽的本地持久化由它独占。 */
-  readonly saves: import('../domain/save-game.ts').SaveSlots<import('../scenes/world-scene.ts').StoryWorldViewSnapshot>;
+  readonly saves: import('../domain/save-game.ts').SaveSlots<import('./world-snapshot.ts').StoryWorldViewSnapshot>;
   saveSlot?:number;
   /** 当前地图与世界的存档快照；地图或战斗还没就绪时没有可存的东西。摘要由界面按菜单内容补上。 */
   captureSaveWorld?: () => SaveWorldResult;
@@ -168,7 +168,7 @@ export interface MenuContext {
   /** 挑战模式连点 5 次后进入压测战斗。 */
   startPressureTest?:()=>Promise<void>;
   /** 标题页的「开始游戏」使用同一份存档槽。 */
-  readonly saves: import('../domain/save-game.ts').SaveSlots<import('../scenes/world-scene.ts').StoryWorldViewSnapshot>;
+  readonly saves: import('../domain/save-game.ts').SaveSlots<import('./world-snapshot.ts').StoryWorldViewSnapshot>;
   /** 云存档能力；缺失时云存档页只显示不可用，本机存档照常。 */
   readonly cloud?: import('./cloud-save.ts').CloudSavePort;
   /** 从某个有效存档槽恢复；空槽通过 enterGame 进入职业选择。 */

@@ -1,6 +1,6 @@
 import { prepareCombatRestore } from '../domain/combat-snapshot.ts';
 import { validateSceneSnapshot } from '../domain/scene-snapshot.ts';
-import type { StoryWorldViewSnapshot } from '../scenes/world-scene.ts';
+import type { StoryWorldViewSnapshot } from './world-snapshot.ts';
 import type { StoryContext } from './ports.ts';
 
 /** 持久现场中的队伍外观由当前装备重新合成，不能复用上次进程的纹理键。 */

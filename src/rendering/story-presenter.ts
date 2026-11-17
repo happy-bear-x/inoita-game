@@ -36,7 +36,7 @@ type LogicalSceneAction = Extract<VisualAction, { type: 'town-pose' | 'world-obj
 
 /** 独立舞台只产生语义结果，由运行时提交到正式世界。 */
 export class StoryPresenter implements StoryPresentationPort {
-  private readonly world: () => WorldScene;
+  private readonly world: () => WorldScene|undefined;
   private readonly scene: () => StoryStageScene;
   private readonly app: StoryContext;
   private actors = new Map<string, Performer>();
@@ -61,15 +61,20 @@ export class StoryPresenter implements StoryPresentationPort {
   private topEffects?: Phaser.GameObjects.Layer;
   private toneFilter?: Phaser.Filters.ColorMatrix;
   private mapEffect = false;
-  constructor(app: StoryContext, world: () => WorldScene, stage?: () => StoryStageScene) {
+  constructor(app: StoryContext, world: () => WorldScene|undefined, stage?: () => StoryStageScene) {
     this.app = app; this.world = world;
-    this.scene = stage ?? (() => world().scene.get(SCENE_KEYS.storyStage) as StoryStageScene);
+    this.scene = stage ?? (() => this.requireWorld().scene.get(SCENE_KEYS.storyStage) as StoryStageScene);
   }
-  prefetchMap(map: string): void { this.world().prefetchMap(map); }
+  private requireWorld():WorldScene {
+    const world=this.world();
+    if(!world)throw new DOMException('剧情所属会话已关闭','AbortError');
+    return world;
+  }
+  prefetchMap(map: string): void { this.requireWorld().prefetchMap(map); }
   async begin(signal?: AbortSignal, restored?: StoryStage | StoryStageSnapshot, initialCurtain?: StoryCurtain, deferFirstStage = false, skipSignal?: AbortSignal): Promise<void> {
     if (!signal) throw new Error('剧情舞台需要导演的取消信号');
     signal.throwIfAborted();
-    const world = this.world(), player = world.player;
+    const world = this.requireWorld(), player = world.player;
     if (!world.worldReady() || !player) throw new Error('正式地图尚未准备好');
     const mapId = world.map!.id;
     this.appearance = player.actor;
@@ -139,8 +144,8 @@ export class StoryPresenter implements StoryPresentationPort {
     // 实际 CREATE 只登记一次；跳过取消等待后，补画与收尾仍能等待同一个启动结果。
     const opening = new Promise<void>((resolve, reject) => {
       try {
-        this.world().scene.launch(SCENE_KEYS.storyStage, { signal, onReady: resolve, onError: reject, initialCurtain });
-        this.world().scene.moveAbove('world', 'story-stage');
+        this.requireWorld().scene.launch(SCENE_KEYS.storyStage, { signal, onReady: resolve, onError: reject, initialCurtain });
+        this.requireWorld().scene.moveAbove('world', 'story-stage');
       } catch (error) { reject(error); }
     });
     this.opening = opening;
@@ -329,8 +334,8 @@ export class StoryPresenter implements StoryPresentationPort {
   private async resolveStage(declaration: StoryStage | StoryStageSnapshot, signal: AbortSignal, pendingEntrances?: readonly string[], skipPrefetch = false): Promise<StoryStageSnapshot> {
     const current = this.captureStage() ?? this.baseline;
     if (current) this.scenes.set(current.map, structuredClone(current.scene));
-    const map = declaration.mapFromWorld ? current?.map ?? this.world().map!.id : declaration.map;
-    if (!skipPrefetch && map !== this.world().map?.id) this.prefetchMap(map);
+    const map = declaration.mapFromWorld ? current?.map ?? this.requireWorld().map!.id : declaration.map;
+    if (!skipPrefetch && map !== this.requireWorld().map?.id) this.prefetchMap(map);
     let snapshot: StoryStageSnapshot;
     if ('scene' in declaration) {
       snapshot = structuredClone(declaration);
@@ -339,9 +344,9 @@ export class StoryPresenter implements StoryPresentationPort {
     }
     else {
       let source = !declaration.resetActors ? this.scenes.get(map) : undefined;
-      if (declaration.retainPlayerPosition && map === this.world().map?.id && this.scene().map?.id !== map && !declaration.resetActors)
-        source = this.world().captureStoryScene();
-      if (!source && map === this.world().map?.id && !declaration.resetActors) source = this.world().captureStoryScene();
+      if (declaration.retainPlayerPosition && map === this.requireWorld().map?.id && this.scene().map?.id !== map && !declaration.resetActors)
+        source = this.requireWorld().captureStoryScene();
+      if (!source && map === this.requireWorld().map?.id && !declaration.resetActors) source = this.requireWorld().captureStoryScene();
       if (!source) {
         const reference = this.app.world.maps.find(reference => reference.id === map);
         if (!reference) throw new Error('这片区域的资源尚未准备好');
@@ -350,7 +355,7 @@ export class StoryPresenter implements StoryPresentationPort {
         ]);
         signal.throwIfAborted();
         const player = current?.scene.actors.find(actor => actor.id === 'player')
-          ?? this.world().captureStoryScene().actors.find(actor => actor.id === 'player');
+          ?? this.requireWorld().captureStoryScene().actors.find(actor => actor.id === 'player');
         if (!player) throw new Error('剧情玩家尚未准备好');
         source = prepareSceneVisit({ session: this.app.session, campaign: this.app.campaign, world: this.app.world,
           battleCatalog: this.app.battleCatalog, drops: cachedDropCatalog(drops, this.app.items, this.app.battleCatalog.enemies), springs, partyActors: current?.scene.actors },
@@ -880,6 +885,6 @@ export class StoryPresenter implements StoryPresentationPort {
     // 当前地图；这里在演出交还操作权时补同一次应用，255 的地图仍按原版保留当前曲目。
     // 回主菜单时 `ui.mode` 已经切走，不能再把地图音乐盖到菜单主题上。
     const world = this.world();
-    if (this.app.ui?.mode === 'game' && world.map) this.app.audio?.enterMap(world.map.id);
+    if (this.app.ui?.mode === 'game' && world?.map) this.app.audio?.enterMap(world.map.id);
   }
 }

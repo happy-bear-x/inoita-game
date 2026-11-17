@@ -58,7 +58,7 @@ npm run test:standalone
 - `world-effects.test.ts` 验证飞弹转向和持续效果独立保留贴图到结束；`buff-loop-renderer.test.ts` 验证首次缺图后恢复。
 - `world-effects.test.ts` 还通过实际战斗装配与特效播放器验证地狱火在 1×/2×/3× 采样下的位置、数量和绘制层级一致，覆盖主角与佣兵。
 
-- `resident-combat-lifecycle.test.ts` 验证回标题后的会话资源释放，以及迟到退出回调不能清理新会话。
+- `resident-combat-lifecycle.test.ts` 验证回标题后的会话资源与回调释放，以及迟到退出回调不能清理新会话；`session-lifecycle.test.ts` 验证退出先取消本局工作，场景 shutdown 后才释放资源。
 
 - 持久标记预校验失败不通知或修改原会话；会话销毁后迟到结果不安装，退出恢复原位置后才恢复保存，并拒绝并发退出。
 
@@ -93,3 +93,7 @@ npm run test:standalone
 - `story-equipment.test.ts` 覆盖剧情装备发放与拾取拦截、手动穿脱与连带替换保护、剧情移除与离队销毁、正常装备退回；`story-disguise.test.ts` 验证剧情伪装穿脱，`saved-game.test.ts` 验证当前格式读回时保留剧情装备限制。
 
 - `prompt-shell.test.ts` 覆盖确定/取消按钮实际图片层、独立输入弹窗的图片释放、系统键盘可见范围与密码表单校验及提交。
+
+- `combat-defeat-ticket.test.ts` 覆盖正常离图先结算再提交地图移动、恢复世界先丢弃旧死亡单，以及销毁战斗只释放死亡单、不发放奖励。
+
+- `combat-rewards.test.ts` 通过真实 `Session.settleEnemyDefeat` 验证普通、首杀、保底、任务、压测与景物奖励；故障注入覆盖地面掉落裁剪、经验与宝箱衍生怪的原子回滚，并验证死亡单提交后移除、提交后的监听者错误隔离。

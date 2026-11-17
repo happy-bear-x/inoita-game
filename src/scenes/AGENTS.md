@@ -5,7 +5,7 @@ Phaser 场景层：驱动生命周期、转发输入，把 domain、rendering、
 ## 文件
 
 - `world-scene.ts`：主世界，负责地图加载、角色移动、镜头与地图内交互。
-- `world-combat.ts`：世界内战斗的装配与更新，把战斗规则接到场景表现。
+- `world-combat.ts`：世界内战斗的装配与更新，把战斗规则接到场景表现；`world-combat-host.ts` 定义战斗需要的世界协作能力。
 - 队员离队时推进上阵版本并保留待同步状态，确保暂停期间重新上阵也会重建角色和控制器。
 - 地图敌人的返回点取生成点并校正可站位置，读档恢复当前位置时保持返回点不变。
 - `story-stage-scene.ts`：剧情舞台，承接对白、选项和演出期间的输入锁定。
@@ -127,3 +127,8 @@ npm test -- tests/scene-assets.test.ts
 
 - 世界主角与伙伴按地图 townPose 准备外观；剧情主角覆盖随场景快照采纳，同图投影姿态变化时重新准备外观，舞台按自身地图选择伙伴姿态。
 - 剧情里的 `town-pose` 只刷新主角外观（`refreshActorAppearance`），替换一个角色视觉即可，不重建舞台地图和其他角色。
+
+- 正常离图在提交地图移动前调用 `prepareToLeaveWorld()` 完成已确认击杀；替换会话与恢复快照调用 `discardWorldWork()` 取消旧现场工作。场景和战斗的销毁只释放资源。恢复道具由会话装配绑定到 `WorldScene.useRecoveryItem()`。
+- 世界快照与存档捕获结果定义在 `application/world-snapshot.ts`，场景实现消费该数据契约。
+
+- 正常离图在 `finishMapVisit` 清理本次战斗的召唤资源条目、敌人冷却和队员临时资源上限；恢复快照保留已恢复状态，后续旧场景销毁只释放表现资源。

@@ -1,4 +1,3 @@
-import { settleCombatRewards } from '../domain/combat-rewards.ts';
 import { SummonLifecycle, advanceSummonLifetime, releasesSummonVitals, summonDurationMs, summonLifetimeExpired, summonedChildren } from '../domain/summon-lifecycle.ts';
 import { displaySettings } from '../application/display-settings.ts';
 import {applyStoryEnemyRemovals} from '../domain/world-enemies.ts';
@@ -104,7 +103,10 @@ import {moltenReflectionDamage,rollMoltenSplash,moltenSplashTargets} from '../do
 import { CombatOutcomes } from '../rendering/combat-outcomes.ts';
 import { classSummonEnemyIds, enemyCombatAssets, equipmentAttackFor, partyMemberCombatAssets, playerCombatAssets, sharedCombatAssets } from '../rendering/combat-assets.ts';
 import { learnedSkillIds } from '../domain/skill-configuration.ts';
-import type { WorldScene } from './world-scene.ts';
+import type { CombatWorldHost } from './world-combat-host.ts';
+
+/** 本次战斗使用的固定会话和共享服务；控制状态由调用方提供实时查询。 */
+type CombatServices = Readonly<Pick<StoryContext, 'session'|'director'|'audio'|'battleCatalog'|'characterStats'|'items'|'wardrobe'|'world'|'statusHud'|'ui'|'locked'|'suspended'|'pressureMode'|'gmSpeedMultiplier'>>;
 
 interface MapAlly {
   id:string;member:CompanionMember;visual:CharacterVisual;body:Phaser.Physics.Arcade.Body;facing:Facing;
@@ -212,8 +214,8 @@ export class WorldCombat {
   private controlRevision=0;
   private actionDispatchers?:WeakMap<CombatPresenter,CombatActionDispatcher>;
   private partyDefeatWork?:Map<string,()=>void>;
-  readonly scene:WorldScene;
-  readonly app:StoryContext;
+  readonly scene:CombatWorldHost;
+  readonly app:CombatServices;
   readonly roster:WorldEnemyRoster;
   readonly hero:BattleCharacter;
   readonly drops:DropCatalog;
@@ -238,7 +240,7 @@ export class WorldCombat {
   private readonly passivesCache=new Map<string,{key:string;value:PassiveModifier[]}>();
   private readonly skillTableCache=new Map<string,{key:string;value:EnemyPlayableSkill[]}>();
   private reactionSkillCache?:Map<string,{
-    configuration:StorySkillProgression|CompanionSkillProgression;version:number;catalog:StoryContext['battleCatalog'];
+    configuration:StorySkillProgression|CompanionSkillProgression;version:number;catalog:CombatServices['battleCatalog'];
     classId:string;growth:ReturnType<typeof memberSkillGrowth>;prepared:ReadonlySet<string>|undefined;requiresAssets:boolean;
     loadout:SkillLoadout;reactions:readonly SkillReaction[];
   }>;
@@ -337,15 +339,21 @@ export class WorldCombat {
   /** 跟随长时间没有进展、被传送到队长身边的次数；用于上报排查。 */
   private followerCatchUps = 0;
   private readonly regroupCooldowns = new Map<string,number>();
-  constructor(scene:WorldScene,app:StoryContext,roster:WorldEnemyRoster,hero:BattleCharacter,drops:DropCatalog){
-    this.scene=scene;this.app=app;this.roster=roster;this.hero=hero;this.drops=drops;
+  constructor(scene:CombatWorldHost,app:CombatServices,roster:WorldEnemyRoster,hero:BattleCharacter,drops:DropCatalog){
+    this.scene=scene;
+    const session=app.session,director=app.director;
+    this.app={session,director,audio:app.audio,battleCatalog:app.battleCatalog,
+      characterStats:app.characterStats,items:app.items,wardrobe:app.wardrobe,world:app.world,
+      statusHud:app.statusHud,ui:app.ui,
+      get locked(){return app.locked;},get suspended(){return app.suspended;},
+      get pressureMode(){return app.pressureMode;},get gmSpeedMultiplier(){return app.gmSpeedMultiplier;}};
+    this.roster=roster;this.hero=hero;this.drops=drops;
     this.threat=this.createThreatSystem();
     this.outcomes=new CombatOutcomes(scene,app.battleCatalog);
     this.buffLoops=new BuffLoopRenderer(scene,app.battleCatalog);
     this.stateMarkers=new StateMarkers(scene,app.battleCatalog);
     this.feedback=new CombatFeedback(scene,app.battleCatalog);
     this.combatEffects=new CombatEffects(scene);
-    app.useRecoveryItem=this.useRecoveryItem;
   }
   private createConditions():CombatConditions {
     return new CombatConditions({
@@ -822,17 +830,22 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
     };
   }
   private destroyEnemy(enemy: MapEnemy,preserveCooldown=false,keepSummonState=false): void {
-    // 压测敌人不在任何地图生成点里，死亡记录不会再有刷新入口，用完就丢掉。
-    if(this.app.pressureMode&&!enemy.summonedBy)this.app.session.forgetEnemyVitals(enemy.key);
-    // 召唤物只存在于这次战斗：移除或销毁时丢掉它在会话里的血量/法力条目，避免存档越攒越多。
-    // 检查点恢复会重建同一批召唤物，那条路径保留会话状态（`keepSummonState`）。
-    if(releasesSummonVitals(enemy.summonedBy,keepSummonState))this.app.session.forgetEnemyVitals(enemy.key);
-    if(!preserveCooldown)this.app.session.cooldowns.removeActor(enemy.key);
+    if(!this.closed)this.releaseEnemyState(enemy,preserveCooldown,keepSummonState);
     this.dealtDamage?.delete(enemy.key);
     this.threat?.removeActor(enemy.key);
     for(const actor of this.arena)actor.controller?.targetRemoved(enemy.key);
     this.combatRuntime?.removeActor(enemy.key);enemy.controller?.dispose(); enemy.presenter.clear();
     this.movement.remove(enemy.visual); enemy.visual.container.destroy(); enemy.assets?.release();
+  }
+  private releaseEnemyState(enemy:MapEnemy,preserveCooldown=false,keepSummonState=false):void {
+    if(this.app.pressureMode&&!enemy.summonedBy||releasesSummonVitals(enemy.summonedBy,keepSummonState))
+      this.app.session.forgetEnemyVitals(enemy.key);
+    if(!preserveCooldown)this.app.session.cooldowns.removeActor(enemy.key);
+  }
+  /** 正常结束本次地图访问时清理临时领域状态；恢复快照不走这个入口。 */
+  finishMapVisit():void {
+    this.hero.clearCombatResourceLimits();for(const ally of this.allies)ally.member.clearCombatResourceLimits();
+    for(const enemy of this.arena)this.releaseEnemyState(enemy);
   }
   private clearEnemies(preserveCooldown=false,keepSummonStates=false): void {
     for (const enemy of this.arena) this.destroyEnemy(enemy,preserveCooldown,keepSummonStates);
@@ -1383,67 +1396,32 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
     const earnsExperience=cause==='hit'
       ?!!(this.memberOf(casterId??'')||this.arena.some(enemy=>enemy.key===casterId&&this.memberOf(enemy.summonedBy??'')))
       :!friendlySummon;
-    if(!this.pendingDefeats.add(key,render=>{
-      // 结算失败也不能把 0 血敌人留在场上：至少补写死亡记录并移除，再记一条诊断。
-      let recorded=false;
-      try {
+    let result:ReturnType<CombatServices['session']['settleEnemyDefeat']>;
+    if(!this.pendingDefeats.add(key,()=>{
+      result=session.settleEnemyDefeat({key,spawn,enemy:targetEnemy.definition,map,x,y,
+        lootLevel:this.scene.map?.lootLevel,enemyLevel:snapshot.level,elite:snapshot.elite,
+        earnsExperience,pressureMode:this.app.pressureMode,drops:this.drops,
+        stats:this.app.characterStats,random:Math.random,
+        landing:(lx,ly)=>this.scene.lootLanding(map,lx,ly)});
+    },render=>{
       this.runtime.cancel(`defeat:${key}`);this.outcomes.cancelDeath(key);
-      if(spawn){session.enemyDefeated(spawn);recorded=true;}
-      const living=session.party?.livingIds??[];
-      const settlement=settleCombatRewards({
-        enemy:targetEnemy.definition,hasSpawn:!!spawn,pressureMode:this.app.pressureMode,oneTime:spawn?.respawn===false,enemyLevel:snapshot.level,elite:snapshot.elite,
-        heroLevel:this.hero.level,map,x,y,lootLevel:this.scene.map?.lootLevel,
-        partySize:Math.max(1,living.length||1),earnsExperience,
-        party:(living.length?living:['player']).map(id=>{
-          const member=id==='player'?this.hero:session.party?.get(id);
-          return {id,level:member?.level??this.hero.level};
-        }),
-        modifiers:session.party?.groupModifiers(),itemChance:session.partyItemChance,
-        drops:this.drops,stats:this.app.characterStats,random:Math.random,
-        questRequirements:session.questDropRequirements(),
-        pity:session.lootPity,
-        reserved:{misses:session.reservedDropMisses,claimed:session.claimedReservedDrops,
-          pending:new Set(groundLootFor(session).dropsOnMap(map).flatMap(drop=>
-            drop.reward.kind==='item'?[drop.reward.item]:[]))},
-      });
-      if(render&&settlement.killSound)this.app.audio?.monsterDeath(targetEnemy.definition.id);
-      for(const record of settlement.pityRecords)session.lootPity.recordEnemy(record.ownerId,
-        {equipment:record.equipment,bestRarity:record.bestRarity},record.eligibility,record.points);
-      session.reservedDropMisses=settlement.reservedUnlockMisses;
-      if(settlement.breakable){
-        this.scene.spawnLootOnMap(map,x,y,settlement.breakable.rewards,render&&!this.closed);
-        for(const id of session.chests.spawnBreakableEnemies(map,key,settlement.breakable.enemies,{x,y}))
-          session.forgetEnemyVitals(id);
-      }else{
-        const offsets=[0,5,-5];
-        for(const group of settlement.owners)this.scene.spawnLootOnMap(map,
-          x+offsets[group.slot%offsets.length]!,y,group.rewards,render&&!this.closed);
-        if(settlement.reserved.length)this.scene.spawnLootOnMap(map,x,y,settlement.reserved,render&&!this.closed);
-      }
-      if(spawn)this.scene.spawnLootOnMap(map,x,y,settlement.quest,render&&!this.closed);
+      // 死亡单已结束，通知剧情时不会再次冲刷同一笔奖励。
+      result?.notify();
       this.removeEnemy(key);
+      if(!result)return;
+      const {settlement,levelledIds}=result;
       if(settlement.isBreakable)this.syncChestEnemies();
-      if(settlement.experience>0){
-        const members=living.flatMap(id=>{const member=this.memberOf(id);return member?[{id,member}]:[];});
-        const levels=members.map(({member})=>member.level);
-        session.party?.addExperience(settlement.experience);
-        if(render&&!this.closed)for(let index=0;index<members.length;index++){
-          const {id,member}=members[index],visual=this.visualOf(id);
-          if(member.level>levels[index]&&visual?.container.active){
-            this.outcomes.levelUp(visual);this.app.audio?.playerLevelUp();
-          }
+      if(render&&!this.closed){
+        this.scene.refreshGroundLoot();
+        if(settlement.killSound)this.app.audio?.monsterDeath(targetEnemy.definition.id);
+        for(const id of levelledIds){
+          const visual=this.visualOf(id);
+          if(visual?.container.active){this.outcomes.levelUp(visual);this.app.audio?.playerLevelUp();}
         }
-      }
-      } catch(error) {
-        globalThis.storyDiagnostics?.record('enemy-defeat-settlement-error',{
-          enemy:targetEnemy.definition.id,key,map,render,
-          message:error instanceof Error?error.message:String(error)},false);
-        // 结算中途失败时，补写死亡记录并从场上移除；奖励可能只发了一部分，但不能留成打不死的 0 血敌人。
-        if(spawn&&!recorded){try{session.enemyDefeated(spawn);}catch{}}
-        try{this.removeEnemy(key);}catch{}
       }
     }))return false;
     this.combatantsCache=undefined;
+    let scheduled=false;
     try {
       this.summonAwareness?.forget(key);
       this.threat?.removeActor(key);
@@ -1457,14 +1435,16 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
       if(delayFrames>0){
         this.outcomes.vanish(key,targetEnemy.visual,()=>{});
         this.runtime.schedule(`defeat:${key}`,delayFrames,()=>this.pendingDefeats.complete(key));
-      }else this.pendingDefeats.complete(key,cause==='hit');
+        scheduled=true;
+      }
     } catch(error) {
       // 退场表现失败也不能让死亡单一直挂着；立即静默结算，敌人照常消失。
       globalThis.storyDiagnostics?.record('enemy-defeat-presentation-error',{
         enemy:targetEnemy.definition.id,key,map,
         message:error instanceof Error?error.message:String(error)},false);
-      if(this.pendingDefeats.has(key))this.pendingDefeats.complete(key,false);
+
     }
+    if(!scheduled)this.pendingDefeats.complete(key,cause==='hit');
     return true;
   }
   /**
@@ -3445,9 +3425,7 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
     this.closed=true;this.generation++;this.combatRuntime?.dispose();this.partyDefeatWork?.clear();
     for(const notify of [...this.allyWaiters])notify();
     for(const tween of this.deathTweens.values())tween.stop();this.deathTweens.clear();this.fallen.clear();
-    if(this.app.useRecoveryItem===this.useRecoveryItem)this.app.useRecoveryItem=undefined;
-    this.pendingDefeats.flush();this.outcomes.destroy();this.feedback.destroy();
-    this.hero.clearCombatResourceLimits();for(const ally of this.allies)ally.member.clearCombatResourceLimits();
+    this.pendingDefeats.clear();this.outcomes.destroy();this.feedback.destroy();
     this.heroAi?.dispose();this.heroAi=undefined;
     this.stateMarkers.clear();this.conditionVisuals?.clear();
     for(const ally of [...this.allies]){ally.ai.dispose();ally.overhead.destroy();this.movement.remove(ally.visual);ally.visual.container.destroy();ally.assets?.release();}

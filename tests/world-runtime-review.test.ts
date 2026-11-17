@@ -154,12 +154,12 @@ test('same-map rollback restores combat without rebuilding the scene',async()=>{
   const host:any=Object.assign(Object.create(WorldScene.prototype),{
     map:{id:'home'},loadingWorld:false,encounterResults:new Map(),app:{},
     projectStoryWorld:async()=>{calls.push('project');},
-    combat:{restoreState:async()=>{calls.push('combat');}},
+    combat:{discardPendingDefeats(){calls.push('discard');},restoreState:async()=>{calls.push('combat');}},
     restoreScenePositions:()=>{calls.push('positions');},syncControlledCharacter:()=>{calls.push('controlled');},
     restartStoryWorld:()=>{throw new Error('same-map rollback must not restart');}
   });
   await host.restoreStoryWorld({location:{map:'home'},generatedEntities:[],world:{},scene:{}},new AbortController().signal);
-  assert.deepEqual(calls,['project','combat','positions','controlled']);
+  assert.deepEqual(calls,['discard','project','combat','positions','controlled']);
 });
 
 test('manual hostile skills continue into basic attack only on completion and for the same controlled member',()=>{

@@ -54,7 +54,10 @@ import { storyExitId } from '../domain/story-world.ts';
 import { hasLivingParty } from '../domain/session-checkpoint.ts';
 import { freezeSnapshot, storyDevMode } from '../domain/dev-mode.ts';
 import type { TravelDestination } from '../domain/content.ts';
-import type {StoryAudioState} from '../application/game-audio.ts';
+import type { StoryWorldViewSnapshot, SaveWorldResult } from '../application/world-snapshot.ts';
+export type { StoryWorldViewSnapshot, SaveWorldResult, SaveWorldReason } from '../application/world-snapshot.ts';
+import type { CombatWorldHost } from './world-combat-host.ts';
+import type { RecoveryResult } from '../domain/recovery-items.ts';
 
 import { characterSceneClips} from '../rendering/combat-asset-descriptors.ts';
 import { partyMemberCombatAssets } from '../rendering/combat-assets.ts';
@@ -128,20 +131,12 @@ export interface SceneOptions {
   y: number;
   facing?: ExitFacing;
 }
-/** 旧存档没有 `scene`，读档时按 `location` 与剧情世界状态重新投影；新存档始终写入。 */
-export interface StoryWorldViewSnapshot {location:TravelDestination;world?:WorldCombatState;generatedEntities:EntityPlacement[];scene?:SceneSnapshot;audio?:StoryAudioState}
-/** 存档捕获失败的原因；界面据此给出具体提示，而不是一律说“当前地图不能存档”。 */
-export type SaveWorldReason = 'debug' | 'pressure' | 'loading' | 'not-ready' | 'no-survivors';
-export type SaveWorldResult =
-  | { ok: true; map: { id: string; name: string }; world: StoryWorldViewSnapshot }
-  | { ok: false; reason: SaveWorldReason };
-
 /** 场景里的一个人物：一个容器装着若干张动作图层。 */
 interface Character extends CharacterVisual {
   marker: QuestMarker | null;
 }
 
-export class WorldScene extends Phaser.Scene {
+export class WorldScene extends Phaser.Scene implements CombatWorldHost {
   private readonly chestFades = new Map<string, Phaser.Tweens.Tween>();
   private wardrobe?: Wardrobe;
   private readonly companionWardrobes=new Map<string,Wardrobe>();
@@ -1815,8 +1810,16 @@ export class WorldScene extends Phaser.Scene {
       return false;
     });
   }
+  /** 正常离图先结算已经确认的击杀；场景销毁只负责释放资源。 */
+  prepareToLeaveWorld():void { this.combat?.settleForSave(); this.combat?.finishMapVisit(); }
+  /** 替换会话或恢复快照时，旧现场剩余工作不再写回游戏状态。 */
+  discardWorldWork():void { this.combat?.discardPendingDefeats(); }
+  useRecoveryItem(entry:string,memberId?:string):RecoveryResult {
+    return this.combat?.useRecoveryItem(entry,memberId)??{used:false,reason:'unavailable'};
+  }
   changeMap(exit: MapExit): void {
     if (this.loadingWorld||!this.exitAvailable(exit)) return;
+    this.prepareToLeaveWorld();
     this.app.session.applyStoryCommands([{type:'travel',destination:{map:exit.destination,...exit.spawn,facing:exit.facing==='any'?'south':exit.facing}}]);
     this.loadingWorld = true; this.near = null; this.app.ui.loading('正在前往新的地方…');
     this.beginWorldSwitch();
@@ -1842,6 +1845,7 @@ export class WorldScene extends Phaser.Scene {
     } catch (error) {
       return { ok: false, reason: error instanceof Error ? error.message : String(error) };
     }
+    this.prepareToLeaveWorld();
     this.app.session.applyStoryCommands([{ type: 'travel', destination: { map: destination, ...point, facing: 'south' } }]);
     this.loadingWorld = true; this.near = null; this.app.ui.loading('正在前往新的地方…');
     // 用场景回调结算，而不是轮询 `loadingWorld`：加载失败时那个标志不会回落，
@@ -1914,10 +1918,16 @@ export class WorldScene extends Phaser.Scene {
       (!this.app.items.items[reward.item].stackable||reward.lootLevel!==undefined)
       ?{...reward,instance:this.app.session.bag.prepareDrop(reward.item,{...(reward.roll?{grade:reward.roll,sockets:reward.roll.sockets}:{}),lootLevel:reward.lootLevel})}
       :reward),{nowMs:this.app.session.nowMs});
-    if(render&&!this.destroyed&&this.map?.id===map){this.groundLootView?.sync(store.dropsOnMap(map));this.groundLootRevision=store.revision;}
+    if(render&&this.map?.id===map)this.refreshGroundLoot();
+  }
+  refreshGroundLoot():void {
+    if(this.destroyed||!this.map)return;
+    const store=groundLootFor(this.app.session);
+    this.groundLootView?.sync(store.dropsOnMap(this.map.id));
+    this.groundLootRevision=store.revision;
   }
   /** 掉落物只落在能走过去、且不压住地图进出口的位置。 */
-  private lootLanding(map:string,x:number,y:number):{x:number;y:number} {
+  lootLanding(map:string,x:number,y:number):{x:number;y:number} {
     const navigation=this.movement?.navigation;
     if(!navigation||this.map?.id!==map)return {x,y};
     const point={x,y},exits=this.map.exits;
@@ -2216,6 +2226,7 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     const state=snapshot as StoryWorldViewSnapshot;
     if(!state?.location?.map)throw new Error('正式剧情世界快照无效');
     signal.throwIfAborted();
+    this.discardWorldWork();
     // 回滚后这一场景观察到的胜负记录不再作数：同一场遭遇可能重新变成可打、可结算。
     this.encounterResults.clear();
     if(this.map?.id===state.location.map&&!this.loadingWorld){
@@ -2255,6 +2266,7 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
       }
       const prepared=stage?.scene.map===location.map?stage.scene:undefined;
       try{
+        this.combat?.finishMapVisit();
         // 剧情驱动的跨图一律静默；素材由这次静默重建自己加载，不退回加载页。
         await this.restartStoryWorld(location,signal,undefined,undefined,true,prepared);
       }catch(error){
@@ -2371,7 +2383,7 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
         const signal=this.app.storySignal??this.request.signal;
         signal.throwIfAborted();this.resetInput();this.app.director.cancel();
         // 回滚前放弃旧战斗的死亡单：旧场景稍后销毁时的结算不能写进还原后的会话。
-        this.combat?.discardPendingDefeats();
+        this.discardWorldWork();
         const world=checkpoint.world.world?{...checkpoint.world,world:prepareCombatRestore(checkpoint.world.world,this.app.battleCatalog,checkpoint.session.party?.slots.filter((id):id is string=>!!id)??[])}:checkpoint.world;
         this.app.session.restoreState(checkpoint.session);
         await this.restoreStoryWorld(world,signal);

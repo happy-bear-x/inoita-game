@@ -1,3 +1,4 @@
+import {groundLootFor} from '../src/domain/ground-loot.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -51,13 +52,14 @@ function combat(session:Session,roster:WorldEnemyRoster,enemyId=turtleId,next=ma
   const definition=battle.enemies.find(enemy=>enemy.id===enemyId)!;
   const visual={actor:definition.actor,container:{active:true,x:placed.x,y:placed.y,disableInteractive(){}}};
   const enemy={key:placed.key,definition,visual,presenter:{clear(){}}};
-  const loot:{kind:string;item?:string}[]=[];
+  const lootStart=groundLootFor(session).dropsOnMap(next.id).length;
+  const loot=()=>groundLootFor(session).dropsOnMap(next.id).slice(lootStart).map(drop=>drop.reward);
   const fighter={level:52,physicalAttack:400,magicAttack:400,hitBase:10000,hitBonus:1000,
     evasionBase:100,evasionBonus:0,criticalRate:0,criticalResistance:0,criticalDamage:1000,
     criticalDamageResistance:0,weaponBlock:0,shieldBlock:0,physicalResistance:0,magicResistance:0};
   const host=Object.setPrototypeOf({
     app:{session,characterStats:stats},hero:session.hero,roster,drops,arena:[enemy],allies:[],activeParty:['player'],
-    scene:{map:next,facing:'east',refreshCombatTarget(){},spawnLootOnMap(_map:string,_x:number,_y:number,rewards:typeof loot){loot.push(...rewards);}},
+    scene:{map:next,facing:'east',refreshCombatTarget(){},lootLanding(_map:string,x:number,y:number){return {x,y};},refreshGroundLoot(){}},
     conditions:new CombatConditions(),pendingDefeats:new PendingEnemyDefeats(),hitResolution:new CombatHitResolution(),
     memberOf:(id:string)=>id==='player'?session.hero:undefined,
     partyFighter:()=>fighter,actorAttributes:()=>({...fighter,maxHealth:10000,physicalDamageRate:0,magicDamageRate:0,stealthDamageRate:0,zealotRate:0,primaryAttributes:session.hero!.panel.attributes}),
@@ -98,12 +100,12 @@ test('story-removed quest turtles can be selected, hit by basics and skills, and
   // 固定掉落骰子，走正式死亡与奖励结算。
   t.mock.method(Math,'random',()=>0);
   host.pendingDefeats.complete(enemy.key,false);
-  const shells=loot.filter(reward=>reward.kind==='item'&&reward.item==='meadow-turtle-s-shell');
+  const shells=loot().filter(reward=>reward.kind==='item'&&reward.item==='meadow-turtle-s-shell');
   assert.equal(shells.length,1,'正式奖励结算产出任务龟壳');
   assert.equal(session.questBook.factSequence('combat'),1);
   assert.equal(roster.isPresent(enemy.key),false);
   host.pendingDefeats.complete(enemy.key,false);
-  assert.equal(loot.filter(reward=>reward.kind==='item'&&reward.item==='meadow-turtle-s-shell').length,1);
+  assert.equal(loot().filter(reward=>reward.kind==='item'&&reward.item==='meadow-turtle-s-shell').length,1);
   roster.refresh();assert.equal(roster.isPresent(enemy.key),false,'死亡计时到期前保持退场');
   session.advanceGameTime(DEFAULT_ENEMY_RESPAWN_MS);roster.refresh();
   assert.equal(roster.isPresent(enemy.key),true,'刷新入口重新生成任务怪');
@@ -140,7 +142,7 @@ test('quest-restored enemies accelerated outside view can be hit and settle each
   second.strike(100);assert.equal(second.health(),before-100);
   second.strike(100000);second.strike(100000);
   second.host.pendingDefeats.complete(key,false);second.host.pendingDefeats.complete(key,false);
-  assert.equal(second.loot.filter(reward=>reward.item==='meadow-turtle-s-shell').length,1);
+  assert.equal(second.loot().filter(reward=>reward.kind==='item'&&reward.item==='meadow-turtle-s-shell').length,1);
   assert.equal(session.questBook.factSequence('combat'),2);
 });
 

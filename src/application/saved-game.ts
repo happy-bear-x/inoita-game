@@ -7,7 +7,7 @@ import type {ItemCatalog} from '../domain/items.ts';
 import type {CharacterStatsCatalog} from '../domain/character-stats.ts';
 import type {BattleCatalog} from '../domain/battle.ts';
 import type {CompanionCatalog} from '../domain/party.ts';
-import type {StoryWorldViewSnapshot} from '../scenes/world-scene.ts';
+import type {StoryWorldViewSnapshot} from './world-snapshot.ts';
 import {validateSceneSnapshot} from '../domain/scene-snapshot.ts';
 
 export interface SavedGameContent {

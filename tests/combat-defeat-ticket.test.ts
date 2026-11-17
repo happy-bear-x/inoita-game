@@ -129,3 +129,57 @@ test('checkpoints settle pending defeats before capturing session and world',()=
   assert.equal(flushed,1,'捕获检查点前先结算死亡单');
   assert.equal(captured,1);
 });
+
+
+test('normal map travel settles confirmed defeats before changing the session location',()=>{
+  const calls:string[]=[];
+  const host=Object.setPrototypeOf({loadingWorld:false,exitAvailable:()=>true,
+    combat:{settleForSave(){calls.push('settle');},finishMapVisit(){calls.push('finish');}},
+    app:{session:{applyStoryCommands(){calls.push('travel');}},ui:{loading(){}}},
+    beginWorldSwitch(){calls.push('switch');},scene:{restart(){calls.push('restart');}}
+  },WorldScene.prototype);
+  host.changeMap({destination:'next',spawn:{x:1,y:2},facing:'south'});
+  assert.deepEqual(calls,['settle','finish','travel','switch','restart']);
+});
+
+test('world restore cancels old defeat work before projecting a different map',async()=>{
+  const calls:string[]=[];
+  const host=Object.setPrototypeOf({map:{id:'old'},encounterResults:new Map(),app:{},
+    combat:{discardPendingDefeats(){calls.push('discard');}},
+    restartStoryWorld:async()=>{calls.push('restore');}
+  },WorldScene.prototype);
+  await host.restoreStoryWorld({location:{map:'new'},generatedEntities:[]},new AbortController().signal);
+  assert.deepEqual(calls,['discard','restore']);
+});
+
+test('combat destruction releases pending defeats without applying rewards',()=>{
+  let rewards=0,cleared=0;
+  const pending=new PendingEnemyDefeats();pending.add('wolf',()=>{rewards++;});
+  const empty={clear(){},destroy(){}};
+  const host:any=Object.setPrototypeOf({closed:false,generation:0,
+    allyWaiters:new Set(),deathTweens:new Map(),fallen:new Set(),pendingDefeats:pending,
+    outcomes:empty,feedback:empty,hero:{clearCombatResourceLimits(){}},allies:[],
+    stateMarkers:empty,partyControllers:new Map(),partySkills:new Map(),lastSkillResets:new Map(),
+    passivesCache:new Map(),skillTableCache:new Map(),equipmentRecoveryCache:new Map(),combatProcsCache:new Map(),
+    combatEffects:empty,buffLoops:empty,clearEnemies(){cleared++;},conditions:empty,summons:empty,
+    extraSkillLeases:new Map(),preparedSkillIds:new Set(),allySkillSignatures:new Map(),
+    allySkillGates:new Map(),skillAssetFailures:new Map()
+  },WorldCombat.prototype);
+  host.destroy();host.destroy();
+  assert.equal(rewards,0,'释放旧世界不能推进任务或发奖励');
+  assert.equal(pending.has('wolf'),false);
+  assert.equal(cleared,1,'重复销毁只释放一次');
+});
+
+
+test('disposing an old enemy visual preserves restored session vitals and cooldowns',()=>{
+  const writes:string[]=[],released:string[]=[];
+  const host=Object.setPrototypeOf({closed:true,app:{pressureMode:false,session:{
+    forgetEnemyVitals(){writes.push('vitals');},cooldowns:{removeActor(){writes.push('cooldown');}}}},
+    arena:[],movement:{remove(){released.push('movement');}}
+  },WorldCombat.prototype);
+  invoke(host,'destroyEnemy',{key:'summon:1',summonedBy:'player',controller:{dispose(){}},
+    presenter:{clear(){}},visual:{container:{destroy(){released.push('visual');}}}});
+  assert.deepEqual(writes,[]);
+  assert.deepEqual(released,['movement','visual']);
+});

@@ -336,6 +336,12 @@ test('交还操作权时重新应用正式世界的地图音乐，回菜单后�
   assert.deepEqual(applied, ['shadow-camp']);
   await presenter('menu').release();
   assert.deepEqual(applied, ['shadow-camp'], '回菜单后不能再把地图音乐盖到菜单主题上');
+  const closed=new StoryPresenter(
+    {audio:{enterMap:(id:string)=>applied.push(id)},ui:{mode:'game'}} as unknown as StoryContext,
+    ()=>undefined,()=>stage);
+  await closed.release();
+  assert.deepEqual(applied,['shadow-camp'],'读档取消旧会话后，不恢复旧地图音乐');
+
 });
 
 test('deferred first stage inherits the world actor instead of resolving against its own declaration', async () => {
