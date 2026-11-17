@@ -48,7 +48,7 @@ QQ 内置 WebView 不支持 WebGL、UC 浏览器 `navigator.vibrate` 赋值错�
   1. 内容侧把首段 `walk` 改为不移动（`retainPlayerPosition` 已保留现场），或改成玩家附近可达点。
   2. 代码侧对动态地图走位失败退到 `NavigationWorld.nearest` 的可站点并记诊断，避免整段剧情中断。
   3. 校验侧按触发落点地图（`quest-102` 的 `alternates`）补跑走位检查。
-- 正式版分支状态：仍存在；内容与寻路代码未改。
+- 正式版分支状态：已修（提交 `020d4ee6`）：去掉固定走位，并为动态地图走位加最近可站点兜底。
 
 ### 3.2 `effects-atlas:24` 缺失动画（P1，确认 bug）
 
@@ -57,7 +57,8 @@ QQ 内置 WebView 不支持 WebGL、UC 浏览器 `navigator.vibrate` 赋值错�
 - 影响：Phaser 在动画不存在时先停掉当前播放再警告，魔法宝石飞行动画实际停在首帧。
 - 建议：播放已有动画，不要用纹理键。可在 `ground-loot.ts` 取 `sprite.anims.currentAnim?.key` 后 `play({key,startFrame,repeat:-1})`，或在 `effects.ts` 暴露 `seekEffect(sprite, elapsedMs)` 用 `setProgress` 同步进度；顺带把当前 `repeat:0` 改为飞行期间循环。
 - 验证：`npm test -- tests/ground-loot-presentation.test.ts tests/effect-atlas.test.ts`，并补一条“飞行精灵播放的动画键在 AnimationManager 中存在、不产生 Missing animation”的断言。
-- 正式版分支状态：仍存在；`ground-loot.ts` / `effects.ts` 未改。
+- 正式版分支状态：已修（提交 `ec1413e2`）：改为重播 `sprite.anims.currentAnim.key`，飞行期间循环，并按已飞时间取模计算起始帧。
+- 补充核查（2026-11-17）：日志里所有 `Missing animation` 只有 `effects-atlas:24` 一种；代码搜索确认 `ground-loot.ts` 是唯一把纹理键当动画键的入口。其他特效、伤害数字和角色动画都使用真实动画键，或先 `anims.create` 再播放；`stale-effect-animation`、`effect-texture-missing` 均为 0。因此没有证据表明其他特效帧正在丢失。
 
 ### 3.3 iOS 音频 `resume()` 拒绝未捕获（P1）
 
