@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { installTextureLoader } from '../src/rendering/scene-assets.ts';
 import { EventEmitter } from 'node:events';
 import { registerHooks } from 'node:module';
 import test from 'node:test';
@@ -506,6 +507,7 @@ test('cancelled or superseded resource loading releases the late lease without r
     Object.assign(scene, { events, load, sys: { isActive: () => true },
       textures: { on: textureEvents.on.bind(textureEvents), exists: (key: string) => frames.has(key), get: () => ({ has: () => true }), remove: (key: string) => frames.delete(key) },
       anims: { exists: () => false } });
+    installTextureLoader(scene);
     const abort = new AbortController();
     const running = scene.showStage(stageSnapshot({ type: 'stage', map: 'map', x: 1, y: 2, facing: 'south', playerVisible: true, cast: [] }), abort.signal, appearance);
     await new Promise(resolve => setImmediate(resolve));
@@ -521,31 +523,45 @@ test('cancelled or superseded resource loading releases the late lease without r
 });
 
 test('skipping a loading stage frees the shared texture queue for another scene', async () => {
-  const events = new EventEmitter(), textureEvents = new EventEmitter();
-  const textures = Object.assign(textureEvents, { exists: () => false, remove: () => {} });
-  const stageLoad = Object.assign(new EventEmitter(), { image() {}, spritesheet() {}, start() {} });
+  const events = new EventEmitter(), textureEvents = new EventEmitter(), frames = new Set<string>();
+  const textures = Object.assign(textureEvents, { exists: (key: string) => frames.has(key),
+    get: () => ({ has: () => true }), remove: (key: string) => frames.delete(key) });
+  let starts = 0, startCalls = 0, loading = false;
+  const queued: string[] = [];
+  const load = Object.assign(new EventEmitter(), { image(key: string) { queued.push(key); }, spritesheet() {},
+    start() { startCalls++; if (loading) return; loading = true; starts++; } });
+  const anims = { exists: () => false };
+  const host = { events: new EventEmitter(), textures, anims, load };
+  installTextureLoader(host as never);
   const app = { world: { maps: [{ id: 'map', file: 'map.json' }], props: [], actors: {} }, wardrobe: { textures: [] },
     session: { storyWorld: { actorAppearance: (actor: string) => actor } },
     content: { map: async () => ({ id: 'map', ground: 'ground.png', canopy: 'canopy.png', features: [], entities: [] }) }
   } as unknown as StoryContext;
   const scene = new StoryStageScene(app);
-  const anims = { exists: () => false };
-  Object.assign(scene, { events, load: stageLoad, textures, anims, sys: { isActive: () => true } });
+  Object.assign(scene, { events, textures, anims, sys: { isActive: () => true },
+    load: { start() { throw new Error('业务场景不能启动图片下载'); } } });
   const controller = new AbortController();
   const running = scene.showStage(stageSnapshot({ type: 'stage', map: 'map', x: 1, y: 2, facing: 'south', playerVisible: true, cast: [] }), controller.signal, appearance);
   await new Promise(resolve => setImmediate(resolve));
-  let starts = 0;
+  assert.equal(starts, 1);
   const nextEvents = new EventEmitter();
-  const next = { events: nextEvents, textures, anims, load: Object.assign(new EventEmitter(), { image() {}, start() { starts++; } }) };
+  const next = { events: nextEvents, textures, anims, load: { start() { throw new Error('新地图也必须共用加载场景'); } } };
   const { loadSceneAssets } = await import('../src/rendering/scene-assets.ts');
-  const pending = loadSceneAssets(next as never, [{ kind: 'image', key: 'next', file: 'next.png' }], () => {});
-  const nextRejected = assert.rejects(pending, { name: 'AbortError' });
+  const pending = loadSceneAssets(next as never, [{ kind: 'image', key: 'next', file: 'next.png' }]);
   controller.abort();
   await assert.rejects(running, { name: 'AbortError' });
   await new Promise(resolve => setImmediate(resolve));
-  assert.equal(starts, 1);
+  assert.equal(startCalls, 2, '新请求仍通过同一宿主加入下载');
+  assert.equal(starts, 1, 'Phaser 正在加载时 start 不会重开批次');
+  for (const key of queued) { frames.add(key); textureEvents.emit('addtexture', key); }
+  load.emit('complete');
+  const lease = await pending;
+  assert.equal(frames.has('next'), true);
+  assert.equal(frames.has('map-ground'), false, '旧舞台无人接管的图片应回收');
+  assert.equal(host.events.listenerCount('shutdown'), 0, '完成后清理本批次监听');
   nextEvents.emit('shutdown');
-  await nextRejected;
+  assert.equal(frames.has('next'), false);
+  lease.release();
 });
 
 test('retainPlayerPosition continues from the formal world player when the stage has not shown that map yet', async () => {
@@ -665,6 +681,7 @@ test('on-demand object assets retain the original and override textures and disc
     Object.assign(scene,{events,load,sys:{isActive:()=>true},
       textures:{on:textureEvents.on.bind(textureEvents),exists:(key:string)=>frames.has(key),get:()=>({has:()=>true}),remove:(key:string)=>frames.delete(key)},
       anims:{exists:()=>false}});
+    installTextureLoader(scene);
     const abort=new AbortController(),running=scene.prepareActorAssets('gate',abort.signal);
     await new Promise(resolve=>setImmediate(resolve));
     assert.deepEqual(pending.sort(),['gate','glow']);
@@ -707,6 +724,7 @@ test('stage loads only requested poses and effects and reuses its ownership unti
   Object.assign(scene, { events: new EventEmitter(), load, sys: { isActive: () => true },
     textures: { exists: (key: string) => frames.has(key), get: () => ({ has: () => true }), remove: (key: string) => frames.delete(key) },
     anims: { exists: () => false } });
+  installTextureLoader(scene);
   const signal = new AbortController().signal;
   const finish = async (work: Promise<void>) => {
     await new Promise(resolve => setImmediate(resolve));

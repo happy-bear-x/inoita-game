@@ -10,6 +10,7 @@
  * 一起拉进渲染层。
  */
 export const SCENE_KEYS = {
+  textureLoader: 'texture-loader',
   menu: 'menu',
   classSelect: 'story-class-select',
   world: 'world',

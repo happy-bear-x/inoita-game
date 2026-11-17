@@ -132,3 +132,5 @@ npm test -- tests/scene-assets.test.ts
 - 世界快照与存档捕获结果定义在 `application/world-snapshot.ts`，场景实现消费该数据契约。
 
 - 正常离图在 `finishMapVisit` 清理本次战斗的召唤资源条目、敌人冷却和队员临时资源上限；恢复快照保留已恢复状态，后续旧场景销毁只释放表现资源。
+
+- `texture-loader-scene.ts` 承接全部图片与图集下载，在业务场景之前启动；世界、舞台和菜单关闭只取消自己的等待，游戏退出时注销下载登记、监听和计时器。

@@ -602,7 +602,7 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
       state=prepareCombatRestore(state,this.app.battleCatalog,this.app.session.party?.activeIds??[]);
       await this.prepareRestoredSkills(signal);
       const definitions=[...new Set(state.roster.enemies.map(enemy=>enemy.enemyId))].map(id=>this.app.battleCatalog.enemies.find(enemy=>enemy.id===id)!);
-      const lease=await loadSceneAssets(this.scene,definitions.flatMap(definition=>this.enemyAssets(definition)),()=>{});
+      const lease=await loadSceneAssets(this.scene,definitions.flatMap(definition=>this.enemyAssets(definition)),{});
       if(this.closed||signal?.aborted){lease.release();signal?.throwIfAborted();return;}
       this.restoredAssets?.release();this.restoredAssets=lease;
       // 旧现场可能还有正在消散的死亡单；先取消对应的 tween，再清空队列。
@@ -2411,7 +2411,7 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
       const learned=learnedSkillIds(this.app.battleCatalog,member.classId,member.skills);
       const signature=this.allySkillSignatureNow(member),gate=this.allySkillGateNow(member);
       lease=await loadSceneAssets(this.scene,partyMemberCombatAssets(this.app.battleCatalog,this.app.wardrobe,member.classId,actor,
-        learned,{items:this.app.items,equipment:this.hero.bag.equipmentItems(this.hero.bag.equipmentFor(id))}),()=>{});
+        learned,{items:this.app.items,equipment:this.hero.bag.equipmentItems(this.hero.bag.equipmentFor(id))}),{});
       if(this.closed||party.get(id)!==member||!party.activeIds.includes(id)){lease.release();continue;}
       if(this.allySkillSignatureNow(member)!==signature){
         lease.release();this.partySyncPending=true;this.nextPartySyncAt=this.scene.time.now+100;retry=true;continue;
@@ -2626,7 +2626,7 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
     // 音效与画面并行准备，不参与战斗入口的等待：音频加载失败不该挡住战斗。
     this.prepareCombatSounds();
     const generation=++this.generation;
-    const lease=await loadSceneAssets(this.scene,needed,()=>{});
+    const lease=await loadSceneAssets(this.scene,needed,{});
     if(this.closed||generation!==this.generation){lease.release();return;}
     this.playerAssets=lease;
     this.focusRings?.destroy();
@@ -2726,7 +2726,7 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
     });
     const buffs=this.app.session.storyWorld.pendingPartyBuffs;
     const effects=Object.fromEntries(buffs.flatMap(value=>{const effect=this.app.battleCatalog.statusAttackBuffs?.[value.buff]?.applicationEffect;return effect?[[effect,this.app.battleCatalog.attackEffects[effect]]]:[];}));
-    const lease=await loadSceneAssets(this.scene,[...definitions.flatMap(definition=>this.enemyAssets(definition)),...effectAssets(effects)],()=>{});
+    const lease=await loadSceneAssets(this.scene,[...definitions.flatMap(definition=>this.enemyAssets(definition)),...effectAssets(effects)],{});
     if(this.closed||signal.aborted){lease.release();signal.throwIfAborted();return;}
     this.storyAssets?.release();this.storyAssets=lease;
     applyStoryEnemyRemovals(this.app.session,this.scene.map!.id,this.arena.map(enemy=>({key:enemy.key,enemyId:enemy.definition.id})),key=>{this.conditions.remove(key);this.removeEnemy(key);});
@@ -3090,7 +3090,7 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
         const learned=learnedSkillIds(catalog,this.hero.classId,this.app.session.skills);
         const plan=playerCombatAssets({catalog,wardrobe:this.app.wardrobe,items:this.app.items,
           hero:this.hero,actor:this.player.actor,learnedSkills:learned});
-        const lease=await loadSceneAssets(this.scene,plan,()=>{});
+        const lease=await loadSceneAssets(this.scene,plan,{});
         try { await this.scene.preparePlayerAppearance?.(); } catch(error) { lease.release(); throw error; }
         if(this.closed){lease.release();return;}
         if(this.playerSkillSignatureNow()===playerSignature){
@@ -3109,7 +3109,7 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
         const learned=learnedSkillIds(catalog,member.classId,member.skills);
         const plan=partyMemberCombatAssets(catalog,this.app.wardrobe,member.classId,actor,learned,
           {items:this.app.items,equipment:this.hero.bag.equipmentItems(this.hero.bag.equipmentFor(id))});
-        const lease=await loadSceneAssets(this.scene,plan,()=>{});
+        const lease=await loadSceneAssets(this.scene,plan,{});
         if(this.closed){lease.release();return;}
         if(this.app.session.party?.get(id)!==member||!this.app.session.party?.activeIds.includes(id)){lease.release();continue;}
         if(this.allySkillSignatureNow(member)===signature){
@@ -3192,7 +3192,7 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
     if(this.closed)return false;
     const definition=this.app.battleCatalog.enemies.find(enemy=>enemy.id===enemyId);
     if(!definition)return false;
-    const lease=await loadSceneAssets(this.scene,this.enemyAssets(definition),()=>{},true,signal);
+    const lease=await loadSceneAssets(this.scene,this.enemyAssets(definition),{ lifetime: 'manual', signal });
     if(this.closed||signal?.aborted){lease.release();return false;}
     this.pressureAssets?.release();this.pressureAssets=lease;
     // 音效不参与等待；缺声音不影响刷怪。

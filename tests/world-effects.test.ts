@@ -11,7 +11,7 @@ import {CombatController,type ActionPlayback,type Combatant,type CombatPort} fro
 import {CombatCooldownStore} from '../src/domain/combat-cooldowns.ts';
 import {CombatConditions} from '../src/domain/combat-conditions.ts';
 import type {CharacterVisual} from '../src/rendering/characters.ts';
-import {loadSceneAssets,type PendingAsset} from '../src/rendering/scene-assets.ts';
+import {installTextureLoader,loadSceneAssets,type PendingAsset} from '../src/rendering/scene-assets.ts';
 import {EFFECT_ATLAS_BY_FILE,EFFECT_ATLAS_PAGES} from '../src/generated/effect-atlas.ts';
 const hook=registerHooks({resolve(specifier,context,next){return specifier==='phaser'
   ?{url:'data:text/javascript,export default {BlendModes:{NORMAL:0,SCREEN:1,ADD:2,MULTIPLY:3},Scene:class{},Physics:{Arcade:{Body:class{}}}}',shortCircuit:true}:next(specifier,context);}});
@@ -78,6 +78,7 @@ function setup(){
     })},
     tweens:{killTweensOf:()=>{},add:()=>({remove:()=>{}})},time:{delayedCall:()=>({remove:()=>{}})},facing:'east',
   } as unknown as Phaser.Scene;
+  installTextureLoader(scene);
   const advance=(count:number)=>{for(let tick=0;tick<count;tick++)for(const node of [...nodes]){
     if(!node.active||!node.playing||!node.animation)continue;
     if(++node.age>=node.animation.frames.length){node.playing=false;node.emit('animationcomplete');}
@@ -142,7 +143,7 @@ test('the 24-frame actor playback completes while its independent 26-frame world
 test('world effects retain actual scene asset leases until their own animation finishes or the world is cleared',async()=>{
   const f=setup(),world=new CombatEffects(f.scene),visual=f.character('player'),caster=f.actor('player');
   const assets=effectAssets({'swirl-ring':catalog.attackEffects['swirl-ring'],'hitback-wave':catalog.attackEffects['hitback-wave']});
-  const actorLease=await loadSceneAssets(f.scene,assets,()=>{});
+  const actorLease=await loadSceneAssets(f.scene,assets,{ progress: ()=>{} });
   const presenter=new CombatPresenter(f.scene,catalog,()=>visual,()=>[caster],world);
   dispatchFrame(presenter,{caster,facing:'east',basicAttack:null,skill:{id:'swirling-storm',action:catalog.skills['swirling-storm'].action!,level:1}},0);
   dispatchFrame(presenter,{caster,facing:'east',basicAttack:null,skill:{id:'weapon-hitback',action:catalog.skills['weapon-hitback'].action!,level:1}},2);
@@ -170,7 +171,7 @@ test('图集页释放后，另一个场景创建的特效动画会被清理并�
   const effect=catalog.attackEffects['rampage-burst']!;
   const clip=effect.clips.default!;
   const assets=effectAssets({'rampage-burst':effect});
-  const lease=await loadSceneAssets(f.scene,assets,()=>{});
+  const lease=await loadSceneAssets(f.scene,assets,{ progress: ()=>{} });
   // 加载贴图的场景和创建特效的场景不同，但 Phaser 的 anims/textures 是全游戏共用的。
   const otherScene={...f.scene} as unknown as Phaser.Scene;
   const first=createEffect(otherScene,clip,0,0,true);
@@ -182,7 +183,7 @@ test('图集页释放后，另一个场景创建的特效动画会被清理并�
   for(const key of keys)assert.ok(f.animations.has(key),'持续特效仍持有图集');
   first.destroy();
   for(const key of keys)assert.equal(f.animations.has(key),false,`页释放后应删除动画：${key}`);
-  const reloaded=await loadSceneAssets(f.scene,assets,()=>{});
+  const reloaded=await loadSceneAssets(f.scene,assets,{ progress: ()=>{} });
   const second=createEffect(otherScene,clip,0,0,true);
   for(const key of keys)assert.notEqual(f.animations.get(key),before.get(key),`重载后应重建动画：${key}`);
   first.destroy();second.destroy();reloaded.release();
@@ -194,7 +195,7 @@ test('帧已经失效的特效动画在播放前会被重建',async()=>{
   const clip=effect.clips.default!;
   const layer=clip.layers.find(value=>EFFECT_ATLAS_BY_FILE[value.file])!;
   const key=atlasAnimationKey(layer,clip);
-  const lease=await loadSceneAssets(f.scene,effectAssets({'rampage-burst':effect}),()=>{});
+  const lease=await loadSceneAssets(f.scene,effectAssets({'rampage-burst':effect}),{ progress: ()=>{} });
   const stale={key,frames:[{frame:{texture:null}}],frameRate:1} as unknown as Animation;
   f.animations.set(key,stale);
   const container=createEffect(f.scene,clip,0,0,true);
@@ -206,7 +207,7 @@ test('a turning projectile retains every heading until its flight ends',async()=
   const f=setup();
   const [name,effect]=Object.entries(catalog.attackEffects).find(([,effect])=>effect.clips['heading-0']&&effect.clips['heading-23'])!;
   const assets=effectAssets({[name]:effect});
-  const owner=await loadSceneAssets(f.scene,assets,()=>{});
+  const owner=await loadSceneAssets(f.scene,assets,{ progress: ()=>{} });
   const presenter=new CombatPresenter(f.scene,catalog,()=>undefined,()=>[]);
   presenter.renderFlight({kind:'start',id:1,effect:name,position:{x:0,y:0},heading:0,directional:true,aboveCharacters:false});
   owner.release();
@@ -218,7 +219,7 @@ test('a turning projectile retains every heading until its flight ends',async()=
 
 test('horizontal flight skips unchanged depth writes while vertical flight updates its order',async t=>{
   const f=setup(),name='impact-spark';
-  const owner=await loadSceneAssets(f.scene,effectAssets({[name]:catalog.attackEffects[name]}),()=>{});
+  const owner=await loadSceneAssets(f.scene,effectAssets({[name]:catalog.attackEffects[name]}),{ progress: ()=>{} });
   let update:()=>void=()=>{};
   t.mock.method(f.scene.tweens,'add',(config:unknown)=>{
     update=(config as {onUpdate:()=>void}).onUpdate;

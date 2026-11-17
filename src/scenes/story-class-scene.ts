@@ -80,7 +80,7 @@ export class StoryClassScene extends Phaser.Scene {
     const previewAssets=catalog.classes.flatMap(entry=>characterAssets(entry.previewActor));
     await Promise.all([
       loadUiImages(this,[...Object.values(catalog.assets),...catalog.classes.map(entry=>entry.icon),'/assets/ui/menus/close.png','/assets/ui/menus/close-pressed.png'],value=>{if(!signal.aborted)this.app.ui.loading('正在准备职业…',value);}).then(lease=>{if(signal.aborted){lease.release();signal.throwIfAborted();}this.events.once('shutdown',()=>lease.release());}),
-      loadSceneAssets(this,[{kind:'image',key:`class-background:${catalog.background}`,file:catalog.background},...previewAssets],()=>{})
+      loadSceneAssets(this,[{kind:'image',key:`class-background:${catalog.background}`,file:catalog.background},...previewAssets],{ progress: ()=>{} })
     ]);
     signal.throwIfAborted();
     for(const key of new Set(previewAssets.map(asset=>asset.key)))this.textures.get(key).setFilter(Phaser.Textures.FilterMode.NEAREST);

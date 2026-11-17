@@ -203,7 +203,7 @@ test('learning guardian while a companion owns its textures survives companion d
   host.scene.textures={exists:(key:string)=>textures.has(key),get:()=>({has:()=>true}),remove:(key:string)=>textures.delete(key)};
   host.scene.anims={exists:()=>false,remove(){}};
   host.scene.load={start(){throw new Error('cached textures must not download again');}};
-  const companion=await loadSceneAssets(host.scene,plan,()=>{});
+  const companion=await loadSceneAssets(host.scene,plan,{ progress: ()=>{} });
   host.preparedSkillIds=new Map([['player',new Set(['dark-strike'])]]);
   let finishAppearance!:()=>void;
   host.scene.preparePlayerAppearance=()=>new Promise<void>(resolve=>{finishAppearance=resolve;});

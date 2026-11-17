@@ -5,6 +5,32 @@ import { versionedAsset } from '../application/asset-version.ts';
 import { releaseEffectAnimations } from './effect-animations.ts';
 import { cancelPendingTextureRemoval, releaseTextureWhenUnused } from './texture-lifecycle.ts';
 
+const textureLoaders = new WeakMap<Phaser.Textures.TextureManager, Phaser.Scene>();
+
+/** 游戏启动时登记固定下载场景；业务场景关闭不影响已发出的文件。 */
+export function installTextureLoader(host: Phaser.Scene): () => void {
+  const previous = textureLoaders.get(host.textures);
+  if (previous && previous !== host) throw new Error('图片加载场景已登记');
+  textureLoaders.set(host.textures, host);
+  return () => {
+    if (textureLoaders.get(host.textures) !== host) return;
+    textureLoaders.delete(host.textures);
+    const ledger = ledgers.get(host.textures);
+    if (!ledger) return;
+    for (const round of [...ledger.rounds]) settleRound(ledger, round, 'destroy');
+    for (const timer of ledger.late.values()) clearTimeout(timer);
+    ledger.late.clear();
+    ledger.detach?.();
+    ledgers.delete(host.textures);
+  };
+}
+
+export interface SceneAssetOptions {
+  progress?: (value: number) => void;
+  signal?: AbortSignal;
+  lifetime?: 'scene' | 'manual';
+}
+
 export type PendingAsset =
   | { kind: 'image'; key: string; file: string }
   | { kind: 'spritesheet'; key: string; file: string; config: Phaser.Types.Loader.FileTypes.ImageFrameConfig }
@@ -65,10 +91,12 @@ interface TextureWriteRound {
   close: () => void;
 }
 interface TextureLedger {
+  detach?: () => void;
   textures: Phaser.Textures.TextureManager;
   anims: Phaser.Animations.AnimationManager;
   pool: AssetPool;
   writes: Map<string, TextureWrite>;
+  rounds: Set<TextureWriteRound>;
   /** 宽限到期后仍可能迟到的写入；落地时按有无租约决定去留，过期自动清掉。 */
   late: Map<string, ReturnType<typeof setTimeout>>;
 }
@@ -174,10 +202,10 @@ function ledgerFor(scene: Phaser.Scene): TextureLedger {
   // 新租约接管同一张图时取消排队，避免兜底队列删掉刚重新加载的纹理。
   const pool = new AssetPool(key => releaseTextureWhenUnused(textures, anims, key),
     key => cancelPendingTextureRemoval(textures, key));
-  const created: TextureLedger = { textures, anims, pool, writes: new Map(), late: new Map() };
+  const created: TextureLedger = { textures, anims, pool, writes: new Map(), rounds: new Set(), late: new Map() };
   ledgers.set(textures, created);
   if (typeof textures.on === 'function') {
-    textures.on('addtexture', (key: string) => {
+    const added = (key: string) => {
       // 有登记的写入：这次落地就是它的结果。没有写入但还留着迟到登记的旧文件：
       // 无主就退役，有主则已经被新租约接管，什么都不用做。
       const write = created.writes.get(key);
@@ -187,7 +215,9 @@ function ledgerFor(scene: Phaser.Scene): TextureLedger {
       clearTimeout(timer);
       created.late.delete(key);
       retireUnclaimedTexture(created, key);
-    });
+    };
+    textures.on('addtexture', added);
+    created.detach = () => textures.off('addtexture', added);
   }
   return created;
 }
@@ -318,6 +348,7 @@ function registerTextureWrites(ledger: TextureLedger, scene: Phaser.Scene,
     closed: new Promise<void>(resolve => { closeRound = resolve; }),
     close: () => closeRound(),
   };
+  ledger.rounds.add(round);
   let deadline: ReturnType<typeof setTimeout> | undefined;
   let poll: ReturnType<typeof setInterval> | undefined;
   /** 文件事件不断把停摆期限往后推；慢网、排队、重试都不会被误判成停摆。 */
@@ -383,6 +414,7 @@ function registerTextureWrites(ledger: TextureLedger, scene: Phaser.Scene,
   scene.events.once('destroy', onDestroy);
   round.touch();
   round.detach = () => {
+    ledger.rounds.delete(round);
     load.off('addfile', onAddFile);
     load.off('filecomplete', onFileComplete);
     load.off('loaderror', onLoadError);
@@ -471,7 +503,9 @@ async function writeFreeAssets(ledger: TextureLedger, scene: Phaser.Scene, neede
   return blocked;
 }
 
-export async function loadSceneAssets(scene: Phaser.Scene, assets: PendingAsset[], progress: (value: number) => void, retain=false, signal?: AbortSignal): Promise<AssetLease> {
+export async function loadSceneAssets(scene: Phaser.Scene, assets: PendingAsset[], options: SceneAssetOptions = {}): Promise<AssetLease> {
+  const { progress = () => {}, signal, lifetime = 'scene' } = options;
+  const retain = lifetime === 'manual';
   signal?.throwIfAborted();
   const ledger = ledgerFor(scene);
   const pool = ledger.pool;
@@ -487,16 +521,28 @@ export async function loadSceneAssets(scene: Phaser.Scene, assets: PendingAsset[
   if (unique.every(asset => assetGap(scene, asset) === undefined)) {
     const ownership = pool.acquire(keys);
     const lease = { release: () => { scene.events.off('shutdown', lease.release); ownership.release(); } };
-    if (!retain) scene.events.once('shutdown', lease.release);
-    try { progress(1); return lease; }
-    catch (error) { lease.release(); throw error; }
+    let closed = false;
+    const shutdown = () => { closed = true; };
+    scene.events.once('shutdown', shutdown);
+    try {
+      progress(1);
+      signal?.throwIfAborted();
+      if (closed) throw new DOMException('场景已关闭', 'AbortError');
+      if (!retain) scene.events.once('shutdown', lease.release);
+      return lease;
+    } catch (error) { lease.release(); throw error; }
+    finally { scene.events.off('shutdown', shutdown); }
   }
+  const host = textureLoaders.get(scene.textures);
+  if (!host) throw new Error('图片加载场景尚未登记');
   changeLoaders(scene, keys, 1);
   const ownership = pool.acquire(keys);
   const lease = {release:()=>{scene.events.off('shutdown',lease.release);ownership.release();}};
   const controller = new AbortController();
   const shutdown = () => controller.abort(new DOMException('场景已关闭','AbortError'));
   scene.events.once('shutdown',shutdown);
+  host.events.once('destroy', shutdown);
+  if (host !== scene) host.events.once('shutdown', shutdown);
   const cancel = () => controller.abort(signal?.reason);
   signal?.addEventListener('abort', cancel, { once: true });
   // 等待别人的下载时，进度只能前进；自己的 loader 重新开始时也不会把进度条拉回 0。
@@ -512,7 +558,7 @@ export async function loadSceneAssets(scene: Phaser.Scene, assets: PendingAsset[
         controller.signal.throwIfAborted();
         const needed = unique.filter(asset => assetGap(scene, asset) !== undefined);
         if (!needed.length) return [];
-        return writeFreeAssets(ledger, scene, needed, report, controller.signal);
+        return writeFreeAssets(ledger, host, needed, report, controller.signal);
       });
       if (!blocked.length) break;
       if (pass >= 2) throw new Error(`贴图 ${blocked[0]} 仍在写入中`);
@@ -520,6 +566,7 @@ export async function loadSceneAssets(scene: Phaser.Scene, assets: PendingAsset[
     }
     controller.signal.throwIfAborted();
     report(1);
+    controller.signal.throwIfAborted();
     // Phaser 的图片解码失败不发 loaderror；complete 也不保证纹理和帧已入库。
     verifyAssets(scene, unique);
     scene.events.off('shutdown',shutdown);
@@ -532,6 +579,8 @@ export async function loadSceneAssets(scene: Phaser.Scene, assets: PendingAsset[
     scene.events.off('shutdown',shutdown);lease.release();throw error;
   }finally{
     signal?.removeEventListener('abort', cancel);
+    host.events.off('destroy', shutdown);
+    if (host !== scene) host.events.off('shutdown', shutdown);
     changeLoaders(scene, keys, -1);
   }
 }

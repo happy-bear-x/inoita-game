@@ -655,7 +655,7 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
     if (silent) await this.app.storyAssetPreparation?.wait(map.id);
     signal.throwIfAborted();
     const loaded = await loadEntryPlan(plan, {
-      load: (assets, progress) => loadSceneAssets(this, assets, progress, true, signal),
+      load: (assets, progress) => loadSceneAssets(this, assets, { progress, lifetime: 'manual', signal }),
       report: silent ? () => {} : (label, value) => ui.loading(label, value),
       preloadPortraits: (files, portraitSignal, progress) => ui.preloadPortraits(files, portraitSignal, progress),
       prepareSounds: (names, soundSignal) => { soundSignal.throwIfAborted(); return this.app.audio?.prepareStoryEffects(names, soundSignal) ?? Promise.resolve(); }
@@ -846,9 +846,9 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
   }
   /** @param silent 演出中的世界重建：不显示加载进度，舞台画面保持可见。 */
   loadAssets(needed: PendingAsset[], label: string, initialEntry=false, silent=false): Promise<AssetLease> {
-    return loadSceneAssets(this, needed, value => {
+    return loadSceneAssets(this, needed, { progress: value => {
       if (!silent) this.app.ui.loading(`正在加载 · ${label}`, initialEntry ? 0.5 + value * 0.5 : value);
-    }, true);
+    }, lifetime: 'manual' });
   }
   /** 正式世界、入口计划和运行时兜底共用的素材输入。 */
   private assetInputs(): WorldAssetInputs {
@@ -921,7 +921,7 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
     });
     const assets = entryPlanAssets(plan);
     const missing = missingSceneAssets(loader, assets).length;
-    const lease = await loadSceneAssets(loader, assets, () => {}, true, signal);
+    const lease = await loadSceneAssets(loader, assets, { lifetime: 'manual', signal });
     if (signal.aborted) { lease.release(); signal.throwIfAborted(); }
     globalThis.storyDiagnostics?.record('story-entry-prefetch', { map: mapId, missing });
     return lease;
@@ -950,7 +950,7 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
           const lease = await loadSceneAssets(this, [
             { kind: 'image', key: map.id + '-ground', file: map.ground },
             { kind: 'image', key: map.id + '-canopy', file: map.canopy }
-          ], () => {}, true, signal);
+          ], { lifetime: 'manual', signal });
           if (signal.aborted || this.prefetchTarget !== target) lease.release();
           else this.app.retainMapPrefetch(lease);
         } catch {
@@ -1116,7 +1116,7 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
           const actor=this.app.world.actors[member.definition.actor];
           if(actor){
             const assets=partyMemberCombatAssets(this.app.battleCatalog,this.app.wardrobe,member.classId,actor,learned,{items:this.app.items,equipment});
-            const lease=await loadSceneAssets(this,assets,()=>{},true);
+            const lease=await loadSceneAssets(this,assets,{ lifetime: 'manual' });
             try{
               signal?.throwIfAborted();
               if(changed())throw new Error('伙伴状态已改变');

@@ -24,6 +24,7 @@ import { StoryStageScene } from './scenes/story-stage-scene.ts';
 import type { StoryWorldViewSnapshot } from './application/world-snapshot.ts';
 import { FormalUiScene } from './scenes/formal-ui-scene.ts';
 import { MenuScene } from './scenes/menu-scene.ts';
+import { TextureLoaderScene } from './scenes/texture-loader-scene.ts';
 import { AudioScene } from './scenes/audio-scene.ts';
 
 import { WorldScene } from './scenes/world-scene.ts';
@@ -362,7 +363,7 @@ async function preloadCommon(signal: AbortSignal): Promise<void> {
     });
     while (commonPreloadIndex < commonPreloadBatches.length) {
       signal.throwIfAborted();
-      const lease = await loadSceneAssets(scene, commonPreloadBatches[commonPreloadIndex]!, () => {}, true, signal);
+      const lease = await loadSceneAssets(scene, commonPreloadBatches[commonPreloadIndex]!, { lifetime: 'manual', signal });
       if (signal.aborted) { lease.release(); signal.throwIfAborted(); }
       app.commonAssetLeases.push(lease);
       commonPreloadIndex += 1;
@@ -906,6 +907,7 @@ function boot(): void {
       });
     }, 0);
     game.events.on(UI_EVENTS.select,()=>app.audio?.ui('select'));
+    game.scene.add(SCENE_KEYS.textureLoader, new TextureLoaderScene(), true);
     game.scene.add(SCENE_KEYS.audio, new AudioScene(app), true);
     game.scene.add(SCENE_KEYS.controlsUi, new ControlsScene(), true);
     game.scene.add(SCENE_KEYS.world, new WorldScene(app), false);

@@ -9,7 +9,7 @@ import type {BattleCatalog} from '../src/domain/battle.ts';
 import type {Combatant} from '../src/domain/combat.ts';
 import type {CharacterVisual} from '../src/rendering/characters.ts';
 import {setCharacterStealth} from '../src/rendering/character-visibility.ts';
-import {loadSceneAssets,type PendingAsset} from '../src/rendering/scene-assets.ts';
+import {installTextureLoader,loadSceneAssets,type PendingAsset} from '../src/rendering/scene-assets.ts';
 const hook=registerHooks({resolve(specifier,context,next){return specifier==='phaser'
   ?{url:'data:text/javascript,export default {BlendModes:{NORMAL:0,SCREEN:1,ADD:2,MULTIPLY:3},Scene:class{},Physics:{Arcade:{Body:class{}}}}',shortCircuit:true}:next(specifier,context);}});
 const {CombatPresenter}=await import('../src/rendering/combat-presenter.ts');
@@ -66,6 +66,7 @@ function setup(){
     })},
     tweens:{killTweensOf:()=>{},add:()=>({remove:()=>{}})},time:{delayedCall:()=>({remove:()=>{}})},facing:'east',
   } as unknown as Phaser.Scene;
+  installTextureLoader(scene);
   const advance=(count:number)=>{for(let tick=0;tick<count;tick++)for(const node of [...nodes]){
     if(!node.active||!node.playing||!node.animation)continue;
     if(++node.age>=node.animation.frames.length){node.playing=false;node.emit('animationcomplete');}
@@ -79,7 +80,7 @@ function setup(){
 
 test('Whist smoke attaches to moving feet at full opacity and survives the next action clear until its sixth frame',async()=>{
   const f=setup(),effects=new CombatEffects(f.scene),visual=f.character('player'),caster=f.actor('player');
-  const lease=await loadSceneAssets(f.scene,effectAssets({'smoke-puff':catalog.attackEffects['smoke-puff']}),()=>{});
+  const lease=await loadSceneAssets(f.scene,effectAssets({'smoke-puff':catalog.attackEffects['smoke-puff']}),{ progress: ()=>{} });
   const body=f.scene.add.sprite(0,0,'body');visual.layers.push(body);visual.container.add(body);
   visual.container.setPosition(24,40);
   setCharacterStealth(visual,true);assert.equal(body.alpha,0.5);
@@ -101,7 +102,7 @@ test('character-owned smoke retains loaded textures across action cancellation a
   for(const end of ['animation','character','world'] as const){
     const f=setup(),effects=new CombatEffects(f.scene),visual=f.character('player'),caster=f.actor('player');
     const assets=effectAssets({'smoke-puff':catalog.attackEffects['smoke-puff']});
-    const lease=await loadSceneAssets(f.scene,assets,()=>{});
+    const lease=await loadSceneAssets(f.scene,assets,{ progress: ()=>{} });
     const presenter=new CombatPresenter(f.scene,catalog,()=>visual,()=>[caster],effects);
     presenter.showEffects('player',[{effect:'smoke-puff',recipient:'caster',placement:'attached'}]);
     const smoke=f.effects('smoke-puff')[0];assert.ok(smoke);let destroyed=0;smoke.on('destroy',()=>destroyed++);
@@ -119,7 +120,7 @@ test('character-owned smoke retains loaded textures across action cancellation a
 
 test('character lifetime is specific to generated smoke and does not retain ordinary attached or in-flight action visuals',async()=>{
   const f=setup(),effects=new CombatEffects(f.scene),visual=f.character('player'),caster=f.actor('player');
-  const lease=await loadSceneAssets(f.scene,effectAssets({'smoke-puff':catalog.attackEffects['smoke-puff']}),()=>{});
+  const lease=await loadSceneAssets(f.scene,effectAssets({'smoke-puff':catalog.attackEffects['smoke-puff']}),{ progress: ()=>{} });
   const presenter=new CombatPresenter(f.scene,catalog,()=>visual,()=>[caster],effects);
   presenter.showEffects('player',[{effect:'smoke-puff',recipient:'caster',placement:'attached'},
     {effect:'life-drain',recipient:'caster',placement:'attached'}]);

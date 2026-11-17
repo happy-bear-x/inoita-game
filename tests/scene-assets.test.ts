@@ -1,8 +1,9 @@
 import test from 'node:test';
+import { registerHooks } from 'node:module';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import type Phaser from 'phaser';
-import { loadSceneAssets, missingSceneAssets, retainLoadedSceneAssets } from '../src/rendering/scene-assets.ts';
+import { installTextureLoader, loadSceneAssets, missingSceneAssets, retainLoadedSceneAssets } from '../src/rendering/scene-assets.ts';
 import type { PendingAsset } from '../src/rendering/scene-assets.ts';
 
 const asset: PendingAsset = { kind: 'spritesheet', key: 'skill-effect', file: 'assets/effect.png', config: { frameWidth: 8, frameHeight: 8, endFrame: 2 } };
@@ -83,23 +84,25 @@ function setup() {
     events, load,
     textures: {
       on: textureEvents.on.bind(textureEvents),
+      off: textureEvents.off.bind(textureEvents),
       exists: (key: string) => frames.has(key),
       get: textureFor,
       remove: (key: string) => { removed.push(key); frames.delete(key); textureObjects.delete(key); }
     },
     anims: { exists: () => false, remove: () => {} }
   } as unknown as Phaser.Scene;
-  return { scene, events, load, frames, files, removed, duplicateWrites, queued, starts: () => starts,
+  const detach = installTextureLoader(scene);
+  return { scene, events, load, frames, detach, textureEvents, files, removed, duplicateWrites, queued, starts: () => starts,
     outcome: (next: typeof outcome) => { outcome = next; }, addTexture };
 }
 
 test('decode failure rejects with the asset key and path, then retry can acquire and release it', async () => {
   const run = setup(); run.outcome('decode-error');
-  await assert.rejects(loadSceneAssets(run.scene, [asset], () => {}), diagnostic(/skill-effect.*assets\/effect\.png/));
+  await assert.rejects(loadSceneAssets(run.scene, [asset], { progress: () => {} }), diagnostic(/skill-effect.*assets\/effect\.png/));
   assert.equal(run.events.listenerCount('shutdown'), 0);
   assert.deepEqual(run.load.eventNames(), []);
   run.outcome('success');
-  const lease = await loadSceneAssets(run.scene, [asset], () => {});
+  const lease = await loadSceneAssets(run.scene, [asset], { progress: () => {} });
   lease.release(); lease.release();
   assert.deepEqual(run.removed, [asset.key]);
 });
@@ -108,7 +111,7 @@ test('missing middle frames reject both fresh and cached sprite sheets', async (
   for (const cached of [false, true]) {
     const run = setup(); run.outcome('missing-frame');
     if (cached) run.frames.set(asset.key, new Set([0, 2]));
-    await assert.rejects(loadSceneAssets(run.scene, [asset], () => {}), diagnostic(/skill-effect.*帧 1/));
+    await assert.rejects(loadSceneAssets(run.scene, [asset], { progress: () => {} }), diagnostic(/skill-effect.*帧 1/));
     assert.equal(run.starts(), 1, '预检判缺时必须真的进入 loader');
     assert.equal(run.frames.size, 0);
     assert.equal(run.events.listenerCount('shutdown'), 0);
@@ -119,7 +122,7 @@ test('cached sprite sheet with missing frames is rebuilt instead of skipped', as
   const run = setup();
   run.frames.set(asset.key, new Set([0, 2]));
   assert.equal(missingSceneAssets(run.scene, [asset]).length, 1, '预检按帧判断');
-  const lease = await loadSceneAssets(run.scene, [asset], () => {});
+  const lease = await loadSceneAssets(run.scene, [asset], { progress: () => {} });
   assert.equal(run.starts(), 1, '残帧缓存必须重新加载');
   assert.deepEqual([...run.frames.get(asset.key)!], [0, 1, 2]);
   assert.equal(missingSceneAssets(run.scene, [asset]).length, 0);
@@ -129,9 +132,9 @@ test('cached sprite sheet with missing frames is rebuilt instead of skipped', as
 
 test('a residual texture held by another lease is not rebuilt', async () => {
   const run = setup();
-  const held = await loadSceneAssets(run.scene, [asset], () => {}, true);
+  const held = await loadSceneAssets(run.scene, [asset], { progress: () => {}, lifetime: 'manual' });
   run.frames.set(asset.key, new Set([0, 2]));
-  await assert.rejects(loadSceneAssets(run.scene, [asset], () => {}), /仍被其他租约持有/);
+  await assert.rejects(loadSceneAssets(run.scene, [asset], { progress: () => {} }), /仍被其他租约持有/);
   assert.deepEqual([...run.frames.get(asset.key)!], [0, 2], '共享纹理不能删');
   assert.equal(run.removed.includes(asset.key), false);
   held.release();
@@ -140,8 +143,8 @@ test('a residual texture held by another lease is not rebuilt', async () => {
 
 test('valid cached assets stay alive until the last lease is released', async () => {
   const run = setup();
-  const first = await loadSceneAssets(run.scene, [asset, asset], () => {});
-  const second = await loadSceneAssets(run.scene, [asset], () => {}, true);
+  const first = await loadSceneAssets(run.scene, [asset, asset], { progress: () => {} });
+  const second = await loadSceneAssets(run.scene, [asset], { progress: () => {}, lifetime: 'manual' });
   assert.equal(run.queued.length, 0);
   run.events.emit('shutdown');
   assert.equal(run.frames.size, 1);
@@ -152,8 +155,8 @@ test('valid cached assets stay alive until the last lease is released', async ()
 test('simultaneous requests on one scene share a loader batch and retain independent leases', async () => {
   const run = setup();
   const [first, second] = await Promise.all([
-    loadSceneAssets(run.scene, [asset], () => {}),
-    loadSceneAssets(run.scene, [asset], () => {}, true)
+    loadSceneAssets(run.scene, [asset], { progress: () => {} }),
+    loadSceneAssets(run.scene, [asset], { progress: () => {}, lifetime: 'manual' })
   ]);
   assert.equal(run.starts(), 1);
   first.release();
@@ -170,8 +173,8 @@ test('scenes sharing one texture manager register a key only once', async () => 
   });
   const otherScene = { ...run.scene, events: new EventEmitter(), load: otherLoad } as unknown as Phaser.Scene;
   const [first, second] = await Promise.all([
-    loadSceneAssets(run.scene, [asset], () => {}),
-    loadSceneAssets(otherScene, [asset], () => {})
+    loadSceneAssets(run.scene, [asset], { progress: () => {} }),
+    loadSceneAssets(otherScene, [asset], { progress: () => {} })
   ]);
   assert.equal(run.starts(), 1);
   assert.equal(otherStarts, 0, '同一纹理库已有加载在排队，另一个场景不应再启动 loader');
@@ -182,10 +185,10 @@ test('scenes sharing one texture manager register a key only once', async () => 
 
 test('network failure and shutdown clean up loading listeners and ownership', async () => {
   const network = setup(); network.outcome('network-error');
-  await assert.rejects(loadSceneAssets(network.scene, [asset], () => {}), diagnostic(/skill-effect/));
+  await assert.rejects(loadSceneAssets(network.scene, [asset], { progress: () => {} }), diagnostic(/skill-effect/));
   assert.deepEqual(network.load.eventNames(), []);
   const cancelled = setup(); cancelled.outcome('pending');
-  const pending = loadSceneAssets(cancelled.scene, [asset], () => {});
+  const pending = loadSceneAssets(cancelled.scene, [asset], { progress: () => {} });
   cancelled.events.emit('shutdown');
   await assert.rejects(pending, { name: 'AbortError' });
   assert.equal(cancelled.events.listenerCount('shutdown'), 0);
@@ -197,7 +200,7 @@ test('network failure and shutdown clean up loading listeners and ownership', as
 test('an explicit prefetch cancellation releases late textures without stopping the host scene', async () => {
   const run = setup(); run.outcome('pending');
   const controller = new AbortController();
-  const pending = loadSceneAssets(run.scene, [asset], () => {}, true, controller.signal);
+  const pending = loadSceneAssets(run.scene, [asset], { progress: () => {}, lifetime: 'manual', signal: controller.signal });
   // 让下载真正开始：取消只对已经在路上的文件有意义。
   await new Promise(resolve => setImmediate(resolve));
   controller.abort();
@@ -210,10 +213,10 @@ test('an explicit prefetch cancellation releases late textures without stopping 
 test('cancelling a queued request does not wait for another download', async () => {
   const run = setup(); run.outcome('pending');
   const firstController = new AbortController();
-  const first = loadSceneAssets(run.scene, [asset], () => {}, true, firstController.signal);
+  const first = loadSceneAssets(run.scene, [asset], { progress: () => {}, lifetime: 'manual', signal: firstController.signal });
   await new Promise(resolve => setImmediate(resolve));
   const secondController = new AbortController();
-  const second = loadSceneAssets(run.scene, [{ kind: 'image', key: 'other', file: 'other.png' }], () => {}, true, secondController.signal);
+  const second = loadSceneAssets(run.scene, [{ kind: 'image', key: 'other', file: 'other.png' }], { progress: () => {}, lifetime: 'manual', signal: secondController.signal });
   secondController.abort();
   await assert.rejects(second, { name: 'AbortError' });
   assert.equal(run.starts(), 1);
@@ -223,7 +226,7 @@ test('cancelling a queued request does not wait for another download', async () 
 
 test('cancelled loading removes a texture that arrives after the lease is released', async () => {
   const run = setup(); run.outcome('pending');
-  const pending = loadSceneAssets(run.scene, [asset], () => {});
+  const pending = loadSceneAssets(run.scene, [asset], { progress: () => {} });
   // 让下载真正开始，再模拟场景关闭：只有已经在路上的文件才会迟到落地。
   await new Promise(resolve => setImmediate(resolve));
   run.events.emit('shutdown');
@@ -234,7 +237,7 @@ test('cancelled loading removes a texture that arrives after the lease is releas
   assert.deepEqual(run.duplicateWrites, []);
   // 写入登记已经清掉，之后同键请求可以重新下载。
   run.outcome('success');
-  const lease = await loadSceneAssets(run.scene, [asset], () => {});
+  const lease = await loadSceneAssets(run.scene, [asset], { progress: () => {} });
   assert.equal(run.starts(), 2);
   assert.equal(run.frames.has(asset.key), true);
   lease.release();
@@ -243,14 +246,14 @@ test('cancelled loading removes a texture that arrives after the lease is releas
 
 test('a request for a key already being written waits and adopts that write', async () => {
   const run = setup(); run.outcome('pending');
-  const pending = loadSceneAssets(run.scene, [asset], () => {});
+  const pending = loadSceneAssets(run.scene, [asset], { progress: () => {} });
   // 让下载真正开始，再模拟场景关闭：只有已经在路上的文件才会迟到落地。
   await new Promise(resolve => setImmediate(resolve));
   run.events.emit('shutdown');
   await assert.rejects(pending, { name: 'AbortError' });
   run.outcome('success');
   let settled = false;
-  const waiting = loadSceneAssets(run.scene, [asset], () => {}).then(lease => { settled = true; return lease; });
+  const waiting = loadSceneAssets(run.scene, [asset], { progress: () => {} }).then(lease => { settled = true; return lease; });
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(settled, false, '旧文件还没落定时，新请求不能自己再开一次下载');
   assert.equal(run.starts(), 1, '同一个纹理键不新开写入代');
@@ -269,7 +272,7 @@ test('atlas assets load with string frames and verify their sentinel frame', asy
   assert.equal(missingSceneAssets(run.scene, [atlas]).length, 1);
   run.frames.set(atlas.key, new Set(['frame-b']));
   assert.equal(missingSceneAssets(run.scene, [atlas]).length, 1, '哨兵帧缺失必须重新加载');
-  const lease = await loadSceneAssets(run.scene, [atlas], () => {});
+  const lease = await loadSceneAssets(run.scene, [atlas], { progress: () => {} });
   assert.equal(missingSceneAssets(run.scene, [atlas]).length, 0);
   assert.equal(run.queued.length, 0);
   lease.release();
@@ -282,8 +285,8 @@ test('concurrent loaders can repair one damaged atlas texture without one failin
   const run = setup();
   run.frames.set(atlas.key, new Set(['frame-b'])); // 哨兵帧缺失的损坏缓存
   const [first, second] = await Promise.all([
-    loadSceneAssets(run.scene, [atlas], () => {}),
-    loadSceneAssets(run.scene, [atlas], () => {})
+    loadSceneAssets(run.scene, [atlas], { progress: () => {} }),
+    loadSceneAssets(run.scene, [atlas], { progress: () => {} })
   ]);
   assert.equal(missingSceneAssets(run.scene, [atlas]).length, 0);
   first.release(); second.release();
@@ -304,13 +307,13 @@ test('retaining assets verifies textures and frames before taking a lease', () =
 test('ready and empty asset requests finish while an unrelated download is still pending', async () => {
   const run = setup(); run.outcome('pending');
   const unrelated = { kind: 'image' as const, key: 'far-map', file: 'far-map.png' };
-  const downloading = loadSceneAssets(run.scene, [unrelated], () => {}, true);
+  const downloading = loadSceneAssets(run.scene, [unrelated], { progress: () => {}, lifetime: 'manual' });
   await new Promise(resolve => setImmediate(resolve));
   run.frames.set(asset.key, new Set([0, 1, 2]));
   const otherScene = { ...run.scene, events: new EventEmitter() } as unknown as Phaser.Scene;
   let ready = false, empty = false;
-  const cached = loadSceneAssets(otherScene, [asset], () => {}, true).then(lease => { ready = true; return lease; });
-  const noAssets = loadSceneAssets(otherScene, [], () => {}).then(lease => { empty = true; return lease; });
+  const cached = loadSceneAssets(otherScene, [asset], { progress: () => {}, lifetime: 'manual' }).then(lease => { ready = true; return lease; });
+  const noAssets = loadSceneAssets(otherScene, [], { progress: () => {} }).then(lease => { empty = true; return lease; });
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(ready, true, '已经齐全的贴图不等远图下载'); assert.equal(empty, true);
   assert.equal(run.starts(), 1);
@@ -323,11 +326,11 @@ test('ready and empty asset requests finish while an unrelated download is still
 test('missing frames still wait for the writer queue before repairing the texture', async () => {
   const run = setup(); run.outcome('pending');
   const unrelated = { kind: 'image' as const, key: 'far-map', file: 'far-map.png' };
-  const downloading = loadSceneAssets(run.scene, [unrelated], () => {}, true);
+  const downloading = loadSceneAssets(run.scene, [unrelated], { progress: () => {}, lifetime: 'manual' });
   await new Promise(resolve => setImmediate(resolve));
   run.frames.set(asset.key, new Set([0, 2]));
   let repaired = false;
-  const repairing = loadSceneAssets(run.scene, [asset], () => {}, true).then(lease => { repaired = true; return lease; });
+  const repairing = loadSceneAssets(run.scene, [asset], { progress: () => {}, lifetime: 'manual' }).then(lease => { repaired = true; return lease; });
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(repaired, false); assert.equal(run.starts(), 1); assert.deepEqual([...run.frames.get(asset.key)!], [0, 2]);
   run.frames.set(unrelated.key, new Set([0])); run.outcome('success'); run.load.emit('complete');
@@ -344,7 +347,7 @@ test('a late texture still drawn by a visible scene is retired after the referen
   (run.scene.textures as unknown as { game: unknown }).game = { scene: { scenes: [visible] }, events: frameEvents };
   run.outcome('pending');
   const controller = new AbortController();
-  const pending = loadSceneAssets(run.scene, [asset], () => {}, true, controller.signal);
+  const pending = loadSceneAssets(run.scene, [asset], { progress: () => {}, lifetime: 'manual', signal: controller.signal });
   // 让下载真正开始：取消只对已经在路上的文件有意义。
   await new Promise(resolve => setImmediate(resolve));
   controller.abort();
@@ -359,12 +362,12 @@ test('a late texture still drawn by a visible scene is retired after the referen
 test('a different file for a key already being written is rejected without a second download', async () => {
   const run = setup(); run.outcome('pending');
   const controller = new AbortController();
-  const first = loadSceneAssets(run.scene, [asset], () => {}, true, controller.signal);
+  const first = loadSceneAssets(run.scene, [asset], { progress: () => {}, lifetime: 'manual', signal: controller.signal });
   await new Promise(resolve => setImmediate(resolve));
   controller.abort();
   await assert.rejects(first, { name: 'AbortError' });
   const other = { ...asset, file: 'assets/other.png' };
-  await assert.rejects(loadSceneAssets(run.scene, [other], () => {}), /贴图键指向不同资源/);
+  await assert.rejects(loadSceneAssets(run.scene, [other], { progress: () => {} }), /贴图键指向不同资源/);
   assert.equal(run.starts(), 1, '冲突时不能启动第二次下载');
   run.addTexture(asset.key);
   assert.equal(run.frames.has(asset.key), false);
@@ -373,13 +376,13 @@ test('a different file for a key already being written is rejected without a sec
 test('shutdown keeps the key blocked while the file is still in flight', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
   const run = setup(); run.outcome('pending');
-  const first = loadSceneAssets(run.scene, [asset], () => {});
+  const first = loadSceneAssets(run.scene, [asset], { progress: () => {} });
   await new Promise(resolve => setImmediate(resolve));
   run.events.emit('shutdown');
   await assert.rejects(first, { name: 'AbortError' });
   run.outcome('success');
   let settled = false;
-  const waiting = loadSceneAssets(run.scene, [asset], () => {}).then(lease => { settled = true; return lease; });
+  const waiting = loadSceneAssets(run.scene, [asset], { progress: () => {} }).then(lease => { settled = true; return lease; });
   await new Promise(resolve => setImmediate(resolve));
   t.mock.timers.tick(5000);
   await new Promise(resolve => setImmediate(resolve));
@@ -399,13 +402,13 @@ test('shutdown keeps an atlas key blocked until all of its child files finish', 
   const atlas: PendingAsset = { kind: 'atlas', key: 'props-atlas:0', file: 'assets/props/atlas/props-0.png',
     atlas: 'assets/props/atlas/props-0.json', frame: 'frame-a' };
   const run = setup(); run.outcome('pending');
-  const first = loadSceneAssets(run.scene, [atlas], () => {});
+  const first = loadSceneAssets(run.scene, [atlas], { progress: () => {} });
   await new Promise(resolve => setImmediate(resolve));
   run.events.emit('shutdown');
   await assert.rejects(first, { name: 'AbortError' });
   run.outcome('success');
   let settled = false;
-  const waiting = loadSceneAssets(run.scene, [atlas], () => {}).then(lease => { settled = true; return lease; });
+  const waiting = loadSceneAssets(run.scene, [atlas], { progress: () => {} }).then(lease => { settled = true; return lease; });
   await new Promise(resolve => setImmediate(resolve));
   const file = run.files.get(atlas.key) as unknown as { multiFile: { state: number; files: { state: number }[] } };
   t.mock.timers.tick(5000);
@@ -426,7 +429,7 @@ test('shutdown keeps an atlas key blocked until all of its child files finish', 
 test('a texture that lands after the write timed out is retired', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
   const run = setup(); run.outcome('pending');
-  const pending = loadSceneAssets(run.scene, [asset], () => {});
+  const pending = loadSceneAssets(run.scene, [asset], { progress: () => {} });
   await new Promise(resolve => setImmediate(resolve));
   run.events.emit('shutdown');
   await assert.rejects(pending, { name: 'AbortError' });
@@ -439,13 +442,13 @@ test('a texture that lands after the write timed out is retired', async (t) => {
 test('a write that never settles stops blocking the key after the fallback deadline', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
   const run = setup(); run.outcome('pending');
-  const first = loadSceneAssets(run.scene, [asset], () => {});
+  const first = loadSceneAssets(run.scene, [asset], { progress: () => {} });
   await new Promise(resolve => setImmediate(resolve));
   run.events.emit('shutdown');
   await assert.rejects(first, { name: 'AbortError' });
   run.outcome('success');
   let settled = false;
-  const waiting = loadSceneAssets(run.scene, [asset], () => {}).then(lease => { settled = true; return lease; });
+  const waiting = loadSceneAssets(run.scene, [asset], { progress: () => {} }).then(lease => { settled = true; return lease; });
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(settled, false, '兜底到期前一直等这次写入');
   t.mock.timers.tick(35000);
@@ -454,4 +457,91 @@ test('a write that never settles stops blocking the key after the fallback deadl
   assert.equal(run.starts(), 2, '到期后允许重新下载');
   assert.deepEqual(run.duplicateWrites, [], '旧文件没有落地，不存在重复写入');
   lease.release();
+});
+
+test('a fixed host survives consumer shutdown and hands the existing write to another consumer', async () => {
+  const run = setup(); run.outcome('pending');
+  const consumer = () => ({ ...run.scene, events: new EventEmitter(),
+    load: { start() { throw new Error('consumer loader must stay unused'); } } } as unknown as Phaser.Scene);
+  const firstConsumer = consumer(), nextConsumer = consumer();
+  const first = loadSceneAssets(firstConsumer, [asset]);
+  await new Promise(resolve => setImmediate(resolve));
+  firstConsumer.events.emit('shutdown');
+  await assert.rejects(first, { name: 'AbortError' });
+  const next = loadSceneAssets(nextConsumer, [asset]);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(run.starts(), 1);
+  assert.equal(run.events.listenerCount('shutdown') > 0, true, '宿主仍观察在途文件');
+  run.files.get(asset.key)!.state = 17;
+  run.addTexture(asset.key);
+  run.load.emit('complete');
+  const lease = await next;
+  assert.equal(run.frames.has(asset.key), true);
+  assert.deepEqual(run.duplicateWrites, []);
+  nextConsumer.events.emit('shutdown');
+  assert.equal(run.frames.has(asset.key), false);
+  lease.release();
+});
+
+test('a fixed host retires a late result after its only consumer cancels', async () => {
+  const run = setup(); run.outcome('pending');
+  const consumer = { ...run.scene, events: new EventEmitter() } as unknown as Phaser.Scene;
+  const controller = new AbortController();
+  const pending = loadSceneAssets(consumer, [asset], { lifetime: 'manual', signal: controller.signal });
+  await new Promise(resolve => setImmediate(resolve));
+  controller.abort();
+  await assert.rejects(pending, { name: 'AbortError' });
+  assert.equal(run.addTexture(asset.key), true);
+  run.load.emit('complete');
+  assert.equal(run.frames.has(asset.key), false);
+  assert.deepEqual(run.load.eventNames(), []);
+  assert.equal(run.events.listenerCount('shutdown'), 0);
+});
+
+test('cancelling from the final progress callback rejects both cached and downloaded leases', async () => {
+  for (const cached of [false, true]) {
+    const run = setup();
+    if (cached) run.addTexture(asset.key);
+    const controller = new AbortController();
+    await assert.rejects(loadSceneAssets(run.scene, [asset], { lifetime: 'manual', signal: controller.signal,
+      progress: value => { if (value === 1) controller.abort(); } }), { name: 'AbortError' });
+    assert.equal(run.frames.has(asset.key), false, '未交付的使用权必须归还');
+    assert.equal(run.events.listenerCount('shutdown'), 0);
+  }
+});
+
+test('stopping the fixed host cancels its consumers and releases write listeners', async () => {
+  const run = setup(); run.outcome('pending');
+  const consumer = { ...run.scene, events: new EventEmitter() } as unknown as Phaser.Scene;
+  const pending = loadSceneAssets(consumer, [asset]);
+  await new Promise(resolve => setImmediate(resolve));
+  run.events.once('shutdown', run.detach);
+  run.events.emit('shutdown');
+  await assert.rejects(pending, { name: 'AbortError' });
+  assert.deepEqual(run.load.eventNames(), []);
+  assert.equal(run.textureEvents.listenerCount('addtexture'), 0);
+  assert.equal(consumer.events.listenerCount('shutdown'), 0);
+});
+
+
+test('game destruction without shutdown cancels requests and detaches the actual loader scene', async () => {
+  const hook = registerHooks({ resolve(specifier, context, next) {
+    return specifier === 'phaser' ? { url: 'data:text/javascript,export default {Scene:class{}}', shortCircuit: true } : next(specifier, context);
+  } });
+  let Loader: typeof import('../src/scenes/texture-loader-scene.ts').TextureLoaderScene;
+  try { ({ TextureLoaderScene: Loader } = await import('../src/scenes/texture-loader-scene.ts')); }
+  finally { hook.deregister(); }
+  const run = setup(); run.detach(); run.outcome('pending');
+  const host = Object.assign(new Loader(), run.scene);
+  host.create();
+  const consumer = { ...run.scene, events: new EventEmitter() } as unknown as Phaser.Scene;
+  const pending = loadSceneAssets(consumer, [asset]);
+  await new Promise(resolve => setImmediate(resolve));
+  host.events.emit('destroy');
+  await assert.rejects(pending, { name: 'AbortError' });
+  assert.deepEqual(run.load.eventNames(), []);
+  assert.deepEqual(host.events.eventNames(), []);
+  assert.equal(run.textureEvents.listenerCount('addtexture'), 0);
+  assert.equal(consumer.events.listenerCount('shutdown'), 0);
+  await assert.rejects(loadSceneAssets(consumer, [asset]), /图片加载场景尚未登记/);
 });

@@ -129,7 +129,7 @@ export class StoryStageScene extends Phaser.Scene {
       needed.push(...characterAssets(appearance, characterSceneClips(appearance, actor.clip)));
     }
     needed.push(...this.app.wardrobe.textures.map(texture => ({ kind: 'image' as const, ...texture })));
-    const lease = await loadSceneAssets(this, needed, () => {}, true, signal);
+    const lease = await loadSceneAssets(this, needed, { lifetime: 'manual', signal });
     const guard = () => {
       signal.throwIfAborted();
       if (revision !== this.revision || !this.sys.isActive()) throw new DOMException('演出舞台已更新', 'AbortError');
@@ -222,7 +222,7 @@ export class StoryStageScene extends Phaser.Scene {
     signal.throwIfAborted();
     needed = needed.filter(asset => !this.preparedAssetKeys.has(asset.key));
     if (!needed.length) return;
-    const lease = await loadSceneAssets(this, needed, () => {}, true, signal);
+    const lease = await loadSceneAssets(this, needed, { lifetime: 'manual', signal });
     if (signal.aborted || revision !== this.revision || !this.sys.isActive()) {
       lease.release(); signal.throwIfAborted(); throw new DOMException('演出舞台已更新', 'AbortError');
     }
