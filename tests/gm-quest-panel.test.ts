@@ -1,0 +1,403 @@
+import assert from 'node:assert/strict';
+import test, { after } from 'node:test';
+import type Phaser from 'phaser';
+import { domWindow, installMenuDom, type MenuElement } from './support/menu-dom.ts';
+import type { Campaign, CampaignQuest } from '../src/domain/campaign.ts';
+import type { QuestGroupDefinition, QuestStatus } from '../src/domain/content.ts';
+import type { QuestProgress } from '../src/domain/quest-book.ts';
+import type { GmActions, GmQuestDebugState } from '../src/debug/gm-actions.ts';
+import type { QuestCatalogEntry, QuestCatalogGroup, QuestCatalogSummary } from '../src/debug/quest-catalog.ts';
+import type { QuestStartPlan } from '../src/debug/quest-jump.ts';
+import type { MenuTextSpec } from '../src/ui/dom/menu-text.ts';
+import { UiNode } from '../src/ui/dom/node.ts';
+import { domAssets } from '../src/ui/dom/assets.ts';
+import { COMMON_BUTTON_IMAGES } from '../src/ui/common-button.ts';
+import { UiSurface } from '../src/ui/phaser/widgets.ts';
+import { GmPanel } from '../src/ui/phaser/gm-panel.ts';
+
+/** 只保留菜单节点真正用到的 Phaser 边界：事件、画框尺寸和画布矩形。 */
+class Events {
+  private readonly listeners = new Map<string, { callback: (...args: any[]) => void; context?: unknown; once: boolean }[]>();
+  on(event: string, callback: (...args: any[]) => void, context?: unknown) {
+    const rows = this.listeners.get(event) ?? [];
+    rows.push({ callback, context, once: false });
+    this.listeners.set(event, rows);
+    return this;
+  }
+  once(event: string, callback: (...args: any[]) => void, context?: unknown) {
+    this.on(event, callback, context);
+    this.listeners.get(event)!.at(-1)!.once = true;
+    return this;
+  }
+  off(event: string, callback: (...args: any[]) => void, context?: unknown) {
+    this.listeners.set(event, (this.listeners.get(event) ?? [])
+      .filter(row => row.callback !== callback || row.context !== context));
+    return this;
+  }
+  emit(event: string, ...args: any[]) {
+    for (const row of [...this.listeners.get(event) ?? []]) {
+      if (row.once) this.off(event, row.callback, row.context);
+      row.callback.apply(row.context, args);
+    }
+    return this;
+  }
+}
+
+class MenuScene {
+  readonly events = new Events();
+  readonly scale = Object.assign(new Events(), { width: 1024, height: 640 });
+  readonly game = {
+    events: new Events(), renderer: { type: 1 },
+    canvas: { getBoundingClientRect: () => ({ x: 0, y: 0, left: 0, top: 0, width: 1024, height: 640 }) },
+  };
+  readonly textures = { exists: () => false };
+}
+
+const cleanupDom = installMenuDom();
+after(cleanupDom);
+
+/** 搜索框挂在 #game-frame 下：先找覆盖层，再找里面的原生输入。 */
+function questSearchRoot(): MenuElement | undefined {
+  return domWindow.children[0]!.children.find(node => node.id === 'game-frame')!.children
+    .find(node => String(node.className).includes('gm-quest-search'));
+}
+function questSearchField(): MenuElement | undefined {
+  return questSearchRoot()?.children
+    .find(node => String(node.className).includes('gm-quest-search-field'));
+}
+function questSearchValue(): string {
+  return (questSearchField() as unknown as { value: string } | undefined)?.value ?? '';
+}
+/** 模拟输入框事件；真实浏览器里由用户敲键盘触发。 */
+function typeQuestSearch(value: string): void {
+  const field = questSearchField();
+  assert.ok(field, '搜索框存在');
+  (field as unknown as { value: string }).value = value;
+  field.dispatchEvent(new Event('input', { bubbles: true }));
+}
+function pressQuestSearchKey(key: string): void {
+  const field = questSearchField();
+  assert.ok(field, '搜索框存在');
+  const event = new Event('keydown', { bubbles: true, cancelable: true });
+  Object.assign(event, { key });
+  field.dispatchEvent(event);
+}
+const preloaded = await domAssets.preloadFiles(COMMON_BUTTON_IMAGES, new AbortController().signal, () => {});
+after(() => preloaded.release());
+
+/** 记录所有创建过的 DOM 节点，按钮标签和顺序都从这份名单里找。 */
+const created: UiNode[] = [];
+const setPosition = UiNode.prototype.setPosition;
+UiNode.prototype.setPosition = function (x: number, y: number) {
+  if (!created.includes(this)) created.push(this);
+  return setPosition.call(this, x, y);
+};
+after(() => { UiNode.prototype.setPosition = setPosition; });
+
+const quest = (id: string, title: string): CampaignQuest => ({
+  id, title, description: `${title}的说明`, completion: 'story',
+  goals: [{ id: 'g1', kind: 'item', target: 'ingredient', quantity: 5, label: '收集食材' }],
+  guidance: { available: '去接任务', active: '收集食材' },
+  progressText: '进行中', completeText: '完成了',
+}) as CampaignQuest;
+
+const definition = (id: string, title: string, kind: 'main' | 'side', questIds: string[]): QuestGroupDefinition =>
+  ({ id, title, kind, questIds });
+
+const progress = (status: QuestStatus, current = 0): QuestProgress =>
+  ({ status, cycle: 0, completedCycles: 0, goals: { g1: current } });
+
+function summary(entries: QuestCatalogEntry[]): QuestCatalogSummary {
+  const value: QuestCatalogSummary = {
+    total: entries.length, journalVisible: 0, hidden: 0, internal: 0,
+    locked: 0, available: 0, active: 0, ready: 0, completed: 0,
+  };
+  for (const entry of entries) {
+    if (!entry.hidden && !entry.internal) value.journalVisible++;
+    if (entry.hidden) value.hidden++;
+    if (entry.internal) value.internal++;
+    value[entry.status]++;
+  }
+  return value;
+}
+
+function catalogGroup(
+  group: QuestGroupDefinition, entries: QuestCatalogEntry[], anchor?: string,
+): QuestCatalogGroup {
+  const counts = summary(entries);
+  return {
+    definition: group, kind: group.kind, entries, summary: counts, completed: counts.completed,
+    ready: counts.ready > 0, current: counts.active > 0 || counts.ready > 0,
+    anchorMainGroupTitle: anchor,
+  };
+}
+
+function fixture(options: { unsatisfied?: boolean; ready?: boolean } = {}) {
+  created.length = 0;
+  const quests = {
+    'q-main-1': quest('q-main-1', '主线甲01'),
+    'q-main-2': quest('q-main-2', '主线甲02'),
+    'q-side-1': quest('q-side-1', '支线乙01'),
+    'q-main-3': quest('q-main-3', '主线丙01'),
+  };
+  const entry = (id: keyof typeof quests, status: QuestStatus, current = 0, hidden = false): QuestCatalogEntry =>
+    ({ quest: quests[id], progress: progress(status, current), status, hidden, internal: false });
+  const mainA = definition('group-main-a', '主线甲', 'main', ['q-main-1', 'q-main-2']);
+  const sideB = definition('group-side-b', '支线乙', 'side', ['q-side-1']);
+  const mainC = definition('group-main-c', '主线丙', 'main', ['q-main-3']);
+  const groups: QuestCatalogGroup[] = [
+    catalogGroup(mainA, [entry('q-main-1', 'active', 2), entry('q-main-2', 'completed', 5)]),
+    catalogGroup(sideB, [entry('q-side-1', 'locked', 0, true)], '主线甲'),
+    catalogGroup(mainC, [entry('q-main-3', 'available')]),
+  ];
+  const campaign = {
+    quests: Object.values(quests), questGroups: [mainA, sideB, mainC], placements: [],
+  } as unknown as Campaign;
+
+  let debugState: GmQuestDebugState = { active: false, completed: false };
+  let finishStart: ((value: { ok: boolean; plan?: QuestStartPlan }) => void) | undefined;
+  const startCalls: string[] = [];
+  const startModes: (string | undefined)[] = [];
+  let keepCalls = 0;
+  const gm = {
+    digest: () => ({ quests: { active: [], ready: [] }, location: null, story: { completedEvents: 0, runs: [] } }),
+    actions: () => [],
+    isNoclip: () => false,
+    isDoubleSpeed: () => false,
+    questCatalog: () => groups,
+    questDebugState: () => debugState,
+    previewQuestDebug: (questId: string) => ({
+      ok: true,
+      plan: planFor(questId),
+    }),
+    startQuestDebug: (questId: string, mode?: string) => {
+      startCalls.push(questId);
+      startModes.push(mode);
+      return new Promise<{ ok: boolean; plan?: QuestStartPlan }>(resolve => { finishStart = resolve; });
+    },
+    returnFromQuestDebug: async () => ({ ok: true }),
+    keepQuestDebugProgress: () => { keepCalls++; debugState = { active: false, completed: false }; return { ok: true }; },
+  } as unknown as GmActions;
+
+  function planFor(questId: string): QuestStartPlan {
+    const target = campaign.quests.find(value => value.id === questId)!;
+    return {
+      questId, quest: target, mode: options.ready ? 'ready' : 'available',
+      changedQuests: [{ id: 'q-pre', title: '前置任务', from: 'locked', to: 'completed' }],
+      accept: { script: 'script-accept', eventId: 'event-accept' },
+      acceptAlternatives: [{ script: 'script-accept', eventId: 'event-accept' }],
+      conditionPatch: { quests: [], choices: [], flags: [], completedEvents: [], removedEvents: [],
+        unsatisfied: options.unsatisfied ? ['缺少接取选择'] : [] },
+      destination: { map: 'dungeon', x: 8, y: 9, facing: 'south' },
+      warnings: [], fallback: options.ready === true,
+    };
+  }
+
+  const scene = new MenuScene();
+  const body = new UiSurface(scene as unknown as Phaser.Scene, 960, 480);
+  let specs: MenuTextSpec[] = [];
+  const setTexts: string[] = [];
+  let active = true;
+  const writer = { add: (spec: MenuTextSpec) => { specs.push(spec); } };
+  let panel: GmPanel;
+  const render = () => { specs = []; panel.update(body, writer); };
+  panel = new GmPanel(gm, campaign, { close: () => {}, render }, {
+    active: () => active,
+    setText: (key, text) => {
+      const spec = specs.find(value => value.key === key);
+      if (spec) spec.text = text;
+      setTexts.push(text);
+    },
+    moveText: (key, text, y) => {
+      const spec = specs.find(value => value.key === key);
+      if (spec) { spec.text = text; spec.y = y; }
+      setTexts.push(text);
+    },
+    refresh: () => {},
+  });
+  panel.render(body, writer);
+
+  const shown = (label: string) => created.find(node =>
+    node.active && node.shown && node.getData('uiAction') && node.getData('label') === label);
+  const button = (label: string) => {
+    const node = shown(label);
+    assert.ok(node, `按钮存在：${label}`);
+    return node!;
+  };
+  const click = (label: string) => (button(label).getData('action') as () => void)();
+  const texts = () => specs.map(spec => spec.text);
+  const answerStart = (ok: boolean) => finishStart?.({ ok, plan: planFor('q-main-1') });
+  return {
+    panel, body, scene, groups, campaign, texts, specs: () => specs, button, shown, click, startCalls, startModes,
+    setTexts, get keepCalls() { return keepCalls; },
+    setActive: (value: boolean) => { active = value; },
+    setDebugState: (value: GmQuestDebugState) => { debugState = value; },
+    get debugState() { return debugState; },
+    answerStart,
+    render,
+    cleanup: () => { panel.dispose(); scene.events.emit('shutdown'); },
+  };
+}
+
+test('the GM quest tab lists every group in catalog order with interleaved side quests', t => {
+  const f = fixture(); t.after(f.cleanup);
+  const tab = f.button('调试页 任务');
+  assert.equal(tab.x, 856, '第四个页签在 856');
+  assert.ok(tab.input!.hitArea.width + 856 <= 960, '第四个页签不越界');
+  f.click('调试页 任务');
+
+  assert.ok(f.button('任务组 主线甲'));
+  assert.ok(f.button('任务组 支线乙'));
+  assert.ok(f.button('任务组 主线丙'));
+  assert.ok(f.button('任务组 主线甲').y < f.button('任务组 支线乙').y, '支线组排在主线甲之后');
+  assert.ok(f.button('任务组 支线乙').y < f.button('任务组 主线丙').y, '支线组排在主线丙之前');
+  assert.ok(f.texts().includes('支线'), '支线组有文字标签');
+  assert.ok(f.texts().includes('当前 · 1/2 完成 · 进行中'), '当前进度组带摘要');
+  // 首次打开自动选中当前进度组，右栏直接列出组内任务（按 questIds 顺序，不反转）。
+  assert.ok(f.button('任务 主线甲01'));
+  assert.ok(f.button('任务 主线甲02'));
+  assert.ok(f.button('任务 主线甲01').y < f.button('任务 主线甲02').y, '组内任务保持内容顺序');
+});
+
+test('selecting a group shows its quests and selecting a quest shows the jump detail', t => {
+  const f = fixture(); t.after(f.cleanup);
+  f.click('调试页 任务');
+  f.click('任务组 支线乙');
+  assert.ok(f.button('任务 支线乙01'));
+  assert.equal(f.shown('任务 主线甲01'), undefined, '换组后旧任务不再显示');
+  assert.ok(f.texts().includes('未解锁 · 日志外'), '日志外任务带标签');
+
+  f.click('任务 支线乙01');
+  f.button('从可接取开始');
+  assert.ok(f.texts().includes('将补前置 1 个'));
+  assert.ok(f.texts().includes('解锁于：主线甲'));
+  assert.ok(f.texts().includes('接取剧情：event-accept（脚本 script-accept）'));
+  assert.ok(f.texts().includes('支线乙01的说明'));
+
+  f.click('返回任务组');
+  assert.ok(f.button('任务 支线乙01'), '返回后重新列出组内任务');
+});
+
+test('an unsatisfied accept condition offers the active fallback', t => {
+  const f = fixture({ unsatisfied: true }); t.after(f.cleanup);
+  f.click('调试页 任务');
+  f.click('任务 主线甲01');
+  assert.ok(f.button('从进行中开始'));
+});
+
+test('a talk quest starts from its ready delivery state', t => {
+  const f = fixture({ ready: true }); t.after(f.cleanup);
+  f.click('调试页 任务');
+  f.click('任务 主线甲01');
+  assert.ok(f.texts().includes('没有可接取入口，会直接放到待交付状态。'));
+  f.click('从待交付开始');
+  assert.deepEqual(f.startModes, ['ready']);
+});
+
+test('a debug run shows its banner, disables other starts and can keep its progress', t => {
+  const f = fixture(); t.after(f.cleanup);
+  f.click('调试页 任务');
+  f.setDebugState({
+    active: true, questId: 'q-main-1', title: '主线甲01', status: 'active',
+    goals: [{ id: 'g1', label: '收集食材', current: 2, quantity: 5 }], completed: false,
+  });
+  f.click('任务 主线甲01');
+  assert.ok(f.texts().includes('当前调试任务：主线甲01 · 进行中'));
+  assert.ok(f.texts().includes('目标：收集食材 2/5'));
+  assert.equal(f.button('从可接取开始').input?.enabled, false, '调试进行中禁用开始按钮');
+  f.button('回到跳转前');
+  f.click('保留进度');
+  assert.equal(f.keepCalls, 1);
+  assert.ok(f.texts().includes('已保留调试进度并恢复自动存档'));
+});
+
+test('a debug run can be ended from the group list without selecting a quest', t => {
+  const f = fixture(); t.after(f.cleanup);
+  f.setDebugState({
+    active: true, questId: 'q-main-1', title: '主线甲01', status: 'active',
+    goals: [{ id: 'g1', label: '收集食材', current: 2, quantity: 5 }], completed: false,
+  });
+  f.click('调试页 任务');
+  f.click('返回任务组');
+  assert.ok(f.button('回到跳转前'));
+  assert.ok(f.button('保留进度'));
+});
+
+test('a late start result is ignored after the page closes', async t => {
+  const f = fixture(); t.after(f.cleanup);
+  f.click('调试页 任务');
+  f.click('任务 主线甲01');
+  f.click('从可接取开始');
+  assert.deepEqual(f.startCalls, ['q-main-1']);
+  assert.ok(f.setTexts.includes('正在准备任务起点…'));
+
+  f.click('调试页 状态');
+  f.setActive(false);
+  f.answerStart(true);
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.ok(!f.setTexts.some(text => text.startsWith('已开始')), '页面关闭后不更新开始结果');
+});
+
+test('the GM quest search box sits at the top of the right column', t => {
+  const f = fixture(); t.after(f.cleanup);
+  f.click('调试页 任务');
+  const field = questSearchField();
+  assert.ok(field, '打开任务页后出现搜索框');
+  assert.equal(field!.style.width, '348px');
+  assert.equal(field!.style.top, '70px');
+  assert.equal(field!.style.left, '582px');
+  assert.ok(Number.parseFloat(field!.style.fontSize) >= 16, '输入框字号不小于 16px');
+  assert.equal(questSearchRoot()?.style.display, 'block');
+});
+
+test('typing a quest name lists cross-group results and clicking one opens its detail', t => {
+  const f = fixture(); t.after(f.cleanup);
+  f.click('调试页 任务');
+  typeQuestSearch('支线乙01');
+  assert.equal(f.shown('任务 主线甲01'), undefined, '搜索时右栏不再显示组内任务');
+  assert.ok(f.button('搜索任务 支线乙01'));
+
+  f.click('搜索任务 支线乙01');
+  assert.equal(questSearchValue(), '', '选中结果后清空搜索');
+  assert.ok(f.texts().includes('支线乙01的说明'), '打开普通任务详情');
+  assert.ok(f.texts().includes('解锁于：主线甲'));
+  assert.equal(f.shown('搜索任务 支线乙01'), undefined, '搜索结果退出');
+});
+
+test('a group name brings out all quests in that group', t => {
+  const f = fixture(); t.after(f.cleanup);
+  f.click('调试页 任务');
+  typeQuestSearch('主线甲');
+  assert.ok(f.button('搜索任务 主线甲01'));
+  assert.ok(f.button('搜索任务 主线甲02'));
+  assert.equal(f.shown('搜索任务 支线乙01'), undefined, '无关任务不出现');
+  typeQuestSearch('不存在');
+  assert.ok(f.texts().includes('没有匹配的任务'), '无结果时给出提示');
+});
+
+test('Enter opens the first result and Escape clears the search', t => {
+  const f = fixture(); t.after(f.cleanup);
+  f.click('调试页 任务');
+  typeQuestSearch('主线甲');
+  pressQuestSearchKey('Enter');
+  assert.equal(questSearchValue(), '');
+  assert.ok(f.texts().includes('主线甲01的说明'), 'Enter 打开第一条结果');
+
+  typeQuestSearch('支线乙');
+  assert.ok(f.button('搜索任务 支线乙01'));
+  pressQuestSearchKey('Escape');
+  assert.equal(questSearchValue(), '', 'Escape 清空输入');
+  assert.ok(f.button('任务 主线甲01'), '回到当前组的任务列表，菜单没有关闭');
+  assert.equal(f.shown('搜索任务 支线乙01'), undefined);
+});
+
+test('the quest search box only shows on the quest tab', t => {
+  const f = fixture(); t.after(f.cleanup);
+  f.click('调试页 任务');
+  assert.equal(questSearchRoot()?.style.display, 'block');
+  f.click('调试页 状态');
+  assert.equal(questSearchRoot()?.style.display, 'none');
+  f.click('调试页 任务');
+  assert.equal(questSearchRoot()?.style.display, 'block');
+});
+

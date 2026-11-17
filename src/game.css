@@ -12,9 +12,9 @@
 .dom-menu-clip{position:absolute;left:0;top:0;overflow:hidden;pointer-events:none}
 .dom-label[hidden],.dom-ui-layer[hidden]{display:none!important}
 /* 全屏遮罩期间，挂在 DOM 顶层之外的输入框和表单也一起收起。 */
-body.ui-occluded .text-prompt,body.ui-occluded .cloud-credentials{display:none!important}
+body.ui-occluded .text-prompt,body.ui-occluded .cloud-credentials,body.ui-occluded .gm-quest-search{display:none!important}
 
-/* 手机系统键盘只能由真实 input 唤起：存档改名和修改密码用居中表单，云存档登录用面板内嵌输入框。 */
+/* 手机系统键盘只能由真实 input 唤起：存档改名和修改密码用居中表单，云存档登录和 GM 任务搜索用面板内嵌输入框。 */
 .text-prompt{position:fixed;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.65);touch-action:auto}
 .text-prompt form{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;gap:14px;width:calc(var(--prompt-unit,1px) * 450);--prompt-padding:24px;max-height:calc(100vh - 24px);padding:var(--prompt-padding);background:#000;isolation:isolate}
 .text-prompt-frame{position:absolute;inset:0;display:grid;grid-template-columns:24px minmax(0,1fr) 24px;grid-template-rows:24px minmax(0,1fr) 24px;pointer-events:none;z-index:-1}
@@ -49,6 +49,12 @@ body.ui-occluded .text-prompt,body.ui-occluded .cloud-credentials{display:none!i
 .cloud-credentials input{position:absolute;box-sizing:border-box;padding:0 12px;border:1px solid #6b5a37;border-radius:6px;background:#0e171c;color:#f5f0df;outline:none;pointer-events:auto;touch-action:auto;-webkit-user-select:text;user-select:text;-webkit-touch-callout:default;-webkit-appearance:none;appearance:none}
 .cloud-credentials input::placeholder{color:#7d7462}
 .cloud-credentials input:focus{border-color:var(--gold);box-shadow:0 0 0 2px rgba(226,200,141,.18)}
+
+/* GM 任务页搜索：输入框贴在右栏顶部，和画布共用 #game-frame 的坐标。 */
+.gm-quest-search{position:absolute;inset:0;z-index:5;display:none;pointer-events:none;touch-action:auto}
+.gm-quest-search .gm-quest-search-field{position:absolute;box-sizing:border-box;padding:0 10px;border:1px solid #6b5a37;border-radius:6px;background:#0e171c;color:#f5f0df;outline:none;pointer-events:auto;touch-action:auto;-webkit-user-select:text;user-select:text;-webkit-touch-callout:default;-webkit-appearance:none;appearance:none}
+.gm-quest-search .gm-quest-search-field::placeholder{color:#7d7462}
+.gm-quest-search .gm-quest-search-field:focus{border-color:var(--gold);box-shadow:0 0 0 2px rgba(226,200,141,.18)}
 
 /* 动作控件的按下图片跟随原生指针状态。 */
 .dom-control-pressed{display:none;opacity:.85}

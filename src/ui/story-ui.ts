@@ -652,7 +652,8 @@ export class StoryUI {
       return false;
     }
     // 改名或数字输入框开着时键盘归系统输入法：Enter/Escape 由输入框自己处理。
-    if(this.savePage.renaming||this.shopPanel?.prompting||this.statusPage?.prompting)return true;
+    if(this.savePage.renaming||this.shopPanel?.prompting||this.statusPage?.prompting
+      ||(this.page==='debug'&&!!this.gmPanel?.searchFocused))return true;
     if(this.app.ui.controlLayoutEditing){if(event.key==='Escape'){event.preventDefault();this.closeControlEditor();}else this.controlEditor?.key(event);return true;}
     if(event.key==='Escape'&&this.itemNotice){event.preventDefault();this.itemNotice=undefined;this.updateItemNotice();return true;}
     if(this.savePage.handleEscape(event))return true;
@@ -950,6 +951,18 @@ export class StoryUI {
         this.gmPanel=new GmPanel(gm,this.session.campaign,{close:()=>this.close(),render:()=>{if(this.app.gm===gm&&this.gmPanelOwner===gm)this.updateDebugPanel();},runAction:action=>{this.busy=true;try{return action();}finally{this.busy=false;this.sessionSignature=this.sessionDataSignature()??this.sessionSignature;}}},{
           itemSlot:this.app.menuPanels.assets['inventory-slot'],
           itemSelected:this.app.menuPanels.assets['inventory-selected'],
+          assets:this.app.menuPanels.assets,
+          questRow:this.app.menuPanels.assets['quest-row'],
+          questRowSelected:this.app.menuPanels.assets['quest-row-selected'],
+          questRowPressed:this.app.menuPanels.assets['quest-row-pressed'],
+          questReady:this.app.menuPanels.assets['quest-ready'],
+          questMain:this.app.menuPanels.assets['quest-main'],
+          moveText:(key,text,y)=>{
+            const spec=this.gmTextSpecs.find(value=>value.key===key);
+            if(spec){spec.text=text;spec.y=y;}
+            this.menuText?.setText('debug',key,text);
+            this.menuText?.refresh();
+          },
           itemDetail:(itemId,close)=>this.renderGmItemDetail(itemId,close),
           updateItemDetail:(itemId,close)=>{
             if(!this.open||this.page!=='debug'||this.gmPanelOwner!==gm)return;

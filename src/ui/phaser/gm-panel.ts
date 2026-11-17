@@ -1,9 +1,13 @@
-import type { Campaign } from '../../domain/campaign.ts';
-import type { GmActions, GmCharacterState, GmItemEntry, GmItemFilter } from '../../debug/gm-actions.ts';
+import type { Campaign, CampaignQuest } from '../../domain/campaign.ts';
+import type { GmActions, GmCharacterState, GmItemEntry, GmItemFilter, GmQuestDebugState } from '../../debug/gm-actions.ts';
+import type { QuestCatalogEntry, QuestCatalogGroup } from '../../debug/quest-catalog.ts';
+import type { QuestStartPlan } from '../../debug/quest-jump.ts';
+import type { QuestStatus } from '../../domain/content.ts';
 import { INVENTORY_LABELS } from '../../domain/inventory.ts';
 import { GOLD, type ScrollArea, type UiSurface } from './widgets.ts';
 import type { MenuTextClip, MenuTextSpec, MenuTextWriter } from '../dom/menu-text.ts';
-import type { UiNode } from '../dom/node.ts';
+import type { UiImage, UiNode } from '../dom/node.ts';
+import { QuestSearchInput } from '../dom/quest-search-input.ts';
 
 /**
  * 游戏内的 GM 面板——`gm-actions` 的人类通道，只负责显示与收集点击，不做任何动作逻辑。
@@ -25,6 +29,14 @@ interface GmReferences {
   itemSlot?: string;
   /** 背包选中框，来自 `content/menu-panels.json` 的 `inventory-selected`。 */
   itemSelected?: string;
+  /** 任务组列表底图与状态图，来自 `content/menu-panels.json` 的同名资源。 */
+  questRow?: string;
+  questRowSelected?: string;
+  questRowPressed?: string;
+  questReady?: string;
+  questMain?: string;
+  /** 通用菜单图框；任务页沿用任务日志的左右两栏边框。 */
+  assets?: Readonly<Record<string,string>>;
   /** 道具详情层：装配方用背包同一套说明面板画，关闭时回调清掉状态。 */
   itemDetail?(itemId: string, close: () => void): void;
   updateItemDetail?(itemId:string|undefined,close:()=>void):void;
@@ -35,12 +47,32 @@ interface GmReferences {
   /** 滚动后重算 DOM 文字位置。 */
   refresh?(): void;
   setText?(key:string,text:string):void;
+  /** 池化列表滚动时同时改文字和它在页面里的纵向位置。 */
+  moveText?(key:string,text:string,y:number):void;
 }
 
-type GmPage = 'status' | 'character' | 'items';
+type GmPage = 'status' | 'character' | 'items' | 'quests';
 const PAGES: readonly [GmPage, string][] = [
-  ['status', '状态'], ['character', '人物'], ['items', '道具'],
+  ['status', '状态'], ['character', '人物'], ['items', '道具'], ['quests', '任务'],
 ];
+const QUEST_STATUS_LABELS: Record<QuestStatus, string> = {
+  locked: '未解锁', available: '可接取', active: '进行中', ready: '待交付', completed: '已完成',
+};
+const QUEST_STATUS_COLORS: Record<QuestStatus, string> = {
+  locked: '#8a7a62', available: '#8fd18a', active: '#ffd8a0', ready: '#ffb36b', completed: '#a9a294',
+};
+/** 任务页左右两栏与原版任务日志同宽：左 536，右 380，中间留 16。 */
+const QUEST_ROW_HEIGHT = 56;
+const QUEST_ENTRY_HEIGHT = 52;
+const QUEST_LEFT = { x: 30, y: 70, width: 504, height: 350 } as const;
+const QUEST_RIGHT = { x: 582, y: 70, width: 348, height: 350 } as const;
+/** 搜索框贴在右栏顶部；任务列表和详情从它下方 104 开始。 */
+const QUEST_SEARCH = { x: QUEST_RIGHT.x, y: QUEST_RIGHT.y, width: QUEST_RIGHT.width, height: 28 } as const;
+const QUEST_CONTENT_Y = 104;
+const QUEST_DETAIL_HEIGHT = 248;
+const QUEST_DETAIL_CLIP = { top: QUEST_CONTENT_Y, bottom: 352 } as const;
+/** 没有调试任务时，右栏列表一直排到边框内沿（104..420）。 */
+const QUEST_ENTRIES_HEIGHT = QUEST_RIGHT.y + QUEST_RIGHT.height - QUEST_CONTENT_Y;
 /** 道具页：每页 40 格，按背包同款底图与选中框显示。 */
 const ITEM_FILTERS: readonly GmItemFilter[] = ['all', 'equipment', 'consumable', 'material', 'quest'];
 const ITEM_COLUMNS = 10;
@@ -53,6 +85,30 @@ const ITEM_MAX = 999;
 const clipText = (value: string, limit: number): string =>
   value.length > limit ? `${value.slice(0, limit)}…` : value;
 
+/** 搜索匹配前去掉空白并转小写，中文按子串比较。 */
+const normalizeQuestQuery = (value: string): string => value.replace(/\s+/g, '').toLowerCase();
+const questTextMatches = (text: string, query: string): boolean =>
+  text.replace(/\s+/g, '').toLowerCase().includes(query);
+
+interface QuestSearchResult {
+  group: QuestCatalogGroup;
+  entry: QuestCatalogEntry;
+}
+
+function collectQuestSearchResults(
+  groups: readonly QuestCatalogGroup[], query: string,
+): QuestSearchResult[] {
+  const results: QuestSearchResult[] = [];
+  if (!query) return results;
+  for (const group of groups) {
+    const groupMatches = questTextMatches(group.definition.title, query);
+    for (const entry of group.entries) {
+      if (groupMatches || questTextMatches(entry.quest.title, query)) results.push({ group, entry });
+    }
+  }
+  return results;
+}
+
 export class GmPanel {
   private page: GmPage = 'status';
   private result = '';
@@ -64,6 +120,23 @@ export class GmPanel {
   private itemDetail?: string;
   /** 道具网格的滚动位置：选物品、发放和重画都不应该把列表跳回顶部。 */
   private itemScroll = 0;
+  /** 任务页：左栏任务组、右栏任务或任务详情，各自保留选中与滚动位置。 */
+  private questGroupId?: string;
+  private questId?: string;
+  private questPreview?: QuestStartPlan;
+  private questList?: ScrollArea;
+  private questEntryList?: ScrollArea;
+  private questDetailScroll?: ScrollArea;
+  private questListOffset = 0;
+  private questEntryOffset = 0;
+  private questDetailOffset = 0;
+  /** 搜索框里的原始文字；匹配前统一去空格并转小写。 */
+  private questQuery = '';
+  private questSearchList?: ScrollArea;
+  private questSearchOffset = 0;
+  private readonly questSearch: QuestSearchInput;
+  private questInitialized = false;
+  private questSerial = 0;
   /** 本次重画的 DOM 文字出口；GM 页的文字全部按内容块坐标登记。 */
   private writer?: MenuTextWriter;
   private tabButtons=new Map<GmPage,UiNode>();
@@ -87,10 +160,22 @@ export class GmPanel {
   // 项目启用 `erasableSyntaxOnly`：不能用构造函数参数属性，字段显式声明再赋值。
   constructor(gm: GmActions, campaign: Campaign, hooks: GmPanelHooks, references: GmReferences = {}) {
     this.gm = gm; this.campaign = campaign; this.hooks = hooks; this.references = references;
+    this.questSearch = new QuestSearchInput({
+      onInput: value => this.onQuestQuery(value),
+      onSubmit: () => this.openFirstQuestSearchResult(),
+      onEscape: () => this.clearQuestSearch(),
+    });
+  }
+
+  /** 搜索框有焦点时菜单键盘整块让路；输入框自己处理 Enter/Escape。 */
+  get searchFocused():boolean {
+    return this.questSearch.focused;
   }
 
   dispose():void {
-    this.reportSerial++;
+    this.reportSerial++;this.questSerial++;
+    this.questSearch.destroy();
+    this.questSearchList=undefined;
     this.writer=undefined;
   }
 
@@ -100,13 +185,17 @@ export class GmPanel {
     this.writer={add:spec=>{this.tabText.push(spec);writer?.add(spec);}};
     PAGES.forEach(([page, label], index) => {
       const button=this.button(body, label, 532 + index * 108, 8, 104, 46, () => {
-        if(this.page===page)return;this.page=page;this.result='';this.hooks.render();
+        if(this.page===page)return;
+        // 离开任务页就作废还在等待的开始/返回结果，避免旧页面回来时覆盖当前内容。
+        if(this.page==='quests')this.questSerial++;
+        this.page=page;this.result='';this.hooks.render();
       }, { selected: this.page === page, fontSize: 20 }, `调试页 ${label}`);
       this.tabButtons.set(page,button);
     });
     this.renderContent(body,writer);
   }
   update(body:UiSurface,writer?:MenuTextWriter):void{
+    this.captureQuestScrolls();
     for(const scroll of this.contentScrolls){
       this.references.removeScroll?.(scroll);scroll.destroy();
       const index=body.scrolls.indexOf(scroll);if(index>=0)body.scrolls.splice(index,1);
@@ -118,9 +207,11 @@ export class GmPanel {
     this.textSerial=this.tabText.length;this.renderContent(body,writer);
   }
   private renderContent(body:UiSurface,writer?:MenuTextWriter):void{
+    if (this.page !== 'quests') this.questSearch.hide();
     this.reportSerial++;this.writer=writer;this.characterControls=undefined;this.refreshItemPage=undefined;this.refreshStatusPage=undefined;const before=new Set(body.root.list),scrolls=new Set(body.scrolls);
     const hint = this.page === 'character' ? this.renderCharacter(body)
       : this.page === 'items' ? this.renderItems(body)
+      : this.page === 'quests' ? this.renderQuests(body)
       : this.renderStatus(body);
     this.resultTextKey=`gm-text-${this.textSerial}`;
     this.text(this.result || hint, 60, 452, 900, 17, this.result ? '#ffd8a0' : '#c8bda6');
@@ -131,8 +222,14 @@ export class GmPanel {
 
   private text(value: string, x: number, y: number, width = 0, size = 22, color = GOLD,
     scroll?: string, clip?: MenuTextClip): void {
+    this.textAt(`gm-text-${this.textSerial++}`, value, x, y, width, size, color, scroll, clip);
+  }
+
+  /** 固定 key 的文字；任务页的池化行靠它原地更新文字和位置。 */
+  private textAt(key: string, value: string, x: number, y: number, width = 0, size = 22,
+    color = GOLD, scroll?: string, clip?: MenuTextClip): void {
     this.writer?.add({
-      key: `gm-text-${this.textSerial++}`, text: value, x, y,
+      key, text: value, x, y,
       style: { size, color, width: width || undefined, wrap: width ? 'word' : undefined },
       ...(scroll ? { scroll } : {}), ...(clip ? { clip } : {})
     });
@@ -219,6 +316,551 @@ export class GmPanel {
     this.characterControls={members,values,level,mana,toggles};
     return '升级只升不降；倒下角色点「回满 HP」即可复活。无敌只挡战斗伤害，不挡剧情直接改血；一击必杀在命中敌人时直接击杀，未命中仍然落空。技能全满会直接拉满当前角色全部技能，不耗技能点。';
   }
+  /** 切换 GM 页或重画前保存任务页自己的滚动位置；滚动区随后会被销毁。 */
+  private captureQuestScrolls():void {
+    if(this.questList){this.questListOffset=this.questList.scrollTop;this.questList=undefined;}
+    if(this.questEntryList){this.questEntryOffset=this.questEntryList.scrollTop;this.questEntryList=undefined;}
+    if(this.questDetailScroll){this.questDetailOffset=this.questDetailScroll.scrollTop;this.questDetailScroll=undefined;}
+    if(this.questSearchList){this.questSearchOffset=this.questSearchList.scrollTop;this.questSearchList=undefined;}
+  }
+
+  /**
+   * 任务页：左栏是全部任务组（按剧情顺序，主线支线混排），右栏先列出组内任务，
+   * 选中任务后切成详情与开始按钮。真正的状态修改由 `GmActions` 完成，面板只收集点击。
+   */
+  private renderQuests(body: UiSurface): string {
+    this.showQuestSearch(body);
+    const groups = this.gm.questCatalog();
+    const debug = this.gm.questDebugState();
+    if (this.references.assets) {
+      body.border(this.references.assets, 14, 56, 536, 378);
+      body.border(this.references.assets, 566, 56, 380, 378);
+    }
+    this.renderQuestBanner(body, debug);
+    if (!groups.length) {
+      this.text('任务目录为空。', 60, 84, 900, 20);
+      return '';
+    }
+    const group = this.questGroupFor(groups, debug);
+    this.renderQuestGroupList(body, groups);
+    const query = normalizeQuestQuery(this.questQuery);
+    if (query) {
+      this.renderQuestSearchResults(body, groups, query, debug);
+    } else {
+      const entry = group.entries.find(value => value.quest.id === this.questId);
+      if (this.questId && !entry) { this.questId = undefined; this.questPreview = undefined; }
+      if (this.questId) {
+        if (this.questPreview?.questId !== this.questId) this.questPreview = this.previewQuest(this.questId);
+        this.renderQuestDetail(body, group, this.questId, debug);
+      } else this.renderQuestGroupEntries(body, group, debug);
+    }
+    const total = groups.reduce((count, value) => count + value.entries.length, 0);
+    if (debug.lastError) return `上次错误：${debug.lastError}`;
+    return debug.active
+      ? '调试进行中：其他任务的开始按钮暂时禁用；先选择「回到跳转前」或「保留进度」。'
+      : `共 ${groups.length} 个任务组 · ${total} 个任务；左栏按剧情顺序排列，点任务组查看组内任务。`;
+  }
+
+  /** 搜索框每次重画都重新贴到右栏顶部；节点不重建，输入焦点保持。 */
+  private showQuestSearch(body: UiSurface): void {
+    const matrix = body.root.getWorldTransformMatrix();
+    const origin = matrix.transformPoint(QUEST_SEARCH.x, QUEST_SEARCH.y);
+    this.questSearch.show({
+      left: origin.x, top: origin.y,
+      width: QUEST_SEARCH.width * matrix.scaleX,
+      height: QUEST_SEARCH.height * matrix.scaleY,
+      fontSize: 16 * matrix.scaleY,
+    }, { value: this.questQuery, placeholder: '搜索任务名或任务组' });
+  }
+
+  /** 输入变化只改查询和选择，右栏按新结果重画；不重建输入框，避免丢焦点。 */
+  private onQuestQuery(value: string): void {
+    if (value === this.questQuery) return;
+    this.questQuery = value;
+    this.questId = undefined; this.questPreview = undefined;
+    this.questSearchList = undefined; this.questSearchOffset = 0;
+    this.questEntryList = undefined; this.questEntryOffset = 0;
+    this.questDetailScroll = undefined; this.questDetailOffset = 0;
+    this.result = '';
+    this.hooks.render();
+  }
+
+  /** Enter 打开当前查询的第一条结果；没有结果时什么也不做。 */
+  private openFirstQuestSearchResult(): void {
+    const results = collectQuestSearchResults(this.gm.questCatalog(), normalizeQuestQuery(this.questQuery));
+    const first = results[0];
+    if (first) this.selectQuestSearchResult(first);
+  }
+
+  /** Escape 只清空搜索并 blur，菜单保持打开。 */
+  private clearQuestSearch(): void {
+    const hadQuery = this.questQuery.length > 0;
+    this.questSearch.blur();
+    this.questSearch.setValue('');
+    this.questQuery = '';
+    if (!hadQuery) return;
+    this.questSearchList = undefined; this.questSearchOffset = 0;
+    this.questEntryList = undefined; this.questEntryOffset = 0;
+    this.questDetailScroll = undefined; this.questDetailOffset = 0;
+    this.result = '';
+    this.hooks.render();
+  }
+
+  /** 点击或回车选中结果：打开普通任务详情，左栏滚到对应组，清空搜索。 */
+  private selectQuestSearchResult(result: QuestSearchResult): void {
+    const groups = this.gm.questCatalog();
+    const groupIndex = groups.findIndex(group => group.definition.id === result.group.definition.id);
+    this.questSearch.blur();
+    this.questSearch.setValue('');
+    this.questQuery = '';
+    this.questGroupId = result.group.definition.id;
+    this.questId = result.entry.quest.id;
+    this.questPreview = this.previewQuest(result.entry.quest.id);
+    this.questSearchList = undefined; this.questSearchOffset = 0;
+    this.questEntryList = undefined; this.questEntryOffset = 0;
+    this.questDetailScroll = undefined; this.questDetailOffset = 0;
+    this.questListOffset = Math.max(0, groupIndex * QUEST_ROW_HEIGHT - QUEST_ROW_HEIGHT);
+    this.result = '';
+    this.hooks.render();
+  }
+
+  /** 右栏搜索层：跨全部任务组，按目录顺序列出命中任务，只建视口内的行。 */
+  private renderQuestSearchResults(
+    body: UiSurface, groups: readonly QuestCatalogGroup[], query: string, debug: GmQuestDebugState,
+  ): void {
+    const results = collectQuestSearchResults(groups, query);
+    const height = debug.active ? QUEST_DETAIL_HEIGHT : QUEST_ENTRIES_HEIGHT;
+    const list = body.scroll(QUEST_RIGHT.x, QUEST_CONTENT_Y, QUEST_RIGHT.width, height);
+    this.questSearchList = list;
+    this.references.registerScroll?.('gm-quest-search', list);
+    const clip = { top: QUEST_CONTENT_Y, bottom: QUEST_CONTENT_Y + height } as const;
+    if (!results.length)
+      this.textAt('gm-quest-search-empty', '没有匹配的任务', QUEST_RIGHT.x, QUEST_CONTENT_Y + 8,
+        QUEST_RIGHT.width, 16, '#c8bda6', 'gm-quest-search', clip);
+    const rowHeight = QUEST_ENTRY_HEIGHT;
+    const cells = Array.from({ length: Math.ceil(height / rowHeight) + 1 }, (_, slot) => {
+      const title = `gm-quest-search-${slot}-title`;
+      const meta = `gm-quest-search-${slot}-meta`;
+      let current: QuestSearchResult | undefined;
+      const button = this.button(body, '', 0, slot * rowHeight, QUEST_RIGHT.width, rowHeight, () => {
+        if (current) this.selectQuestSearchResult(current);
+      }, {
+        ...(this.references.questRow ? { image: this.references.questRow } : {}),
+        ...(this.references.questRowPressed ? { pressed: this.references.questRowPressed } : {}),
+        parent: list.content, guard: list.guard,
+      });
+      this.textAt(title, '', QUEST_RIGHT.x + 12, QUEST_CONTENT_Y + slot * rowHeight + 7,
+        QUEST_RIGHT.width - 24, 16, GOLD, 'gm-quest-search', clip);
+      this.textAt(meta, '', QUEST_RIGHT.x + 12, QUEST_CONTENT_Y + slot * rowHeight + 29,
+        QUEST_RIGHT.width - 24, 12, '#c8bda6', 'gm-quest-search', clip);
+      return {
+        button,
+        set: (value: QuestSearchResult | undefined, index: number): void => {
+          current = value;
+          button.setVisible(!!value);
+          if (!value) {
+            this.references.setText?.(title, ''); this.references.setText?.(meta, '');
+            return;
+          }
+          const y = index * rowHeight;
+          button.setPosition(0, y).setData('label', `搜索任务 ${value.entry.quest.title}`);
+          const titleText = clipText(value.entry.quest.title, 22);
+          const kind = value.group.kind === 'main' ? '主线' : '支线';
+          const metaText = `${kind} · ${clipText(value.group.definition.title, 16)} · ${QUEST_STATUS_LABELS[value.entry.status]}`;
+          if (this.references.moveText) {
+            this.references.moveText(title, titleText, QUEST_CONTENT_Y + y + 7);
+            this.references.moveText(meta, metaText, QUEST_CONTENT_Y + y + 29);
+          } else {
+            this.references.setText?.(title, titleText);
+            this.references.setText?.(meta, metaText);
+          }
+        },
+      };
+    });
+    list.setHeight(Math.max(height, results.length * rowHeight));
+    list.scrollTop = this.questSearchOffset;
+    let firstRow = -1;
+    const updateRows = () => {
+      const first = Math.floor(list.scrollTop / rowHeight);
+      if (first === firstRow) return;
+      firstRow = first;
+      cells.forEach((cell, slot) => cell.set(results[first + slot], first + slot));
+    };
+    list.onScroll = () => {
+      this.questSearchOffset = list.scrollTop;
+      updateRows();
+      this.references.refresh?.();
+    };
+    updateRows();
+    if (debug.active) {
+      this.button(body, '回到跳转前', QUEST_RIGHT.x, 358, 170, 30,
+        () => void this.onReturnQuestDebug(), { fontSize: 15 });
+      this.button(body, '保留进度', QUEST_RIGHT.x + 178, 358, 170, 30,
+        () => this.onKeepQuestDebugProgress(), { fontSize: 15 });
+    }
+  }
+
+  /** 首次打开任务页时定位到当前进度组；已有调试任务时优先定位它的组。 */
+  private questGroupFor(groups: readonly QuestCatalogGroup[], debug: GmQuestDebugState): QuestCatalogGroup {
+    if (!this.questInitialized) {
+      this.questInitialized = true;
+      const active = debug.active && debug.questId
+        ? groups.find(group => group.entries.some(entry => entry.quest.id === debug.questId))
+        : undefined;
+      const current = active ?? groups.find(group => group.current);
+      if (current) {
+        this.questGroupId = current.definition.id;
+        // 有调试任务时直接打开它的详情，让「回到跳转前 / 保留进度」立即出现。
+        this.questId = active && debug.questId ? debug.questId : undefined;
+        this.questPreview = undefined;
+        this.questEntryOffset = 0; this.questDetailOffset = 0;
+        this.questListOffset = Math.max(0, groups.indexOf(current) * QUEST_ROW_HEIGHT - QUEST_ROW_HEIGHT);
+      }
+    }
+    let selected = groups.find(group => group.definition.id === this.questGroupId);
+    if (!selected) {
+      selected = groups.find(group => group.current) ?? groups[0]!;
+      this.questGroupId = selected.definition.id;
+      this.questId = undefined; this.questPreview = undefined;
+    }
+    return selected;
+  }
+
+  /** 调试任务进行中时，在页签左侧显示目标、状态和进度；它不会盖住右侧页签。 */
+  private renderQuestBanner(body: UiSurface, debug: GmQuestDebugState): void {
+    if (!debug.active) return;
+    body.rect(14, 8, 506, 46, 0x15100b, .88);
+    const status = debug.status ? QUEST_STATUS_LABELS[debug.status] : '';
+    const title = debug.title ?? debug.questId ?? '任务';
+    this.textAt('gm-quest-banner-title',
+      `当前调试任务：${clipText(title, 18)}${status ? ` · ${status}` : ''}${debug.completed ? ' · 已完成' : ''}`,
+      24, 12, 486, 16, GOLD);
+    const goals = (debug.goals ?? []).map(goal => `${goal.label} ${goal.current}/${goal.quantity}`).join(' · ');
+    const detail = [goals ? `目标：${goals}` : '', debug.lastError ? `错误：${debug.lastError}` : '']
+      .filter(Boolean).join(' · ');
+    this.textAt('gm-quest-banner-goals', clipText(detail || '目标：无', 38),
+      24, 32, 486, 13, debug.lastError ? '#ffd8a0' : '#c8bda6');
+  }
+
+  /** 左栏：全部任务组按目录顺序排列，只创建视口内的行，滚动时复用。 */
+  private renderQuestGroupList(body: UiSurface, groups: readonly QuestCatalogGroup[]): void {
+    const list = body.scroll(QUEST_LEFT.x, QUEST_LEFT.y, QUEST_LEFT.width, QUEST_LEFT.height);
+    this.questList = list;
+    this.references.registerScroll?.('gm-quest-groups', list);
+    const width = 500, height = QUEST_ROW_HEIGHT;
+    const clip = { top: QUEST_LEFT.y, bottom: QUEST_LEFT.y + QUEST_LEFT.height } as const;
+    const cells: {
+      button: UiNode; main?: UiImage; ready?: UiImage;
+      set(value: QuestCatalogGroup | undefined, index: number): void;
+    }[] = Array.from({ length: Math.ceil(QUEST_LEFT.height / height) + 1 }, (_, slot) => {
+      const title = `gm-quest-group-${slot}-title`;
+      const summary = `gm-quest-group-${slot}-summary`;
+      const tag = `gm-quest-group-${slot}-tag`;
+      let current: QuestCatalogGroup | undefined;
+      let faceFile: string | undefined;
+      const button = this.button(body, '', 0, slot * height, width, height, () => {
+        const item = current;
+        if (!item) return;
+        if (item.definition.id === this.questGroupId && !this.questId && !this.questQuery) return;
+        // 点任务组回到组内列表：清空搜索，右侧不再保留上一个搜索结果。
+        this.questQuery = ''; this.questSearch.setValue(''); this.questSearch.blur();
+        this.questSearchList = undefined; this.questSearchOffset = 0;
+        this.questEntryList = undefined;
+        this.questDetailScroll = undefined; this.questDetailOffset = 0;
+        this.questEntryOffset = 0;
+        this.questGroupId = item.definition.id;
+        this.questId = undefined; this.questPreview = undefined;
+        this.result = '';
+        this.hooks.render();
+      }, {
+        ...(this.references.questRow ? { image: this.references.questRow } : {}),
+        ...(this.references.questRowPressed ? { pressed: this.references.questRowPressed } : {}),
+        parent: list.content, guard: list.guard,
+      });
+      const main = this.references.questMain
+        ? body.image(this.references.questMain, 5, 5, 63, 45, button) : undefined;
+      const ready = this.references.questReady
+        ? body.image(this.references.questReady, 441, 4, 54, 47, button) : undefined;
+      this.textAt(title, '', QUEST_LEFT.x + 75, QUEST_LEFT.y + slot * height + 7, 360, 17, GOLD, 'gm-quest-groups', clip);
+      this.textAt(summary, '', QUEST_LEFT.x + 75, QUEST_LEFT.y + slot * height + 31, 360, 13, '#c8bda6', 'gm-quest-groups', clip);
+      this.textAt(tag, '', QUEST_LEFT.x + 12, QUEST_LEFT.y + slot * height + 20, 60, 14, '#d9b26b', 'gm-quest-groups', clip);
+      return {
+        button, main, ready,
+        set: (value: QuestCatalogGroup | undefined, index: number): void => {
+          current = value;
+          button.setVisible(!!value);
+          main?.setVisible(!!value && value.kind === 'main');
+          ready?.setVisible(!!value?.ready);
+          if (!value) {
+            this.references.setText?.(title, ''); this.references.setText?.(summary, ''); this.references.setText?.(tag, '');
+            return;
+          }
+          const y = index * height;
+          button.setPosition(0, y).setData('label', `任务组 ${value.definition.title}`);
+          const selected = value.definition.id === this.questGroupId;
+          const face = button.getData('face') as UiImage | undefined;
+          const file = selected ? this.references.questRowSelected ?? this.references.questRow : this.references.questRow;
+          // 滚动复用行时只有选中状态真的换了才重新取图，避免每滚一行都释放/申请图片租约。
+          if (face && file && faceFile !== file) { faceFile = file; face.load(file); }
+          const titleText = clipText(value.definition.title, 24);
+          const summaryText = this.questGroupSummary(value);
+          const tagText = value.kind === 'side' ? '支线' : '';
+          if (this.references.moveText) {
+            this.references.moveText(title, titleText, QUEST_LEFT.y + y + 7);
+            this.references.moveText(summary, summaryText, QUEST_LEFT.y + y + 31);
+            this.references.moveText(tag, tagText, QUEST_LEFT.y + y + 20);
+          } else {
+            this.references.setText?.(title, titleText);
+            this.references.setText?.(summary, summaryText);
+            this.references.setText?.(tag, tagText);
+          }
+        },
+      };
+    });
+    list.setHeight(Math.max(0, groups.length * height - 8));
+    list.scrollTop = this.questListOffset;
+    let firstRow = -1;
+    const updateRows = () => {
+      const first = Math.floor(list.scrollTop / height);
+      if (first === firstRow) return;
+      firstRow = first;
+      cells.forEach((cell, slot) => cell.set(groups[first + slot], first + slot));
+    };
+    list.onScroll = () => {
+      this.questListOffset = list.scrollTop;
+      updateRows();
+      this.references.refresh?.();
+    };
+    updateRows();
+  }
+
+  private questGroupSummary(group: QuestCatalogGroup): string {
+    const summary = group.summary;
+    const state = group.ready ? '待交付'
+      : summary.active > 0 ? '进行中'
+      : summary.available > 0 ? '可接取'
+      : summary.completed === summary.total ? '已完成'
+      : '未解锁';
+    return `${group.current ? '当前 · ' : ''}${summary.completed}/${summary.total} 完成 · ${state}`;
+  }
+
+  /** 右栏第一层：选中任务组的全部任务，按 `entries` 顺序（也就是内容里的 `questIds` 顺序）。 */
+  private renderQuestGroupEntries(body: UiSurface, group: QuestCatalogGroup, debug: GmQuestDebugState): void {
+    const height = debug.active ? QUEST_DETAIL_HEIGHT : QUEST_ENTRIES_HEIGHT;
+    const list = body.scroll(QUEST_RIGHT.x, QUEST_CONTENT_Y, QUEST_RIGHT.width, height);
+    this.questEntryList = list;
+    this.references.registerScroll?.('gm-quest-entries', list);
+    const clip = { top: QUEST_CONTENT_Y, bottom: QUEST_CONTENT_Y + height } as const;
+    const kind = group.kind === 'main' ? '主线' : '支线';
+    const anchor = group.anchorMainGroupTitle ? ` · 解锁于 ${group.anchorMainGroupTitle}` : '';
+    this.textAt('gm-quest-entries-title', clipText(group.definition.title, 18),
+      QUEST_RIGHT.x, QUEST_CONTENT_Y, 348, 17, GOLD, 'gm-quest-entries', clip);
+    this.textAt('gm-quest-entries-meta', `${kind} · ${group.entries.length} 个任务${anchor}`,
+      QUEST_RIGHT.x, QUEST_CONTENT_Y + 22, 348, 13, '#c8bda6', 'gm-quest-entries', clip);
+    group.entries.forEach((entry, index) => {
+      const y = 40 + index * QUEST_ENTRY_HEIGHT;
+      this.button(body, '', 0, y, QUEST_RIGHT.width, QUEST_ENTRY_HEIGHT, () => {
+        if (this.questId === entry.quest.id) return;
+        this.questEntryOffset = list.scrollTop;
+        this.questId = entry.quest.id;
+        this.questPreview = this.previewQuest(entry.quest.id);
+        this.questDetailOffset = 0;
+        this.result = this.questPreview ? '' : `无法预览任务 ${entry.quest.title}`;
+        this.hooks.render();
+      }, {
+        ...(this.references.questRow ? { image: this.references.questRow } : {}),
+        ...(this.references.questRowPressed ? { pressed: this.references.questRowPressed } : {}),
+        parent: list.content, guard: list.guard,
+      }).setData('label', `任务 ${entry.quest.title}`);
+      this.textAt(`gm-quest-entry-${index}-title`, clipText(entry.quest.title, 22),
+        QUEST_RIGHT.x + 12, QUEST_CONTENT_Y + y + 7, QUEST_RIGHT.width - 24, 16, GOLD, 'gm-quest-entries', clip);
+      this.textAt(`gm-quest-entry-${index}-status`, this.questEntryStatus(entry),
+        QUEST_RIGHT.x + 12, QUEST_CONTENT_Y + y + 29, QUEST_RIGHT.width - 24, 12, QUEST_STATUS_COLORS[entry.status], 'gm-quest-entries', clip);
+    });
+    if (!group.entries.length)
+      this.text('这个任务组没有任务。', QUEST_RIGHT.x, QUEST_CONTENT_Y + 48, 340, 16, '#c8bda6');
+    list.setHeight(Math.max(height, 40 + group.entries.length * QUEST_ENTRY_HEIGHT));
+    list.scrollTop = this.questEntryOffset;
+    list.onScroll = () => {
+      this.questEntryOffset = list.scrollTop;
+      this.references.refresh?.();
+    };
+    if (debug.active) {
+      this.button(body, '回到跳转前', QUEST_RIGHT.x, 358, 170, 30,
+        () => void this.onReturnQuestDebug(), { fontSize: 15 });
+      this.button(body, '保留进度', QUEST_RIGHT.x + 178, 358, 170, 30,
+        () => this.onKeepQuestDebugProgress(), { fontSize: 15 });
+    }
+  }
+
+  private questEntryStatus(entry: QuestCatalogEntry): string {
+    const parts = [QUEST_STATUS_LABELS[entry.status]];
+    if (entry.hidden) parts.push('日志外');
+    if (entry.internal) parts.push('内部');
+    return parts.join(' · ');
+  }
+
+  /** 右栏第二层：任务详情、起点预览和开始/返回按钮。 */
+  private renderQuestDetail(body: UiSurface, group: QuestCatalogGroup, questId: string, debug: GmQuestDebugState): void {
+    const scroll = body.scroll(QUEST_RIGHT.x, QUEST_CONTENT_Y, QUEST_RIGHT.width, QUEST_DETAIL_HEIGHT);
+    this.questDetailScroll = scroll;
+    this.references.registerScroll?.('gm-quest-detail', scroll);
+    const entry = group.entries.find(value => value.quest.id === questId)!;
+    const quest = entry.quest;
+    const plan = this.questPreview?.questId === questId ? this.questPreview : undefined;
+    let y = QUEST_CONTENT_Y, index = 0;
+    const line = (text: string, size: number, color = GOLD, width = 0, gap = 3): void => {
+      if (!text) return;
+      this.textAt(`gm-quest-detail-${index++}`, text, QUEST_RIGHT.x, y, width, size,
+        color, 'gm-quest-detail', QUEST_DETAIL_CLIP);
+      const chars = width > 0 ? Math.max(1, Math.floor(width / Math.max(1, size))) : 0;
+      const lines = chars ? Math.max(1, Math.ceil(Array.from(text).length / chars)) : 1;
+      y += lines * (size + 5) + gap;
+    };
+    const kind = group.kind === 'main' ? '主线' : '支线';
+    line(clipText(quest.title, 20), 19, GOLD, 0, 4);
+    line(`${kind} · ${clipText(group.definition.title, 16)} · ${QUEST_STATUS_LABELS[entry.status]}`,
+      14, QUEST_STATUS_COLORS[entry.status], QUEST_RIGHT.width, 5);
+    if (group.kind === 'side' && group.anchorMainGroupTitle)
+      line(`解锁于：${clipText(group.anchorMainGroupTitle, 20)}`, 13, '#c8bda6', QUEST_RIGHT.width, 4);
+    const tags = [entry.hidden ? '日志外' : '', entry.internal ? '内部' : ''].filter(Boolean).join(' · ');
+    if (tags) line(tags, 12, '#c8bda6', QUEST_RIGHT.width, 4);
+    if (plan?.fallback) line(plan.mode === 'ready'
+      ? '没有可接取入口，会直接放到待交付状态。'
+      : '没有可接取入口，只能从进行中开始。', 13, '#ffd8a0', 340, 4);
+    if (!plan) line('无法预览任务起点。', 13, '#ffd8a0', 340, 4);
+    line(quest.description, 14, '#d8cdb8', 340, 6);
+    const placement = this.campaign.placements.find(value => value.actor === quest.giver
+      || (quest.giverCharacterId !== undefined && value.characterId === quest.giverCharacterId));
+    const giver = placement?.name ?? quest.giver, map = this.questMap(quest, plan) ?? placement?.map;
+    if (giver || map)
+      line(`${giver ? `发布者：${giver}` : ''}${giver && map ? '    ' : ''}${map ? `地图：${map}` : ''}`,
+        13, '#c8bda6', 340, 5);
+    if (quest.goals.length) {
+      line('目标进度', 14, GOLD, 0, 2);
+      for (const goal of quest.goals) {
+        const current = entry.progress.goals[goal.id] ?? 0;
+        line(`· ${goal.label ?? goal.target} ${current}/${goal.quantity}`, 13, '#c8bda6', 330, 2);
+      }
+    }
+    const changes = plan ? plan.changedQuests.filter(change => change.id !== questId) : [];
+    line(`将补前置 ${changes.length} 个`, 14, GOLD, 0, 2);
+    for (const change of changes.slice(0, 8))
+      line(`· ${clipText(change.title, 18)}（${QUEST_STATUS_LABELS[change.from]} → ${QUEST_STATUS_LABELS[change.to]}）`,
+        13, '#c8bda6', 330, 2);
+    if (changes.length > 8) line(`…另有 ${changes.length - 8} 个`, 13, '#c8bda6', 330, 4);
+    if (plan?.accept) {
+      line(plan.accept.eventId
+        ? `接取剧情：${plan.accept.eventId}（脚本 ${plan.accept.script}）`
+        : `接取剧情：${plan.accept.script}（无对应事件，直接播放）`, 13, '#c8bda6', 340, 4);
+    } else {
+      line('接取剧情：无（传送到发布者后自己接取）', 13, '#c8bda6', 340, 4);
+    }
+    if (plan?.destination)
+      line(`传送：${plan.destination.map} (${plan.destination.x},${plan.destination.y})`, 13, '#c8bda6', 340, 4);
+    const warnings = [...(plan?.warnings ?? [])];
+    for (const gap of plan?.conditionPatch.unsatisfied ?? [])
+      if (!warnings.some(warning => warning.includes(gap))) warnings.push(gap);
+    for (const warning of warnings) line(`注意：${warning}`, 13, '#ffd8a0', 340, 2);
+    scroll.setHeight(Math.max(QUEST_DETAIL_HEIGHT, y - QUEST_CONTENT_Y + 6));
+    scroll.scrollTop = this.questDetailOffset;
+    scroll.onScroll = () => {
+      this.questDetailOffset = scroll.scrollTop;
+      this.references.refresh?.();
+    };
+
+    // 接取剧情条件补不齐时，仍给一条退路，不能把任务卡死；对话任务只存在待交付阶段。
+    const fallback = plan?.fallback === true || plan?.mode === 'active'
+      || (plan?.conditionPatch.unsatisfied.length ?? 0) > 0;
+    const startLabel = plan?.mode === 'ready' ? '从待交付开始'
+      : fallback ? '从进行中开始' : '从可接取开始';
+    const startMode = plan?.mode === 'ready' ? 'ready' as const
+      : fallback ? 'active' as const : 'available' as const;
+    if (debug.active) {
+      // 调试任务没结束时先处理跳转前快照，避免覆盖；开始按钮保留但禁用。
+      this.button(body, '回到跳转前', QUEST_RIGHT.x, 358, 170, 30,
+        () => void this.onReturnQuestDebug(), { fontSize: 15 });
+      this.button(body, '保留进度', QUEST_RIGHT.x + 178, 358, 170, 30,
+        () => this.onKeepQuestDebugProgress(), { fontSize: 15 });
+      this.button(body, '返回任务组', QUEST_RIGHT.x, 392, 170, 30,
+        () => this.backToQuestGroup(), { fontSize: 15 });
+      this.button(body, startLabel, QUEST_RIGHT.x + 178, 392, 170, 30,
+        () => void this.onStartQuestDebug(questId, startMode),
+        { disabled: true, fontSize: 14 });
+    } else {
+      this.button(body, startLabel, QUEST_RIGHT.x, 358, QUEST_RIGHT.width, 30,
+        () => void this.onStartQuestDebug(questId, startMode),
+        { disabled: !plan, fontSize: 16 });
+      this.button(body, '返回任务组', QUEST_RIGHT.x, 392, QUEST_RIGHT.width, 28,
+        () => this.backToQuestGroup(), { fontSize: 15 });
+    }
+  }
+
+  /** 显示地图时优先用预览落点；没有预览就看任务的可接取地点和发布者摆放。 */
+  private questMap(quest: CampaignQuest, plan?: QuestStartPlan): string | undefined {
+    if (plan?.destination) return plan.destination.map;
+    const place = quest.places?.available;
+    if (place?.type === 'fixed') return place.map;
+    if (place?.type === 'alternatives') return place.spots[0]?.map;
+    return this.campaign.placements.find(placement => placement.actor === quest.giver)?.map;
+  }
+
+  private previewQuest(questId: string): QuestStartPlan | undefined {
+    try {
+      const result = this.gm.previewQuestDebug(questId);
+      return result.ok ? result.plan : undefined;
+    } catch { return undefined; }
+  }
+
+  private backToQuestGroup(): void {
+    this.questId = undefined; this.questPreview = undefined;
+    this.questDetailOffset = 0; this.result = '';
+    this.hooks.render();
+  }
+
+  /** 异步动作只在页面仍在任务页且没有被后续点击作废时更新结果。 */
+  private questPageActive(serial: number): boolean {
+    return serial === this.questSerial && this.page === 'quests'
+      && (!this.references.active || this.references.active());
+  }
+
+  private async onStartQuestDebug(questId: string, mode: 'available' | 'active' | 'ready'): Promise<void> {
+    const serial = ++this.questSerial;
+    this.result = '正在准备任务起点…';
+    if (this.resultTextKey) this.references.setText?.(this.resultTextKey, this.result);
+    let result: Awaited<ReturnType<GmActions['startQuestDebug']>>;
+    try { result = await this.gm.startQuestDebug(questId, mode); }
+    catch (error) { result = { ok: false, reason: error instanceof Error ? error.message : String(error) }; }
+    if (!this.questPageActive(serial)) return;
+    const title = result.plan?.quest.title
+      ?? this.campaign.quests.find(quest => quest.id === questId)?.title ?? questId;
+    this.result = result.ok ? `已开始：${title}` : `开始失败：${result.reason ?? '原因未记录'}`;
+    if (this.resultTextKey) this.references.setText?.(this.resultTextKey, this.result);
+    this.questPreview = this.previewQuest(questId);
+    this.hooks.render();
+  }
+
+  private async onReturnQuestDebug(): Promise<void> {
+    const serial = ++this.questSerial;
+    this.result = '正在恢复跳转前的状态…';
+    if (this.resultTextKey) this.references.setText?.(this.resultTextKey, this.result);
+    let result: Awaited<ReturnType<GmActions['returnFromQuestDebug']>>;
+    try { result = await this.gm.returnFromQuestDebug(); }
+    catch (error) { result = { ok: false, reason: error instanceof Error ? error.message : String(error) }; }
+    if (!this.questPageActive(serial)) return;
+    this.result = result.ok ? '已回到跳转前' : `返回失败：${result.reason ?? '原因未记录'}`;
+    if (this.resultTextKey) this.references.setText?.(this.resultTextKey, this.result);
+    this.questPreview = undefined;
+    this.hooks.render();
+  }
+
+  private onKeepQuestDebugProgress(): void {
+    const result = this.perform(() => this.gm.keepQuestDebugProgress());
+    this.result = result.ok ? '已保留调试进度并恢复自动存档' : `保留失败：${result.reason ?? '原因未记录'}`;
+    this.questPreview = undefined;
+    this.hooks.render();
+  }
+
   private perform<T>(action:()=>T):T{return this.hooks.runAction?this.hooks.runAction(action):action();}
   private refreshCharacter():void{
     const controls=this.characterControls,setText=this.references.setText;
