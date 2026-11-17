@@ -1,131 +1,154 @@
-# 艾诺迪亚 · 故事
+**English** | [简体中文](README.zh-CN.md)
 
-Phaser 4.2.1 + TypeScript 的剧情与任务体验版，面向手机横屏。源码、内容、素材、测试和构建工具都在本仓库内，安装依赖后可以直接运行。
+# Inotia 4 Remake
 
-## 环境要求
+A fan-made remake of Inotia 4, built with Phaser 4.2.1 and TypeScript. It runs in desktop and mobile browsers and as a standalone Android app. The repository contains the game source, story and quest content, assets, tests, and build tools.
 
-- Node.js 24 或更高版本（工程直接执行 `.ts` 脚本，并运行 Vite 8）
+This is a non-commercial fan project, not an official game. Assets from the original game and text derived from its story remain the property of their original rights holders. See [License](#license).
+
+## What's in the game
+
+- Story scenes, quests, dialogue, and choices
+- Real-time combat with party AI
+- Maps, movement, and battle effects
+- Cloud saves with account login
+- An Android app with its own Chromium and over-the-air updates
+- GM debug mode for testing quests and game state
+
+## Requirements
+
+- Node.js 24 or newer
 - npm
 
-## 快速开始
+## Quick start
 
 ```bash
 npm ci
 npm run dev
 ```
 
-开发服务默认在 http://localhost:4003/ 。首次安装请用 `npm ci`，不要用 `npm run test:standalone` 作为安装方式。
+Open http://localhost:4003/ in a browser.
 
-## 常用命令
+`npm run dev` loads the game code from source and compiles the content with the same rules as a production build.
+
+## Preview the production build locally
 
 ```bash
-npm run dev                 # Vite 开发服务，4003
-npm run build               # 校验内容后构建到 dist/
-npm run serve               # 前台静态服务，默认 4004
-npm run deploy              # 类型检查 + 构建 + 核对 HTTPS 入口版本
-npm run typecheck           # 只做 TypeScript 类型检查
-npm test -- tests/combat.test.ts   # 类型检查 + 指定测试文件
-npm run test:all            # 全量单元测试
-npm run validate:content    # 内容、校验器或素材引用变化时
-npm run test:standalone     # 独立安装、类型检查和构建验收
-npm run apk                 # 打包 Android 安装包
-npm run verify:apk          # 校验 APK 产物
-npm run update:key          # 首次生成热更新签名密钥（私钥在仓库外）
-npm run verify:update       # 核对 APK 基线与线上清单的差量
+npm run build
+npm run serve
 ```
 
-本机访问地址是 https://catgo.online:4002/：nginx 终止 TLS 后转发到 127.0.0.1:4004 的静态服务。`npm run deploy` 需要 nginx 和 4004 静态服务都在运行。构建产物在 `dist/`，服务直接读磁盘，构建完成即生效。
+Open http://127.0.0.1:4004/ in a browser.
 
-## 目录结构
+`npm run build` validates the content and builds the game into `dist/`. `npm run serve` reads `dist/` from disk, so a new build appears after a page refresh without restarting the server.
+
+## Common commands
+
+| Command | What it does |
+|---|---|
+| `npm run dev` | Start the development server on port 4003. |
+| `npm run build` | Validate content, build into `dist/`, and prune unused assets. |
+| `npm run serve` | Serve the built `dist/` folder on port 4004. |
+| `npm run deploy` | Type-check, build, and confirm the deployed site serves this build. |
+| `npm run typecheck` | Type-check TypeScript only. |
+| `npm test -- tests/combat.test.ts` | Type-check, then run the named test file. |
+| `npm run test:all` | Run the full unit test suite. |
+| `npm run validate:content` | Validate content, the validator, and asset references. |
+| `npm run test:standalone` | Verify a clean install, type-check, and build. |
+| `npm run apk` | Build the Android APK. |
+| `npm run verify:apk` | Check the APK output. |
+| `npm run update:key` | Create the hot-update signing key on first use. |
+| `npm run verify:update` | Compare the APK baseline with the published update manifest. |
+
+## Project layout
 
 ```text
-src/                游戏源码
-  application/      能力接口、内容加载、存档与音频装配
-  domain/           战斗、剧情、任务、背包、存档等纯规则
-  rendering/        Phaser 世界、战斗、特效与角色表现
-  scenes/           地图、剧情舞台、菜单与调试场景
-  ui/               菜单、HUD、对话、DOM 组件与界面逻辑
-  debug/            GM 调试动作层
-public/             随游戏发布的运行时静态资源
-  content/          剧情、任务、地图、战斗、物品等内容 JSON
-  assets/           运行时图集页、地图、音频和未进图集的例外图片
-asset-source/       图集生成与内容去重的源图（进 Git，不随游戏发布）
-asset-archive/      构建裁剪出的运行时旧图副本（不进 Git）
-tests/              单元测试与独立构建验收
-tools/              构建、校验、静态服务、APK 打包
-docs/               架构、剧情创作、部署、热更新、调试与诊断说明
-android/            Android 自带 Chromium 156 的壳（可选打包层）
-.agents/skills/     随仓库提供的 Phaser 4 开发技能
+src/                Game source
+  application/      Capability wiring, content loading, saves, audio
+  domain/           Pure rules: combat, story, quests, inventory, saves
+  rendering/        Phaser world, combat, effects, character visuals
+  scenes/           Map, story stage, menu, and debug scenes
+  ui/               Menus, HUD, dialogue, DOM components, UI logic
+  debug/            GM debug actions
+public/             Runtime assets shipped with the game
+  content/          Story, quests, maps, combat, items, audio
+  assets/           Atlas pages, maps, audio, standalone images
+asset-source/       Source images for atlas generation (in Git, not shipped)
+asset-archive/      Old runtime images removed by the build (not in Git)
+tests/              Unit tests and standalone build checks
+tools/              Build, validation, static server, APK packaging
+docs/               Architecture, content authoring, deployment, updates, debugging
+android/            Android shell with bundled Chromium 156
+.agents/skills/     Phaser 4 development skills included with the repo
 ```
 
-## 内容与素材
+## Content and assets
 
-- `public/content/campaign.json` 是剧情、任务、事件与角色摆放的源文件。
-- `public/content/world.json`、`public/content/maps/`、`public/content/battle.json` 等保存地图与战斗数据。
-- `public/assets/` 保存运行时加载的图集页、地图、音频和未进图集的例外图片，路径由内容 JSON 或图集映射引用。
-- `asset-source/` 保存被图集替代的角色、特效、界面、道具和图标源图；图集生成、内容去重和逐像素测试只从这里读，不随游戏发布。
-- 内容字段的写法和校验规则见 [剧情与任务创作](docs/story-content.md)。
-- 改动内容、校验器或素材引用后运行 `npm run validate:content`；构建时也会再校验一次。
+- `public/content/campaign.json` holds the story, quests, events, and character placement.
+- `public/content/world.json`, `public/content/maps/`, `public/content/battle.json`, and the other files in `public/content/` hold map and combat data.
+- `public/assets/` holds the atlas pages, maps, audio, and standalone images loaded at runtime. Content JSON or the atlas map points to these files.
+- `asset-source/` holds the source images for characters, effects, UI, props, and icons. Atlas generation, content deduplication, and pixel tests read from here; the folder is not shipped with the game.
+- See [Story and quest authoring](docs/story-content.md) for content fields and validation rules.
+- Run `npm run validate:content` after changing content, the validator, or asset references. The build validates again.
 
-素材和内容随游戏版本管理，不依赖仓库外部数据。新增素材时按现有目录和命名规则放置，并确认内容校验与构建通过。
+Content and assets are versioned with the game and do not depend on data outside this repository. When adding assets, follow the existing folder and naming rules and make sure validation and the build pass.
 
-## 开发入口
+## Development docs
 
-| 要做的工作 | 从哪里开始 |
+Development docs are currently written in Chinese.
+
+| Task | Start here |
 |---|---|
-| 先弄懂各模块怎么协作 | [模块原理入门](docs/module-guide.md) |
-| 改功能、规则或生命周期 | [架构与修改入口](docs/architecture.md) → 对应源码与测试 |
-| 写对白、任务、事件或地图条件 | [剧情与任务创作](docs/story-content.md) → `public/content/campaign.json` |
-| 改音乐、环境音与音效 | [音频说明](docs/audio.md) → `public/content/audio.json` |
-| 调试游戏或任务 | [GM 调试模式](docs/debugging.md) |
-| 部署与缓存 | [打包服务与部署](docs/deployment.md) |
-| 安卓热更新与分发 | [热更新（Android 自带 Chromium）](docs/live-update.md) |
-| 收集手机端报错 | [诊断说明](docs/diagnostics.md) |
+| Understand how the modules work together | [Module guide](docs/module-guide.md) |
+| Change behavior, rules, or lifecycle | [Architecture](docs/architecture.md) → source and tests |
+| Write dialogue, quests, events, or map conditions | [Story and quest authoring](docs/story-content.md) → `public/content/campaign.json` |
+| Change music, ambience, or sound effects | [Audio](docs/audio.md) → `public/content/audio.json` |
+| Debug the game or a quest | [GM debug mode](docs/debugging.md) |
+| Deployment and caching | [Build service and deployment](docs/deployment.md) |
+| Android over-the-air updates | [Hot updates](docs/live-update.md) |
+| Collect errors from phones | [Diagnostics](docs/diagnostics.md) |
 
-## 界面与调试场景
+## Interface and debug scenes
 
-屏幕界面采用 DOM、CSS 和 SVG 组件，复用现有布局与状态；Phaser 承担地图、角色与战斗表现。
+Screen UI uses DOM, CSS, and SVG components; Phaser draws the map, characters, and combat.
 
-- `?gm`：本次会话打开 GM 调试模式，标题页出现「调试」入口。
+- `?gm` opens GM debug mode for the session and adds a **Debug** entry to the title screen.
+- The GM panel has four tabs: state, characters, items, and story. In a browser you can also call the same actions through `globalThis.gm`.
 
-GM 面板包含状态、人物、道具和剧情四个子页；浏览器里也可以通过 `globalThis.gm` 调用同一套调试动作。
+## Phaser skills
 
-## Phaser 技能
+The repository includes 28 Phaser 4 development skills in `.agents/skills/`. Claude Code reads them through the `.claude/skills` symlink. The skills cover scenes, animation, physics, cameras, tilemaps, input, text, particles, filters, scaling, and Phaser 4 features.
 
-仓库自带 28 个 Phaser 4 开发技能，位于 `.agents/skills/`，Claude Code 通过 `.claude/skills` 符号链接读取。技能覆盖场景、动画、物理、相机、瓦片地图、输入、文本、粒子、滤镜、缩放与 Phaser 4 新特性。
+When implementing a feature, look for a solution in this order:
 
-实现功能时按这个顺序找解法：
+1. Built-in Phaser APIs.
+2. The matching skill in this repository.
+3. The official Phaser 4.2.1 documentation.
 
-1. Phaser 内置 API；
-2. 项目内对应的 Phaser 技能；
-3. Phaser 4.2.1 官方文档。
+The engine version is pinned in `package.json`.
 
-引擎版本以 `package.json` 为准。
+## Testing
 
-## 测试与验收
+Choose the `tests/*.test.ts` files related to your change; you can pass several files at once. Unit tests cover rules and lightweight stand-ins. Content validation checks files and references. Neither replaces checking the real screen, audio, and long-running memory use on a device.
 
-默认选择与改动直接相关的 `tests/*.test.ts`，可以一次传多个文件。单元测试验证规则和轻量表现替身；内容校验验证文件和引用。二者都不能替代真机画面、音频和长时间资源占用验收。
+By project convention, automated browser runs are not started on their own. UI and device checks are done by the maintainer. Browsers are used only when explicitly requested.
 
-按项目约定，不主动启动浏览器自动化；界面和真机效果由用户验收。用户明确要求时才使用浏览器。
+## Android app
 
-## 打包 Android 安装包
+`npm run apk` packages `dist/` into the Android wrapper in `android/`. The wrapper embeds Chromium 156, so the app does not depend on the device WebView. Building needs JDK 25 on the machine and uses Gradle 9.7.1, AGP 9.4, Android SDK 37, and build-tools 37.0.0. The first run downloads the Android SDK and Gradle and creates a signing key in your home directory. `android/keystore.properties`, build caches, and build outputs are not committed. The APK is about 293 MB and targets arm64-v8a only.
 
-`npm run apk` 会把 `dist/` 打进 `android/` 提供的 Cefrium 壳，APK 自带 Chromium 156，不再依赖设备 WebView。构建需要本机有 JDK 25，并使用 Gradle 9.7.1、AGP 9.4、Android SDK 37 和 build-tools 37.0.0；首次运行会自动下载 Android SDK 与 Gradle，并生成签名密钥到用户目录。`android/keystore.properties`、构建缓存和产物都不会进入仓库。当前 APK 约 293MB，只发 arm64-v8a。
+A hot update means the app downloads new web code and content without installing a new APK. `npm run build` generates and signs the update manifest in `dist/update/`. Run `npm run update:key` once before the first APK build. The private key is stored at `~/.config/inoita/update-signing.pem` and must be backed up separately; the public key `android/update-public-key.txt` is committed. After the first APK, web code and content changes only need a new build and deployment; the ~293 MB APK does not need to be rebuilt. Engine or Chromium upgrades still require a new APK. See [Hot updates](docs/live-update.md) for details.
 
-热更新在 `npm run build` 时生成 `dist/update/` 清单和签名。首次打包前运行 `npm run update:key`，私钥保存在 `~/.config/inoita/update-signing.pem`，必须单独备份；公钥 `android/update-public-key.txt` 随仓库提交。`npm run apk` 会把更新器一起打进安装包，之后改网页层代码或内容只需重新构建和部署，不再重发约 293MB 的 APK。引擎/Chromium 版本升级仍然必须发 APK。细则见 [热更新（Android 自带 Chromium）](docs/live-update.md)。
+## Credits
 
-## 特别感谢
+Thanks to kj for testing and feedback.
 
-<p align="center">测试人员：kj</p>
+## License
 
-<p align="center">感谢 kj 的反馈与验证。</p>
+The source code in this repository (`src/`, `tests/`, `tools/`, and so on) is released under the [MIT License](LICENSE).
 
-## 许可证
+Images, audio, and other assets in `public/assets/` and `asset-source/`, and the story, quest, and text content in `public/content/` derived from the original game, are the property of their original rights holders. They are not covered by the MIT License and are included for study and research only.
 
-本仓库的源代码（`src/`、`tests/`、`tools/` 等）采用 [MIT License](LICENSE)。
+## Copyright
 
-`public/assets/` 与 `asset-source/` 中的图片、音频等素材，以及 `public/content/` 中派生自原版游戏的剧情、任务和文本，版权归原权利方所有，不包含在 MIT 许可范围内，仅用于学习与研究。
-
-## 版权
-
-游戏素材与派生内容的版权归原权利方所有，本项目用于学习与研究。
+Game assets and derived content belong to their original rights holders. This project is for study and research.

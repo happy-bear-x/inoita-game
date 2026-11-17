@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Inotia 4</string>
+    <string name="app_name">Inotia 4 Remake</string>
     <string name="exit_message">退出游戏？</string>
     <string name="exit_confirm">退出</string>
     <string name="exit_cancel">继续</string>

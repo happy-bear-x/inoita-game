@@ -92,7 +92,7 @@ try {
 
   const badging = run(path.join(buildTools, 'aapt2'), ['dump', 'badging', apk]).stdout;
   check('包名', /package: name='io\.github\.sunflower9264\.inoita'/.test(badging));
-  check('应用名 Inotia 4', /application-label:'Inotia 4'/.test(badging));
+  check('应用名 Inotia 4 Remake', /application-label:'Inotia 4 Remake'/.test(badging));
   // 版本号只维护 android/app/build.gradle 一处，校验时直接读它。
   const expectedVersion =
     /versionName\s+'([^']+)'/.exec(
