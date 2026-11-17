@@ -318,3 +318,27 @@ test('quest drop requirements are queried after this kill updates its quest',()=
   };
   run.settle();assert.equal(checked,true);
 });
+
+
+test('failed kill settlement restores companions in place for existing world bindings',t=>{
+  t.mock.method(Math,'random',()=>0);
+  const run=harness({members:[{id:'player',level:10},{id:'ally',level:10}]}),party=run.session.party!;
+  const id=party.activeIds.find(id=>id!=='player')!;
+  const member=party.get(id)!,skills=member.skills;
+  // 世界的队友记录与头顶血条都会保留这一成员引用。
+  const ally={member},readOverhead=()=>member.player;
+  const before=run.session.captureState(),beforeMember=member.captureState();
+  const add=party.addExperience.bind(party);
+  t.mock.method(party,'addExperience',(amount:number)=>{
+    add(amount);member.setHealth(0);throw new Error('injected companion settlement failure');
+  });
+  assert.throws(()=>run.settle(),/injected companion settlement/);
+  assert.deepEqual(run.session.captureState(),before);
+  assert.equal(party.get(id),ally.member,'回滚保持世界正在使用的成员对象');
+  assert.equal(party.get(id)!.skills,skills,'技能消费者持有的对象也保持有效');
+  assert.deepEqual(ally.member.captureState(),beforeMember);
+  assert.equal(readOverhead().health,beforeMember.health);
+  party.get(id)!.setHealth(1);
+  assert.equal(readOverhead().health,1,'恢复后的血量变化仍能由原血条闭包读到');
+  assert.equal(ally.member.alive,true);
+});

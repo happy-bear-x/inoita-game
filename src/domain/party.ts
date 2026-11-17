@@ -494,19 +494,26 @@ export class PartyRoster {
   captureState():PartyState{return structuredClone({members:[...this.owned.values()].map(member=>member.captureState()),
     rosterSlots:this.rosterSlots,slots:this.slots.map(value=>value??null),selected:this.selected,serial:this.serial,
     heroAiFrequency:[...this.heroAiFrequency],sharedUnlockedSkills:[...this.sharedUnlockedSkills]});}
-  restoreState(state:PartyState):void{
+  restoreState(state:PartyState):void {
+    this.restoreRoster(state,new Map());
+  }
+  /** 局部回滚保留原成员及技能对象，让已装配的战斗和血条继续读取同一实例。 */
+  checkpoint():()=>void {
+    const state=this.captureState(),members=new Map(this.owned);
+    return ()=>this.restoreRoster(state,members);
+  }
+  private restoreRoster(state:PartyState,members:ReadonlyMap<string,CompanionMember>):void {
     const saved=structuredClone(state);this.owned.clear();
     this.sharedUnlockedSkills.clear();for(const id of saved.sharedUnlockedSkills??[])this.sharedUnlockedSkills.add(id);
     for(const entry of saved.members){
       const definition=this.catalog.definitions[entry.definitionId];if(!definition)throw new Error('检查点中的伙伴不存在');
-      const member=new CompanionMember(entry.id,definition,entry.source,entry.level,this.stats,this.items,this.bag,
+      const member=members.get(entry.id)??new CompanionMember(entry.id,definition,entry.source,entry.level,this.stats,this.items,this.bag,
         this.catalog.growth[definition.classId],this.changed,entry.generated,this.catalog.generation.training,()=>this.bumpGroupModifiers(),this.battleCatalog);
       member.restoreState(entry);this.applySharedSkills(member);this.owned.set(entry.id,member);
     }
     this.rosterSlots=saved.rosterSlots;this.slots=saved.slots.map(value=>value??undefined);this.selected=saved.selected;this.serial=saved.serial;
     this.invalidateActiveIds();
     this.heroAiFrequency.clear();for(const [id,value] of saved.heroAiFrequency)this.heroAiFrequency.set(id,value);
-    // 读档整体替换名册：即使内容和当前一致，也要让按版本复用的展示与组队被动缓存失效。
     this.bumpGroupModifiers();
   }
 

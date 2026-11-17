@@ -106,7 +106,7 @@ interface StoryCommandBaseline {
   bag?:BagState;
   hero?:BattleCharacterState;
   skills?:SkillConfigurationState;
-  party?:ReturnType<PartyRoster['captureState']>;
+  restoreParty?:()=>void;
   quests?:{checkpoint:QuestBookCheckpoint;factSequences:[string,number][]};
   world?:StoryWorldSnapshot;
   /** 完成遭遇被历史上限裁掉时，同一批次会删除它的一次性敌人状态；回滚必须一起恢复。 */
@@ -1305,7 +1305,7 @@ export class Session {
     if(touched.has('bag'))baseline.bag=this.bag.captureState();
     if(touched.has('hero')&&this.hero)baseline.hero=this.hero.captureState();
     if(touched.has('skills'))baseline.skills=this.skills.captureState();
-    if(touched.has('party')&&this.party)baseline.party=this.party.captureState();
+    if(touched.has('party')&&this.party)baseline.restoreParty=this.party.checkpoint();
     if(touched.has('questBook'))baseline.quests={checkpoint:this.questBook.checkpoint(),factSequences:[...this.factSequences]};
     if(touched.has('storyWorld')){
       baseline.world=this.storyWorld.captureState();
@@ -1328,7 +1328,7 @@ export class Session {
     if(touched.has('bag'))this.bag.restoreUnchecked(baseline.bag!);
     if(touched.has('hero')&&baseline.hero)this.hero!.restoreState(baseline.hero);
     if(touched.has('skills'))this.skills.restoreState(baseline.skills!);
-    if(touched.has('party')&&baseline.party)this.party!.restoreState(baseline.party);
+    if(touched.has('party'))baseline.restoreParty?.();
     if(touched.has('questBook')){
       this.questBook.rollbackTo(baseline.quests!.checkpoint);
       this.factSequences.clear();for(const[source,sequence]of baseline.quests!.factSequences)this.factSequences.set(source,sequence);

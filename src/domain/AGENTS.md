@@ -124,3 +124,5 @@
 - 剧情 `town-pose` 只覆盖主角的站立/行走姿态，`SceneActorState.townPose` 随快照保存；同图分镜保留，真实换图或 `resetActors` 恢复地图默认。旧存档缺省该字段时按地图选择。
 
 - 击杀事务只备份本次修改的敌人条目，以及当前地图最多 64 件地面掉落；其他地图的死亡记录和掉落保持原对象。`GroundLootStore.checkpointMap` 同时恢复序号与被上限淘汰的本图掉落。
+
+- 局部事务和剧情命令回滚通过 `PartyRoster.checkpoint` 恢复原成员及技能对象，保持战斗与血条的引用有效；完整读档仍用 `restoreState` 重建队伍。
