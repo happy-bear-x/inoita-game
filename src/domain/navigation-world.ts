@@ -361,6 +361,17 @@ export class NavigationWorld {
     if (!best) throw new Error(`地图没有可通行区域：${this.name}`);
     return best;
   }
+  /**
+   * 剧情走位兜底：从 `point` 周围由近到远找整盒可站、脚点可站、且与 `origin` 处于同一
+   * 地形区域的点。`nearestReachableBody` 是按离起点的路径长度找点，目标被挡时会直接
+   * 返回起点；这里要的是“离目标最近的可达落点”，让走位失败时仍然朝目标推进。
+   */
+  nearestReachableSettledBody(shape: NavigationShape, origin: Point, point: Point,
+    ignore?: NavigationActor, placements: readonly Placement[] = [], extra?: (point: Point) => boolean): Point | undefined {
+    if (!shape.collision) return undefined;
+    return this.scanNearest(p => this.terrainFree(p) && this.canPlaceBody(shape, p, ignore, placements)
+      && this.sameTerrainRegion(origin, p) && (!extra || extra(p)), point);
+  }
   /** 整盒版就近落点：整个碰撞盒站得住，且不与现有实体重叠；地图上没有这样的位置时返回 undefined。 */
   nearestBody(shape: NavigationShape, point: Point, ignore?: NavigationActor, placements: readonly Placement[] = [],
     extra?: (point: Point) => boolean): Point | undefined {

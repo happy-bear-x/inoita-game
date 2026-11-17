@@ -366,7 +366,8 @@ test('nearestWalkable finds a reachable tile when the story target is blocked',t
   const scene={sys:{scale:{width:640,height:480}},events,add:{group:()=>group}} as unknown as Phaser.Scene;
   const world=new World(scene,{gravity:{x:0,y:0},debug:false});
   scene.physics={world,add:{collider:(...args:Parameters<typeof world.addCollider>)=>world.addCollider(...args)}} as Phaser.Physics.Arcade.ArcadePhysics;
-  const blocked=new Array(144).fill(false);for(let col=0;col<12;col++)blocked[5*12+col]=true;
+  // 只挡住目标所在的一格：兜底应朝目标推进到最近的整盒可站格，而不是原地不动。
+  const blocked=new Array(144).fill(false);blocked[5*12+2]=true;
   const navigation=new NavigationWorld({name:'arena',tileSize:16,columns:12,rows:12,blocked});
   const movement=new MovementWorld(scene,navigation);
   t.after(()=>{movement.destroy();world.destroy();});
@@ -378,10 +379,11 @@ test('nearestWalkable finds a reachable tile when the story target is blocked',t
   movement.register(visual,true);
   movement.place(visual,{x:40,y:40});
   const result=movement.nearestWalkable(visual,{x:40,y:88});
-  assert.ok(result,'墙带目标应能找到最近可站点');
+  assert.ok(result,'阻挡目标应能找到最近可站点');
   assert.ok(navigation.terrainFree(result),`兜底脚点不可站：${JSON.stringify(result)}`);
   assert.ok(navigation.bodyTerrainFree({collision},result),`兜底整盒压墙：${JSON.stringify(result)}`);
-  assert.ok(result.y<80||result.y>=96,'兜底点不能落回墙带');
+  assert.ok(result.y>40&&result.y<80,`兜底要朝目标推进但停在阻挡格前：${JSON.stringify(result)}`);
+  assert.notDeepEqual(result,{x:40,y:88},'兜底不能回到被挡的目标格');
 });
 
 test('re-registering a walking actor as static keeps temporary sampling until stop',t=>{
