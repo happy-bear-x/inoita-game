@@ -12,19 +12,20 @@
 
 ## 2. 结论摘要
 
-真正需要处理的游戏运行问题有 5 个，其中 3 个是确认 bug，2 个是确认的异常处理缺陷：
+真正需要处理的游戏运行问题有 4 个：2 个确认 bug、1 个异常处理缺陷、1 个高概率竞态。
 
 | 优先级 | 问题 | 结论 |
 | --- | --- | --- |
 | P0 | `event-158` 剧情走位目标 `(136,216)` 落在阻挡格 | 确认内容坐标错误，会卡住剧情 |
 | P1 | `Missing animation: effects-atlas:24` | 确认代码 bug：把纹理键当动画键播放，魔法宝石飞行停在首帧 |
 | P1 | iOS `AudioContext.resume()` 拒绝未捕获 | 确认异常处理缺陷：声音可能起不来 |
-| P1 | 技能书页跨职业绑定书抛错 | 确认界面校验顺序问题：应给提示，不应抛未捕获错误 |
 | P2 | `Texture key already in use` 重复纹理键 | 高概率竞态：取消加载后的迟到文件与新同键加载重叠 |
 
 QQ 内置 WebView 不支持 WebGL、UC 浏览器 `navigator.vibrate` 赋值错误，按产品决定不处理，归入“浏览器兼容限制”；UC 明确不加提示，QQ 也不做专门提示。
 
-修复进度（2026-11-17）：3.1 `event-158` 已修（提交 `020d4ee6`）；3.2 `effects-atlas:24` 已修（提交 `ec1413e2`）；3.3 iOS 音频已修（提交 `a4760b49`）。其余 2 个待修。
+技能书跨职业校验不适用：当前内容只产出不绑定具体技能的通用技能书，以及随机解锁一门技能的封印书；日志里的 2 次跨职业错误来自旧档或调试数据。正式版只读格式 1，旧档不会进入。
+
+修复进度（2026-11-17）：3.1 `event-158` 已修（提交 `020d4ee6`）；3.2 `effects-atlas:24` 已修（提交 `ec1413e2`）；3.3 iOS 音频已修（提交 `a4760b49`）。其余 1 个待修：3.4 纹理重复竞态。
 
 其余高频日志主要是噪声或设计状态，不建议当 bug 修：
 
@@ -67,14 +68,7 @@ QQ 内置 WebView 不支持 WebGL、UC 浏览器 `navigator.vibrate` 赋值错�
 - 建议：所有 `resume()` 接 `.catch(()=>{})`；只在 `!document.hidden` 且确有用户触摸时重试；ready 后移除 Phaser 的 `VISIBLE` 处理器，用带 catch 的自己的可见/触摸恢复；连续失败提示“点屏幕恢复声音”。
 - 正式版分支状态：已修（提交 `a4760b49`）：新增 `resumeAudioContext` 接住同步/异步拒绝，只在可见、未锁、未运行时恢复；`ready` 后摘掉 Phaser 的 `VISIBLE` 处理器；首次失败记录 `audio-resume-failed` 诊断。
 
-### 3.4 技能书页跨职业绑定书抛错（P1）
-
-- 现象：2 条同一点击栈的 `Uncaught Error: 请选择本职业的技能`。
-- 根因：抛出点 `src/domain/story-skills.ts:47`（`skill()`），经 `bookProblem:70` 到 `src/ui/phaser/skill-book-panel.ts:76` 的 `open()`；`problemFor` 在 `skill-book-panel.ts:269` 对“绑定技能”直接查领域，而绑定技能可能属于其他职业或与当前职业不一致。
-- 建议：`problemFor` 先检查 `this.skillIds.includes(id)`（或技能书 `classId`），不匹配返回“这本技能书不属于当前职业”；`bookProblem` 对非法 id 返回字符串而非抛错；给 `openSkillBook` 包 try/catch 并用 `showInstant` 显示原因。
-- 正式版分支状态：界面和领域代码未改。
-
-### 3.5 `Texture key already in use` 重复纹理键（P2，高概率竞态）
+### 3.4 `Texture key already in use` 重复纹理键（P2，高概率竞态）
 
 - 现象：过滤后约 390 条、45 个会话（统计期间日志仍在增长）。按纹理族分：地图 ground/canopy 157 条（66 个不同键）、`characters-atlas` 页 120 条、技能图标 90 条、特效页 24 条（`effects-atlas:14/15/19`）。平台以 Android APK 和 iOS Safari 为主。
 - 证据：报错栈为 Phaser `TextureManager.addImage → checkKey`（`node_modules/phaser/src/textures/TextureManager.js:273`）；项目通过 `loadSceneAssets` 的 `scene.load.image/atlas` 发起加载（`src/rendering/scene-assets.ts:212-217`）。约一半报错发生在 `story-entry-prefetch`、`map-enter` 后 5 秒内；有 5 次连续突发正好各含一整套 24 个键，和一次进图计划的完整资源集吻合。
@@ -142,16 +136,18 @@ QQ 内置 WebView 不支持 WebGL、UC 浏览器 `navigator.vibrate` 赋值错�
 - 浏览器兼容限制（产品决定不处理）：
   - QQ 内置 WebView 不支持 WebGL，新页面白屏；不增加预检/降级，也不做专门提示。
   - UC 浏览器下 Phaser 4.2.1 给只读的 `navigator.vibrate` 赋值抛错；日志显示报错后没有后续游戏事件，等同启动中断。不打补丁，也不加提示。
+- 旧功能残留：
+  - 绑定具体职业技能的独立技能书已移除；当前只有不绑定技能的通用技能书和随机解锁的封印书。日志中的 2 次“请选择本职业的技能”来自旧档或调试数据，正式版只读格式 1，不会再触发。
 - 存档相关：
   - `save-refused-no-survivor` 1 条：全员阵亡不能存档，规则内正常。
   - `save-repaired-stale-quest-item` 1 条：只存在于旧 `main`；正式版分支 `SAVE_FORMAT=1` 且已删除该修复，不会再产生。
 
 ## 6. 建议修复顺序
 
-1. `event-158` 内容坐标/动态地图走位校验（P0，直接卡剧情）。
-2. `ground-loot.ts:46` 播放正确动画键（P1，确认 bug，影响所有魔法宝石掉落）。
-3. iOS 音频 `resume()` catch + 技能书跨职业校验（P1，异常处理）。
-4. 纹理重复竞态（P2，先补回归测试，再调整取消/租约策略）。
+1. `event-158` 内容坐标/动态地图走位校验（P0，已修）。
+2. `ground-loot.ts:46` 播放正确动画键（P1，已修）。
+3. iOS 音频 `resume()` catch（P1，已修）。
+4. 纹理重复竞态（P2，待修；先补回归测试，再调整取消/租约策略）。
 5. 可选项：WebGL 丢失遮罩/低端机 2×、暂停守卫、`session-recovered` 判定修正、空图诊断区分剧情清场。
 
 ## 7. 验证入口
