@@ -6,7 +6,6 @@ import type {SceneActorState,SceneSnapshot} from '../domain/scene-snapshot.ts';
 import {generateMapEntities} from '../domain/scene-visit.ts';
 import {placementMayBeInactive, resolveMapActors} from '../domain/map-placement.ts';
 import { SCENE_KEYS } from '../application/scene-keys.ts';
-import { StatusHud } from '../ui/phaser/status-hud.ts';
 import { worldZoom } from '../ui/viewport.ts';
 import { OverheadStatus } from '../rendering/overhead-status.ts';
 import { QuestMarker } from '../rendering/quest-marker.ts';
@@ -23,7 +22,6 @@ import type { AssetLease } from '../application/assets.ts';
 import { Wardrobe } from '../rendering/wardrobe.ts';
 import { acquireCompanionWardrobe, pruneCompanionWardrobes } from '../rendering/wardrobe-cache.ts';
 import { costumeRecipe } from '../domain/wardrobe.ts';
-import { memberArt } from '../domain/menu-panels.ts';
 import type { EquipmentSlot } from '../domain/items.ts';
 import type { BattleStatKey } from '../domain/battle-semantics.ts';
 import type { PassiveModifier } from '../domain/passive-skills.ts';
@@ -65,24 +63,14 @@ import { PLAYER_MOVE_SPEED, characterAnimationState, characterAssets, createChar
 import { drawMapLayers, type MapLayerHandles } from '../rendering/map-layers.ts';
 import type { CharacterVisual } from '../rendering/characters.ts';
 import { loadSceneAssets, missingSceneAssets, retainLoadedSceneAssets } from '../rendering/scene-assets.ts';
-import { Hud } from '../rendering/hud.ts';
-import type { DomLabel } from '../ui/dom/dom-ui.ts';
-import { ActionControls, type ShortcutSlot } from '../ui/phaser/action-controls.ts';
+import type { ShortcutSlot } from '../ui/phaser/action-controls.ts';
+import { WorldHud } from '../ui/world-hud.ts';
 import { ShortcutBar, type ShortcutEntry } from '../domain/shortcut-bar.ts';
 import { learnedSkillIds, type SkillConfiguration } from '../domain/skill-configuration.ts';
-import { NameBanner } from '../rendering/name-banner.ts';
-import { StoryMinimap, type MinimapInteraction, type MinimapTask } from '../rendering/story-minimap.ts';
-import { displaySettings } from '../application/display-settings.ts';
-import { controlSettings } from '../application/control-settings.ts';
-import { ComputerSkillHud } from '../ui/phaser/computer-skill-hud.ts';
+import type { MinimapInteraction, MinimapTask } from '../rendering/story-minimap.ts';
 import type { Cooldown } from '../domain/combat.ts';
-import { MoveStick } from '../ui/phaser/move-stick.ts';
-import { KeyboardActions } from '../ui/phaser/keyboard-actions.ts';
 import type { PendingAsset } from '../rendering/scene-assets.ts';
 
-/** 帧率显示每秒结算一次；长时间挂起后先重新开窗，避免把停顿算成一次超低值。 */
-const FPS_WINDOW_MS = 1000;
-const FPS_RESET_AFTER_IDLE_MS = 2000;
 /** 卡顿时最多补 2 个逻辑帧；补 3 帧会把 AI、寻路和状态的尖峰叠成三倍。 */
 const MAX_FRAME_DELTA_MS = 120;
 /** GM 等场景重建的等待上限；既没报错也没就绪时不能让调用方永远等下去。 */
@@ -211,28 +199,12 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
   private interactionRevision=0;
   /** 地图角色集合的修订号；整图刷新摘要用它代替逐角色拼名单。 */
   private charactersRevision=0;
-  /** 屏幕固定的界面层与它上面的移动摇杆。 */
-  private hud?: Hud;
-  private statusHud?:StatusHud;
+  private worldHud?: WorldHud;
   private overheadStatus?:OverheadStatus;
-  private stick?: MoveStick;
-  private controls?: ActionControls;
-  private keyboardActions?: KeyboardActions;
-  /** 电脑模式专用的只读技能状态行。 */
-  private skillHud?: ComputerSkillHud;
-  private unsubscribeControlMode?: () => void;
   private shortcutPageCache?:{configuration:SkillConfiguration;version:number;bagRevision:number;owner:string;classId:string;page:number;
     entries:(ShortcutEntry|null)[];levels:Record<string,number>;slotsSignature?:string};
   private shortcutTick?:number;
-  private nameBanner?: NameBanner;
-  private minimap?: StoryMinimap;
   private nextMinimapEnemyUpdate = 0;
-  private fpsReadout?: { dom?: DomLabel; lastRaf?: number; lastActual?: number; lastVisible?: boolean };
-  /** rAF 累计帧数的上次读数；用它算每秒浏览器叫了几次。 */
-  private fpsFrameBase = 0;
-  private fpsWindowStart = 0;
-  /** 当前统计窗口里真正交付到画面的游戏帧数。 */
-  private fpsActualFrames = 0;
   private request = new AbortController();
   private mapAssets?: AssetLease;
   private prefetchTarget?: string;
@@ -350,20 +322,10 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
       this.pickupMessages?.destroy();this.pickupMessages=undefined;this.pickupRecipients.clear();
       this.movement?.destroy(); this.movement = undefined;
       this.mapLayers?.destroy(); this.mapLayers = undefined;
-      this.stick?.destroy(); this.stick = undefined;
-      this.controls?.destroy(); this.controls = undefined;
-      this.keyboardActions?.destroy(); this.keyboardActions = undefined;
-      this.skillHud?.destroy(); this.skillHud = undefined;
-      this.unsubscribeControlMode?.(); this.unsubscribeControlMode = undefined;
+      this.worldHud?.destroy(); this.worldHud = undefined;
       this.input.off(Phaser.Input.Events.POINTER_DOWN, this.onPointerDown, this);
-      this.nameBanner?.destroy(); this.nameBanner = undefined;
-      this.minimap?.destroy(); this.minimap = undefined;
-      this.fpsReadout?.dom?.remove(); this.fpsReadout = undefined;
-      this.statusHud?.destroy();this.statusHud=undefined;
       this.overheadStatus?.destroy();this.overheadStatus=undefined;
-      this.hud?.destroy(); this.hud = undefined;
       this.app.domUi?.setLayerVisible('world', false);
-      this.app.domUi?.setLayerVisible('hud', false);
       this.wardrobe?.destroy(); this.wardrobe = undefined;
       for (const wardrobe of this.companionWardrobes.values()) wardrobe.destroy();
       this.companionWardrobes.clear(); this.companionOutfits.clear(); this.companionPreviews.clear();
@@ -393,7 +355,7 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
         });
       }
     });
-    this.hud = new Hud(this);
+    this.worldHud = new WorldHud(this, this.app.domUi);
     this.layoutHud();
     this.scale.on('resize', this.resizeView, this);
     this.events.on(Phaser.Scenes.Events.POST_UPDATE, this.afterMovement, this);
@@ -680,29 +642,19 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
     globalThis.storyDiagnostics?.record('start-phase',{phase:'wardrobe-ready',map:map.id});
     this.app.director.onSkipProgress?.('outfit-ready');
     this.projectedPlayerEquipment=JSON.stringify(this.app.session.bag.equipmentItems());
-    this.statusHud=new StatusHud(this.hud!,this.app.statusHud,()=>this.combat?.controlledState??this.app.session.player,listener=>this.app.session.subscribe(listener),
-      ()=>this.app.session.party?.activeSnapshot(),id=>{this.switchControlled(id);},id=>{
-        if(id==='player')return this.app.statusHud.assets['player-portrait'];
-        const member=this.app.session.party?.get(id);if(!member)return undefined;
-        const actor=this.app.world.actors[member.definition.actor];
-        return memberArt(this.app.menuPanels,actor,member.classId,member.source).partyIcon;
-      },()=>{if(this.canControl)this.combat?.focusSelected();},id=>this.combat?.activeConditions(id)??[],()=>this.app.session.player,this.app.domUi);
-    this.stick = new MoveStick(this, this.hud!, this.app.controlSkin, this.app.controlLayout, this.app.keyBindings, this.app.inputRouter, this.app.domUi);
-    this.controls = new ActionControls(this, this.hud!, {
-      attack: () => this.attackKey(), skill: key => {if(this.canControl)this.combat?.attack(key);},
-      item: itemId => this.useShortcutItem(itemId), swap: () => this.cycleShortcutPage()
-    }, this.app.controlSkin, this.app.controlLayout, this.app.domUi);
-    this.keyboardActions = new KeyboardActions(this, this.app.keyBindings, {
-      skill: slot => this.triggerShortcutSlot(slot),
-      cycle: () => this.cycleShortcutPage(),
-      previousMember: () => this.switchMember(-1),
-      nextMember: () => this.switchMember(1)
-    }, this.app.inputRouter);
-    this.skillHud = new ComputerSkillHud(this, this.hud!, this.app.controlSkin, this.app.domUi);
-    // 操作方式切换后立刻按新 HUD 显隐，不等下一帧兜底。
-    this.unsubscribeControlMode = controlSettings.subscribeMode(() => this.syncHud());
+    const hudSession = this.app.session;
+    const hudSignal = signal;
+    this.worldHud!.mount(this.app, map, {
+      active: () => !hudSignal.aborted && this.app.session === hudSession,
+      player: () => this.combat?.controlledState,
+      conditions: id => this.combat?.activeConditions(id) ?? []
+    }, {
+      attack: () => this.attackKey(), skill: key => { if (this.canControl) this.combat?.attack(key); },
+      item: id => this.useShortcutItem(id), cycle: () => this.cycleShortcutPage(),
+      slot: slot => this.triggerShortcutSlot(slot), member: direction => this.switchMember(direction),
+      select: id => this.switchControlled(id), focus: () => { if (this.canControl) this.combat?.focusSelected(); }
+    });
     this.refreshLoadout();
-    this.nameBanner = new NameBanner(this, this.hud!, map.name, this.app.domUi);
     this.layoutHud();
     this.mapLayers = drawMapLayers(this, map, { keyPrefix: `${map.id}-dodge` });
     this.groundLootView=new GroundLootView(this,this.app.items,(clip,x,y)=>createEffect(this,clip,x,y,true));
@@ -765,8 +717,7 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
     if(options.preparedScene){this.restoreScenePositions(options.preparedScene);this.combat.adoptStoryPositions(options.preparedScene.actors);}
     signal.throwIfAborted();
     if(options.checkpoint)await this.combat.restoreState(options.checkpoint,signal);
-    this.minimap = new StoryMinimap(this, this.hud!, map, this.app.storyInterface, this.app.domUi!);
-    this.fpsReadout = this.createFpsReadout();
+    this.worldHud!.mountMinimap(map, this.app.storyInterface);
     this.resizeView(); this.refreshState();
     this.unsubscribe = this.app.session.subscribe(() => this.refreshState());
     ui.drawPortrait = (actor, portrait, portraitSignal) => {
@@ -1282,7 +1233,7 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
    * 两个组件在一次调用里同时拿到技能冷却和格子内容，冷却不再单独触发第二遍绘制。
    */
   refreshCombatHud(cooldowns?:Readonly<Record<string,Cooldown>>):void {
-    if(!this.controls)return;
+    if(!this.worldHud?.ready)return;
     const context=this.controlledContext();
     // 没有战斗或还没有操控角色时没有可画的快捷栏；等事件或下一个逻辑帧再来。
     if(!context)return;
@@ -1302,8 +1253,7 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
     // 签名没变时连 HUD 喂数据都省掉；切组、切人和冷却读数变化才重绘。
     if(cache.slotsSignature===slotsSignature)return;
     cache.slotsSignature=slotsSignature;
-    this.skillHud?.setPage(slots);
-    this.controls.setShortcutPage(slots);
+    this.worldHud.setShortcutPage(slots);
   }
 
   /** 战斗逻辑帧推进后统一画一次；同一 tick 内重复调用直接跳过。 */
@@ -1356,7 +1306,7 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
     if(this.combat?.switchMember(direction))this.autoAttack.release();
   }
   /** 键位编辑读取实际操控者当前组六格，不另选角色或快捷页。 */
-  getControlLayoutPreview():readonly ShortcutSlot[]{return this.controls?.snapshot()??[];}
+  getControlLayoutPreview():readonly ShortcutSlot[]{return this.worldHud?.snapshot()??[];}
   /** 点消耗品格：恢复药水走整队恢复，复活卷轴按上阵顺序复活，其它物品走普通的「使用」。 */
   private useShortcutItem(itemId:string):void {
     if(!this.canControl)return;
@@ -1400,7 +1350,7 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
   /** 宝箱开启、泉水喝空这类状态变化不触发整图刷新，单独更新小地图圆环。 */
   private refreshMinimapInteractions(): void {
     const map = this.map;
-    if (!map || !this.minimap) return;
+    if (!map || !this.worldHud?.minimap) return;
     const session = this.app.session, markers: MinimapInteraction[] = [];
     for (const character of this.characters) {
       const status = session.marker(character.entity.actor, character.entity.characterId);
@@ -1408,7 +1358,7 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
       if (this.showsInteractionMarker(character, status, marked))
         markers.push({id: character.entity.id, x: character.container.x, y: character.container.y});
     }
-    this.minimap.updateInteractions(markers);
+    this.worldHud?.minimap.updateInteractions(markers);
   }
   /**
    * 任务完成和进度只在任务簿版本变化时对比；完成优先，同一轮不再发进度。
@@ -1461,7 +1411,7 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
     this.noticeQuestChanges();
     // 小地图创建前的那次刷新也会写签名；把「小地图是否已就绪」算进签名，
     // 保证创建后的第一次刷新一定执行，把本图任务人物交给小地图。
-    const stateSignature=this.refreshStateSignature()+(this.minimap?'|minimap':'');
+    const stateSignature=this.refreshStateSignature()+(this.worldHud?.minimap?'|minimap':'');
     if(stateSignature===this.refreshStateSignatureValue)return;
     this.refreshStateSignatureValue=stateSignature;
     this.interactionRevision=(this.interactionRevision??0)+1;
@@ -1490,15 +1440,15 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
         taskMarkers.push({id: character.entity.id, x: character.container.x, y: character.container.y, status});
       // 原版一个角色只画一个标记：有任务图标时不再叠交互圆环。
       // 小地图还没创建时不必收集交互点；创建后的那次刷新会因为签名变化重新收集。
-      if (this.minimap && this.showsInteractionMarker(character, status, marked, opened, consumed))
+      if (this.worldHud?.minimap && this.showsInteractionMarker(character, status, marked, opened, consumed))
         interactionMarkers.push({id: character.entity.id, x: character.container.x, y: character.container.y});
     }
     const map = this.map;
     if (!map) return;
-    if (this.minimap) {
-      if (this.player) this.minimap.updatePlayer((this.combat?.controlledVisual??this.player).container);
-      this.minimap.updateTasks(taskMarkers);
-      this.minimap.updateInteractions(interactionMarkers);
+    if (this.worldHud?.minimap) {
+      if (this.player) this.worldHud?.minimap.updatePlayer((this.combat?.controlledVisual??this.player).container);
+      this.worldHud?.minimap.updateTasks(taskMarkers);
+      this.worldHud?.minimap.updateInteractions(interactionMarkers);
     }
   }
   resizeView(): void {
@@ -1511,68 +1461,15 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
     camera.setBounds((this.map.width - width) / 2, (this.map.height - height) / 2, width, height);
   }
   /** 界面层与摇杆随视口摆放，和地图是否就绪无关。 */
-  /** 帧率显示：左上角小地图右边，设置里可关，默认开（application/display-settings）。 */
-  private createFpsReadout(): { dom?: DomLabel } {
-    const dom=this.app.domUi?.label('hud','dom-fps');
-    if(dom)dom.setStyle({fontSize:'22px',color:'#fff4dc',textShadow:'0 1px 2px rgba(0,0,0,.7)'});
-    return { dom };
-  }
-  private layoutFps(): void {
-    const extent = this.minimap?.extent(), readout = this.fpsReadout;
-    if (!extent || !readout?.dom) return;
-    readout.dom.setPosition(extent.x + extent.width + 8, extent.y);
-  }
-  private updateFps(): void {
-    const readout = this.fpsReadout;
-    if (!readout?.dom) return;
-    const visible = displaySettings.fps;
-    if (readout.lastVisible !== visible) {
-      readout.lastVisible = visible;
-      this.fpsFrameBase = this.game.loop.frame; this.fpsWindowStart = 0; this.fpsActualFrames = 0;
-      readout.dom.setVisible(visible);
-    }
-    if (!visible) return;
-    // 数浏览器的 requestAnimationFrame 调用次数，不是游戏更新次数：
-    // 限帧后游戏每秒只更新 60 次，浏览器仍可能按屏幕刷新率叫 120 次。
-    const now = performance.now();
-    if (!this.fpsWindowStart) {
-      this.fpsWindowStart = now;
-      this.fpsFrameBase = this.game.loop.frame;
-      this.fpsActualFrames = 0;
-    }
-    // updateFps 每个真正交付到画面的游戏帧调用一次，所以直接数调用次数。
-    this.fpsActualFrames++;
-    const elapsed = now - this.fpsWindowStart;
-    // 挂起、演出遮挡等长时间不更新后，先以当前帧重新开窗，避免把停顿算成一次超低值。
-    if (elapsed > FPS_RESET_AFTER_IDLE_MS) {
-      this.fpsWindowStart = now; this.fpsFrameBase = this.game.loop.frame; this.fpsActualFrames = 0; return;
-    }
-    if (elapsed < FPS_WINDOW_MS) return;
-    const raf = Math.round(Math.max(0, this.game.loop.frame - this.fpsFrameBase) * 1000 / elapsed);
-    const actual = Math.round(this.fpsActualFrames * 1000 / elapsed);
-    this.fpsFrameBase = this.game.loop.frame; this.fpsWindowStart = now; this.fpsActualFrames = 0;
-    if (readout.lastRaf !== raf || readout.lastActual !== actual) {
-      readout.lastRaf = raf;
-      readout.lastActual = actual;
-      readout.dom.setText(`rAF ${raf} / 实际 ${actual} 帧`);
-    }
-  }
   private layoutHud(): void {
-    this.hud?.layout(this.scale.width, this.scale.height);
-    this.stick?.layout();
-    this.controls?.layout();
-    this.skillHud?.layout();
-    this.nameBanner?.layout();
-    this.minimap?.layout();
-    this.layoutFps();
-    this.statusHud?.layout();
+    this.worldHud?.layout(this.scale.width, this.scale.height);
   }
   /** 流程接管输入时把摇杆放回中位。 */
   resetInput(): void {
     const controlled=this.combat?.controlledVisual??this.player;
     if (controlled && this.movement) this.movement.stop(controlled);
     this.combat?.setPaused(!this.canCombatControl);
-    this.controls?.resetInput(); this.stick?.reset(); this.syncHud();
+    this.worldHud?.resetInput(); this.syncHud();
   }
   trimTextures(): void {
     if(!this.mapAssets)return;
@@ -1996,7 +1893,7 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
     });
     if(picked.length){this.groundLootView?.sync(store.dropsOnMap(mapId));this.groundLootRevision=store.revision;}
   }
-  refreshCombatTarget():void{this.statusHud?.setTarget(this.combat?.targetStatus());}
+  refreshCombatTarget():void{this.worldHud?.setTarget(this.combat?.targetStatus());}
   revivePartyMember(id:string,item:string):import('../domain/items.ts').ItemResult{
     if(!this.combat)throw new Error('请等待地图加载');return this.combat.revive(id,item);
   }
@@ -2394,17 +2291,7 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
   syncHud(): void {
     const enabled = this.canControl;
     const backgroundVisible=enabled||(this.sys.isActive()&&!this.loadingWorld&&this.app.ui.ready&&this.app.ui.controlLayoutEditing&&!this.app.suspended);
-    // 可见性每帧都写：切图会重建摇杆、控件和小地图，新对象默认可见；
-    // 如果把它塞进下面的状态摘要，摘要没变就会漏掉这次收起（开场独白时摇杆就是这么露出来的）。
-    // 摇杆只由 enabled 控制输入，电脑模式的外观隐藏在 MoveStick 内部处理。
-    this.stick?.setVisible(enabled);
-    const keyboardMode = controlSettings.mode === 'keyboard';
-    this.controls?.setVisible(enabled && !keyboardMode);
-    this.skillHud?.setVisible(enabled && keyboardMode);
-    this.minimap?.setVisible(backgroundVisible);
-    this.statusHud?.setVisible(backgroundVisible);
     this.overheadStatus?.setVisible(backgroundVisible);
-    this.app.domUi?.setLayerVisible('hud', backgroundVisible);
     this.app.domUi?.setLayerVisible('world', backgroundVisible && !this.stageOccluded);
     const target = this.near?.container.visible ? this.near : null;
     // 敌人数值只在逻辑帧里变化；同一战斗帧的多个渲染帧复用同一份目标状态。
@@ -2421,8 +2308,8 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
       }
       targetStatus=targetCache.status;hostile=targetCache.hostile;
     }
-    // 名称条同样每帧同步：新对象默认隐藏，等摘要变化才显示会把换图后的提示吞掉。
-    this.nameBanner?.sync(backgroundVisible, target ? target.entity.name || target.actor.name : null);
+    this.worldHud?.sync({enabled, backgroundVisible, targetName: target ? target.entity.name || target.actor.name : null,
+      hasTarget: !!target, hostile, targetStatus});
     // 方法同时承担「状态变化后立即同步」和「逐帧兜底」两种调用；决定文字与按钮的状态
     // 归一成摘要，摘要在变才写这些较贵的对象，逐帧调用就只剩几次只读检查。
     const signature=`${enabled}|${target?.entity.id??''}|${hostile}|${targetStatus?`${targetStatus.id}|${targetStatus.name}|${targetStatus.level}|${targetStatus.health}/${targetStatus.maxHealth}|${targetStatus.sceneLevel}`:''}`;
@@ -2431,8 +2318,6 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     for (const tween of this.chestFades.values()) {
       if (enabled) tween.resume(); else tween.pause();
     }
-    this.controls?.setAttack(enabled && (!!target||hostile), false);
-    this.statusHud?.setTarget(targetStatus);
   }
   /**
    * 一个对象能不能被选中交互：有功能（商店、宝箱、泉水、玩法服务），或者有话可说
@@ -2515,7 +2400,7 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     }
     // 卡顿时最多补 2 个逻辑帧；补 3 帧会把 AI/寻路/状态的尖峰叠成三倍。
     const stepDelta=Math.min(delta,MAX_FRAME_DELTA_MS);
-    this.updateFps();
+    this.worldHud?.updateFps();
     if (!this.canControl) this.syncHud();
     if (!this.player || !this.movement) return;
     const controlled=this.combat?.controlledVisual??this.player;
@@ -2529,7 +2414,7 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
       this.encounterResults.add(encounter.id);
       this.playStory(()=>this.app.director.encounterResult(encounter.id,'won',`result:${encounter.id}:won`));break;
     }
-    this.statusHud?.update(this.app.session.combatTick);
+    this.worldHud?.updateStatus();
     this.groundLootView?.setPaused(!this.canCombatControl);
     if(this.canCombatControl&&this.map){const store=groundLootFor(this.app.session);store.advance(this.map.id,stepDelta);
       if(store.revision!==this.groundLootRevision){this.groundLootRevision=store.revision;this.groundLootView?.sync(store.dropsOnMap(this.map.id));}}
@@ -2538,7 +2423,7 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     if(this.combat?.playerCannotMove()){this.movement.stop(controlled);return;}
     // 原版 GAMESTATE_PressKeyPlay：CHAR_IsSkillOn 时整段跳过方向输入。
     if(this.combat?.castingSkill)return;
-    const axis = this.stick?.axis ?? { x: 0, y: 0 };
+    const axis = this.worldHud?.axis ?? { x: 0, y: 0 };
     const length = Math.hypot(axis.x, axis.y);
     // 进图时如果方向还按着，先停住，等松手回中一次再接受移动。
     if (this.entryInputGate) {
@@ -2562,14 +2447,14 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     const moving = Math.hypot(pos.x - previous.x, pos.y - previous.y) > .01;
     this.lastPlayerPosition = pos;
     if (!this.canControl) return;
-    this.minimap?.updatePlayer(pos);
+    this.worldHud?.minimap?.updatePlayer(pos);
     const body = this.movement.body(controlled);
     const walking = isBodyWalking(body);
     if(!this.combat?.playerCannotAct()&&this.combat?.attackState!=='attacking')setCharacterClip(this,controlled, `${walking ? 'walk' : 'idle'}-${this.combat?.facing??this.facing}`);
     this.combat?.afterMovement();
-    if (this.minimap && this.combat && this.time.now >= this.nextMinimapEnemyUpdate) {
+    if (this.worldHud?.minimap && this.combat && this.time.now >= this.nextMinimapEnemyUpdate) {
       this.nextMinimapEnemyUpdate = this.time.now + MINIMAP_ENEMY_REFRESH_MS;
-      this.minimap.updateEnemies(this.combat.specialEnemyMarkers());
+      this.worldHud?.minimap.updateEnemies(this.combat.specialEnemyMarkers());
     }
     this.collectGroundLoot(pos);
     this.updateInteractionTarget(); this.syncHud();

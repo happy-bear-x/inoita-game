@@ -8,6 +8,7 @@ const phaser=registerHooks({resolve(specifier,context,next){
   return specifier==='phaser'?{url:'data:text/javascript,export default {BlendModes:{},Scene:class{},Physics:{Arcade:{Body:class{}}}}',shortCircuit:true}:next(specifier,context);
 }});
 const {WorldScene}=await import('../src/scenes/world-scene.ts');
+const {WorldHud}=await import('../src/ui/world-hud.ts');
 phaser.deregister();
 
 function fixture(){
@@ -18,11 +19,15 @@ function fixture(){
   const visible=(name:string)=>({setVisible:(value:boolean)=>{visibility[name]=value;}});
   const state={sys:{isActive:()=>true},loadingWorld:false,near:null,chestFades:new Map(),
     app:{locked:true,suspended:false,ui:{ready:true,controlLayoutEditing:true},session:{combatTick:0}},
-    stick:{...visible('stick'),reset:()=>calls.push('stick-reset')},
-    controls:{...visible('controls'),setAttack:()=>{},snapshot:()=>preview,resetInput:()=>calls.push('controls-reset')},
-    skillHud:visible('skillHud'),
-    minimap:visible('minimap'),statusHud:{...visible('status'),update:()=>{},setTarget:()=>{}},overheadStatus:visible('overhead'),
-    nameBanner:{sync:(value:boolean)=>{visibility.banner=value;}},
+    worldHud:Object.assign(Object.create(WorldHud.prototype),{
+      active:()=>true,
+      stick:{...visible('stick'),reset:()=>calls.push('stick-reset')},
+      controls:{...visible('controls'),setAttack:()=>{},snapshot:()=>preview,resetInput:()=>calls.push('controls-reset')},
+      skillHud:visible('skillHud'),
+      mapView:visible('minimap'),statusHud:{...visible('status'),update:()=>{},setTarget:()=>{}},
+      nameBanner:{sync:(value:boolean)=>{visibility.banner=value;}}
+    }),
+    overheadStatus:visible('overhead'),
     refreshCombatTarget:()=>{},
     combat:{hasHostileTarget:()=>false,setPaused:(value:boolean)=>calls.push(`paused:${value}`),
       update:(_delta:number,enabled:boolean)=>calls.push(`combat:${enabled}`)},
@@ -110,10 +115,10 @@ test('a rebuilt HUD is hidden by the first sync even when nothing else changed',
   app.director={busy:true};
   scene.syncHud();
   const fresh={setVisible:(value:boolean)=>{visibility.rebuiltStick=value;},reset:()=>{}};
-  (state as unknown as {stick:typeof fresh}).stick=fresh;
+  (state.worldHud as {stick:typeof fresh}).stick=fresh;
   scene.syncHud();
   assert.equal(visibility.rebuiltStick,false,'新摇杆必须按当前演出状态收起');
-  (state as unknown as {controls:{setVisible:(value:boolean)=>void;setAttack:()=>void;}}).controls.setVisible=(value)=>visibility.rebuiltControls=value;
+  (state.worldHud as {controls:{setVisible:(value:boolean)=>void;setAttack:()=>void;}}).controls.setVisible=(value)=>visibility.rebuiltControls=value;
   scene.syncHud();
   assert.equal(visibility.rebuiltControls,false);
 });

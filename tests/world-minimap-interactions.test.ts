@@ -60,11 +60,11 @@ test('minimap interaction markers follow the original NPC ring and skip opened o
   const host = Object.assign(Object.create(WorldScene.prototype), {
     app: {session, storyInterface: {assets: {}}, shops: {shops: {shop: {}, 'quest-shop': {}}}},
     characters, map: {id: 'map'}, player: {container: {x: 0, y: 0}}, chestFades: new Map(),
-    minimap: {
+    worldHud: {minimap: {
       updatePlayer() {},
       updateTasks(tasks: unknown[]) { taskLists.push(tasks); },
       updateInteractions(list: Point[]) { interactionLists.push(list); },
-    },
+    }},
     refreshLoadout() {}, noticeQuestChanges() {}, syncQuestMarker() {},
     chestOpened: (target: typeof characters[number]) => opened.has(target.entity.id),
     legendarySwordConsumed: (target: typeof characters[number]) => pulled.has(target.entity.id),

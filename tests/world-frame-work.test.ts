@@ -87,7 +87,7 @@ test('shortcut pages reuse layout snapshots while mana, eligibility, quantity an
   let recoveryCooldown={remainingMs:100,durationMs:200};
   t.mock.getter(session.recovery,'cooldown',()=>recoveryCooldown);
   const host=Object.assign(Object.create(WorldScene.prototype),{app:{session,battleCatalog:battle,items},
-    controls:{setShortcutPage:(value:readonly ShortcutSlot[])=>{slots=value;}},
+    worldHud:{ready:true,setShortcutPage:(value:readonly ShortcutSlot[])=>{slots=value;}},
     combat:{controlledMember:hero,controlledId:'player',
       skillShortcutState:(_skill:string,rank:number)=>{seenRank=rank;return {cost,enabled:allowed};}}});
   invoke(host,'refreshCombatHud');assert.equal(slots[0].enabled,true);assert.equal(seenRank,1);
@@ -122,8 +122,7 @@ test('one combat tick paints the shortcut wheel and keyboard skill row once, whi
   let cooldowns:Readonly<Record<string,{remainingMs:number;durationMs:number}>>={'skill':{remainingMs:1000,durationMs:2000}};
   const host=Object.assign(Object.create(WorldScene.prototype),{
     app:{session:{combatTick:0,bag,skills:configuration},battleCatalog:{skills:{skill:{icon:'skill.png'}}},items:{items:{}}},
-    controls:{setCooldowns:()=>assert.fail('冷却应随快捷页一次绘制'),setShortcutPage:()=>paints.push('controls')},
-    skillHud:{setCooldowns:()=>assert.fail('冷却应随快捷页一次绘制'),setPage:()=>paints.push('skillHud')},
+    worldHud:{ready:true,setShortcutPage:()=>paints.push('skillHud','controls')},
     combat:{controlledMember:{classId:'dark-knight',player:{mana:10},skills:configuration},controlledId:'player',
       get cooldowns(){cooldownReads++;return cooldowns;},
       skillShortcutState:()=>({cost:0,enabled:true})}
@@ -143,12 +142,12 @@ test('one combat tick paints the shortcut wheel and keyboard skill row once, whi
   invoke(host,'refreshCombatHudIfTickChanged');
   assert.equal(paints.length,6,'事件已经刷新过的同一逻辑帧不再重画');
   const withoutCombat=Object.assign(Object.create(WorldScene.prototype),{
-    app:{session:{combatTick:0}},controls:{setShortcutPage:()=>assert.fail('没有战斗和操控者时不应绘制')}
+    app:{session:{combatTick:0}},worldHud:{ready:true,setShortcutPage:()=>assert.fail('没有战斗和操控者时不应绘制')}
   });
   invoke(withoutCombat,'refreshCombatHudIfTickChanged');
   invoke(withoutCombat,'refreshCombatHud');
   const withoutSession=Object.assign(Object.create(WorldScene.prototype),{
-    app:{},controls:{setShortcutPage:()=>assert.fail('没有会话时不应绘制')}
+    app:{},worldHud:{ready:true,setShortcutPage:()=>assert.fail('没有会话时不应绘制')}
   });
   invoke(withoutSession,'refreshCombatHudIfTickChanged');
   invoke(withoutSession,'refreshCombatHud');
