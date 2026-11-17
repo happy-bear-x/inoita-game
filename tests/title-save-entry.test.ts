@@ -371,7 +371,7 @@ test('the auto save sits on top of the list and a renamed manual slot shows its 
 });
 
 test('older development saves enter the same empty-slot class flow',()=>{
-  const f=fixture();f.entries.set('inotia4.story.v1.slot1',JSON.stringify({format:2}));
+  const f=fixture();f.entries.set('inotia4.story.v1.slot1',JSON.stringify({format:0}));
   f.click('开始游戏');f.click('存档槽 2');assert.deepEqual(f.events,['new']);
 });
 

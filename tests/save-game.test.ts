@@ -74,7 +74,7 @@ test('save summary carries the captured screenshot when present',()=>{
 });
 
 test('damaged slots stay unreadable while an older development format displays EMPTY',()=>{
-  const storage=memory({'inotia4.story.v1.slot0':'{not json','inotia4.story.v1.slot1':JSON.stringify({ format:2, summary:{ classId:'dark-knight', mapId:'m', level:1 }, session:{}, world:{} }) });
+  const storage=memory({'inotia4.story.v1.slot0':'{not json','inotia4.story.v1.slot1':JSON.stringify({ format:0, summary:{ classId:'dark-knight', mapId:'m', level:1 }, session:{}, world:{} }) });
   const slots=new SaveSlots<World>(storage);
   assert.deepEqual(slots.inspect(0),{ kind:'unreadable', reason:'存档内容不是有效 JSON' });
   assert.equal(slots.inspect(1).kind,'empty');
