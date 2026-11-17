@@ -464,9 +464,12 @@ export class QuestBook {
     };
     const grant = (item: string, quantity: number): void => { add(grants, item, quantity); const value = count(item) + quantity; integer(value, 0, '物品总量'); balances.set(item, value); };
     const conditionContext: StoryConditionContext = this.conditionContextFor(context, states);
+    // 这一批里显式推进的任务先在本地副本里撤掉钉住，收尾刷新才不会把刚写的正式状态改回去；
+    // 真正的调试集合等 `commit` 成功后再删，预演计划不会误清覆盖。
+    const forcedProgress = new Map(this.forcedProgress);
     const view: QuestEvaluationView = {
       conditionContext, itemCount: count, equippedItemCount: context.equippedItemCount,
-      forcedAvailable: this.forcedAvailable, forcedProgress: this.forcedProgress };
+      forcedAvailable: this.forcedAvailable, forcedProgress };
     const refreshAll = (): void => {
       // Unlocking can depend on another quest becoming available in the same batch.
       for (let pass = 0; pass <= states.size; pass++) {
@@ -591,7 +594,7 @@ export class QuestBook {
       if (action.type === 'accept' || action.type === 'complete' || action.type === 'script-ready'
         || action.type === 'script-complete' || action.type === 'reset') {
         releasedForced.add(action.quest);
-        this.forcedProgress.delete(action.quest);
+        forcedProgress.delete(action.quest);
       }
       switch (action.type) {
         // 原版写的是绝对状态（`QUESTSYSTEM_ChangeQuestState@0x1c0ac8`），只跳过「已经就是目标状态」，
