@@ -23,6 +23,7 @@ import type { Session, SessionState } from '../domain/session.ts';
 import type { StoryDirector } from '../domain/story-director.ts';
 import type { ItemCategory } from '../domain/story-interface.ts';
 import { organizedDebugInventory } from '../domain/inventory.ts';
+import { encounterSpawnId } from '../domain/world-enemies.ts';
 import { DIAGNOSTICS_REPORT_PATH, diagnosticsReportUrl } from '../application/endpoints.ts';
 
 interface GmResult { ok: boolean; reason?: string }
@@ -227,6 +228,7 @@ export function createGmActions(ports: GmPorts): GmActions {
   const log: GmActionLogEntry[] = [];
   const marks = new Map<string, SessionState>();
   let jumping = false;
+  let combatSettlementSerial = 0;
   let disposed = false;
   const lifetime = new AbortController();
   let markRun: { origin: SessionState; world?: unknown } | undefined;
@@ -373,6 +375,60 @@ export function createGmActions(ports: GmPorts): GmActions {
     }
     // `currentQuest()` 是「正在追踪的，否则第一条可见的进行中任务」——不是单独的追踪字段。
     return { counts, active, ready, current: session.currentQuest()?.id };
+  };
+
+  /**
+   * 当前任务链里正在等待的剧情战斗。任务进度只记在普通任务上，剧情用遭遇等待结果；
+   * 直接改包装任务不会让等待中的剧情继续，后续任务自然也不会出现。
+   */
+  const waitingStoryCombatState = () => {
+    const targets = new Set<string>();
+    for (const [id, state] of session.quests) {
+      if (state.status !== 'active' && state.status !== 'ready') continue;
+      for (const goal of session.definition(id)?.goals ?? []) if (goal.kind === 'defeat') targets.add(goal.target);
+    }
+    if (!targets.size) return { encounters: [], driven: new Set<string>() };
+    const encounters = session.storyWorld.activeEncounters.filter(encounter =>
+      encounter.spawns.some(spawn => targets.has(spawn.enemyId)) &&
+      session.runtimeState.runs.some(run => run.status === 'waiting' && run.waiting?.encounter === encounter.id));
+    const enemyIds = new Set(encounters.flatMap(encounter => encounter.spawns.map(spawn => spawn.enemyId)));
+    const driven = new Set<string>();
+    for (const [id, state] of session.quests) {
+      if (state.status !== 'active' && state.status !== 'ready') continue;
+      if ((session.definition(id)?.goals ?? []).some(goal => goal.kind === 'defeat' && enemyIds.has(goal.target))) driven.add(id);
+    }
+    return { encounters, driven };
+  };
+
+  const waitingStoryCombats = (targetId: string) => {
+    const { encounters, driven } = waitingStoryCombatState();
+    if (!encounters.length) return [];
+    const target = session.definition(targetId);
+    const wrapper = !!target && (target.completion === 'story' || target.goals.length === 0);
+    return wrapper || driven.has(targetId) ? encounters : [];
+  };
+
+  /** 按正常打赢结算这些遭遇：先记击败，让目标型战斗任务进入待交付；再让导演继续等待中的剧情。 */
+  const settleStoryCombats = (encounters: ReturnType<typeof waitingStoryCombats>) => {
+    const storyDirector = director;
+    if (!storyDirector) throw new Error('当前环境没有剧情导演，无法结算剧情战斗');
+    const enemyIds = new Set(encounters.flatMap(encounter => encounter.spawns.map(spawn => spawn.enemyId)));
+    const driven = new Set<string>();
+    for (const [id, state] of session.quests) {
+      if (state.status !== 'active' && state.status !== 'ready') continue;
+      if ((session.definition(id)?.goals ?? []).some(goal => goal.kind === 'defeat' && enemyIds.has(goal.target))) driven.add(id);
+    }
+    for (const encounter of encounters) {
+      for (const spawn of encounter.spawns) {
+        session.enemyDefeated({ ...spawn, id: encounterSpawnId(encounter.id, spawn.id), respawn: false });
+      }
+    }
+    // `encounterResult` 走真实导演队列；这里不等待整段后续演出，任务完成后由剧情自己继续。
+    for (const encounter of encounters) {
+      void storyDirector.encounterResult(encounter.id, 'won', `gm-complete:${++combatSettlementSerial}:${encounter.id}`)
+        .catch(error => console.error('GM 剧情战斗结算失败', error));
+    }
+    return { driven, count: encounters.length };
   };
 
   const worldDigest = () => {
@@ -836,8 +892,16 @@ export function createGmActions(ports: GmPorts): GmActions {
       debugRun = undefined; markRun = undefined; marks.clear(); log.length = 0;
     },
     completeCurrentQuest: (questId?: string) => run('completeCurrentQuest', [questId], () => {
+      const waitingCombats = waitingStoryCombatState();
       const activeList = questDigest().active;
-      const targetId = questId ?? session.currentQuest()?.id ?? activeList[0]?.id;
+      let targetId = questId ?? session.currentQuest()?.id ?? waitingCombats.driven.values().next().value ?? activeList[0]?.id;
+      if (!questId && targetId && waitingCombats.encounters.length) {
+        const current = session.definition(targetId);
+        const wrapper = !!current && (current.completion === 'story' || current.goals.length === 0);
+        // 旧版本可能已经把包装任务点完成，留下无关的正常任务当“当前任务”；
+        // 这时等待中的剧情战斗才是真正卡住进度的任务，先完成它。
+        if (!wrapper && !waitingCombats.driven.has(targetId)) targetId = waitingCombats.driven.values().next().value ?? targetId;
+      }
       if (!targetId) return { ok: false, reason: '当前没有进行中的任务' };
       const quest = session.definition(targetId);
       if (!quest) return { ok: false, reason: `未找到任务定义：${targetId}` };
@@ -857,12 +921,21 @@ export function createGmActions(ports: GmPorts): GmActions {
 
       if (session.questBook.pinned(targetId)) session.unpinDebugQuest(targetId);
 
-      session.applyStoryCommands([{
-        type: 'quest',
-        command: { type: 'script-complete', quest: targetId, cycle: session.questBook.state(targetId)?.cycle }
-      }]);
+      // 剧情任务的进度在普通任务上，但结算入口是等待中的遭遇。先按正常打赢结算，
+      // 让目标型战斗任务进入待交付，剧情事件才会继续结算战斗并接取后续任务。
+      const storyCombats = waitingStoryCombats(targetId);
+      if (storyCombats.length && !director) return { ok: false, reason: '当前环境没有剧情导演，无法结算剧情战斗' };
+      const settled = storyCombats.length ? settleStoryCombats(storyCombats) : { driven: new Set<string>(), count: 0 };
+      if (!settled.driven.has(targetId)) {
+        session.applyStoryCommands([{
+          type: 'quest',
+          command: { type: 'script-complete', quest: targetId, cycle: session.questBook.state(targetId)?.cycle }
+        }]);
+      }
 
-      return { ok: true, reason: `已完成任务「${quest.title}」` };
+      return { ok: true, reason: settled.driven.has(targetId)
+        ? `已结算 ${settled.count} 场剧情战斗，任务「${quest.title}」等待剧情完成`
+        : `已完成任务「${quest.title}」${settled.count ? `；已结算 ${settled.count} 场剧情战斗` : ''}` };
     }),
     setNoclip: enabled => run('setNoclip', [enabled], () => {
       if (ports.setNoclip) return ports.setNoclip(enabled);
