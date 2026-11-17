@@ -85,6 +85,15 @@ const ITEM_MAX = 999;
 const clipText = (value: string, limit: number): string =>
   value.length > limit ? `${value.slice(0, limit)}…` : value;
 
+/** 原内容中的战斗标记与未汉化占位文案转成可读的面板文字。 */
+const readableStoryText = (value: string): string => {
+  const translated = value.replaceAll('보류_베스킨의 목걸이', '贝斯金的项链')
+    .replaceAll('보류_뒷골목의 무법자들', '后巷的不法之徒').replaceAll('보류_위험한 연구', '危险的研究');
+  if (/[가-힣]/.test(translated)) return '这段任务的中文说明尚未补全。';
+  return translated.replace(/[·_]EP\d+[A-Z]?/g, '')
+    .replace(/_BOSS战/g, '：首领战').replace(/BOSS/g, '首领').replaceAll('_', ' · ');
+};
+
 /** 搜索匹配前去掉空白并转小写，中文按子串比较。 */
 const normalizeQuestQuery = (value: string): string => value.replace(/\s+/g, '').toLowerCase();
 const questTextMatches = (text: string, query: string): boolean =>
@@ -101,9 +110,11 @@ function collectQuestSearchResults(
   const results: QuestSearchResult[] = [];
   if (!query) return results;
   for (const group of groups) {
-    const groupMatches = questTextMatches(group.definition.title, query);
+    const groupMatches = questTextMatches(group.definition.title, query)
+      || questTextMatches(readableStoryText(group.definition.title), query);
     for (const entry of group.entries) {
-      if (groupMatches || questTextMatches(entry.quest.title, query)) results.push({ group, entry });
+      if (groupMatches || questTextMatches(entry.quest.title, query)
+        || questTextMatches(readableStoryText(entry.quest.title), query)) results.push({ group, entry });
     }
   }
   return results;
@@ -128,6 +139,8 @@ export class GmPanel {
   private questEntryList?: ScrollArea;
   private questDetailScroll?: ScrollArea;
   private questListOffset = 0;
+  /** 搜索选中远端组时指定左栏目标位置；下一次 capture 不能拿旧 scrollTop 覆盖它。 */
+  private questListScrollTarget?: number;
   private questEntryOffset = 0;
   private questDetailOffset = 0;
   /** 搜索框里的原始文字；匹配前统一去空格并转小写。 */
@@ -170,6 +183,12 @@ export class GmPanel {
   /** 搜索框有焦点时菜单键盘整块让路；输入框自己处理 Enter/Escape。 */
   get searchFocused():boolean {
     return this.questSearch.focused;
+  }
+
+  /** 画框缩放、旋转或安全区变化后重新贴住右栏；不重建任务列表和滚动位置。 */
+  layoutSearch(body: UiSurface):void {
+    if (this.page !== 'quests') { this.questSearch.hide(); return; }
+    this.showQuestSearch(body);
   }
 
   dispose():void {
@@ -262,7 +281,7 @@ export class GmPanel {
     button('脱困',300,180,220,52,()=>this.onRescue()).button.setData('label','脱困');
     const actionsKey=text(`最近操作：${this.gm.actions().slice(-3).map(entry=>entry.call).join(' → ')||'（还没有）'}`,276,16,900);
     const currentId=quests.current??quests.active[0]?.id,current=currentId?this.campaign.quests.find(q=>q.id===currentId):undefined;
-    const quest=button(current?`完成任务：「${clipText(current.title,8)}」`:'立刻完成当前任务',60,316,360,48,()=>this.onCompleteCurrentQuest(),{disabled:!current});quest.button.setData('label','立刻完成当前任务');
+    const quest=button(current?`完成任务：「${clipText(readableStoryText(current.title),8)}」`:'立刻完成当前任务',60,316,360,48,()=>this.onCompleteCurrentQuest(),{disabled:!current});quest.button.setData('label','立刻完成当前任务');
     const noclip=button(`穿墙：${this.gm.isNoclip()?'开':'关'}`,440,316,220,48,()=>this.onToggleNoclip(),{selected:this.gm.isNoclip()});noclip.button.setData('label','穿墙');
     const speed=button(`2倍速度：${this.gm.isDoubleSpeed()?'开':'关'}`,680,316,220,48,()=>this.onToggleDoubleSpeed(),{selected:this.gm.isDoubleSpeed()});speed.button.setData('label','2倍速度');
     this.refreshStatusPage=()=>{
@@ -273,7 +292,7 @@ export class GmPanel {
       set(questKey,`任务 进行中 ${q.active.length} · 待交付 ${q.ready.length}`);set(storyKey,`剧情 已完成 ${storyState.completedEvents} 个事件 · 在跑 ${storyState.runs.length} 段`);
       set(actionsKey,`最近操作：${this.gm.actions().slice(-3).map(entry=>entry.call).join(' → ')||'（还没有）'}`);
       const id=q.current??q.active[0]?.id,task=id?this.campaign.quests.find(item=>item.id===id):undefined;
-      set(quest.key,task?`完成任务：「${clipText(task.title,8)}」`:'立刻完成当前任务');quest.button.getData('setEnabled')?.(!!task);
+      set(quest.key,task?`完成任务：「${clipText(readableStoryText(task.title),8)}」`:'立刻完成当前任务');quest.button.getData('setEnabled')?.(!!task);
       const wall=this.gm.isNoclip(),fast=this.gm.isDoubleSpeed();set(noclip.key,`穿墙：${wall?'开':'关'}`);set(speed.key,`2倍速度：${fast?'开':'关'}`);
       noclip.button.getData('setSelected')?.(wall);speed.button.getData('setSelected')?.(fast);
       if(this.resultTextKey)set(this.resultTextKey,this.result);
@@ -318,7 +337,7 @@ export class GmPanel {
   }
   /** 切换 GM 页或重画前保存任务页自己的滚动位置；滚动区随后会被销毁。 */
   private captureQuestScrolls():void {
-    if(this.questList){this.questListOffset=this.questList.scrollTop;this.questList=undefined;}
+    if(this.questList){this.questListOffset=this.questListScrollTarget??this.questList.scrollTop;this.questListScrollTarget=undefined;this.questList=undefined;}
     if(this.questEntryList){this.questEntryOffset=this.questEntryList.scrollTop;this.questEntryList=undefined;}
     if(this.questDetailScroll){this.questDetailOffset=this.questDetailScroll.scrollTop;this.questDetailScroll=undefined;}
     if(this.questSearchList){this.questSearchOffset=this.questSearchList.scrollTop;this.questSearchList=undefined;}
@@ -419,7 +438,8 @@ export class GmPanel {
     this.questSearchList = undefined; this.questSearchOffset = 0;
     this.questEntryList = undefined; this.questEntryOffset = 0;
     this.questDetailScroll = undefined; this.questDetailOffset = 0;
-    this.questListOffset = Math.max(0, groupIndex * QUEST_ROW_HEIGHT - QUEST_ROW_HEIGHT);
+    this.questListScrollTarget = Math.max(0, groupIndex * QUEST_ROW_HEIGHT - QUEST_ROW_HEIGHT);
+    this.questListOffset = this.questListScrollTarget;
     this.result = '';
     this.hooks.render();
   }
@@ -463,10 +483,10 @@ export class GmPanel {
             return;
           }
           const y = index * rowHeight;
-          button.setPosition(0, y).setData('label', `搜索任务 ${value.entry.quest.title}`);
-          const titleText = clipText(value.entry.quest.title, 22);
+          button.setPosition(0, y).setData('label', `搜索任务 ${readableStoryText(value.entry.quest.title)}`);
+          const titleText = clipText(readableStoryText(value.entry.quest.title), 22);
           const kind = value.group.kind === 'main' ? '主线' : '支线';
-          const metaText = `${kind} · ${clipText(value.group.definition.title, 16)} · ${QUEST_STATUS_LABELS[value.entry.status]}`;
+          const metaText = `${kind} · ${clipText(readableStoryText(value.group.definition.title), 16)} · ${QUEST_STATUS_LABELS[value.entry.status]}`;
           if (this.references.moveText) {
             this.references.moveText(title, titleText, QUEST_CONTENT_Y + y + 7);
             this.references.moveText(meta, metaText, QUEST_CONTENT_Y + y + 29);
@@ -533,7 +553,7 @@ export class GmPanel {
     const status = debug.status ? QUEST_STATUS_LABELS[debug.status] : '';
     const title = debug.title ?? debug.questId ?? '任务';
     this.textAt('gm-quest-banner-title',
-      `当前调试任务：${clipText(title, 18)}${status ? ` · ${status}` : ''}${debug.completed ? ' · 已完成' : ''}`,
+      `当前调试任务：${clipText(readableStoryText(title), 18)}${status ? ` · ${status}` : ''}${debug.completed ? ' · 已完成' : ''}`,
       24, 12, 486, 16, GOLD);
     const goals = (debug.goals ?? []).map(goal => `${goal.label} ${goal.current}/${goal.quantity}`).join(' · ');
     const detail = [goals ? `目标：${goals}` : '', debug.lastError ? `错误：${debug.lastError}` : '']
@@ -596,13 +616,13 @@ export class GmPanel {
             return;
           }
           const y = index * height;
-          button.setPosition(0, y).setData('label', `任务组 ${value.definition.title}`);
+          button.setPosition(0, y).setData('label', `任务组 ${readableStoryText(value.definition.title)}`);
           const selected = value.definition.id === this.questGroupId;
           const face = button.getData('face') as UiImage | undefined;
           const file = selected ? this.references.questRowSelected ?? this.references.questRow : this.references.questRow;
           // 滚动复用行时只有选中状态真的换了才重新取图，避免每滚一行都释放/申请图片租约。
           if (face && file && faceFile !== file) { faceFile = file; face.load(file); }
-          const titleText = clipText(value.definition.title, 24);
+          const titleText = clipText(readableStoryText(value.definition.title), 24);
           const summaryText = this.questGroupSummary(value);
           const tagText = value.kind === 'side' ? '支线' : '';
           if (this.references.moveText) {
@@ -652,8 +672,8 @@ export class GmPanel {
     this.references.registerScroll?.('gm-quest-entries', list);
     const clip = { top: QUEST_CONTENT_Y, bottom: QUEST_CONTENT_Y + height } as const;
     const kind = group.kind === 'main' ? '主线' : '支线';
-    const anchor = group.anchorMainGroupTitle ? ` · 解锁于 ${group.anchorMainGroupTitle}` : '';
-    this.textAt('gm-quest-entries-title', clipText(group.definition.title, 18),
+    const anchor = group.anchorMainGroupTitle ? ` · 解锁于 ${readableStoryText(group.anchorMainGroupTitle)}` : '';
+    this.textAt('gm-quest-entries-title', clipText(readableStoryText(group.definition.title), 18),
       QUEST_RIGHT.x, QUEST_CONTENT_Y, 348, 17, GOLD, 'gm-quest-entries', clip);
     this.textAt('gm-quest-entries-meta', `${kind} · ${group.entries.length} 个任务${anchor}`,
       QUEST_RIGHT.x, QUEST_CONTENT_Y + 22, 348, 13, '#c8bda6', 'gm-quest-entries', clip);
@@ -671,8 +691,8 @@ export class GmPanel {
         ...(this.references.questRow ? { image: this.references.questRow } : {}),
         ...(this.references.questRowPressed ? { pressed: this.references.questRowPressed } : {}),
         parent: list.content, guard: list.guard,
-      }).setData('label', `任务 ${entry.quest.title}`);
-      this.textAt(`gm-quest-entry-${index}-title`, clipText(entry.quest.title, 22),
+      }).setData('label', `任务 ${readableStoryText(entry.quest.title)}`);
+      this.textAt(`gm-quest-entry-${index}-title`, clipText(readableStoryText(entry.quest.title), 22),
         QUEST_RIGHT.x + 12, QUEST_CONTENT_Y + y + 7, QUEST_RIGHT.width - 24, 16, GOLD, 'gm-quest-entries', clip);
       this.textAt(`gm-quest-entry-${index}-status`, this.questEntryStatus(entry),
         QUEST_RIGHT.x + 12, QUEST_CONTENT_Y + y + 29, QUEST_RIGHT.width - 24, 12, QUEST_STATUS_COLORS[entry.status], 'gm-quest-entries', clip);
@@ -718,18 +738,18 @@ export class GmPanel {
       y += lines * (size + 5) + gap;
     };
     const kind = group.kind === 'main' ? '主线' : '支线';
-    line(clipText(quest.title, 20), 19, GOLD, 0, 4);
-    line(`${kind} · ${clipText(group.definition.title, 16)} · ${QUEST_STATUS_LABELS[entry.status]}`,
+    line(clipText(readableStoryText(quest.title), 20), 19, GOLD, 0, 4);
+    line(`${kind} · ${clipText(readableStoryText(group.definition.title), 16)} · ${QUEST_STATUS_LABELS[entry.status]}`,
       14, QUEST_STATUS_COLORS[entry.status], QUEST_RIGHT.width, 5);
     if (group.kind === 'side' && group.anchorMainGroupTitle)
-      line(`解锁于：${clipText(group.anchorMainGroupTitle, 20)}`, 13, '#c8bda6', QUEST_RIGHT.width, 4);
+      line(`解锁于：${clipText(readableStoryText(group.anchorMainGroupTitle), 20)}`, 13, '#c8bda6', QUEST_RIGHT.width, 4);
     const tags = [entry.hidden ? '日志外' : '', entry.internal ? '内部' : ''].filter(Boolean).join(' · ');
     if (tags) line(tags, 12, '#c8bda6', QUEST_RIGHT.width, 4);
     if (plan?.fallback) line(plan.mode === 'ready'
       ? '没有可接取入口，会直接放到待交付状态。'
       : '没有可接取入口，只能从进行中开始。', 13, '#ffd8a0', 340, 4);
     if (!plan) line('无法预览任务起点。', 13, '#ffd8a0', 340, 4);
-    line(quest.description, 14, '#d8cdb8', 340, 6);
+    line(readableStoryText(quest.description), 14, '#d8cdb8', 340, 6);
     const placement = this.campaign.placements.find(value => value.actor === quest.giver
       || (quest.giverCharacterId !== undefined && value.characterId === quest.giverCharacterId));
     const giver = placement?.name ?? quest.giver, map = this.questMap(quest, plan) ?? placement?.map;
@@ -746,7 +766,7 @@ export class GmPanel {
     const changes = plan ? plan.changedQuests.filter(change => change.id !== questId) : [];
     line(`将补前置 ${changes.length} 个`, 14, GOLD, 0, 2);
     for (const change of changes.slice(0, 8))
-      line(`· ${clipText(change.title, 18)}（${QUEST_STATUS_LABELS[change.from]} → ${QUEST_STATUS_LABELS[change.to]}）`,
+      line(`· ${clipText(readableStoryText(change.title), 18)}（${QUEST_STATUS_LABELS[change.from]} → ${QUEST_STATUS_LABELS[change.to]}）`,
         13, '#c8bda6', 330, 2);
     if (changes.length > 8) line(`…另有 ${changes.length - 8} 个`, 13, '#c8bda6', 330, 4);
     if (plan?.accept) {

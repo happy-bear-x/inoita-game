@@ -132,26 +132,39 @@ function catalogGroup(
   };
 }
 
-function fixture(options: { unsatisfied?: boolean; ready?: boolean } = {}) {
+function fixture(options: { unsatisfied?: boolean; ready?: boolean; scrollGroups?: boolean } = {}) {
   created.length = 0;
-  const quests = {
+  const quests: Record<string, CampaignQuest> = {
     'q-main-1': quest('q-main-1', '主线甲01'),
     'q-main-2': quest('q-main-2', '主线甲02'),
     'q-side-1': quest('q-side-1', '支线乙01'),
     'q-main-3': quest('q-main-3', '主线丙01'),
+    'q-raw': quest('q-raw', '主线_测试_BOSS战'),
   };
-  const entry = (id: keyof typeof quests, status: QuestStatus, current = 0, hidden = false): QuestCatalogEntry =>
-    ({ quest: quests[id], progress: progress(status, current), status, hidden, internal: false });
+  const entry = (id: string, status: QuestStatus, current = 0, hidden = false): QuestCatalogEntry =>
+    ({ quest: quests[id]!, progress: progress(status, current), status, hidden, internal: false });
   const mainA = definition('group-main-a', '主线甲', 'main', ['q-main-1', 'q-main-2']);
   const sideB = definition('group-side-b', '支线乙', 'side', ['q-side-1']);
   const mainC = definition('group-main-c', '主线丙', 'main', ['q-main-3']);
+  const raw = definition('group-raw', '格式组', 'side', ['q-raw']);
   const groups: QuestCatalogGroup[] = [
     catalogGroup(mainA, [entry('q-main-1', 'active', 2), entry('q-main-2', 'completed', 5)]),
     catalogGroup(sideB, [entry('q-side-1', 'locked', 0, true)], '主线甲'),
     catalogGroup(mainC, [entry('q-main-3', 'available')]),
+    catalogGroup(raw, [entry('q-raw', 'locked')], '主线丙'),
   ];
+  const definitions: QuestGroupDefinition[] = [mainA, sideB, mainC, raw];
+  if (options.scrollGroups) {
+    for (let index = 0; index < 18; index++) {
+      const id = `q-far-${index}`;
+      quests[id] = quest(id, `远端任务${index}`);
+      const group = definition(`group-far-${index}`, `远端组${index}`, 'side', [id]);
+      definitions.push(group);
+      groups.push(catalogGroup(group, [entry(id, 'locked')], '主线丙'));
+    }
+  }
   const campaign = {
-    quests: Object.values(quests), questGroups: [mainA, sideB, mainC], placements: [],
+    quests: Object.values(quests), questGroups: definitions, placements: [],
   } as unknown as Campaign;
 
   let debugState: GmQuestDebugState = { active: false, completed: false };
@@ -399,5 +412,36 @@ test('the quest search box only shows on the quest tab', t => {
   assert.equal(questSearchRoot()?.style.display, 'none');
   f.click('调试页 任务');
   assert.equal(questSearchRoot()?.style.display, 'block');
+});
+
+test('raw story markers are shown as readable task text', t => {
+  const f = fixture(); t.after(f.cleanup);
+  f.click('调试页 任务');
+  typeQuestSearch('测试');
+  assert.ok(f.button('搜索任务 主线 · 测试：首领战'));
+  f.click('搜索任务 主线 · 测试：首领战');
+  assert.ok(f.texts().includes('主线 · 测试：首领战'));
+  assert.ok(!f.texts().some(text => text.includes('_BOSS战')), '详情不显示内容标记');
+});
+
+test('selecting a search result scrolls the left catalog to its group', t => {
+  const f = fixture({ scrollGroups: true }); t.after(f.cleanup);
+  f.click('调试页 任务');
+  typeQuestSearch('远端任务17');
+  assert.ok(f.button('搜索任务 远端任务17'));
+  f.click('搜索任务 远端任务17');
+  assert.ok(f.button('任务组 远端组17'), '左栏滚到结果所在组');
+  assert.ok(f.texts().includes('远端任务17的说明'));
+});
+
+test('the search box follows the menu frame after layout changes', t => {
+  const f = fixture(); t.after(f.cleanup);
+  f.click('调试页 任务');
+  const field = questSearchField()!;
+  f.body.root.setPosition(40, 30).setScale(2);
+  f.panel.layoutSearch(f.body);
+  assert.equal(field.style.left, '1204px');
+  assert.equal(field.style.top, '170px');
+  assert.equal(field.style.width, '696px');
 });
 

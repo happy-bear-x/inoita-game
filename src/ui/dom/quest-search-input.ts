@@ -103,7 +103,8 @@ export class QuestSearchInput {
     field.addEventListener('input', () => this.options.onInput(field.value));
     field.addEventListener('keydown', event => {
       // 中文输入法正在选词时，回车用于确认候选，不当作打开第一条结果。
-      if (event.isComposing) return;
+      // 部分安卓 WebView / 旧版 Safari 在确认候选时只给 keyCode 229。
+      if (event.isComposing || event.keyCode === 229) return;
       if (event.key === 'Enter') {
         event.preventDefault();
         event.stopPropagation();
@@ -119,10 +120,12 @@ export class QuestSearchInput {
   private applyRect(rect: QuestSearchInputRect): void {
     const field = this.field;
     if (!field) return;
+    const height = Math.max(22, rect.height);
     field.style.left = `${rect.left}px`;
-    field.style.top = `${rect.top}px`;
+    // 画框缩小后 28px 的设计高度可能低于 16px 字号所需空间；加高时保持原来的垂直中心。
+    field.style.top = `${Math.max(0, rect.top - (height - rect.height) / 2)}px`;
     field.style.width = `${Math.max(1, rect.width)}px`;
-    field.style.height = `${Math.max(1, rect.height)}px`;
+    field.style.height = `${height}px`;
     // iOS Safari 会把小于 16px 的输入框整体放大；这里保底 16px，避免聚焦时页面乱缩放。
     field.style.fontSize = `${Math.max(16, rect.fontSize)}px`;
   }
