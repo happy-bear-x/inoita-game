@@ -28,10 +28,6 @@ import java.util.Map;
  */
 final class LocalAssetServer extends NanoHTTPD {
 
-    interface MigrationListener {
-        void onMigrationDone();
-    }
-
     interface FrameRateListener {
         void onFrameRateRequested(int rate);
     }
@@ -49,20 +45,13 @@ final class LocalAssetServer extends NanoHTTPD {
 
     private final Context context;
     private final UpdateManager manager;
-    private final MigrationListener migrationListener;
     private final FrameRateListener frameRateListener;
-    private final String migrationJson;
-    private boolean migrationPending;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
-    LocalAssetServer(Context context, UpdateManager manager, String migrationJson,
-                     MigrationListener migrationListener, FrameRateListener frameRateListener) {
+    LocalAssetServer(Context context, UpdateManager manager, FrameRateListener frameRateListener) {
         super("127.0.0.1", PORT);
         this.context = context;
         this.manager = manager;
-        this.migrationJson = migrationJson;
-        this.migrationPending = migrationJson != null && !migrationJson.equals("{}");
-        this.migrationListener = migrationListener;
         this.frameRateListener = frameRateListener;
     }
 
@@ -87,12 +76,6 @@ final class LocalAssetServer extends NanoHTTPD {
             if (uri.equals("/__native/build-info")) return json(manager.buildInfoJson());
             if (uri.equals("/__native/frame-rate")) return nativeFrameRate(session);
             if (uri.equals("/__native/bootstrap.js")) return bootstrap();
-            if (uri.equals("/__native/migration-done")) {
-                mainHandler.post(() -> {
-                    if (migrationListener != null) migrationListener.onMigrationDone();
-                });
-                return empty(Response.Status.NO_CONTENT);
-            }
             if (uri.equals("/__diagnostics/report")) return proxyDiagnostics(session);
             if (uri.equals("/__cloud") || uri.startsWith("/__cloud/")) return proxyCloud(session, uri);
             return serveAsset(session, uri);
@@ -263,23 +246,6 @@ final class LocalAssetServer extends NanoHTTPD {
                 .append("setFrameRate:function(rate){fetch('/__native/frame-rate?rate='+encodeURIComponent(rate),{method:'POST'}).catch(function(){});},")
                 .append("buildInfo:function(){return JSON.stringify(globalThis.__inoitaBuildInfo||{});}")
                 .append("};");
-
-        boolean migrate;
-        synchronized (this) {
-            migrate = migrationPending && migrationJson != null;
-            if (migrate) migrationPending = false;
-        }
-        if (migrate) {
-            script.append("try{var __inoitaMigration=").append(migrationJson).append(";")
-                    .append("for(var __k in __inoitaMigration){")
-                    .append("if(Object.prototype.hasOwnProperty.call(__inoitaMigration,__k))")
-                    .append("localStorage.setItem(__k,__inoitaMigration[__k]);}")
-                    .append("}catch(__e){}");
-            script.append("fetch('/__native/migration-done',{method:'POST'}).catch(function(){});");
-            mainHandler.post(() -> {
-                if (migrationListener != null) migrationListener.onMigrationDone();
-            });
-        }
 
         Response response = newFixedLengthResponse(Response.Status.OK,
                 "text/javascript; charset=utf-8", script.toString());

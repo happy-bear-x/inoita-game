@@ -59,7 +59,6 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
     private UpdateManager updateManager;
     private long lastBackPressed;
     private boolean pageReady;
-    private String migrationJson;
     /** 页面请求的游戏帧率（30/60）；Surface 始终按它向系统投票，不跟随屏幕瞬时低刷新率。 */
     private int requestedFrameRate;
     /** 最近一次读到的屏幕实际刷新率；只用于通知页面换算限帧和日志，不回设 Surface。 */
@@ -131,37 +130,14 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
 
         updateManager = UpdateManager.get(getApplicationContext());
         updateManager.setListener(this);
-        startWithMigration();
+        updateManager.initialize(this::onUpdateManagerReady);
         hideSystemBars();
-    }
-
-    private void startWithMigration() {
-        final boolean needed = SaveMigration.isNeeded(this);
-        final ProgressDialog migrationDialog;
-        if (needed) {
-            migrationDialog = new ProgressDialog(this);
-            migrationDialog.setMessage(getString(R.string.migration_booting));
-            migrationDialog.setCancelable(false);
-            migrationDialog.show();
-        } else {
-            migrationDialog = null;
-        }
-
-        SaveMigration.migrateIfNeeded(this, json -> {
-            if (migrationDialog != null) migrationDialog.dismiss();
-            if (isFinishing() || isDestroyed()) return;
-            migrationJson = json;
-            if (json == null || json.equals("{}")) SaveMigration.markDone(this);
-            updateManager.initialize(this::onUpdateManagerReady);
-            hideSystemBars();
-        });
     }
 
     private void onUpdateManagerReady() {
         if (isFinishing() || isDestroyed()) return;
         try {
-            server = new LocalAssetServer(this, updateManager, migrationJson,
-                    this::onMigrationDone, this::onFrameRateRequested);
+            server = new LocalAssetServer(this, updateManager, this::onFrameRateRequested);
             server.startServer();
         } catch (IOException error) {
             Log.e(TAG, "本地资源服务启动失败", error);
@@ -176,10 +152,6 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
             startBootWatchdog();
         }
         if (!updateManager.repostPendingState()) updateManager.checkForUpdate();
-    }
-
-    private void onMigrationDone() {
-        SaveMigration.markDone(this);
     }
 
     /**

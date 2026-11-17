@@ -10,7 +10,6 @@
 - `InotiaApplication.java`：在 `attachBaseContext` / `onCreate` 初始化 Chromium；初始化必须早于任何 `CefriumBrowser`。
 - `LocalAssetServer.java`：只监听 `127.0.0.1:47653` 的本地 HTTP 服务。按 `UpdateManager` 的版本快照送文件，并提供 `/__native/report`、`/__native/boot-ok`、`/__native/build-info`、`/__native/frame-rate`、`/__native/bootstrap.js`；`/__cloud`、`/__diagnostics/report` 反向代理到 `config/endpoints.json` 派生出的地址。
 - `AssetPaths.java`：本地服务的路径规范化和 MIME/缓存规则，和原来的 WebViewAssetLoader 口径一致。
-- `SaveMigration.java`：首次启动时用隐藏的系统 WebView 读取旧地址 `https://appassets.androidplatform.net` 下的 `localStorage`，存成备份，再由 `bootstrap.js` 写入新地址。
 - `Diagnostics.java`：页面与更新流程共用的诊断上报。
 - `app/src/main/java/io/github/sunflower9264/inoita/Update*.java`：热更新器。`UpdateManager` 管检查、下载和启动回退；`UpdateManifest` 解析并验签指针/清单；`UpdateHttp` 固定 host、处理 gzip 与 Range；`UpdateInstaller` 做差量、硬链接和版本切换；`UpdateState` 管 SharedPreferences 与版本目录。
 - `update-public-key.txt`：热更清单验签公钥（base64 SPKI DER），由 `npm run update:key` 生成；缺失时 Gradle 写空字符串，热更检查自动跳过。
@@ -21,12 +20,11 @@
 - **构建工具链固定**：JDK 25、Gradle 9.7.1、AGP 9.4、compileSdk 37、build-tools 37.0.0。`tools/build-apk.mjs` 会优先使用 `~/.local/jdk-25`；本机打包前先确认这些版本，不要退回 JDK 17 / Gradle 8.7。
 - 网页产物仍是 `dist/`；打包前先在仓库根目录运行 `npm run build`。`assets.srcDirs` 直接读取 `../dist`，不复制。
 - **页面 origin 固定为 `http://127.0.0.1:47653`**。端口写死是为了让 Cefrium 的 `localStorage` 一直落在同一个 origin；不要改成随机端口。端口被占用时 `MainActivity` 会弹出错误并退出。
-- `index.html` 由本地服务在 `<head>` 最前面注入 `/__native/bootstrap.js`。这个脚本必须在模块脚本之前定义 `__inoitaEndpoints`、`__inoitaBuildInfo`、`window.InotiaNative` 和一次性存档迁移；不要改成只在 `loadUrl` 后注入。
+- `index.html` 由本地服务在 `<head>` 最前面注入 `/__native/bootstrap.js`。这个脚本必须在模块脚本之前定义 `__inoitaEndpoints`、`__inoitaBuildInfo` 和 `window.InotiaNative`；不要改成只在 `loadUrl` 后注入。
 - `window.InotiaNative` 只是兼容层：`report()` 走 `/__native/report`，`markBootOk()` 走 `/__native/boot-ok`，`buildInfo()` 读 `__inoitaBuildInfo`，`setFrameRate(rate)` 走 `/__native/frame-rate`。页面代码继续按原接口调用。
 - **按玩家帧率选显示模式，Surface 的帧率请求保持 30/60。** 壳收到 30/60 后，选一个刷新率是目标帧率整数倍的最低显示模式（30→60/90/120，60→60/120），写 `preferredDisplayModeId`。`Surface.setFrameRate` 传玩家选的 30/60 和 `FRAME_RATE_COMPATIBILITY_FIXED_SOURCE`（游戏要固定目标帧率；媒体页建议 DEFAULT，游戏页用 FIXED_SOURCE）。关键是不能传屏幕瞬时的低刷新率（LTPO 会掉到 10Hz），那会让系统把整个应用按该帧率限死。`DisplayManager.onDisplayChanged` 和 800ms 兜底只读实际刷新率、写 `window.__inoitaDisplayHz` 并派发 `inoita-display-rate`，页面用 `setRefreshRate` 换算限帧；实际值不能回设 Surface。整数倍保证每个游戏帧占整数个屏幕节拍；60 帧在 90Hz 上会反复在 1 个和 2 个节拍之间跳，所以不要固定请求最高刷新率。
 - `Cefrium.setGpuProcessEnabled(true)`、`setLibraryPrefetchEnabled(false)`、`setComponentUpdatesEnabled(false)` 都在 `attachBaseContext` 里、`Cefrium.setupProcess` 之前设置；SDK 的 `CefriumInitProvider` 在本方法返回后就会读预读开关，放到 `onCreate` 已经太晚。GPU 独立进程实测多约 21% 内存，没有帧率收益就回退。
 - `__inoitaEndpoints` 在 APK 内指向本地代理：`cloudBase = http://127.0.0.1:47653/__cloud`，`diagnosticsReport = http://127.0.0.1:47653/__diagnostics/report`；代理再转到 `config/endpoints.json` 派生地址，页面不写域名，也不受 CORS 影响。
-- **存档迁移只做一次**：旧 origin 是 `https://appassets.androidplatform.net`，新 origin 是本地地址。`SaveMigration` 先导出旧 `localStorage` 到 `filesDir/migration-localstorage.json`，`bootstrap.js` 写入后调用 `/__native/migration-done`，之后不再注入，避免覆盖新存档。
 - **热更只换网页层**。`UpdateManager.initialize()` 先读清单、发布不可变路径快照，再启动本地服务与浏览器；加载地址带 `?v=<buildId>`。清单不可用时降级为只读 APK 资源。
 - 热更新指针的 `minShell` 必须和新壳一致。当前 `SHELL_VERSION=2`，`tools/update-manifest.ts` 的 `MIN_SHELL=2`；旧 WebView 壳（1）会跳过新清单，需要重装 APK。
 - 更新检查不只做一次：冷启动检查，失败 30 秒后重试（最多 3 次），重试用尽后弹出「检查更新失败」并允许手动重试；回到前台且距上次检查超过 6 小时再查。检查时间/结果、待处理 buildId、下载失败原因、失败 buildId 和时间、启动耗时都持久化到 SharedPreferences。
@@ -37,7 +35,7 @@
 - 壳使用 edge-to-edge：`setDecorFitsSystemWindows(false)`，Cefrium 的 surface 铺满整屏；安全区只由网页用于 HUD、侧边按钮和文字避让，不参与画布尺寸。全屏开关在自带引擎里返回 `packaged`，由隐藏系统栏实现沉浸式。
 - 页面背景色设在视图树上：`browser.getSurfaceContainer().setBackgroundColor(...)`。`CefriumBrowser` 是屏幕上显示的 surface 浏览器，它的 `setBackgroundColor` 只对离屏浏览器有效，调用会立刻抛 `IllegalStateException` 让应用闪退。
 - 明文只允许本机 `127.0.0.1` 与 `localhost`；release 的云存档/诊断地址必须是 HTTPS。本地 HTTP 服务只绑定 `127.0.0.1`，不监听局域网。
-- **不要降级 Cefrium 到 0.17.1**。0.18.0 修复了同进程系统 WebView 与 Cefrium 并存、`addDocumentStartJavaScript` 在原生层杀死进程的启动崩溃；存档迁移会在启动时创建一次系统 WebView，正好踩中前者。升级时同时改 `android/build.gradle` 的插件版本和 `app/build.gradle` 的 SDK 版本。
+- **不要降级 Cefrium 到 0.17.1**。0.18.0 修复了 `addDocumentStartJavaScript` 在原生层杀死进程的启动崩溃；升级时同时改 `android/build.gradle` 的插件版本和 `app/build.gradle` 的 SDK 版本。
 - **引擎升级必须发 APK**。Cefrium/Chromium 是原生库，热更只能换 `dist/` 里的网页内容。Chromium 版本由 `com.cefrium:cefrium-sdk` 决定，升级时改版本号并重新打包。Cefrium 是 LGPL-3.0-or-later 或商业许可；分发 APK 时保留根目录 `THIRD-PARTY-NOTICES.md` 并提供源码地址。
 - Cefrium 的原生库必须解压到磁盘：Gradle 打开 `useLegacyPackaging`，清单保留 `android:extractNativeLibs="true"`；只打 `arm64-v8a`，不要恢复多 ABI 打包。
 - `verify-apk.mjs` 会检查 Cefrium 类、arm64 原生库、16 KB 页对齐和游戏资产与 `dist` 一致；Cefrium 自带的 `icudtl.dat`、`*.pak`、`stored-locales/`、`cefrium/` 不参与和 `dist` 的逐文件对比。
