@@ -160,6 +160,9 @@ export class Session {
       (enemy.capture.map!==map||enemy.capture.visit!==this.storyWorld.visit))this.deleteEnemyState(id);
     if (this.chests.mapId !== map) {
       for (const spawn of this.chests.spawns) this.deleteEnemyState(spawn.id);
+      // 永久死亡的 breakable 记录只属于上一次地图访问，换图后不会再生成，直接清掉。
+      for (const [id, enemy] of this.enemyStates)
+        if (id.startsWith('breakable:') && enemy.deadUntil === 'permanent') this.deleteEnemyState(id);
       if (this.chests.mapId !== undefined) {
         for (const [id, enemy] of this.enemyStates) if (enemy.deadUntil !== 'permanent') this.deleteEnemyState(id);
       }
@@ -512,9 +515,15 @@ export class Session {
     this.claimedReservedDrops.add(item);
     this.reservedDropMisses=0;
   }
-  /** 旧档里已经拥有的解锁道具只补领取记录，不改动物品，也不清掉当前保底。 */
+  /** 读取时补齐已经拥有的解锁道具领取记录，不改动物品，也不清掉当前保底。 */
   seedReservedClaims(items:Iterable<string>):void {
     for(const item of items)this.claimedReservedDrops.add(item);
+  }
+  /** 任务或剧情直接发放配方书、礼盒等解锁道具时登记领取，避免之后从保留掉落再出现。 */
+  private noteReservedGrant(item:string):void {
+    const definition=this.bag.catalog.items[item];
+    if(definition?.use?.kind==='recipe'||definition?.use?.kind==='box'||item.startsWith('sealed-skillbook'))
+      this.seedReservedClaims([item]);
   }
   private restoreReservedDrops(state?:ReservedDropState):void {
     const value=state??{unlockMisses:0,claimed:[]};
@@ -587,10 +596,7 @@ export class Session {
     this.restoreReservedDrops(restored.reservedDrops);
     this.partyItemChance=restored.partyItemChance??0;
   }
-  /**
-   * 收据表按任务只保留周期最新的一张：正式消费者只读某任务的最新奖励，
-   * 旧存档里同一任务的多个历史轮次在恢复时丢弃。
-   */
+  /** 收据表按任务保存一张；正常写入已经按周期覆盖。 */
   private restoreReceipts(receipts:Iterable<QuestSettlement>):void {
     this.receipts.clear();
     for(const receipt of receipts)this.receipts.set(receipt.quest,structuredClone(receipt));
@@ -679,7 +685,7 @@ export class Session {
     const rewardKeys=new Set<string>();
     const questProgress=new Map(restored.questBook.quests);
     for(const receipt of restored.receipts){
-      const key=JSON.stringify([receipt.quest,receipt.cycle]);
+      const key=receipt.quest;
       if(!this.definition(receipt.quest)||rewardKeys.has(key)||!Number.isSafeInteger(receipt.cycle)||receipt.cycle<0)throw new Error('检查点奖励记录无效');
       const progress=questProgress.get(receipt.quest);
       if(!progress||!progress.completedCycles||receipt.cycle>progress.cycle)throw new Error('检查点奖励与任务周期不一致');
@@ -1255,7 +1261,7 @@ export class Session {
   private applyQuestCommand(command:QuestCommand):void {
     const plan=this.questBook.plan(command,{stateIsCurrent:true});
     for(const item of plan.itemRemovals)if(!this.bag.remove(item.item,item.quantity))throw new Error('剧情物品不足');
-    for(const item of plan.itemGrants)this.bag.add(item.item,item.quantity);
+    for(const item of plan.itemGrants){this.bag.add(item.item,item.quantity);this.noteReservedGrant(item.item);}
     for(const receipt of plan.rewards){
       // 收据按任务只留最新一轮；周期没有前进，说明这一轮已经结算过。
       const existing=this.receipts.get(receipt.quest);
@@ -1320,7 +1326,7 @@ export class Session {
                 occurrence:{source:'talk',sequence:this.questBook.factSequence('talk')+1}}});break;
             case 'item-give':case 'item-take':
               if(!Number.isSafeInteger(command.quantity)||command.quantity<=0)throw new Error('剧情物品数量无效');
-              if(command.type==='item-give')this.bag.add(command.item,command.quantity);
+              if(command.type==='item-give'){this.bag.add(command.item,command.quantity);this.noteReservedGrant(command.item);}
               else if(!(command.allowPartial&&this.bag.count(command.item)===0)&&!this.bag.remove(command.item,command.allowPartial?Math.min(command.quantity,this.bag.count(command.item)):command.quantity))throw new Error('剧情物品不足');
               break;
             case 'money-give':case 'money-take':

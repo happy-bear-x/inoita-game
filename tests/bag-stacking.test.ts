@@ -86,7 +86,7 @@ test('带词条、强化、宝石的实例不会被并进普通堆叠，绑定�
   bag.verifyConsistency();
 });
 
-test('旧档里的零数量实例仍按原校验拒绝，不被合并掩盖', () => {
+test('零数量实例仍按原校验拒绝', () => {
   const session = createSession();
   session.bag.add('skillbook', 1);
   const saved = record(session);

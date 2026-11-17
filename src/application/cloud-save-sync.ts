@@ -68,7 +68,7 @@ export async function backupLocalSaves<World>(ports: CloudSaveSyncPorts<World>):
   let total = 0;
   for (const slot of localRefs()) {
     const reading = ports.saves.readRaw(slot);
-    if (reading.kind === 'empty') continue;
+    if (reading.kind === 'empty' || reading.kind === 'obsolete') continue;
     total += 1;
     if (reading.kind === 'ok') local.push({ slot, raw: reading.raw });
     else failures.push({ slot, reason: reasonOf(reading) });

@@ -375,9 +375,11 @@ test('older development saves enter the same empty-slot class flow',()=>{
   f.click('开始游戏');f.click('存档槽 2');assert.deepEqual(f.events,['new']);
 });
 
-test('the previous published save format still opens as a readable slot',()=>{
-  const f=fixture();f.entries.set('inotia4.story.v1.slot1',saved().replace('"format":34','"format":33'));
-  f.click('开始游戏');f.click('存档槽 2');assert.deepEqual(f.events,['load:1']);
+test('a save from an older format enters the empty-slot flow',()=>{
+  const f=fixture();
+  const raw=JSON.parse(saved());raw.format=SAVE_FORMAT-1;
+  f.entries.set('inotia4.story.v1.slot1',JSON.stringify(raw));
+  f.click('开始游戏');f.click('存档槽 2');assert.deepEqual(f.events,['new']);
 });
 
 test('title settings keeps every row inside a scrolling panel',()=>{

@@ -16,12 +16,10 @@ APK 把 Vite 构建的 `dist/`（当前约 113MB、4200 多个文件）打进 as
 - **更新源就是同一份 `dist/`**。网页版和 APK 热更共用一次构建、一次部署。
 - **壳保持薄**。游戏逻辑、内容、素材都在网页层；原生只留 Cefrium 宿主、本地资源服务和更新器。
 
-## 页面来源与存档迁移
+## 页面来源
 
-- 旧壳的页面 origin 是 `https://appassets.androidplatform.net`；新壳是 `http://127.0.0.1:47653`。浏览器把它们当成两个网站，旧 `localStorage` 不会自动出现。
-- 首次启动时 `SaveMigration` 创建一个隐藏的系统 WebView，加载 APK 里的 `migrate.html`，把旧 origin 的 `localStorage` 导出到 `filesDir/migration-localstorage.json`。
-- `LocalAssetServer` 在 `index.html` 的 `<head>` 最前面插入 `/__native/bootstrap.js`。这个脚本在模块脚本之前把迁移数据写进新 origin，并定义 `__inoitaEndpoints`、`__inoitaBuildInfo` 和 `window.InotiaNative`。
-- 迁移完成后调用 `/__native/migration-done`，之后不再注入；避免用旧备份覆盖玩家后来产生的新存档。
+- 新壳的页面 origin 固定为 `http://127.0.0.1:47653`。正式版只读取这个 origin 下的当前 59 格式存档，不再读取或迁移旧 WebView origin 的 `localStorage`。
+- `LocalAssetServer` 在 `index.html` 的 `<head>` 最前面插入 `/__native/bootstrap.js`。这个脚本在模块脚本之前定义 `__inoitaEndpoints`、`__inoitaBuildInfo` 和 `window.InotiaNative`。
 
 ## 服务端产物
 
@@ -48,7 +46,7 @@ dist/update/
 
 ## 客户端流程
 
-1. `MainActivity.onCreate` 先做一次存档迁移，再 `UpdateManager.initialize()`；初始化完成后启动 `LocalAssetServer`，创建 `CefriumBrowser`，加载 `http://127.0.0.1:47653/index.html?v=<buildId>`。
+1. `MainActivity.onCreate` 直接调用 `UpdateManager.initialize()`；初始化完成后启动 `LocalAssetServer`，创建 `CefriumBrowser`，加载 `http://127.0.0.1:47653/index.html?v=<buildId>`。
 2. 冷启动后台检查；失败后 30 秒重试，最多 3 次；重试用尽后弹「检查更新失败」并允许手动重试；回前台且距上次检查超过 6 小时再查。
 3. 按 `UPDATE_CHANNEL` 取 `latest.json` 或 `latest-staging.json` 及 `.sig`，验签；连接超时 4 秒、读取超时 8 秒，禁用缓存。
 4. buildId 与当前一致 → 结束，不显示界面。
@@ -68,7 +66,7 @@ dist/update/
 - 清单不可用 → 只读 APK 资源降级启动。
 - 路径按段解码后拒绝 `.`、`..`、反斜杠、NUL、隐藏段和空段；MIME 与缓存头沿用旧口径：`bundles/` 一年 `immutable`；`index.html`、`diagnostics.js` 用 `no-store`；其余 `no-cache`。
 - `index.html` 响应时在 `<head>` 最前面插入 `/__native/bootstrap.js`；不要改成 `loadUrl` 之后注入，否则模块脚本已经先跑了。
-- `/__native/report`、`/__native/boot-ok`、`/__native/build-info`、`/__native/migration-done` 由 `LocalAssetServer` 处理；`/__cloud`、`/__diagnostics/report` 反向代理到 `config/endpoints.json` 派生出的 HTTPS 地址，页面不需要 CORS。
+- `/__native/report`、`/__native/boot-ok`、`/__native/build-info` 由 `LocalAssetServer` 处理；`/__cloud`、`/__diagnostics/report` 反向代理到 `config/endpoints.json` 派生出的 HTTPS 地址，页面不需要 CORS。
 - `window.InotiaNative` 是兼容层：`report()` 走 `/__native/report`，`markBootOk()` 走 `/__native/boot-ok`，`buildInfo()` 读 `__inoitaBuildInfo`。页面代码继续按原接口调用。
 
 ## 回滚
@@ -108,7 +106,7 @@ npm run verify:update -- --apk apk-out/Inotia-4-2.0.1.apk --url https://catgo.on
 手装一次 APK 后验证：
 
 1. 改一句剧情 → `npm run deploy` → 重开游戏看到更新弹窗 → 下载后重载并看到新剧情。
-2. 旧档仍在；首次从 1.0.3 升级时，旧 `localStorage` 能迁移到新 origin。
+2. 新 origin 下的 59 存档能正常读取；旧 WebView origin 的 `localStorage` 留在原处，但正式版不再读取或迁移。
 3. 关掉服务端再启动，能离线进游戏。
 4. 下载中杀进程再启动，能续传。
 5. 用一个缺文件的坏清单，确认自动回退且不再反复提示该版本。
@@ -120,7 +118,7 @@ npm run verify:update -- --apk apk-out/Inotia-4-2.0.1.apk --url https://catgo.on
 
 - **引擎升级必须发 APK**。Chromium 是原生库，热更只换网页内容。
 - **第一个 Cefrium 包要重装**。`minShell=2` 会拦住旧 WebView 壳的自动更新；旧用户必须安装 2.0.0 APK。
-- **旧壳无法自动迁移到新壳**。换引擎不是热更能完成的；需要在发布说明里让玩家安装新 APK。
+- **旧壳无法自动迁移到新壳**。换引擎不是热更能完成的；正式版也不再迁移旧 origin 的存档，发布说明要让玩家安装新 APK 并提前说明旧档不再承接。
 - **私钥丢失 = 更新链断掉**。必须备份 `~/.config/inoita/update-signing.pem`。
 - **不支持降级**。`builtAt` 只增不减；撤回线上版本要部署一个内容正确的新构建。
 - **存储**：APK 约 293MB + 当前版本约 113MB；staging 只额外占用缺失文件。

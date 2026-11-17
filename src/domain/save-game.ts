@@ -49,7 +49,7 @@ export interface SaveGame<World = unknown> {
 }
 
 /**
- * 读一个槽的三种结果。`unreadable` 与 `empty` 分开：损坏槽保留 unreadable，保存覆盖时确认；开发阶段的版本不符槽显示 EMPTY。
+ * 读一个槽的三种结果。`unreadable` 与 `empty` 分开：损坏槽和未来版本保留 unreadable，保存覆盖时确认；旧格式槽显示 EMPTY。
  */
 type SlotReading<World = unknown> =
   | { kind:'empty' }
@@ -165,7 +165,8 @@ export class SaveSlots<World = unknown> {
   /** 已解析记录的摘要判定；peek、inspect 和写档回填缓存共用，避免三处条件分叉。 */
   private summaryReadingOf(record:Partial<SaveGame<World>>):SlotSummaryReading {
     if(!record||typeof record!=='object')return {kind:'unreadable',reason:'存档内容不是对象'};
-    if(typeof record.format==='number'&&!isReadableSaveFormat(record.format))return {kind:'empty'};
+    if(typeof record.format==='number'&&!isReadableSaveFormat(record.format))
+      return record.format>SAVE_FORMAT?{kind:'unreadable',reason:'存档版本比当前游戏新'}:{kind:'empty'};
     if(!isReadableSaveFormat(record.format))return {kind:'unreadable',reason:'存档缺少有效版本'};
     if(!record.session||!record.world)return {kind:'unreadable',reason:'存档缺少会话或世界状态'};
     const summary=record.summary;

@@ -68,7 +68,7 @@ npm run test:standalone
 
 - 装备清理由 shop、shop-panel、story-menu-interactions 用例覆盖等级与独立品质筛选、保护条件、报价变化、上锁入口和长按释放；saved-game 覆盖锁定状态读回。
 - `texture-lifecycle.test.ts` 覆盖纹理退役：可见对象仍引用时不删、隐藏对象不算引用、容器内角色计入，以及引用消失后在帧后检查里补删。
-- `enemy-presence-runtime.test.ts` 使用正式任务、怪物和掉落，验证剧情清场后的任务怪从旧档恢复、普攻和技能扣血、单次死亡结算、任务掉落、刷新与换图、任务结束后的同帧退场、重复接取及捕捉；在场与生成资格查询保持只读。
+- `enemy-presence-runtime.test.ts` 使用正式任务、怪物和掉落，验证剧情清场后的任务怪从存档恢复、普攻和技能扣血、单次死亡结算、任务掉落、刷新与换图、任务结束后的同帧退场、重复接取及捕捉；在场与生成资格查询保持只读。
 - `enemy-respawn.test.ts` 覆盖视野内 60 秒、视野外 20 秒、四边 48 地图像素缓冲、回头、镜头范围变化、读档、换图和一次性/捕捉/动态敌人；`combat-clock-runtime.test.ts` 验证主镜头接线、各档画面采样和暂停计时，真实任务战斗用例验证提前刷新的怪仍扣血并只结算一次掉落。
 
 - `party.test.ts` 与 `story-menu-interactions.test.ts` 验证佣兵能力点、旧成长保留和人物页加点。
@@ -86,8 +86,8 @@ npm run test:standalone
 
 - `story-scene`、`story-stage-isolation` 与 `saved-game` 覆盖主角收放武器的正常/跳过路径、同图保留、地图重载恢复默认和当前格式读回。
 
-- `mercenary-skill-unlocks.test.ts` 覆盖六职业封印书的永久共享、候补与未来佣兵继承、抽取去重、失败回滚和检查点恢复；存档与菜单用例覆盖旧书转换、等级保留和背包控件复用。
+- `mercenary-skill-unlocks.test.ts` 覆盖六职业封印书的永久共享、候补与未来佣兵继承、抽取去重、失败回滚和检查点恢复；存档与菜单用例覆盖共享资格、等级保留和背包控件复用。
 
-- `story-equipment.test.ts` 覆盖剧情装备发放与拾取拦截、手动穿脱与连带替换保护、剧情移除与离队销毁、正常装备退回；`story-disguise.test.ts` 验证剧情伪装穿脱，`saved-game.test.ts` 验证 58 → 59 清理散装实例并保留正在穿戴的剧情装备。
+- `story-equipment.test.ts` 覆盖剧情装备发放与拾取拦截、手动穿脱与连带替换保护、剧情移除与离队销毁、正常装备退回；`story-disguise.test.ts` 验证剧情伪装穿脱，`saved-game.test.ts` 验证当前格式读回时保留剧情装备限制。
 
 - `prompt-shell.test.ts` 覆盖确定/取消按钮实际图片层、独立输入弹窗的图片释放、系统键盘可见范围与密码表单校验及提交。

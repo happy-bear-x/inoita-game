@@ -250,3 +250,14 @@ test('restoring a save keeps saved breakable records and permanent states',()=>{
   assert.equal(session.enemyVitals('breakable:3:forest:jar:0').deadUntil,'permanent');
   assert.equal(session.enemyVitals('chest:3:forest:box:0').deadUntil,'permanent');
 });
+
+test('leaving a map clears permanent breakable records',()=>{
+  const session=new Session(campaign);
+  const state=session.captureState() as any;
+  // 记录不在本次 chests.spawns 里，只有换图清理能删掉它。
+  state.chests={map:'forest',visit:3,opened:[],consumed:[],enemies:[]};
+  state.enemies=[['breakable:3:forest:jar:0',{deadUntil:'permanent'}]];
+  session.restoreState(state);
+  session.enterMap('another-map');
+  assert.deepEqual(session.enemyVitals('breakable:3:forest:jar:0'),{});
+});

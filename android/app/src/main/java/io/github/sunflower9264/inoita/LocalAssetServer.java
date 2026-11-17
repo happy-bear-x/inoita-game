@@ -210,7 +210,7 @@ final class LocalAssetServer extends NanoHTTPD {
      * 在入口 HTML 的 head 最前面插入 bootstrap。
      *
      * 它比 Cefrium 的 document-start 注入更可靠：即使原生注入接口不可用，
-     * 页面也一定能在模块脚本之前拿到 __inoitaEndpoints、原生桥和存档迁移数据。
+     * 页面也一定能在模块脚本之前拿到 __inoitaEndpoints、__inoitaBuildInfo 和原生桥。
      */
     private static byte[] injectBootstrap(byte[] htmlBytes) {
         String html = new String(htmlBytes, StandardCharsets.UTF_8);

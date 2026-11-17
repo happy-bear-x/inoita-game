@@ -3,7 +3,7 @@ import test from 'node:test';
 import {readFileSync} from 'node:fs';
 import {prepareSavedGame,type SavedGameContent} from '../src/application/saved-game.ts';
 import {newStorySession} from '../src/domain/story-class.ts';
-import {captureSaveGame,saveSummary} from '../src/domain/save-game.ts';
+import {SAVE_FORMAT,captureSaveGame,saveSummary} from '../src/domain/save-game.ts';
 import type {StoryWorldViewSnapshot} from '../src/scenes/world-scene.ts';
 const read=<T>(name:string):T=>JSON.parse(readFileSync(new URL(`../public/content/${name}.json`,import.meta.url),'utf8')) as T;
 const content:SavedGameContent={campaign:read('campaign'),world:read('world'),storyClasses:read('story-classes'),
@@ -97,4 +97,15 @@ test('current saves retain explicit hero posture', () => {
   const current = record();
   current.world.scene!.actors[0].townPose = false;
   assert.equal(prepareSavedGame(current, content).world.scene!.actors[0].townPose, false);
+});
+
+test('a save from an older format is rejected before installation',()=>{
+  const saved=record();saved.format=SAVE_FORMAT-1;
+  assert.throws(()=>prepareSavedGame(saved,content),/存档版本不受支持/);
+});
+
+
+test('a save with no living member is rejected',()=>{
+  const saved=record();saved.session.hero!.health=0;
+  assert.throws(()=>prepareSavedGame(saved,content),/存档没有存活队员/);
 });

@@ -1092,7 +1092,7 @@ export class MenuScene extends Phaser.Scene {
     const summary=`${verb}成功 ${result.completed} 个`;
     return details?`${summary}，${result.failures.length} 个失败（${details}）`:`${summary}。`;
   }
-  /** 存档槽直接读摘要里的截图 data URL 绘制；没有截图的旧档左侧留空。 */
+  /** 存档槽直接读摘要里的截图 data URL 绘制；没有截图时左侧留空。 */
   private openSlots():void{
     this.resetChallengeClicks();
     this.slotRequest?.abort();

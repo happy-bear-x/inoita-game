@@ -77,7 +77,7 @@ export function generateCompanion(rules:CompanionGenerationRules,definition:{cla
   return {level,baseAttributes,skillCaps:caps,groupSkills};
 }
 
-/** 每名佣兵独立记录普通分配、实际花费和旧档补齐的点数。 */
+/** 每名佣兵独立记录普通分配、实际花费和历史补点。 */
 export interface MercenarySkillPoints {
   allocations:Record<string,number>;
   spentPoints:number;
@@ -91,25 +91,7 @@ export interface MercenarySkillContext {
   clearShortcuts:()=>void;
 }
 
-/** 把旧自动成长与解锁书首级换成普通分配，技能书提升独立保留。 */
-export function migrateMercenarySkills(caps:Record<string,number>,training:CompanionGenerationRules['training'],
-  level:number,books:Record<string,number>,unlocked:Record<string,number>,catalog:BattleCatalog,pointsPerLevel:number) {
-  const allocations:Record<string,number>={},bookLevels:Record<string,number>={},qualifications:Record<string,number>={};
-  let spentPoints=0;
-  for(const id of new Set([...Object.keys(caps),...Object.keys(unlocked)])){
-    const skill=catalog.skills[id];if(!skill)throw new Error('存档中的佣兵技能不存在');
-    const allocated=unlocked[id]!==undefined?Math.min(1,unlocked[id]):autoSkillLevel(training,id,caps[id],level);
-    if(allocated)allocations[id]=allocated;
-    const bookLevel=unlocked[id]!==undefined?Math.max(0,unlocked[id]-allocated):(books[id]??0);
-    if(bookLevel)bookLevels[id]=bookLevel;
-    if(unlocked[id]!==undefined)qualifications[id]=0;
-    spentPoints+=skill.ranks.slice(0,allocated).reduce((sum,rank)=>sum+rank.pointCost,0);
-  }
-  return {skillPoints:{allocations,spentPoints,legacyBonusPoints:Math.max(0,spentPoints-(level-1)*pointsPerLevel)},
-    skillBookLevels:bookLevels,unlockedSkills:qualifications};
-}
-
-/** 训练表按角色等级算出的自然技能等级；自动成长和旧档迁移共用这一份口径。 */
+/** 训练表按角色等级算出的自然技能等级。 */
 function autoSkillLevel(training:CompanionGenerationRules['training'],id:string,cap:number,level:number):number {
   return training[id]?.requiredLevels.slice(0,cap).filter(required=>level>=required).length??0;
 }

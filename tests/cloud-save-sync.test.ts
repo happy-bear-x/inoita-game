@@ -63,11 +63,12 @@ function cloudStub(options:{
   return {port,uploads,downloads,setEntries(next){entries=next;}};
 }
 
-test('backup uploads valid slots and reports future, obsolete and damaged local slots',async()=>{
+test('backup uploads valid slots, skips obsolete ones, and reports future and damaged local slots',async()=>{
   const s=storage({
     'inotia4.story.v1.slot0':save(),
     'inotia4.story.v1.slot1':save(SAVE_FORMAT+1),
     'inotia4.story.v1.slot2':'{broken',
+    'inotia4.story.v1.slot3':save(SAVE_FORMAT-1),
   });
   const slots=new SaveSlots(s),cloud=cloudStub();
   const result=await backupLocalSaves({cloud:cloud.port,saves:slots,confirm:async()=>true});

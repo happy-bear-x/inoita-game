@@ -133,8 +133,6 @@ android {
 dependencies {
     // 把 Chromium 156 打进 APK，页面不再依赖设备自带的 WebView。
     implementation 'com.cefrium:cefrium-sdk:0.18.0'
-    // 只在一次性存档迁移时用系统 WebView 读取旧地址的 localStorage。
-    implementation 'androidx.webkit:webkit:1.11.0'
     implementation 'androidx.core:core:1.16.0'
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'androidx.mediarouter:mediarouter:1.7.0'

@@ -19,7 +19,7 @@ export const emptyShortcutRow = (): ShortcutRow => Array<ShortcutEntry | null>(S
 
 /**
  * 同一技能只保留最后一次登记：从行末往前扫，后出现的副本优先。
- * 旧档没有登记时间，页 2/高槽位视为更新；物品沿用原来的“可占多格”规则。
+ * 页 2/高槽位视为更新；物品沿用原来的“可占多格”规则。
  */
 export function dedupeSkillShortcuts(row:ShortcutRow):ShortcutRow {
   const result=row.map(entry=>entry?{...entry}:null),seen=new Set<string>();

@@ -92,6 +92,12 @@ test('a format older than the current one is obsolete and displays EMPTY until o
   assert.equal(rewritten.kind,'ok');assert.equal(rewritten.kind==='ok'&&rewritten.game.format,SAVE_FORMAT);
 });
 
+test('a future format is unreadable instead of empty',()=>{
+  const slots=new SaveSlots<World>(memory()),session=createSession(),game=record(session);game.format=SAVE_FORMAT+1;
+  slots.write(1,game);
+  assert.equal(slots.inspect(1).kind,'unreadable');
+});
+
 test('slot numbers are bounded and a refusing storage reports the write failure',()=>{
   const slots=new SaveSlots<World>(memory()),session=createSession();
   assert.throws(()=>slots.inspect(MANUAL_SAVE_SLOT_COUNT),/存档槽编号无效/);

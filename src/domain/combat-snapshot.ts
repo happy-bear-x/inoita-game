@@ -40,11 +40,6 @@ function finiteTree(value:unknown,seen=new Set<object>()):void {
     seen.add(value);for(const child of Object.values(value))finiteTree(child,seen);seen.delete(value);
   }
 }
-/**
- * 读档修复：旧版本在召唤主人被名册刷新移除后，可能把它的召唤物留在快照里。
- * 主人的 key 必须仍是队员或敌人；否则把这个召唤和它的子树一起丢掉，让存档继续可读。
- */
-
 /** 读档先校验隔离副本；静止恢复丢弃动作、路径与动作临时属性。 */
 export function prepareCombatRestore(value:WorldCombatState,catalog:BattleCatalog,partyIds:readonly string[]):WorldCombatState {
   const copy=structuredClone(value);finiteTree(copy);

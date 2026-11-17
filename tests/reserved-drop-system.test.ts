@@ -118,3 +118,13 @@ test('reserved drop state survives session capture and restore', () => {
   assert.equal(restored.reservedDropMisses, 4);
   assert.deepEqual([...restored.claimedReservedDrops].sort(), ['once-a', 'once-b']);
 });
+
+test('quest rewards and story item grants register one-time unlock items', () => {
+  const session = new Session(campaign, undefined, undefined, items);
+  assert.equal(session.accept('quest-353'), true);
+  session.bag.add('paillette', 5);
+  assert.equal(session.complete('quest-353'), true);
+  assert.ok(session.claimedReservedDrops.has('lvl-d-weapon-combo-unit'));
+  session.applyStoryCommands([{ type: 'item-give', item: 'd-armor-combo-unit', quantity: 1 }]);
+  assert.ok(session.claimedReservedDrops.has('d-armor-combo-unit'));
+});

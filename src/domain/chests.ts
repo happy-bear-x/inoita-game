@@ -34,7 +34,7 @@ export class ChestVisits {
     this.consumed.clear();for(const id of restored.consumed)this.consumed.add(id);
     this.enemies.splice(0,this.enemies.length,...restored.enemies);
   }
-  /** 丢弃一条生成记录；旧档清理和槽位覆盖写入都用它。 */
+  /** 丢弃一条生成记录；槽位覆盖写入使用它。 */
   removeSpawn(id:string):boolean {
     const index=this.enemies.findIndex(enemy=>enemy.id===id);
     if(index<0)return false;
@@ -56,7 +56,9 @@ export class ChestVisits {
   /** 泉水喝出怪物：和宝箱怪走同一份生成记录，随本次地图访问一起重建。 */
   spawnEnemy(map: string, key: string, enemyId: string, position: {x:number;y:number}): void {
     this.revisionValue++;
-    this.enemies.push({ id: `spring:${this.visit}:${map}:${key}`, enemyId, x: position.x, y: position.y, respawn: false });
+    const id=`spring:${this.visit}:${map}:${key}`;
+    this.removeSpawn(id);
+    this.enemies.push({ id, enemyId, x: position.x, y: position.y, respawn: false });
   }
   /**
    * 可破坏物里开出的怪：同样只活到本次地图访问结束。

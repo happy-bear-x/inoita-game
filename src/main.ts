@@ -523,7 +523,13 @@ async function resumeSlot(slot:SaveSlotRef,signal?:AbortSignal):Promise<void> {
         ui.loading('正在读取存档…');
         app.storyClasses=await app.content.storyClasses(request);request.throwIfAborted();
         await prepareStory(request);request.throwIfAborted();
-        const candidate=prepareSavedGame(reading.game,app);
+        let candidate:ReturnType<typeof prepareSavedGame>;
+        try { candidate=prepareSavedGame(reading.game,app); }
+        catch(error){
+          globalThis.storyDiagnostics?.record('load-validation-failed',{slot:selectedSlot,
+            reason:error instanceof Error?error.message:String(error)},false);
+          throw new Error('游戏存档出错。无法正常进行游戏。');
+        }
         await app.content.map(candidate.map.file,request);request.throwIfAborted();
         ui.loading('正在准备游戏菜单…',0.15);
         await prepareMenuCore(request,value=>ui.loading('正在准备游戏菜单…',0.15+0.35*value));
