@@ -1,8 +1,7 @@
 // 必须最先执行：补齐旧版 Android WebView 缺少的浏览器 API，后面的模块才能正常加载。
 import './application/browser-compat.ts';
 import {installPageInteractionGuard} from './application/page-interaction-guard.ts';
-import {prepareSavedGame} from './application/saved-game.ts';
-import {SavedGameLoader} from './application/saved-game-loader.ts';
+import {createSessionLifecycle} from './session-lifecycle.ts';
 import {AutoSaver} from './application/auto-save.ts';
 import {resetAudioContext,resumeAudioContext} from './application/game-audio.ts';
 import {AUTO_SAVE_SLOT, SAVE_FORMAT, type SaveSlotRef} from './domain/save-game.ts';
@@ -15,18 +14,14 @@ import { storyReferenceMaps, validateStoryReferences } from './application/story
 import { ControlsScene } from './scenes/controls-scene.ts';
 import Phaser from 'phaser';
 import { StoryApp } from './app.ts';
-import { nextStoryMap } from './domain/story-preparation.ts';
 import { commonAssetBatches } from './application/entry-plan.ts';
 import { loadSceneAssets } from './rendering/scene-assets.ts';
 import { trustedContentNow } from './application/content-trust.ts';
 import type { Session } from './domain/session.ts';
 import { newStorySession } from './domain/story-class.ts';
 import { StoryClassScene } from './scenes/story-class-scene.ts';
-import { StoryPresenter } from './rendering/story-presenter.ts';
-import { OutfitPool } from './rendering/outfit-pool.ts';
 import { StoryStageScene } from './scenes/story-stage-scene.ts';
-import type { StoryWorldViewSnapshot } from './scenes/world-scene.ts';
-import { StoryDirector } from './domain/story-director.ts';
+import type { StoryWorldViewSnapshot } from './application/world-snapshot.ts';
 import { FormalUiScene } from './scenes/formal-ui-scene.ts';
 import { MenuScene } from './scenes/menu-scene.ts';
 import { AudioScene } from './scenes/audio-scene.ts';
@@ -45,11 +40,8 @@ import { GAME_FRAME_TIMING, installFrameLimitClock } from './application/game-ti
 import { displaySettings, parallelTextureUnits } from './application/display-settings.ts';
 import { currentRefreshRate, detectRefreshRate, refreshRateKnown, resolveFrameLimit, setRefreshRate } from './application/frame-pacing.ts';
 import { requestNativeFrameRate } from './application/native-frame-rate.ts';
-import { installDiagnosticMetrics, installDiagnosticSnapshot, installStorySkipDiagnostics, FrameStats } from './application/game-diagnostics.ts';
-import { createGmActions, consoleGmActions, type ConsoleGmActions } from './debug/gm-actions.ts';
-import { IndexedDbDebugMarkStore } from './application/debug-mark-store.ts';
-import { prepareDebugMark } from './application/debug-mark-preparation.ts';
-import { persistentDebugWorld, prepareDebugWorld } from './application/debug-world.ts';
+import { installDiagnosticMetrics, installDiagnosticSnapshot, FrameStats } from './application/game-diagnostics.ts';
+import { type ConsoleGmActions } from './debug/gm-actions.ts';
 import { DomUi } from './ui/dom/dom-ui.ts';
 
 declare global {
@@ -60,8 +52,6 @@ declare global {
   var gm: ConsoleGmActions | undefined;
 }
 
-/** 读档完成后，等音频缓存稳定再写一条诊断；不阻塞加载。 */
-const AUDIO_READY_DIAGNOSTIC_DELAY_MS = 4000;
 /** 启动后第一次补测刷新率的延迟；启动初期 rAF 可能还没按高刷回调。 */
 const REFRESH_RECHECK_AFTER_BOOT_MS = 3000;
 /** 进图/读档加载结束后补测刷新率的延迟；此时加载压力已经结束。 */
@@ -71,20 +61,6 @@ const REFRESH_RECHECK_AFTER_START_MS = 1200;
 function worldScene(): WorldScene | undefined {
   return app.game?.scene.getScene(SCENE_KEYS.world) as WorldScene | undefined;
 }
-/**
- * 世界场景在启动切换与场景重启的空窗里不存在。下面两组接线的期望不同，用名字区分：
- *
- * - `requireWorldScene` 用于**玩家发起的操作**。静默丢掉会表现成「点了没反应」，
- *   而玩家已经把这次操作当成生效了，所以这里抛错。
- * - `worldScene()?.…` 用于**查询与可选表现**（预览、外观、镜头焦点）。没有世界场景时
- *   返回 undefined 是合法结果，静默跳过不算丢信息。
- */
-function requireWorldScene(): WorldScene {
-  const scene = worldScene();
-  if (!scene) throw new Error('请等待地图加载');
-  return scene;
-}
-
 // 在创建画布前拦住整页缩放和长按菜单，避免第一次触摸就改掉视口。
 installPageInteractionGuard();
 fitViewport();
@@ -145,7 +121,12 @@ function recordStartPhase(phase:string,details?:Record<string,unknown>):void{
   try{globalThis.storyDiagnostics?.record('start-phase',{phase,...details});}
   catch{/* 诊断不能影响启动 */}
 }
-const savedGameLoader=new SavedGameLoader();
+const sessionLifecycle=createSessionLifecycle(app,{
+  lifetime:{get current(){return modeRequest;},set current(value){modeRequest=value;}},
+  worldScene,currentScene,gmOn,runtimeDiagnostics,prepareStory,prepareMenuCore,refreshMenuWhenReady,
+  cancelCommonPreload,clearMenuPreparations,recordSceneChange,
+  remeasureRefreshAfterStart:()=>remeasureRefreshAfterStart?.(),startAutoSave,stopAutoSave,autoSaver:()=>autoSaver,
+});
 /**
  * 自动存档：进图、剧情事件完成、任务接取/完成、定时四种时机合并写入唯一的自动槽。
  * 会话装上之后才创建，回到主菜单时停掉。
@@ -431,7 +412,7 @@ const PRESSURE_START = { x: 280, y: 200 } as const;
 async function startPressureTest(): Promise<void> {
   if (app.pressureMode) return;
   if (app.mode !== 'menu' || app.suspended || !ui.ready || !app.game?.scene.isActive(SCENE_KEYS.menu)
-    || savedGameLoader.busy) return;
+    || sessionLifecycle.busy) return;
   modeRequest.abort(); modeRequest = new AbortController();
   const signal = modeRequest.signal;
   app.pressureMode = true;
@@ -505,77 +486,7 @@ async function finishStoryStart(classId: string): Promise<void> {
 }
 
 /** 标题与游戏内设置共用读档：准备失败保留入口，旧场景关闭后才替换会话。 */
-async function resumeSlot(slot:SaveSlotRef,signal?:AbortSignal):Promise<void> {
-  // 压测不读写存档；要读档先返回标题，避免把压测会话和存档会话混在一起。
-  if(app.pressureMode)return;
-  const game=app.game,sourceMode=app.mode,sourceScene=currentScene(),sourceSession=app.session,sourceLifetime=modeRequest;
-  if(!game||(sourceMode!=='menu'&&sourceMode!=='game')||app.suspended||!ui.ready||savedGameLoader.busy||
-    !sourceScene?.sys.isActive()||sourceMode==='game'&&worldScene()?.loadingWorld)return;
-  const isCurrent=()=>modeRequest===sourceLifetime&&app.mode===sourceMode&&currentScene()===sourceScene&&app.session===sourceSession&&
-    (sourceScene.sys.isActive()||sourceScene.sys.isPaused());
-  const loadStarted=performance.now();
-  globalThis.storyDiagnostics?.record('load-start',{slot,from:sourceMode},false);
-  try{
-    await savedGameLoader.load(slot,{
-      isCurrent,
-      prepare:async(selectedSlot,request)=>{
-        const reading=app.saves.inspect(selectedSlot);
-        if(reading.kind!=='ok')throw new Error(reading.kind==='empty'?'没有可以载入的存档。':'游戏存档出错。无法正常进行游戏。');
-        ui.loading('正在读取存档…');
-        app.storyClasses=await app.content.storyClasses(request);request.throwIfAborted();
-        await prepareStory(request);request.throwIfAborted();
-        let candidate:ReturnType<typeof prepareSavedGame>;
-        try { candidate=prepareSavedGame(reading.game,app); }
-        catch(error){
-          globalThis.storyDiagnostics?.record('load-validation-failed',{slot:selectedSlot,
-            reason:error instanceof Error?error.message:String(error)},false);
-          throw new Error('游戏存档出错。无法正常进行游戏。');
-        }
-        await app.content.map(candidate.map.file,request);request.throwIfAborted();
-        ui.loading('正在准备游戏菜单…',0.15);
-        await prepareMenuCore(request,value=>ui.loading('正在准备游戏菜单…',0.15+0.35*value));
-        refreshMenuWhenReady(request);
-        request.throwIfAborted();return candidate;
-      },
-      stopCurrent:async()=>{
-        cancelCommonPreload();
-        stopAutoSave();app.gm?.dispose();modeRequest.abort();app.director?.dispose();app.clearMapPrefetch();app.clearStoryPrefetch();ui.resetInput();
-        const stopped=new Promise<void>(resolve=>sourceScene.events.once(Phaser.Scenes.Events.SHUTDOWN,()=>resolve()));
-        game.scene.stop(sourceScene.sys.settings.key);await stopped;
-        app.releaseResidentCombat();
-      },
-      install:(candidate,lifetime)=>{
-        modeRequest=lifetime;const {session,world}=candidate,location=world.location;
-        app.mode='game';ui.setMode('game');ui.loading('正在读取存档…');
-        // 自动槽不是玩家手动选择的槽，所以这里留空。
-        app.saveSlot=slot===AUTO_SAVE_SLOT?undefined:slot;
-        installSession(session, candidate.map.file);
-        recordSceneChange(SCENE_KEYS.world, { map: location.map, source: 'load' });
-        game.scene.start(SCENE_KEYS.world,{map:location.map,x:location.x,y:location.y,facing:location.facing,
-          initialEntry:true,suppressEntry:true,resumeStory:true,signal:lifetime.signal,checkpoint:world.world,generatedEntities:world.generatedEntities,preparedScene:world.scene,
-          onReady:()=>{
-            if(lifetime.signal.aborted)return;
-            remeasureRefreshAfterStart?.();
-            if(world.audio)app.audio?.restoreStoryAudio(world.audio);
-            window.setTimeout(()=>{if(!lifetime.signal.aborted)globalThis.storyDiagnostics?.record('load-audio-ready',{map:location.map});},AUDIO_READY_DIAGNOSTIC_DELAY_MS);
-          }});
-      },
-    },signal);
-    globalThis.storyDiagnostics?.record('load',{slot,
-      elapsedMs:Math.round((performance.now()-loadStarted)*10)/10},false);
-  }catch(error){
-    // 玩家返回、切槽或换会话会让 loader 抛 AbortError；取消不是读档失败，不能写进错误流。
-    const cancelled=!!signal?.aborted||(typeof error==='object'&&error!==null
-      &&(error as {name?:string}).name==='AbortError');
-    if(cancelled){
-      globalThis.storyDiagnostics?.record('load-cancel',{slot},false);
-    }else{
-      globalThis.storyDiagnostics?.record('load-error',{slot,
-        elapsedMs:Math.round((performance.now()-loadStarted)*10)/10,error});
-    }
-    if(isCurrent())ui.loaded();throw error;
-  }
-}
+async function resumeSlot(slot:SaveSlotRef,signal?:AbortSignal):Promise<void> { await sessionLifecycle.load(slot,signal); }
 
 async function changePressureClass(classId:string):Promise<void> {
   const selected=app.storyClasses.classes.find(entry=>entry.id===classId);
@@ -583,8 +494,7 @@ async function changePressureClass(classId:string):Promise<void> {
   if(!app.pressureMode||!selected||!scene||!game||scene.loadingWorld)return;
   const oldSession=app.session;
   ui.loading('正在进入压测战场…');
-  stopAutoSave();app.gm?.dispose();app.director?.dispose();modeRequest.abort();modeRequest=new AbortController();
-  app.clearMapPrefetch();app.clearStoryPrefetch();ui.resetInput();
+  sessionLifecycle.stopCurrentWork();modeRequest=new AbortController();
   const stopped=new Promise<void>(resolve=>scene.events.once(Phaser.Scenes.Events.SHUTDOWN,()=>resolve()));
   game.scene.stop(SCENE_KEYS.world);await stopped;
   app.releaseSession(oldSession);
@@ -599,200 +509,9 @@ async function changePressureClass(classId:string):Promise<void> {
 }
 
 /** 新开与读档共用的会话装配：世界场景、菜单、剧情播放器与界面都接到这份会话上。 */
-function installSession(session: Session, keepMapFile?: string): void {
-  stopAutoSave();app.gm?.dispose();app.director?.dispose();
-  // 会话可能换了职业；旧常驻包、历史地图纹理和会话级内容解析结果都不再复用。
-  app.releaseResidentCombat();
-  app.clearMapHistory();
-  app.clearStoryPrefetch();
-  app.content.clearSessionCaches(keepMapFile);
-  app.outfits?.destroy();
-  app.outfits = new OutfitPool({ textures: app.game!.textures, anims: app.game!.anims, game: app.game! },
-    app.wardrobe, app.items, (ids, signal) => app.content.wardrobePoses(ids, signal));
-  const campaign = app.campaign, presentation = app.storyInterface;
-  app.session = session;
-  globalThis.storyDiagnostics?.record('session-install', {
-    slot: app.saveSlot ?? null, map: session.storyWorld.currentLocation?.map ?? null,
-    pressure: app.pressureMode, party: session.party?.activeIds ?? null,
-    classId: session.hero?.classId ?? null, level: session.hero?.level ?? null,
-  }, false);
-  app.storySignal = modeRequest.signal;
-  app.checkpoint.clear();
-  app.summonLampMerchant=(entry,signal)=>requireWorldScene().summonLampMerchant(entry,signal);
-  app.changeEquipment=async(entry,slot,signal,memberId)=>requireWorldScene().changeEquipment(entry,slot,signal,memberId);
-  app.equipmentAppearance=memberId=>worldScene()?.equipmentAppearance(memberId);
-  app.previewAppearance=memberId=>worldScene()?.previewAppearance(memberId);
-  app.retainAppearance=actor=>app.outfits?.rentByActor(actor);
-  app.preparePartyMember=async(id,signal,options)=>{const scene=worldScene();if(scene)await scene.preparePartyMember(id,signal,options);};
-  app.releasePartyPreview=()=>worldScene()?.releasePartyPreview();
-  // 属性页只在菜单重绘时读一次；菜单打开期间战斗已暂停，Buff 不会继续走。
-  app.combatAttribute=(id,attribute,base,passives)=>worldScene()?.combatAttribute(id,attribute,base,passives)??base;
-  app.combatStealthed=id=>worldScene()?.combatStealthed(id)??false;
-  app.revivePartyMember=(id,item)=>requireWorldScene().revivePartyMember(id,item);
-  ui.playerActor = campaign.start.actor;
-  app.storyUI.bind(session, app.world, presentation);
-  ui.questItemName = id => app.items.items[id]?.name ?? id;
-  const presenter = new StoryPresenter(app, () => worldScene()!, () => app.game!.scene.getScene(SCENE_KEYS.storyStage) as StoryStageScene);
-  const director = new StoryDirector(campaign, session, ui, locked => {
-    if (app.director !== director) return;
-    ui.lock(locked,'game');
-    if (!locked) app.storyAssetPreparation.clear();
-    const scene = worldScene();
-    if (locked && scene?.player) scene.setClip(scene.player, `idle-${scene.facing}`);
-  }, presenter, {
-    normalize: signal => worldScene()?.normalizeForStory(signal),
-    capture: () => worldScene()?.captureStoryWorld(),
-    restore: async (snapshot, signal) => { await worldScene()?.restoreStoryWorld(snapshot, signal); },
-    project: async (stage, signal) => { await worldScene()?.projectStoryWorld(stage, signal); },
-    checkpoint: () => worldScene()?.checkpointStoryWorld(),
-    settle: () => worldScene()?.settleStoryPlayback(),
-    prepare: async (_commands, signal, stage, script, cursor) => {
-      const scene = worldScene();
-      // 剧情开演前先等在途进图；世界不完整时把真实错误交给错误页和重试路径恢复。
-      await scene?.waitWorldReady(signal);
-      if (scene?.map) {
-        const target = cursor ? nextStoryMap(campaign, cursor, scene.map.id)
-          : stage && !stage.mapFromWorld ? stage.map : undefined;
-        void scene.prefetchStoryEntry(target ?? scene.map.id, script, signal);
-      }
-      signal.throwIfAborted();
-    },
-    prefetch: async (scripts, signal) => { await worldScene()?.ensureStoryAssets(scripts, signal); },
-  });
-  app.director = director;
-  if (globalThis.storyDiagnostics) installStorySkipDiagnostics(director,
-    (kind, details) => globalThis.storyDiagnostics?.record(kind, details, false));
-  // 事件播完（世界投影已经结束）写入自动存档；节点中途不写。
-  director.onEventCompleted = () => autoSaver?.request();
-  director.onError = (error, retry) => {
-    if (app.director !== director || app.mode !== 'game') return;
-    console.error(error);
-    const message = error instanceof Error ? error.message : String(error);
-    const snapshot = worldScene()?.diagnosticSnapshot();
-    globalThis.storyDiagnostics?.record('story-error', { message, stack: error instanceof Error ? error.stack : undefined,
-      map: snapshot?.map, player: snapshot?.player });
-    ui.error(message, () => {
-      ui.loaded(); void (async () => {
-        try {
-          // 世界只建了一半时先重建，成功后再接着走剧情游标。
-          await worldScene()?.recoverWorld();
-          await retry();
-        } catch (next) { director.onError?.(next, retry); }
-      })();
-    });
-  };
-  // GM 动作层在会话装配好之后才建（它要 session 与 director）；开关关闭时**不建也不挂**，
-  // 这样「默认关闭」是结构上的保证，而不是靠调用方自觉。
-  app.gm = gmOn() ? createGmActions({
-    session, campaign, director, markStore: new IndexedDbDebugMarkStore(),
-    acquireStoryCatalog:()=>app.acquireDebugCatalog(),
-    prepareMark: async (mark, signal) => { signal.throwIfAborted(); const prepared = prepareDebugMark(mark, app); signal.throwIfAborted(); return prepared; },
-    status: () => runtimeDiagnostics(),
-    onStoryPreparation: preparing => { if(preparing)app.ui.loading('正在准备剧情…');else app.ui.loaded(); },
-    rescue: () => {
-      const scene = worldScene();
-      if (!scene) return { ok: false, reason: '不在游戏场景里' };
-      return scene.rescuePlayer();
-    },
-    travel: async (map, position) => {
-      const scene = worldScene();
-      return scene ? scene.gmTravel(map, position) : { ok: false, reason: '不在游戏场景里' };
-    },
-    setNoclip: enabled => {
-      app.gmNoclip = enabled;
-      const scene = worldScene();
-      if (scene) scene.setNoclip(enabled);
-      return { ok: true };
-    },
-    isNoclip: () => app.gmNoclip,
-    setSpeedMultiplier: multiplier => {
-      app.gmSpeedMultiplier = multiplier;
-      const scene = worldScene();
-      if (scene) scene.setSpeedMultiplier(multiplier);
-      return { ok: true };
-    },
-    getSpeedMultiplier: () => app.gmSpeedMultiplier ?? 1,
-    persistence: {
-      // 调试现场不写玩家存档：停掉待写与重试。
-      suspend: () => autoSaver?.suspend(),
-      // 结束调试：恢复自动存档、把当前现场记成检查点，再按正常节奏请求一次存档。
-      resume: () => {
-        autoSaver?.resume();
-        worldScene()?.checkpointStoryWorld();
-        autoSaver?.request();
-      },
-      // 回滚流程（死亡回检查点）接管调试现场：此刻画面还停在调试现场，只能恢复写入，不能记检查点。
-      resumeAfterRollback: () => autoSaver?.resume(),
-    },
-    debugWorld: {
-      capture: () => {
-        try { return worldScene()?.captureStoryWorld(); }
-        catch { return undefined; }
-      },
-      capturePersistent: () => {
-        try { const scene = worldScene(); return scene ? persistentDebugWorld(scene.captureStoryWorld()) : undefined; }
-        catch { return undefined; }
-      },
-      restore: async (snapshot, signal = modeRequest.signal) => {
-        const scene = worldScene();
-        if (!scene) return { ok: false, reason: '不在游戏场景里' };
-        try {
-          await scene.restoreStoryWorld(prepareDebugWorld(snapshot, app), signal);
-          return { ok: true };
-        } catch (error) {
-          return { ok: false, reason: error instanceof Error ? error.message : String(error) };
-        }
-      },
-    },
-    onDebugStory: () => app.storyUI.openDebugStory(),
-    ui: () => app.storyUI.diagnosticState(),
-    combat: {
-      setInvincible: (id, enabled) => {
-        const scene = worldScene();
-        return scene ? scene.setInvincible(id, enabled) : { ok: false, reason: '不在游戏场景里' };
-      },
-      // 开关存在会话上，换图重建战斗后仍然有效，所以读取不必经过场景。
-      isInvincible: id => session.isInvincible(id),
-      setOneHitKill: (id, enabled) => {
-        const scene = worldScene();
-        return scene ? scene.setOneHitKill(id, enabled) : { ok: false, reason: '不在游戏场景里' };
-      },
-      isOneHitKill: id => session.isOneHitKill(id),
-      revive: id => {
-        const scene = worldScene();
-        return scene ? scene.reviveMember(id) : { ok: false, reason: '不在游戏场景里' };
-      },
-    },
-  }) : undefined;
-  if (app.gm) globalThis.gm = consoleGmActions(app.gm); else delete globalThis.gm;
-  app.audio?.enterStory();
-  // 会话装好之后再开自动存档：它要绑定这一份会话的任务状态。
-  startAutoSave(session);
-}
+function installSession(session:Session,keepMapFile?:string):void {sessionLifecycle.install(session,keepMapFile);}
 
-function returnToMenu(): void {
-  if (!ui.canReturn) return;
-  if (app.mode === 'game' && worldScene()?.loadingWorld && !ui.failed) return;
-  app.pressureMode = false;
-  const returnPage=app.mode==='class-select'?'slots':'home';
-  const departedSession = app.session;
-  savedGameLoader.cancel();stopAutoSave();app.gm?.dispose();modeRequest.abort();modeRequest=new AbortController();clearMenuPreparations(); app.director?.dispose(); app.clearMapPrefetch(); app.clearStoryPrefetch(); ui.resetInput();
-  // 会话已经销毁：把动作层一起摘掉，免得 agent 拿到一个指向已 dispose 导演的句柄。
-  app.gm = undefined; delete globalThis.gm;
-  const scene = currentScene();
-  const releaseSessionAssets = () => { app.releaseSession(departedSession); };
-  const stage = app.game?.scene.getScene(SCENE_KEYS.storyStage);
-  if (stage && (stage.sys.isActive() || stage.sys.isPaused() || stage.sys.isSleeping())) app.game!.scene.stop(SCENE_KEYS.storyStage);
-  if (scene?.sys.isActive() || scene?.sys.isPaused()) {
-    // 场景还活着时不能提前删纹理；等 WorldScene/当前场景真正 shutdown 后再释放。
-    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, releaseSessionAssets);
-    scene.scene.start(SCENE_KEYS.menu,{page:returnPage});
-  } else releaseSessionAssets();
-  // 初始内容请求失败时菜单场景仍在运行。
-  app.mode = 'menu'; ui.lock(false,'game'); ui.setMode('menu');
-  recordSceneChange(SCENE_KEYS.menu, { source: 'return' });
-  app.audio?.enterMenu();
-}
+function returnToMenu():void {sessionLifecycle.exit();}
 /**
  * 人、面板、上报与 CDP 共用的一份运行态。卡住时按「锁 → 场景 → 战斗 → 移动体」的顺序看：
  * `lockOwners` 说明谁按住了操作，`world.player.inWall` 说明身体是否嵌进墙，

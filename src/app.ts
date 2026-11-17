@@ -248,6 +248,9 @@ export class StoryApp {
     this.content.clearSessionCaches();
     this.outfits?.destroy(); this.outfits = undefined;
     this.saveSlot = undefined;
+    for(const key of ['summonLampMerchant','changeEquipment','equipmentAppearance','previewAppearance',
+      'retainAppearance','preparePartyMember','releasePartyPreview','combatAttribute','combatStealthed',
+      'revivePartyMember','useRecoveryItem','storySignal'])Reflect.deleteProperty(this,key);
     Reflect.deleteProperty(this, 'session'); Reflect.deleteProperty(this, 'director');
     return true;
   }
