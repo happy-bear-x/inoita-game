@@ -114,8 +114,6 @@ export class StoryApp {
   equipmentAppearance?:(memberId:string)=>import('./domain/content.ts').ActorDefinition|undefined;
   /** 菜单预览专用外观；世界角色正在用的整套外观另由 `equipmentAppearance` 提供。 */
   previewAppearance?:(memberId:string)=>import('./domain/content.ts').ActorDefinition|undefined;
-  /** 预览角色借用一套外观时持有的租约；画面不再显示后归还。 */
-  retainAppearance?:(actor:import('./domain/content.ts').ActorDefinition)=>import('./application/assets.ts').AssetLease|undefined;
   menuPanels!: MenuPanels;
   storyClasses!: StoryClassCatalog;
   /** 当前界面场景持有的菜单图片租约账。 */
@@ -249,7 +247,7 @@ export class StoryApp {
     this.outfits?.destroy(); this.outfits = undefined;
     this.saveSlot = undefined;
     for(const key of ['summonLampMerchant','changeEquipment','equipmentAppearance','previewAppearance',
-      'retainAppearance','preparePartyMember','releasePartyPreview','combatAttribute','combatStealthed',
+      'preparePartyMember','releasePartyPreview','combatAttribute','combatStealthed',
       'revivePartyMember','useRecoveryItem','storySignal'])Reflect.deleteProperty(this,key);
     Reflect.deleteProperty(this, 'session'); Reflect.deleteProperty(this, 'director');
     return true;

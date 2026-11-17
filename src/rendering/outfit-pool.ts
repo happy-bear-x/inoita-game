@@ -1,3 +1,4 @@
+import { registerAppearance, retireAppearance } from './appearance-ownership.ts';
 import { CompositionBudget } from './composition-budget.ts';
 import type { AssetLease } from '../application/assets.ts';
 import type Phaser from 'phaser';
@@ -41,7 +42,7 @@ class InterruptedComposition extends Error {}
 const STAMP_BATCH_SIZE = 128;
 let serial = 0;
 
-/** 本次游戏共用合成纹理；使用权由场景衣柜持有，缓存不持有具体场景。 */
+/** 本次游戏共用合成纹理；使用权由场景衣柜和角色画面共同持有，缓存不持有具体场景。 */
 export class OutfitPool {
   private readonly host: Phaser.Scene;
   private readonly catalog: WardrobeCatalog;
@@ -63,29 +64,6 @@ export class OutfitPool {
     this.offRestore = onWebGLRestore(this.host, () => { this.contextRevision++; this.redrawCached(); });
   }
   get available():boolean { return this.active; }
-  /**
-   * 预览角色直接持有的外观租约。预览在用期间，世界换装或关闭场景释放自己的租约
-   * 也不会把这张图删掉；预览销毁时归还。
-   */
-  rentByActor(actor: ActorDefinition): AssetLease | undefined {
-    if (!this.active) return undefined;
-    for (const [key, entry] of this.entries) {
-      if (entry.outfit?.actor !== actor) continue;
-      entry.users++;
-      let released = false;
-      return { release: () => {
-        if (released) return; released = true;
-        entry.users--;
-        if (!entry.users) {
-          if (this.entries.get(key) === entry) this.entries.delete(key);
-          entry.controller.abort(new DOMException('人物外观已无人使用', 'AbortError'));
-          if (entry.outfit) this.dispose(entry.outfit);
-        } else if (entry.retired && entry.outfit) this.dispose(entry.outfit);
-        this.trim();
-      } };
-    }
-    return undefined;
-  }
   key(base: ActorDefinition, equipment: Partial<Record<EquipmentSlot, string>>, classId?: string,
     options?: WardrobePrepareOptions): string {
     const recipe = costumeRecipe(this.catalog, this.items, equipment, classId, base.id, options?.learnedSkills, options?.townPose);
@@ -103,7 +81,21 @@ export class OutfitPool {
       this.entries.set(key, entry);
       entry.promise = this.prepare(base, equipment, classId, options, entry.controller.signal).then(outfit => {
         if(entry!.controller.signal.aborted){this.dispose(outfit);entry!.controller.signal.throwIfAborted();}
-        entry!.outfit = outfit; this.trim(); return outfit;
+        entry!.outfit = outfit;
+        const held = entry!;
+        registerAppearance(outfit.actor, () => {
+          if (!this.active || held.retired || held.controller.signal.aborted)
+            throw new DOMException('人物外观已释放', 'AbortError');
+          held.users++;
+          let released = false;
+          return { release: () => {
+            if (released) return; released = true;
+            held.users--;
+            if (!held.users && held.retired) this.dispose(outfit);
+            this.trim();
+          } };
+        });
+        this.trim(); return outfit;
       }, error => {
         if (this.entries.get(key) === entry) this.entries.delete(key);
         throw error;
@@ -165,6 +157,7 @@ export class OutfitPool {
   }
   private readonly sources = new WeakMap<Outfit, AssetLease>();
   private dispose(outfit: Outfit): void {
+    if (this.sources.has(outfit)) retireAppearance(outfit.actor);
     for (const key of outfit.textures) {
       // 菜单预览可能仍在画这套外观；画面里还有人用时保留，等它切走后再删。
       // 纹理真正删除时由 `removeNow` 清掉引用它的动画；保留期间继续计入显存预算。

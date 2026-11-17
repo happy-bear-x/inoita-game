@@ -6,6 +6,7 @@ import {readFileSync} from 'node:fs';
 import type Phaser from 'phaser';
 import type {ActorDefinition} from '../src/domain/content.ts';
 import {CHARACTER_ATLAS_BY_FILE,CHARACTER_ATLAS_PAGES} from '../src/generated/character-atlas.ts';
+import { registerAppearance } from '../src/rendering/appearance-ownership.ts';
 import {characterFrameList} from '../src/rendering/character-atlas.ts';
 import {CHARACTER_ATLAS_ALIASES} from '../tools/character-atlas-aliases.ts';
 
@@ -85,14 +86,14 @@ function setup(actor:ActorDefinition=structuredClone(goblin)){
     destroy(){if(!this.scene)return;counts.destroyed++;this.anims!.destroy();this.anims=undefined;
       this.emit('destroy');this.removeAllListeners();this.parentContainer?.remove(this);this.scene=undefined;this.active=false;}
   }
-  class Container {
+  class Container extends EventEmitter {
     active=true;list:Sprite[]=[];
     setDepth(){return this;}
     addAt(sprite:Sprite,index:number){this.list.splice(index,0,sprite);sprite.parentContainer=this;return this;}
     getIndex(sprite:Sprite){return this.list.indexOf(sprite);}
     moveTo(sprite:Sprite,index:number){this.remove(sprite);this.list.splice(index,0,sprite);return this;}
     remove(sprite:Sprite){const index=this.list.indexOf(sprite);if(index>=0)this.list.splice(index,1);}
-    destroy(){for(const sprite of [...this.list])sprite.destroy();this.active=false;}
+    destroy(){if(!this.active)return;for(const sprite of [...this.list])sprite.destroy();this.active=false;this.emit('destroy');this.removeAllListeners();}
   }
   const scene={textures,anims:manager,sys:{anims:manager},events:new EventEmitter(),
     add:{sprite:(_x:number,_y:number,key:string)=>new Sprite(key),container:()=>new Container()}} as unknown as Phaser.Scene;
@@ -180,4 +181,39 @@ test('walking direction changes preserve real Phaser animation frame and elapsed
   sprite.anims!.setCurrentFrame(animation.frames[2]);sprite.anims!.accumulator=17;
   setCharacterClip(f.scene,f.character,'walk-west');
   assert.equal(f.sprite(),sprite);assert.equal(sprite.anims!.currentFrame!.index,3);assert.equal(sprite.anims!.accumulator,17);
+});
+
+
+test('character owns a generated appearance through hiding, replacement and destruction',()=>{
+  const actor=structuredClone(goblin);
+  for(const clip of Object.values(actor.clips))for(const layer of clip!.layers)layer.file='';
+  const operations:string[]=[];
+  registerAppearance(actor,()=>{operations.push('take old');return {release:()=>operations.push('release old')};});
+  const f=setup(actor),body=f.sprite();
+  assert.deepEqual(operations,['take old']);
+  body.setVisible(false);
+  setCharacterClip(f.scene,f.character,'idle-south');
+  assert.deepEqual(operations,['take old'],'隐藏或重复动作继续持有');
+  const replacement={...actor};
+  registerAppearance(replacement,()=>{operations.push('take new');return {release:()=>operations.push('release new')};});
+  f.character.actor=replacement;
+  setCharacterClip(f.scene,f.character,'idle-south');
+  assert.deepEqual(operations,['take old','take new','release old'],'同名动作也接手新外观');
+  f.character.container.destroy();f.character.container.destroy();
+  assert.deepEqual(operations,['take old','take new','release old','release new']);
+});
+
+test('failed appearance replacement clears partially updated sprites before releasing both appearances',()=>{
+  const actor=structuredClone(goblin);
+  for(const clip of Object.values(actor.clips))for(const layer of clip!.layers)layer.file='';
+  let users=0;
+  registerAppearance(actor,()=>{users++;return {release:()=>users--};});
+  const f=setup(actor),replacement=structuredClone(actor);
+  registerAppearance(replacement,()=>{users++;return {release:()=>{
+    assert.equal(f.character.container.active,false,'先清掉引用图片的画面');users--;
+  }};});
+  f.character.actor=replacement;
+  f.sprite().setTexture=()=>{throw new Error('projection failed');};
+  assert.throws(()=>setCharacterClip(f.scene,f.character,'idle-south'),/projection failed/);
+  assert.equal(users,0);assert.equal(f.counts.destroyed,1);
 });

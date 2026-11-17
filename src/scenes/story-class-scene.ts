@@ -86,7 +86,7 @@ export class StoryClassScene extends Phaser.Scene {
     for(const key of new Set(previewAssets.map(asset=>asset.key)))this.textures.get(key).setFilter(Phaser.Textures.FilterMode.NEAREST);
     this.background=this.add.image(0,0,`class-background:${catalog.background}`).setOrigin(0).setScrollFactor(0).setDepth(0);
     this.surface=new UiSurface(this,960,640);
-    this.preview=new LiveCharacterPreview(this,()=>{},actor=>createCharacter(this,actor,{id:'class-preview',actor:actor.id,x:0,y:0}),null,actor=>this.app.retainAppearance?.(actor));
+    this.preview=new LiveCharacterPreview(this,()=>{},actor=>createCharacter(this,actor,{id:'class-preview',actor:actor.id,x:0,y:0}),null);
     this.buildPage();this.choose(catalog.classes.find(entry=>entry.id===catalog.defaultClass)!);
     this.app.ui.loaded();this.app.syncLifecycle?.();this.app.prefetchStory?.();
   }

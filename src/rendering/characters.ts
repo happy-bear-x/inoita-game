@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { retainAppearance } from './appearance-ownership.ts';
 import type { ActorDefinition, AnimationClip, ClipName, EntityPlacement, Facing } from '../domain/content.ts';
 import { STORY_POSE_NAMES } from '../domain/content.ts';
 import { idlePoseFrame } from '../domain/basic-attack.ts';
@@ -37,6 +38,8 @@ interface CharacterSequence {
 
 const characterSequences = new WeakMap<Phaser.GameObjects.Sprite, CharacterSequence>();
 const sequenceCleanupInstalled = new WeakSet<Phaser.GameObjects.Sprite>();
+const visualAppearances = new WeakMap<CharacterVisual, { actor: ActorDefinition; lease?: AssetLease }>();
+const appearanceCleanupInstalled = new WeakSet<CharacterVisual>();
 const CHARACTER_SEQUENCE_KEY = 'character-action';
 
 function releaseCharacterSequence(sprite: Phaser.GameObjects.Sprite): void {
@@ -141,35 +144,54 @@ export function createCharacter(scene: Phaser.Scene, actor: ActorDefinition, ent
 function replaceLayers(scene: Phaser.Scene, character: CharacterVisual, name: ClipName): AnimationClip {
   const clip = character.actor.clips[name];
   if (!clip) throw new Error(`角色动作缺少资源：${character.entity.actor}/${name}`);
-  const flipped = clipMirrored(clip, character.actor, character.entity);
-  character.clipName = name;
-  character.facing = (FACING_SUFFIX.exec(name)?.[1] as Facing | undefined) ?? null;
-  character.flipped = flipped;
-  const previous = character.layers, layers: Phaser.GameObjects.Sprite[] = [];
-  for (let index = 0; index < clip.layers.length; index++) {
-    const layer = clip.layers[index];
-    let sprite = previous[index];
-    const first = layerFrame(layer, 0);
-    if (sprite?.scene && sprite.anims) {
-      if (characterSequences.get(sprite)?.actor !== character.actor) releaseCharacterSequence(sprite);
-      sprite.removeAllListeners('animationcomplete');
-      sprite.anims.stop();
-      sprite.setTexture(first.key, first.frame).setPosition(0, 0).setVisible(true);
-      if (character.container.getIndex(sprite) !== index) character.container.moveTo(sprite, index);
-    } else {
-      sprite?.destroy();
-      sprite = scene.add.sprite(0, 0, first.key, first.frame);
-      character.container.addAt(sprite, index);
-    }
-    // 按共同的脚底锚点镜像，而不是贴图中心；透明度由潜行状态继续维护。
-    sprite.setOrigin(clip.originX, clip.originY).setBlendMode(blendModeOf(layer.blend)).setScale(flipped ? -1 : 1, 1);
-    sprite.anims.timeScale = 1;
-    layers.push(sprite);
+  const held = visualAppearances.get(character);
+  const changing = held?.actor !== character.actor;
+  const lease = changing ? retainAppearance(character.actor) : undefined;
+  if (lease && !appearanceCleanupInstalled.has(character)) {
+    character.container.once('destroy', () => {
+      const owned = visualAppearances.get(character);
+      visualAppearances.delete(character); owned?.lease?.release();
+    });
+    appearanceCleanupInstalled.add(character);
   }
-  for (let index = clip.layers.length; index < previous.length; index++) previous[index].destroy();
-  // 数组身份代表本次动作批次，Sprite 本身可以复用。
-  character.layers = layers;
-  applyCharacterVisibility(character);
+  try {
+    const flipped = clipMirrored(clip, character.actor, character.entity);
+    character.clipName = name;
+    character.facing = (FACING_SUFFIX.exec(name)?.[1] as Facing | undefined) ?? null;
+    character.flipped = flipped;
+    const previous = character.layers, layers: Phaser.GameObjects.Sprite[] = [];
+    for (let index = 0; index < clip.layers.length; index++) {
+      const layer = clip.layers[index];
+      let sprite = previous[index];
+      const first = layerFrame(layer, 0);
+      if (sprite?.scene && sprite.anims) {
+        if (characterSequences.get(sprite)?.actor !== character.actor) releaseCharacterSequence(sprite);
+        sprite.removeAllListeners('animationcomplete');
+        sprite.anims.stop();
+        sprite.setTexture(first.key, first.frame).setPosition(0, 0).setVisible(true);
+        if (character.container.getIndex(sprite) !== index) character.container.moveTo(sprite, index);
+      } else {
+        sprite?.destroy();
+        sprite = scene.add.sprite(0, 0, first.key, first.frame);
+        character.container.addAt(sprite, index);
+      }
+      // 按共同的脚底锚点镜像，而不是贴图中心；透明度由潜行状态继续维护。
+      sprite.setOrigin(clip.originX, clip.originY).setBlendMode(blendModeOf(layer.blend)).setScale(flipped ? -1 : 1, 1);
+      sprite.anims.timeScale = 1;
+      layers.push(sprite);
+    }
+    for (let index = clip.layers.length; index < previous.length; index++) previous[index].destroy();
+    // 数组身份代表本次动作批次，Sprite 本身可以复用。
+    character.layers = layers;
+    applyCharacterVisibility(character);
+    if (changing) {
+      visualAppearances.set(character, { actor: character.actor, lease });
+      held?.lease?.release();
+    }
+  } catch (error) {
+    // 部分图层已经替换时，先清掉画面再归还本次外观。
+    character.container.destroy(); lease?.release(); throw error;
+  }
   return clip;
 }
 
@@ -185,7 +207,7 @@ export function setCharacterClip(scene: Phaser.Scene, character: CharacterVisual
       if (Object.keys(character.actor.clips).length) throw new Error(`角色动作缺少资源：${character.entity.actor}/${name}`);
       return;
     }
-    if (!restart && character.clipName === name && character.flipped === clipMirrored(clip, character.actor, character.entity)) return;
+    if (!restart && (!visualAppearances.has(character) || visualAppearances.get(character)?.actor === character.actor) && character.clipName === name && character.flipped === clipMirrored(clip, character.actor, character.entity)) return;
     // 转向时保留当前帧号和帧内已过时间，所有图层一起接上。
     const previous = character.clipName?.startsWith('walk-') && name.startsWith('walk-')
       ? character.layers[0]?.anims : null;

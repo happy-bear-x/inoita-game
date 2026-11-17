@@ -5,6 +5,7 @@ import type Phaser from 'phaser';
 import type { ActorDefinition } from '../src/domain/content.ts';
 import type { ItemCatalog } from '../src/domain/items.ts';
 import type { WardrobeCatalog } from '../src/domain/wardrobe.ts';
+import { retainAppearance } from '../src/rendering/appearance-ownership.ts';
 import { Wardrobe } from '../src/rendering/wardrobe.ts';
 import { OutfitPool, OUTFIT_CACHE_LIMIT } from '../src/rendering/outfit-pool.ts';
 import { retainLoadedSceneAssets } from '../src/rendering/scene-assets.ts';
@@ -404,4 +405,18 @@ test('town movement replaces only locomotion and keeps equipped parts and combat
     for (const [name,id] of Object.entries(city.poses))
       assert.equal(id, name.startsWith('idle-') || name.startsWith('walk-') ? town[name as keyof typeof town] : poses[name]);
   }
+});
+
+
+test('visual appearance ownership survives pool disposal and stale actors cannot acquire again', async t => {
+  const run=sharedSetup(t),wardrobe=run.create();
+  const outfit=await wardrobe.prepare(run.actor,{},'hero');
+  const first=retainAppearance(outfit.actor)!,second=retainAppearance(outfit.actor)!;
+  assert.ok(first);assert.ok(second);
+  wardrobe.destroy();run.pool.destroy();
+  assert.ok(run.textures.has(outfit.textures[0]));
+  assert.throws(()=>retainAppearance(outfit.actor),{name:'AbortError'});
+  first.release();first.release();assert.ok(run.textures.has(outfit.textures[0]));
+  second.release();assert.equal(run.textures.size,0);
+  assert.equal(retainAppearance(run.actor),undefined);
 });

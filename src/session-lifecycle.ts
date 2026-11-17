@@ -149,8 +149,6 @@ export function createSessionLifecycle(app:StoryApp,hooks:SessionLifecycleHooks)
     app.changeEquipment=async(entry,slot,signal,memberId)=>requireWorldScene().changeEquipment(entry,slot,signal,memberId);
     app.equipmentAppearance=memberId=>worldScene()?.equipmentAppearance(memberId);
     app.previewAppearance=memberId=>worldScene()?.previewAppearance(memberId);
-    const outfits=app.outfits;
-    app.retainAppearance=actor=>worldScene()?outfits?.rentByActor(actor):undefined;
     app.useRecoveryItem=(entry,memberId)=>requireWorldScene().useRecoveryItem(entry,memberId);
     app.preparePartyMember=async(id,signal,options)=>{const scene=worldScene();if(scene)await scene.preparePartyMember(id,signal,options);};
     app.releasePartyPreview=()=>worldScene()?.releasePartyPreview();

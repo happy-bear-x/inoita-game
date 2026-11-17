@@ -1,5 +1,4 @@
 import type Phaser from 'phaser';
-import type { AssetLease } from '../../application/assets.ts';
 import type { ActorDefinition } from '../../domain/content.ts';
 import type { CharacterVisual } from '../../rendering/characters.ts';
 import { characterFrameList } from '../../rendering/character-atlas.ts';
@@ -14,16 +13,13 @@ export class LiveCharacterPreview {
   private readonly hole:(rect?:PreviewRect)=>void;
   private readonly create:(actor:ActorDefinition)=>CharacterVisual;
   private readonly backgroundAlpha:number|null;
-  private readonly retain:(actor:ActorDefinition)=>AssetLease|undefined;
   private visual?:CharacterVisual;
-  /** 预览借用这套外观纹理的凭据；销毁预览时归还，世界换装才不会提前删图。 */
-  private lease?:AssetLease;
   private background?:Phaser.GameObjects.Rectangle;
   private target?:{surface:UiSurface;rect:PreviewRect};
   private shown=true;
   constructor(scene:Phaser.Scene,hole:(rect?:PreviewRect)=>void,create:(actor:ActorDefinition)=>CharacterVisual,
-    backgroundAlpha:number|null=.65,retain:(actor:ActorDefinition)=>AssetLease|undefined=()=>undefined){
-    this.scene=scene;this.hole=hole;this.create=create;this.backgroundAlpha=backgroundAlpha;this.retain=retain;
+    backgroundAlpha:number|null=.65){
+    this.scene=scene;this.hole=hole;this.create=create;this.backgroundAlpha=backgroundAlpha;
   }
   static available(scene:Phaser.Scene,actor:ActorDefinition):boolean{
     const clip=actor.clips['idle-south'];
@@ -38,8 +34,6 @@ export class LiveCharacterPreview {
   show(surface:UiSurface,actor:ActorDefinition,rect:PreviewRect):void{
     if(this.visual?.actor!==actor){
       this.releaseVisual();
-      // 先借住这套外观的纹理，再画；世界那边随后释放自己的租约也不会删掉它。
-      this.lease=this.retain(actor);
       this.visual=this.create(actor);
       this.visual.container.setDepth(2).setScrollFactor(0);
     }
@@ -64,6 +58,5 @@ export class LiveCharacterPreview {
   destroy():void{this.detach();this.background?.destroy();this.background=undefined;}
   private releaseVisual():void{
     this.visual?.container.destroy();this.visual=undefined;
-    this.lease?.release();this.lease=undefined;
   }
 }
