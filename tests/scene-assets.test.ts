@@ -14,6 +14,8 @@ function setup() {
   const frames = new Map<string, Set<string | number>>();
   const textureObjects = new Map<string, { has(frame: string): boolean }>();
   const removed: string[] = [];
+  /** 模拟 Phaser.Loader.File：state 10 未开始、11 加载中、17 完成、16 失败。 */
+  const files = new Map<string, { key: string; state: number }>();
   /** 与 Phaser 一致：同一个键第二次写入只报错、不覆盖、不发 addtexture。 */
   const duplicateWrites: string[] = [];
   const queued: PendingAsset[] = [];
@@ -42,19 +44,30 @@ function setup() {
       queued.push({ kind: 'spritesheet', key, file, config }),
     image: (key: string, file: string) => queued.push({ kind: 'image', key, file }),
     atlas: (key: string, file: string, atlas: string) => queued.push({ kind: 'atlas', key, file, atlas }),
-    start: () => { starts++; const batch = queued.splice(0); queueMicrotask(() => {
-      if (outcome === 'pending') return;
-      for (const asset of batch) {
-        if (outcome === 'network-error') { load.emit('loaderror', { key: asset.key }); continue; }
-        if (outcome === 'decode-error') continue;
-        if (asset.kind === 'atlas') addTexture(asset.key, new Set(outcome === 'success' ? ['frame-a', 'frame-b'] : ['frame-a']));
-        else addTexture(asset.key, new Set(outcome === 'success' ? [0, 1, 2] : [0, 2]));
-        // Phaser 在写进纹理库之后才发 filecomplete。
-        load.emit('filecomplete', asset.key, asset.kind);
-      }
-      // Phaser's decode failure reaches complete without loaderror or a failed count.
-      load.emit('complete', load, 0, 0);
-    }); }
+    start: () => {
+      starts++;
+      const batch = queued.splice(0).map(asset => {
+        const file = { key: asset.key, state: 11 }; // FILE_LOADING
+        files.set(asset.key, file);
+        // Loader 接受文件时发 addfile；场景关闭后实现靠这个对象的状态判断是否还在路上。
+        load.emit('addfile', asset.key, asset.kind, load, file);
+        return { asset, file };
+      });
+      queueMicrotask(() => {
+        if (outcome === 'pending') return;
+        for (const { asset, file } of batch) {
+          if (outcome === 'network-error') { file.state = 16; load.emit('loaderror', file); continue; }
+          if (outcome === 'decode-error') { file.state = 16; continue; }
+          file.state = 17; // FILE_COMPLETE
+          if (asset.kind === 'atlas') addTexture(asset.key, new Set(outcome === 'success' ? ['frame-a', 'frame-b'] : ['frame-a']));
+          else addTexture(asset.key, new Set(outcome === 'success' ? [0, 1, 2] : [0, 2]));
+          // Phaser 在写进纹理库之后才发 filecomplete。
+          load.emit('filecomplete', asset.key, asset.kind);
+        }
+        // Phaser's decode failure reaches complete without loaderror or a failed count.
+        load.emit('complete', load, 0, 0);
+      });
+    }
   });
   const scene = {
     events, load,
@@ -66,7 +79,7 @@ function setup() {
     },
     anims: { exists: () => false, remove: () => {} }
   } as unknown as Phaser.Scene;
-  return { scene, events, load, frames, removed, duplicateWrites, queued, starts: () => starts,
+  return { scene, events, load, frames, files, removed, duplicateWrites, queued, starts: () => starts,
     outcome: (next: typeof outcome) => { outcome = next; }, addTexture };
 }
 
@@ -347,8 +360,45 @@ test('a different file for a key already being written is rejected without a sec
   assert.equal(run.frames.has(asset.key), false);
 });
 
+test('shutdown keeps the key blocked while the file is still in flight', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  const run = setup(); run.outcome('pending');
+  const first = loadSceneAssets(run.scene, [asset], () => {});
+  await new Promise(resolve => setImmediate(resolve));
+  run.events.emit('shutdown');
+  await assert.rejects(first, { name: 'AbortError' });
+  run.outcome('success');
+  let settled = false;
+  const waiting = loadSceneAssets(run.scene, [asset], () => {}).then(lease => { settled = true; return lease; });
+  await new Promise(resolve => setImmediate(resolve));
+  t.mock.timers.tick(5000);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(settled, false, '文件还在路上时，5 秒不能放行第二次写入');
+  assert.equal(run.starts(), 1, '同一个键始终只有一个写入代');
+  // 文件失败后轮询看到终态，才把写入权交给新请求。
+  run.files.get(asset.key)!.state = 16;
+  t.mock.timers.tick(200);
+  await new Promise(resolve => setImmediate(resolve));
+  const lease = await waiting;
+  assert.equal(run.starts(), 2, '旧文件结束后新请求正常下载');
+  lease.release();
+});
+
+test('a texture that lands after the write timed out is retired', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  const run = setup(); run.outcome('pending');
+  const pending = loadSceneAssets(run.scene, [asset], () => {});
+  await new Promise(resolve => setImmediate(resolve));
+  run.events.emit('shutdown');
+  await assert.rejects(pending, { name: 'AbortError' });
+  t.mock.timers.tick(35000);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(run.addTexture(asset.key), true);
+  assert.equal(run.frames.has(asset.key), false, '停摆后落地的旧文件没有租约，应被迟到登记回收');
+});
+
 test('a write that never settles stops blocking the key after the fallback deadline', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
   const run = setup(); run.outcome('pending');
   const first = loadSceneAssets(run.scene, [asset], () => {});
   await new Promise(resolve => setImmediate(resolve));

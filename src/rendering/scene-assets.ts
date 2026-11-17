@@ -18,13 +18,14 @@ const textureQueues = new WeakMap<Phaser.Textures.TextureManager, Promise<void>>
  */
 const activeLoaders = new WeakMap<Phaser.Textures.TextureManager, Map<string, number>>();
 /**
- * 所属场景关闭后，Loader 会摘掉自己的监听，之后只能靠纹理库的 addtexture 观察文件落地。
- * 这段时间给在途写入一个宽限：文件落下就接管，落不下就按“不可观察”结算，别让等待者空等。
+ * 场景关闭后 Loader 会摘掉监听，但文件对象还在，`File.state` 仍会从“加载中”走到
+ * “完成/失败”。按文件状态轮询，等文件真的结束才释放写入权，不能按固定秒数猜。
  */
-const WRITE_GRACE_AFTER_LOADER_GONE_MS = 5_000;
+const WRITE_POLL_MS = 200;
 /**
- * 兜底期限。loader.timeout 是 15 秒、maxRetries 是 1（见 src/main.ts），最坏 30 秒后
- * Phaser 不可能还有文件在路上，超过这个时间可以安全地把写入权交给下一次请求。
+ * 长时间没有任何文件事件才认为写入停摆。单个文件有 15 秒超时、最多重试一次
+ * （见 src/main.ts），在途文件一定会在更短的时间里发 `filecomplete` 或 `loaderror`；
+ * 连续这么久没有事件，剩下的只可能是没启动的文件或已经损坏的 loader。
  */
 const WRITE_DEADLINE_MS = 35_000;
 
@@ -45,15 +46,23 @@ interface TextureWrite {
   /** 下载身份：同键不同资源时不能共用一次写入。 */
   identity: string;
   scene: Phaser.Scene;
+  round: TextureWriteRound;
+  /** Loader 接受的顶层文件；图集的子文件不单独登记。 */
+  file?: Phaser.Loader.File;
   settled: boolean;
   done: Promise<void>;
   resolve: () => void;
 }
-/** 一个批次登记的一组写入，共用一套监听与兜底定时器。 */
+/** 一个批次登记的一组写入，共用一套监听、轮询与兜底定时器。 */
 interface TextureWriteRound {
   writes: TextureWrite[];
+  byKey: Map<string, TextureWrite>;
   finished: boolean;
   detach: () => void;
+  /** 有文件事件就把“停摆期限”重新计时。 */
+  touch: () => void;
+  closed: Promise<void>;
+  close: () => void;
 }
 interface TextureLedger {
   textures: Phaser.Textures.TextureManager;
@@ -94,16 +103,32 @@ function retireUnclaimedTexture(ledger: TextureLedger, key: string): void {
   releaseTextureWhenUnused(ledger.textures, ledger.anims, key);
 }
 
+/** Phaser 的文件状态：10 还没开始，13 以上都是已经结束（失败、完成、待销毁）。 */
+const FILE_PENDING = 10;
+const FILE_FAILED = 13;
+function fileFinished(file: Phaser.Loader.File | undefined): boolean {
+  // 没有文件被 Loader 接受，就不会再有写入落地。
+  if (!file) return true;
+  const state = (file as unknown as { state?: number }).state ?? FILE_PENDING;
+  return state <= FILE_PENDING || state >= FILE_FAILED;
+}
+
 function finishWrite(ledger: TextureLedger, write: TextureWrite, retire: boolean): void {
   if (write.settled) return;
   write.settled = true;
   if (ledger.writes.get(write.key) === write) ledger.writes.delete(write.key);
   if (retire) retireUnclaimedTexture(ledger, write.key);
   write.resolve();
+  write.round.touch();
 }
 
+/**
+ * 结算整批。`complete` 表示 Loader 正常结束；`stalled` 表示长时间没有任何文件事件；
+ * `destroy` 表示场景已销毁，之后不可能再有文件写进纹理库。
+ * 后两种都要留迟到登记：取消的请求仍可能在结算后落地。
+ */
 function settleRound(ledger: TextureLedger, round: TextureWriteRound,
-  kind: 'complete' | 'unobservable' | 'timeout'): void {
+  kind: 'complete' | 'stalled' | 'destroy'): void {
   if (round.finished) return;
   round.finished = true;
   round.detach();
@@ -111,13 +136,13 @@ function settleRound(ledger: TextureLedger, round: TextureWriteRound,
   for (const write of round.writes) {
     if (write.settled) continue;
     unsettled++;
-    // 宽限到期时文件可能还会落地，交给迟到登记；真正到期后不可能还有文件在途。
-    if (kind === 'unobservable') armLateWrite(ledger, write.key);
-    finishWrite(ledger, write, kind === 'complete');
+    if (kind !== 'complete') armLateWrite(ledger, write.key);
+    finishWrite(ledger, write, true);
   }
+  round.close();
   if (kind !== 'complete' && unsettled)
     globalThis.storyDiagnostics?.record(
-      kind === 'timeout' ? 'texture-write-timeout' : 'texture-write-unobservable',
+      kind === 'stalled' ? 'texture-write-timeout' : 'texture-write-unobservable',
       { key: round.writes[0]!.key, keys: unsettled });
 }
 
@@ -269,48 +294,85 @@ function verifyAssets(scene: Phaser.Scene, assets: PendingAsset[]): void {
  */
 function registerTextureWrites(ledger: TextureLedger, scene: Phaser.Scene,
   assets: readonly PendingAsset[]): TextureWriteRound {
-  const round: TextureWriteRound = { writes: [], finished: false, detach: () => {} };
-  const keys = new Set<string>();
+  let closeRound!: () => void;
+  const round: TextureWriteRound = {
+    writes: [], byKey: new Map(), finished: false, detach: () => {}, touch: () => {},
+    closed: new Promise<void>(resolve => { closeRound = resolve; }),
+    close: () => closeRound(),
+  };
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  let poll: ReturnType<typeof setInterval> | undefined;
+  /** 文件事件不断把停摆期限往后推；慢网、排队、重试都不会被误判成停摆。 */
+  round.touch = () => {
+    if (round.finished) return;
+    if (deadline !== undefined) clearTimeout(deadline);
+    deadline = setTimeout(() => settleRound(ledger, round, 'stalled'), WRITE_DEADLINE_MS);
+    unrefTimer(deadline);
+  };
+  /** 场景关闭后 Loader 不再发事件，只能看文件自己的状态：还在加载就继续等。 */
+  const pollFiles = () => {
+    if (round.finished) return;
+    let open = 0;
+    for (const write of round.writes) {
+      if (write.settled) continue;
+      if (fileFinished(write.file)) finishWrite(ledger, write, true);
+      else open++;
+    }
+    if (open) return;
+    round.finished = true;
+    round.detach();
+    round.close();
+    globalThis.storyDiagnostics?.record('texture-write-unobservable',
+      { key: round.writes[0]?.key, keys: round.writes.length });
+  };
+  const startPoll = () => {
+    if (poll !== undefined) return;
+    poll = setInterval(pollFiles, WRITE_POLL_MS);
+    unrefTimer(poll);
+  };
   for (const asset of assets) {
     let resolve!: () => void;
     const done = new Promise<void>(value => { resolve = value; });
     const write: TextureWrite = {
-      key: asset.key, identity: downloadIdentity(asset), scene, settled: false, done, resolve };
+      key: asset.key, identity: downloadIdentity(asset), scene, round, settled: false, done, resolve };
     ledger.writes.set(asset.key, write);
     const late = ledger.late.get(asset.key);
     if (late) { clearTimeout(late); ledger.late.delete(asset.key); }
     round.writes.push(write);
-    keys.add(asset.key);
+    round.byKey.set(asset.key, write);
   }
   const load = scene.load;
   const settleKey = (key: string): void => {
-    if (!keys.has(key)) return;
-    const write = ledger.writes.get(key);
     // 同一纹理库的写入按队列串行，同一时刻不会有两个批次登记同一个键。
-    if (write) finishWrite(ledger, write, true);
+    const write = round.byKey.get(key);
+    if (write && !write.settled) finishWrite(ledger, write, true);
+  };
+  // Loader 只在真正接受文件时发 addfile；记下文件对象，场景关闭后靠它的 state 结算。
+  const onAddFile = (key: string, _type: string, _loader: unknown, file: Phaser.Loader.File) => {
+    const write = round.byKey.get(key);
+    if (write && !write.settled) write.file = file;
   };
   const onFileComplete = (key: string) => settleKey(key);
   const onLoadError = (file: { key?: string } | undefined) => { if (file?.key) settleKey(file.key); };
   const onComplete = () => settleRound(ledger, round, 'complete');
-  let grace: ReturnType<typeof setTimeout> | undefined;
-  const onShutdown = () => {
-    // loader 即将 removeAllListeners()，只能靠 addtexture 或宽限判断。
-    grace = setTimeout(() => settleRound(ledger, round, 'unobservable'), WRITE_GRACE_AFTER_LOADER_GONE_MS);
-    unrefTimer(grace);
-  };
-  const deadline = setTimeout(() => settleRound(ledger, round, 'timeout'), WRITE_DEADLINE_MS);
-  unrefTimer(deadline);
+  const onShutdown = () => startPoll();
+  const onDestroy = () => settleRound(ledger, round, 'destroy');
+  load.on('addfile', onAddFile);
   load.on('filecomplete', onFileComplete);
   load.on('loaderror', onLoadError);
   load.once('complete', onComplete);
   scene.events.once('shutdown', onShutdown);
+  scene.events.once('destroy', onDestroy);
+  round.touch();
   round.detach = () => {
+    load.off('addfile', onAddFile);
     load.off('filecomplete', onFileComplete);
     load.off('loaderror', onLoadError);
     load.off('complete', onComplete);
     scene.events.off('shutdown', onShutdown);
-    clearTimeout(deadline);
-    if (grace !== undefined) clearTimeout(grace);
+    scene.events.off('destroy', onDestroy);
+    if (deadline !== undefined) clearTimeout(deadline);
+    if (poll !== undefined) clearInterval(poll);
   };
   return round;
 }
@@ -369,6 +431,9 @@ async function writeFreeAssets(ledger: TextureLedger, scene: Phaser.Scene, neede
     const cancelled = () => { clean(); reject(signal.reason); };
     const complete = () => { clean(); resolve(); };
     scene.load.on('progress', progress); scene.load.once('complete', complete); signal.addEventListener('abort', cancelled, { once: true });
+    // Loader 在已经关闭时 start() 会静默 no-op，永远等不到 complete；写入结算时也要放行，
+    // 后面的缺口复查会给出明确失败，而不是把整条纹理队列卡死。
+    void round.closed.then(() => { clean(); resolve(); });
     try {
       for (const asset of free) {
         if (asset.kind === 'image') scene.load.image(asset.key, versionedAsset(asset.file));
@@ -378,6 +443,7 @@ async function writeFreeAssets(ledger: TextureLedger, scene: Phaser.Scene, neede
       scene.load.start();
     } catch (error) {
       // 文件没排进去就不会再有结算信号，别让这个键白占着写入权。
+      clean();
       settleRound(ledger, round, 'complete');
       throw error;
     }
