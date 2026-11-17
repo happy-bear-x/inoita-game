@@ -6,16 +6,41 @@ import type Phaser from 'phaser';
 export const AUDIO_CATALOG_VERSION = 3;
 
 /**
- * 只在页面可见、音频未锁且上下文未运行时尝试恢复。
- * Web Audio 的 resume() 在 iOS 上可能被拒绝，必须接住，失败交给调用方记录。
+ * 只在页面可见且上下文未运行时尝试恢复。
+ *
+ * `locked` 是 Phaser 构造时的一次快照，首次解锁的 resume 被拒后会一直是 `true`。
+ * 真实用户手势就是最可靠的解锁时机，不能拿它挡住；自动事件没有手势，跳过可以少制造
+ * 预期内的拒绝。Web Audio 的 resume() 在 iOS 上可能被拒绝，同步和异步都要接住。
  */
 export function resumeAudioContext(
   context: { state: string; resume(): Promise<void> } | undefined,
-  options: { visible: () => boolean; locked: () => boolean; onFailure?: (error: unknown) => void },
+  options: { visible: () => boolean; locked: () => boolean; gesture?: boolean; onFailure?: (error: unknown) => void },
 ): void {
-  if (!context || options.locked() || context.state === 'running' || !options.visible()) return;
+  if (!context || !options.visible()) return;
+  if (!options.gesture && options.locked()) return;
+  if (context.state === 'running') return;
   try {
     void context.resume().catch(error => options.onFailure?.(error));
+  } catch (error) {
+    options.onFailure?.(error);
+  }
+}
+
+/**
+ * iOS 17/18 从后台回前台时，音频上下文可能报 `running`，但音频设备实际没有启动。
+ * 照 Phaser 自带可见恢复的做法先 `suspend()` 再 `resume()`，让系统重新启动设备；
+ * 两个 Promise 的拒绝都要接住，否则会变成 unhandled-rejection。
+ */
+export function resetAudioContext(
+  context: { suspend(): Promise<void>; resume(): Promise<void> } | undefined,
+  options: { visible: () => boolean; onFailure?: (error: unknown) => void },
+): void {
+  if (!context || !options.visible()) return;
+  try {
+    void context.suspend().catch(() => undefined).then(() => {
+      if (!options.visible()) return;
+      return context.resume().catch(error => options.onFailure?.(error));
+    });
   } catch (error) {
     options.onFailure?.(error);
   }

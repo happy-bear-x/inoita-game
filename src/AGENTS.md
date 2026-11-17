@@ -19,7 +19,7 @@
 - 场景只编排生命周期；世界绘制归 `rendering`，布局和状态归 `ui`，屏幕界面绘制和输入归 `ui/dom`。
 - 手机系统键盘只影响 DOM 输入框，不改变游戏画布尺寸。`main.ts` 的 `visualViewport` 重排在输入框聚焦时只跟随位置偏移（`fitViewport({keepSize:true})`），不按键盘缩小后的可视区重算尺寸；云存档输入框挂在 `#game-frame` 内，与画布共用坐标系。
 - iOS 弹出键盘会让窗口短暂失焦。`main.ts` 在启动后接管 `window.onblur/onfocus` 并关闭 Phaser 的 `pauseOnBlur`：输入框聚焦期间的失焦不能暂停游戏循环或音频，真正的页面切走由 `visibilitychange` 驱动。
-- **iOS 音频恢复要接住拒绝。** `resumeAudioContext` 只在页面可见、音频未锁且上下文未运行时尝试 `resume()`，同步和异步拒绝都不能漏；`ready` 后摘掉 Phaser 自带的 `VISIBLE` 恢复处理器，避免它在 iOS 上产生 `unhandled-rejection`。
+- **iOS 音频恢复要接住拒绝。** `resumeAudioContext` 只在页面可见且上下文未运行时尝试 `resume()`；自动事件跳过 Phaser 的 `locked` 快照，真实手势不受它阻挡（首次解锁被拒后 `locked` 会一直为 true）。iOS 回前台还要按 Phaser 原来的做法先 `suspend()` 再 `resume()`（`resetAudioContext`），因为 iOS 17/18 可能报 `running` 却没有声音；同步和异步拒绝都不能漏，`ready` 后摘掉 Phaser 自带的 `VISIBLE` 处理器，改用这套带 catch 的恢复。
 - 玩法规则只在 `domain` 写一份，`application` 负责把它接到 Phaser 和浏览器。
 - 游戏世界实现顺序：Phaser 4 内置 API → 技能 → Phaser 4.2.1 官方文档。屏幕界面采用 DOM、CSS 和 SVG，复用现有布局与状态接口。
 - 进入游戏前通过同一个预载入口同步等待菜单、DOM 状态栏、轮盘、小地图和图集图片；回菜单统一释放界面持有的图片资源。

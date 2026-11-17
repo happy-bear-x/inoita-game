@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import { setImmediate } from 'node:timers/promises';
 import { readFileSync } from 'node:fs';
 import type Phaser from 'phaser';
-import { GameAudio, resumeAudioContext, type AudioCatalog } from '../src/application/game-audio.ts';
+import { GameAudio, resetAudioContext, resumeAudioContext, type AudioCatalog } from '../src/application/game-audio.ts';
 
 const catalog = JSON.parse(readFileSync(new URL('../public/content/audio.json', import.meta.url), 'utf8')) as AudioCatalog;
 
@@ -15,8 +15,12 @@ test('音频恢复只在可见、未锁、未运行时尝试，并吞掉 iOS 的
   assert.equal(resumed, 1);
   resumeAudioContext(context('suspended', async () => { resumed += 1; }), { visible: () => false, locked: () => false });
   resumeAudioContext(context('suspended', async () => { resumed += 1; }), { visible: () => true, locked: () => true });
+  assert.equal(resumed, 1, '自动事件在锁定状态下不尝试');
+  // 真实手势就是解锁时机：`locked` 是构造时的快照，首次解锁被拒后会一直为 true。
+  resumeAudioContext(context('suspended', async () => { resumed += 1; }), { visible: () => true, locked: () => true, gesture: true });
+  assert.equal(resumed, 2, '手势不受 locked 快照阻挡');
   resumeAudioContext(context('running', async () => { resumed += 1; }), { visible: () => true, locked: () => false });
-  assert.equal(resumed, 1, '隐藏、锁定或已运行时不再 resume');
+  assert.equal(resumed, 2, '已运行时不再 resume');
   let failure: unknown;
   resumeAudioContext(context('suspended', () => Promise.reject(new Error('denied'))),
     { visible: () => true, locked: () => false, onFailure: error => { failure = error; } });
@@ -26,6 +30,32 @@ test('音频恢复只在可见、未锁、未运行时尝试，并吞掉 iOS 的
   resumeAudioContext(context('suspended', () => { throw new Error('sync-denied'); }),
     { visible: () => true, locked: () => false, onFailure: error => { syncFailure = error; } });
   assert.match(String(syncFailure), /sync-denied/);
+});
+
+test('iOS 回前台先挂起再恢复，并接住两个拒绝', async () => {
+  const steps: string[] = [];
+  resetAudioContext({
+    suspend: async () => { steps.push('suspend'); },
+    resume: async () => { steps.push('resume'); },
+  }, { visible: () => true });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(steps, ['suspend', 'resume'], '先挂起再恢复，让 iOS 重新启动音频设备');
+
+  const hidden: string[] = [];
+  resetAudioContext({
+    suspend: async () => { hidden.push('suspend'); },
+    resume: async () => { hidden.push('resume'); },
+  }, { visible: () => false });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(hidden, [], '不可见时不动音频上下文');
+
+  let failures = 0;
+  resetAudioContext({
+    suspend: () => Promise.reject(new Error('suspend-denied')),
+    resume: () => Promise.reject(new Error('resume-denied')),
+  }, { visible: () => true, onFailure: () => { failures += 1; } });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(failures, 1, '挂起被拒后仍尝试恢复，失败只报一次');
 });
 
 test('音效只准备当前武器、已学技能、地图敌人和动作声音', async () => {

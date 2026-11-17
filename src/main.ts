@@ -4,7 +4,7 @@ import {installPageInteractionGuard} from './application/page-interaction-guard.
 import {prepareSavedGame} from './application/saved-game.ts';
 import {SavedGameLoader} from './application/saved-game-loader.ts';
 import {AutoSaver} from './application/auto-save.ts';
-import {resumeAudioContext} from './application/game-audio.ts';
+import {resetAudioContext,resumeAudioContext} from './application/game-audio.ts';
 import {AUTO_SAVE_SLOT, SAVE_FORMAT, type SaveSlotRef} from './domain/save-game.ts';
 import { SCENE_KEYS } from './application/scene-keys.ts';
 import { UI_EVENTS } from './application/ui-events.ts';
@@ -1142,28 +1142,48 @@ function boot(): void {
       const phaserVisible = (sound as unknown as { onGameVisible?: (...args: unknown[]) => void }).onGameVisible;
       if (phaserVisible) game.events.off(Phaser.Core.Events.VISIBLE, phaserVisible, sound);
       let resumeFailureLogged = false;
-      const resumeAudio = () => resumeAudioContext(sound.context ?? undefined, {
+      const reportFailure = (trigger: string) => (error: unknown) => {
+        if (resumeFailureLogged) return;
+        resumeFailureLogged = true;
+        globalThis.storyDiagnostics?.record('audio-resume-failed', {
+          state: sound.context?.state ?? 'missing',
+          hidden: document.visibilityState !== 'visible',
+          trigger,
+          reason: error instanceof Error ? error.message : String(error),
+        }, false);
+      };
+      const resumeAudio = (gesture: boolean, trigger: string) => resumeAudioContext(sound.context ?? undefined, {
         visible: () => document.visibilityState === 'visible',
         locked: () => sound.locked,
-        onFailure: error => {
-          if (resumeFailureLogged) return;
-          resumeFailureLogged = true;
-          globalThis.storyDiagnostics?.record('audio-resume-failed', {
-            state: sound.context?.state ?? 'missing',
-            hidden: document.visibilityState !== 'visible',
-            reason: error instanceof Error ? error.message : String(error),
-          }, false);
-        },
+        gesture,
+        // 自动事件没有用户手势，iOS 的拒绝是预期内的，不占用唯一一条诊断。
+        onFailure: gesture ? reportFailure(trigger) : undefined,
       });
-      window.addEventListener('pointerdown', resumeAudio, { capture: true });
-      window.addEventListener('focus', resumeAudio);
-      document.addEventListener('visibilitychange', resumeAudio);
-      window.addEventListener('pageshow', resumeAudio);
+      let appleResetTimer = 0;
+      const recoverVisible = () => {
+        if (document.visibilityState !== 'visible') return;
+        // iOS 17/18 回前台后上下文可能报 running 却发不出声音，照 Phaser 原来的做法
+        // 先挂起再恢复；其它平台只补一次普通 resume。
+        if (game.device.os.iOS) {
+          window.clearTimeout(appleResetTimer);
+          appleResetTimer = window.setTimeout(() => resetAudioContext(sound.context ?? undefined,
+            { visible: () => document.visibilityState === 'visible', onFailure: reportFailure('visible') }), 100);
+          return;
+        }
+        resumeAudio(false, 'visible');
+      };
+      const pointerDown = () => resumeAudio(true, 'pointerdown');
+      const focused = () => resumeAudio(false, 'focus');
+      window.addEventListener('pointerdown', pointerDown, { capture: true });
+      window.addEventListener('focus', focused);
+      document.addEventListener('visibilitychange', recoverVisible);
+      window.addEventListener('pageshow', recoverVisible);
       game.events.once(Phaser.Core.Events.DESTROY, () => {
-        window.removeEventListener('pointerdown', resumeAudio, true);
-        window.removeEventListener('focus', resumeAudio);
-        document.removeEventListener('visibilitychange', resumeAudio);
-        window.removeEventListener('pageshow', resumeAudio);
+        window.clearTimeout(appleResetTimer);
+        window.removeEventListener('pointerdown', pointerDown, true);
+        window.removeEventListener('focus', focused);
+        document.removeEventListener('visibilitychange', recoverVisible);
+        window.removeEventListener('pageshow', recoverVisible);
       });
     }, 0);
     game.events.on(UI_EVENTS.select,()=>app.audio?.ui('select'));
