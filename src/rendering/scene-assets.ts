@@ -103,14 +103,32 @@ function retireUnclaimedTexture(ledger: TextureLedger, key: string): void {
   releaseTextureWhenUnused(ledger.textures, ledger.anims, key);
 }
 
-/** Phaser 的文件状态：10 还没开始，13 以上都是已经结束（失败、完成、待销毁）。 */
+/**
+ * Phaser 的文件状态：10 还没开始，11 加载中，12 已下载待处理，14 处理中，
+ * 13 以上都是已经结束（失败、完成、待销毁）。
+ */
 const FILE_PENDING = 10;
 const FILE_FAILED = 13;
+function fileActive(file: Phaser.Loader.File | undefined): boolean {
+  const state = (file as unknown as { state?: number }).state ?? FILE_PENDING;
+  return state === 11 || state === 12 || state === 14;
+}
+/**
+ * 图集是一个 MultiFile：`load.atlas` 把图片和 JSON 两个子文件分别加进 Loader，
+ * 父对象自己的 state 在整个加载期间都是 10，只有收尾时才变成 20。所以有父对象时
+ * 要看全部子文件：还有子文件在路上就继续等；全都不在路上（结束或没启动）才算完。
+ */
 function fileFinished(file: Phaser.Loader.File | undefined): boolean {
   // 没有文件被 Loader 接受，就不会再有写入落地。
   if (!file) return true;
-  const state = (file as unknown as { state?: number }).state ?? FILE_PENDING;
-  return state <= FILE_PENDING || state >= FILE_FAILED;
+  const parent = (file as unknown as { multiFile?: Phaser.Loader.File & { files?: Phaser.Loader.File[] } }).multiFile;
+  const children = parent?.files;
+  if (parent && Array.isArray(children)) {
+    const state = (parent as unknown as { state?: number }).state ?? FILE_PENDING;
+    if (state >= FILE_FAILED) return true;
+    return !children.some(child => fileActive(child));
+  }
+  return !fileActive(file);
 }
 
 function finishWrite(ledger: TextureLedger, write: TextureWrite, retire: boolean): void {

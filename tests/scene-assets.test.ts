@@ -47,18 +47,28 @@ function setup() {
     start: () => {
       starts++;
       const batch = queued.splice(0).map(asset => {
-        const file = { key: asset.key, state: 11 }; // FILE_LOADING
+        // 图集是 MultiFile：Loader 实际接受的是图片和 JSON 两个子文件，父对象自己一直是 FILE_PENDING。
+        const children = asset.kind === 'atlas'
+          ? [{ key: asset.key, state: 11 }, { key: asset.key, state: 11 }]
+          : [{ key: asset.key, state: 11 }];
+        const parent = asset.kind === 'atlas' ? { key: asset.key, state: 10, files: children } : undefined;
+        for (const child of children) (child as { multiFile?: unknown }).multiFile = parent;
+        const file = children[children.length - 1]!;
         files.set(asset.key, file);
-        // Loader 接受文件时发 addfile；场景关闭后实现靠这个对象的状态判断是否还在路上。
-        load.emit('addfile', asset.key, asset.kind, load, file);
-        return { asset, file };
+        // Loader 接受文件时发 addfile；场景关闭后实现靠这些对象的状态判断是否还在路上。
+        for (const child of children) load.emit('addfile', child.key, asset.kind, load, child);
+        return { asset, file, children, parent };
       });
       queueMicrotask(() => {
         if (outcome === 'pending') return;
-        for (const { asset, file } of batch) {
-          if (outcome === 'network-error') { file.state = 16; load.emit('loaderror', file); continue; }
-          if (outcome === 'decode-error') { file.state = 16; continue; }
-          file.state = 17; // FILE_COMPLETE
+        for (const { asset, file, children, parent } of batch) {
+          if (outcome === 'network-error') {
+            for (const child of children) child.state = 16;
+            load.emit('loaderror', file); continue;
+          }
+          if (outcome === 'decode-error') { for (const child of children) child.state = 16; continue; }
+          for (const child of children) child.state = 17; // FILE_COMPLETE
+          if (parent) parent.state = 20; // FILE_PENDING_DESTROY
           if (asset.kind === 'atlas') addTexture(asset.key, new Set(outcome === 'success' ? ['frame-a', 'frame-b'] : ['frame-a']));
           else addTexture(asset.key, new Set(outcome === 'success' ? [0, 1, 2] : [0, 2]));
           // Phaser 在写进纹理库之后才发 filecomplete。
@@ -381,6 +391,35 @@ test('shutdown keeps the key blocked while the file is still in flight', async (
   await new Promise(resolve => setImmediate(resolve));
   const lease = await waiting;
   assert.equal(run.starts(), 2, '旧文件结束后新请求正常下载');
+  lease.release();
+});
+
+test('shutdown keeps an atlas key blocked until all of its child files finish', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  const atlas: PendingAsset = { kind: 'atlas', key: 'props-atlas:0', file: 'assets/props/atlas/props-0.png',
+    atlas: 'assets/props/atlas/props-0.json', frame: 'frame-a' };
+  const run = setup(); run.outcome('pending');
+  const first = loadSceneAssets(run.scene, [atlas], () => {});
+  await new Promise(resolve => setImmediate(resolve));
+  run.events.emit('shutdown');
+  await assert.rejects(first, { name: 'AbortError' });
+  run.outcome('success');
+  let settled = false;
+  const waiting = loadSceneAssets(run.scene, [atlas], () => {}).then(lease => { settled = true; return lease; });
+  await new Promise(resolve => setImmediate(resolve));
+  const file = run.files.get(atlas.key) as unknown as { multiFile: { state: number; files: { state: number }[] } };
+  t.mock.timers.tick(5000);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(settled, false, '图集还有子文件在路上时不能放行');
+  file.multiFile.files[0]!.state = 17; // 只完成了图片，JSON 还在路上
+  t.mock.timers.tick(200);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(settled, false, '只完成一个子文件仍不算结束');
+  file.multiFile.files[1]!.state = 17;
+  file.multiFile.state = 20;
+  run.addTexture(atlas.key, new Set(['frame-a', 'frame-b']));
+  const lease = await waiting;
+  assert.equal(settled, true);
   lease.release();
 });
 
