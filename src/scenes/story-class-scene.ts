@@ -7,9 +7,14 @@ export class StoryClassScene extends Phaser.Scene {
   private page?:ClassSelectionPage;
   constructor(app:StoryClassApp){super(SCENE_KEYS.classSelect);this.app=app;}
   create():void {
-    this.page?.dispose();
-    const page=new ClassSelectionPage(this,this.app);this.page=page;
-    this.events.once('shutdown',()=>{page.dispose();if(this.page===page)this.page=undefined;});
+    const previous=this.page;
+    if(previous){this.scale.off('resize',previous.layout,previous);previous.dispose();}
+    const page=new ClassSelectionPage(this,this.app,()=>this.scene.restart());this.page=page;
+    this.scale.on('resize',page.layout,page);
+    this.events.once('shutdown',()=>{
+      this.scale.off('resize',page.layout,page);
+      page.dispose();if(this.page===page)this.page=undefined;
+    });
     page.mount();
   }
   override update():void {this.page?.update();}

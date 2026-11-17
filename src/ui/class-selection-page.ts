@@ -1,4 +1,5 @@
-import Phaser from 'phaser';
+import type Phaser from 'phaser';
+import { addClassSelectionHighlight, applyClassSelectionFilters, createClassSelectionBackground, setClassSelectionBackdrop } from './phaser/class-selection-view.ts';
 import type { StoryClassContext } from '../application/ports.ts';
 import type { StoryClass } from '../domain/story-class.ts';
 import { characterAssets, createCharacter } from '../rendering/characters.ts';
@@ -45,14 +46,14 @@ export class ClassSelectionPage {
   private descriptionScroll?:ScrollArea;
   /** 职业选择整屏独占键盘；场景关闭时注销，避免回到标题页后继续处理按键。 */
   private unregisterInput?:()=>void;
-  constructor(scene:Phaser.Scene,app:StoryClassApp){this.scene=scene;this.app=app;}
+  private readonly retry:()=>void;
+  constructor(scene:Phaser.Scene,app:StoryClassApp,retry:()=>void=()=>{}){this.scene=scene;this.app=app;this.retry=retry;}
   mount():void{
-    this.request=new AbortController();this.selected=undefined;this.scene.cameras.main.setBackgroundColor('#000000');
-    this.scene.scale.on('resize',this.layout,this);
+    this.request=new AbortController();this.selected=undefined;setClassSelectionBackdrop(this.scene);
     this.unregisterInput?.();this.unregisterInput=this.app.inputRouter.register('menu',this.routeKey,{exclusive:()=>true});
 
     const signal=this.request.signal;
-    void this.open(signal).catch(error=>{if(!signal.aborted)this.app.ui.error((error as Error).message,()=>this.scene.scene.restart());});
+    void this.open(signal).catch(error=>{if(!signal.aborted)this.app.ui.error((error as Error).message,()=>this.retry());});
   }
   dispose():void {
     if(this.disposed)return;
@@ -60,7 +61,6 @@ export class ClassSelectionPage {
     this.unregisterInput?.();
     this.unregisterInput=undefined;
     this.request.abort();
-    this.scene.scale.off('resize',this.layout,this);
     this.preview?.destroy();
     this.preview=undefined;
     this.background?.destroy();
@@ -107,8 +107,8 @@ export class ClassSelectionPage {
       loadSceneAssets(this.scene,[{kind:'image',key:`class-background:${catalog.background}`,file:catalog.background},...previewAssets],{ progress: ()=>{}, signal }).then(lease=>{if(signal.aborted){lease.release();signal.throwIfAborted();}this.releaseSceneAssets=()=>lease.release();})
     ]);
     signal.throwIfAborted();
-    for(const key of new Set(previewAssets.map(asset=>asset.key)))this.scene.textures.get(key).setFilter(Phaser.Textures.FilterMode.NEAREST);
-    this.background=this.scene.add.image(0,0,`class-background:${catalog.background}`).setOrigin(0).setScrollFactor(0).setDepth(0);
+    applyClassSelectionFilters(this.scene,previewAssets.map(asset=>asset.key));
+    this.background=createClassSelectionBackground(this.scene,`class-background:${catalog.background}`);
     this.surface=new UiSurface(this.scene,960,640);
     this.preview=new LiveCharacterPreview(this.scene,()=>{},actor=>createCharacter(this.scene,actor,{id:'class-preview',actor:actor.id,x:0,y:0}),null);
     this.buildPage();this.choose(catalog.classes.find(entry=>entry.id===catalog.defaultClass)!);
@@ -122,7 +122,7 @@ export class ClassSelectionPage {
     const positions=[[37,118],[70,251],[198,313],[648,313],[776,251],[809,118]];
     catalog.classes.forEach((character,index)=>{
       const [x,y]=positions[index];const button=view.button('',x,y,116,114,()=>this.choose(character),{image:character.icon,guard}).setData('label',character.name);
-      this.selections.push(view.image(catalog.assets.selected,0,0,116,114,button).setBlendMode(Phaser.BlendModes.ADD).setVisible(false));
+      this.selections.push(addClassSelectionHighlight(view,catalog.assets.selected,0,0,116,114,button).setVisible(false));
     });
     view.button('',334,388,292,77,()=>{
       // 加载页由正式界面场景画在画布上，DOM 文案要先让位，别浮到加载背景上面。
@@ -147,7 +147,7 @@ export class ClassSelectionPage {
     this.preview!.visible(this.app.ui.ready&&!this.app.suspended);
     this.renderDomText(entry);this.layout();
   }
-  private layout():void{
+  layout():void{
     this.surface?.layout(8);
     if(this.surface&&this.background){
       const matrix=this.surface.root.getWorldTransformMatrix(),point=matrix.transformPoint(80,0);
