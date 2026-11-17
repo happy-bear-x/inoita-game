@@ -85,4 +85,4 @@
 
 发版前运行 `npm run release:story`。它依次检查内容、GM 调试现场表、身份台账与全部剧情回放、主线完整回放，最后构建。`npm run audit:story` 是较短的剧情门禁，其中支线覆盖台账会列出可自动完成的数量和每一条跑不了的支线及原因；新增支线时数量变化会让测试失败，必须同步更新台账。
 
-任务、目标、奖励和恢复引用都随存档一起保存。改变存档结构、内容引用或校验口径时，增加 `src/domain/save-game.ts` 的 `SAVE_FORMAT`，并在 `src/application/saved-game.ts` 补上 59→新格式的迁移和旧档测试。只读取当前格式；更旧的槽显示 EMPTY，更新的槽显示不可读取。当前格式损坏或引用校验失败时显示不可读取。`campaign.contentVersion` 是创作版本信息，不能代替存档格式校验。
+任务、目标、奖励和恢复引用都随存档一起保存。改变存档结构、内容引用或校验口径时，增加 `src/domain/save-game.ts` 的 `SAVE_FORMAT`，同时保留上一版为可读，并在 `src/application/saved-game.ts` 补上 59→新格式的迁移和旧档测试。只读取当前格式；更旧的槽显示 EMPTY，更新的槽显示不可读取。当前格式损坏或引用校验失败时显示不可读取。`campaign.contentVersion` 是创作版本信息，不能代替存档格式校验。
