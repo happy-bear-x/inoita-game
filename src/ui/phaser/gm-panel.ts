@@ -53,7 +53,7 @@ interface GmReferences {
 
 type GmPage = 'status' | 'character' | 'items' | 'story';
 const PAGES: readonly [GmPage, string][] = [
-  ['status', '状态'], ['character', '人物'], ['items', '道具'],
+  ['status', '状态'], ['character', '人物'], ['items', '道具'], ['story', '剧情'],
 ];
 /** 道具页：每页 40 格，按背包同款底图与选中框显示。 */
 const ITEM_FILTERS: readonly GmItemFilter[] = ['all', 'equipment', 'consumable', 'material', 'quest'];
