@@ -4,9 +4,29 @@ import { EventEmitter } from 'node:events';
 import { setImmediate } from 'node:timers/promises';
 import { readFileSync } from 'node:fs';
 import type Phaser from 'phaser';
-import { GameAudio, type AudioCatalog } from '../src/application/game-audio.ts';
+import { GameAudio, resumeAudioContext, type AudioCatalog } from '../src/application/game-audio.ts';
 
 const catalog = JSON.parse(readFileSync(new URL('../public/content/audio.json', import.meta.url), 'utf8')) as AudioCatalog;
+
+test('音频恢复只在可见、未锁、未运行时尝试，并吞掉 iOS 的 resume 拒绝', async () => {
+  const context = (state: string, resume: () => Promise<void>) => ({ state, resume });
+  let resumed = 0;
+  resumeAudioContext(context('suspended', async () => { resumed += 1; }), { visible: () => true, locked: () => false });
+  assert.equal(resumed, 1);
+  resumeAudioContext(context('suspended', async () => { resumed += 1; }), { visible: () => false, locked: () => false });
+  resumeAudioContext(context('suspended', async () => { resumed += 1; }), { visible: () => true, locked: () => true });
+  resumeAudioContext(context('running', async () => { resumed += 1; }), { visible: () => true, locked: () => false });
+  assert.equal(resumed, 1, '隐藏、锁定或已运行时不再 resume');
+  let failure: unknown;
+  resumeAudioContext(context('suspended', () => Promise.reject(new Error('denied'))),
+    { visible: () => true, locked: () => false, onFailure: error => { failure = error; } });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.match(String(failure), /denied/);
+  let syncFailure: unknown;
+  resumeAudioContext(context('suspended', () => { throw new Error('sync-denied'); }),
+    { visible: () => true, locked: () => false, onFailure: error => { syncFailure = error; } });
+  assert.match(String(syncFailure), /sync-denied/);
+});
 
 test('音效只准备当前武器、已学技能、地图敌人和动作声音', async () => {
   const f = harness();

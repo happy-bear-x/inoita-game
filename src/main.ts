@@ -4,6 +4,7 @@ import {installPageInteractionGuard} from './application/page-interaction-guard.
 import {prepareSavedGame} from './application/saved-game.ts';
 import {SavedGameLoader} from './application/saved-game-loader.ts';
 import {AutoSaver} from './application/auto-save.ts';
+import {resumeAudioContext} from './application/game-audio.ts';
 import {AUTO_SAVE_SLOT, SAVE_FORMAT, type SaveSlotRef} from './domain/save-game.ts';
 import { SCENE_KEYS } from './application/scene-keys.ts';
 import { UI_EVENTS } from './application/ui-events.ts';
@@ -1136,12 +1137,34 @@ function boot(): void {
       window.onblur = () => { if (!editingText()) game.events.emit(Phaser.Core.Events.BLUR); };
       window.onfocus = () => game.events.emit(Phaser.Core.Events.FOCUS);
       const sound = game.sound as Phaser.Sound.WebAudioSoundManager;
-      // 系统键盘或来电可能让音频上下文停住；用户下一次触摸或页面回焦时补一次恢复。
-      const resumeAudio = () => {
-        if (sound.context && !sound.locked && sound.context.state !== 'running') void sound.context.resume();
-      };
+      // Phaser 自带的 VISIBLE 恢复在 iOS 上 suspend/resume 不接拒绝，会变成
+      // unhandled-rejection；ready 后摘掉，改用自己的可见/触摸恢复。
+      const phaserVisible = (sound as unknown as { onGameVisible?: (...args: unknown[]) => void }).onGameVisible;
+      if (phaserVisible) game.events.off(Phaser.Core.Events.VISIBLE, phaserVisible, sound);
+      let resumeFailureLogged = false;
+      const resumeAudio = () => resumeAudioContext(sound.context ?? undefined, {
+        visible: () => document.visibilityState === 'visible',
+        locked: () => sound.locked,
+        onFailure: error => {
+          if (resumeFailureLogged) return;
+          resumeFailureLogged = true;
+          globalThis.storyDiagnostics?.record('audio-resume-failed', {
+            state: sound.context?.state ?? 'missing',
+            hidden: document.visibilityState !== 'visible',
+            reason: error instanceof Error ? error.message : String(error),
+          }, false);
+        },
+      });
       window.addEventListener('pointerdown', resumeAudio, { capture: true });
       window.addEventListener('focus', resumeAudio);
+      document.addEventListener('visibilitychange', resumeAudio);
+      window.addEventListener('pageshow', resumeAudio);
+      game.events.once(Phaser.Core.Events.DESTROY, () => {
+        window.removeEventListener('pointerdown', resumeAudio, true);
+        window.removeEventListener('focus', resumeAudio);
+        document.removeEventListener('visibilitychange', resumeAudio);
+        window.removeEventListener('pageshow', resumeAudio);
+      });
     }, 0);
     game.events.on(UI_EVENTS.select,()=>app.audio?.ui('select'));
     game.scene.add(SCENE_KEYS.audio, new AudioScene(app), true);

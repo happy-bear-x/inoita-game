@@ -5,6 +5,22 @@ import type Phaser from 'phaser';
 /** 音频目录结构版本；内容 JSON 与运行时必须一致，改结构时加一。 */
 export const AUDIO_CATALOG_VERSION = 3;
 
+/**
+ * 只在页面可见、音频未锁且上下文未运行时尝试恢复。
+ * Web Audio 的 resume() 在 iOS 上可能被拒绝，必须接住，失败交给调用方记录。
+ */
+export function resumeAudioContext(
+  context: { state: string; resume(): Promise<void> } | undefined,
+  options: { visible: () => boolean; locked: () => boolean; onFailure?: (error: unknown) => void },
+): void {
+  if (!context || options.locked() || context.state === 'running' || !options.visible()) return;
+  try {
+    void context.resume().catch(error => options.onFailure?.(error));
+  } catch (error) {
+    options.onFailure?.(error);
+  }
+}
+
 export interface AudioCatalog {
   version: typeof AUDIO_CATALOG_VERSION;
   music: Record<string, string>;
