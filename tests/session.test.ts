@@ -191,7 +191,7 @@ test('the encounter-result receipt restores both the world and the enemy states 
   assert.equal(session.enemyVitals(encounterSpawnId('receipt-0','mob')).deadUntil,'permanent');
 });
 
-test('loading an older save trims unbounded completed encounters and their enemy states',()=>{
+test('loading a save keeps completed encounters and their enemy states as written',()=>{
   const session=new Session(campaign),map=campaign.start.map;
   const state=session.captureState();
   const completed=Array.from({length:66},(_,index)=>({
@@ -200,12 +200,10 @@ test('loading an older save trims unbounded completed encounters and their enemy
   state.storyWorld.encounters=[...completed,{id:'legacy-active',map,status:'active' as const,spawns:[]}];
   state.enemies=completed.map(encounter=>[encounterSpawnId(encounter.id,'mob'),{deadUntil:'permanent' as const}]);
   session.restoreState(state);
-  assert.equal(session.storyWorld.encounter('legacy-0'),undefined);
-  assert.equal(session.storyWorld.encounter('legacy-1'),undefined);
-  assert.equal(session.storyWorld.encounter('legacy-2')?.status,'won');
-  assert.equal(session.storyWorld.encounter('legacy-active')?.status,'active','active 遭遇必须保留');
-  assert.deepEqual(session.enemyVitals(encounterSpawnId('legacy-0','mob')),{});
-  assert.deepEqual(session.enemyVitals(encounterSpawnId('legacy-1','mob')),{});
+  assert.equal(session.storyWorld.encounter('legacy-0')?.status,'won');
+  assert.equal(session.storyWorld.encounter('legacy-65')?.status,'won');
+  assert.equal(session.storyWorld.encounter('legacy-active')?.status,'active');
+  assert.equal(session.enemyVitals(encounterSpawnId('legacy-0','mob')).deadUntil,'permanent');
   assert.equal(session.enemyVitals(encounterSpawnId('legacy-65','mob')).deadUntil,'permanent');
-  assert.equal(session.captureState().storyWorld.encounters.length,65,'64 条已完成加 1 条 active');
+  assert.equal(session.captureState().storyWorld.encounters.length,67);
 });

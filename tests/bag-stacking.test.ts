@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import test from 'node:test';
 import { parseItemCatalog, parseShops } from '../src/application/content-validation.ts';
 import type { BattleCatalog } from '../src/domain/battle.ts';
-import { Bag, mergeStackableInstances } from '../src/domain/bag.ts';
+import { Bag } from '../src/domain/bag.ts';
 import type { Campaign } from '../src/domain/campaign.ts';
 import { BattleCharacter, type CharacterStatsCatalog } from '../src/domain/character-stats.ts';
 import type { ItemCatalog, ItemInstance } from '../src/domain/items.ts';
@@ -84,42 +84,6 @@ test('带词条、强化、宝石的实例不会被并进普通堆叠，绑定�
     assert.equal(entries.filter(predicate).length, 1);
   assert.equal(entries.find(entry => !entry.numbers && !entry.enhancement && !entry.gems.length && !entry.skill)!.quantity, 2);
   bag.verifyConsistency();
-
-  // 纯函数也跳过带状态的实例：手工把每条实例复制一份，只有普通那条会合并。
-  const state = structuredClone(bag.captureState());
-  const plain = state.instances.find(entry => entry.item === item && !entry.numbers && !entry.enhancement && !entry.gems.length && !entry.skill)!;
-  for (const source of state.instances.filter(entry => entry.item === item)) {
-    state.instances.push({ ...structuredClone(source), id: `${source.id}-legacy` });
-  }
-  const merged = mergeStackableInstances(state, catalog);
-  assert.equal(merged.instances.filter(entry => entry.item === item && !entry.numbers && !entry.enhancement && !entry.gems.length && !entry.skill).length, 1);
-  assert.equal(merged.instances.find(entry => entry.id === plain.id)!.quantity, 4);
-  const bound = merged.instances.filter(entry => entry.item === item && entry.skill === 'dark-strike');
-  assert.equal(bound.length, 1, '绑定同技能的书复制件合并为一条');
-  assert.equal(bound[0]!.quantity, 2);
-  assert.equal(merged.instances.filter(entry => entry.item === item).length, 8, '三件带状态实例的复制件保留，绑定书合并');
-});
-
-test('旧档里分散的两条技能书读档后合并为一条并更新所有格位引用', () => {
-  const session = createSession();
-  session.bag.add('skillbook', 1);
-  const saved = record(session);
-  const original = saved.session.bag.instances.find(entry => entry.item === 'skillbook')!;
-  const duplicate = { ...structuredClone(original), id: 'owned-legacy-skillbook' };
-  saved.session.bag.instances.push(duplicate);
-  saved.session.bag.pouches.consumable[5] = duplicate.id;
-  saved.session.bag.allCells[6] = duplicate.id;
-
-  const loaded = createSession();
-  restoreSaveGame(loaded, saved);
-  loaded.bag.verifyConsistency();
-  const entries = loaded.bag.entries.filter(entry => entry.item === 'skillbook');
-  assert.equal(entries.length, 1, '两条实例收成一条');
-  assert.equal(entries[0]!.quantity, 2, '数量相加');
-  assert.equal(loaded.bag.count('skillbook'), 2);
-  assert.ok(!JSON.stringify(loaded.bag.pouchCells).includes(duplicate.id), '分类袋不再引用被合并的实例');
-  assert.ok(!JSON.stringify(loaded.bag.allCells).includes(duplicate.id), '全部页不再引用被合并的实例');
-  assert.ok(loaded.bag.allCells.some(entry => entry?.id === entries[0]!.id), '保留的实例仍在全部页');
 });
 
 test('旧档里的零数量实例仍按原校验拒绝，不被合并掩盖', () => {

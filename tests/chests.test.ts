@@ -237,16 +237,16 @@ test('breakable spawns overwrite the same slot id instead of appending',()=>{
   assert.equal(new Set(visits.spawns.map(spawn=>spawn.id)).size,visits.spawns.length);
 });
 
-test('restoring a save dedupes breakable records and prunes permanent ones',()=>{
+test('restoring a save keeps saved breakable records and permanent states',()=>{
   const session=new Session(campaign);
   const state=session.captureState() as any;
   const spawn=(id:string)=>({id,enemyId:mimic,x:0,y:0,respawn:false});
   state.chests={map:'forest',visit:3,opened:[],consumed:[],enemies:[
-    spawn('breakable:3:forest:jar:0'),spawn('breakable:3:forest:jar:0'),spawn('chest:3:forest:box:0'),
+    spawn('breakable:3:forest:jar:0'),spawn('chest:3:forest:box:0'),
   ]};
   state.enemies=[['breakable:3:forest:jar:0',{deadUntil:'permanent'}],['chest:3:forest:box:0',{deadUntil:'permanent'}]];
   session.restoreState(state);
-  assert.deepEqual(session.chests.spawns.map(spawn=>spawn.id),['chest:3:forest:box:0']);
-  assert.equal(session.enemyVitals('breakable:3:forest:jar:0').deadUntil,undefined);
-  assert.equal(session.enemyVitals('chest:3:forest:box:0').deadUntil,'permanent','宝箱的永久死亡必须保留');
+  assert.deepEqual(session.chests.spawns.map(spawn=>spawn.id),['breakable:3:forest:jar:0','chest:3:forest:box:0']);
+  assert.equal(session.enemyVitals('breakable:3:forest:jar:0').deadUntil,'permanent');
+  assert.equal(session.enemyVitals('chest:3:forest:box:0').deadUntil,'permanent');
 });

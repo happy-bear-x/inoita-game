@@ -112,55 +112,6 @@ function instanceStackKey(entry: ItemInstance): string | undefined {
 function stackKey(item: string, skill?: string): string {
   return `${item}\u0000${skill ?? ''}`;
 }
-/** 这件实例能否参与合并：目录允许叠加，且没有独立状态。 */
-function isStackableInstance(entry: ItemInstance, catalog: ItemCatalog): boolean {
-  const definition = catalog.items[entry.item];
-  return !!definition?.stackable && !definition.equipment && instanceStackKey(entry) !== undefined;
-}
-/**
- * 把背包里同 id、可叠加、没有实例状态的多条实例并成一条：
- * 数量加到保留的那条上，其余实例从袋页与全部页的格位里换成它的 id。
- * 不修改传入的状态；没有可合并的条目时原样返回。
- *
- * 旧存档在可叠加物品还是逐件存放时，会把同一件物品散在多个格位里；读档时用它收拢。
- * 带强化、宝石、词条等单件状态的实例各算一件；绑定技能相同的可叠加物品按同一个键合并。
- */
-export function mergeStackableInstances(state: BagState, catalog: ItemCatalog): BagState {
-  const seen = new Set<string>();
-  let mergeable = false;
-  for (const entry of state.instances) {
-    if (!isStackableInstance(entry, catalog)) continue;
-    const key = instanceStackKey(entry)!;
-    if (seen.has(key)) { mergeable = true; break; }
-    seen.add(key);
-  }
-  if (!mergeable) return state;
-  const merged = structuredClone(state), keep = new Map<string, ItemInstance>(), dropped = new Map<string, string>(), instances: ItemInstance[] = [];
-  for (const entry of merged.instances) {
-    if (!isStackableInstance(entry, catalog)) { instances.push(entry); continue; }
-    const key = instanceStackKey(entry)!;
-    const canonical = keep.get(key);
-    if (!canonical) { keep.set(key, entry); instances.push(entry); continue; }
-    canonical.quantity += entry.quantity;
-    dropped.set(entry.id, canonical.id);
-  }
-  merged.instances = instances;
-  // 同一页里可能同时留下保留实例和它原先的旧格位；每页只保留第一处引用，其余格位清空。
-  const rewrite = (cells: (string | undefined)[]): (string | undefined)[] => {
-    const next = cells.map(id => id === undefined ? undefined : dropped.get(id) ?? id), present = new Set<string>();
-    for (let index = 0; index < next.length; index += 1) {
-      const id = next[index];
-      if (id === undefined) continue;
-      if (present.has(id)) { next[index] = undefined; continue; }
-      present.add(id);
-    }
-    return next;
-  };
-  for (const pouch of INVENTORY_POUCHES) merged.pouches[pouch] = rewrite(merged.pouches[pouch]);
-  merged.allCells = rewrite(merged.allCells);
-  return merged;
-}
-
 /** Inventory operations own both loose items and equipped instances. */
 export class Bag {
   readonly catalog: ItemCatalog;
@@ -237,14 +188,6 @@ export class Bag {
     this.writeState(restored);
   }
 
-  /** 读档后收拢旧档里分散的同 id 可叠加实例；没有可合并的条目时什么都不做。 */
-  mergeStackedInstances(): void {
-    const state = this.snapshot();
-    const merged = mergeStackableInstances(state, this.catalog);
-    if (merged === state) return;
-    verifyBagState(merged, this.catalog);
-    this.writeState(merged);
-  }
   private snapshot(): BagState {
     return structuredClone({instances:[...this.instances.values()],pouches:this.pouches,allCells:this.all,worn:this.worn,
       companionEquipment:[...this.companionEquipment],retiredEquipment:[...this.retiredEquipment],serial:this.serial,shortcuts:[...this.shortcuts],recipes:[...this.recipeBook]});
@@ -255,7 +198,7 @@ export class Bag {
     this.all=restored.allCells.map(id=>id??undefined);this.worn=restored.worn;this.serial=restored.serial;
     this.companionEquipment.clear();for(const [owner,equipment] of restored.companionEquipment)this.companionEquipment.set(owner,equipment);
     this.retiredEquipment.clear();for(const [owner,equipment] of restored.retiredEquipment??[])this.retiredEquipment.set(owner,equipment);
-    this.shortcuts.clear();for(const [owner,row] of restored.shortcuts)this.shortcuts.set(owner,dedupeSkillShortcuts(row));
+    this.shortcuts.clear();for(const [owner,row] of restored.shortcuts)this.shortcuts.set(owner,row);
     this.recipeBook=new Set(restored.recipes);this.lastResult=undefined;
     // Invalidate equipment operations prepared before the checkpoint was restored.
     this.revision++;

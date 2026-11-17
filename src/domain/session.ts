@@ -578,15 +578,12 @@ export class Session {
     this.trackedQuest=restored.trackedQuest;this.debugFocusQuestValue=restored.debugFocusQuest;this.playerState=restored.player?Object.freeze({...restored.player}):undefined;
     this.coins=restored.money;this.gameTimeMs=restored.gameTimeMs;
     this.recovery.restoreState(restored.recovery);this.chests.restoreState(restored.chests);this.springs.restoreState(restored.springs);this.legendaryWeapons.restoreState(restored.legendaryWeapons);this.shops.restoreState(restored.shops);
-    this.pruneBreakableEnemyStates();
-    this.forgetPrunedEncounterEnemies();
     const clock=restored.combatClock??{frame:Math.floor(restored.resourceRecovery.elapsedMs/LOGIC_FRAME_MS),remainderMs:restored.resourceRecovery.elapsedMs%LOGIC_FRAME_MS};
     this.combatClock.restoreState(clock);this.cooldowns.restoreState(restored.cooldowns??{actors:[]});
     this.frenzyAnimations.restoreState(restored.frenzyAnimations??[]);
     this.resourceRecovery.restoreState({...restored.resourceRecovery,elapsedMs:clock.frame*LOGIC_FRAME_MS});groundLootFor(this).restoreState(restored.groundLoot);
     this.questItemGenerators.restoreState(restored.questItemGeneration,groundLootFor(this));
     this.lootPity.restoreState(restored.lootPity??{version:2,members:[],chests:[],bossDefeats:[]});
-    for(const [id] of restored.lootPity?.members??[])if(id!=='player'&&!this.party?.get(id))this.lootPity.removeMember(id);
     this.restoreReservedDrops(restored.reservedDrops);
     this.partyItemChance=restored.partyItemChance??0;
   }
@@ -596,10 +593,7 @@ export class Session {
    */
   private restoreReceipts(receipts:Iterable<QuestSettlement>):void {
     this.receipts.clear();
-    for(const receipt of receipts){
-      const kept=this.receipts.get(receipt.quest);
-      if(!kept||receipt.cycle>kept.cycle)this.receipts.set(receipt.quest,structuredClone(receipt));
-    }
+    for(const receipt of receipts)this.receipts.set(receipt.quest,structuredClone(receipt));
     this.receiptRevisionValue++;
   }
   /**
@@ -735,14 +729,6 @@ export class Session {
   /** 召唤物离场时丢弃它的战斗状态；召唤实例的 key 不会被地图生成点复用。 */
   forgetEnemyVitals(id:string):void {
     this.deleteEnemyState(id);
-  }
-  /** 旧档里已永久死亡的可破坏物记录不会再生成，读档时连记录和会话状态一起清掉。 */
-  private pruneBreakableEnemyStates():void {
-    for(const [id,state] of [...this.enemyStates]) {
-      if(!id.startsWith('breakable:')||state.deadUntil!=='permanent')continue;
-      this.deleteEnemyState(id);
-      this.chests.removeSpawn(id);
-    }
   }
   /**
    * 一次性剧情遭遇被有界历史淘汰后，它的怪物死亡记录也不会再被任何名册或结算读到。

@@ -36,7 +36,7 @@ Phaser 4.2.1 + TypeScript 的艾诺迪亚4重制版。源码、内容、素材�
 - **内容直接在本仓库维护**。`public/content/` 是剧情、任务、地图和战斗数据的唯一源文件。发现和原版不一致时，去 `../inoita` 对照原版实现和素材，然后把修正直接写进本仓库对应的 JSON、类型或代码；后续内容变更也以本仓库的 JSON 和代码为起点。增删物品定义时，同步核对剧情与掉落引用、背包分类统计和调试现场表。
 - **剧情独立创作**。`public/content/campaign.json` 是剧情、任务和角色摆放的源文件；新增字段先定义游戏含义、单位和消费方式，内容加载和构建共用校验器。
 - **名字用游戏里的概念**。动画叫 `walk-east`、`idle-south`，地图属性叫 `blocked`、`exits`、`entities`，剧情行为叫 `dialogue`、`choice`。
-- **存档兼容上一版**。当前代码必须能读回最近一次发布的存档格式；升级流程见 `src/domain/AGENTS.md`，迁移链在 `src/application/saved-game.ts`。
+- **存档只读当前格式**。正式版只接受当前 `SAVE_FORMAT`（59）；更旧或更新的格式按空槽或过旧处理。结构变化时升格式，并补当前格式到新格式的迁移和旧档测试。读取范围在 `src/domain/save-game.ts`，读取校验在 `src/application/saved-game.ts`。
 - **服务地址分开发与部署**。网页始终同源，页面不写域名；Android 壳由本地服务在页面脚本前注入 `__inoitaEndpoints` 和原生桥。环境根地址只维护 `config/endpoints.json`：Android 调试用 `adb reverse` 指向本机 4003，发布和网页生产共用 `https://catgo.online:4002`；云存档 `/__cloud`、诊断 `/__diagnostics/report` 路径固定。热更新检查地址从同一根地址派生 `/update/latest.json`，自测通道用 `/update/latest-staging.json`；下载走原生 HTTP，不需要 CORS。细则见 `config/AGENTS.md`、`src/application/AGENTS.md`、`android/AGENTS.md`。
 
 ## 3. 测试与验证
@@ -90,7 +90,7 @@ tsconfig.json          类型检查；只用可擦除语法，测试用 node --t
 src/                   游戏源码（规则见 src/AGENTS.md）
   app.ts               启动装配；场景与界面使用 application/ports.ts 的能力接口
   main.ts              游戏配置与启动
-  application/         端口装配、内容加载、存档迁移（AGENTS.md）
+  application/         端口装配、内容加载、存档读取（AGENTS.md）
   scenes/              地图、剧情舞台、菜单与调试场景（AGENTS.md）
   domain/              内容类型、会话状态、剧情调度、通行、战斗规则（AGENTS.md）
   rendering/           角色、世界、战斗与特效表现（AGENTS.md）

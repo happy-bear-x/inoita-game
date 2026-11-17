@@ -31,11 +31,8 @@ export class ChestVisits {
     this.revisionValue++;
     const restored=structuredClone(state);this.map=restored.map;this.visit=restored.visit;
     this.opened.clear();for(const id of restored.opened)this.opened.add(id);
-    this.consumed.clear();for(const id of restored.consumed??[])this.consumed.add(id);
-    // 旧档里同 id 可能因为槽位重生被追加多次；保留最后一条，避免遍历量随读档增长。
-    const deduped=new Map<string,EnemySpawn>();
-    for(const enemy of restored.enemies)deduped.set(enemy.id,enemy);
-    this.enemies.splice(0,this.enemies.length,...deduped.values());
+    this.consumed.clear();for(const id of restored.consumed)this.consumed.add(id);
+    this.enemies.splice(0,this.enemies.length,...restored.enemies);
   }
   /** 丢弃一条生成记录；旧档清理和槽位覆盖写入都用它。 */
   removeSpawn(id:string):boolean {

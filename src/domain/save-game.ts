@@ -2,18 +2,13 @@ import type { Session, SessionState } from './session.ts';
 
 /** 手动存档槽：原版三个，体验版扩到十个，方便反复测任务时保进度。 */
 export const MANUAL_SAVE_SLOT_COUNT = 10;
-/**
- * 存档格式版本。记录结构或校验口径变了就加一，并在 `application/saved-game.ts`
- * 的升级链里补上从上一版读回的迁移；比 `LEGACY_SAVE_FORMATS` 更旧的档才按空槽处理。
- */
+/** 存档格式版本。正式版只读取当前格式；旧格式按空槽或过旧处理。 */
 export const SAVE_FORMAT = 59;
-/** 仍然能读回并升级到当前格式的旧版本；新增升级步骤时同步加入这里。 */
-export const LEGACY_SAVE_FORMATS: readonly number[] = [58, 57, 56, 55, 54, 53, 52, 51, 50, 49, 48, 47, 46, 45, 44, 43, 42, 41, 40, 39, 38, 37, 36, 35, 34, 33];
 export function isReadableSaveFormat(format: unknown): format is number {
-  return typeof format === 'number' && (format === SAVE_FORMAT || LEGACY_SAVE_FORMATS.includes(format));
+  return format === SAVE_FORMAT;
 }
 
-/** 云存档导入时的格式分类：能读、比当前新、比升级链旧、版本不合法。 */
+/** 云存档导入时的格式分类：能读、比当前新、比当前旧、版本不合法。 */
 type SaveFormatStatus = 'ok' | 'future' | 'obsolete' | 'unknown';
 export function saveFormatStatus(format: unknown): SaveFormatStatus {
   if (typeof format !== 'number' || !Number.isSafeInteger(format)) return 'unknown';
@@ -69,7 +64,7 @@ export type SlotSummaryReading =
 
 /**
  * 云端导入用的原始读档结果。与 `SlotSummaryReading` 不同：这里把“未来版本”和
- * “升级链之前的旧版本”分开，界面能在上传/下载前告诉玩家具体原因，而不是混成空槽。
+ * “比当前格式旧的版本”分开，界面能在上传/下载前告诉玩家具体原因，而不是混成空槽。
  */
 export type SaveRawReading =
   | { kind:'ok'; raw:string; summary:SaveSummary; format:number }
@@ -118,8 +113,6 @@ export function captureSaveGame<World>(session:Session, world:World, summary:Sav
 /** 把存档灌回一个同职业的新会话。校验全部交给 `Session.restoreState`：它对背包、技能、任务、队伍逐项验。 */
 export function restoreSaveGame<World>(session:Session, game:SaveGame<World>):World {
   session.restoreState(game.session);
-  // 校验通过后再收拢：旧档里分散的同 id 可叠加实例并成一条；数量非法仍在上一行按原规则报错。
-  session.bag.mergeStackedInstances();
   return game.world;
 }
 

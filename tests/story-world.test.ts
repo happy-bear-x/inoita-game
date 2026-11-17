@@ -137,19 +137,18 @@ test('completed encounters keep only the most recent 64 by completion order whil
   assert.equal([...world.encounterStatuses().values()].filter(encounter=>encounter.status==='won').length,64);
 });
 
-test('restoring a legacy snapshot trims completed encounters to the bounded history',()=>{
+test('restoring a snapshot keeps completed encounters as written',()=>{
   const completed:StoryWorldSnapshot['encounters']=Array.from({length:66},(_,index)=>({
     id:`legacy-${index}`,map:'forest',status:'won' as const,spawns:[{id:`mob-${index}`,enemyId:'wolf',x:index,y:index}],
   }));
   const snapshot:StoryWorldSnapshot={entities:[],exits:[],flags:[],choices:[],mapVisit:0,
     encounters:[...completed,{id:'legacy-active',map:'forest',status:'active',spawns:[]}]};
   const world=new StoryWorldState();world.restoreState(snapshot);
-  assert.equal(world.encounter('legacy-0'),undefined);
-  assert.equal(world.encounter('legacy-1'),undefined);
-  assert.equal(world.encounter('legacy-2')?.status,'won');
+  assert.equal(world.encounter('legacy-0')?.status,'won');
+  assert.equal(world.encounter('legacy-65')?.status,'won');
   assert.equal(world.encounter('legacy-active')?.status,'active');
-  assert.deepEqual(world.consumePrunedEncounters().map(encounter=>encounter.id),['legacy-0','legacy-1']);
-  assert.equal(world.captureState().encounters.length,65,'64 条已完成记录加 1 条 active');
+  assert.deepEqual(world.consumePrunedEncounters(),[]);
+  assert.equal(world.captureState().encounters.length,67);
 });
 
 test('failed world restore validates before replacing the live world',()=>{

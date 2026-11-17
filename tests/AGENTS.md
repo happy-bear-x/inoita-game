@@ -45,7 +45,7 @@ npm test -- tests/combat.test.ts
 npm run test:standalone
 ```
 
-- `session-cooldowns-party.test.ts` 验证放逐与预备队的冷却、掉落保底清理，以及旧档中已放逐成员记录的回收。
+- `session-cooldowns-party.test.ts` 验证放逐与预备队的冷却，以及放逐时清理掉落保底记录。
 
 - `world-skill-cache.test.ts` 验证共享技能贴图在原使用者离队后仍由后学会的主角持有，最后释放时回收；覆盖退队失败清理、迟到失败、自动反应等待资源，入队期间换装的重试，以及读档等待全队技能资源、准备失败保留原战斗现场。
 - `basic-attack-repeat.test.ts` 与 `world-runtime-review.test.ts` 验证手动对敌技能自然结束后接普攻，以及无目标、辅助技能和切人时的边界。
@@ -66,10 +66,10 @@ npm run test:standalone
 
 - `story-preparation.test.ts` 覆盖确定路径与调用返回、预测边界；`story-asset-preparation.test.ts` 覆盖跨场景请求复用、目标替换、取消和失败重试；入口测试验证恢复游戏不等待后续剧情素材。
 
-- 装备清理由 shop、shop-panel、story-menu-interactions 用例覆盖等级与独立品质筛选、保护条件、报价变化、上锁入口和长按释放；saved-game 覆盖 44 → 45 迁移及锁定状态读回。
+- 装备清理由 shop、shop-panel、story-menu-interactions 用例覆盖等级与独立品质筛选、保护条件、报价变化、上锁入口和长按释放；saved-game 覆盖锁定状态读回。
 - `texture-lifecycle.test.ts` 覆盖纹理退役：可见对象仍引用时不删、隐藏对象不算引用、容器内角色计入，以及引用消失后在帧后检查里补删。
 - `enemy-presence-runtime.test.ts` 使用正式任务、怪物和掉落，验证剧情清场后的任务怪从旧档恢复、普攻和技能扣血、单次死亡结算、任务掉落、刷新与换图、任务结束后的同帧退场、重复接取及捕捉；在场与生成资格查询保持只读。
-- `enemy-respawn.test.ts` 覆盖视野内 60 秒、视野外 20 秒、四边 48 地图像素缓冲、回头、镜头范围变化、读档、换图和一次性/捕捉/动态敌人；`combat-clock-runtime.test.ts` 验证主镜头接线、各档画面采样和暂停计时，`saved-game.test.ts` 验证 57 → 58 的期限迁移，真实任务战斗用例验证提前刷新的怪仍扣血并只结算一次掉落。
+- `enemy-respawn.test.ts` 覆盖视野内 60 秒、视野外 20 秒、四边 48 地图像素缓冲、回头、镜头范围变化、读档、换图和一次性/捕捉/动态敌人；`combat-clock-runtime.test.ts` 验证主镜头接线、各档画面采样和暂停计时，真实任务战斗用例验证提前刷新的怪仍扣血并只结算一次掉落。
 
 - `party.test.ts` 与 `story-menu-interactions.test.ts` 验证佣兵能力点、旧成长保留和人物页加点。
 
@@ -81,10 +81,10 @@ npm run test:standalone
 
 - `party-follow.test.ts` 按连续移动推进角色，覆盖墙内站位、拐角、赶路、拉扯与离队边界和预算等待；跟随验收统计实际位移和拉回次数。
 
-- `mercenary-skills.test.ts`、`mercenary-skill-unlocks.test.ts`、存档和菜单测试覆盖佣兵手动加点、主角学习规则、招募上限、解锁资格、技能书突破、免费初始化、旧档补点与成员隔离；战斗缓存测试验证初始化只清理对应成员。主角初始化继续验证初始技能和快捷栏恢复。
+- `mercenary-skills.test.ts`、`mercenary-skill-unlocks.test.ts`、存档和菜单测试覆盖佣兵手动加点、主角学习规则、招募上限、解锁资格、技能书突破、免费初始化、历史补点与成员隔离；战斗缓存测试验证初始化只清理对应成员。主角初始化继续验证初始技能和快捷栏恢复。
 - `mercenary-skills.test.ts` 同时验证剧情伙伴自动成长提示与实际升级一致，以及成长门槛不超过角色等级范围。
 
-- `story-scene`、`story-stage-isolation` 与 `saved-game` 覆盖主角收放武器的正常/跳过路径、同图保留、地图重载恢复默认和上一版存档迁移。
+- `story-scene`、`story-stage-isolation` 与 `saved-game` 覆盖主角收放武器的正常/跳过路径、同图保留、地图重载恢复默认和当前格式读回。
 
 - `mercenary-skill-unlocks.test.ts` 覆盖六职业封印书的永久共享、候补与未来佣兵继承、抽取去重、失败回滚和检查点恢复；存档与菜单用例覆盖旧书转换、等级保留和背包控件复用。
 

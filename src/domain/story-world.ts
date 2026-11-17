@@ -322,10 +322,7 @@ export class StoryWorldState {
     // 整份快照替换后按快照顺序重建进行中索引，旧世界的索引不能残留。
     this.activeEncounterIds=new Set(restored.encounters.filter(e=>e.status==='active').map(e=>e.id));
     this.location=restored.location;this.mapVisit=restored.mapVisit;this.partyBuffs=restored.partyBuffs??[];this.enemyRemovals=restored.enemyRemovals??[];this.appearances=new Map(restored.appearances??[]);this.enemyLocations=new Map((restored.enemyLocations??[]).map(value=>[value.enemyId,value]));
-    // 旧存档可能带着无界增长的历史；恢复后先按当前上限裁剪。恢复失败时旧状态不受影响，
-    // 所以这次裁剪只属于这份新状态，先清掉上一轮没被取走的裁剪记录。
     this.prunedEncounters=[];
     this.completedEncounterOrder=[...this.encounters.values()].filter(isCompletedEncounter).map(encounter=>encounter.id);
-    this.pruneCompletedEncounters();
   }
 }

@@ -9,7 +9,7 @@ import type { ActorDefinition } from '../src/domain/content.ts';
 import type { ItemCatalog } from '../src/domain/items.ts';
 import type { CompanionCatalog } from '../src/domain/party.ts';
 import { Session, DEFAULT_ENEMY_RESPAWN_MS } from '../src/domain/session.ts';
-import { AUTO_SAVE_SLOT, LEGACY_SAVE_FORMATS, MANUAL_SAVE_SLOT_COUNT, SAVE_FORMAT, SaveSlots, captureSaveGame, restoreSaveGame, sanitizeSaveName, saveSummary, type SaveStorage } from '../src/domain/save-game.ts';
+import { AUTO_SAVE_SLOT, MANUAL_SAVE_SLOT_COUNT, SAVE_FORMAT, SaveSlots, captureSaveGame, restoreSaveGame, sanitizeSaveName, saveSummary, type SaveStorage } from '../src/domain/save-game.ts';
 
 const read=<T>(name:string):T=>JSON.parse(readFileSync(new URL(`../public/content/${name}.json`,import.meta.url),'utf8')) as T;
 const campaign=read<Campaign>('campaign'),items=read<ItemCatalog>('items'),stats=read<CharacterStatsCatalog>('character-stats');
@@ -57,7 +57,7 @@ test('a save slot round-trips the whole session and the world view into a fresh 
   assert.equal(again.kind==='ok'&&again.game.session.money,before.money);
 });
 
-test('save summary carries the captured screenshot while old saves simply omit it',()=>{
+test('save summary carries the captured screenshot when present',()=>{
   const slots=new SaveSlots<World>(memory()),session=createSession();
   const current=record(session);
   current.summary.screenshot='data:image/jpeg;base64,AAAA';
@@ -66,34 +66,11 @@ test('save summary carries the captured screenshot while old saves simply omit i
   assert.equal(reading.kind,'ok');
   assert.equal(reading.kind==='ok'&&reading.summary.screenshot,'data:image/jpeg;base64,AAAA');
 
-  // 旧档没有截图字段时照常读取；界面据此不画图片。
-  const legacy=record(session);legacy.format=SAVE_FORMAT-1;
-  slots.write(3,legacy);
-  const old=slots.inspect(3);
-  assert.equal(old.kind,'ok');
-  assert.equal(old.kind==='ok'&&old.game.summary.screenshot,undefined);
-});
-
-test('an old save with repeat-quest receipt history loads only the latest receipt per quest',()=>{
-  const session=createSession();
-  const settle=()=>{
-    assert.equal(session.accept('quest-353'),true);
-    session.bag.add('paillette',5);
-    assert.equal(session.complete('quest-353'),true);
-  };
-  settle();settle();
-  const saved=record(session);
-  const latest=saved.session.receipts.find(receipt=>receipt.quest==='quest-353');
-  assert.ok(latest);
-  assert.equal(latest.cycle,1,'当前轮收据已写入存档');
-  saved.session.receipts.unshift({...structuredClone(latest),cycle:0});
-  assert.equal(saved.session.receipts.filter(receipt=>receipt.quest==='quest-353').length,2,'模拟旧档保留多轮历史');
-
-  const loaded=createSession();
-  restoreSaveGame(loaded,saved);
-  const receipts=loaded.captureState().receipts.filter(receipt=>receipt.quest==='quest-353');
-  assert.deepEqual(receipts.map(receipt=>receipt.cycle),[1],'读档时丢掉旧周期');
-  assert.deepEqual(loaded.rewardReceiptFor('quest-353'),latest.reward);
+  // 当前格式也可以没有截图字段；界面据此不画图片。
+  slots.write(3,record(session));
+  const plain=slots.inspect(3);
+  assert.equal(plain.kind,'ok');
+  assert.equal(plain.kind==='ok'&&plain.game.summary.screenshot,undefined);
 });
 
 test('damaged slots stay unreadable while an older development format displays EMPTY',()=>{
@@ -106,11 +83,10 @@ test('damaged slots stay unreadable while an older development format displays E
   assert.deepEqual(slots.inspect(0),{ kind:'empty' });
 });
 
-test('the previous published format stays readable until the slot is overwritten',()=>{
+test('a format older than the current one is obsolete and displays EMPTY until overwritten',()=>{
   const slots=new SaveSlots<World>(memory()),session=createSession(),legacy=record(session);legacy.format=SAVE_FORMAT-1;
   slots.write(1,legacy);
-  const reading=slots.inspect(1);
-  assert.equal(reading.kind,'ok');assert.equal(reading.kind==='ok'&&reading.game.format,SAVE_FORMAT-1);
+  assert.equal(slots.inspect(1).kind,'empty');
   slots.write(1,record(session));
   const rewritten=slots.inspect(1);
   assert.equal(rewritten.kind,'ok');assert.equal(rewritten.kind==='ok'&&rewritten.game.format,SAVE_FORMAT);
@@ -245,7 +221,7 @@ test('raw cloud import distinguishes versions and writes the cloud name without 
   const game=JSON.parse(raw.raw) as Record<string,unknown>;
   storage.setItem('inotia4.story.v1.slot1',JSON.stringify({...game,format:SAVE_FORMAT+1}));
   assert.equal(slots.readRaw(1).kind,'future');
-  storage.setItem('inotia4.story.v1.slot2',JSON.stringify({...game,format:Math.min(...LEGACY_SAVE_FORMATS)-1}));
+  storage.setItem('inotia4.story.v1.slot2',JSON.stringify({...game,format:SAVE_FORMAT-1}));
   assert.equal(slots.readRaw(2).kind,'obsolete');
   storage.setItem('inotia4.story.v1.slot3','{broken');
   assert.equal(slots.readRaw(3).kind,'unreadable');
@@ -256,7 +232,7 @@ test('raw cloud import distinguishes versions and writes the cloud name without 
   const renamed=slots.peek(0);
   assert.equal(renamed.kind==='ok'?renamed.summary.name:undefined,'云端名','以云端原文的名字为准');
   assert.throws(()=>slots.writeRaw(0,JSON.stringify({...game,format:SAVE_FORMAT+1})),/更新游戏/);
-  assert.throws(()=>slots.writeRaw(0,JSON.stringify({...game,format:Math.min(...LEGACY_SAVE_FORMATS)-1})),/过旧/);
+  assert.throws(()=>slots.writeRaw(0,JSON.stringify({...game,format:SAVE_FORMAT-1})),/过旧/);
   const kept=slots.peek(0);
   assert.equal(kept.kind==='ok'?kept.summary.name:undefined,'云端名','失败的导入不覆盖原槽');
 });

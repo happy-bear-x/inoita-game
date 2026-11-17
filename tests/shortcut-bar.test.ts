@@ -62,7 +62,7 @@ test('a skill moves to the last registered slot and keeps only one copy',()=>{
   assert(!player.assigned('skill','dark-strike'));
   assert.deepEqual(companion.page(0)[1],{kind:'skill',id:'dark-strike'});
 });
-test('items may still occupy multiple slots; restoring an old duplicate skill row keeps the last copy',()=>{
+test('items may still occupy multiple slots; restoring a row keeps entries as written',()=>{
   const bag=create(),shortcuts=bar(bag);
   shortcuts.assign(0,0,{kind:'item',id:'healing-potion-s'});
   shortcuts.assign(1,4,{kind:'item',id:'healing-potion-s'});
@@ -72,8 +72,9 @@ test('items may still occupy multiple slots; restoring an old duplicate skill ro
   state.shortcuts=[['player',row]];
   bag.restoreState(state);
   const restored=bar(bag);
-  assert.equal(restored.row().filter(entry=>entry?.kind==='skill'&&entry.id==='dark-strike').length,1);
-  assert.deepEqual(restored.page(1)[2],{kind:'skill',id:'dark-strike'},'旧行按后出现的槽位保留');
+  assert.equal(restored.row().filter(entry=>entry?.kind==='skill'&&entry.id==='dark-strike').length,2);
+  assert.deepEqual(restored.page(0)[0],{kind:'skill',id:'dark-strike'});
+  assert.deepEqual(restored.page(1)[2],{kind:'skill',id:'dark-strike'});
 });
 
 test('emptying an item stack clears its slot but leaves skills alone',()=>{
