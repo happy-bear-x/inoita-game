@@ -24,7 +24,7 @@ interface CombatRewardMember {
   level: number;
 }
 
-interface CombatRewardInput {
+export interface CombatRewardInput {
   /** 被击杀的敌人定义；经验按定义里的基础数值计算。 */
   enemy: EnemyDefinition;
   /** 是否有地图生成点。没有生成点时仍可给经验，但不写击杀记录、不掷掉落。 */
@@ -78,7 +78,7 @@ interface CombatRewardPityRecord {
   points: number;
 }
 
-interface CombatRewardSettlement {
+export interface CombatRewardSettlement {
   /** 本次击杀应发放的经验；景物怪、非队伍击杀和 0 经验敌人返回 0。 */
   experience: number;
   isBreakable: boolean;

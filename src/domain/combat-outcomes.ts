@@ -9,23 +9,22 @@ export const ENEMY_DEFEAT_SETTLE_FRAMES = (ENEMY_DEFEAT_HOLD_MS + ENEMY_DEFEAT_F
 
 /** A defeated enemy remains registered until its one settlement has completed. */
 export class PendingEnemyDefeats {
-  private readonly pending = new Map<string, (render: boolean) => void>();
+  private readonly pending = new Map<string, {settle:(render:boolean)=>void;present?:(render:boolean)=>void}>();
+  private readonly completing = new Set<string>();
   has(key: string): boolean { return this.pending.has(key); }
-  /** 当前还没结算的死亡单；恢复/回滚时用来取消对应的消散 tween。 */
   keys(): readonly string[] { return [...this.pending.keys()]; }
-  add(key: string, settle: (render: boolean) => void): boolean {
-    if (this.pending.has(key)) return false;
-    this.pending.set(key, settle);
-    return true;
+  add(key:string,settle:(render:boolean)=>void,present?:(render:boolean)=>void):boolean {
+    if(this.pending.has(key))return false;
+    this.pending.set(key,{settle,present});return true;
   }
-  complete(key: string, render = true): void {
-    const settle = this.pending.get(key);
-    if (!settle) return;
-    this.pending.delete(key);
-    settle(render);
+  complete(key:string,render=true):void {
+    const ticket=this.pending.get(key);
+    if(!ticket||this.completing.has(key))return;
+    this.completing.add(key);
+    try{ticket.settle(render);this.pending.delete(key);}
+    finally{this.completing.delete(key);}
+    ticket.present?.(render);
   }
   clear():void {this.pending.clear();}
-  flush(): void {
-    for (const key of [...this.pending.keys()]) this.complete(key, false);
-  }
+  flush():void {for(const key of [...this.pending.keys()])this.complete(key,false);}
 }

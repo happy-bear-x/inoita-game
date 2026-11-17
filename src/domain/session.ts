@@ -32,6 +32,8 @@ import { LOGIC_FRAME_MS, type BattleCatalog } from './battle.ts';
 import { BattleCharacter, type BattleCharacterState, type CharacterStatsCatalog } from './character-stats.ts';
 import { PartyRoster, type CompanionCatalog } from './party.ts';
 import { LootPity, type LootPityState } from './loot-pity.ts';
+import { settleCombatRewards, type CombatRewardInput, type CombatRewardSettlement } from './combat-rewards.ts';
+import type { DropReward } from './drops.ts';
 
 interface EnemyState { health?:number; mana?:number; deadUntil?:number|'permanent'; offscreenRespawnAt?:number; capture?:{map:string;visit:number} }
 export const DEFAULT_ENEMY_RESPAWN_MS = 60_000;
@@ -40,7 +42,19 @@ export const OFFSCREEN_ENEMY_RESPAWN_MS = 20_000;
 type SessionListener = (session: Session) => void;
 type SnapshotSlot = 'questBook'|'storyWorld'|'bag'|'enemies'|'receipts'|'chests'|'groundLoot';
 
-/** Data owned by a story session; render objects and subscriptions stay outside checkpoints. */
+export interface EnemyDefeatInput extends Pick<CombatRewardInput,'enemy'|'map'|'x'|'y'|'lootLevel'|'enemyLevel'|'elite'|'earnsExperience'|'pressureMode'|'drops'|'stats'|'random'> {
+  key:string;
+  spawn?:EnemySpawn|CampaignEnemyPlacement;
+  /** 地图适配器提供的纯落点计算。 */
+  landing(x:number,y:number):{x:number;y:number};
+}
+export interface EnemyDefeatResult {
+  settlement:CombatRewardSettlement;
+  levelledIds:string[];
+  notify():void;
+}
+
+/** 会话拥有的游戏状态；渲染对象与订阅由运行现场持有。 */
 export interface SessionState {
   classId?:string;
   questBook:QuestBookState;
@@ -108,9 +122,10 @@ interface StoryCommandBaseline {
   playerState?:Readonly<StoryPlayerState>;
   runtime?:StoryRuntimeSnapshot;
   shops?:ShopVisitsState;
+  chests?:ChestVisitsState;
 }
 /** `atomic` 能回滚的子系统：剧情命令会碰到的全集，再加上商店货架。 */
-type AtomicSubsystem = StorySubsystem | 'shops';
+type AtomicSubsystem = StorySubsystem | 'shops' | 'chests';
 interface AtomicFrame { touched:Set<AtomicSubsystem>; baseline:StoryCommandBaseline }
 /** 命令静态会碰到的子系统；比运行时实际改动多抓是安全的，少抓会漏回滚。 */
 function storyCommandSubsystems(command:StoryCommand):readonly StorySubsystem[]{
@@ -819,9 +834,90 @@ export class Session {
         deadUntil:this.gameTimeMs+respawnMs,offscreenRespawnAt:this.gameTimeMs+Math.min(respawnMs,OFFSCREEN_ENEMY_RESPAWN_MS)});
       this.emit();
     });
-    for (const listener of this.defeatListeners) listener(spawn.enemyId);
+    if(this.deferredDefeats)this.deferredDefeats.push(spawn.enemyId);
+    else for (const listener of this.defeatListeners) listener(spawn.enemyId);
     return 'activeQuest' in spawn;
   }
+
+  /** 一次死亡只提交一次游戏状态；返回的通知在死亡单移除后发布。 */
+  settleEnemyDefeat(input:EnemyDefeatInput):EnemyDefeatResult|undefined {
+    if(input.spawn&&this.enemyStates.get(input.spawn.id)?.deadUntil!==undefined)return;
+    const store=groundLootFor(this),pending=this.pendingNotification;
+    const previousDefeats=this.deferredDefeats,defeats:string[]=[];
+    const enemies=new Map<string,EnemyState|undefined>();
+    const remember=(id:string)=>{if(!enemies.has(id))enemies.set(id,this.enemyStates.get(id));};
+    if(input.spawn)remember(input.spawn.id);
+    let rollbackLoot:(()=>void)|undefined;
+    this.deferredDefeats=defeats;this.notificationBatchDepth++;
+    let settlement:CombatRewardSettlement,levelledIds:string[]=[];
+    let living:readonly string[]=[];
+    try {
+      settlement=this.atomic(()=>{
+        try {
+          if(input.spawn)this.enemyDefeated(input.spawn);
+          living=this.party?.livingIds??[];
+          const levels=new Map(living.map(id=>[id,id==='player'?this.hero?.level:this.party?.get(id)?.level]));
+          const heroLevel=this.hero?.level??1;
+          const result=settleCombatRewards({
+            ...input,hasSpawn:!!input.spawn,oneTime:input.spawn?.respawn===false,
+            heroLevel,partySize:Math.max(1,living.length),
+            party:(living.length?living:['player']).map(id=>({id,level:(id==='player'?this.hero:this.party?.get(id))?.level??heroLevel})),
+            modifiers:this.party?.groupModifiers(),itemChance:this.partyItemChance,
+            questRequirements:this.questDropRequirements(),pity:this.lootPity,
+            reserved:{misses:this.reservedDropMisses,claimed:this.claimedReservedDrops,
+              pending:new Set(store.dropsOnMap(input.map).flatMap(drop=>drop.reward.kind==='item'?[drop.reward.item]:[]))},
+          });
+          for(const record of result.pityRecords)this.lootPity.recordEnemy(record.ownerId,
+            {equipment:record.equipment,bestRarity:record.bestRarity},record.eligibility,record.points);
+          this.reservedDropMisses=result.reservedUnlockMisses;
+          const add=(x:number,y:number,rewards:readonly DropReward[])=>{
+            if(!rewards.length)return;
+            const landing=input.landing(x,y);
+            const prepared=rewards.map(reward=>reward.kind==='item'&&!reward.instance&&
+              (!this.bag.catalog.items[reward.item].stackable||reward.lootLevel!==undefined)
+              ?{...reward,instance:this.bag.prepareDrop(reward.item,{...(reward.roll?{grade:reward.roll,sockets:reward.roll.sockets}:{}),lootLevel:reward.lootLevel})}:reward);
+            rollbackLoot??=store.checkpointMap(input.map);
+            store.add(input.map,landing.x,landing.y,prepared,{nowMs:this.nowMs});
+          };
+          if(result.breakable){
+            add(input.x,input.y,result.breakable.rewards);
+            // 只保存本次可能覆盖的衍生怪状态，不复制其他地图的死亡历史。
+            this.atomic(()=>{
+              for(const spawn of this.chests.spawns)if(spawn.id.startsWith('breakable:')&&spawn.id.includes(':'+input.key+':'))remember(spawn.id);
+              for(const id of this.chests.spawnBreakableEnemies(input.map,input.key,result.breakable!.enemies,{x:input.x,y:input.y})){
+                remember(id);this.forgetEnemyVitals(id);
+              }
+            },['chests']);
+          }else{
+            const offsets=[0,5,-5];
+            for(const group of result.owners)add(input.x+offsets[group.slot%offsets.length]!,input.y,group.rewards);
+            add(input.x,input.y,result.reserved);
+          }
+          if(input.spawn)add(input.x,input.y,result.quest);
+          if(result.experience>0)this.party?.addExperience(result.experience);
+          levelledIds=living.filter(id=>((id==='player'?this.hero:this.party?.get(id))?.level??0)>(levels.get(id)??0));
+          this.emit();
+          return result;
+        }catch(error){
+          rollbackLoot?.();
+          for(const [id,state]of enemies){if(state)this.enemyStates.set(id,state);else this.enemyStates.delete(id);}
+          this.enemyRevisionValue++;this.enemySpawnRevisionValue++;
+          throw error;
+        }
+      },['bag','hero','skills','party','questBook','lootPity','reservedDrops']);
+    }finally{
+      this.notificationBatchDepth--;this.pendingNotification=pending;this.deferredDefeats=previousDefeats;
+    }
+    let notified=false;
+    return {settlement,levelledIds,notify:()=>{
+      if(notified)return;notified=true;
+      const report=(operation:()=>void)=>{try{operation();}catch(error){console.error('击杀结算通知失败',error);}};
+      report(()=>this.refresh());
+      for(const listener of this.listeners)report(()=>listener(this));
+      for(const enemy of defeats)for(const listener of this.defeatListeners)report(()=>listener(enemy));
+    }};
+  }
+  private deferredDefeats?:string[];
   private readonly defeatListeners = new Set<(enemy: string) => void>();
   subscribeDefeats(listener: (enemy: string) => void): () => void {
     this.defeatListeners.add(listener); return () => { this.defeatListeners.delete(listener); };
@@ -1224,6 +1320,7 @@ export class Session {
     if(touched.has('playerState'))baseline.playerState=this.playerState;
     if(touched.has('runtimeSnapshot'))baseline.runtime=this.runtimeSnapshot;
     if(touched.has('shops'))baseline.shops=this.shops.captureState();
+    if(touched.has('chests'))baseline.chests=this.chests.captureState();
     return baseline;
   }
   /** 只恢复这次真的碰过的子系统；没碰过的不读也不写。 */
@@ -1257,6 +1354,7 @@ export class Session {
     if(touched.has('playerState'))this.playerState=baseline.playerState;
     if(touched.has('runtimeSnapshot'))this.runtimeSnapshot=baseline.runtime!;
     if(touched.has('shops'))this.shops.restoreState(baseline.shops!);
+    if(touched.has('chests'))this.chests.restoreState(baseline.chests!);
   }
   /**
    * 内部剧情检查点：由 `StoryRuntime` 自己产出，只接收引用并做廉价检查；开发/测试模式再全量校验。

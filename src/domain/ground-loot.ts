@@ -29,6 +29,16 @@ export class GroundLootStore {
   /** 掉落内容/飞行状态的版本号；界面只在它变化时重建，避免每帧克隆整张表。 */
   revision=0;
   captureState():GroundLootState { return structuredClone({nextId:this.nextId,drops:[...this.drops.values()]}); }
+
+  /** 击杀只改本图，备份包含被上限淘汰的掉落，其他地图保持原对象。 */
+  checkpointMap(map:string):()=>void {
+    const nextId=this.nextId,drops=this.forMap(map);
+    return ()=>{
+      for(const drop of this.onMap(map))this.discard(drop);
+      for(const drop of drops){this.drops.set(drop.id,drop);this.track(drop);}
+      this.nextId=nextId;this.pickupCheck=undefined;this.revision++;
+    };
+  }
   restoreState(state:GroundLootState):void {
     const restored=structuredClone(state);this.nextId=restored.nextId;this.drops.clear();this.byMap.clear();this.flyingByMap.clear();this.pickupCheck=undefined;
     for(const drop of restored.drops){this.drops.set(drop.id,drop);this.track(drop);}
