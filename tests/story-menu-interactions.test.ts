@@ -14,7 +14,7 @@ import type { BattleCatalog } from '../src/domain/battle.ts';
 import { BattleCharacter, type CharacterStatsCatalog } from '../src/domain/character-stats.ts';
 import type { WorldIndex } from '../src/domain/content.ts';
 import type { Campaign } from '../src/domain/campaign.ts';
-import type { ItemCatalog, EquipmentSlot } from '../src/domain/items.ts';
+import { USE_LABELS, type ItemCatalog, type EquipmentSlot } from '../src/domain/items.ts';
 import type { CompanionCatalog } from '../src/domain/party.ts';
 import { Session } from '../src/domain/session.ts';
 import { SaveSlots, captureSaveGame, restoreSaveGame, saveSummary } from '../src/domain/save-game.ts';
@@ -239,7 +239,21 @@ function fixture(classId = 'dark-knight') {
     sync: () => menu.sync(), resetInput: () => scene.game.events.emit(UI_EVENTS.cancelInput),
     renderText() {}, paginate: (_ui, text) => [{ text, end: text.length }], async portrait() {}
   };
-  const internals = menu as unknown as MenuInternals;
+  const pageFields=new Set(['operation','selectedItem','itemResult','bagPreview','confirmOperation','changeEquipment']);
+  const internals = new Proxy(menu as unknown as MenuInternals,{
+    get(target,key){
+      const owner=target as unknown as {bagPage?:Record<string,unknown>;menuBusy:boolean};
+      if(key==='busy')return owner.menuBusy;
+      if(typeof key==='string'&&pageFields.has(key)){
+        const value=owner.bagPage?.[key];return typeof value==='function'?value.bind(owner.bagPage):value;
+      }
+      return Reflect.get(target,key);
+    },
+    set(target,key,value){
+      if(typeof key==='string'&&pageFields.has(key)){(target as unknown as {bagPage:Record<string,unknown>}).bagPage[key]=value;return true;}
+      return Reflect.set(target,key,value);
+    }
+  });
   const entry = (item: string) => session.bag.entries.find(value => value.item === item)!;
   const add = (item: string, quantity = 1, skill?: string) => { session.bag.add(item, quantity, skill); return session.bag.entries.find(value => value.item === item && value.skill === skill)!; };
   const recruit = (className = 'warlock') => {
@@ -3170,8 +3184,8 @@ test('ending a session drops the cached bag page', t => {
   let clears=0;const clear=f.internals.body.clear.bind(f.internals.body);
   (f.internals.body as unknown as {clear:()=>void}).clear=()=>{clears+=1;clear();};
   f.menu.releaseSession(f.session);
-  const cached=f.internals as unknown as {bagPageCached:boolean;session:unknown};
-  assert.equal(cached.bagPageCached,false,'换会话前丢掉旧背包页');
+  const cached=f.internals as unknown as {bagPage:unknown;session:unknown};
+  assert.equal(cached.bagPage,undefined,'换会话前释放旧背包页面');
   assert.equal(clears,1,'旧页面节点被清掉');
   assert.equal(cached.session,undefined);
 });
@@ -3711,4 +3725,84 @@ test('挑战换职业可取消或确认后重开', t => {
   f.scene.click(f.scene.button('以 1 级重新挑战'));
   assert.deepEqual(chosen,['assassin']);
   assert.deepEqual(pauses,[true,false,true]);
+});
+
+function pendingEquipmentChange(){
+  let finish!:()=>void,reject!:(error:Error)=>void;
+  const promise=new Promise<void>((resolve,fail)=>{finish=resolve;reject=fail;});
+  return {promise,finish,reject};
+}
+
+for(const outcome of ['success','failure'] as const){
+  test(`closing the bag ignores late equipment ${outcome}`,async t=>{
+    const f=fixture();t.after(f.cleanup);f.hero.addExperience(Number.MAX_SAFE_INTEGER);
+    const ring=f.add('ferrule'),request=pendingEquipmentChange();
+    let signal:AbortSignal|undefined;
+    f.app.changeEquipment=(_entry,_slot,operationSignal)=>{signal=operationSignal;return request.promise;};
+    f.menu.debugDescribe(ring.id);f.scene.click(f.scene.button('装备'));
+    assert.equal(f.internals.busy,true);
+    f.menu.close();assert.equal(signal?.aborted,true);assert.equal(f.menu.menuOpen,false);
+    if(outcome==='success')request.finish();else request.reject(new Error('迟到换装失败'));
+    await Promise.resolve();await Promise.resolve();
+    assert.equal(f.menu.menuOpen,false);assert.equal(f.internals.busy,false);
+    assert.ok(!domTexts(f).includes('迟到换装失败'));
+    f.menu.show('bag');
+    assert.ok(!domTexts(f).includes('迟到换装失败'),'重新打开不显示旧操作错误');
+    assert.equal(f.scene.button('整理').input!.enabled,true);
+  });
+
+  test(`old equipment ${outcome} cannot unlock a new member operation`,async t=>{
+    const f=fixture();t.after(f.cleanup);f.hero.addExperience(Number.MAX_SAFE_INTEGER);
+    const member=f.recruit('warlock'),ring=f.add('ferrule'),orb=f.add('crystal-orb');
+    const first=pendingEquipmentChange(),second=pendingEquipmentChange();
+    const owners:string[]=[];const signals:(AbortSignal|undefined)[]=[];
+    f.app.changeEquipment=(_entry,_slot,signal,owner='player')=>{
+      owners.push(owner);signals.push(signal);return owners.length===1?first.promise:second.promise;
+    };
+    f.menu.debugDescribe(ring.id);f.scene.click(f.scene.button('装备'));
+    f.menu.close();f.select(member.id);f.menu.debugDescribe(orb.id);f.scene.click(f.scene.button('装备'));
+    assert.deepEqual(owners,['player',member.id]);assert.equal(signals[0]?.aborted,true);
+    assert.equal(signals[1]?.aborted,false);assert.equal(f.internals.busy,true);
+    const bodyNodes=[...f.internals.body.root.list];
+    if(outcome==='success')first.finish();else first.reject(new Error('旧队员换装失败'));
+    await Promise.resolve();await Promise.resolve();
+    assert.equal(f.internals.busy,true,'旧操作不能解除新操作的输入锁');
+    assert.equal(f.internals.selectedMemberId,member.id);
+    assert.deepEqual(f.internals.body.root.list,bodyNodes,'旧操作不能重绘新队员的页面');
+    assert.ok(!domTexts(f).includes('旧队员换装失败'));
+    second.finish();await Promise.resolve();await Promise.resolve();
+    assert.equal(f.internals.busy,false);assert.equal(f.internals.selectedMemberId,member.id);
+  });
+
+  test(`rebinding the menu ignores equipment ${outcome} from the old session`,async t=>{
+    const f=fixture();t.after(f.cleanup);f.hero.addExperience(Number.MAX_SAFE_INTEGER);
+    const ring=f.add('ferrule'),request=pendingEquipmentChange();let signal:AbortSignal|undefined;
+    f.app.changeEquipment=(_entry,_slot,operationSignal)=>{signal=operationSignal;return request.promise;};
+    f.menu.debugDescribe(ring.id);f.scene.click(f.scene.button('装备'));
+    const nextHero=new BattleCharacter('dark-knight',stats,items);
+    const nextSession=new Session(campaign,undefined,undefined,items,nextHero,battle,stats,companions);
+    f.menu.bind(nextSession,world,content);f.menu.show('bag');
+    assert.equal(signal?.aborted,true);
+    const organize=f.scene.button('整理'),bodyNodes=[...f.internals.body.root.list];
+    if(outcome==='success')request.finish();else request.reject(new Error('上一局换装失败'));
+    await Promise.resolve();await Promise.resolve();
+    assert.equal(f.menu.menuOpen,true);assert.equal(f.internals.busy,false);
+    assert.equal(f.scene.button('整理'),organize);
+    assert.deepEqual(f.internals.body.root.list,bodyNodes);
+    assert.ok(!domTexts(f).includes('上一局换装失败'));
+    assert.equal(nextSession.bag.equipment['ring'],undefined);
+  });
+}
+
+test('using recovery items merges synchronous session notifications into one page refresh',t=>{
+  const f=fixture();t.after(f.cleanup);
+  const itemId=Object.keys(items.items).find(id=>items.items[id].use?.kind==='recover-health')!;
+  const entry=f.add(itemId,2),quantity=entry.quantity;f.menu.debugDescribe(entry.id);
+  f.app.useRecoveryItem=id=>{f.session.bag.take(id,1);return {used:true,amount:0,healed:[],effects:[]};};
+  const render=t.mock.method(f.internals as unknown as {render():void},'render');
+  const organize=f.scene.button('整理');
+  f.scene.click(f.scene.button(USE_LABELS[items.items[itemId].use!.kind]));
+  assert.equal(render.mock.callCount(),1);
+  assert.equal(f.scene.button('整理'),organize);
+  assert.equal(f.session.bag.get(entry.id)?.quantity,quantity-1);
 });

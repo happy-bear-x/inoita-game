@@ -103,3 +103,5 @@ npm run test:standalone
 - `character-animation-reuse.test.ts` 验证角色直接持有合成外观：隐藏、同名动作换外观、销毁和替换失败清理；`wardrobe.test.ts` 验证池销毁后已有画面持有者归还前不删图，并拒绝用旧外观创建新持有者。
 
 - 图片加载测试显式登记下载宿主，覆盖业务场景取消后共用下载继续、同键接管、图集子文件、迟到回收，以及进度回调取消时拒绝交付。
+
+- `menu-item-drag.test.ts` 覆盖长按阈值、移动取消、多指隔离、失效定时器和拖拽资源释放；背包异步操作的关闭、换人和换会话隔离由 `story-menu-interactions.test.ts` 验证。
