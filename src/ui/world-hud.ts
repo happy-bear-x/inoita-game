@@ -24,7 +24,7 @@ interface HudActions {
   item(id: string): void;
   cycle(): void;
   slot(slot: number): void;
-  member(direction: number): void;
+  member(direction: -1 | 1): void;
   select(id: string): void;
   focus(): void;
 }

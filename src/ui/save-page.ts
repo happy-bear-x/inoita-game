@@ -29,7 +29,7 @@ const saveUnavailableNotice = (reason: SaveWorldReason): string => reason === 'd
  * 整页重绘、忙碌标记、弹层定位和滚动区位置仍由菜单统一管理。
  */
 export interface SavePageHost {
-  readonly app: Pick<StoryUIContext,'saves'|'saveSlot'|'menuPanels'|'audio'|'captureSaveThumbnail'|'captureSaveWorld'|'promptText'|'resumeSlot'>;
+  readonly app: Pick<StoryUIContext,'saves'|'saveSlot'|'menuPanels'|'storyClasses'|'audio'|'captureSaveThumbnail'|'captureSaveWorld'|'promptText'|'resumeSlot'>;
   session(): Session | undefined;
   world(): WorldIndex | undefined;
   /** 当前剧情界面的素材表，和菜单页共用同一份存档槽图。 */

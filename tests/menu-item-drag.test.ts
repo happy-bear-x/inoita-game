@@ -29,7 +29,7 @@ test('short press leaves click available and does not drop',()=>{
   assert.equal(s.timers[0].ms,350);
   s.drag.end(pointer());
   assert.equal(s.drag.suppressClick,false);
-  assert.deepEqual(s.drops,[]);
+  assert.equal(s.drops.length,0);
   assert.equal(s.timers[0].removed,true);
   s.timers[0].run();
   assert.equal(s.counts().activated,0);
@@ -40,7 +40,7 @@ test('long press cancels scrolling, moves its ghost and drops once after cleanup
   assert.equal(s.drag.suppressClick,true);
   assert.deepEqual(s.counts(),{cancelledScroll:1,activated:1,destroyed:0});
   s.drag.move(pointer(2,30,40));s.drag.end(pointer(2));
-  assert.deepEqual(s.positions,[]);assert.deepEqual(s.drops,[]);
+  assert.deepEqual(s.positions,[]);assert.equal(s.drops.length,0);
   s.drag.move(pointer(1,30,40));s.drag.end(pointer(1,30,40));s.drag.end(pointer());
   assert.deepEqual(s.positions,[[30,40]]);
   assert.equal(s.counts().destroyed,1);
@@ -60,7 +60,7 @@ test('movement before long press respects screen scale and cancels the gesture',
 test('cancel removes ghost without dropping or allowing the synthetic click',()=>{
   const s=setup();s.drag.start(pointer(),s.gesture);s.timers[0].run();
   s.drag.cancel();s.drag.cancel();s.drag.end(pointer());
-  assert.equal(s.counts().destroyed,1);assert.deepEqual(s.drops,[]);
+  assert.equal(s.counts().destroyed,1);assert.equal(s.drops.length,0);
   assert.equal(s.drag.suppressClick,true);
 });
 
@@ -75,7 +75,7 @@ test('activation that leaves the page cleans up the returned ghost',()=>{
   const s=setup();const activate=s.gesture.activate;
   s.drag.start(pointer(),{...s.gesture,activate:()=>{s.drag.cancel();return activate();}});
   s.timers[0].run();s.drag.end(pointer());
-  assert.equal(s.counts().destroyed,1);assert.deepEqual(s.drops,[]);
+  assert.equal(s.counts().destroyed,1);assert.equal(s.drops.length,0);
 });
 
 test('pointer outside scroll does not replace an existing gesture',()=>{

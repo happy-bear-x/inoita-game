@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { formalPresentation } from '../src/ui/formal-presentation.ts';
-import type { GameUI } from '../src/ui/game-ui.ts';
-function state(overrides:Record<string,unknown>={}){
+type TestPresentationState={-readonly [K in keyof Parameters<typeof formalPresentation>[0]]:Parameters<typeof formalPresentation>[0][K]};
+function state(overrides:Record<string,unknown>={}):TestPresentationState{
   return {mode:'game',ready:true,suspended:false,worldRebuildCover:false,skipBackdrop:false,
     loadingState:undefined,defeatState:undefined,defeated:false,choices:undefined,quest:undefined,
-    dialogueLine:undefined,toastMessage:'',...overrides} as unknown as GameUI;
+    dialogueLine:undefined,toastMessage:'',...overrides} as unknown as TestPresentationState;
 }
 test('full-screen presentation preserves priority without changing flow state',()=>{
   const ui=state({dialogueLine:{text:'对白'},choices:{options:[]},defeatState:{busy:false},defeated:true,loadingState:{label:'加载'}});

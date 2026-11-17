@@ -27,7 +27,6 @@ import type { Session } from '../domain/session.ts';
 import type { WorldIndex } from '../domain/content.ts';
 import type { StoryInterface } from '../domain/story-interface.ts';
 import type { CompanionMember } from '../domain/party.ts';
-import type { SkillLearningProgression } from '../domain/skill-learning.ts';
 
 import { ShopPanel } from './phaser/shop-panel.ts';
 
@@ -63,10 +62,7 @@ import { itemDescriptionBody } from './item-detail-lines.ts';
 
 import { BAG_DESCRIPTION_WIDTH, descriptionPanel } from './bag-layout.ts';
 
-import { layoutDescriptionText } from './description-text-layout.ts';
-import type { DescriptionTextPart } from '../domain/description-text.ts';
 import { POPUP_FRAME, tradeLayout } from './shop-layout.ts';
-import { TEXT_COLORS } from './text-style.ts';
 
 import { LiveCharacterPreview, type PreviewRect } from './phaser/live-character-preview.ts';
 import type { CharacterVisual } from '../rendering/characters.ts';
@@ -75,8 +71,6 @@ import { storyMenuSignature, type StoryMenuPage, type StoryMenuViewModelSource }
 
 type Page=StoryMenuPage;
 const tabs:[Page,string][]=[['status','人物'],['bag','背包'],['skills','技能'],['party','队伍'],['quests','任务'],['system','系统']];
-/** 原版菜单里正文与数值的米色：进绘制前调 `GRPX_SetFontColorFromRGB(0xe2,0xcb,0x9e)`。 */
-const AREA_TEXT=TEXT_COLORS.primary;
 /** 菜单内容块的固定原点；说明层与内容块共用同一坐标。 */
 const CONTENT_ORIGIN={x:32,y:172} as const;
 /** 正式菜单读取 Session，操作仍由背包、技能、队伍和商店领域对象执行。 */
@@ -837,7 +831,6 @@ export class StoryUI {
   }
   private member(){return this.selectedMemberId==='player'?this.session!.hero:this.session!.party?.get(this.selectedMemberId);}
   private classNames(){return Object.fromEntries(this.app.storyClasses.classes.map(value=>[value.id,value.name]));}
-  private actor(){const member=this.member();return this.world!.actors[this.selectedMemberId==='player'?this.session!.campaign.start.actor:(member as CompanionMember).definition.actor];}
   /**
    * 队员栏：104×340 的栏里放三个 104×113 的成员按钮（`Scene_Init_POPUP_SC_CHARACTER_INFO @0x1e5478`
    * 里 `SetRect(?, 0/0x71/0xe2, 104, 113)`），每个画成员头像 86×96、落在框内 +(9,9)，
@@ -865,18 +858,8 @@ export class StoryUI {
     const actor=this.world!.actors[id==='player'?this.session!.campaign.start.actor:(member as CompanionMember).definition.actor];
     return memberArtwork(this.app.menuPanels,actor,member!.classId,source).partyIcon;
   }
-  private memberArt(){
-    const member=this.member()!;
-    const source=this.selectedMemberId==='player'?undefined:(member as CompanionMember).source;
-    return memberArtwork(this.app.menuPanels,this.actor(),member.classId,source);
-  }
   private configuration(){return this.selectedMemberId==='player'?this.session!.skills:(this.member() as CompanionMember).skills;}
 
-  private skillProgression():SkillLearningProgression|undefined {
-    if(this.selectedMemberId==='player')return this.session!.skills;
-    const member=this.session!.party?.get(this.selectedMemberId);
-    return member?.source==='mercenary'?member.skills:undefined;
-  }
   private scroll(name:string,x:number,y:number,w:number,h:number,surface=this.body!,bleed=0,
     bar?:Parameters<UiSurface['scroll']>[5]):ScrollArea{
     const scroll=surface.scroll(x,y,w,h,bleed,bar);this.scrollNames.set(name,scroll);
@@ -1198,27 +1181,7 @@ export class StoryUI {
   }
 
   /** 说明正文的色块统一落成 DOM 规格；技能页和背包说明只是收进不同的数组。 */
-  private pushDescriptionText(target:MenuTextSpec[],keyPrefix:string,
-    layout:{lines:{runs:{text:string;color?:string;x:number}[]}[];lineHeight:number},
-    x:number,top:number,width:number,size:number,scroll:string,clip:{top:number;bottom:number},baseY=0):void{
-    layout.lines.forEach((line,lineIndex)=>line.runs.forEach((run,runIndex)=>{
-      target.push({key:`${keyPrefix}-${lineIndex}-${runIndex}`,text:run.text,
-        x:x+run.x,y:top+baseY+lineIndex*layout.lineHeight,
-        style:{size,color:run.color??TEXT_COLORS.white,width,
-          lineHeight:layout.lineHeight,wrap:'word'},scroll,clip});
-    }));
-  }
   /** 说明正文的断行和行高仍在布局阶段算完；测量用的 Phaser 文字当场销毁，不参与显示。 */
-  private descriptionLayout(view:UiSurface,parts:readonly DescriptionTextPart[],width:number,size:number):
-    {lines:{runs:{text:string;color?:string;x:number}[]}[];lineHeight:number;height:number}{
-    if(!parts.length)return{lines:[],lineHeight:0,height:0};
-    const probe=view.text('测',0,0,0,size,TEXT_COLORS.white);
-    const lines=layoutDescriptionText(parts,width,text=>probe.context.measureText(text).width);
-    const lineHeight=probe.height+5;
-    probe.destroy();
-    return{lines,lineHeight,height:Math.max(0,lines.length*lineHeight-5)};
-  }
-
   /** 说明区由技能目录与 AI 设置共享；设置页与原版一样留空。 */
 
   /** 当前选中成员的快捷栏。默认内容按已学会的主动技能算，主角第一组第六格还带开局的消耗品。 */

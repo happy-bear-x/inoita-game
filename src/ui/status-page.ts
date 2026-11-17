@@ -30,7 +30,7 @@ import type { WorldIndex, ActorDefinition } from '../domain/content.ts';
 
 const AREA_TEXT=TEXT_COLORS.primary;
 
-export type StatusMember=Session['hero']|CompanionMember;
+export type StatusMember=NonNullable<Session['hero']>|CompanionMember;
 export interface StatusPageHost {
  readonly app:Pick<StoryUIContext,'menuPanels'|'storyClasses'|'battleCatalog'|'combatStealthed'|'combatAttribute'>;
  readonly session:Session; readonly world:WorldIndex; readonly selectedMemberId:string; readonly page:string;
