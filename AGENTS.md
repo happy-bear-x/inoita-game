@@ -91,7 +91,7 @@ src/                   游戏源码（规则见 src/AGENTS.md）
   app.ts               启动装配；场景与界面使用 application/ports.ts 的能力接口
   main.ts              游戏配置与启动
   application/         端口装配、内容加载、存档读取（AGENTS.md）
-  scenes/              地图、剧情舞台、菜单与调试场景（AGENTS.md）
+  scenes/              地图、剧情舞台与菜单（AGENTS.md）
   domain/              内容类型、会话状态、剧情调度、通行、战斗规则（AGENTS.md）
   rendering/           角色、世界、战斗与特效表现（AGENTS.md）
   ui/                  菜单、HUD、对话、DOM 组件与界面逻辑（AGENTS.md）

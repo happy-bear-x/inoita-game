@@ -3,7 +3,7 @@ import type { StoryNodeCommit } from './story-runtime.ts';
 import type { StoryWorldState, StoryEntityState } from './story-world.ts';
 import { placementAuthority } from './actor-authority.ts';
 
-/** 正常演出和调试预演共用角色落位、转场及事件完成的提交规则。 */
+/** 正常演出和预演共用角色落位、转场及事件完成的提交规则。 */
 export function storyCommitCommands(commit: StoryNodeCommit, world: StoryWorldState, changes: readonly StoryEntityState[],
   hasPartyMember: (memberId: string) => boolean = () => true): StoryCommand[] {
   let commands = [...commit.commands];

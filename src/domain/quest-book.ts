@@ -341,7 +341,7 @@ export class QuestBook {
   /**
    * 只刷新被这次变化影响的任务：条件键变化找引用该键的任务，背包/操控角色变化找进行中任务。
    *
-   * 全量刷新只留给启动、读档/检查点恢复、调试和显式 `refresh` 命令；常规剧情、对话和
+   * 全量刷新只留给启动、读档/检查点恢复和显式 `refresh` 命令；常规剧情、对话和
    * 拾取都不再扫全部 505 条定义。
    */
   refreshChanges(changes: QuestRefreshChanges): void {

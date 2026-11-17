@@ -67,7 +67,7 @@ src/                游戏源码
   application/      能力接口、内容加载、存档与音频装配
   domain/           战斗、剧情、任务、背包、存档等纯规则
   rendering/        Phaser 世界、战斗、特效与角色表现
-  scenes/           地图、剧情舞台、菜单与调试场景
+  scenes/           地图、剧情舞台与菜单
   ui/               菜单、HUD、对话、DOM 组件与界面逻辑
   debug/            GM 调试动作层
 public/             随游戏发布的运行时静态资源

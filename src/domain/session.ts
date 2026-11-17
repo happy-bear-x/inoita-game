@@ -503,7 +503,7 @@ export class Session {
   evaluateCondition(condition:StoryCondition):boolean {
     return evaluateStoryCondition(condition,this.conditionContext());
   }
-  /** 调试准备在独立会话中执行，安装之前不会通知正式导演。 */
+  /** 预演在独立会话中执行，安装之前不会通知正式导演。 */
   createStorySandbox():Session {
     const hero=this.hero&&this.stats?new BattleCharacter(this.hero.classId,this.stats,this.bag.catalog):undefined;
     return new Session(this.campaign,this.playerState,this.character,this.bag.catalog,hero,this.battle,this.stats,this.companions);
@@ -966,7 +966,7 @@ export class Session {
     const conditions=this.questConditionInputs.map(input=>input.read(context!)),previous=this.questProjection;
     if(previous&&previous.questVersion===questVersion&&previous.bagVersion===bagVersion&&previous.owner===owner&&
       conditions.every((value,index)=>Object.is(value,previous.conditions[index])))return;
-    // 没有上一份投影（启动、读档/检查点恢复、调试改写了世界上下文）时做一次全量刷新，
+    // 没有上一份投影（启动、读档/检查点恢复）时做一次全量刷新，
     // 把新装进来的任务和当前条件对齐；常规刷新只找这次变化会影响的任务。
     if(!previous){this.recordPerformance(['questBook']);this.questBook.commit(this.questBook.plan({type:'refresh'}));this.recordQuestProjection();return;}
     const keys:string[]=[];
@@ -1457,7 +1457,7 @@ export class Session {
    * 只把玩家挪到同一张图上的新位置，不预演、不整批快照。
    *
    * 真实运行时玩家的位置由 Arcade 物理推进（`world-scene` 每帧 `movement.drive`），根本不经过
-   * `applyStoryCommands`；这条通路给没有物理的调用方（测试助手逐步走位、调试传送）用同一段
+   * `applyStoryCommands`；这条通路给没有物理的调用方（测试助手逐步走位）用同一段
    * `StoryWorldState` 簿记写位置，随后照常 `emit`，所以触发层仍按真实帧序跑。
    * 换图要改地图级的世界状态（任务可用性读 `worldValue('map')`），必须走剧情转场命令。
    */

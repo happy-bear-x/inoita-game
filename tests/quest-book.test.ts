@@ -591,4 +591,3 @@ test('resetting side quests refreshes other running item goals after taking item
   assert.equal(h.book.state('other')!.goals.ore, 1, '扣回交付物后其他进行中任务的目标要跟着重算');
   assert.equal(h.book.status('other'), 'active');
 });
-

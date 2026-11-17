@@ -351,7 +351,7 @@ export class StoryRuntime {
     this.install({ ...this.state, pendingOccurrences: this.state.pendingOccurrences.filter(pending => this.occurrenceKey(pending.occurrence) !== key) });
     return played;
   }
-  /** `node` 只给调试入口用：从任意节点强制开演，正常触发始终从脚本 entry 开始。 */
+  /** `node` 供测试从任意节点开演；正常触发始终从脚本 entry 开始。 */
   start(script: string, eventId?: string, occurrence = `manual:${this.state.sequence + 1}`, node?: string): Promise<boolean> {
     const graph = this.graph.scripts[script];
     if (!graph) return Promise.reject(new Error(`未找到剧情：${script}`));

@@ -43,4 +43,3 @@ test('session release clears old gameplay owners and ignores a delayed callback 
   assert.deepEqual([disposed, poolDestroyed, cacheCleared], [1, 1, 1]);
   assert.equal(app.releaseSession(current), false);
 });
-
