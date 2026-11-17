@@ -128,3 +128,13 @@ test('quest rewards and story item grants register one-time unlock items', () =>
   session.applyStoryCommands([{ type: 'item-give', item: 'd-armor-combo-unit', quantity: 1 }]);
   assert.ok(session.claimedReservedDrops.has('d-armor-combo-unit'));
 });
+
+test('a failed story batch rolls back the reserved claim with the bag', () => {
+  const session = new Session(campaign, undefined, undefined, items);
+  assert.throws(() => session.applyStoryCommands([
+    { type: 'item-give', item: 'lvl-d-weapon-combo-unit', quantity: 1 },
+    { type: 'item-take', item: 'lvl-d-weapon-combo-unit', quantity: 999 },
+  ]));
+  assert.equal(session.bag.count('lvl-d-weapon-combo-unit'), 0);
+  assert.ok(!session.claimedReservedDrops.has('lvl-d-weapon-combo-unit'));
+});

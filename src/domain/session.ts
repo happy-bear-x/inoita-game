@@ -80,7 +80,7 @@ export interface SessionState {
 
 /** 剧情命令会改到的会话子系统；批次开始时只抓这些的旧值。 */
 type StorySubsystem = 'bag'|'hero'|'skills'|'party'|'lootPity'|'storyWorld'|'enemies'|'groundLoot'
-  |'questBook'|'coins'|'receipts'|'playerState'|'runtimeSnapshot';
+  |'questBook'|'coins'|'receipts'|'reservedDrops'|'playerState'|'runtimeSnapshot';
 /** 一次剧情命令提交的回执：`StoryDirector` 在分支求值失败时用它恢复到提交前。 */
 export interface StoryCommitReceipt {
   /** 丢掉旧值；普通调用方在返回前已经调用。 */
@@ -103,6 +103,7 @@ interface StoryCommandBaseline {
   coins?:number;
   /** 任务 id → 捕获时的最新一张收据。 */
   receipts?:[string,QuestSettlement][];
+  reservedDrops?:{unlockMisses:number;claimed:string[]};
   lootPity?:LootPityState;
   playerState?:Readonly<StoryPlayerState>;
   runtime?:StoryRuntimeSnapshot;
@@ -119,13 +120,14 @@ function storyCommandSubsystems(command:StoryCommand):readonly StorySubsystem[]{
       switch(command.command.type){
         case 'fact':case 'pin-active':case 'unpin-active':case 'refresh':case 'reset':case 'script-ready':
           return ['questBook'];
-        case 'accept':return ['questBook','bag'];
-        case 'complete':case 'script-complete':return ['questBook','bag','hero','skills','coins','receipts'];
+        case 'accept':return ['questBook','bag','reservedDrops'];
+        case 'complete':case 'script-complete':return ['questBook','bag','hero','skills','coins','receipts','reservedDrops'];
         case 'reset-side-quests':return ['questBook','bag'];
       }
       return ['questBook'];
     }
-    case 'item-give':case 'item-take':return ['bag'];
+    case 'item-give':return ['bag','reservedDrops'];
+    case 'item-take':return ['bag'];
     case 'money-give':case 'money-take':return ['coins'];
     case 'item-drop':return ['groundLoot'];
     case 'flag':case 'choice':case 'travel':case 'encounter':return ['storyWorld'];
@@ -1216,6 +1218,7 @@ export class Session {
     if(touched.has('groundLoot'))baseline.loot=groundLootFor(this).captureState();
     if(touched.has('coins'))baseline.coins=this.coins;
     if(touched.has('receipts'))baseline.receipts=[...this.receipts].map(([key,receipt])=>[key,structuredClone(receipt)]);
+    if(touched.has('reservedDrops'))baseline.reservedDrops={unlockMisses:this.reservedDropMisses,claimed:[...this.claimedReservedDrops]};
     if(touched.has('lootPity'))baseline.lootPity=this.lootPity.captureState();
     if(touched.has('playerState'))baseline.playerState=this.playerState;
     if(touched.has('runtimeSnapshot'))baseline.runtime=this.runtimeSnapshot;
@@ -1245,6 +1248,10 @@ export class Session {
     if(touched.has('groundLoot'))groundLootFor(this).restoreState(baseline.loot!);
     if(touched.has('coins'))this.coins=baseline.coins!;
     if(touched.has('receipts'))this.restoreReceipts(baseline.receipts!.map(([,receipt])=>receipt));
+    if(touched.has('reservedDrops')){
+      this.reservedDropMisses=baseline.reservedDrops!.unlockMisses;
+      this.claimedReservedDrops.clear();for(const item of baseline.reservedDrops!.claimed)this.claimedReservedDrops.add(item);
+    }
     if(touched.has('lootPity'))this.lootPity.restoreState(baseline.lootPity!);
     if(touched.has('playerState'))this.playerState=baseline.playerState;
     if(touched.has('runtimeSnapshot'))this.runtimeSnapshot=baseline.runtime!;

@@ -140,7 +140,7 @@ export function drawSaveBoardRow(
   };
   if(row.reading.kind==='ok'){
     const summary=row.reading.summary;
-    // 只画保存时截下的游戏画面；旧存档没有截图时左侧留空，不拿立绘顶替。
+    // 只画保存时截下的游戏画面；没有截图时左侧留空，不拿立绘顶替。
     if(summary.screenshot){
       const shotY=bottom+12+Math.round((PORTRAIT_HEIGHT-SHOT_HEIGHT)/2);
       view.imageContain(summary.screenshot,left+SHOT_X,shotY,SHOT_WIDTH,SHOT_HEIGHT,parent);
@@ -152,8 +152,13 @@ export function drawSaveBoardRow(
     if(savedAt)text('time',savedAt,left+TEXT_X,bottom+106,TEXT_WIDTH,18,SAVE_SLOT_TIME_TEXT);
   }else{
     view.image(assets.empty,origin.x+Math.round((SAVE_BOARD.panelWidth-EMPTY_WIDTH)/2),top+Math.round((SAVE_BOARD.frameHeight-EMPTY_HEIGHT)/2),EMPTY_WIDTH,EMPTY_HEIGHT,parent);
-    // 空槽由 EMPTY 图本身表示；只有自动槽还需要名字，手动槽不再重复写「存档槽 N」。
-    if(row.auto)text('title',row.title,left+170,bottom+58,340,24,SAVE_SLOT_TEXT);
+    if(row.reading.kind==='unreadable'){
+      text('title',row.title,left+TEXT_X,bottom+14,TEXT_WIDTH,24,SAVE_SLOT_TEXT);
+      text('status',row.reading.reason,left+TEXT_X,bottom+48,TEXT_WIDTH,18,SAVE_SLOT_TIME_TEXT);
+    }else if(row.auto){
+      // 空槽由 EMPTY 图本身表示；只有自动槽还需要名字。
+      text('title',row.title,left+170,bottom+58,340,24,SAVE_SLOT_TEXT);
+    }
   }
   const rowButton=row.action?view.button('',left,bottom,row.controls?.length?SAVE_BOARD.rowWidth-CONTROL_COLUMN:SAVE_BOARD.rowWidth,SAVE_BOARD.rowHeight,row.action,
     {bare:true,parent}).setData('label',row.label):undefined;
