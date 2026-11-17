@@ -28,6 +28,7 @@ function harness(options: { travelThrows?: boolean; playReturns?: boolean; realP
       calls.push('restore');
       h.session.restoreState(before.session);
     },
+    checkpoint: () => { calls.push('checkpoint'); },
     finish: () => { calls.push('finish'); h.director.releaseTriggers(); },
     dispose: () => { calls.push('dispose'); h.director.releaseTriggers(); },
   };
@@ -86,11 +87,20 @@ test('keeping a debug run does not restore the earlier session state', async () 
     assert.equal((await gm.startQuestDebug('quest-11')).ok, true);
     const event1 = h.session.campaign.events.find(event => event.id === 'event-1')!;
     assert.equal(h.director.allowsAutomaticEvent(event1), false);
+    let notified = 0;
+    const notify = h.director.notify.bind(h.director);
+    (h.director as unknown as { notify: typeof notify }).notify = (...args) => {
+      notified++;
+      return notify(...args);
+    };
     const kept = gm.keepQuestDebugProgress();
     assert.equal(kept.ok, true, kept.reason);
     assert.equal(gm.questDebugState().active, false);
     assert.equal(h.session.status('quest-11'), 'available');
     assert.equal(h.director.allowsAutomaticEvent(event1), true);
+    assert.ok(calls.includes('checkpoint'), '保留进度后刷新回滚检查点');
+    await new Promise<void>(resolve => setImmediate(resolve));
+    assert.equal(notified, 0, '保留进度不能补派发正式剧情');
     assert.equal(calls.includes('restore'), false);
     assert.ok(calls.includes('finish'));
     assert.ok(calls.includes('autoSave'), '保留进度后补一次自动存档请求');

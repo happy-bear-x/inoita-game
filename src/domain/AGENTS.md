@@ -37,7 +37,8 @@
 - 剧情运行时快照不可变：`StoryRuntime` 的写入只替换数组和对象，`snapshot()` 直接返回引用，不做整份深拷贝。内部检查点走 `adoptTrusted`（版本、数组、ID 和重复的廉价检查；开发/测试模式再全量校验），读档、检查点恢复和云存档走 `prepareRestore`。开发/测试模式用 `dev-mode.ts` 的 `freezeSnapshot` 冻结快照，生产热路径不冻结。
 - `StoryDirector.onSkipProgress` 只报告跳过请求、最终逻辑提交、世界就绪、交还操作权与必须停下的确认；计时和日志由应用层接入。
 - 剧情事件完成通知等世界投影成功后发出；投影失败重试成功时补发一次。
-- **自动剧情过滤只作用于自动派发。** `StoryDirector.setAutomaticEventFilter` 通过 `StoryRuntimePort.eventAllowed` 在 `processOccurrence` 的候选检查里跳过事件；显式 `trigger` / `script` 直接启动剧本，不经过过滤。区域和近身触发被过滤时，场景保留占用，下一帧不重复上报。
+- **自动剧情过滤只作用于自动派发。** `StoryDirector.setAutomaticEventFilter` 通过 `StoryRuntimePort.eventAllowed` 在 `processOccurrence` 的候选检查里跳过事件；显式 `trigger` / `script` 直接启动剧本，不经过过滤。区域和近身触发被过滤时，场景保留占用，下一帧不重复上报；过滤解除后仍站在区域内或角色身边时释放占用并补触发。
+- 调试用的 `QuestBook.forcedProgress` 遇到正式任务命令要先撤销：显式状态机推进优先于调试覆盖，否则完成状态会被 ready 钉回去。
 - 每段剧情对同一脚本的立绘和音效只发起一次准备；失败后允许重新准备，跳过只取消等待。
 - 舞台快照中的 `mapEffect` 记录地图褪色开关，旧快照没有该字段时沿用当前效果。
 - 跳过剧情只影响表现：`StoryDirector.prepare` 跳过时仍调用 `world.prepare`，为当前图和下一张确定地图发起预取，但跳过只结束等待，加载在后台继续，不阻塞剧情推进；同图舞台可补齐后续人物与战斗素材。立绘和音效同样发起预取但不阻塞推进；`choice` 和 `quest-popup` 之前先收起旧对白框、开全屏黑底（`presentation.setBackdrop`），调用 `presentation.flushStage` 按逻辑快照画出对应画面，补画完成后撤黑底、露出剧情画面再弹窗。任务、物品、标记、传送和检查点仍按原顺序提交。

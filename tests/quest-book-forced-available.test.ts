@@ -50,6 +50,19 @@ test('forced availability survives a full refresh and accept, then relocks when 
   assert.equal(book.status('other'), 'locked');
 });
 
+test('an explicit completion releases the pinned ready progress', () => {
+  const { book, commit } = fixture([
+    rules('pre', { completion: 'story' }),
+    rules('after', { completion: 'story' }),
+  ]);
+  commit({ type: 'accept', quest: 'pre' });
+  book.forceProgress('pre', { status: 'ready', cycle: 0, completedCycles: 0, goals: {} });
+  assert.equal(book.status('pre'), 'ready');
+
+  commit({ type: 'script-complete', quest: 'pre' });
+  assert.equal(book.status('pre'), 'completed', '正式完成不能被调试用的 ready 钉住');
+});
+
 test('forcing availability never opens internal quests', () => {
   const { book } = fixture(gatedDefinitions());
   book.forceAvailable('internal', true);

@@ -1,7 +1,7 @@
 import type { Campaign, CampaignQuest } from '../domain/campaign.ts';
 import type { Facing, QuestStatus, TravelDestination } from '../domain/content.ts';
 import type { QuestBookState, QuestProgress } from '../domain/quest-book.ts';
-import type { StoryCondition } from '../domain/story-condition.ts';
+import { storyConditionReferences, type StoryCondition } from '../domain/story-condition.ts';
 import type { StoryEvent, StoryPlace } from '../domain/story-graph.ts';
 import type { Session } from '../domain/session.ts';
 
@@ -443,6 +443,16 @@ export function applyQuestStartPlan(session: Session, plan: QuestStartPlan): voi
     session.questBook.forceProgress(entry.id, patchedProgress(quest, progress, entry.status));
   }
 
+  // 调试起点补齐这批任务需要的交付物品；否则接取/完成脚本会在 handoverItems 检查处中断。
+  const itemQuestIds = new Set<string>([...quests.keys(), ...plan.conditionPatch.quests.map(entry => entry.id)]);
+  for (const id of itemQuestIds) {
+    const quest = questOf(session.campaign, id);
+    for (const item of quest?.handoverItems ?? []) {
+      const held = session.bag.count(item.item);
+      if (held < item.quantity) session.bag.add(item.item, item.quantity - held);
+    }
+  }
+
   // 待交付/进行中起点走真实接取命令：talk 自动变 ready，周期、运行池和接取物品都由任务簿决定。
   if (plan.mode !== 'available') {
     const cycle = session.questBook.state(plan.questId)?.cycle;
@@ -513,14 +523,57 @@ function questScriptEvents(campaign: Campaign): Map<string, string[]> {
   return index;
 }
 
-/** 调试运行只自动播放与目标任务有关的剧情事件；显式播放的接取剧情不受此集合限制。 */
-export function questFocusEventIds(campaign: Campaign, quest: CampaignQuest, acceptEventId?: string): ReadonlySet<string> {
+const focusConditionCache = new WeakMap<Campaign, Map<string, string[]>>();
+
+/** 哪些事件的触发条件引用了某个任务；用于从完成事件反向找到它的前置事件。 */
+function questConditionEvents(campaign: Campaign): Map<string, string[]> {
+  const cached = focusConditionCache.get(campaign);
+  if (cached) return cached;
+  const index = new Map<string, string[]>();
+  for (const event of campaign.events) {
+    for (const questId of storyConditionReferences(event.condition).quests) {
+      const events = index.get(questId);
+      if (events) events.push(event.id); else index.set(questId, [event.id]);
+    }
+  }
+  focusConditionCache.set(campaign, index);
+  return index;
+}
+
+/**
+ * 调试运行只自动播放与目标任务有关的剧情事件；显式播放的接取剧情不受此集合限制。
+ *
+ * 除了直接引用目标任务的事件，还沿事件条件反向展开：完成事件条件里的前置任务，
+ * 由哪些事件的脚本/条件提供，这些事件也属于本轮剧情链。`satisfied` 里的任务已经由
+ * 调试起点补好，不再把生产它们的历史事件放进来。
+ */
+export function questFocusEventIds(campaign: Campaign, quest: CampaignQuest, acceptEventId?: string,
+  satisfied: ReadonlySet<string> = new Set()): ReadonlySet<string> {
+  const eventsById = new Map(campaign.events.map(event => [event.id, event]));
+  const scriptEvents = questScriptEvents(campaign);
+  const conditionEvents = questConditionEvents(campaign);
   const ids = new Set<string>();
-  if (acceptEventId) ids.add(acceptEventId);
-  if (quest.interactionEvent) ids.add(quest.interactionEvent);
+  const pending: string[] = [];
+  const seed = (id: string | undefined): void => { if (id && !ids.has(id)) pending.push(id); };
+  seed(acceptEventId);
+  seed(quest.interactionEvent);
   const scripts = new Set([quest.offerScript, quest.completeScript]
     .filter((value): value is string => !!value));
-  for (const event of campaign.events) if (scripts.has(event.script)) ids.add(event.id);
-  for (const eventId of questScriptEvents(campaign).get(quest.id) ?? []) ids.add(eventId);
+  for (const event of campaign.events) if (scripts.has(event.script)) seed(event.id);
+  for (const eventId of scriptEvents.get(quest.id) ?? []) seed(eventId);
+  for (const eventId of conditionEvents.get(quest.id) ?? []) seed(eventId);
+
+  while (pending.length) {
+    const id = pending.pop()!;
+    if (ids.has(id)) continue;
+    ids.add(id);
+    const event = eventsById.get(id);
+    if (!event) continue;
+    for (const required of storyConditionReferences(event.condition).quests) {
+      if (required === quest.id || satisfied.has(required)) continue;
+      for (const provider of scriptEvents.get(required) ?? []) if (!ids.has(provider)) pending.push(provider);
+      for (const provider of conditionEvents.get(required) ?? []) if (!ids.has(provider)) pending.push(provider);
+    }
+  }
   return ids;
 }

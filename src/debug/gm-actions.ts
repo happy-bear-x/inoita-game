@@ -57,6 +57,8 @@ export interface GmStoryDebugPort {
   /** 返回是否真的开始播放；不要求等整段剧情结束。 */
   play(accept: QuestAcceptCandidate): Promise<boolean>;
   restore(snapshot: GmStoryDebugSnapshot): Promise<void>;
+  /** 保留进度后把当前现场记为新的回滚检查点。 */
+  checkpoint?(): void;
   finish(): void;
   dispose(): void;
 }
@@ -486,7 +488,12 @@ export function createGmActions(ports: GmPorts): GmActions {
     let before: GmStoryDebugSnapshot;
     try { before = storyDebug.capture(); }
     catch (error) { return { ok: false, reason: error instanceof Error ? error.message : String(error), plan }; }
-    const focusEvents = questFocusEventIds(campaign, plan.quest, plan.accept?.eventId);
+    const satisfied = new Set<string>([plan.questId]);
+    for (const change of plan.changedQuests) satisfied.add(change.id);
+    for (const entry of plan.conditionPatch.quests) satisfied.add(entry.id);
+    for (const [id, state] of session.quests)
+      if (state.status === 'active' || state.status === 'ready' || state.status === 'completed') satisfied.add(id);
+    const focusEvents = questFocusEventIds(campaign, plan.quest, plan.accept?.eventId, satisfied);
     director?.setAutomaticEventFilter(event => focusEvents.has(event.id));
     try {
       storyDebug.begin();
@@ -537,7 +544,8 @@ export function createGmActions(ports: GmPorts): GmActions {
       director?.setAutomaticEventFilter(undefined);
       return { ok: true };
     } catch (error) {
-      return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+      run.lastError = error instanceof Error ? error.message : String(error);
+      return { ok: false, reason: run.lastError };
     }
     }).finally(() => { questDebugFinishing = false; });
   };
@@ -549,13 +557,22 @@ export function createGmActions(ports: GmPorts): GmActions {
       return run('keepQuestDebugProgress', [], (): GmResult => {
         if (!questDebugRun) return { ok: false, reason: '当前没有调试任务' };
         if (director?.busy) return { ok: false, reason: '剧情正在播放，请先结束当前剧情' };
-        session.questBook.clearDebugOverrides();
-        session.emit();
-        ports.storyDebug?.finish();
-        director?.setAutomaticEventFilter(undefined);
-        ports.requestAutoSave?.();
-        questDebugRun = undefined;
-        return { ok: true };
+        const storyDebug = ports.storyDebug;
+        // 保留进度时先把触发继续挡住：override 释放产生的任务变化只更新观察表，
+        // 不能在过滤器移除后补演正式剧情。
+        director?.holdTriggers();
+        try {
+          session.questBook.clearDebugOverrides();
+          session.emit();
+          storyDebug?.finish();
+          storyDebug?.checkpoint?.();
+          ports.requestAutoSave?.();
+          return { ok: true };
+        } finally {
+          director?.releaseTriggers();
+          director?.setAutomaticEventFilter(undefined);
+          questDebugRun = undefined;
+        }
       });
     } finally { questDebugFinishing = false; }
   };

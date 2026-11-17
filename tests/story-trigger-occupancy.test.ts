@@ -33,6 +33,17 @@ test('a replayed story releases its claim even while the player keeps standing t
   assert.equal(claimNearTrigger(events, occupied, () => ({ id: 'lyman' }), () => true)?.event.id, 'event-186');
 });
 
+test('clearing an automatic-event filter releases the near claim in place', () => {
+  const events = [{ id: 'event-186' }];
+  const occupied = new Set(['event-186']);
+  const beside = () => ({ id: 'lyman' });
+  assert.equal(claimNearTrigger(events, occupied, beside, () => true, () => false), null);
+  assert.equal(occupied.has('event-186'), true, '调试过滤期间保持占用');
+
+  assert.equal(claimNearTrigger(events, occupied, beside, () => true, () => true)?.event.id,
+    'event-186', '过滤解除后不用走开也能补触发');
+});
+
 test('an occupied event keeps its claim while its condition is unmet', () => {
   const events = [{ id: 'event-186' }];
   const occupied = new Set(['event-186']);

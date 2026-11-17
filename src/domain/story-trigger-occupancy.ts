@@ -25,11 +25,16 @@ export function claimNearTrigger<E extends OccupancyEvent, C>(
   occupied: Set<string>,
   besideAt: (event: E) => C | null,
   eligible: (event: E) => boolean,
+  allowed?: (event: E) => boolean,
 ): { event: E; beside: C } | null {
   for (const event of events) {
     const beside = besideAt(event);
     if (!beside) { occupied.delete(event.id); continue; }
-    if (occupied.has(event.id)) continue;
+    if (occupied.has(event.id)) {
+      // 没有 allowed 时保持原有占用语义；有 allowed 时，过滤解除后允许补触发。
+      if (!allowed?.(event) || !eligible(event)) continue;
+      occupied.delete(event.id);
+    }
     if (!eligible(event)) continue;
     occupied.add(event.id);
     return { event, beside };

@@ -194,6 +194,8 @@ interface PlanEntry {
   runningIds: string[];
   factSequences: Map<string, number>;
   changed: boolean;
+  /** 本批任务命令显式写过的任务；提交后释放这些任务的调试进度钉住。 */
+  releasedForced: string[];
   snapshot?: QuestBookState;
 }
 /**
@@ -535,6 +537,7 @@ export class QuestBook {
     };
     // 调用方保证状态已是最新时跳过开头的全表刷新；剧情提交在批次开始前和每条任务命令前都会刷新。
     if (!options.stateIsCurrent) refreshAll();
+    const releasedForced = new Set<string>();
     for (const action of actions) {
       if (action.type === 'refresh') { refreshAll(); continue; }
       if (action.type === 'fact') {
@@ -583,6 +586,13 @@ export class QuestBook {
       const quest = this.definitions.get(action.quest), state = states.get(action.quest);
       if (!quest || !state) throw new Error(`未知任务 ${action.quest}`);
       if (action.cycle !== undefined && action.cycle !== state.cycle) throw new Error(`任务 ${action.quest} 周期已改变`);
+      // 显式任务命令代表正式状态机推进，优先于调试时钉住的 ready/active。
+      // 必须在写入和收尾刷新之前撤掉钉住，否则刷新会把刚写好的正式状态改回 ready。
+      if (action.type === 'accept' || action.type === 'complete' || action.type === 'script-ready'
+        || action.type === 'script-complete' || action.type === 'reset') {
+        releasedForced.add(action.quest);
+        this.forcedProgress.delete(action.quest);
+      }
       switch (action.type) {
         // 原版写的是绝对状态（`QUESTSYSTEM_ChangeQuestState@0x1c0ac8`），只跳过「已经就是目标状态」，
         // 不拒绝回头路：已交付的任务被重新接取时，原版照常清空计数、重新进运行池并再发接取物品
@@ -636,7 +646,7 @@ export class QuestBook {
     const changed = !sameList(runningIds, this.runningIds) || !sameNumbers(factSequences, this.factSequences)
       || [...dirty].some(id => !sameProgress(states.get(id)!, this.states.get(id)!));
     const delta = new Map([...new Set([...grants.keys(), ...removals.keys()])].map(item => [item, (grants.get(item) ?? 0) - (removals.get(item) ?? 0)]));
-    const entry: PlanEntry = { states, runningIds, factSequences, changed };
+    const entry: PlanEntry = { states, runningIds, factSequences, changed, releasedForced: [...releasedForced] };
     // 计划对象浅冻即可：条目自己已冻结，`nextState` 是 getter，递归冻结会把它提前物化。
     const plan: QuestPlan = Object.freeze({ baseRevision: this.revision, changed,
       itemGrants: Object.freeze([...delta].filter(([, quantity]) => quantity > 0).map(([item, quantity]) => Object.freeze({ item, quantity }))),
@@ -655,6 +665,7 @@ export class QuestBook {
     // 直接接管计划那份容器：条目不可变，所以没有「谁还会再写它」的问题，连浅拷贝都不用做。
     this.states = entry.states; this.runningIds = entry.runningIds;
     this.factSequences = entry.factSequences; this.revision++;
+    for (const id of entry.releasedForced) this.forcedProgress.delete(id);
   }
   /**
    * 派生一个**共享同一份不可变状态根**的沙盒：不克隆状态、也不跑初始 refresh。

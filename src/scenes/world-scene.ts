@@ -2419,7 +2419,15 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     for (const event of triggerIndex?.regionEvents ?? this.app.campaign.events)if(event.source==='region'&&event.map===this.map?.id&&event.region){
       const inside=overlapsFootRect(pos,event.region);
       if(!inside){this.occupiedRegions.delete(event.id);continue;}
-      if(this.occupiedRegions.has(event.id)||(event.condition&&!this.app.session.evaluateCondition(event.condition)))continue;
+      if(this.occupiedRegions.has(event.id)){
+        // 调试过滤解除后，仍站在区域里的事件要能补触发；已播完或条件不成立的保持占用。
+        const canRetry=this.app.director.allowsAutomaticEvent(event)
+          &&!this.app.director.runtime.snapshot().completedEvents.includes(event.id)
+          &&(!event.condition||this.app.session.evaluateCondition(event.condition));
+        if(!canRetry)continue;
+        this.occupiedRegions.delete(event.id);
+      }
+      if(event.condition&&!this.app.session.evaluateCondition(event.condition))continue;
       this.occupiedRegions.add(event.id);
       this.playStory(()=>this.app.director.enterRegion(event.id,event.map!).then(played=>{
         // 没播成、且事件还没结束（导演这一刻不收、或运行时不认这次触发）就放下这块占用，
@@ -2444,7 +2452,8 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
           && character.container.visible
           && nearInteractive(pos, character.container, character.actor.collision, !!character.entity.flip)) ?? null;
       },
-      event => !event.condition || this.app.session.evaluateCondition(event.condition));
+      event => !event.condition || this.app.session.evaluateCondition(event.condition),
+      event => this.app.director.allowsAutomaticEvent(event));
     if (near) {
       const { event, beside } = near;
       this.playStory(() => this.app.director.approach(event.near!, this.map?.id, beside.entity.characterId).then(played => {

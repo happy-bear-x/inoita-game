@@ -251,6 +251,7 @@ export function createSessionLifecycle(app:StoryApp,hooks:SessionLifecycleHooks)
           app.storyDebugActive = false;
         } finally { director.releaseTriggers(); }
       },
+      checkpoint: () => { worldScene()?.checkpointStoryWorld(); },
       finish: () => {
         app.storyDebugActive = false;
         director.releaseTriggers();
