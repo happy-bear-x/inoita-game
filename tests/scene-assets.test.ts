@@ -12,26 +12,45 @@ function setup() {
   const events = new EventEmitter();
   const textureEvents = new EventEmitter();
   const frames = new Map<string, Set<string | number>>();
+  const textureObjects = new Map<string, { has(frame: string): boolean }>();
   const removed: string[] = [];
+  /** 与 Phaser 一致：同一个键第二次写入只报错、不覆盖、不发 addtexture。 */
+  const duplicateWrites: string[] = [];
   const queued: PendingAsset[] = [];
   let starts = 0;
   let outcome: 'success' | 'decode-error' | 'network-error' | 'missing-frame' | 'pending' = 'success';
+  const textureFor = (key: string) => {
+    let texture = textureObjects.get(key);
+    if (!texture) {
+      texture = { has: (frame: string) => {
+        const values = frames.get(key)!;
+        return values.has(frame) || values.has(Number(frame));
+      } };
+      textureObjects.set(key, texture);
+    }
+    return texture;
+  };
+  const addTexture = (key: string, values: Set<string | number> = new Set([0, 1, 2])): boolean => {
+    if (frames.has(key)) { duplicateWrites.push(key); return false; }
+    frames.set(key, values);
+    textureFor(key);
+    textureEvents.emit('addtexture', key);
+    return true;
+  };
   const load = Object.assign(new EventEmitter(), {
     spritesheet: (key: string, file: string, config: Phaser.Types.Loader.FileTypes.ImageFrameConfig) =>
       queued.push({ kind: 'spritesheet', key, file, config }),
     image: (key: string, file: string) => queued.push({ kind: 'image', key, file }),
     atlas: (key: string, file: string, atlas: string) => queued.push({ kind: 'atlas', key, file, atlas }),
-    start: () => { starts++; queueMicrotask(() => {
+    start: () => { starts++; const batch = queued.splice(0); queueMicrotask(() => {
       if (outcome === 'pending') return;
-      for (const asset of queued.splice(0)) {
-        if (outcome === 'network-error') load.emit('loaderror', { key: asset.key });
-        if (asset.kind === 'atlas') {
-          if (outcome === 'success') frames.set(asset.key, new Set(['frame-a', 'frame-b']));
-          if (outcome === 'missing-frame') frames.set(asset.key, new Set(['frame-a']));
-        } else {
-          if (outcome === 'success') frames.set(asset.key, new Set([0, 1, 2]));
-          if (outcome === 'missing-frame') frames.set(asset.key, new Set([0, 2]));
-        }
+      for (const asset of batch) {
+        if (outcome === 'network-error') { load.emit('loaderror', { key: asset.key }); continue; }
+        if (outcome === 'decode-error') continue;
+        if (asset.kind === 'atlas') addTexture(asset.key, new Set(outcome === 'success' ? ['frame-a', 'frame-b'] : ['frame-a']));
+        else addTexture(asset.key, new Set(outcome === 'success' ? [0, 1, 2] : [0, 2]));
+        // Phaser 在写进纹理库之后才发 filecomplete。
+        load.emit('filecomplete', asset.key, asset.kind);
       }
       // Phaser's decode failure reaches complete without loaderror or a failed count.
       load.emit('complete', load, 0, 0);
@@ -42,16 +61,13 @@ function setup() {
     textures: {
       on: textureEvents.on.bind(textureEvents),
       exists: (key: string) => frames.has(key),
-      get: (key: string) => ({ has: (frame: string) => {
-        const values = frames.get(key)!;
-        return values.has(frame) || values.has(Number(frame));
-      } }),
-      remove: (key: string) => { removed.push(key); frames.delete(key); }
+      get: textureFor,
+      remove: (key: string) => { removed.push(key); frames.delete(key); textureObjects.delete(key); }
     },
     anims: { exists: () => false, remove: () => {} }
   } as unknown as Phaser.Scene;
-  return { scene, events, load, frames, removed, queued, starts: () => starts, outcome: (next: typeof outcome) => { outcome = next; },
-    addTexture: (key: string) => { frames.set(key, new Set([0, 1, 2])); textureEvents.emit('addtexture', key); } };
+  return { scene, events, load, frames, removed, duplicateWrites, queued, starts: () => starts,
+    outcome: (next: typeof outcome) => { outcome = next; }, addTexture };
 }
 
 test('decode failure rejects with the asset key and path, then retry can acquire and release it', async () => {
@@ -136,6 +152,7 @@ test('scenes sharing one texture manager register a key only once', async () => 
   ]);
   assert.equal(run.starts(), 1);
   assert.equal(otherStarts, 0, '同一纹理库已有加载在排队，另一个场景不应再启动 loader');
+  assert.deepEqual(run.duplicateWrites, [], '同一个纹理键只允许写一次');
   first.release(); second.release();
   assert.deepEqual(run.removed, [asset.key]);
 });
@@ -148,18 +165,23 @@ test('network failure and shutdown clean up loading listeners and ownership', as
   const pending = loadSceneAssets(cancelled.scene, [asset], () => {});
   cancelled.events.emit('shutdown');
   await assert.rejects(pending, { name: 'AbortError' });
-  assert.deepEqual(cancelled.load.eventNames(), []);
   assert.equal(cancelled.events.listenerCount('shutdown'), 0);
+  // 在途写入继续观察文件；loader 结束后才摘掉监听、清掉兜底定时器。
+  cancelled.load.emit('complete', cancelled.load, 0, 0);
+  assert.deepEqual(cancelled.load.eventNames(), []);
 });
 
 test('an explicit prefetch cancellation releases late textures without stopping the host scene', async () => {
   const run = setup(); run.outcome('pending');
   const controller = new AbortController();
   const pending = loadSceneAssets(run.scene, [asset], () => {}, true, controller.signal);
+  // 让下载真正开始：取消只对已经在路上的文件有意义。
+  await new Promise(resolve => setImmediate(resolve));
   controller.abort();
   await assert.rejects(pending, { name: 'AbortError' });
-  run.addTexture(asset.key);
+  assert.equal(run.addTexture(asset.key), true);
   assert.equal(run.frames.has(asset.key), false);
+  assert.deepEqual(run.duplicateWrites, []);
 });
 
 test('cancelling a queued request does not wait for another download', async () => {
@@ -179,22 +201,40 @@ test('cancelling a queued request does not wait for another download', async () 
 test('cancelled loading removes a texture that arrives after the lease is released', async () => {
   const run = setup(); run.outcome('pending');
   const pending = loadSceneAssets(run.scene, [asset], () => {});
+  // 让下载真正开始，再模拟场景关闭：只有已经在路上的文件才会迟到落地。
+  await new Promise(resolve => setImmediate(resolve));
   run.events.emit('shutdown');
   await assert.rejects(pending, { name: 'AbortError' });
-  run.addTexture(asset.key);
+  assert.equal(run.addTexture(asset.key), true);
   assert.equal(run.frames.has(asset.key), false, '迟到纹理没有新租约时应立即删除');
   assert.ok(run.removed.includes(asset.key));
+  assert.deepEqual(run.duplicateWrites, []);
+  // 写入登记已经清掉，之后同键请求可以重新下载。
+  run.outcome('success');
+  const lease = await loadSceneAssets(run.scene, [asset], () => {});
+  assert.equal(run.starts(), 2);
+  assert.equal(run.frames.has(asset.key), true);
+  lease.release();
+  assert.equal(run.frames.has(asset.key), false);
 });
 
-test('a late texture stays when a new lease already owns the key', async () => {
+test('a request for a key already being written waits and adopts that write', async () => {
   const run = setup(); run.outcome('pending');
   const pending = loadSceneAssets(run.scene, [asset], () => {});
+  // 让下载真正开始，再模拟场景关闭：只有已经在路上的文件才会迟到落地。
+  await new Promise(resolve => setImmediate(resolve));
   run.events.emit('shutdown');
   await assert.rejects(pending, { name: 'AbortError' });
   run.outcome('success');
-  const lease = await loadSceneAssets(run.scene, [asset], () => {});
-  run.addTexture(asset.key);
-  assert.equal(run.frames.has(asset.key), true, '新租约接管后不能删除迟到纹理');
+  let settled = false;
+  const waiting = loadSceneAssets(run.scene, [asset], () => {}).then(lease => { settled = true; return lease; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(settled, false, '旧文件还没落定时，新请求不能自己再开一次下载');
+  assert.equal(run.starts(), 1, '同一个纹理键不新开写入代');
+  assert.equal(run.addTexture(asset.key), true);
+  const lease = await waiting;
+  assert.equal(run.duplicateWrites.length, 0, '同一个纹理键只允许写一次');
+  assert.equal(run.frames.has(asset.key), true, '新租约接管的是这次写入的纹理');
   lease.release();
   assert.equal(run.frames.has(asset.key), false);
 });
@@ -271,4 +311,58 @@ test('missing frames still wait for the writer queue before repairing the textur
   const leases = await Promise.all([downloading, repairing]);
   assert.equal(repaired, true); assert.equal(run.starts(), 2);
   for (const lease of leases) lease.release();
+});
+
+test('a late texture still drawn by a visible scene is retired after the reference disappears', async () => {
+  const run = setup();
+  const drawn = { type: 'Sprite', visible: true, frame: { texture: { key: asset.key } } };
+  const frameEvents = new EventEmitter();
+  const visible = { sys: { isVisible: () => true, settings: { key: 'world' } }, children: { list: [drawn] } };
+  (run.scene.textures as unknown as { game: unknown }).game = { scene: { scenes: [visible] }, events: frameEvents };
+  run.outcome('pending');
+  const controller = new AbortController();
+  const pending = loadSceneAssets(run.scene, [asset], () => {}, true, controller.signal);
+  // 让下载真正开始：取消只对已经在路上的文件有意义。
+  await new Promise(resolve => setImmediate(resolve));
+  controller.abort();
+  await assert.rejects(pending, { name: 'AbortError' });
+  assert.equal(run.addTexture(asset.key), true);
+  assert.equal(run.frames.has(asset.key), true, '画面还在引用时不能删');
+  visible.children.list = [];
+  frameEvents.emit('postrender');
+  assert.equal(run.frames.has(asset.key), false, '引用消失后在帧后检查里补删');
+});
+
+test('a different file for a key already being written is rejected without a second download', async () => {
+  const run = setup(); run.outcome('pending');
+  const controller = new AbortController();
+  const first = loadSceneAssets(run.scene, [asset], () => {}, true, controller.signal);
+  await new Promise(resolve => setImmediate(resolve));
+  controller.abort();
+  await assert.rejects(first, { name: 'AbortError' });
+  const other = { ...asset, file: 'assets/other.png' };
+  await assert.rejects(loadSceneAssets(run.scene, [other], () => {}), /贴图键指向不同资源/);
+  assert.equal(run.starts(), 1, '冲突时不能启动第二次下载');
+  run.addTexture(asset.key);
+  assert.equal(run.frames.has(asset.key), false);
+});
+
+test('a write that never settles stops blocking the key after the fallback deadline', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const run = setup(); run.outcome('pending');
+  const first = loadSceneAssets(run.scene, [asset], () => {});
+  await new Promise(resolve => setImmediate(resolve));
+  run.events.emit('shutdown');
+  await assert.rejects(first, { name: 'AbortError' });
+  run.outcome('success');
+  let settled = false;
+  const waiting = loadSceneAssets(run.scene, [asset], () => {}).then(lease => { settled = true; return lease; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(settled, false, '兜底到期前一直等这次写入');
+  t.mock.timers.tick(35000);
+  const lease = await waiting;
+  assert.equal(settled, true);
+  assert.equal(run.starts(), 2, '到期后允许重新下载');
+  assert.deepEqual(run.duplicateWrites, [], '旧文件没有落地，不存在重复写入');
+  lease.release();
 });

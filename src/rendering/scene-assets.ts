@@ -10,7 +10,6 @@ export type PendingAsset =
   | { kind: 'spritesheet'; key: string; file: string; config: Phaser.Types.Loader.FileTypes.ImageFrameConfig }
   /** 打包后的图集：图片和 JSON 必须成对加载，纹理键下会注册所有帧。 */
   | { kind: 'atlas'; key: string; file: string; atlas: string; frame?: string; frames?: readonly string[] };
-const pools = new WeakMap<Phaser.Textures.TextureManager, AssetPool>();
 /** 队列按纹理管理器排队：同一份纹理库只有一个 loader 能写，跨场景并发会重复注册同一纹理键。 */
 const textureQueues = new WeakMap<Phaser.Textures.TextureManager, Promise<void>>();
 /**
@@ -19,15 +18,135 @@ const textureQueues = new WeakMap<Phaser.Textures.TextureManager, Promise<void>>
  */
 const activeLoaders = new WeakMap<Phaser.Textures.TextureManager, Map<string, number>>();
 /**
- * 取消的加载批次里，Phaser 仍可能在租约释放后才把图片写进全局纹理库。
- * 这里按纹理库记下这些键；晚到的纹理如果没有新租约接管，就立刻删除。
+ * 所属场景关闭后，Loader 会摘掉自己的监听，之后只能靠纹理库的 addtexture 观察文件落地。
+ * 这段时间给在途写入一个宽限：文件落下就接管，落不下就按“不可观察”结算，别让等待者空等。
  */
-const abandonedTextures = new WeakMap<Phaser.Textures.TextureManager, Set<string>>();
+const WRITE_GRACE_AFTER_LOADER_GONE_MS = 5_000;
+/**
+ * 兜底期限。loader.timeout 是 15 秒、maxRetries 是 1（见 src/main.ts），最坏 30 秒后
+ * Phaser 不可能还有文件在路上，超过这个时间可以安全地把写入权交给下一次请求。
+ */
+const WRITE_DEADLINE_MS = 35_000;
 
-function markAbandonedTextures(textures: Phaser.Textures.TextureManager, keys: Iterable<string>): void {
-  let abandoned = abandonedTextures.get(textures);
-  if (!abandoned) { abandoned = new Set(); abandonedTextures.set(textures, abandoned); }
-  for (const key of keys) abandoned.add(key);
+/**
+ * 同一纹理键的写入登记。
+ *
+ * Phaser 4 没有单文件取消：场景关闭或 loader.reset() 只清空记账，已经发出的请求仍会写回
+ * 全局纹理库。取消一次加载如果直接把写入权让给后来者，两代文件就会各写一次同一个键，
+ * 第二次在 TextureManager.checkKey 处报 `Texture key already in use`，而且引擎不抛错，
+ * 上层仍把文件当作加载成功。
+ *
+ * 这里维持一条不变量：对任一纹理键，从它“缺失或残帧”到下一次成功注册之间，全局最多只有
+ * 一个 loader 文件集被接受。取消只解除调用方的等待，写入权要等文件落定、加载失败或兜底
+ * 到期才释放；后来者先等这次写入结束，再决定复用还是自己下载。
+ */
+interface TextureWrite {
+  key: string;
+  /** 下载身份：同键不同资源时不能共用一次写入。 */
+  identity: string;
+  scene: Phaser.Scene;
+  settled: boolean;
+  done: Promise<void>;
+  resolve: () => void;
+}
+/** 一个批次登记的一组写入，共用一套监听与兜底定时器。 */
+interface TextureWriteRound {
+  writes: TextureWrite[];
+  finished: boolean;
+  detach: () => void;
+}
+interface TextureLedger {
+  textures: Phaser.Textures.TextureManager;
+  anims: Phaser.Animations.AnimationManager;
+  pool: AssetPool;
+  writes: Map<string, TextureWrite>;
+  /** 宽限到期后仍可能迟到的写入；落地时按有无租约决定去留，过期自动清掉。 */
+  late: Map<string, ReturnType<typeof setTimeout>>;
+}
+const ledgers = new WeakMap<Phaser.Textures.TextureManager, TextureLedger>();
+
+function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
+  (timer as unknown as { unref?: () => void }).unref?.();
+}
+
+/** 只比较“下载同一份文件”所需的信息，不比较帧需求：同一页图集被不同动作引用不同帧仍是一次写入。 */
+function downloadIdentity(asset: PendingAsset): string {
+  if (asset.kind === 'atlas')
+    return JSON.stringify(['atlas', versionedAsset(asset.file), versionedAsset(asset.atlas)]);
+  if (asset.kind === 'image') return JSON.stringify(['image', versionedAsset(asset.file)]);
+  const { frameWidth, frameHeight, startFrame = 0, endFrame = -1, margin = 0, spacing = 0 } = asset.config;
+  return JSON.stringify(['spritesheet', versionedAsset(asset.file),
+    frameWidth, frameHeight, startFrame, endFrame, margin, spacing]);
+}
+
+function armLateWrite(ledger: TextureLedger, key: string): void {
+  if (ledger.late.has(key)) return;
+  const timer = setTimeout(() => { ledger.late.delete(key); }, WRITE_DEADLINE_MS);
+  unrefTimer(timer);
+  ledger.late.set(key, timer);
+}
+
+/** 落地纹理没有租约接管时才退役；删除统一走可见引用优先的延迟队列。 */
+function retireUnclaimedTexture(ledger: TextureLedger, key: string): void {
+  if (ledger.pool.holders(key) !== 0) return;
+  if (!ledger.textures.exists(key)) return;
+  // 取消预取后旧文件落地再被回收是常态，不记诊断，避免每次换向都刷日志。
+  releaseTextureWhenUnused(ledger.textures, ledger.anims, key);
+}
+
+function finishWrite(ledger: TextureLedger, write: TextureWrite, retire: boolean): void {
+  if (write.settled) return;
+  write.settled = true;
+  if (ledger.writes.get(write.key) === write) ledger.writes.delete(write.key);
+  if (retire) retireUnclaimedTexture(ledger, write.key);
+  write.resolve();
+}
+
+function settleRound(ledger: TextureLedger, round: TextureWriteRound,
+  kind: 'complete' | 'unobservable' | 'timeout'): void {
+  if (round.finished) return;
+  round.finished = true;
+  round.detach();
+  let unsettled = 0;
+  for (const write of round.writes) {
+    if (write.settled) continue;
+    unsettled++;
+    // 宽限到期时文件可能还会落地，交给迟到登记；真正到期后不可能还有文件在途。
+    if (kind === 'unobservable') armLateWrite(ledger, write.key);
+    finishWrite(ledger, write, kind === 'complete');
+  }
+  if (kind !== 'complete' && unsettled)
+    globalThis.storyDiagnostics?.record(
+      kind === 'timeout' ? 'texture-write-timeout' : 'texture-write-unobservable',
+      { key: round.writes[0]!.key, keys: unsettled });
+}
+
+function ledgerFor(scene: Phaser.Scene): TextureLedger {
+  let ledger = ledgers.get(scene.textures);
+  if (ledger) return ledger;
+  // 纹理和动画都属于全游戏共用的管理器；这里不能捕获某个具体 Scene，
+  // 否则清理时会去错误的场景账本里找特效动画。
+  const textures = scene.textures, anims = scene.anims;
+  // 租约归零时画面里可能还有借用这张图的显示对象（菜单预览等），先确认没人再画；
+  // 新租约接管同一张图时取消排队，避免兜底队列删掉刚重新加载的纹理。
+  const pool = new AssetPool(key => releaseTextureWhenUnused(textures, anims, key),
+    key => cancelPendingTextureRemoval(textures, key));
+  const created: TextureLedger = { textures, anims, pool, writes: new Map(), late: new Map() };
+  ledgers.set(textures, created);
+  if (typeof textures.on === 'function') {
+    textures.on('addtexture', (key: string) => {
+      // 有登记的写入：这次落地就是它的结果。没有写入但还留着迟到登记的旧文件：
+      // 无主就退役，有主则已经被新租约接管，什么都不用做。
+      const write = created.writes.get(key);
+      if (write) { finishWrite(created, write, true); return; }
+      const timer = created.late.get(key);
+      if (!timer) return;
+      clearTimeout(timer);
+      created.late.delete(key);
+      retireUnclaimedTexture(created, key);
+    });
+  }
+  return created;
 }
 
 function loaderCounts(scene: Phaser.Scene): Map<string, number> {
@@ -42,33 +161,6 @@ function changeLoaders(scene: Phaser.Scene, keys: Iterable<string>, delta: 1 | -
     const next = (counts.get(key) ?? 0) + delta;
     if (next > 0) counts.set(key, next); else counts.delete(key);
   }
-}
-
-function poolFor(scene: Phaser.Scene): AssetPool {
-  let pool = pools.get(scene.textures);
-  if (!pool) {
-    // 纹理和动画都属于全游戏共用的管理器；这里不能捕获某个具体 Scene，
-    // 否则清理时会去错误的场景账本里找特效动画。
-    const anims = scene.anims, textures = scene.textures;
-    // 租约归零时画面里可能还有借用这张图的显示对象（菜单预览等），先确认没人再画；
-    // 新租约接管同一张图时取消排队，避免兜底队列删掉刚重新加载的纹理。
-    const created = new AssetPool(key => releaseTextureWhenUnused(textures, anims, key),
-      key => cancelPendingTextureRemoval(textures, key));
-    pool = created;
-    pools.set(textures, created);
-    // Phaser 的 Loader 不保证在场景关闭时中止在途文件。晚到的纹理如果没有租约接管，
-    // 就在这里立刻删掉，避免它变成没人释放的无主纹理。
-    if (typeof textures.on === 'function') {
-      textures.on('addtexture', (key: string) => {
-        const abandoned = abandonedTextures.get(textures);
-        if (!abandoned?.has(key)) return;
-        abandoned.delete(key);
-        if (created.holders(key)) return;
-        removeTexture(anims, textures, key);
-      });
-    }
-  }
-  return pool;
 }
 
 /**
@@ -90,7 +182,7 @@ export function retainLoadedSceneAssets(scene: Phaser.Scene,
     if (gap) throw new Error(`常驻资源尚未就绪：${asset.key}（${gap === 'texture' ? '纹理未加载' : `缺少帧 ${gap.slice('frame:'.length)}`}）`);
     keys.push(asset.key);
   }
-  return poolFor(scene).acquire(keys);
+  return ledgerFor(scene).pool.acquire(keys);
 }
 
 async function inTextureQueue<T>(scene: Phaser.Scene, signal: AbortSignal, work: () => Promise<T>): Promise<T> {
@@ -109,6 +201,16 @@ async function inTextureQueue<T>(scene: Phaser.Scene, signal: AbortSignal, work:
     signal.throwIfAborted();
     return await work();
   } finally { release(); }
+}
+
+function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => { signal.removeEventListener('abort', abort); reject(signal.reason); };
+    signal.addEventListener('abort', abort, { once: true });
+    promise.then(value => { signal.removeEventListener('abort', abort); resolve(value); },
+      error => { signal.removeEventListener('abort', abort); reject(error); });
+  });
 }
 
 type AssetGap = 'texture' | `frame:${string}`;
@@ -161,9 +263,134 @@ function verifyAssets(scene: Phaser.Scene, assets: PendingAsset[]): void {
   if (failures.length) throw new Error('部分画面未能加载，请重试', { cause: new Error(failures.join('\n')) });
 }
 
+/**
+ * 登记本批要下载的纹理键，并在文件落定、失败、场景关闭或兜底到期时结算。
+ * 监听必须在 scene.load.start() 之前挂好：已完成的文件不会再补发事件。
+ */
+function registerTextureWrites(ledger: TextureLedger, scene: Phaser.Scene,
+  assets: readonly PendingAsset[]): TextureWriteRound {
+  const round: TextureWriteRound = { writes: [], finished: false, detach: () => {} };
+  const keys = new Set<string>();
+  for (const asset of assets) {
+    let resolve!: () => void;
+    const done = new Promise<void>(value => { resolve = value; });
+    const write: TextureWrite = {
+      key: asset.key, identity: downloadIdentity(asset), scene, settled: false, done, resolve };
+    ledger.writes.set(asset.key, write);
+    const late = ledger.late.get(asset.key);
+    if (late) { clearTimeout(late); ledger.late.delete(asset.key); }
+    round.writes.push(write);
+    keys.add(asset.key);
+  }
+  const load = scene.load;
+  const settleKey = (key: string): void => {
+    if (!keys.has(key)) return;
+    const write = ledger.writes.get(key);
+    // 同一纹理库的写入按队列串行，同一时刻不会有两个批次登记同一个键。
+    if (write) finishWrite(ledger, write, true);
+  };
+  const onFileComplete = (key: string) => settleKey(key);
+  const onLoadError = (file: { key?: string } | undefined) => { if (file?.key) settleKey(file.key); };
+  const onComplete = () => settleRound(ledger, round, 'complete');
+  let grace: ReturnType<typeof setTimeout> | undefined;
+  const onShutdown = () => {
+    // loader 即将 removeAllListeners()，只能靠 addtexture 或宽限判断。
+    grace = setTimeout(() => settleRound(ledger, round, 'unobservable'), WRITE_GRACE_AFTER_LOADER_GONE_MS);
+    unrefTimer(grace);
+  };
+  const deadline = setTimeout(() => settleRound(ledger, round, 'timeout'), WRITE_DEADLINE_MS);
+  unrefTimer(deadline);
+  load.on('filecomplete', onFileComplete);
+  load.on('loaderror', onLoadError);
+  load.once('complete', onComplete);
+  scene.events.once('shutdown', onShutdown);
+  round.detach = () => {
+    load.off('filecomplete', onFileComplete);
+    load.off('loaderror', onLoadError);
+    load.off('complete', onComplete);
+    scene.events.off('shutdown', onShutdown);
+    clearTimeout(deadline);
+    if (grace !== undefined) clearTimeout(grace);
+  };
+  return round;
+}
+
+/** 等这些键的在途写入结束；期间如果对方的场景还活着，把它的进度接给当前进度条（只增不减）。 */
+async function waitForTextureWrites(ledger: TextureLedger, keys: readonly string[],
+  signal: AbortSignal, report: (value: number) => void): Promise<void> {
+  const writes = keys.map(key => ledger.writes.get(key))
+    .filter((write): write is TextureWrite => write !== undefined && !write.settled);
+  if (!writes.length) return;
+  const sources = new Set<Phaser.Loader.LoaderPlugin>();
+  const onProgress = (value: number) => report(value);
+  for (const write of writes) {
+    const load = write.scene?.load;
+    if (!load || typeof load.on !== 'function' || sources.has(load)) continue;
+    sources.add(load);
+    load.on('progress', onProgress);
+  }
+  try {
+    await abortable(Promise.all(writes.map(write => write.done)), signal);
+  } finally {
+    for (const load of sources) load.off('progress', onProgress);
+  }
+}
+
+/**
+ * 取消只结束调用方的等待，不结束在途写入：后来者必须等这次写入落定，避免两代文件
+ * 同时写同一个纹理键。返回仍被其他写入挡住的键，交给调用方等待后重试。
+ */
+async function writeFreeAssets(ledger: TextureLedger, scene: Phaser.Scene, needed: readonly PendingAsset[],
+  progress: (value: number) => void, signal: AbortSignal): Promise<string[]> {
+  const free: PendingAsset[] = [];
+  const blocked: string[] = [];
+  for (const asset of needed) {
+    const write = ledger.writes.get(asset.key);
+    if (!write) { free.push(asset); continue; }
+    if (write.identity !== downloadIdentity(asset))
+      throw new Error(`贴图键指向不同资源：${asset.key}`);
+    blocked.push(asset.key);
+  }
+  // 残帧修复只处理本批真正要写的键：在途批次可能已经删过同一张残图，不能重复删。
+  for (const asset of free) {
+    if (assetGap(scene, asset) === 'texture') continue;
+    const holders = ledger.pool.holders(asset.key);
+    const loading = loaderCounts(scene).get(asset.key) ?? 0;
+    // 只有“正在加载这个键、还没开始用纹理”的其他调用者可以和本次一起等重建；
+    // 真正持有纹理的租约（地图/舞台/常驻包）仍然不能删。
+    if (holders !== 1 && holders !== loading)
+      throw new Error(`贴图 ${asset.key} 仍被其他租约持有，无法补齐缺失帧`);
+    removeTexture(scene.anims, scene.textures, asset.key);
+  }
+  if (!free.length) return blocked;
+  const round = registerTextureWrites(ledger, scene, free);
+  await new Promise<void>((resolve, reject) => {
+    const clean = () => { scene.load.off('progress', progress); scene.load.off('complete', complete); signal.removeEventListener('abort', cancelled); };
+    const cancelled = () => { clean(); reject(signal.reason); };
+    const complete = () => { clean(); resolve(); };
+    scene.load.on('progress', progress); scene.load.once('complete', complete); signal.addEventListener('abort', cancelled, { once: true });
+    try {
+      for (const asset of free) {
+        if (asset.kind === 'image') scene.load.image(asset.key, versionedAsset(asset.file));
+        else if (asset.kind === 'spritesheet') scene.load.spritesheet(asset.key, versionedAsset(asset.file), asset.config);
+        else scene.load.atlas(asset.key, versionedAsset(asset.file), versionedAsset(asset.atlas));
+      }
+      scene.load.start();
+    } catch (error) {
+      // 文件没排进去就不会再有结算信号，别让这个键白占着写入权。
+      settleRound(ledger, round, 'complete');
+      throw error;
+    }
+  });
+  // complete 时已经结算过一轮；这里再兜一次，覆盖解码失败这类不发 addtexture 的情况。
+  settleRound(ledger, round, 'complete');
+  return blocked;
+}
+
 export async function loadSceneAssets(scene: Phaser.Scene, assets: PendingAsset[], progress: (value: number) => void, retain=false, signal?: AbortSignal): Promise<AssetLease> {
   signal?.throwIfAborted();
-  const pool = poolFor(scene);
+  const ledger = ledgerFor(scene);
+  const pool = ledger.pool;
   const byKey = new Map<string, PendingAsset>();
   for (const asset of assets) {
     const previous = byKey.get(asset.key);
@@ -188,48 +415,35 @@ export async function loadSceneAssets(scene: Phaser.Scene, assets: PendingAsset[
   scene.events.once('shutdown',shutdown);
   const cancel = () => controller.abort(signal?.reason);
   signal?.addEventListener('abort', cancel, { once: true });
+  // 等待别人的下载时，进度只能前进；自己的 loader 重新开始时也不会把进度条拉回 0。
+  let reported = -1;
+  const report = (value: number) => {
+    if (!(value > reported)) return;
+    reported = value;
+    progress(value);
+  };
   try {
-    await inTextureQueue(scene, controller.signal, async () => {
-      controller.signal.throwIfAborted();
-      const needed = unique.filter(asset => assetGap(scene, asset) !== undefined);
-      // 纹理键已存在但帧不全：先确认没有别的租约在用它，再删掉重建。
-      for (const asset of needed) {
-        if (assetGap(scene, asset) === 'texture') continue;
-        const holders = pool.holders(asset.key);
-        const loading = loaderCounts(scene).get(asset.key) ?? 0;
-        // 只有“正在加载这个键、还没开始用纹理”的其他调用者可以和本次一起等重建；
-        // 真正持有纹理的租约（地图/舞台/常驻包）仍然不能删。
-        if (holders !== 1 && holders !== loading)
-          throw new Error(`贴图 ${asset.key} 仍被其他租约持有，无法补齐缺失帧`);
-        removeTexture(scene.anims, scene.textures, asset.key);
-      }
-      if (!needed.length) { progress(1); return; }
-      await new Promise<void>((resolve,reject)=>{
-        const clean=()=>{scene.load.off('progress',progress);scene.load.off('complete',complete);controller.signal.removeEventListener('abort',cancelled);};
-        const cancelled=()=>{clean();reject(controller.signal.reason);};
-        const complete=()=>{clean();resolve();};
-        scene.load.on('progress',progress);scene.load.once('complete',complete);controller.signal.addEventListener('abort',cancelled,{once:true});
-        for(const asset of needed){
-          if(asset.kind==='image')scene.load.image(asset.key,versionedAsset(asset.file));
-          else if(asset.kind==='spritesheet')scene.load.spritesheet(asset.key,versionedAsset(asset.file),asset.config);
-          else scene.load.atlas(asset.key,versionedAsset(asset.file),versionedAsset(asset.atlas));
-        }
-        scene.load.start();
+    for (let pass = 0; ; pass++) {
+      const blocked = await inTextureQueue(scene, controller.signal, async () => {
+        controller.signal.throwIfAborted();
+        const needed = unique.filter(asset => assetGap(scene, asset) !== undefined);
+        if (!needed.length) return [];
+        return writeFreeAssets(ledger, scene, needed, report, controller.signal);
       });
-      controller.signal.throwIfAborted();
-    });
+      if (!blocked.length) break;
+      if (pass >= 2) throw new Error(`贴图 ${blocked[0]} 仍在写入中`);
+      await waitForTextureWrites(ledger, blocked, controller.signal, report);
+    }
+    controller.signal.throwIfAborted();
+    report(1);
     // Phaser 的图片解码失败不发 loaderror；complete 也不保证纹理和帧已入库。
     verifyAssets(scene, unique);
     scene.events.off('shutdown',shutdown);
     if(!retain)scene.events.once('shutdown',lease.release);
     return lease;
   }catch(error){
-    // 中止只结束 JS 这边的等待；Phaser 的在途文件仍可能晚到并写进纹理库。
-    // 先记账再释放：晚到的纹理如果没有新租约接管，就在 addtexture 时删掉。
-    // 已经在纹理库里的 key 不会再触发 addtexture，不该记成待对账的无主纹理。
-    if(controller.signal.aborted)markAbandonedTextures(scene.textures,
-      keys.filter(key=>!scene.textures.exists(key)));
-    else globalThis.storyDiagnostics?.record('asset-load-error',
+    // 取消只结束这边的等待：在途写入仍由登记负责结算和清理。
+    if(!controller.signal.aborted) globalThis.storyDiagnostics?.record('asset-load-error',
       {error,files:unique.map(asset=>({key:asset.key,file:asset.file}))});
     scene.events.off('shutdown',shutdown);lease.release();throw error;
   }finally{

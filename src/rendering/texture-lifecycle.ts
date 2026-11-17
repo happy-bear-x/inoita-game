@@ -12,6 +12,9 @@ import { releaseEffectAnimations } from './effect-animations.ts';
  * 删除前扫描所有仍在显示的场景：有可见对象引用它就先记账、等引用消失后再删。
  * 兜底覆盖 Sprite / Image / Container 链和当前动画的全部帧纹理；TilemapLayer
  * 这类通过 tileset 引用纹理的对象不在扫描范围内，它们仍应由场景租约保住。
+ *
+ * 调用方包括 `AssetPool` 的租约释放，以及 `scene-assets.ts` 在取消后迟到的无主纹理。
+ * 后者同样必须先经过这里的可见引用检查，不能直接 remove。
  */
 
 const PENDING_RETRY_MS = 500;
