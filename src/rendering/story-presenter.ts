@@ -313,7 +313,9 @@ export class StoryPresenter implements StoryPresentationPort {
     this.toneFilter.setActive(enabled);
   }
   private async stage(declaration: StoryStage | StoryStageSnapshot, signal: AbortSignal, pendingEntrances?: readonly string[], skipSignal?: AbortSignal): Promise<void> {
-    this.dynamicStage = declaration.mapFromWorld === true;
+    // `resolveStoryScene` 会在快照里剥掉 `mapFromWorld`；按快照重建（换姿态、刷新外观）
+    // 仍是同一张动态舞台，不能把来源丢掉，否则后面的走位兜底会失效。
+    this.dynamicStage = 'scene' in declaration ? this.dynamicStage : declaration.mapFromWorld === true;
     const epoch = ++this.epoch;
     const snapshot = await this.resolveStage(declaration, signal, pendingEntrances, !!skipSignal?.aborted);
     signal.throwIfAborted();
@@ -481,7 +483,8 @@ export class StoryPresenter implements StoryPresentationPort {
       return () => { camera.off(Phaser.Cameras.Scene2D.Events.PAN_COMPLETE, complete); camera.panEffect.reset(); };
     }, () => camera.centerOn(x, y));
   }
-  private async walk(action: Extract<VisualAction, {type:'walk'}>, playback: PerformancePlayback, batch = false): Promise<void> {
+  /** 返回兜底实际使用的落点；正常走到目标时返回 undefined，调用方沿用原动作坐标。 */
+  private async walk(action: Extract<VisualAction, {type:'walk'}>, playback: PerformancePlayback, batch = false): Promise<{x:number;y:number}|undefined> {
     const scene = this.scene(), actor = this.actor(action.target), visual = actor.visual, movement = scene.movement!;
     actor.clearPose?.(); delete actor.storyPoseHold;
     if(actor.unpositioned)return;
@@ -524,18 +527,21 @@ export class StoryPresenter implements StoryPresentationPort {
         return () => { scene.events.off(Phaser.Scenes.Events.POST_UPDATE, update); movement.stop(visual); body.setImmovable(immovable); };
       }, () => { if (!failed) settle(); });
       if (failed) {
+        const from = movement.position(visual);
         const fallback = this.dynamicStage ? movement.nearestWalkable(visual, destination) : undefined;
         if (fallback && (fallback.x !== destination.x || fallback.y !== destination.y)) {
           destination = fallback;
           finalFacing = faceTarget(movement.position(visual), destination);
           settle();
           globalThis.storyDiagnostics?.record('story-walk-fallback', { target: action.target,
-            wanted: { x: action.x, y: action.y }, used: fallback, map: this.scene().map?.id }, false);
-          return;
+            from, wanted: { x: action.x, y: action.y }, used: movement.position(visual),
+            error: route.error?.message, map: this.scene().map?.id }, false);
+          return destination;
         }
         throw new Error(`剧情${route.error?.message ?? '道路不可达'}：${action.target} → (${action.x}, ${action.y})`);
       }
     } finally { movement.stop(visual); body.setImmovable(immovable); }
+    return undefined;
   }
   async parallel(actions: PerformanceAction[], playback: PerformancePlayback): Promise<void> {
     const flatten = (action: PerformanceAction): VisualAction[] => action.type === 'parallel' ? action.actions.flatMap(flatten) : [action];
@@ -553,7 +559,9 @@ export class StoryPresenter implements StoryPresentationPort {
       const performer = this.actors.get(bound ?? action.target);
       if (!performer || action.type === 'walk' && performer.unpositioned) return [];
       return [{ visual: performer.visual,
-        position: action.type === 'leave' ? movement.position(performer.visual) : { x: action.x, y: action.y },
+        // 走位和退场按实际脚点整组落位；只有 appear 用内容坐标。走位失败时实际脚点
+        // 才是可达位置，原动作坐标可能仍然是阻挡格。
+        position: action.type === 'appear' ? { x: action.x, y: action.y } : movement.position(performer.visual),
         enabled: action.type === 'appear' || action.type === 'walk' && performer.visual.container.visible }];
     });
     if (placements.length) movement.placeAll(placements);
@@ -720,8 +728,13 @@ export class StoryPresenter implements StoryPresentationPort {
       case 'walk': {
         const actor=this.actor(action.target);
         const facing=faceTarget(scene.movement!.position(actor.visual),action);
-        await this.walk(action, playback, batch);
-        if (!actor.unpositioned) {this.applySceneAction(action);this.face(actor,facing);}
+        const landed=await this.walk(action, playback, batch);
+        // 走位用了兜底落点时，逻辑坐标也要写兜底点；否则后面的落位会按原阻挡目标
+        // 重新找“最近可站点”，把角色送到不可达的位置。
+        if (!actor.unpositioned) {
+          this.applySceneAction(landed ? { ...action, x: landed.x, y: landed.y } : action);
+          this.face(actor,facing);
+        }
         return;
       }
       case 'pose': await this.poseAction(action, playback); return;

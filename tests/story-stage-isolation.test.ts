@@ -783,6 +783,24 @@ test('skipping keeps logical positions without rebuilding the stage and flush pa
   assert.equal(run.music(),'remote','补画后保持目标地图音乐');
 });
 
+test('a dynamic stage keeps its walk fallback after rebuilding from a snapshot', async () => {
+  const run = harness(), signal = new AbortController().signal, playback = { signal, skipSignal: signal };
+  await run.presenter.begin(signal);
+  await run.presenter.execute({ type: 'stage', mapFromWorld: true, map: 'home', x: 10, y: 20,
+    facing: 'south', playerVisible: true, cast: [] }, playback);
+  // 按快照重建（town-pose / refresh-appearance 走这条路）；快照里没有 mapFromWorld。
+  await run.presenter.execute(run.presenter.captureStage()!, playback);
+  const movement = run.stage.movement as unknown as {
+    walkTo(): { state: string; error?: Error };
+    nearestWalkable(): { x: number; y: number } | undefined;
+  };
+  movement.walkTo = () => ({ state: 'failed', error: new Error('道路不可达') });
+  movement.nearestWalkable = () => ({ x: 56, y: 72 });
+  await run.presenter.execute({ type: 'walk', target: 'player', x: 400, y: 400, speedPxPerSecond: 60 }, playback);
+  const player = run.presenter.captureStage()!.scene.actors.find(actor => actor.id === 'player')!;
+  assert.deepEqual({ x: player.x, y: player.y }, { x: 56, y: 72 }, '兜底落点同时写进逻辑快照，不能写回阻挡目标');
+});
+
 test('skipped camera actions and camera-following walks update the restored view', async () => {
   const run=harness(), signal=new AbortController().signal, skip=new AbortController();
   await run.presenter.begin(signal);
