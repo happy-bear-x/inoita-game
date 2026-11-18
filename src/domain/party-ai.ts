@@ -3,14 +3,15 @@ import { LOGIC_FRAME_MS, type EnemyPlayableSkill } from './battle.ts';
 import { attackDistance, targetDistance } from './basic-attack.ts';
 import { CombatController, canTargetCombatant, type Combatant, type CombatPort } from './combat.ts';
 import { combatStateCapabilities } from './combat-state.ts';
-import { needsTarget } from './skill-action.ts';
+import { choosePartyAction } from './party-tactics.ts';
+import type { PartySkillUse } from './party.ts';
+import type { BattleBuffKey } from './battle-semantics.ts';
 import type { Facing } from './content.ts';
 import { type CompanionStance } from './party-placement.ts';
 import { canTraverse, createPathSearch, PATH_GRID_SIZE, type PathQuery } from './pathfinding.ts';
 import { attackRangeQueryRadius, quantizedDistanceQueryRadius, type CombatQueryCircle } from './combat-spatial-index.ts';
 import type { GameRectangle, Point } from './navigation.ts';
 
-export type PartySkillKind = 'chance' | 'combat-chance' | 'heal' | 'ally-combat' | 'emergency-heal';
 export interface PartyPort extends CombatPort {
   leader(): Combatant | undefined;
   /** 当前操控角色的朝向；跟随站位用它分前后。 */
@@ -36,10 +37,14 @@ export interface PartyPort extends CombatPort {
   /** 长时间没有位移或离得太远时，让宿主把佣兵放到队长身边；无场景调用可省略。 */
   regroup?(): boolean | void;
   skills(): readonly EnemyPlayableSkill[];
-  skillKind(id:string): PartySkillKind | undefined;
-  vitals(id:string): {health:number;maxHealth:number} | undefined;
+  skillUses(id:string): readonly PartySkillUse[];
+  isBoss?(id:string): boolean;
+  hasBuff?(id:string,buff:BattleBuffKey): boolean;
+  ownedSummons?(id:string): readonly Combatant[];
+  hasCriticalAlly?(): boolean;
+  vitals(id:string): {health:number;maxHealth:number;mana?:number;maxMana?:number} | undefined;
   attacking(id:string): boolean;
-  attackRange():number;
+  attackRange(id?:string):number;
 }
 interface PartyControllerState {
   accumulator:number;
@@ -78,22 +83,8 @@ const PARTY_FLANK_SIDE_PX = 4;
 const PARTY_FLANK_RETRY_MS = 2000;
 /** 近战/远程分界：攻击距离超过这个值的伙伴站后排。 */
 const PARTY_RANGED_RANGE_UNITS = 6;
-/** 技能尝试顺序：保命/辅助先于输出。频率和冷却仍然照旧。 */
-const PARTY_SKILL_PRIORITY:Record<PartySkillKind,number>={
-  'emergency-heal':0,heal:1,'ally-combat':2,'combat-chance':3,chance:4
-};
-/** 技能频率：0 关闭、1 普通、2 高频。 */
-const HIGH_SKILL_FREQUENCY = 2;
-/** 自动施法掷点范围 1..99。 */
-const AUTO_SKILL_ROLL_MAX = 99;
-/** 技能范围每格 8 像素。 */
+const TACTIC_INTERVAL_MS = 2 * LOGIC_FRAME_MS;
 const RANGE_UNIT_PX = 8;
-/** 原版自动施法阈值：[普通频率, 高频]；1..99 掷点严格小于阈值才施放。 */
-const AUTO_SKILL_THRESHOLDS:Record<PartySkillKind,readonly [number,number]>={
-  chance:[30,100],'combat-chance':[30,50],heal:[50,70],'emergency-heal':[20,40],'ally-combat':[60,80]
-};
-/** 已经跟随目标时，战斗技能的基础阈值提高到 50。 */
-const FOLLOWING_COMBAT_CHANCE_THRESHOLDS:readonly [number,number]=[50,100];
 
 /** 搜索只能停在起点或地图网格上。侧翼附近没有合法终点时，直接走普通接敌路线。 */
 function hasFlankLanding(goal: Point, start: Point, bounds: GameRectangle, canStand: (point: Point) => boolean): boolean {
@@ -109,19 +100,14 @@ function hasFlankLanding(goal: Point, start: Point, bounds: GameRectangle, canSt
   return false;
 }
 
-/** 自动施法抽取 1 至 99 的整数，严格小于阈值时通过。 */
-export function partySkillThreshold(kind:PartySkillKind,frequency:number,following:boolean):number {
-  const index=frequency===HIGH_SKILL_FREQUENCY?1:0;
-  if(kind==='combat-chance'&&following)return FOLLOWING_COMBAT_CHANCE_THRESHOLDS[index]!;
-  return AUTO_SKILL_THRESHOLDS[kind][index]!;
-}
-
 /** Party intent is independent of monster awareness and wandering. */
 export class PartyController {
   private readonly id:string;
   private readonly port:PartyPort;
   readonly combatController:CombatController;
-  private readonly random:()=>number;
+  private nextTacticsAt=0;
+  private tacticsTarget?:string;
+  private criticalAlly=false;
   private accumulator=0;
   private clock=0;
   private nextPathAt=0;
@@ -141,14 +127,12 @@ export class PartyController {
   private destination?:Point;
   private destinationTarget?:string;
   private destinationRange?:number;
-  /** 技能表身份不变时，按优先级排好的顺序可以复用；排序本身不随冷却或法力变化。 */
-  private sortedSkillsCache?:{source:readonly EnemyPlayableSkill[];value:EnemyPlayableSkill[]};
   /** 同一逻辑帧内候选者数组身份不变，队伍 ID 集合可以复用。 */
   private partyIdsCache?:{source:readonly Combatant[];team:string;value:ReadonlySet<string>};
   private disposed=false;
   readonly follower:PartyFollow;
-  constructor(id:string,port:PartyPort,combat:CombatController,random= Math.random){
-    this.id=id;this.port=port;this.combatController=combat;this.random=random;this.follower=new PartyFollow(id,port);
+  constructor(id:string,port:PartyPort,combat:CombatController){
+    this.id=id;this.port=port;this.combatController=combat;this.follower=new PartyFollow(id,port);
   }
   /** 只读动作阶段；不需要冷却快照时用这个。 */
   actionState(){return this.combatController.actionState();}
@@ -165,7 +149,7 @@ export class PartyController {
     // 搜索持有的是旧场地的闭包，读档后必须重新开始。
     this.search=undefined;this.follower.reset();
     this.chaseProgress=undefined;this.chaseRecoveryUntil=0;this.targetId=undefined;this.targetSince=0;
-    this.flankFailedUntil=0;
+    this.flankFailedUntil=0;this.resetTactics();
   }
   targetRemoved(targetId:string):void {
     this.combatController.targetRemoved(targetId);
@@ -173,7 +157,10 @@ export class PartyController {
     if(this.destinationTarget!==targetId)return;
     this.clearRoute();
   }
-  cancel():void {this.follower.reset();this.combatController.cancel(true);this.clearRoute();this.targetId=undefined;this.chaseProgress=undefined;
+  private resetTactics():void {
+    this.nextTacticsAt=0;this.tacticsTarget=undefined;this.criticalAlly=false;
+  }
+  cancel():void {this.resetTactics();this.follower.reset();this.combatController.cancel(true);this.clearRoute();this.targetId=undefined;this.chaseProgress=undefined;
     this.chaseRecoveryUntil=0;this.flankFailedUntil=0;this.accumulator=0;}
   disable():void {this.cancel();}
   reset():void {this.cancel();this.combatController.reset();}
@@ -193,7 +180,18 @@ export class PartyController {
     if(!actor){this.port.stop();return;}
     const leader=this.port.leader();
     const returning=leader?this.follower.tick(actor,leader,LOGIC_FRAME_MS):false;
-    if(returning&&this.combatController.actionState()==='approaching')this.combatController.cancel(true);
+    const critical=this.port.hasCriticalAlly?.()??false;
+    const becameCritical=critical&&!this.criticalAlly;
+    this.criticalAlly=critical;
+    if(this.combatController.actionState()==='approaching'){
+      if(returning)this.combatController.cancel(true);
+      else if(critical && !this.combatController.activeAction()?.skill && this.hasHealingSkill() && this.port.inCombat()){
+        const action=choosePartyAction(actor,this.selectTarget(actor),this.port,this.combatController);
+        if(action && ('skill' in action && action.urgent)){
+          this.combatController.cancel(false);this.nextTacticsAt=0;
+        }
+      }
+    }
     this.combatController.update();
     if(!combatStateCapabilities(actor.states??[]).canAct){
       this.clearRoute();this.follower.suspend();return;
@@ -206,7 +204,21 @@ export class PartyController {
     if(actionState!=='idle'){this.follower.suspend();return;}
     if(returning){this.targetId=undefined;this.clearRoute();this.follow(actor);return;}
     const target=this.selectTarget(actor);
-    if(this.port.inCombat()&&this.trySkill(actor,target))return;
+    if(this.port.inCombat()){
+      if(this.clock>=this.nextTacticsAt || target?.id!==this.tacticsTarget || becameCritical){
+        this.nextTacticsAt=this.clock+TACTIC_INTERVAL_MS;
+        this.tacticsTarget=target?.id;
+        const action=choosePartyAction(actor,target,this.port,this.combatController);
+        if(action && 'skill' in action){
+          if(this.combatController.request(action.skill,action.targetId)==='started'){
+            this.clearRoute(false);this.nextTacticsAt=0;return;
+          }
+        }
+      }else if(target && attackDistance(actor.position,actor.bounds,target.position,target.bounds)<=this.port.attackRange()){
+        // 下一次战术判断前保留当前移动，避免普攻抢占刚进入射程的技能。
+        return;
+      }
+    }
     if(target){this.chase(actor,target);return;}
     this.chaseProgress=undefined;
     this.follow(actor);
@@ -219,7 +231,7 @@ export class PartyController {
     if(this.clock<this.chaseRecoveryUntil){this.targetId=undefined;return undefined;}
     const current=this.targetId?this.port.actor(this.targetId):undefined;
     if(current&&this.validTarget(actor,current)&&this.withinLeash(actor,current,leader)
-      &&this.clock-this.targetSince<PARTY_TARGET_STICKY_MS)return current;
+      &&this.clock-this.targetSince<PARTY_TARGET_STICKY_MS&&!this.criticalAlly)return current;
     const threat=this.nearestThreatTarget(actor,leader);
     if(threat)return this.rememberTarget(threat);
     this.targetId=undefined;return undefined;
@@ -263,14 +275,18 @@ export class PartyController {
     // 队伍 ID 必须从完整候选收集：远处队友也可能正被这名敌人攻击。
     // 敌人本身按 withinLeash 的联合圆预筛，随后仍走原来的阵营、可选中和 leash 过滤。
     const candidates=this.port.candidates(),partyIds=this.partyIds(candidates,actor.team);
-    let best:Combatant|undefined,bestDistance=Infinity;
+    let best:Combatant|undefined,bestDistance=Infinity,protecting=false;
     for(const candidate of this.threatCandidates(actor,leader,candidates)){
       if(candidate.team===actor.team||!canTargetCombatant(actor,candidate))continue;
       const targetId=targetOf(candidate.id);
       if(!targetId||!partyIds.has(targetId))continue;
       if(!this.withinLeash(actor,candidate,leader))continue;
       const distance=targetDistance(actor.position,candidate.position);
-      if(distance<bestDistance){best=candidate;bestDistance=distance;}
+      const victim=this.port.vitals(targetId);
+      const urgent=!!victim&&victim.health>0&&victim.health<=victim.maxHealth*0.35;
+      if((urgent&&!protecting)||(urgent===protecting&&distance<bestDistance)){
+        best=candidate;bestDistance=distance;protecting=urgent;
+      }
     }
     return best;
   }
@@ -283,43 +299,7 @@ export class PartyController {
     this.partyIdsCache={source:candidates,team,value};
     return value;
   }
-  private trySkill(actor:Combatant,target:Combatant|undefined):boolean {
-    // 治疗和协同技能会扫描远处队友（例如谁正在战斗），不能换成附近敌人查询。
-    const skills=this.sortedSkills(),candidates=this.port.candidates();
-    for(const skill of skills){
-      const frequency=skill.frequency??1,kind=this.port.skillKind(skill.id);
-      if(!frequency||!kind||!this.combatController.skillReady(skill.id)||!this.combatController.canSelectSkill(skill)
-        ||this.port.canSpendMana?.(skill.manaCost??0)===false)continue;
-      if(needsTarget(skill.action)&&(!target||attackDistance(actor.position,actor.bounds,target.position,target.bounds)>skill.action.approachDistanceUnits))continue;
-      const threshold=partySkillThreshold(kind,frequency,!target);
-      let ready=false;
-      if(kind==='heal'||kind==='emergency-heal'){
-        ready=candidates.some(ally=>{
-          const hp=this.port.vitals(ally.id);
-          return ally.team===actor.team&&!!hp&&hp.health>0&&hp.health<Math.trunc(hp.maxHealth*threshold/100)
-            &&targetDistance(actor.position,ally.position)<=skill.action.searchRadiusPx;
-        });
-      }else if(kind==='ally-combat'){
-        ready=candidates.some(ally=>ally.id!==actor.id&&ally.team===actor.team&&this.port.attacking(ally.id)&&this.roll(threshold));
-      }else ready=this.roll(threshold);
-      if(ready&&this.combatController.request(skill,target?.id)==='started'){this.clearRoute(false);return true;}
-    }
-    return false;
-  }
-  /** 当前技能表按优先级排一次；技能表对象没换时直接复用上次顺序。 */
-  private sortedSkills():readonly EnemyPlayableSkill[] {
-    const source=this.port.skills();
-    if(!source.length)return source;
-    const cached=this.sortedSkillsCache;
-    if(cached?.source===source)return cached.value;
-    const value=[...source].sort((a,b)=>this.skillPriority(a.id)-this.skillPriority(b.id));
-    this.sortedSkillsCache={source,value};
-    return value;
-  }
-  private skillPriority(skillId:string):number {
-    const kind=this.port.skillKind(skillId);
-    return kind?PARTY_SKILL_PRIORITY[kind]:9;
-  }
+
   private chase(actor:Combatant,target:Combatant):void {
     const range=this.port.attackRange();
     if(attackDistance(actor.position,actor.bounds,target.position,target.bounds)<=range&&!this.needsFlank(actor,target)){
@@ -404,12 +384,11 @@ export class PartyController {
     if(this.destinationTarget)this.clearRoute(false);
     this.follower.move(actor,leader,this.stance(),LOGIC_FRAME_MS);
   }
+  private hasHealingSkill():boolean {
+    return this.port.skills().some(skill=>skill.frequency!==0 && this.port.skillUses(skill.id).includes('heal'));
+  }
   private stance():CompanionStance {
-    const support=this.port.skills().some(skill=>{
-      const kind=this.port.skillKind(skill.id);
-      return kind==='heal'||kind==='emergency-heal';
-    });
-    if(support)return 'support';
+    if(this.hasHealingSkill())return 'support';
     return this.port.attackRange()>PARTY_RANGED_RANGE_UNITS?'back':'front';
   }
   private followToTarget(actor:Combatant,target:Combatant,range:number):void {
@@ -525,5 +504,4 @@ export class PartyController {
     this.destinationTarget=undefined;this.destinationRange=undefined;this.nextPathAt=0;
     if(stop)this.port.stop();
   }
-  private roll(threshold:number):boolean{return 1+Math.floor(this.random()*AUTO_SKILL_ROLL_MAX)<threshold;}
 }

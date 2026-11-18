@@ -2296,10 +2296,19 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
       // 玩家指派了目标，或队伍最近与敌人真实交战过，都算整个队伍已进入战斗。
       inCombat:()=>!!this.focusTargetId||this.awareness.inCombat((this.app.session.combatTick??0)*LOGIC_FRAME_MS),
       skills:()=>this.partySkills.get(id)??[],
-      skillKind:skill=>this.app.session.party?.catalog.autoSkills?.[skill]?.kind,
+      skillUses:skill=>this.app.session.party?.catalog.autoSkills[skill]?.uses??[],
+      isBoss:key=>(combatActor(this.arena,key,enemy=>enemy.key)?.definition.specialRank??0)>=2,
+      hasBuff:(key,buff)=>this.conditions.hasBuff(key,buff),
+      ownedSummons:key=>this.arena.flatMap(enemy=>{
+        if(enemy.summonedBy!==key||this.pendingDefeats.has(enemy.key))return [];
+        const actor=this.combatant(enemy.key);return actor?[actor]:[];
+      }),
+      hasCriticalAlly:()=>this.activeParty.some(key=>{
+        const hp=this.memberOf(key)?.player;return !!hp && hp.health>0 && hp.health<=hp.maxHealth*0.35;
+      }),
       vitals:key=>this.memberOf(key)?.player,
       attacking:key=>this.partyControllers.get(key)?.actionState()==='attacking',
-      attackRange:()=>controller.basicAttackRange+this.actorAttribute(id,'attackRangeBonusUnits'),
+      attackRange:(key=id)=>(this.partyControllers.get(key)?.basicAttackRange??controller.basicAttackRange)+this.actorAttribute(key,'attackRangeBonusUnits'),
       navigationBounds:()=>this.movement.navigation.bounds,pathBudget:this.pathBudget,
       navigationSnapshot:()=>this.movement.navigation.captureStandability(this.movement.actor(visual)),
       moveToward:position=>{if(!this.conditions.canAutoApproach(id)){this.movement.stop(visual);return;}setFacing(faceTarget(this.movement.position(visual),position));this.movement.toward(visual,position,this.movementSpeed(id,PLAYER_MOVE_SPEED));},
@@ -2354,12 +2363,12 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
   private syncAiSkills(id:string):void{
     const party=this.app.session.party,frequencies=party?.aiFrequency(id);
     const latest=this.partySkillsFor(id);this.partySkills.set(id,latest);
-    const member=this.memberOf(id),mana=member?.player.mana??0;
+    const member=this.memberOf(id);
     const costs=member?this.aiSkillCosts(id,member,latest):undefined;
     for(const skill of latest){
-      // 技能表和蓝耗按版本复用；频率仍按当前法力每逻辑帧更新。
+      // 蓝耗按当前属性更新；频率保留玩家设置，施法和留蓝判断共用这个费用。
       skill.manaCost=costs?this.cachedAiSkillCost(costs,id,skill):this.skillManaCost(id,skill.id,skill.level);
-      skill.frequency=mana>=(skill.manaCost??0)?frequencies?.get(skill.id)??1:0;
+      skill.frequency=frequencies?.get(skill.id)??1;
     }
   }
   /**
