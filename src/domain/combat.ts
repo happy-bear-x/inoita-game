@@ -112,6 +112,28 @@ export interface CombatPort {
   clearEffects(): void;
 }
 
+export type SkillMovementPort = Pick<CombatPort,'canPlaceBody'|'canRelocateReach'|'canRelocateVerify'|'navigationBounds'>;
+
+export function chargeLanding(caster:Combatant,target:Combatant,charge:NonNullable<SkillAction['charge']>,port:SkillMovementPort){
+  return planCharge(caster,target,charge,point=>port.canPlaceBody?.(point)??false,
+    point=>port.canRelocateReach?.(point)??true,point=>port.canRelocateVerify?.(point)??true);
+}
+
+export function rearLanding(caster:Combatant,target:Combatant,port:SkillMovementPort){
+  return planRearTeleport(caster,target,point=>port.canPlaceBody?.(point,target.id)??false,
+    point=>port.canRelocateReach?.(point)??true,port.navigationBounds?.());
+}
+
+// 贴身冲锋只走一个短突进；前方受阻时取最远可站点。
+export function lungeLanding(start:Point,facing:Facing,distance:number,port:SkillMovementPort):Point|undefined {
+  const dx=facing==='east'?1:facing==='west'?-1:0;
+  const dy=facing==='south'?1:facing==='north'?-1:0;
+  for(let step=Math.round(distance);step>=1;step--){
+    const point={x:start.x+dx*step,y:start.y+dy*step};
+    if(port.canPlaceBody?.(point)&&(port.canRelocateReach?.(point)??true))return point;
+  }
+}
+
 function resolveTargetArea(caster:Combatant,current:Combatant|undefined,candidates:Combatant[],rangeUnits:number,
   fallbackCenter:Point=caster.position):{
   targets:Combatant[];selectedTargetId?:string;
@@ -293,13 +315,6 @@ export class CombatController {
     }
     this.approach();
   }
-  /**
-   * 技能强制位移按身体整盒落位。没有整盒查询时**拒绝位移**，不退回窄足底——
-   * 脚点可站但身体压墙的落点会把角色放进墙里。
-   */
-  private canRelocateTo(position:Point,clearanceActorId?:string):boolean {
-    return this.port.canPlaceBody?.(position,clearanceActorId)??false;
-  }
   private approach(): 'no-target'|'no-mana'|undefined {
     if (this.state !== 'approaching' || !this.active) return;
     const caster = this.port.actor(this.casterId), target = this.active.targetId ? this.port.actor(this.active.targetId) : undefined;
@@ -316,10 +331,7 @@ export class CombatController {
       return;
     }
     if(target&&this.active.approached&&this.port.canFinishApproach?.(target.id)===false){this.cancel();return;}
-    const charge=skill?.action.charge&&target?planCharge(caster,target,skill.action.charge,
-      position=>this.canRelocateTo(position),
-      position=>this.port.canRelocateReach?.(position)??true,
-      position=>this.port.canRelocateVerify?.(position)??true):undefined;
+    const charge=skill?.action.charge&&target?chargeLanding(caster,target,skill.action.charge,this.port):undefined;
     if(skill?.action.charge&&!charge){this.cancel();return 'no-target';}
     const manaCost=skill?(this.port.manaCost?.(skill)??skill.manaCost):undefined;
     if(manaCost && this.port.spendMana && !this.port.spendMana(manaCost)) {this.cancel();return 'no-mana';}
@@ -351,18 +363,8 @@ export class CombatController {
           if(!live||!combatStateCapabilities(live.states??[]).canAct){this.cancel(false,false);return;}
           if(action.charge&&skill?.action.charge){
             if(next===0&&action.charge.close){
-              // 贴身冲锋沿着面向冲刺；终点被墙或其他人挡住时，退到这一段里
-              // 最远的可站点，而不是整段跳过——冲刺应停在障碍/地图边界前。
-              const distance=Math.max(0,Math.round(skill.action.charge.lungeDistancePx));
-              const dx=action.facing==='east'?1:action.facing==='west'?-1:0;
-              const dy=action.facing==='south'?1:action.facing==='north'?-1:0;
-              for(let step=distance;step>=1;step--){
-                const lunge={x:action.charge.destination.x+dx*step,y:action.charge.destination.y+dy*step};
-                // 8 像素突进逐像素检查整盒落点，已经覆盖沿途地形、人物和内容机关；
-                // 再跑一次全路线搜索是重复工作。
-                if(this.canRelocateTo(lunge)
-                  &&(this.port.canRelocateReach?.(lunge)??true)){this.port.relocate(lunge);break;}
-              }
+              const lunge=lungeLanding(action.charge.destination,action.facing,skill.action.charge.lungeDistancePx,this.port);
+              if(lunge)this.port.relocate(lunge);
             }else if(next===skill.action.charge.arrivalFrame)this.port.relocate(action.charge.destination);
             live=this.port.actor(this.casterId)??live;
           }
@@ -384,9 +386,7 @@ export class CombatController {
         if(skill?.action.rearTeleport?.frame===next){
           const target=action.target;
           // 瞬移不沿路线走：同地形连通 + 落点整盒站得住就够了，不再跑全路线搜索。
-          const destination=target&&planRearTeleport(action.caster,target,point=>this.canRelocateTo(point,target.id),
-            point=>this.port.canRelocateReach?.(point)??true,
-            this.port.navigationBounds?.());
+          const destination=target&&rearLanding(action.caster,target,this.port);
           if(destination){
             this.port.relocate(destination,target.id);
             action.caster=this.port.actor(this.casterId)!;

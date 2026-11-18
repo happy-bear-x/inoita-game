@@ -116,3 +116,20 @@ test('ambush waits for a basic shot even when rampage reaches the enemy',()=>{
   h.enemy.position.x=96;
   assert.equal(h.skill(),'ambush');
 });
+
+for(const id of ['shield-bash','dark-attack']){
+  test(id+' rates enemies from the reachable landing point',()=>{
+    const h=fixture(id);
+    h.skills[0].action=battle.skills[id].companion!.action!;
+    h.skills[0].frequency=2;
+    h.actor.position.x=320;
+    h.enemy.position.x=392;
+    h.enemy.facing='west';
+    h.bosses.add(h.enemy.id);
+    let open=true;
+    Object.assign(h.port,{canPlaceBody:()=>open});
+    assert.equal(h.skill(),id);
+    open=false;
+    assert.equal(h.skill(),undefined);
+  });
+}

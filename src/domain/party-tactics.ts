@@ -1,6 +1,6 @@
-import { attackDistance, PIXELS_PER_DISTANCE_UNIT } from './basic-attack.ts';
+import { attackDistance, faceTarget, PIXELS_PER_DISTANCE_UNIT } from './basic-attack.ts';
 import type { CombatUnit, EnemyPlayableSkill, SkillAction, SkillEffectCue } from './battle.ts';
-import { canTargetCombatant, resolveCueTargets, type Combatant, type CombatController } from './combat.ts';
+import { canTargetCombatant, chargeLanding, lungeLanding, rearLanding, resolveCueTargets, type SkillMovementPort, type Combatant, type CombatController } from './combat.ts';
 import { attackRangeQueryRadius } from './combat-spatial-index.ts';
 import type { PartySkillUse } from './party.ts';
 import type { PartyPort } from './party-ai.ts';
@@ -9,7 +9,7 @@ import { needsTarget } from './skill-action.ts';
 import { MAX_SKILL_TARGETS } from './skill-unit-sequence.ts';
 
 export type PartyAction = {skill:EnemyPlayableSkill;targetId?:string;urgent?:boolean} | {rescue:Combatant;range:number};
-type TacticsPort = Pick<PartyPort,'skills'|'skillUses'|'vitals'|'actor'|'targetOf'|'attacking'|'attackRange'|'candidates'
+type TacticsPort = SkillMovementPort & Pick<PartyPort,'skills'|'skillUses'|'vitals'|'actor'|'targetOf'|'attacking'|'attackRange'|'candidates'
   |'nearbyCandidates'|'partySlots'|'healScore'|'healCandidates'|'rangeBonusUnits'|'canSpendMana'
   |'ownedSummons'|'isBoss'|'hasBuff'>;
 type Readiness = Pick<CombatController,'skillReady'|'canSelectSkill'>;
@@ -44,6 +44,21 @@ function skillProfile(action:SkillAction):SkillProfile {
 function healthFraction(port:TacticsPort,id:string):number {
   const hp=port.vitals(id);
   return hp&&hp.health>0&&hp.maxHealth>0?hp.health/hp.maxHealth:1;
+}
+
+function impactCaster(actor:Combatant,target:Combatant|undefined,action:SkillAction,port:SkillMovementPort):Combatant|undefined {
+  if(!action.charge&&!action.rearTeleport)return actor;
+  if(!target)return;
+  if(action.charge){
+    const plan=chargeLanding(actor,target,action.charge,port);
+    if(!plan)return;
+    const position=plan.close
+      ? lungeLanding(plan.destination,faceTarget(actor.position,target.position),action.charge.lungeDistancePx,port)??plan.destination
+      : plan.destination;
+    return {...actor,position};
+  }
+  const position=rearLanding(actor,target,port);
+  if(position)return {...actor,position};
 }
 
 /** 同一技能的连续打击共享这次覆盖人数，不会把同一敌人算成一群。 */
@@ -122,6 +137,8 @@ export function choosePartyAction(actor:Combatant,target:Combatant|undefined,por
     const self=port.vitals(actor.id);
     if(profile.costsHealth&&(!self||healthFraction(port,actor.id)<0.6||
       self.mana===undefined||!self.maxMana||self.mana>self.maxMana*0.5))continue;
+    const caster=impactCaster(actor,target,action,port);
+    if(!caster)continue;
     let offense=0,support=0,defense=0,healing=0;
     for(const {cue,unit} of profile.effects){
       if(unit.effect==='visual'||unit.effect==='set-attribute'||unit.effect==='clear-attribute')continue;
@@ -129,7 +146,7 @@ export function choosePartyAction(actor:Combatant,target:Combatant|undefined,por
         healCandidates=port.healCandidates?.()??slots.flatMap(slot=>slot?[{...slot,score:port.healScore?.(slot.actor.id)
           ??Math.round(100*healthFraction(port,slot.actor.id))}]:[]);
       }
-      const affected=resolveCueTargets(cue,actor,target,nearby,slots,cue.target==='target-area'?0:bonus,
+      const affected=resolveCueTargets(cue,caster,target,nearby,slots,cue.target==='target-area'?0:bonus,
         port.healScore,healCandidates).slice(0,MAX_SKILL_TARGETS);
       const periodicHeal=unit.effect==='buff'&&unit.ranks[(skill.level??1)-1]?.effect.periodic.some(p=>p.kind==='healing');
       if((unit.effect==='heal'||periodicHeal)&&uses.includes('heal')){
