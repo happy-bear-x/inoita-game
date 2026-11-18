@@ -6,6 +6,7 @@ import { UI_ICON_FRAMES } from '../src/generated/icon-atlas.ts';
 import { UI_EVENTS } from '../src/application/ui-events.ts';
 import { displaySettings } from '../src/application/display-settings.ts';
 import {parseCrafting} from '../src/domain/crafting.ts';
+import {organizedInventory} from '../src/domain/inventory.ts';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test, {after} from 'node:test';
@@ -2218,7 +2219,7 @@ test('shop inventory quantity badges move with the scrolled grid', t => {
   assert(Math.abs(before - badge.y - scroll.scrollTop * scale) < .01, '数量角标与格子一起移动');
 });
 
-test('bag grid drags swap special items and organise from a category updates every layout', t => {
+test('bag grid drags swap special items and organise keeps manual placements', t => {
   const f = fixture(); t.after(f.cleanup);
   const source = f.add('novice-weapon-scroll'), other = f.add('novice-jewel');
   f.menu.show('bag');
@@ -2238,8 +2239,13 @@ test('bag grid drags swap special items and organise from a category updates eve
   let updates=0;const unsubscribe=f.session.subscribe(()=>updates++);t.after(unsubscribe);
   f.scene.click(f.scene.button('整理'));
   assert.equal(updates,1,'整理按钮在分类页面也一次性更新全部与分类');
-  assert.deepEqual(f.session.bag.allCells.map(entry=>entry!.id),f.session.bag.entries.map(entry=>entry.id));
-  for(const cells of Object.values(f.session.bag.pouchCells))assert.equal(cells.some(entry=>entry===undefined),false);
+  assert.equal(f.session.bag.allCells[to]!.id,source.id,'拖过的物品留在全部页的原格');
+  assert.equal(f.session.bag.pouchCells.material[8]!.id,source.id,'分类页留在落点格');
+  const rank=new Map(organizedInventory(f.session.bag.counts,items.items).map(([item],index)=>[item,index]));
+  const loose=f.session.bag.pouchCells.material.flatMap((entry,cell)=>entry&&cell!==8?[{entry,cell}]:[]);
+  assert.deepEqual(loose.map(({entry})=>rank.get(entry.item)),loose.map(({entry})=>rank.get(entry.item)).sort((a,b)=>a!-b!),'其余物品按默认顺序');
+  assert.deepEqual(loose.map(({cell})=>cell),loose.map(({cell})=>cell).sort((a,b)=>a-b),'其余物品填进前面的格号');
+  assert.deepEqual(f.session.bag.counts,counts,'整理不改变数量');
   f.scene.click(f.scene.button('整理'));assert.equal(updates,1,'重复整理无更新');
 });
 
@@ -2439,29 +2445,30 @@ test('crafting bag filters retain matching item nodes and the scrolling area',t=
   f.scene.click(item);assert.equal(bagItem(),item);
 });
 
-test('fusion socket creation only accepts hole-less equipment and creates the rolled sockets', t => {
+test('fusion socket opening repeats until the quality cap', t => {
   const f=fixture();t.after(f.cleanup);const bag=f.session.bag;
   const target=bag.equipment['main-hand']!;bag.unequip('main-hand');
   const state=bag.captureState(),entry=state.instances.find(value=>value.id===target)!;
   entry.numbers!.sockets=0;entry.numbers!.grade=0;bag.restoreState(state);
   f.session.gainMoney(100000);
   const claws=bag.count('sharp-claw'),jewels=bag.count('novice-jewel');
-  f.add('sharp-claw',8);f.add('novice-jewel',1);
+  f.add('sharp-claw',32);f.add('novice-jewel',4);
   const machine=Object.keys(world.actors).find(id=>world.actors[id].service==='fusion-machine')!;
   f.menu.openCrafting(machine);
   f.scene.click(f.scene.button('宝石孔生成'));
   const name=items.items[bag.get(target)!.item].name;
   f.scene.click(f.scene.button(name));
-  const originalRandom=Math.random;Math.random=()=>0;t.after(()=>{Math.random=originalRandom;});
   const money=f.session.money;
-  f.scene.click(f.scene.button('组合'));
-  f.scene.click(f.scene.button('是'));
-  assert.equal(bag.get(target)!.numbers!.sockets,1);
-  assert.equal(f.session.money,money-1);
+  for(const sockets of [1,2,3,4]){
+    f.scene.click(f.scene.button('开孔'));
+    f.scene.click(f.scene.button('是'));
+    assert.equal(bag.get(target)!.numbers!.sockets,sockets);
+    assert.equal(f.session.money,money-sockets);
+  }
   assert.equal(bag.count('sharp-claw'),claws);
   assert.equal(bag.count('novice-jewel'),jewels);
   f.scene.click(f.scene.button(name));
-  assert(visibleDomLabels(f).some(label=>label.text.replace(/\n/g,'')==='不含宝石孔的道具才可以进行合成。'));
+  assert(visibleDomLabels(f).some(label=>label.text.replace(/\n/g,'')==='宝石孔已达上限。'));
 });
 
 test('save page writes the loaded world into the chosen slot and asks before overwriting it', t => {

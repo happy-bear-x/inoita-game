@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { inventoryView, organizedInventory, INVENTORY_LABELS, INVENTORY_POUCHES, INVENTORY_SIDE_FILTERS, pouchFor, type InventoryPouch, type InventoryView } from '../src/domain/inventory.ts';
+import { inventoryView, organizedCells, organizedInventory, INVENTORY_LABELS, INVENTORY_POUCHES, INVENTORY_SIDE_FILTERS, pouchFor, type InventoryPouch, type InventoryView } from '../src/domain/inventory.ts';
 import { ITEM_CATEGORIES, type StoryItem } from '../src/domain/story-interface.ts';
 import type { EquipmentSlot, ItemCatalog, ItemDefinition } from '../src/domain/items.ts';
 import { Session } from '../src/domain/session.ts';
@@ -113,6 +113,24 @@ test('organize orders categories, natural names, and duplicate names without mut
   assert.deepEqual([...inventory], before);
   for (const [id, count] of sorted) assert.equal(count, inventory.get(id));
   assert.deepEqual(organizedInventory(new Map(sorted), items), sorted);
+});
+
+test('organizedCells anchors manually placed items and sorts the rest around them', () => {
+  const ranks = new Map([['sword',0],['a',1],['b',2],['c',3],['d',4]]);
+  const compare = (left: string, right: string) => ranks.get(left)! - ranks.get(right)!;
+  // 没有固定物品时整页排序并收拢，和原来的整理一致。
+  assert.deepEqual(organizedCells([undefined,'c','a',undefined,'b'], new Set(), compare), ['a','b','c']);
+  // 固定在格 1 的物品留在格 1，其余物品按顺序填进剩下的格号。
+  assert.deepEqual(organizedCells(['c','d','a','b'], new Set(['d']), compare), ['a','d','b','c']);
+  // 固定物品在较远的格号时，中间的空位保留；末尾没有被固定物品撑长。
+  assert.deepEqual(organizedCells(['b',undefined,undefined,'a'], new Set(['a']), compare), ['b',undefined,undefined,'a']);
+  // 固定表里不在这页的实例直接忽略。
+  assert.deepEqual(organizedCells(['b','a'], new Set(['ghost']), compare), ['a','b']);
+  // 全部固定时保持玩家摆好的顺序。
+  assert.deepEqual(organizedCells(['b','a'], new Set(['a','b']), compare), ['b','a']);
+  const cells = ['c','d','a','b'];
+  organizedCells(cells, new Set(['d']), compare);
+  assert.deepEqual(cells, ['c','d','a','b'], '不修改输入');
 });
 
 test('session keeps organized order across pickups and hand-in without changing quest state or counts', () => {

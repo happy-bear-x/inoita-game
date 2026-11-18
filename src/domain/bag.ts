@@ -1,7 +1,7 @@
 import { equipmentLevel, type EquipmentChaos } from './chaos-equipment.ts';
 import { ItemApplicationError, ITEM_NOTICE_TEXT, type ItemNotice } from './item-application.ts';
 import { SHORTCUT_ENTRY_COUNT, dedupeSkillShortcuts, type ShortcutRow } from './shortcut-bar.ts';
-import { INVENTORY_POUCHES, organizedInventory, pouchFor, type InventoryPouch, type InventoryView } from './inventory.ts';
+import { INVENTORY_POUCHES, INVENTORY_SIDE_FILTERS, organizedCells, organizedInventory, pouchFor, type InventoryPouch, type InventoryView } from './inventory.ts';
 import type { StoryItem } from './story-interface.ts';
 import type { EnhancementOdds } from './enhancement.ts';
 import { EQUIPMENT_SLOTS, USE_LABELS, USE_HANDLING, USE_INTERFACE_ONLY, USE_NOT_IMPLEMENTED, unimplementedItemUse, type Equipment, type EquipmentSlot, type ItemCatalog, type ItemInstance, type ItemResult } from './items.ts';
@@ -38,6 +38,8 @@ export interface BagState {
   pouches: Record<InventoryPouch, (string | undefined)[]>;
   /** 全部页面独立保存格位，与分类页面共享物品实例。 */
   allCells: (string | undefined)[];
+  /** 玩家手动摆放过的实例：每个页面独立，整理时留在当前格号。 */
+  pinnedItems: Record<InventoryView, string[]>;
   worn: Equipment;
   companionEquipment: [string, Equipment][];
   /** 已离队剧情伙伴的普通装备表：实例仍在背包里，重新入队时穿回同一批。 */
@@ -48,13 +50,18 @@ export interface BagState {
   recipes: string[];
 }
 
+/** 空的固定表：每个页面一组实例 id，整理时这些物品留在当前格号。 */
+function emptyPinnedItems(): Record<InventoryView, Set<string>> {
+  return Object.fromEntries(INVENTORY_SIDE_FILTERS.map(view => [view, new Set<string>()])) as Record<InventoryView, Set<string>>;
+}
+
 /**
  * 一份背包状态是否自洽。
  *
- * 这是「全部页与分类袋各存一套格位」这套手工纪律的**唯一机器检查**：同一批物品的落位分两处
- * 保存，`put`、`clearCells`、`placeInCell`、`organize` 每次都要同时维护。将来多出任何一条
- * 绕过它们的写入路径，两套数组就会悄悄分叉；加上这道检查之前，这种分叉要到下一次恢复检查点
- * 才报错，届时已经难定位是哪条路径写坏的。
+ * 这是「全部页与分类袋各存一套格位、每个页面另记一份固定表」这套手工纪律的**唯一机器检查**：
+ * 同一批物品的落位分两处保存，固定表又按页面引用这些实例，`put`、`clearCells`、`placeInCell`、
+ * `organize` 每次都要同时维护。将来多出任何一条绕过它们的写入路径，两套数组就会悄悄分叉；
+ * 加上这道检查之前，这种分叉要到下一次恢复检查点才报错，届时已经难定位是哪条路径写坏的。
  *
  * 三处调用：`captureState`（坏状态不许出站）、`restoreState`（不许把坏存档灌进来）、
  * `verifyConsistency`（测试显式自检）。**不能只挂在 `notify()` 上**——
@@ -85,6 +92,19 @@ export function verifyBagState(state: BagState, catalog: ItemCatalog): void {
   }
   const all = state.allCells.filter((id): id is string => id != null);
   if (new Set(all).size !== all.length || all.some(id => !loose.has(id)) || all.length !== loose.size) throw new Error('全部页与分类袋的物品不一致');
+  const pinned = state.pinnedItems;
+  if (!pinned || typeof pinned !== 'object' || Array.isArray(pinned)) throw new Error('背包固定格位引用无效');
+  for (const key of Object.keys(pinned)) if (!(INVENTORY_SIDE_FILTERS as readonly string[]).includes(key)) throw new Error('背包固定格位引用无效');
+  for (const view of INVENTORY_SIDE_FILTERS) {
+    const row = (pinned as Record<string, unknown>)[view];
+    if (!Array.isArray(row)) throw new Error('背包固定格位引用无效');
+    const present = new Set((view === 'all' ? state.allCells : state.pouches[view]).filter((id): id is string => id != null));
+    const seen = new Set<string>();
+    for (const id of row) {
+      if (typeof id !== 'string' || !present.has(id) || seen.has(id)) throw new Error('背包固定格位引用无效');
+      seen.add(id);
+    }
+  }
   const equipped = new Set<string>();
   for (const equipment of [state.worn, ...state.companionEquipment.map(([, equipment]) => equipment)]) {
     for (const [slot, id] of Object.entries(equipment)) {
@@ -124,6 +144,8 @@ export class Bag {
    */
   private pouches: Record<InventoryPouch, (string | undefined)[]> = { weapon: [], armor: [], consumable: [], material: [], quest: [] };
   private all: (string | undefined)[] = [];
+  /** 玩家手动摆放过的实例，按页面分开记；`organize` 不移动这些物品。 */
+  private pinned = emptyPinnedItems();
   private worn: Equipment = {};
   private readonly companionEquipment = new Map<string, Equipment>();
   private readonly retiredEquipment = new Map<string, Equipment>();
@@ -189,13 +211,15 @@ export class Bag {
   }
 
   private snapshot(): BagState {
-    return structuredClone({instances:[...this.instances.values()],pouches:this.pouches,allCells:this.all,worn:this.worn,
+    return structuredClone({instances:[...this.instances.values()],pouches:this.pouches,allCells:this.all,
+      pinnedItems:Object.fromEntries(INVENTORY_SIDE_FILTERS.map(view=>[view,[...this.pinned[view]]])) as Record<InventoryView,string[]>,worn:this.worn,
       companionEquipment:[...this.companionEquipment],retiredEquipment:[...this.retiredEquipment],serial:this.serial,shortcuts:[...this.shortcuts],recipes:[...this.recipeBook]});
   }
   private writeState(restored: BagState): void {
     this.instances.clear();for(const entry of restored.instances)this.instances.set(entry.id,entry);
     this.pouches=Object.fromEntries(Object.entries(restored.pouches).map(([view,cells])=>[view,cells.map(id=>id??undefined)])) as BagState['pouches'];
     this.all=restored.allCells.map(id=>id??undefined);this.worn=restored.worn;this.serial=restored.serial;
+    this.pinned=Object.fromEntries(INVENTORY_SIDE_FILTERS.map(view=>[view,new Set(restored.pinnedItems[view])])) as Record<InventoryView,Set<string>>;
     this.companionEquipment.clear();for(const [owner,equipment] of restored.companionEquipment)this.companionEquipment.set(owner,equipment);
     this.retiredEquipment.clear();for(const [owner,equipment] of restored.retiredEquipment??[])this.retiredEquipment.set(owner,equipment);
     this.shortcuts.clear();for(const [owner,row] of restored.shortcuts)this.shortcuts.set(owner,row);
@@ -229,6 +253,8 @@ export class Bag {
       const cell = cells?.indexOf(id) ?? -1;
       if (cells && cell >= 0) { cells[cell] = undefined; this.trim(cells); }
     }
+    // 物品离开格位后不再固定：固定只属于还在背包里的实例。
+    for (const view of INVENTORY_SIDE_FILTERS) this.pinned[view].delete(id);
   }
   /** 五个袋依次拼接的紧凑 id 列表，即背包里所有散装物品的次序。 */
   private orderedIds(): string[] {
@@ -376,21 +402,22 @@ export class Bag {
   }
   private notify(): void { this.revision++; this.changed(); }
   /**
-   * 同时整理六个页面：按分类及中文自然名称排序，收拢空位。
+   * 同时整理六个页面：按分类及中文自然名称排序。玩家手动摆过的物品留在原格号，
+   * 其余物品排序后填进剩下的格号；没有固定物品的页面仍收拢空位。
    * 顺序与空位都没变就不通知更新。
    */
   organize(items: Readonly<Record<string, StoryItem>> = this.catalog.items): void {
     const ranks=new Map(organizedInventory(this.counts,items).map(([item],index)=>[item,index]));
+    const compare=(left:string,right:string)=>{
+      const a=this.instances.get(left)!.item,b=this.instances.get(right)!.item;
+      return INVENTORY_POUCHES.indexOf(pouchFor(this.catalog.items[a]))-INVENTORY_POUCHES.indexOf(pouchFor(this.catalog.items[b])) ||
+        ranks.get(a)!-ranks.get(b)!;
+    };
     let changed=false;
-    for(const target of ['all', ...INVENTORY_POUCHES] as const){
-      const cells=target==='all'?this.all:this.pouches[target],current=cells.filter((id):id is string => id !== undefined);
-      const sorted=[...current].sort((a,b)=>{
-        const left=this.instances.get(a)!.item,right=this.instances.get(b)!.item;
-        return INVENTORY_POUCHES.indexOf(pouchFor(this.catalog.items[left]))-INVENTORY_POUCHES.indexOf(pouchFor(this.catalog.items[right])) ||
-          ranks.get(left)!-ranks.get(right)!;
-      });
-      // 有空格时即使序已排好也要压缩，否则「整理」对空位不起作用。
-      if(current.length===cells.length&&sorted.every((id,index)=>id===current[index]))continue;
+    for(const target of INVENTORY_SIDE_FILTERS){
+      const cells=target==='all'?this.all:this.pouches[target];
+      const sorted=organizedCells(cells,this.pinned[target],compare);
+      if(sorted.length===cells.length&&sorted.every((id,index)=>id===cells[index]))continue;
       if(target==='all')this.all=sorted;else this.pouches[target]=sorted;
       changed=true;
     }
@@ -416,6 +443,8 @@ export class Bag {
     const occupant=cells[cell];
     cells[cell]=id;cells[from]=occupant;
     this.trim(cells);
+    // 只固定玩家直接拖动的这件；被换走的对方仍参与之后的整理。
+    this.pinned[view].add(id);
     this.notify();return true;
   }
   private slotCandidates(entry: ItemInstance, classId: string, allowLocked: boolean): EquipmentSlot[] {

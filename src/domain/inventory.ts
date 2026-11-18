@@ -95,6 +95,30 @@ export function organizedInventory(inventory: ReadonlyMap<string, number>, items
   });
 }
 
+/**
+ * 排好一个背包页面的格位：手动摆放过的物品留在原格号，其余物品按 `compare` 排序后
+ * 从 0 开始填进剩下的格号。没有固定物品时等同于「整页排序并收拢空位」。
+ */
+export function organizedCells(
+  cells: readonly (string | undefined)[],
+  pinned: ReadonlySet<string>,
+  compare: (left: string, right: string) => number,
+): (string | undefined)[] {
+  const anchors = new Map<number, string>();
+  const loose: string[] = [];
+  cells.forEach((id, index) => {
+    if (id === undefined) return;
+    if (pinned.has(id)) anchors.set(index, id); else loose.push(id);
+  });
+  loose.sort(compare);
+  const result: (string | undefined)[] = [];
+  let next = 0;
+  for (let index = 0; index < cells.length; index += 1) result.push(anchors.get(index) ?? loose[next++]);
+  // 固定物品后面的空格才是有效空位；末尾没放满的空格仍按整理收拢。
+  while (result.length && result[result.length - 1] === undefined) result.pop();
+  return result;
+}
+
 type OrderableItem = StoryItem & { kind?: string; level?: number };
 
 /** 调试发放列表：装备按种类首次出现顺序分组，同组内等级从低到高；其它类别保持原顺序。 */

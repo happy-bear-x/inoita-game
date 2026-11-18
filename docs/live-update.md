@@ -18,7 +18,7 @@ APK 把 Vite 构建的 `dist/`（当前约 113MB、4200 多个文件）打进 as
 
 ## 页面来源
 
-- 新壳的页面 origin 固定为 `https://inoita.invalid`。2.1.0 起旧 origin（`http://127.0.0.1:47653`）下的本地存档、设置和诊断数据都不迁移；升级后本地数据从空开始，云存档仍可恢复 1 格式存档槽。
+- 新壳的页面 origin 固定为 `https://inoita.invalid`。2.1.0 起旧 origin（`http://127.0.0.1:47653`）下的本地存档、设置和诊断数据都不迁移；升级后本地数据从空开始，云存档仍可恢复 2 格式存档槽。
 - `AssetContentServer` 在 `index.html` 的 `<head>` 最前面插入 `/__native/bootstrap.js`。这个脚本在模块脚本之前定义 `__inoitaEndpoints`、`__inoitaBuildInfo` 和 `window.InotiaNative`。
 
 ## 服务端产物

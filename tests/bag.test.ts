@@ -139,6 +139,19 @@ test('enhancement and sockets belong to each instance; bad targets never consume
   assert.equal(bag.get(duplicate.id)!.gems.length,0);
 });
 
+test('applySockets only increases the stored socket count',()=>{
+  let changes=0;const bag=create('dark-knight',()=>changes++);
+  const target=bag.equipment['main-hand']!;bag.unequip('main-hand');
+  const state=bag.captureState(),entry=state.instances.find(value=>value.id===target)!;
+  entry.numbers={modifiers:[],gemModifiers:[],magicPercent:0,sockets:1,enhancementUses:0};bag.restoreState(state);
+  const revision=bag.revision,updates=changes;
+  assert.throws(()=>bag.applySockets(target,1,revision),/宝石孔数量无效/);
+  assert.throws(()=>bag.applySockets(target,0,revision),/宝石孔数量无效/);
+  bag.applySockets(target,2,revision);
+  assert.equal(bag.get(target)!.numbers!.sockets,2);assert.equal(changes,updates+1);
+  assert.throws(()=>bag.applySockets(target,3,revision),/合成装备已变化/);
+});
+
 test('packs, boxes and recipes retain their actual rewards',()=>{
   const bag=create();
   const pack=prepareItem(bag,d=>d.use?.kind==='pack'),rewards=catalog.items[pack.item].use!.rewards!;
@@ -257,8 +270,8 @@ test('an emptied stack leaves its cell empty and the next item fills the first f
 test('organise compacts all layouts and repeated calls leave the revision alone',()=>{
   const bag=new Bag(()=>{},catalog,'dark-knight');const [first,second,third]=pick('material',3);
   bag.add(first!);bag.add(second!);bag.add(third!);
-  bag.placeInCell(bag.entries[2]!.id,'material',4);
-  assert.equal(bag.pouchCells.material.length,5,'落格在袋里留出空位');
+  bag.take(bag.entries[1]!.id,1);
+  assert.equal(bag.pouchCells.material.some(entry=>entry===undefined),true,'用光后在袋里留下空位');
   const before=bag.entries.map(entry=>entry.item).sort();
   bag.organize(catalog.items);
   assert.equal(bag.pouchCells.material.some(entry=>entry===undefined),false,'空位被收拢');
@@ -410,20 +423,114 @@ test('removal, stacking and pickups maintain both independently arranged layouts
   assert.equal(bag.pouchCells.material.some(entry=>entry?.id===tail),false);
 });
 
-test('organise resets all six layouts in one notification and keeps instances and quantities',()=>{
+test('organise moves all six layouts in one notification while manual placements stay put',()=>{
   const armor=Object.entries(catalog.items).find(([,item])=>pouchFor(item)==='armor')![0];
   let updates=0;const bag=create('dark-knight',()=>updates++,[weapons(1)[0],armor,pick('consumable',1)[0],pick('material',1)[0],pick('quest',1)[0]]),before=bag.entries.sort((a,b)=>a.id.localeCompare(b.id));
-  bag.placeInCell(bag.allCells[0]!.id,'all',bag.allCells.length+3);
+  const allMoved=bag.allCells[0]!.id;
+  bag.placeInCell(allMoved,'all',bag.allCells.length+3);
+  const pouchMoved:Record<string,string>={};
   for(const pouch of ['weapon','armor','consumable','material','quest'] as const){
-    const cells=bag.pouchCells[pouch];bag.placeInCell(cells[0]!.id,pouch,cells.length+2);
+    const cells=bag.pouchCells[pouch];pouchMoved[pouch]=cells[0]!.id;
+    bag.placeInCell(cells[0]!.id,pouch,cells.length+2);
   }
   updates=0;bag.organize();
   assert.equal(updates,1);
-  assert.deepEqual(bag.allCells.filter(Boolean).map(entry=>entry!.id),bag.entries.map(entry=>entry.id));
-  assert.equal(bag.allCells.some(entry=>entry===undefined),false);
-  for(const cells of Object.values(bag.pouchCells))assert.equal(cells.some(entry=>entry===undefined),false);
+  assert.equal(bag.allCells[bag.allCells.length-1]!.id,allMoved,'全部页的手动物品留在远处');
+  assert.deepEqual(bag.allCells.slice(0,4).map(entry=>entry!.item),[armor,pick('consumable',1)[0],pick('material',1)[0],pick('quest',1)[0]],'其余物品按分类顺序收拢');
+  for(const pouch of ['weapon','armor','consumable','material','quest'] as const){
+    const cells=bag.pouchCells[pouch];
+    assert.equal(cells[3]!.id,pouchMoved[pouch],`${pouch} 的手动物品留在远处`);
+    assert.equal(cells.filter(Boolean).length,1,`${pouch} 没有别的物品`);
+  }
   assert.deepEqual(bag.entries.sort((a,b)=>a.id.localeCompare(b.id)),before);
   bag.organize();assert.equal(updates,1);
+});
+
+test('organise keeps the lamp in the first cell after the player drops it there',()=>{
+  const bag=new Bag(()=>{},catalog,'dark-knight'),[weapon]=weapons(1);
+  bag.add(weapon!);bag.add('lamp');bag.add('healing-potion-s');
+  const lamp=bag.entries.find(entry=>entry.item==='lamp')!;
+  assert.ok(bag.allCells.findIndex(entry=>entry?.id===lamp.id)>0,'神灯原本不在第一格');
+  assert.equal(bag.placeInCell(lamp.id,'all',0),true);
+  bag.organize();
+  assert.equal(bag.allCells[0]!.id,lamp.id,'整理后神灯仍在第一格');
+  assert.deepEqual(bag.captureState().pinnedItems.all,[lamp.id],'只固定拖动的这件');
+  const rank=new Map(organizedInventory(bag.counts,catalog.items).map(([item],index)=>[item,index]));
+  const rest=bag.allCells.slice(1).flatMap(entry=>entry?[entry]:[]);
+  assert.equal(rest.length,2);
+  assert.deepEqual(rest.map(entry=>rank.get(entry.item)),rest.map(entry=>rank.get(entry.item)).sort((a,b)=>a!-b!),'其余物品按默认顺序排列');
+});
+
+test('a drag pins the item only on the page where it was dragged',()=>{
+  const bag=new Bag(()=>{},catalog,'dark-knight'),[first,second]=pick('material',2);
+  bag.add(first!);bag.add(second!);
+  const moved=bag.entries[0]!.id;
+  assert.equal(bag.placeInCell(moved,'material',4),true);
+  bag.organize();
+  assert.equal(bag.pouchCells.material[4]!.id,moved,'分类页留在格 4');
+  assert.deepEqual(bag.captureState().pinnedItems.material,[moved]);
+  assert.deepEqual(bag.captureState().pinnedItems.all,[],'全部页没有固定');
+  assert.equal(bag.allCells.some(entry=>entry===undefined),false,'全部页照常收拢');
+  assert.equal(bag.allCells.length,2);
+});
+
+test('a swap pins only the dragged item and the displaced item sorts again',()=>{
+  const bag=new Bag(()=>{},catalog,'dark-knight'),items=pick('material',4);
+  for(const item of items)bag.add(item);
+  bag.organize();
+  const ids=bag.allCells.map(entry=>entry!.id),moved=ids[3]!;
+  assert.equal(bag.placeInCell(moved,'all',0),true);
+  assert.deepEqual(bag.allCells.map(entry=>entry!.id),[moved,ids[1],ids[2],ids[0]]);
+  bag.organize();
+  assert.deepEqual(bag.allCells.map(entry=>entry!.id),[moved,ids[0],ids[1],ids[2]],'只固定拖动的物品');
+  assert.deepEqual(bag.captureState().pinnedItems.all,[moved]);
+});
+
+test('an item that leaves the bag forgets its pinned cell',()=>{
+  const bag=new Bag(()=>{},catalog,'dark-knight'),[first,second]=pick('material',2);
+  bag.add(first!);bag.add(second!);
+  const moved=bag.entries[0]!.id;
+  bag.placeInCell(moved,'material',4);
+  bag.take(moved,1);
+  assert.deepEqual(bag.captureState().pinnedItems.material,[],'用光后不再固定');
+  bag.organize();
+  assert.equal(bag.pouchCells.material.some(entry=>entry===undefined),false,'没有固定物品时照常收拢');
+});
+
+test('equipping a pinned item clears its pin',()=>{
+  const bag=create('warrior',()=>{},[]),id=bag.equipment['main-hand']!;
+  bag.unequip('main-hand');
+  bag.placeInCell(id,'weapon',4);
+  assert.deepEqual(bag.captureState().pinnedItems.weapon,[id]);
+  bag.equip(id,'main-hand');
+  assert.deepEqual(bag.captureState().pinnedItems.weapon,[],'穿上后不再固定');
+  assert.equal(bag.equipment['main-hand'],id);
+});
+
+test('a pinned layout survives capture and restore',()=>{
+  const bag=create('dark-knight',()=>{},[]),[first,second]=pick('material',2);
+  bag.add(first!);bag.add(second!);
+  const moved=bag.entries[0]!.id;
+  bag.placeInCell(moved,'material',5);
+  const state=bag.captureState(),other=new Bag(()=>{},catalog,'dark-knight');
+  other.restoreState(state);
+  other.organize();
+  assert.equal(other.pouchCells.material[5]!.id,moved,'读档后整理仍留在原格');
+  assert.deepEqual(other.captureState().pinnedItems.material,[moved]);
+});
+
+test('bag state refuses invalid pinned item references',()=>{
+  const bag=create(),entry=bag.entries[0]!;
+  bag.placeInCell(entry.id,'all',bag.allCells.length+1);
+  const state=bag.captureState();
+  verifyBagState(state,catalog);
+  const broken=(change:(value:ReturnType<typeof bag.captureState>)=>void)=>{const next=structuredClone(state);change(next);return next;};
+  assert.throws(()=>verifyBagState(broken(value=>{delete (value as unknown as Record<string,unknown>).pinnedItems;}),catalog),/背包固定格位引用无效/,'缺少固定表');
+  assert.throws(()=>verifyBagState(broken(value=>{(value.pinnedItems as unknown as Record<string,unknown>).weapon=undefined;}),catalog),/背包固定格位引用无效/,'缺少页面');
+  assert.throws(()=>verifyBagState(broken(value=>{value.pinnedItems.all.push('owned-ghost');}),catalog),/背包固定格位引用无效/,'不存在的实例');
+  assert.throws(()=>verifyBagState(broken(value=>{value.pinnedItems.all.push(value.pinnedItems.all[0]!);}),catalog),/背包固定格位引用无效/,'重复固定');
+  assert.throws(()=>verifyBagState(broken(value=>{value.pinnedItems.weapon.push(value.pinnedItems.all[0]!);}),catalog),/背包固定格位引用无效/,'固定到错误的页面');
+  assert.throws(()=>verifyBagState(broken(value=>{(value.pinnedItems as unknown as Record<string,unknown>).extra=[];}),catalog),/背包固定格位引用无效/,'未知页面');
 });
 
 test('checkpoint copies and restores distinct all and category positions',()=>{
