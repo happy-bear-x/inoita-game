@@ -12,7 +12,7 @@ import { QuestMarker } from '../rendering/quest-marker.ts';
 import { questNotices, type QuestNoticeState } from '../ui/quest-progress.ts';
 import Phaser from 'phaser';
 import { ExitTrigger, overlapsFootRect } from '../domain/navigation.ts';
-import { claimNearTrigger } from '../domain/story-trigger-occupancy.ts';
+import { claimStoryTrigger } from '../domain/story-trigger-occupancy.ts';
 import { buildStoryTriggerIndex, type StoryTriggerIndex } from '../domain/story-trigger-index.ts';
 import { NavigationWorld, collisionAt } from '../domain/navigation-world.ts';
 import { MovementWorld } from '../rendering/movement-world.ts';
@@ -44,6 +44,7 @@ import { pullLegendaryWeapon } from '../domain/legendary-weapon.ts';
 import { GroundLootView } from '../rendering/ground-loot.ts';
 import { PickupMessages } from '../rendering/pickup-messages.ts';
 import { BasicAttackRepeat } from '../domain/basic-attack-repeat.ts';
+import type { StoryEvent } from '../domain/story-graph.ts';
 import { storyReachableScripts } from '../domain/story-entry.ts';
 import { buildEntryPlan, entryPlanAssets } from '../application/entry-plan.ts';
 import { loadEntryPlan } from '../application/entry-loading.ts';
@@ -181,7 +182,7 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
   private entryStoryStarted?:() => void;
   private readonly encounterResults=new Set<string>();
   private baseEntities:EntityPlacement[]=[];
-  private readonly occupiedRegions=new Set<string>();
+  private occupiedTriggers=new Set<string>();
   /** 本图的区域/近身事件与角色分组；进图和剧情投影后各建一次。 */
   private triggerIndex?:StoryTriggerIndex<Character>;
   private refreshStateSignatureValue?:string;
@@ -282,7 +283,7 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
     this.questStatuses.clear();this.questStatusVersion=undefined;this.questNoticesReady=false;
     this.prefetchTarget = undefined; this.prefetchTask = undefined;
     this.prefetchFailedTarget = undefined; this.prefetchRetryAt = 0;
-    this.baseEntities=[];this.occupiedRegions.clear();this.encounterResults.clear();this.triggerIndex=undefined;this.refreshStateSignatureValue=undefined;this.lastInteractionScan=undefined;this.interactionRevision=0;this.charactersRevision=0;this.interactionIndex=undefined;this.interactionIndexRevision=undefined;this.interactionIndexCharactersRevision=undefined;
+    this.baseEntities=[];this.occupiedTriggers=new Set();this.encounterResults.clear();this.triggerIndex=undefined;this.refreshStateSignatureValue=undefined;this.lastInteractionScan=undefined;this.interactionRevision=0;this.charactersRevision=0;this.interactionIndex=undefined;this.interactionIndexRevision=undefined;this.interactionIndexCharactersRevision=undefined;
     this.projectedActorIds.clear();
   }
   create(): void {
@@ -2415,52 +2416,37 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     }
     this.collectGroundLoot(pos);
     this.updateInteractionTarget(); this.syncHud();
-    const triggerIndex=this.triggerIndex;
-    for (const event of triggerIndex?.regionEvents ?? this.app.campaign.events)if(event.source==='region'&&event.map===this.map?.id&&event.region){
-      const inside=overlapsFootRect(pos,event.region);
-      if(!inside){this.occupiedRegions.delete(event.id);continue;}
-      if(this.occupiedRegions.has(event.id)){
-        // 调试过滤解除后，仍站在区域里的事件要能补触发；已播完或条件不成立的保持占用。
-        const canRetry=this.app.director.allowsAutomaticEvent(event)
-          &&!this.app.director.runtime.snapshot().completedEvents.includes(event.id)
-          &&(!event.condition||this.app.session.evaluateCondition(event.condition));
-        if(!canRetry)continue;
-        this.occupiedRegions.delete(event.id);
-      }
-      if(event.condition&&!this.app.session.evaluateCondition(event.condition))continue;
-      this.occupiedRegions.add(event.id);
-      this.playStory(()=>this.app.director.enterRegion(event.id,event.map!).then(played=>{
-        // 没播成、且事件还没结束（导演这一刻不收、或运行时不认这次触发）就放下这块占用，
-        // 让还站在区域里的玩家下一帧能再试一次。已经播完的事件保持占用，不再反复触发。
-        if(!played&&this.app.director.allowsAutomaticEvent(event)
-          &&!this.app.director.runtime.snapshot().completedEvents.includes(event.id))this.occupiedRegions.delete(event.id);
-        return played;
-      }));return;
-    }
-    // 近身触发（原版 `near_npc_field`）：走到那个角色旁边就起演。相邻判定与原版
-    // `PLAYER_DoCheckNearNPC` 同口径（曼哈顿 24 px，见 findings 94），占用表与区域触发共用，
-    // 避免同一段戏每帧重复上报。
+    const triggerIndex = this.triggerIndex;
+    const director = this.app.director, occupied = this.occupiedTriggers;
+    const eligible = (event: StoryEvent): boolean => {
+      if (!director.allowsAutomaticEvent(event) || (event.condition && !this.app.session.evaluateCondition(event.condition))) return false;
+      const status = director.runtime.eventStatus(event.id);
+      return status === 'idle' || (status === 'completed' && event.repeat === true);
+    };
+    const regionEvents = triggerIndex?.regionEvents
+      ?? this.app.campaign.events.filter(event => event.source === 'region' && event.map === this.map?.id);
+    const region = claimStoryTrigger(regionEvents, occupied,
+      event => event.region && overlapsFootRect(pos, event.region) ? true : null,
+      eligible);
+    // 近身距离按角色实际碰撞盒判断。即使本帧先触发区域，也要释放已经离开的角色占用。
     const nearEvents = triggerIndex?.nearEvents
       ?? this.app.campaign.events.filter(event => event.source === 'near' && event.near && (!event.map || event.map === this.map?.id));
-    const near = claimNearTrigger(
-      nearEvents,
-      this.occupiedRegions,
-      event => {
-        const candidates = event.near ? triggerIndex?.charactersByActor.get(event.near) : undefined;
-        return (candidates ?? this.characters).find(character => character.entity.actor === event.near
-          && (!event.nearCharacterId || character.entity.characterId === event.nearCharacterId)
-          && character.container.visible
-          && nearInteractive(pos, character.container, character.actor.collision, !!character.entity.flip)) ?? null;
-      },
-      event => !event.condition || this.app.session.evaluateCondition(event.condition),
-      event => this.app.director.allowsAutomaticEvent(event));
-    if (near) {
-      const { event, beside } = near;
-      this.playStory(() => this.app.director.approach(event.near!, this.map?.id, beside.entity.characterId).then(played => {
-        if (!played && this.app.director.allowsAutomaticEvent(event)
-          && !this.app.director.runtime.snapshot().completedEvents.includes(event.id)) this.occupiedRegions.delete(event.id);
+    const near = claimStoryTrigger(nearEvents, occupied, event => {
+      const candidates = event.near ? triggerIndex?.charactersByActor.get(event.near) : undefined;
+      return (candidates ?? this.characters).find(character => character.entity.actor === event.near
+        && (!event.nearCharacterId || character.entity.characterId === event.nearCharacterId)
+        && character.container.visible
+        && nearInteractive(pos, character.container, character.actor.collision, !!character.entity.flip)) ?? null;
+    }, event => !region && eligible(event));
+    const trigger = region ?? near;
+    if (trigger) {
+      this.playStory(async () => {
+        const played = region
+          ? await director.enterRegion(region.event.id, region.event.map!)
+          : await director.approach(near!.event.near!, this.map?.id, near!.contact.entity.characterId);
+        if (!played) occupied.delete(trigger.event.id);
         return played;
-      }));
+      });
       return;
     }
     const exit = this.exitTrigger?.update(pos, moving,exit=>this.exitAvailable(exit));

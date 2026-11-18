@@ -1,53 +1,40 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { claimNearTrigger } from '../src/domain/story-trigger-occupancy.ts';
+import { claimStoryTrigger } from '../src/domain/story-trigger-occupancy.ts';
+import { headlessContent, playthrough } from './helpers/story-playthrough.ts';
 
-type Actor = { id: string };
+test('the border-gateway greeter plays once per approach through the world frame', async () => {
+  const h = playthrough();
+  const map = 'border-gateway-67e044a2';
+  const placement = headlessContent.campaign.scripts['event-125'].nodes.flatMap(node => node.commands)
+    .find(command => command.type === 'world' && command.command.kind === 'place' && command.command.entity.characterId === 'npc-240')!;
+  const greetings = () => h.lines.filter(line => line.includes('富起来了')).length;
+  try {
+    h.session.applyStoryCommands([{type:'travel',destination:{map,x:216,y:168,facing:'north'}},placement]);
+    for (let frame = 0; frame < 4; frame++) { h.frame('all'); await h.idle(); }
+    assert.equal(greetings(),1);
+    h.session.movePlayer({map,x:240,y:184,facing:'north'});
+    h.frame('all'); await h.idle();
+    h.session.movePlayer({map,x:216,y:168,facing:'north'});
+    h.frame('all'); await h.idle();
+    assert.equal(greetings(),2);
+  } finally { h.director.dispose(); }
+});
 
-test('walking away releases the claim so the same near event can fire again', () => {
-  // 事件 186：莱曼的「现在准备好出发了？」。玩家选「我还有事，请稍等」之后原路走回来，
-  // 原版要能重开（这批近身事件带重复标志）。占用表不释放就会一直跳过，永远不再触发。
-  const events = [{ id: 'event-186' }];
+test('unblocking an eligible trigger plays it once without another approach', () => {
+  const event = { id: 'filtered' };
   const occupied = new Set<string>();
-  let beside: Actor | null = { id: 'lyman' };
-  const claim = () => claimNearTrigger(events, occupied, () => beside, () => true);
+  const claim = (allowed: boolean) => claimStoryTrigger([event], occupied, () => true, () => allowed);
+  assert.equal(claim(false), null);
+  assert.equal(claim(true)?.event, event);
+  assert.equal(claim(true), null);
+});
 
-  assert.equal(claim()?.event.id, 'event-186', '第一次靠近就该起演');
-  assert.equal(claim(), null, '同一次靠近不重复上报');
-
-  beside = null;
+test('a consumed trigger yields to the next candidate and a new claim still clears contact that ended', () => {
+  const events = [{ id: 'first' }, { id: 'second' }, { id: 'left' }];
+  const occupied = new Set(['first', 'left']);
+  const claim = () => claimStoryTrigger(events, occupied, event => event.id === 'left' ? null : true, () => true);
+  assert.equal(claim()?.event.id, 'second');
   assert.equal(claim(), null);
-  assert.equal(occupied.has('event-186'), false, '走开之后占用要放下');
-
-  beside = { id: 'lyman' };
-  assert.equal(claim()?.event.id, 'event-186', '走回来应当能重新触发');
-});
-
-test('a replayed story releases its claim even while the player keeps standing there', () => {
-  // 起演没成功（导演这一刻不收、或运行时不认这次触发）时，由调用方在回调里 delete；
-  // 这里钉住同一个语义的另一面：占用只挡「同一帧重复上报」，不挡显式释放。
-  const events = [{ id: 'event-186' }];
-  const occupied = new Set<string>();
-  assert.equal(claimNearTrigger(events, occupied, () => ({ id: 'lyman' }), () => true)?.event.id, 'event-186');
-  occupied.delete('event-186');
-  assert.equal(claimNearTrigger(events, occupied, () => ({ id: 'lyman' }), () => true)?.event.id, 'event-186');
-});
-
-test('clearing an automatic-event filter releases the near claim in place', () => {
-  const events = [{ id: 'event-186' }];
-  const occupied = new Set(['event-186']);
-  const beside = () => ({ id: 'lyman' });
-  assert.equal(claimNearTrigger(events, occupied, beside, () => true, () => false), null);
-  assert.equal(occupied.has('event-186'), true, '调试过滤期间保持占用');
-
-  assert.equal(claimNearTrigger(events, occupied, beside, () => true, () => true)?.event.id,
-    'event-186', '过滤解除后不用走开也能补触发');
-});
-
-test('an occupied event keeps its claim while its condition is unmet', () => {
-  const events = [{ id: 'event-186' }];
-  const occupied = new Set(['event-186']);
-  const claimed = claimNearTrigger(events, occupied, () => ({ id: 'lyman' }), () => false);
-  assert.equal(claimed, null);
-  assert.equal(occupied.has('event-186'), true, '条件不成立不该顺手把占用丢掉');
+  assert.deepEqual([...occupied], ['first', 'second']);
 });

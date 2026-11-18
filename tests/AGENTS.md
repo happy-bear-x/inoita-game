@@ -90,6 +90,7 @@ npm run test:standalone
 
 - `prompt-shell.test.ts` 覆盖确定/取消按钮实际图片层、独立输入弹窗的图片释放、系统键盘可见范围与密码表单校验及提交。
 
+- `story-trigger-occupancy.test.ts` 逐帧走正式场景的触发判断，验证原地只播一次、走开再靠近可以重播，以及过滤解除后的补播。
 - `combat-defeat-ticket.test.ts` 覆盖正常离图先结算再提交地图移动、恢复世界先丢弃旧死亡单，以及销毁战斗只释放死亡单、不发放奖励。
 
 - `combat-rewards.test.ts` 通过真实 `Session.settleEnemyDefeat` 验证普通、首杀、保底、任务、压测与景物奖励；故障注入覆盖地面掉落裁剪、经验与宝箱衍生怪的原子回滚，并验证死亡单在结算前移除、提交后的监听者错误隔离。
