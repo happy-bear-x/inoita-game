@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { WorldEnemyRoster } from '../src/domain/world-enemies.ts';
 import { headlessContent, playthrough } from './helpers/story-playthrough.ts';
 
 const map = headlessContent.maps.get('werewolf-lair-43f5b4c5')!;
@@ -28,13 +27,9 @@ for (const route of roundTrips) test(`the werewolf battle unlocks the next quest
       h.director.onPresentationStarted = () => h.director.skip();
       h.director.onSkipProgress = phase => { if (phase === 'requested') skipped = true; };
     }
-    await h.defeat('enemy-head-werewolf-1');
-    const roster = new WorldEnemyRoster(h.session, map, [], h.session.hero!.level);
-    const [encounter] = roster.completedEncounters();
-    assert.ok(encounter);
-    const resultId = `result:${encounter.id}:won`;
-    assert.equal(await h.director.encounterResult(encounter.id, 'won', resultId), true);
-    await h.idle();
+    const roster = await h.defeat('enemy-head-werewolf-1');
+    assert.equal(h.director.runtime.eventStatus('event-60'), 'waiting');
+    await h.updateWorld(roster);
     assert.equal(skipped, route.skip);
     assert.equal(h.director.runtime.eventStatus('event-60'), 'completed');
     assert.equal(h.director.runtime.eventStatus('event-61'), 'completed');
@@ -43,7 +38,7 @@ for (const route of roundTrips) test(`the werewolf battle unlocks the next quest
 
     const receipts = h.session.captureState().receipts;
     assert.equal(receipts.filter(receipt => receipt.quest === 'quest-46').length, 1);
-    assert.equal(await h.director.encounterResult(encounter.id, 'won', resultId), false);
+    await h.updateWorld(roster);
     assert.deepEqual(h.session.captureState().receipts, receipts);
     if (!route.restore && !route.skip) {
       await h.travel('mine-undergrounds-b2-9407459c');

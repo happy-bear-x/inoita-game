@@ -219,11 +219,8 @@ test('a failed death settlement keeps the one-time encounter winnable after savi
     assert.equal(h.session.enemyVitals(spawn.id).deadUntil, undefined);
     restored = playthrough(JSON.parse(JSON.stringify(h.session.captureState())));
     assert.ok((restored.session.enemyVitals(spawn.id).health ?? 0) > 0);
-    await restored.defeat(definition.id);
-    const [finished] = new WorldEnemyRoster(restored.session, map, [], restored.session.hero!.level).completedEncounters();
-    assert.ok(finished);
-    await restored.director.encounterResult(finished.id, 'won', `result:${finished.id}:won`);
-    await restored.idle();
+    const restoredRoster = await restored.defeat(definition.id);
+    await restored.updateWorld(restoredRoster);
     assert.equal(restored.session.status('quest-47'), 'ready');
     assert.equal(restored.session.captureState().receipts.filter(receipt => receipt.quest === 'quest-46').length, 1);
   } finally {

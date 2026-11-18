@@ -212,7 +212,13 @@ export function playthrough(saved?:SessionState){
   // 连出口也是场景的 ExitTrigger 选出来的，只有「重建场景」那一半没有照做（否则要拉进整套
   // Phaser 场景生命周期）；真实 changeMap 里的那一步写回转场位置照旧执行。
   // 宿主每帧要改的只有这三样：当前地图、可见角色、玩家脚点。
-  interface SceneHost{map:WorldMap;characters:unknown[];player:{container:{x:number;y:number}}}
+  interface SceneHost {
+    map: WorldMap;
+    characters: unknown[];
+    player: {container:{x:number;y:number}};
+    combat: {roster?:WorldEnemyRoster};
+    update(time:number, delta:number):void;
+  }
   let visit:{mapId:string;occupied:Set<string>;app:Record<string,unknown>;host:SceneHost}|undefined;
   let requestedExit:MapExit|undefined,firedExit:MapExit|undefined;
   const enterVisit=():void=>{
@@ -226,12 +232,15 @@ export function playthrough(saved?:SessionState){
     visit={mapId:map.id,occupied,app,host:Object.assign(Object.create(WorldScene.prototype),{
       app,
       sys:{isActive:()=>true},loadingWorld:false,destroyed:false,
-      map,characters:[],near:null,occupiedTriggers:occupied,occupiedCharacters:new Set<string>(),minimap:undefined,
+      map,characters:[],near:null,occupiedTriggers:occupied,occupiedCharacters:new Set<string>(),encounterResults:new Set<string>(),minimap:undefined,
       lastPlayerPosition:{x:location.x,y:location.y},
       player:{container:{x:location.x,y:location.y}},
-      movement:{position:()=>({...session.storyWorld.currentLocation!}),body:()=>({deltaXFinal:()=>0,deltaYFinal:()=>0})},
+      movement:{stop(){},position:()=>({...session.storyWorld.currentLocation!}),body:()=>({deltaXFinal:()=>0,deltaYFinal:()=>0})},
       // playerCannotAct 为真让 afterMovement 跳过换剪辑那一步：假角色进不了动画系统。
-      combat:{controlledVisual:undefined,playerCannotAct:()=>true,attackState:'idle',facing:'south',afterMovement:()=>{}},
+      combat:{controlledVisual:undefined,playerCannotAct:()=>true,playerCannotMove:()=>true,attackState:'idle',facing:'south',
+        update(){},afterMovement(){},roster:undefined as WorldEnemyRoster|undefined,
+        get completedStoryEncounters(){return this.roster?.completedEncounters()??[];}},
+      refreshCombatHud(){},
       exitTrigger:new ExitTrigger(map.exits??[],{x:location.x,y:location.y},false),
       collectGroundLoot:()=>{},updateInteractionTarget:()=>{},syncHud:()=>{},prefetchVisibleExit:()=>{},
       playStory:(work:()=>Promise<boolean>)=>{void work().catch(error=>errors.push(error));},
@@ -260,6 +269,13 @@ export function playthrough(saved?:SessionState){
       container:{x:entity.x,y:entity.y,visible:true}}));
     host.player.container.x=location.x;host.player.container.y=location.y;
     Reflect.get(WorldScene.prototype,'afterMovement').call(host);
+  };
+  const updateWorld = async (roster: WorldEnemyRoster) => {
+    enterVisit();
+    const host = visit!.host;
+    host.combat.roster = roster;
+    host.update(0, 0);
+    await idle();
   };
   /** 分步走过一段直线，每一步都跑真实的 afterMovement。返回 true 表示途中切了图。 */
   const stride=async(to:Point,scope:'none'|'near'|'all'='none',only?:string|readonly string[],quiet:'none'|'transit'|'all'='none'):Promise<boolean>=>{
@@ -534,6 +550,7 @@ export function playthrough(saved?:SessionState){
     if(experience>0)session.party?.addExperience(experience);
     session.emit();
     await idle();
+    return roster;
   };
   const wait=async(milliseconds:number)=>{
     const map=maps.get(session.storyWorld.currentLocation!.map)!;
@@ -591,7 +608,7 @@ export function playthrough(saved?:SessionState){
   };
   /** 地面掉落查询：验收工具用它核对某个生成点有没有产出。 */
   const groundDrops=(map:string)=>groundLootFor(session).forMap(map);
-  return {session,director,region,travel,useExit,approach,talk,defeat,damage,wait,pickup,idle,entities,lines,popups,actions,groundDrops,clearEnemy,frame:afterMovement,
+  return {session,director,region,travel,useExit,approach,talk,defeat,damage,wait,pickup,idle,entities,lines,popups,actions,groundDrops,clearEnemy,frame:afterMovement,updateWorld,
     recordStages:()=>{stageRecords=[];},stageRecords:()=>stageRecords??[],
     choices:(values:string[])=>{choiceQueue=values;}};
 }
