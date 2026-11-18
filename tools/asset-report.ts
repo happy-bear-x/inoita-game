@@ -18,10 +18,8 @@ interface AssetDuplicateGroup {
 interface AssetReport {
   files: number;
   bytes: number;
-  decodedBytes: number;
   uniqueFiles: number;
   uniqueBytes: number;
-  uniqueDecodedBytes: number;
   duplicateGroups: number;
   duplicateFiles: number;
   duplicateBytes: number;
@@ -156,14 +154,13 @@ export async function reportAssets(roots: AssetReportRoots = {}): Promise<AssetR
   const files = filesUnder(path.join(sourceRoot, 'assets'));
   const groups = new Map<string, AssetDuplicateGroup & { decodedBytes: number }>();
   const index = new Map<string, { hash: string; decodedBytes: number }>();
-  let bytes = 0, decodedBytes = 0;
+  let bytes = 0;
   for (const file of files) {
     const content = fs.readFileSync(file.absolute);
     const hash = createHash('sha256').update(content).digest('hex');
     const size = imageSize(content, file.absolute);
     const decoded = size ? size.width * size.height * 4 : 0;
     bytes += content.byteLength;
-    decodedBytes += decoded;
     index.set(`assets/${file.relative}`, { hash, decodedBytes: decoded });
     const existing = groups.get(hash);
     if (existing) {
@@ -177,10 +174,9 @@ export async function reportAssets(roots: AssetReportRoots = {}): Promise<AssetR
       });
     }
   }
-  let uniqueBytes = 0, uniqueDecodedBytes = 0, duplicateGroups = 0, duplicateFiles = 0, duplicateBytes = 0, duplicateDecodedBytes = 0;
+  let uniqueBytes = 0, duplicateGroups = 0, duplicateFiles = 0, duplicateBytes = 0, duplicateDecodedBytes = 0;
   for (const group of groups.values()) {
     uniqueBytes += group.bytes;
-    uniqueDecodedBytes += group.decodedBytes;
     if (group.count > 1) {
       duplicateGroups++;
       duplicateFiles += group.count - 1;
@@ -195,8 +191,8 @@ export async function reportAssets(roots: AssetReportRoots = {}): Promise<AssetR
     .map(({ hash, count, bytes, decodedBytes, width, height, files }) => ({ hash, count, bytes, decodedBytes, width, height, files }));
   const runtime = await runtimeReport(sourceRoot, contentRoot, index);
   return {
-    files: files.length, bytes, decodedBytes,
-    uniqueFiles: groups.size, uniqueBytes, uniqueDecodedBytes,
+    files: files.length, bytes,
+    uniqueFiles: groups.size, uniqueBytes,
     duplicateGroups, duplicateFiles, duplicateBytes, duplicateDecodedBytes,
     topDuplicateGroups,
     ...(runtime ? { runtime } : {})

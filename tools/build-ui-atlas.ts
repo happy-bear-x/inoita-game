@@ -204,7 +204,6 @@ interface AtlasBuild {
   pages: PageBuild[];
   /** 文件 → 该文件内容对应的规范帧（同一内容的多个文件共用一个帧）。 */
   canonical: Map<string, string>;
-  sourceBytes: number;
 }
 
 /**
@@ -216,14 +215,13 @@ export function packUiAtlas(): AtlasBuild {
   const plan = planUiAtlas();
   const pages: PageBuild[] = [];
   const canonical = new Map<string, string>();
-  let sourceBytes = 0;
 
   for (const group of plan.groups) {
     // 每批从新页开始；职业选择页的界面图不会和对白立绘混在同一页。
     for (const batch of group.batches) {
       const entries = batch.map(file => {
         const bytes = fs.readFileSync(sourceAssetPath(file));
-        return { file, png: PNG.sync.read(bytes), bytes: bytes.byteLength };
+        return { file, png: PNG.sync.read(bytes) };
       }).sort((a, b) =>
         b.png.height - a.png.height || b.png.width - a.png.width || a.file.localeCompare(b.file));
 
@@ -238,7 +236,6 @@ export function packUiAtlas(): AtlasBuild {
       startPage();
       for (const entry of entries) {
         const w = entry.png.width, h = entry.png.height;
-        sourceBytes += entry.bytes;
         let shelf = shelves.find(value => value.x + w + PADDING * 2 <= MAX_SIZE);
         if (!shelf) {
           if (!page || height + h + PADDING * 2 > MAX_SIZE) startPage();
@@ -259,7 +256,7 @@ export function packUiAtlas(): AtlasBuild {
   // 同内容的额外路径不重复铺帧，直接映射到先出现的那一帧。
   for (const [file, source] of plan.shared) canonical.set(file, source);
 
-  return { pages, canonical, sourceBytes };
+  return { pages, canonical };
 }
 
 interface UiAtlasWriteResult {

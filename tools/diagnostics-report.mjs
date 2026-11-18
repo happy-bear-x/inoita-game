@@ -29,10 +29,6 @@ function argument(name, fallback) {
   return index >= 0 && process.argv[index + 1] ? process.argv[index + 1] : fallback;
 }
 
-function has(name) {
-  return process.argv.includes(name);
-}
-
 async function readStream(directory, base) {
   let names = [];
   try { names = await fs.readdir(directory); } catch { return []; }

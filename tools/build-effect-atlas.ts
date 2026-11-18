@@ -102,7 +102,6 @@ interface AtlasResult {
   pages: AtlasPage[];
   byFile: Record<string, { page: number; frame: string }[]>;
   digest: string;
-  targetFiles: string[];
   sourceBytes: number;
   pageBytes: number;
 }
@@ -348,10 +347,9 @@ export function packEffectAtlas(): AtlasResult {
     byFile[use.file] = [...frames].sort((a, b) => a.index - b.index)
       .map(frame => ({ page: frame.page, frame: frame.name }));
   }
-  const targetFiles = [...new Set(uses.map(use => use.file))].sort(compareText);
   const sourceBytes = files.reduce((sum, file) => sum + file.width * file.height * 4, 0);
   const pageBytes = pages.reduce((sum, page) => sum + page.width * page.height * 4, 0);
-  return { pages, byFile, digest: effectAtlasSourceDigest(), targetFiles, sourceBytes, pageBytes };
+  return { pages, byFile, digest: effectAtlasSourceDigest(), sourceBytes, pageBytes };
 }
 
 export function writeEffectAtlas(): { pages: number; files: number; frames: number; source: number; packed: number; bytes: number } {

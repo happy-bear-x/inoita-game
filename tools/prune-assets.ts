@@ -16,12 +16,6 @@ export interface PruneOptions {
   keepAll?: boolean;
 }
 
-export interface PruneResult extends ArchiveResult {
-  keep: Set<string>;
-  missing: string[];
-  archiveDir: string;
-}
-
 function filesUnder(directory: string, relative = ''): { relative: string; absolute: string }[] {
   if (!fs.existsSync(directory)) return [];
   const result: { relative: string; absolute: string }[] = [];
@@ -129,7 +123,7 @@ export function archiveUnkeptFiles(options: ArchiveOptions): ArchiveResult {
  * 只移动 `assetsDir` 下的文件；内容、图集清单、更新清单和其他产物不动。
  * 任何被引用的路径在磁盘上缺失时直接抛错，不执行移动。
  */
-export async function pruneAssets(options: PruneOptions): Promise<PruneResult> {
+export async function pruneAssets(options: PruneOptions): Promise<ArchiveResult> {
   const { contentDir, assetsDir, archiveDir, dryRun = false, keepAll = false } = options;
   const report = await collectAssetKeep(contentDir, assetsDir);
   if (report.missing.length) {
@@ -145,7 +139,7 @@ export async function pruneAssets(options: PruneOptions): Promise<PruneResult> {
     assetsDir, archiveDir, keep, covered: report.covered, dryRun: dryRun || keepAll,
     references: report.references, phaserFiles: report.phaserFiles,
   });
-  return { ...result, keep, missing: report.missing, archiveDir };
+  return result;
 }
 
 const mb = (value: number): string => `${(value / 1024 / 1024).toFixed(1)} MB`;

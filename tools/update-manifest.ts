@@ -42,7 +42,6 @@ interface UpdateBuildResult {
   buildId: string;
   fileCount: number;
   signed: boolean;
-  manifestBytes: Buffer;
 }
 interface UpdateDiff { changed: UpdateFile[]; removed: string[]; downloadBytes: number }
 
@@ -219,7 +218,7 @@ export async function writeUpdateArtifacts(rootDir: string, input: UpdateBuildIn
     await writeFile(pointerPath, pointerBytes);
     if (privateKey) await writeFile(`${pointerPath}.sig`, signBytes(pointerBytes, privateKey));
   }
-  return { buildId: manifest.buildId, fileCount: manifest.files.length, signed: Boolean(privateKey), manifestBytes };
+  return { buildId: manifest.buildId, fileCount: manifest.files.length, signed: Boolean(privateKey) };
 }
 
 export async function verifyManifestFiles(rootDir: string, manifest: UpdateManifest): Promise<{ checked: number }> {

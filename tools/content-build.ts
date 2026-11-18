@@ -13,10 +13,6 @@ interface ContentBuildStats {
   files: number;
   sourceBytes: number;
   outputBytes: number;
-  /** 编译过的技能 profile 数与展示行数。 */
-  skillProfiles: number;
-  displayRows: number;
-  irSkills: number;
   wardrobePoses: number;
   /** 被合并到同一贴图键的动画图层数。 */
   dedupedLayers: number;
@@ -57,8 +53,6 @@ interface ClipLike {
 interface ClipRecord { clip: ClipLike; name: string; layer: ClipLayerLike }
 interface ClipDedupe {
   docs: Map<string, unknown>;
-  canonical: Map<string, { key: string; file: string }>;
-  hashes: Map<string, string>;
   dedupedLayers: number;
   clipKeysBefore: number;
   clipKeysAfter: number;
@@ -156,7 +150,7 @@ async function dedupeClipLayers(_sourceDir: string, files: SourceFile[], assetRo
   }
   clipKeysBefore = before.size;
   clipKeysAfter = after.size;
-  return { docs, canonical, hashes, dedupedLayers, clipKeysBefore, clipKeysAfter };
+  return { docs, dedupedLayers, clipKeysBefore, clipKeysAfter };
 }
 
 /** 只读磁盘内容，按生产构建同一套规则计算动画图层合并结果。 */
@@ -187,7 +181,7 @@ async function filesUnder(directory: string, relative = ''): Promise<SourceFile[
 export async function buildContent(sourceDir: string, outputDir: string, assetRoot = SOURCE_ASSETS): Promise<ContentBuildStats> {
   const files = await filesUnder(sourceDir);
   const dedupe = await dedupeClipLayers(sourceDir, files, assetRoot);
-  let sourceBytes = 0, outputBytes = 0, skillProfiles = 0, displayRows = 0, irSkills = 0, wardrobePoses = 0;
+  let sourceBytes = 0, outputBytes = 0, wardrobePoses = 0;
   for (const file of files) {
     const target = path.join(outputDir, file.relative);
     await fs.mkdir(path.dirname(target), { recursive: true });
@@ -204,12 +198,10 @@ export async function buildContent(sourceDir: string, outputDir: string, assetRo
     if (file.relative === 'battle.json') {
       const battle = parsed as BattleLike;
       for (const skill of Object.values(battle.skills ?? {})) {
-        skillProfiles += compileProfile(skill);
-        if (skill.companion) skillProfiles += compileProfile(skill.companion);
-        displayRows += skill.display?.length ?? 0;
-        if (skill.companion) displayRows += skill.companion.display?.length ?? 0;
+        compileProfile(skill);
+        if (skill.companion) compileProfile(skill.companion);
       }
-      irSkills += compileActions(battle);
+      compileActions(battle);
     } else if (file.relative === 'shops.json') {
       // shops 的装备表约 1.2 MB，独立成文件；运行时第一次打开商店再取。
       const shops = parsed as { equipment?: Record<string, Record<string, unknown>> };
@@ -255,32 +247,29 @@ export async function buildContent(sourceDir: string, outputDir: string, assetRo
     sourceBytes += Buffer.byteLength(text);
     outputBytes += Buffer.byteLength(minified);
   }
-  return { files: files.length, sourceBytes, outputBytes, skillProfiles, displayRows, irSkills, wardrobePoses,
+  return { files: files.length, sourceBytes, outputBytes, wardrobePoses,
     dedupedLayers: dedupe.dedupedLayers, clipKeysBefore: dedupe.clipKeysBefore, clipKeysAfter: dedupe.clipKeysAfter };
 }
 
-/** 返回编译过的 profile 数（1 = 本体，companion 另算）。 */
-function compileProfile(skill: SkillProfileLike): number {
-  if (!skill.ranks?.length) return 0;
+/** 编译一个技能本体的展示数据；companion 由调用方另行编译。 */
+function compileProfile(skill: SkillProfileLike): void {
+  if (!skill.ranks?.length) return;
   const { display, displayValues } = compileSkillDisplay(skill.ranks);
   skill.display = display;
   skill.ranks.forEach((rank, index) => {
     rank.displayValues = displayValues[index]!;
     delete rank.details;
   });
-  return 1;
 }
 
 /**
  * 动作 IR：把全部技能与敌人的派生字段（目标需求、效果/音效/召唤名、事件帧索引）
  * 提前算进内容。战斗运行时优先读这些字段，旧内容没有时仍按原逻辑计算。
  */
-function compileActions(battle: BattleLike): number {
-  let count = 0;
+function compileActions(battle: BattleLike): void {
   const compile = (action: SkillAction | null | undefined): void => {
     if (!action) return;
     Object.assign(action, compileSkillAction(action));
-    count++;
   };
   for (const skill of Object.values(battle.skills ?? {})) {
     compile(skill.action);
@@ -298,5 +287,4 @@ function compileActions(battle: BattleLike): number {
     compile(enemy.commandAction?.action);
     compile(enemy.commandAction?.companionAction);
   }
-  return count;
 }

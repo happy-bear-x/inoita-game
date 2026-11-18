@@ -38,7 +38,6 @@ interface AtlasBuild {
   frames: Map<string, PackedFrame>;
   /** 内容相同的图标指向同一个 frame。 */
   canonical: Map<string, string>;
-  sourceBytes: number;
 }
 
 /**
@@ -49,10 +48,8 @@ export function packIcons(): AtlasBuild {
   const files = iconFiles();
   const hashes = new Map<string, string>();
   const unique = new Map<string, { file: string; png: PNG }>();
-  let sourceBytes = 0;
   for (const file of files) {
     const bytes = fs.readFileSync(sourceAssetPath(file));
-    sourceBytes += bytes.byteLength;
     const hash = createHash('sha256').update(bytes).digest('hex');
     hashes.set(file, hash);
     if (unique.has(hash)) continue;
@@ -100,7 +97,7 @@ export function packIcons(): AtlasBuild {
     frames.set(source, placements.get(source)!);
     canonical.set(file, source);
   }
-  return { width, height, frames, canonical, sourceBytes };
+  return { width, height, frames, canonical };
 }
 
 /** 内容里的图标文件内容摘要；图标改了但没重跑图集时，构建期直接失败。 */

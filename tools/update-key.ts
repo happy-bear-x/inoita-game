@@ -16,8 +16,6 @@ const UPDATE_PUBLIC_KEY_PATH = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)), '..', 'android', 'update-public-key.txt');
 
 interface UpdateKey {
-  privateKey: KeyObject;
-  publicKey: KeyObject;
   created: boolean;
 }
 
@@ -58,7 +56,7 @@ export function ensureUpdateKey(): UpdateKey {
   }
   const publicKey = createPublicKey(privateKey);
   writePublicKey(publicKey);
-  return { privateKey, publicKey, created };
+  return { created };
 }
 
 /** ECDSA P-256 DER，base64；签的是文件原始字节。 */
