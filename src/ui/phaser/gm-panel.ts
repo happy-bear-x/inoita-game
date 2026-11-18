@@ -1073,6 +1073,7 @@ export class GmPanel {
   private onCompleteCurrentQuest(): void {
     const result = this.perform(()=>this.gm.completeCurrentQuest());
     this.result = result.reason ?? (result.ok ? '任务已完成' : '完成任务失败');
+    if(result.ok){ this.hooks.close(); return; }
     if(this.refreshStatusPage)this.refreshStatusPage();else this.hooks.render();
   }
   private onToggleNoclip(): void {
