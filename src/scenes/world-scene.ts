@@ -185,6 +185,7 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
   private baseEntities:EntityPlacement[]=[];
   private occupiedTriggers=new Set<string>();
   private occupiedCharacters=new Set<string>();
+  private occupiedNearEvents=new Set<string>();
   /** 本图的区域/近身事件与角色分组；进图和剧情投影后各建一次。 */
   private triggerIndex?:StoryTriggerIndex<Character>;
   private refreshStateSignatureValue?:string;
@@ -285,7 +286,7 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
     this.questStatuses.clear();this.questStatusVersion=undefined;this.questNoticesReady=false;
     this.prefetchTarget = undefined; this.prefetchTask = undefined;
     this.prefetchFailedTarget = undefined; this.prefetchRetryAt = 0;
-    this.baseEntities=[];this.occupiedTriggers=new Set();this.occupiedCharacters=new Set();this.encounterResults.clear();this.triggerIndex=undefined;this.refreshStateSignatureValue=undefined;this.lastInteractionScan=undefined;this.interactionRevision=0;this.charactersRevision=0;this.interactionIndex=undefined;this.interactionIndexRevision=undefined;this.interactionIndexCharactersRevision=undefined;
+    this.baseEntities=[];this.occupiedTriggers=new Set();this.occupiedCharacters=new Set();this.occupiedNearEvents=new Set();this.encounterResults.clear();this.triggerIndex=undefined;this.refreshStateSignatureValue=undefined;this.lastInteractionScan=undefined;this.interactionRevision=0;this.charactersRevision=0;this.interactionIndex=undefined;this.interactionIndexRevision=undefined;this.interactionIndexCharactersRevision=undefined;
     this.projectedActorIds.clear();
   }
   create(): void {
@@ -2434,11 +2435,19 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
         return status === 'idle' || (status === 'completed' && event.repeat) ? status : false;
       }, status => status === 'idle');
     const occupiedCharacters = this.occupiedCharacters;
-    const near = claimStoryTrigger(triggerIndex.nearCharacters, occupiedCharacters, ({ character }) =>
-      character.container.visible && nearInteractive(pos, character.container, character.actor.collision, !!character.entity.flip), ({ events }) => {
+    const occupiedNearEvents = this.occupiedNearEvents;
+    const touching = ({character}: (typeof triggerIndex.nearCharacters)[number]) =>
+      character.container.visible && nearInteractive(pos, character.container, character.actor.collision, !!character.entity.flip);
+    for (const id of occupiedNearEvents) {
+      if (!triggerIndex.nearCharacters.some(group => group.events.some(event => event.id === id) && touching(group))) {
+        occupiedNearEvents.delete(id);
+      }
+    }
+    const near = claimStoryTrigger(triggerIndex.nearCharacters, occupiedCharacters, touching, ({ events }) => {
       if (region) return null;
       let replay: StoryEvent | null = null;
       for (const event of events) {
+        if (occupiedNearEvents.has(event.id)) continue;
         const status = availability(event);
         if (status === 'idle') return event;
         if (status === 'completed' && event.repeat) replay ??= event;
@@ -2454,9 +2463,13 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
       return;
     }
     if (near) {
+      occupiedNearEvents.add(near.selection.id);
       this.playStory(async () => {
         const played = await director.approach(near.selection, near.event.character.entity, this.map?.id);
-        if (!played) occupiedCharacters.delete(near.event.id);
+        if (!played) {
+          occupiedCharacters.delete(near.event.id);
+          occupiedNearEvents.delete(near.selection.id);
+        }
         return played;
       });
       return;

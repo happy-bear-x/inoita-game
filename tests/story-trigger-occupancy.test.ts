@@ -62,6 +62,19 @@ test('the overlapping Kamuran regions offer event 77 before replaying event 75',
   } finally { h.director.dispose(); }
 });
 
+test('the five hall doors play their shared event once while the player stays in contact', async () => {
+  const h = playthrough();
+  const pos = {map:'hall-of-reality-bf3cc6de',x:272,y:361,facing:'north' as const};
+  const approach = async () => { h.frame('near','event-266'); await h.idle(); };
+  const plays = () => h.lines.filter(line=>line.includes('好像打不开呢')).length;
+  try {
+    h.session.applyStoryCommands([{type:'travel',destination:pos}]);
+    h.session.accept('quest-210');
+    await approach(); await approach();
+    assert.equal(plays(),1);
+  } finally { h.director.dispose(); }
+});
+
 test('unblocking an eligible trigger plays it once without another approach', () => {
   const event = { id: 'filtered' };
   const occupied = new Set<string>();
