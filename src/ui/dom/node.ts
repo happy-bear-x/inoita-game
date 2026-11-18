@@ -127,6 +127,12 @@ export class UiNode {
   setPosition(x:number,y:number):this{this.x=x;this.y=y;this.paint();return this;}
   setX(x:number):this{return this.setPosition(x,this.y);}
   setY(y:number):this{return this.setPosition(this.x,y);}
+  /** 左右贴住父容器，宽度交给浏览器计算；铺满画框的横带用它，画框变宽不需要重新量尺寸。 */
+  fillWidth():this{this.setStyle('left','0px');this.setStyle('right','0px');this.setStyle('width','');this.x=0;this.width=0;return this;}
+  /** 四边贴住父容器；铺满画框的覆盖层和浅色罩用它。 */
+  fillParent():this{this.fillWidth();this.setStyle('top','0px');this.setStyle('bottom','0px');this.setStyle('height','');this.y=0;this.height=0;return this;}
+  /** 横向由父容器铺满，只写纵向的像素位置；横带和上下花纹用它。 */
+  setTopHeight(top:number,height:number):this{this.setStyle('top',`${top}px`);this.setStyle('height',`${height}px`);this.y=top;this.height=height;return this;}
   setScale(x:number,y=x):this{this.scaleX=x;this.scaleY=y;this.paint();return this;}
   setSize(width:number,height:number):this{this.width=width;this.height=height;this.paint();return this;}
   setDisplaySize(width:number,height:number):this{return this.setSize(width,height);}

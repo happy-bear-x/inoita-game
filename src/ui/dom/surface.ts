@@ -19,6 +19,8 @@ export class UiSurface {
   readonly mount:HTMLElement;
   readonly scrolls:ScrollArea[]=[];readonly sliders:VolumeSlider[]=[];
   private buttons:UiNode[]=[];private focusIndex=-1;private staticKey?:string;
+  /** 直接铺满画框、不随弹层缩放的覆盖层；随 clear 一起销毁。 */
+  private overlay?:UiNode;private overlayRelayout?:()=>void;
   enabled=()=>true;
   private cancelInput=()=>{for(const button of this.buttons)if(button.active)button.cancelPress();for(const scroll of this.scrolls)scroll.cancelGesture();};
   constructor(scene:Phaser.Scene,width:number,height:number,depth=100,layer='screen'){
@@ -33,12 +35,16 @@ export class UiSurface {
     this.root.setScale(factor).setPosition(left+(frame.width-left-right-this.width*factor)/2,top+(frame.height-top-bottom-this.height*factor)/2);
     this.scrolls.forEach(scroll=>scroll.layout());
   }
-  clear(preserve?:UiNode):void{this.sliders.splice(0).forEach(slider=>slider.destroy());this.scrolls.splice(0).forEach(scroll=>scroll.destroy());this.focusIndex=-1;for(const child of [...this.root.list])if(child!==this.staticRoot&&child!==preserve)child.destroy();this.buttons=this.buttons.filter(button=>button.active);}
+  clear(preserve?:UiNode):void{this.overlay?.destroy();this.overlay=undefined;this.overlayRelayout=undefined;this.sliders.splice(0).forEach(slider=>slider.destroy());this.scrolls.splice(0).forEach(scroll=>scroll.destroy());this.focusIndex=-1;for(const child of [...this.root.list])if(child!==this.staticRoot&&child!==preserve)child.destroy();this.buttons=this.buttons.filter(button=>button.active);}
   pruneDestroyed():void{this.buttons=this.buttons.filter(button=>button.active);}
   clearStatic():void{this.staticKey=undefined;this.staticRoot.removeAll(true);}
   staticLayer(key:string,draw:()=>void):void{if(this.staticKey===key)return;this.clearStatic();this.staticKey=key;draw();}
   destroy():void{this.scene.game.events.off(UI_EVENTS.cancelInput,this.cancelInput);this.clear();this.clearStatic();this.root.destroy();}
-  visible(value:boolean):void{this.root.setVisible(value);this.scrolls.forEach(scroll=>scroll.syncVisibility());}
+  visible(value:boolean):void{this.root.setVisible(value);this.overlay?.setVisible(value);this.scrolls.forEach(scroll=>scroll.syncVisibility());}
+  /** 登记铺满画框的覆盖层；它挂在同一个 mount 上，不跟着弹层根节点缩放。 */
+  setOverlay(overlay:UiNode,relayout?:()=>void):void{this.overlay?.destroy();this.overlay=overlay;this.overlayRelayout=relayout;overlay.setVisible(this.root.shown);}
+  /** 弹层位置、缩放或画框变化后，重排覆盖层的纵向几何。 */
+  relayoutOverlay():void{this.overlayRelayout?.();}
   image(file:string,x:number,y:number,width?:number,height?:number,parent=this.root):UiImage{return new UiImage(this.scene,parent).setPosition(x,y).resize(width,height).load(file);}
   imageCover(file:string,x:number,y:number,width:number,height:number,parent=this.root,anchorX=.5,anchorY=.5):UiImage{return this.image(file,x,y,width,height,parent).fitting(anchorX,anchorY);}
   imageContain(file:string,x:number,y:number,width:number,height:number,parent=this.root):UiImage{return this.image(file,x,y,width,height,parent).fitting(.5,.5,'contain');}

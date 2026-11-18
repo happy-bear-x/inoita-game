@@ -1166,6 +1166,7 @@ export class TitleMenuController {
       const size=this.changelogOpen?CHANGELOG_LAYOUT.canvas:{width:1024,height:640};
       centerModal(this.modal,this.surface,size.width,size.height);
     }
+    this.modal?.relayoutOverlay();
     // 弹层里的滚动区（更新日志、长提示）跟着弹层位置和缩放重排。
     this.modal?.scrolls.forEach(scroll=>scroll.layout());
     this.syncCredentials();

@@ -710,7 +710,7 @@ export class StoryUI {
     const frame=frameRect();
     this.controlEditor?.layout();this.keyBindingEditor?.layout();
     this.pressurePicker?.layout();this.pressureBackdrop?.setSize(frame.width,frame.height);
-    this.surface?.layout(12);this.positionModal();
+    this.surface?.layout(12);this.positionModal();this.modal?.relayoutOverlay();
     if(this.open&&this.page==='debug'&&this.gmPanel&&this.body)this.gmPanel.layoutSearch(this.body);
     // 说明面板不在 surface 之下，位置与缩放按 surface 的世界变换同步，坐标系与内容块一致。
     if(this.surface&&this.description){const matrix=this.surface.root.getWorldTransformMatrix(),position=matrix.transformPoint(CONTENT_ORIGIN.x,CONTENT_ORIGIN.y);this.description.root.setPosition(position.x,position.y).setScale(matrix.scaleX,matrix.scaleY);}

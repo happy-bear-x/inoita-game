@@ -50,16 +50,19 @@ class FakeDomLabel {
 function fakeView(width:number,height:number){
   /** 图片只被链式调用，不需要真的画出来。 */
   const stub=(_file?:string,_x?:number,y=0,_width?:number,_height?:number,parent?:{list:unknown[]})=>{
-    const value:{y:number;active:boolean;[key:string]:unknown}={y,active:true};
+    const value:{y:number;active:boolean;element:{remove:()=>void};[key:string]:unknown}={y,active:true,element:{remove(){}}};
     for(const name of ['setOrigin','setFlipY','setDisplaySize','setAlpha','setScale','setPosition'])value[name]=()=>value;
     value.setY=(next:number)=>{value.y=next;return value;};value.destroy=()=>{value.active=false;if(parent)parent.list=parent.list.filter(node=>node!==value);};
     parent?.list?.push(value);return value;
   };
+  let overlay:unknown, overlayRelayout:(()=>void)|undefined;
   const zones:{handlers:Map<string,()=>void>}[]=[];
   return {
-    width,height,
-    mount:{appendChild(element:{parentElement?:unknown}){element.parentElement=this;}},
-    root:{width,height,visible:true,shown:true,bringToTop:()=>{},setSize:function(width:number,height:number){this.width=width;this.height=height;return this;},setPosition:function(){return this;},setScale:function(){return this;},add:()=>{},getWorldTransformMatrix:()=>({scaleX:1,scaleY:1,transformPoint:(x:number,y:number)=>({x,y})})},
+    width,height,depth:200,
+    mount:{children:[] as unknown[],appendChild(element:{parentElement?:unknown}){element.parentElement=this;this.children.push(element);}},
+    root:{width,height,visible:true,shown:true,bringToTop:()=>{},setSize:function(width:number,height:number){this.width=width;this.height=height;return this;},setPosition:function(){return this;},setScale:function(){return this;},add:()=>{},getWorldTransformMatrix:()=>({tx:0,ty:0,scaleX:1,scaleY:1,transformPoint:(x:number,y:number)=>({x,y})})},
+    setOverlay(node:unknown,relayout:(()=>void)|undefined){overlay=node;overlayRelayout=relayout;},
+    relayoutOverlay(){overlayRelayout?.();},
     buttons:[] as Button[],texts:[] as string[],textNodes:[] as TextNode[],scrolls:[] as FakeScroll[],zones,
     sliders:[] as {label:string;value:number;setValue:(value:number)=>void}[],enabled:()=>true,focusIndex:-1,
     scene:{game:{events:{emit:()=>{}}},scale:{width,height},add:{zone:()=>{const handlers=new Map<string,()=>void>();const zone={handlers,setOrigin(){return zone;},setInteractive(){return zone;},on(event:string,handler:()=>void){handlers.set(event,handler);return zone;}};zones.push(zone);return zone;}}},focus:()=>{},layout:()=>{},image:stub,
@@ -74,7 +77,7 @@ function fakeView(width:number,height:number){
       return label;
     },rect(){const handlers=new Map<string,()=>void>();const zone={handlers,setInteractive(){return zone;},on(event:string,handler:()=>void){handlers.set(event,handler);return zone;}};zones.push(zone);return zone;},
     border(){},frame(){},
-    clear(){this.buttons=[];this.texts=[];this.scrolls=[];this.sliders=[];this.focusIndex=-1;},
+    clear(){this.buttons=[];this.texts=[];this.scrolls=[];this.sliders=[];this.focusIndex=-1;(overlay as {destroy?:()=>void}|undefined)?.destroy?.();overlay=undefined;overlayRelayout=undefined;},
     pruneDestroyed(){this.buttons=this.buttons.filter(button=>button.active);},
     slider(label:string,_x:number,_y:number,_width:number,value:number,onChange:(value:number)=>void){
       const slider={label,value,setValue:(next:number)=>{slider.value=next;onChange(next);}};

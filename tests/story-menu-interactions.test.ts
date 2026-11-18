@@ -3387,23 +3387,43 @@ test('sampling changes preserve discard and save popup coverage, text and pointe
   }
   f.menu.show('save');f.scene.click(f.scene.button('存档槽 1'));f.scene.click(f.scene.button('确认'));
   let save:ReturnType<typeof snapshot>|undefined;
+  const cover=()=>{
+    const node=(f.internals.modal as unknown as {overlay?:UiNode}).overlay;
+    assert.ok(node,'存档确认有铺满画框的覆盖层');
+    return node!;
+  };
+  const band=()=>{
+    const node=cover().list.find(child=>child.element.style.background==='rgba(0,0,0,1)');
+    assert.ok(node,'存档确认有不透明横带');
+    return node!;
+  };
+  const bandFillsFrame=()=>{
+    const node=band();
+    assert.equal(node.element.style.left,'0px','横带左端由画框决定');
+    assert.equal(node.element.style.right,'0px','横带右端由画框决定');
+    const top=Number.parseFloat(String(node.element.style.top)),height=Number.parseFloat(String(node.element.style.height));
+    assert.ok(top>=0&&top+height<=menuFrame.height+.5,'横带完整落在画面内');
+  };
   for(const density of [1,2,2.625,3,1]){
     f.scene.setSampling(density);f.scene.click(f.scene.button('存档槽 1'));
     covered();save??=snapshot();assert.deepEqual(snapshot(),save,`${density}× 存档确认保持位置及大小`);
     assert.deepEqual([f.internals.modal.width,f.internals.modal.height],[1024,640]);
-    const band=f.internals.modal.root.list.find(node=>node.element.style.background==='rgba(0,0,0,1)')!;
-    assert.ok(band,'存档确认有不透明横带');
-    const bounds=band.getBounds();assert.ok(Math.abs(bounds.x)<1e-6);assert.ok(Math.abs(bounds.width-844)<1e-6,'横带铺满屏幕');
+    bandFillsFrame();
     assert.equal(f.scene.canHit(f.scene.button('存档槽 1')),false,'弹层阻止底层操作');
     f.scene.click(f.scene.button('否'));assert.equal(f.internals.modal.root.visible,false);
   }
   f.scene.click(f.scene.button('存档槽 1'));
   for(const [width,height] of [[390,844],[960,540],[844,390]]){
     f.scene.resize(width,height);
-    const band=f.internals.modal.root.list.find(node=>node.element.style.background==='rgba(0,0,0,1)')!;
-    const bounds=band.getBounds();assert.ok(Math.abs(bounds.x)<1e-6);assert.ok(Math.abs(bounds.width-width)<1e-6,'屏幕尺寸变化时，已打开的横带重新铺满');
+    bandFillsFrame();
     assert.deepEqual([f.internals.popupMask.width,f.internals.popupMask.height],[width,height]);
   }
+  // 画框变宽但没有整页重画：横带是靠 left/right 铺满的，不依赖绘制时量到的宽度。
+  const current=cover();
+  menuFrame.width+=120;f.menu.sync();
+  assert.equal(cover(),current,'只做布局时保留同一个覆盖层');
+  bandFillsFrame();
+  assert.equal(f.internals.popupMask.width,menuFrame.width,'压暗层跟随新画框');
   f.scene.click(f.scene.button('否'));assert.equal(f.internals.modal.root.visible,false);
 });
 
