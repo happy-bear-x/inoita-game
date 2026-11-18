@@ -600,12 +600,11 @@ export class Bag {
     entry.numbers.chaos={...chaos};this.notify();
   }
 
-  /** 宝石孔生成：只给 0 孔装备写入孔位上限；强化、词条和已镶宝石不动。 */
+  /** 开孔：写入更高的总孔数；强化、词条和已镶宝石不动。 */
   applySockets(id:string,sockets:number,expectedRevision:number):void {
     const entry=this.instances.get(id),item=entry?this.catalog.items[entry.item]:undefined;
     if(this.revision!==expectedRevision||!entry?.numbers||this.cellOf(id)<0||!item?.equipment)throw new Error('合成装备已变化');
-    if(!Number.isSafeInteger(sockets)||sockets<1||sockets>4)throw new Error('宝石孔数量无效');
-    if(entry.numbers.sockets>0)throw new Error('装备已有宝石孔');
+    if(!Number.isSafeInteger(sockets)||sockets<1||sockets>4||sockets<=entry.numbers.sockets)throw new Error('宝石孔数量无效');
     entry.numbers.sockets=sockets;this.notify();
   }
   use(id: string, target?: string, skill?: string, random: () => number = Math.random, memberId?:string): ItemResult {

@@ -62,31 +62,45 @@ test('stale equipment, depleted materials, reduced money and invalid randomness 
 
 test('crafting content closes over materials, original fees, and existing fusion services',()=>{
   validateCrafting(catalog,items);assert.equal(catalog.operations.chaos.costPerLevel,700);assert.equal(catalog.operations['epic-chaos'].costPerLevel,900);
-  assert.equal(catalog.operations.socket.cost,1);assert.deepEqual(catalog.operations.socket.socketWeights,[35,30,20,15]);assert.deepEqual(catalog.operations.socket.socketLimits,[4,3,2,1,1]);
+  assert.equal(catalog.operations.socket.cost,1);assert.deepEqual(catalog.operations.socket.socketLimits,[4,3,2,1,1]);
   const invalid=structuredClone(catalog);invalid.operations.chaos.rule.levelDiceDivisor=0;assert.throws(()=>parseCrafting(invalid));
   const invalidSocket=structuredClone(catalog);invalidSocket.operations.socket.socketLimits=[4,3,2,1];assert.throws(()=>parseCrafting(invalidSocket));
   const world=read<WorldIndex>('world'),machines=Object.values(world.actors).filter(actor=>actor.service==='fusion-machine');
   assert.equal(machines.length,11);assert(machines.every(actor=>actor.name==='融合器'));
 });
 
-test('socket creation only accepts hole-less equipment and rolls the original socket counts',()=>{
+test('socket opening adds one hole per use until the white quality cap',()=>{
   const {hero,session,target,crafting}=fixture(),bag=hero.bag;
   setSocketTarget(bag,target,0,0);
   assert.equal(crafting.targetSocketProblem(target),undefined);
-  assert.deepEqual(crafting.socketRange(target),{min:1,max:4});
+  assert.deepEqual(crafting.socketStatus(target),{current:0,limit:4});
   const materials=Object.fromEntries(catalog.operations.socket.materials.map(m=>[m.item,bag.count(m.item)])),money=session.money;
-  crafting.socketCommit(crafting.socketQuote(target),()=>0);
-  assert.equal(bag.get(target)!.numbers!.sockets,1);
-  assert.equal(session.money,money-1);
-  for(const material of catalog.operations.socket.materials)assert.equal(bag.count(material.item),materials[material.item]-material.quantity);
+  for(let sockets=1;sockets<=4;sockets+=1){
+    crafting.socketCommit(crafting.socketQuote(target));
+    assert.equal(bag.get(target)!.numbers!.sockets,sockets);
+    assert.equal(session.money,money-sockets);
+    for(const material of catalog.operations.socket.materials)
+      assert.equal(bag.count(material.item),materials[material.item]-material.quantity*sockets);
+  }
   assert.equal(crafting.targetSocketProblem(target),'craft-socket');
-  setSocketTarget(bag,target,5,0);
-  assert.deepEqual(crafting.socketRange(target),{min:1,max:1});
-  crafting.socketCommit(crafting.socketQuote(target),()=>.99);
-  assert.equal(bag.get(target)!.numbers!.sockets,1);
-  setSocketTarget(bag,target,0,0);
-  crafting.socketCommit(crafting.socketQuote(target),()=>.99);
-  assert.equal(bag.get(target)!.numbers!.sockets,4);
+  const snapshot=session.captureState();
+  assert.throws(()=>crafting.socketQuote(target),notice('craft-socket'));
+  assert.deepEqual(session.captureState(),snapshot);
+});
+
+test('socket opening accepts existing sockets and preserves gems up to the rare quality cap',()=>{
+  const {hero,target,crafting}=fixture(),bag=hero.bag;
+  const state=bag.captureState(),gear=state.instances.find(entry=>entry.id===target)!;
+  gear.numbers!.grade=4;gear.numbers!.sockets=1;gear.gems=['novice-jewel'];
+  gear.numbers!.gemModifiers=[{stat:'strength',value:2}];bag.restoreState(state);
+  assert.deepEqual(crafting.socketStatus(target),{current:1,limit:3});
+  crafting.socketCommit(crafting.socketQuote(target));
+  assert.equal(bag.get(target)!.numbers!.sockets,2);
+  assert.deepEqual(bag.get(target)!.gems,['novice-jewel']);
+  assert.deepEqual(bag.get(target)!.numbers!.gemModifiers,[{stat:'strength',value:2}]);
+  crafting.socketCommit(crafting.socketQuote(target));
+  assert.equal(bag.get(target)!.numbers!.sockets,3);
+  assert.equal(crafting.targetSocketProblem(target),'craft-socket');
   const gem=bag.entries.find(entry=>bag.catalog.items[entry.item].kind==='gem')!.id;
   assert.equal(crafting.targetSocketProblem(gem),'craft-equipment');
 });
@@ -96,7 +110,7 @@ test('socket creation rechecks the target, materials, money and revision without
   setSocketTarget(bag,target,0,0);
   const quote=crafting.socketQuote(target),money=session.money,sockets=bag.get(target)!.numbers!.sockets;
   bag.add('novice-jewel',1);
-  assert.throws(()=>crafting.socketCommit(quote,()=>0),notice('craft-target'));
+  assert.throws(()=>crafting.socketCommit(quote),notice('craft-target'));
   assert.equal(bag.get(target)!.numbers!.sockets,sockets);assert.equal(session.money,money);
   setSocketTarget(bag,target,0,0);
   const material=catalog.operations.socket.materials[0];
@@ -123,7 +137,7 @@ test('chaos and socket commits roll back every earlier mutation when a later ste
   let socketUpdates=0;socket.session.subscribe(()=>socketUpdates++);
   const socketSpend=socket.session.spendMoney;
   socket.session.spendMoney=()=>{throw new Error('注入失败');};
-  try{assert.throws(()=>socket.crafting.socketCommit(socketQuote,()=>0),/注入失败/);}
+  try{assert.throws(()=>socket.crafting.socketCommit(socketQuote),/注入失败/);}
   finally{socket.session.spendMoney=socketSpend;}
   assert.deepEqual(socket.session.captureState(),socketBefore,'打孔失败后孔位、材料和金币完全回滚');
   assert.equal(socketUpdates,0);

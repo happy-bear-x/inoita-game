@@ -375,6 +375,6 @@
     "enchant-max": "强化已达到上限。",
     "craft-recipe": "还没有学会这个配方。",
     "craft-equipment": "只有装备类道具才可以进行合成。",
-    "craft-socket": "不含宝石孔的道具才可以进行合成。"
+    "craft-socket": "宝石孔已达上限。"
   }
 }

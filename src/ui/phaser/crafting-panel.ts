@@ -91,7 +91,8 @@ export class CraftingPanel {
   private confirm():void {
     const confirmation=this.confirmation;if(!confirmation||this.committing)return;
     this.committing=true;this.confirmation=undefined;
-    const target=this.target;this.target=undefined;
+    const target=this.target,keepTarget=confirmation.kind==='socket';
+    if(!keepTarget)this.target=undefined;
     let committed=false;
     try {
       const commit=()=>{
@@ -105,6 +106,7 @@ export class CraftingPanel {
     catch(error){if(confirmation.kind!=='recipe')this.target=target;if(error instanceof CraftingError)this.message=this.panels.itemMessages[error.notice];else throw error;}
     finally {this.committing=false;}
     if(committed&&this.text?.runCommit){
+      if(keepTarget)this.target=target;
       if(!this.updateAfterCommit())this.changed();else this.modalChanged();
     }else if(!committed)this.modalChanged();
   }
@@ -271,16 +273,16 @@ export class CraftingPanel {
     const {session,catalog}=this.crafting,bag=session.bag,assets=this.panels.assets,op=catalog.operations.socket;
     if(this.target&&!bag.entries.some(entry=>entry.id===this.target))this.target=undefined;
     const target=this.target?bag.get(this.target):undefined,item=target?bag.catalog.items[target.item]:undefined;
+    const status=target?this.crafting.socketStatus(target.id):undefined,atLimit=!!status&&status.current>=status.limit;
     const slot=v.button('',204,26,74,74,()=>{this.target=undefined;if(!this.updateWork())this.changed();},{image:assets['inventory-slot']}).setData('label','合成装备');
     if(item)v.image(item.icon,5,5,64,64,slot);
     this.drops.push({object:slot,craft:true});
     if(item&&target){
       this.addText('craft-socket-title',item.name,241,111,22,TEXT_COLORS.primary,.5,0,{width:410,align:'center',wrap:'word'});
-      this.addText('craft-socket-stats',`等级 ${equipmentLevel(item,target)}　宝石孔 ${target.numbers?.sockets??0}`,241,140,18,TEXT_COLORS.primary,.5,0,
-        {width:410,align:'center',wrap:'word'});
-      const range=this.crafting.socketRange(target.id);
-      if(range)this.addText('craft-socket-range',range.min===range.max?`可生成 ${range.max} 个宝石孔`:`可生成 ${range.min}~${range.max} 个宝石孔`,
-        241,162,16,TEXT_COLORS.secondary,.5,0,{width:410,align:'center',wrap:'word'});
+      this.addText('craft-socket-stats',`等级 ${equipmentLevel(item,target)}　宝石孔 ${status?.current??target.numbers?.sockets??0}${status?`/${status.limit}`:''}`,
+        241,140,18,TEXT_COLORS.primary,.5,0,{width:410,align:'center',wrap:'word'});
+      if(status)this.addText('craft-socket-range',atLimit?'宝石孔已达上限':`开孔后 ${status.current+1}/${status.limit}`,
+        241,162,16,atLimit?TEXT_COLORS.danger:TEXT_COLORS.secondary,.5,0,{width:410,align:'center',wrap:'word'});
     }
     for(const [index,material] of op.materials.entries()){
       const x=152+index*104,available=bag.count(material.item),definition=bag.catalog.items[material.item];
@@ -293,8 +295,8 @@ export class CraftingPanel {
       const x=82+index*103;v.image(assets[`craft-money-${unit}`],x,290,44,40);
       this.addText(`craft-socket-money-${unit}`,String(coins[unit]),x+44,296,20,TEXT_COLORS.white);
     }
-    v.button('',139,338,205,62,()=>this.begin()).setData('label','组合');
-    this.buttonText('craft-socket-confirm','组合',139,338,205,62);
+    v.button('',139,338,205,62,()=>this.begin(),{disabled:atLimit}).setData('label','开孔');
+    this.buttonText('craft-socket-confirm','开孔',139,338,205,62);
   }
   private renderBagCells(v:UiSurface,scroll:ScrollArea,startDrag:(pointer:UiPointer,entry:string,scroll:ScrollArea)=>void):void{
     const bag=this.crafting.session.bag,assets=this.panels.assets,layout=bagLayout(),cells=layout.grid;

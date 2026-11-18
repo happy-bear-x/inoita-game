@@ -8,15 +8,13 @@ const DEFAULT_CHAOS_VALUE_PERCENT = 100;
 /** 普通混沌加工最高 150%，史诗混沌加工最高 200%。 */
 const CHAOS_VALUE_CAP_PERCENT = 150;
 const EPIC_CHAOS_VALUE_CAP_PERCENT = 200;
-/** 宝石孔权重用 0..99 的百分比掷点。 */
-const SOCKET_WEIGHT_PERCENT = 100;
 /** 单件装备最多 4 个宝石孔。 */
 const MAX_SOCKET_COUNT = 4;
 
 interface CraftingOperationBase {name:string;materials:ItemReward[]}
 interface ChaosCraftingOperation extends CraftingOperationBase {costPerLevel:number;rule:ChaosRule}
-/** 融合器「宝石孔生成」：原版配方 #16；只对 0 孔装备生成孔位。 */
-interface SocketCraftingOperation extends CraftingOperationBase {cost:number;socketWeights:number[];socketLimits:number[]}
+/** 融合器「宝石孔」：对未满品质上限的装备逐个开孔，每次增加 1 孔。 */
+interface SocketCraftingOperation extends CraftingOperationBase {cost:number;socketLimits:number[]}
 export interface CraftingCatalog {operations:{chaos:ChaosCraftingOperation;'epic-chaos':ChaosCraftingOperation;socket:SocketCraftingOperation}}
 type CraftingNotice='craft-target'|'craft-incompatible'|'craft-equipment'|'craft-socket'|'craft-epic'|'craft-needs-chaos'|'craft-max'|'craft-money'|'craft-materials'|'craft-recipe';
 export class CraftingError extends Error {
@@ -46,9 +44,7 @@ export function parseCrafting(value:unknown):CraftingCatalog {
   if(!socket||typeof socket.name!=='string'||!socket.name.trim()||!Array.isArray(socket.materials)||socket.materials.length!==2)fail();
   if(socket.materials.some(m=>!m||typeof m.item!=='string'||!m.item||!integer(m.quantity)||m.quantity<=0)||new Set(socket.materials.map(m=>m.item)).size!==2)fail();
   if(!integer(socket.cost)||socket.cost<=0)fail();
-  if(!Array.isArray(socket.socketWeights)||!socket.socketWeights.length||!socket.socketWeights.every(n=>integer(n)&&n>0))fail();
   if(!Array.isArray(socket.socketLimits)||socket.socketLimits.length!==5||!socket.socketLimits.every(n=>integer(n)&&n>=1&&n<=MAX_SOCKET_COUNT))fail();
-  if(socket.socketWeights.length<Math.max(...socket.socketLimits))fail();
   return data;
 }
 export function validateCrafting(catalog:CraftingCatalog,items:ItemCatalog):void {
@@ -137,23 +133,26 @@ export class EquipmentCrafting {
     },['bag','coins']);
   }
 
-  /** 宝石孔生成只接受装备类、且当前孔位上限为 0 的实例；对应原版 CheckMixture 的 0 孔检查。 */
+  /** 开孔只接受装备类、且当前孔数未到品质上限的实例。 */
   targetSocketProblem(target?:string):CraftingNotice|undefined {
     const bag=this.session.bag,entry=target?bag.get(target):undefined;
     if(!entry||!bag.entries.some(e=>e.id===target))return 'craft-target';
     const item=bag.catalog.items[entry.item];
     if(!item.equipment)return 'craft-equipment';
     if(!entry.numbers)return 'craft-incompatible';
-    if(entry.numbers.sockets>0)return 'craft-socket';
+    if(entry.numbers.sockets>=this.socketLimit(entry))return 'craft-socket';
     return undefined;
   }
-  /** 预览这次会生成几个孔：普通品级 1..上限，稀有品级固定 1。 */
-  socketRange(target?:string):{min:number;max:number}|undefined {
+  /** 当前孔数和该品质的开孔上限；没有生成数值的实例返回 undefined。 */
+  socketStatus(target?:string):{current:number;limit:number}|undefined {
     const entry=target?this.session.bag.get(target):undefined;
     if(!entry?.numbers)return undefined;
+    return {current:entry.numbers.sockets,limit:this.socketLimit(entry)};
+  }
+  /** 品质上限来自 crafting.json 的 socketLimits，下标是稀有度 0..4。 */
+  private socketLimit(entry:ItemInstance):number {
     const rarity=socketRarity(entry,this.session.hero?.catalog);
-    const limit=this.catalog.operations.socket.socketLimits[rarity]??1;
-    return rarity===0?{min:1,max:limit}:{min:1,max:1};
+    return this.catalog.operations.socket.socketLimits[rarity]??1;
   }
   socketQuote(target?:string):SocketQuote {
     const problem=this.targetSocketProblem(target);if(problem)throw new CraftingError(problem);
@@ -162,12 +161,13 @@ export class EquipmentCrafting {
     if(this.session.money<op.cost)throw new CraftingError('craft-money');
     return {target:target!,revision:bag.revision,cost:op.cost};
   }
-  socketCommit(quote:SocketQuote,random:()=>number=Math.random):void {
+  socketCommit(quote:SocketQuote):void {
     const bag=this.session.bag;
     if(bag.revision!==quote.revision)throw new CraftingError('craft-target');
     const current=this.socketQuote(quote.target),entry=bag.get(current.target)!,op=this.catalog.operations.socket;
-    const sockets=rollSocketCreation(entry,this.session.hero?.catalog,op,random);
-    // 随机回调不读写背包，但保持与混沌合成相同的二次核对口径。
+    const sockets=(entry.numbers?.sockets??0)+1;
+    if(sockets>this.socketLimit(entry))throw new CraftingError('craft-socket');
+    // 与混沌合成相同的二次核对口径：报价后目标、材料或金币可能已经变化。
     if(bag.revision!==current.revision)throw new CraftingError('craft-target');
     this.socketQuote(current.target);
     this.session.atomic(()=>{
@@ -184,21 +184,4 @@ function socketRarity(entry:ItemInstance,stats:CharacterStatsCatalog|undefined):
   const grade=entry.numbers?.grade??DEFAULT_EQUIPMENT_GRADE;
   return stats?.equipment[entry.item]?.gradeVariants?.[grade]?.rarity
     ?? stats?.grades?.find(value=>value.index===grade)?.rarity ?? 0;
-}
-
-/** 原版 ApplySocketForMixure：普通稀有度档按权重随机 1..上限；更高档固定 1 孔。 */
-function rollSocketCreation(entry:ItemInstance,stats:CharacterStatsCatalog|undefined,
-  operation:SocketCraftingOperation,random:()=>number):number {
-  const rarity=socketRarity(entry,stats);
-  if(rarity!==0)return 1;
-  const limit=operation.socketLimits[rarity]??operation.socketLimits[0]??1;
-  const value=random();
-  if(!Number.isFinite(value)||value<0||value>=1)throw new Error('宝石孔随机值无效');
-  const roll=Math.floor(value*SOCKET_WEIGHT_PERCENT);
-  let threshold=0;
-  for(let index=0;index<Math.min(limit,operation.socketWeights.length);index+=1){
-    threshold+=operation.socketWeights[index]!;
-    if(roll<threshold)return index+1;
-  }
-  return 1;
 }

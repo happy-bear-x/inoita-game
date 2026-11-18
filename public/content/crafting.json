@@ -69,7 +69,7 @@
       }
     },
     "socket": {
-      "name": "宝石孔生成",
+      "name": "开孔",
       "materials": [
         {
           "item": "sharp-claw",
@@ -81,12 +81,6 @@
         }
       ],
       "cost": 1,
-      "socketWeights": [
-        35,
-        30,
-        20,
-        15
-      ],
       "socketLimits": [
         4,
         3,
