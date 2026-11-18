@@ -486,6 +486,19 @@ test('a swap pins only the dragged item and the displaced item sorts again',()=>
   assert.deepEqual(bag.captureState().pinnedItems.all,[moved]);
 });
 
+test('dragging onto a pinned item releases the displaced item',()=>{
+  const bag=new Bag(()=>{},catalog,'dark-knight'),items=pick('material',4);
+  for(const item of items)bag.add(item);
+  bag.organize();
+  const ids=bag.allCells.map(entry=>entry!.id);
+  assert.equal(bag.placeInCell(ids[2]!,'all',0),true);
+  assert.deepEqual(bag.captureState().pinnedItems.all,[ids[2]],'先固定被拖到第一格的那件');
+  assert.equal(bag.placeInCell(ids[3]!,'all',0),true);
+  assert.deepEqual(bag.captureState().pinnedItems.all,[ids[3]],'被换走的物品解除固定');
+  bag.organize();
+  assert.deepEqual(bag.allCells.map(entry=>entry!.id),[ids[3],ids[0],ids[1],ids[2]],'只有新拖的这件留在第一格，其余按默认顺序');
+});
+
 test('an item that leaves the bag forgets its pinned cell',()=>{
   const bag=new Bag(()=>{},catalog,'dark-knight'),[first,second]=pick('material',2);
   bag.add(first!);bag.add(second!);

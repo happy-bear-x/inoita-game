@@ -443,7 +443,8 @@ export class Bag {
     const occupant=cells[cell];
     cells[cell]=id;cells[from]=occupant;
     this.trim(cells);
-    // 只固定玩家直接拖动的这件；被换走的对方仍参与之后的整理。
+    // 只固定玩家直接拖动的这件；被换走的对方解除固定，重新参与整理。
+    if (occupant !== undefined) this.pinned[view].delete(occupant);
     this.pinned[view].add(id);
     this.notify();return true;
   }
