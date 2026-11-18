@@ -26,7 +26,8 @@ import type { CloudSavePort } from '../application/cloud-save.ts';
 
 const art=(name:string)=>`/assets/ui/title-menu/${name}.png`;
 /** 标题页右下角展示的版本号；等用户要求时再改。 */
-const GAME_VERSION='v1.0.10';
+/** 标题页版本号：构建时由 Vite 按更新日志或 package.json 注入，测试和未注入时回退到当前版本。 */
+const GAME_VERSION=(globalThis as {__inoitaBuild?:{game?:string}}).__inoitaBuild?.game||'v2.0.0';
 /** 版本号下方一行；说明作品性质，并提醒支持官方版本。 */
 const FAN_WORK_NOTICE='同人作品 · 仅供个人学习研究 · 请支持官方正版';
 const CLOSE_IMAGE='/assets/ui/menus/close.png';

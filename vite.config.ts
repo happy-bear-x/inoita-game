@@ -124,7 +124,7 @@ function readBuildInfo(root: string, command: string, versions: { assetVersion: 
     gameVersion = changelog?.releases?.[0]?.gameVersion ?? '';
   } catch { /* 更新日志缺失时只留空。 */ }
   return {
-    game: gameVersion,
+    game: gameVersion || (packageVersion ? `v${packageVersion}` : ''),
     package: packageVersion,
     contentVersion: versions.contentVersion,
     assetVersion: versions.assetVersion,
