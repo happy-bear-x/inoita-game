@@ -208,6 +208,10 @@ const FLOW_FIELD_BUCKET_PX=16;
 const FLOW_FIELD_MIN_BODY_RADIUS_PX=16;
 const FLOW_FIELD_BODY_PADDING_PX=8;
 
+function summonCommandAction(owner:string,command:EnemyPlayableSkill):SkillAction {
+  return memberSkillGrowth(owner)==='companion'?command.companionAction??command.action:command.action;
+}
+
 /** 正式地图的战斗结算与角色表现装配。 */
 export class WorldCombat {
   private readonly manualOffensiveSkills = new WeakMap<NonNullable<ActionPlayback['skill']>,number>();
@@ -1148,8 +1152,7 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
     let commanded=false;
     for(const summon of summons){
       const definition=summon.definition.commandAction;if(!definition)continue;
-      const command=memberSkillGrowth(event.casterId)==='companion'&&definition.companionAction?
-        {...definition,action:definition.companionAction}:definition;
+      const command={...definition,action:summonCommandAction(event.casterId,definition)};
       // 命令是围绕召唤物自身的范围动作：沿它当前的目标，没有目标就原地施放，不强制追最近的敌人。
       const current=this.enemyTarget(summon.key);
       const target=current&&this.arena.some(enemy=>enemy.key===current&&canTargetCombatant(caster,this.combatant(current)!))?
@@ -2301,7 +2304,8 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
       hasBuff:(key,buff)=>this.conditions.hasBuff(key,buff),
       ownedSummons:key=>this.arena.flatMap(enemy=>{
         if(enemy.summonedBy!==key||this.pendingDefeats.has(enemy.key))return [];
-        const actor=this.combatant(enemy.key);return actor?[actor]:[];
+        const actor=this.combatant(enemy.key),command=enemy.definition.commandAction;
+        return actor?[{...actor,commandAction:command&&summonCommandAction(key,command)}]:[];
       }),
       hasCriticalAlly:()=>this.activeParty.some(key=>{
         const hp=this.memberOf(key)?.player;return !!hp && hp.health>0 && hp.health<=hp.maxHealth*0.35;

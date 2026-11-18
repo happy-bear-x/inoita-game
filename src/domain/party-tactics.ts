@@ -1,7 +1,7 @@
 import { attackDistance, faceTarget, PIXELS_PER_DISTANCE_UNIT } from './basic-attack.ts';
 import type { CombatUnit, EnemyPlayableSkill, SkillAction, SkillEffectCue } from './battle.ts';
 import { canTargetCombatant, chargeLanding, lungeLanding, rearLanding, resolveCueTargets, type SkillMovementPort, type Combatant, type CombatController } from './combat.ts';
-import { attackRangeQueryRadius } from './combat-spatial-index.ts';
+import { attackRangeQueryRadius, awarenessRangeQueryRadius } from './combat-spatial-index.ts';
 import type { PartySkillUse } from './party.ts';
 import type { PartyPort } from './party-ai.ts';
 import { rectDistance } from './rect-distance.ts';
@@ -97,6 +97,20 @@ function healingValue(affected:Combatant[], port:TacticsPort, unit:CombatUnit, t
   return wounded?(periodic?20:30)+20*(1-lowest)+4*(wounded-1):0;
 }
 
+function summonCanHit(actor:Combatant,target:Combatant|undefined,port:TacticsPort):boolean {
+  return port.ownedSummons?.(actor.id).some(summon=>{
+    if(!summon.commandAction)return false;
+    const profile=skillProfile(summon.commandAction);
+    const bonus=port.rangeBonusUnits?.(summon.id)??0;
+    const radius=awarenessRangeQueryRadius(Math.ceil(profile.radius/PIXELS_PER_DISTANCE_UNIT)+bonus);
+    const candidates=port.nearbyCandidates?.([{...summon.position,radius}])??port.candidates();
+    const selected=port.actor(port.targetOf?.(summon.id)??'');
+    return profile.effects.some(({cue})=>resolveCueTargets(cue,summon,selected,candidates,[],bonus)
+      .slice(0,MAX_SKILL_TARGETS).some(enemy=>enemy.team!==summon.team &&
+        (enemy.id===target?.id || enemy.id===selected?.id || port.actor(port.targetOf?.(enemy.id)??'')?.team===actor.team)));
+  })??false;
+}
+
 /** 普攻的基准收益为 5。多个动作同分时保留技能表中靠前的一项。 */
 export function choosePartyAction(actor:Combatant,target:Combatant|undefined,port:TacticsPort,combat:Readiness):PartyAction|undefined {
   const skills=port.skills();
@@ -182,9 +196,7 @@ export function choosePartyAction(actor:Combatant,target:Combatant|undefined,por
       }
     }
     if(uses.includes('summon')&&local.length&&!port.ownedSummons?.(actor.id).length)support=Math.max(support,pressured?10:4);
-    if(action.requiresActiveSummon&&target&&port.ownedSummons?.(actor.id).some(summon=>
-      attackDistance(summon.position,summon.bounds,target.position,target.bounds)<=action.approachDistanceUnits))
-      offense=Math.max(offense,9);
+    if(action.requiresActiveSummon&&summonCanHit(actor,target,port))offense=Math.max(offense,9);
     const score=Math.max(offense,support,defense,healing)+(high?4:0);
     if(!healing&&!pressured&&!attackers.length&&Number.isFinite(reserve)&&port.canSpendMana?.(cost+reserve)===false)continue;
     if(score>bestScore){bestScore=score;best={skill,targetId:target?.id,urgent:Math.max(defense,healing)>Math.max(offense,support)};}

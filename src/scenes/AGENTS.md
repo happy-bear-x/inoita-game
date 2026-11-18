@@ -134,4 +134,4 @@ npm test -- tests/scene-assets.test.ts
 
 - `texture-loader-scene.ts` 承接全部图片与图集下载，在业务场景之前启动；世界、舞台和菜单关闭只取消自己的等待，游戏退出时注销下载登记、监听和计时器。
 
-佣兵决策通过 `createPartyController` 读取实际射程、队伍槽、生命、法力、交战目标与现有增益。主角交给 AI 时沿用同一入口。
+佣兵决策通过 `createPartyController` 读取实际射程、队伍槽、生命、法力、交战目标与现有增益。召唤命令的决策和执行按主人身份读取同一份受命动作。主角交给 AI 时沿用同一入口。

@@ -133,3 +133,22 @@ for(const id of ['shield-bash','dark-attack']){
     assert.equal(h.skill(),undefined);
   });
 }
+
+test('monster scream needs an engaged enemy in the summoned creature’s actual shout',()=>{
+  const h=fixture('monster-s-scream');
+  h.skills[0].action=battle.skills['monster-s-scream'].companion!.action!;
+  const command=battle.enemies.find(enemy=>enemy.id==='enemy-hell-s-pawn-1')!.commandAction!;
+  const pawn={...character('pawn','party',136),commandAction:command.companionAction!};
+  h.summons.push(pawn);
+  assert.equal(h.skill(),undefined,'88px from the pawn is outside its shout');
+  pawn.position.x=120;
+  assert.equal(h.skill(),'monster-s-scream','the focused enemy is within 72px');
+
+  pawn.position.x=560;
+  h.second.position.x=600;
+  Object.assign(h.port,{nearbyCandidates:(circles:readonly {x:number;radius:number}[])=>
+    h.port.candidates().filter(actor=>circles.some(circle=>Math.abs(circle.x-actor.position.x)<=circle.radius))});
+  assert.equal(h.skill(),undefined,'an idle bystander alone does not justify a shout');
+  h.attackers.set('second','leader');
+  assert.equal(h.skill(),'monster-s-scream','another engaged enemy is near the pawn');
+});

@@ -1,6 +1,6 @@
 import { rectDistance } from './rect-distance.ts';
 import { PartyFollow } from './party-follow.ts';
-import { LOGIC_FRAME_MS, type EnemyPlayableSkill } from './battle.ts';
+import { LOGIC_FRAME_MS, type EnemyPlayableSkill, type SkillAction } from './battle.ts';
 import { attackDistance, targetDistance } from './basic-attack.ts';
 import { CombatController, canTargetCombatant, type Combatant, type CombatPort } from './combat.ts';
 import { combatStateCapabilities } from './combat-state.ts';
@@ -41,7 +41,7 @@ export interface PartyPort extends CombatPort {
   skillUses(id:string): readonly PartySkillUse[];
   isBoss?(id:string): boolean;
   hasBuff?(id:string,buff:BattleBuffKey): boolean;
-  ownedSummons?(id:string): readonly Combatant[];
+  ownedSummons?(id:string): readonly (Combatant & {commandAction?:SkillAction})[];
   hasCriticalAlly?(): boolean;
   vitals(id:string): {health:number;maxHealth:number;mana?:number;maxMana?:number} | undefined;
   attacking(id:string): boolean;
