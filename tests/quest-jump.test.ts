@@ -340,6 +340,9 @@ test('quest-153 replay follows the accept stage map instead of the destination',
     assert.equal(plan.destination?.map, 'kamuran-wilderness-d37060c8');
     assert.ok(plan.worldCommands.some(command => command.type === 'world'
       && command.command.kind === 'place' && command.command.entity.id === 'quest-npc-located-npc-246'));
+    // npc-82 没有 worldEntityId，只能按舞台地图匹配；只补目的地会漏掉它。
+    assert.ok(plan.worldCommands.some(command => command.type === 'world'
+      && command.command.kind === 'place' && command.command.entity.id === 'quest-npc-located-npc-82'));
 
     h.director.holdTriggers();
     applyQuestStartPlan(h.session, plan);
@@ -356,4 +359,68 @@ test('quest-153 replay follows the accept stage map instead of the destination',
     h.director.dispose();
   }
 });
+
+test('a world entity placed on another map is replayed before the accept scene', () => {
+  const h = playthrough();
+  try {
+    const campaign = h.session.campaign;
+    h.session.storyWorld.apply({ kind: 'place', entity: {
+      id: 'quest-npc-located-npc-59', map: 'inside-arnen-castle01-8b6ce276',
+      actor: 'story-lehman-90989efd', characterId: 'npc-59', x: 200, y: 376, visible: true } });
+    h.session.applyStoryCommands([{ type: 'flag', flag: 'quest-npc-located-npc-59', value: true }]);
+
+    const plan = planQuestStart(campaign, h.session, 'quest-10');
+    assert.ok(plan.worldCommands.some(command => command.type === 'world'
+      && command.command.kind === 'place' && command.command.entity.id === 'quest-npc-located-npc-59'
+      && command.command.entity.map === 'training-dungeon-one'));
+
+    h.director.holdTriggers();
+    applyQuestStartPlan(h.session, plan);
+    h.director.releaseTriggers();
+    assert.equal(h.session.storyWorld.entity('quest-npc-located-npc-59')?.map, 'training-dungeon-one');
+  } finally {
+    h.director.dispose();
+  }
+});
+
+test('a placement from a later story event is not replayed into an earlier jump', () => {
+  const h = playthrough();
+  try {
+    const campaign = h.session.campaign;
+    const plan = planQuestStart(campaign, h.session, 'quest-317');
+    assert.ok(plan.worldCommands.some(command => command.type === 'world'
+      && command.command.kind === 'place' && command.command.entity.id === 'quest-npc-located-npc-445'
+      && command.command.entity.map === 'eternal-snowy-forest-3-d519c1d9'));
+    assert.equal(plan.worldCommands.some(command => command.type === 'world'
+      && command.command.kind === 'remove-character' && command.command.characterId === 'npc-492'), false,
+      '不能重放目标之后事件的清场命令');
+
+    h.director.holdTriggers();
+    applyQuestStartPlan(h.session, plan);
+    h.director.releaseTriggers();
+    assert.equal(h.session.storyWorld.entity('quest-npc-located-npc-445')?.map,
+      'eternal-snowy-forest-3-d519c1d9');
+    assert.equal(h.session.storyWorld.actorVisible('eternal-snowy-valley-f39c6607', 'npc-492'), true);
+  } finally {
+    h.director.dispose();
+  }
+});
+
+test('a quest-gated placement that should stay hidden does not warn about a missing source', () => {
+  const h = playthrough();
+  try {
+    const campaign = h.session.campaign;
+    h.session.applyStoryCommands([{ type: 'quest', command: { type: 'accept', quest: 'quest-334' } }]);
+    assert.equal(h.session.status('quest-334'), 'ready');
+
+    const plan = planQuestStart(campaign, h.session, 'quest-322');
+    assert.equal(plan.worldCommands.some(command => command.type === 'world'
+      && command.command.kind === 'place' && command.command.entity.id === 'quest-npc-npc-449'), false);
+    assert.equal(plan.warnings.some(warning => warning.includes('quest-npc-npc-449')), false,
+      '条件要求隐藏的 NPC 不该报缺来源');
+  } finally {
+    h.director.dispose();
+  }
+});
+
 

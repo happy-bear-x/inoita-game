@@ -342,14 +342,38 @@ function placementForCast(campaign: Campaign, member: StoryCastMember,
 
 function needsWorldPlacement(session: Session, placement: CampaignPlacement): boolean {
   if (!session.evaluateCondition(placement.condition)) return true;
-  return session.storyWorld.isPlaced(placement.id) && !session.storyWorld.visible(placement.id);
+  const placed = session.storyWorld.entity(placement.id);
+  if (!placed) return false;
+  // 另一张地图或另一次访问留下的登记会被世界投影忽略，按没有登记处理。
+  if (placed.mapVisit !== undefined && placed.mapVisit !== session.storyWorld.visit) return false;
+  return placed.removed === true || placed.visible === false || placed.map !== placement.map;
 }
 
-/** 找真正把这个世界实体摆到目标地图的剧本节点；坐标一致时优先。 */
-function worldPlaceSources(campaign: Campaign, placement: CampaignPlacement): { script: string; node: string }[] {
+/** 条件要求目标任务已经完成的事件一定发生在跳转点之后，不能拿来当世界状态的来源。 */
+function conditionAfterQuest(condition: StoryCondition | undefined, questId: string): boolean {
+  if (!condition) return false;
+  switch (condition.type) {
+    case 'all': return condition.conditions.some(child => conditionAfterQuest(child, questId));
+    case 'any': return condition.conditions.length > 0
+      && condition.conditions.every(child => conditionAfterQuest(child, questId));
+    case 'quest': return condition.quest === questId
+      && (condition.status === 'completed' || condition.status === 'settled');
+    default: return false;
+  }
+}
+
+function futureOnlyScript(campaign: Campaign, scriptName: string, questId: string): boolean {
+  const events = campaign.events.filter(event => event.script === scriptName);
+  return events.length > 0 && events.every(event => conditionAfterQuest(event.condition, questId));
+}
+
+/** 找真正把这个世界实体摆到目标地图的剧本节点；坐标一致优先，并排除目标任务之后的事件。 */
+function worldPlaceSource(campaign: Campaign, placement: CampaignPlacement,
+  questId: string): { script: string; node: string } | undefined {
   const exact: { script: string; node: string }[] = [];
   const sameMap: { script: string; node: string }[] = [];
   for (const [scriptName, script] of Object.entries(campaign.scripts)) {
+    if (futureOnlyScript(campaign, scriptName, questId)) continue;
     for (const node of script.nodes) {
       let exactHit = false, mapHit = false;
       for (const command of node.commands) {
@@ -363,7 +387,19 @@ function worldPlaceSources(campaign: Campaign, placement: CampaignPlacement): { 
       else if (mapHit) sameMap.push({ script: scriptName, node: node.id });
     }
   }
-  return exact.length ? exact : sameMap;
+  return exact[0] ?? sameMap[0];
+}
+
+/** 只有 flag/always 这类“世界应当有这个人”的条件才值得报缺来源；任务、选择和否定条件可能本来就该隐藏。 */
+function placementVisibleByFlag(condition: StoryCondition | undefined): boolean {
+  if (!condition) return true;
+  switch (condition.type) {
+    case 'always':
+    case 'flag': return true;
+    case 'all':
+    case 'any': return condition.conditions.every(placementVisibleByFlag);
+    default: return false;
+  }
 }
 
 /** 重放来源节点的世界命令；任务、物品和队伍命令留给正式任务流程，不在调试跳转里伪造。 */
@@ -386,19 +422,20 @@ function worldStateCommands(campaign: Campaign, sources: readonly { script: stri
  * `world place` + `flag` 建立。调试跳转没有播那段上游剧情，所以要把建立实体的原始命令
  * 通过正式命令执行器重放一遍，演出本身仍走正式管线。
  */
-function acceptSceneWorldCommands(campaign: Campaign, session: Session, accept: AcceptCandidate | undefined,
-  destination: TravelDestination | undefined, warnings: string[]): StoryCommand[] {
+function acceptSceneWorldCommands(campaign: Campaign, session: Session, questId: string,
+  accept: AcceptCandidate | undefined, destination: TravelDestination | undefined, warnings: string[]): StoryCommand[] {
   const sources: { script: string; node: string }[] = [];
   for (const { stage, map } of acceptStageDeclarations(campaign, accept, session, destination)) {
     for (const member of stage.cast) {
       const placement = placementForCast(campaign, member, map);
       if (!placement || !needsWorldPlacement(session, placement)) continue;
-      const found = worldPlaceSources(campaign, placement);
-      if (!found.length) {
-        warnings.push(`接取舞台 ${map ?? '当前地图'} 的演员 ${member.id} 需要世界摆放 ${placement.id}，但找不到对应的剧情命令`);
+      const source = worldPlaceSource(campaign, placement, questId);
+      if (!source) {
+        if (placementVisibleByFlag(placement.condition))
+          warnings.push(`接取舞台 ${map ?? '当前地图'} 的演员 ${member.id} 需要世界摆放 ${placement.id}，但找不到对应的剧情命令`);
         continue;
       }
-      sources.push(...found);
+      sources.push(source);
     }
   }
   return worldStateCommands(campaign, sources);
@@ -431,7 +468,7 @@ export function planQuestStart(campaign: Campaign, session: Session, questId: st
   const destination = resolveDestination(campaign, session, quest, accept, mode);
   const warnings: string[] = [];
   satisfyNpcPlacements(campaign, session, quest, destination, conditionPatch);
-  const worldCommands = acceptSceneWorldCommands(campaign, session, accept, destination, warnings);
+  const worldCommands = acceptSceneWorldCommands(campaign, session, questId, accept, destination, warnings);
   if (internal) warnings.push('这是内部任务，没有可接取入口，已改为从进行中开始');
   else if (fallback) warnings.push(quest.completion === 'talk'
     ? '没有找到可接取入口，已直接放到待交付状态'

@@ -34,7 +34,7 @@ src/debug/gm-actions.ts      唯一实现（只依赖纯逻辑模块，不引入
 
 `completion: 'talk'` 的零目标任务没有进行中阶段，起点是待交付：规划会把模式归一成 `ready`，传送到 `places.ready`，并补齐交付 NPC 的 placement 条件（例如卓拉德在影营地需要 `quest-npc-located-npc-40`）。应用计划时先放成可接取，再走真实的 `quest accept` 命令，让任务簿决定 ready/active。
 
-接取剧情播放前，调试会扫描接取脚本自己的舞台声明，按舞台地图补齐 cast 依赖的世界实体：先按 `worldEntityId`（没有时按 `characterId`/`actor`）找到 `campaign.placements`，再到剧本里找建立它的 `world place` 节点，重放该节点的 `world` + `flag` 命令。上游演出不播，任务、物品和队伍命令也不重放。像 quest-10 的莱曼需要 `event-10` 的摆放；quest-153 的舞台在 leap-gate-district、任务目的地却在 kamuran-wilderness，所以不能只补目的地。找不到来源会在跳转结果的警告里点名演员。
+接取剧情播放前，调试会扫描接取脚本自己的舞台声明，按舞台地图补齐 cast 依赖的世界实体：先按 `worldEntityId`（没有时按 `characterId`/`actor`）找到 `campaign.placements`，再到剧本里找建立它的 `world place` 节点，重放该节点的 `world` + `flag` 命令。世界登记在别的地图或已移除时同样重放；条件要求目标任务已完成的事件属于未来，不会被当成来源。上游演出不播，任务、物品和队伍命令也不重放。像 quest-10 的莱曼需要 `event-10` 的摆放；quest-153 的舞台在 leap-gate-district、任务目的地却在 kamuran-wilderness，所以不能只补目的地。只有 `flag`/`always` 类摆放找不到来源时才会在跳转结果的警告里点名演员。
 
 调试运行期间只自动播放与目标任务相关的剧情事件；接取事件、`interactionEvent`、接取/完成脚本、引用目标任务的剧本，以及完成事件条件所依赖的前置事件会放行，其他区域、进图、start 和任务事件不自动开演。所有 `source: 'start'` 事件在跳转时记为已完成，换图不会重播开场。起点还会补齐目标/条件任务的交付物品；「保留进度」会刷新回滚检查点并补一次自动存档。
 
