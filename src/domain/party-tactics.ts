@@ -1,4 +1,4 @@
-import { attackDistance, faceTarget, PIXELS_PER_DISTANCE_UNIT } from './basic-attack.ts';
+import { attackDistance, faceTarget, PIXELS_PER_DISTANCE_UNIT, targetDistance } from './basic-attack.ts';
 import type { CombatUnit, EnemyPlayableSkill, SkillAction, SkillEffectCue } from './battle.ts';
 import { canTargetCombatant, chargeLanding, lungeLanding, rearLanding, resolveCueTargets, type SkillMovementPort, type Combatant, type CombatController } from './combat.ts';
 import { attackRangeQueryRadius, awarenessRangeQueryRadius } from './combat-spatial-index.ts';
@@ -164,7 +164,10 @@ export function choosePartyAction(actor:Combatant,target:Combatant|undefined,por
         port.healScore,healCandidates).slice(0,MAX_SKILL_TARGETS);
       const periodicHeal=unit.effect==='buff'&&unit.ranks[(skill.level??1)-1]?.effect.periodic.some(p=>p.kind==='healing');
       if((unit.effect==='heal'||periodicHeal)&&uses.includes('heal')){
-        healing=Math.max(healing,healingValue(affected,port,unit,high?0.7:0.5,local.length>0,periodicHeal===true,uses.includes('buff')));
+        const healRange=Math.floor(cue.targetRangePx/PIXELS_PER_DISTANCE_UNIT)+bonus;
+        const engaged=periodicHeal ? enemies.some(enemy=>
+          Math.floor(targetDistance(caster.position,enemy.position)/PIXELS_PER_DISTANCE_UNIT)<=healRange) : local.length>0;
+        healing=Math.max(healing,healingValue(affected,port,unit,high?0.7:0.5,engaged,periodicHeal===true,uses.includes('buff')));
         if(cue.target==='ally-heal'){
           const reach=Math.floor(cue.targetRangePx/PIXELS_PER_DISTANCE_UNIT)+bonus;
           for(const slot of slots){

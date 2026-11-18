@@ -106,6 +106,17 @@ test('recovering mana by spending health and refreshing regeneration have observ
   hot.buffs.add('leader:light-command');assert.equal(hot.skill(),undefined);
 });
 
+test('light command evaluates engagement within its own healing radius',()=>{
+  const h=fixture('light-command');
+  h.port.attackRange=()=>4;
+  h.attackers.set(h.enemy.id,h.ally.id);
+  h.vitals.get(h.ally.id)!.health=30;
+  h.enemy.position.x=48;
+  assert.equal(h.skill(),'light-command');
+  h.enemy.position.x=96;
+  assert.equal(h.skill(),undefined);
+});
+
 test('ambush waits for a basic shot even when rampage reaches the enemy',()=>{
   const h=fixture('ambush','rampage');
   h.port.attackRange=()=>12;
