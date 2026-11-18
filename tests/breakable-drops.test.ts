@@ -4,7 +4,6 @@ import { readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 import type { BattleCatalog } from '../src/domain/battle.ts';
 import type { CharacterStatsCatalog } from '../src/domain/character-stats.ts';
-import { ChestVisits } from '../src/domain/chests.ts';
 import { CombatConditions } from '../src/domain/combat-conditions.ts';
 import { CombatHitResolution } from '../src/domain/combat-hit-resolution.ts';
 import { PendingEnemyDefeats } from '../src/domain/combat-outcomes.ts';
@@ -52,20 +51,16 @@ test('breakable loot uses the same rolled result shape as a chest', () => {
   }
 });
 
-test('a defeated breakable rolls once, skips experience and pity, and keeps quest drops', t => {
+test('a defeated breakable opens one death ticket and reports its settlement', t => {
   t.mock.method(Math, 'random', () => 0);
-  const chests = new ChestVisits();
-  chests.enterMap('breakable-map');
-  let experience = 0, pityRecords = 0, syncs = 0;
-  const defeated: unknown[] = [], removals: string[] = [];
-  const loot: { rewards: readonly unknown[]; rendered: boolean }[] = [];
+  let syncs = 0;
+  const removals: string[] = [], settled: Record<string, unknown>[] = [];
   const session = {
-    party: { livingIds: ['player'], groupModifiers: () => ({}), addExperience: (value: number) => { experience += value; } },
     isOneHitKill: () => false,
-    chests,
-    questDropRequirements: () => [],
-    enemyDefeated: (spawn: unknown) => { defeated.push(spawn); },
-    lootPity: { recordEnemy: () => { pityRecords += 1; }, takeBossFirstDefeat: () => false }
+    settleEnemyDefeat: (input: Record<string, unknown>) => {
+      settled.push(input);
+      return { settlement: { isBreakable: true }, levelledIds: [], notify() {} };
+    }
   };
   const enemy = battle.enemies.find(value => value.id === BREAKABLE_ENEMY_IDS.jar)!;
   const spawn = { id: 'spawn', enemyId: enemy.id, x: 10, y: 20, breakableEligible: true };
@@ -78,10 +73,7 @@ test('a defeated breakable rolls once, skips experience and pity, and keeps ques
     enemySnapshot: () => ({ health: enemyHealth, maxHealth: 1000, level: 1, elite: false }),
     source: () => spawn, setEnemyHealth: (_key: string, value: number) => { enemyHealth = value; }
   };
-  const scene = { map: { id: 'breakable-map', lootLevel: 0 }, refreshCombatTarget() {},
-    spawnLootOnMap: (_map: string, _x: number, _y: number, rewards: readonly unknown[], rendered: boolean) => {
-      loot.push({ rewards, rendered });
-    } };
+  const scene = { map: { id: 'breakable-map', lootLevel: 0 }, refreshCombatTarget() {}, refreshGroundLoot() {}, lootLanding: () => ({ x: 10, y: 20 }) };
   const host = Object.setPrototypeOf({
     app: { session, characterStats: stats, audio: { monsterDeath() {} }, director: { healthChanged: () => false } },
     drops: catalog, conditions: new CombatConditions(), hitResolution: new CombatHitResolution(),
@@ -94,15 +86,16 @@ test('a defeated breakable rolls once, skips experience and pity, and keeps ques
   }, WorldCombat.prototype);
   Reflect.get(WorldCombat.prototype, 'settleHit').call(host,
     { casterId: 'player', targetId: spawn.id }, { damage: 5 }, hero, target);
+  host.pendingDefeats.flush();
 
-  assert.deepEqual(defeated, [spawn]);
+  assert.equal(settled.length, 1, '一次击杀只开一张死亡单');
+  const input = settled[0]!;
+  assert.equal(input.key, spawn.id);
+  assert.equal(input.spawn, spawn);
+  assert.equal(input.map, 'breakable-map');
+  assert.equal(input.enemyLevel, 1);
+  assert.equal(input.earnsExperience, true, '由队伍命中，经验由奖励层按景物怪规则决定');
+  assert.equal(input.drops, catalog);
   assert.deepEqual(removals, [spawn.id]);
-  assert.equal(syncs, 1);
-  assert.equal(experience, 0, '景物怪不给经验');
-  assert.equal(pityRecords, 0, '景物怪不记录装备保底');
-  assert.equal(loot.length, 2, '景物奖励与任务掉落各结算一次');
-  assert.ok(loot[0]!.rewards.length > 0);
-  assert.deepEqual(loot[1]!.rewards, []);
-  assert.deepEqual(chests.spawns.map(value => value.enemyId), ['enemy-barrel-of-toxic-waste-1']);
-  assert.equal(chests.spawns[0]!.id, 'breakable:1:breakable-map:spawn:0');
+  assert.equal(syncs, 1, '景物结算后同步衍生怪');
 });
