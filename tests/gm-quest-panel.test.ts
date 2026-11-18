@@ -298,16 +298,19 @@ test('starting a jump asks the host to save first instead of running it directly
   assert.deepEqual(f.jumpModes, ['available']);
 });
 
-test('the GM quest search box sits at the top of the right column', t => {
+test('the GM quest search box sits above the left column', t => {
   const f = fixture(); t.after(f.cleanup);
   f.click('调试页 任务');
   const field = questSearchField();
   assert.ok(field, '打开任务页后出现搜索框');
-  assert.equal(field!.style.width, '348px');
-  assert.equal(field!.style.top, '70px');
-  assert.equal(field!.style.left, '582px');
+  assert.equal(field!.style.width, '500px');
+  assert.equal(field!.style.height, '46px');
+  assert.equal(field!.style.top, '8px');
+  assert.equal(field!.style.left, '30px');
   assert.ok(Number.parseFloat(field!.style.fontSize) >= 16, '输入框字号不小于 16px');
   assert.equal(questSearchRoot()?.style.display, 'block');
+  const entriesTitle = f.specs().find(spec => spec.key === 'gm-quest-entries-title');
+  assert.equal(entriesTitle?.y, 70, '右栏内容从框顶开始');
 });
 
 test('typing a quest name lists cross-group results and clicking one opens its detail', t => {
@@ -387,8 +390,9 @@ test('the search box follows the menu frame after layout changes', t => {
   const field = questSearchField()!;
   f.body.root.setPosition(40, 30).setScale(2);
   f.panel.layoutSearch(f.body);
-  assert.equal(field.style.left, '1204px');
-  assert.equal(field.style.top, '170px');
-  assert.equal(field.style.width, '696px');
+  assert.equal(field.style.left, '100px');
+  assert.equal(field.style.top, '46px');
+  assert.equal(field.style.width, '1000px');
+  assert.equal(field.style.height, '92px');
 });
 

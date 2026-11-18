@@ -29,7 +29,7 @@
 - 每个面板按现有 `create`/`destroy` 结构成对实现，重新打开时复用同一套释放路径。
 - 场景关闭时摘掉自己的监听、计时器和 tween，统一挂在 `shutdown` 或 `destroy` 上。
 - 任务页选择任务组时保留列表、图框和滚动区，只更新选中状态与详情文字；商店查看和关闭商品详情、交易确认及无法出售提示时保留货架和背包列表。
-- **GM 任务页的搜索框和任务文本。** 搜索框是挂在 `#game-frame` 的原生 `input`，`gmPanel.layoutSearch(body)` 在画框布局变化后按 `body.root` 矩阵重贴；任务名/说明经 `readableStoryText` 去掉内容标记。搜索结果选中远端组时用 `questListScrollTarget` 保持左栏目标位置，不能被下一次 `captureQuestScrolls()` 用旧 `scrollTop` 覆盖。
+- **GM 任务页的搜索框和任务文本。** 搜索框位于左栏上方，是挂在 `#game-frame` 的原生 `input`，`gmPanel.layoutSearch(body)` 在画框布局变化后按 `body.root` 矩阵重贴；任务名/说明经 `readableStoryText` 去掉内容标记。搜索结果选中远端组时用 `questListScrollTarget` 保持左栏目标位置，不能被下一次 `captureQuestScrolls()` 用旧 `scrollTop` 覆盖。
 - 调试入口只收集点击，动作执行调用 `src/debug/gm-actions.ts`，不在面板里复制逻辑。
 - 调试道具数量变化只更新数量文字；调试道具与剧情列表只保留可视区及多一行的节点，滚动时复用节点与图片；筛选、选择和重绘保留对应滚动位置。
 - **背包侧栏共用绘制。** 背包、商人、合成台和强化台使用 `bag-rail.ts` 的图框、平铺行和选中底色；商店按右框位置平移。

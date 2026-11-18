@@ -68,12 +68,12 @@ const QUEST_ROW_HEIGHT = 56;
 const QUEST_ENTRY_HEIGHT = 52;
 const QUEST_LEFT = { x: 30, y: 70, width: 504, height: 350 } as const;
 const QUEST_RIGHT = { x: 582, y: 70, width: 348, height: 350 } as const;
-/** 搜索框贴在右栏顶部；任务列表和详情从它下方 104 开始。 */
-const QUEST_SEARCH = { x: QUEST_RIGHT.x, y: QUEST_RIGHT.y, width: QUEST_RIGHT.width, height: 28 } as const;
-const QUEST_CONTENT_Y = 104;
-const QUEST_DETAIL_HEIGHT = 248;
-const QUEST_DETAIL_CLIP = { top: QUEST_CONTENT_Y, bottom: 352 } as const;
-/** 没有调试任务时，右栏列表一直排到边框内沿（104..420）。 */
+/** 搜索框在左栏上方、与页签同一行；两栏任务内容都从框内顶部 70 开始。 */
+const QUEST_SEARCH = { x: QUEST_LEFT.x, y: 8, width: 500, height: 46 } as const;
+const QUEST_CONTENT_Y = 70;
+const QUEST_DETAIL_HEIGHT = 282;
+const QUEST_DETAIL_CLIP = { top: QUEST_CONTENT_Y, bottom: QUEST_CONTENT_Y + QUEST_DETAIL_HEIGHT } as const;
+/** 没有调试任务时，右栏列表一直排到边框内沿（70..420）。 */
 const QUEST_ENTRIES_HEIGHT = QUEST_RIGHT.y + QUEST_RIGHT.height - QUEST_CONTENT_Y;
 /** 道具页：每页 40 格，按背包同款底图与选中框显示。 */
 const ITEM_FILTERS: readonly GmItemFilter[] = ['all', 'equipment', 'consumable', 'material', 'quest'];
@@ -186,7 +186,7 @@ export class GmPanel {
     return this.questSearch.focused;
   }
 
-  /** 画框缩放、旋转或安全区变化后重新贴住右栏；不重建任务列表和滚动位置。 */
+  /** 画框缩放、旋转或安全区变化后重新贴住左栏上方；不重建任务列表和滚动位置。 */
   layoutSearch(body: UiSurface):void {
     if (this.page !== 'quests') { this.questSearch.hide(); return; }
     this.showQuestSearch(body);
@@ -374,7 +374,7 @@ export class GmPanel {
     return `共 ${groups.length} 个任务组 · ${total} 个任务；左栏按剧情顺序排列，点任务组查看组内任务。`;
   }
 
-  /** 搜索框每次重画都重新贴到右栏顶部；节点不重建，输入焦点保持。 */
+  /** 搜索框每次重画都重新贴到左栏上方；节点不重建，输入焦点保持。 */
   private showQuestSearch(body: UiSurface): void {
     const matrix = body.root.getWorldTransformMatrix();
     const origin = matrix.transformPoint(QUEST_SEARCH.x, QUEST_SEARCH.y);

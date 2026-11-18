@@ -5,7 +5,7 @@
 ## 文件
 
 - 布局：`bag-layout.ts`（背包格位）、`skill-book-layout.ts`（技能书页的图标格与右栏）、`choice-layout.ts`（选项竖排）、`control-layout.ts`（控件键位）、`item-layout.ts`（物品格与货币）、`shop-layout.ts`（商店两栏）、`quest-popup-layout.ts`（任务窗）、`description-text-layout.ts`（说明断行）、`text-layout.ts`（通用换行）、`cloud-save-layout.ts`（云存档页状态、颜色与几何）、`changelog-layout.ts`（标题页更新日志弹窗与可视窗口）、`portrait-fit.ts`（头像等比裁剪）、`viewport.ts`（屏幕尺寸、安全区、画布采样倍率与参考分辨率；`screenRectToCanvas` 将菜单预览的屏幕矩形交给游戏画布）。
-- 文本与样式：`text-style.ts`（共用字体）、`text-prompt.ts`（系统键盘输入，用于存档改名）、`number-prompt.ts`（商店数量与能力点数字输入卡，负责范围校验和红色提示）、`cloud-credentials-input.ts`（云存档页内嵌的账号/密码输入框）、`dom/quest-search-input.ts`（GM 任务页右栏顶部的搜索输入框）、`password-change-prompt.ts`（修改密码的当前/新/确认三项表单）、`dialogue-text.ts`（对白分页、断行与逐字显示）、`item-detail-lines.ts`（物品说明行）、`skill-detail-lines.ts`（技能说明行）、`item-result-details.ts`（操作结果说明）、`enhancement-odds-lines.ts`（强化结果句与混沌结果表）、`item-name-color.ts`（品质颜色与装备格边框）、`character-values.ts`（角色数值）。
+- 文本与样式：`text-style.ts`（共用字体）、`text-prompt.ts`（系统键盘输入，用于存档改名）、`number-prompt.ts`（商店数量与能力点数字输入卡，负责范围校验和红色提示）、`cloud-credentials-input.ts`（云存档页内嵌的账号/密码输入框）、`dom/quest-search-input.ts`（GM 任务页左栏上方的搜索输入框）、`password-change-prompt.ts`（修改密码的当前/新/确认三项表单）、`dialogue-text.ts`（对白分页、断行与逐字显示）、`item-detail-lines.ts`（物品说明行）、`skill-detail-lines.ts`（技能说明行）、`item-result-details.ts`（操作结果说明）、`enhancement-odds-lines.ts`（强化结果句与混沌结果表）、`item-name-color.ts`（品质颜色与装备格边框）、`character-values.ts`（角色数值）。
 - 接口与交互：`game-ui.ts`（UI 能力与视图接口）、`story-ui.ts`（剧情与菜单 UI 的接口、页面枚举和提示文案）、`story-ui-signature.ts`（菜单页面 viewModel 与显式签名）、`save-page.ts`（存档/读档页 controller，自行取消读档请求）、`bag-page.ts`（背包状态、绘制与操作）、`status-page.ts`（人物与加点）、`skills-page.ts`（技能学习与自动使用设置）、`settings-page.ts`（游戏设置）、`system-page.ts`（系统菜单）、`shortcut-editor.ts`（快捷栏登记）、`menu-item-drag.ts`（背包与合成共用长按拖拽）、`action-press-gate.ts`（动作按钮互斥）、`common-button.ts`（通用按钮素材）、`instant-message.ts`（屏幕提示）、`quest-progress.ts`（任务完成/进度提示的纯函数）、`slot-frame.ts`（格子底图）。
 - DOM 组件：`dom/node.ts`、`dom/surface.ts` 提供菜单图片、文本、按钮、裁剪、滚动与原生指针；`dom/volume-slider.ts` 提供音量条。
 - DOM 文字：`dom/dom-ui.ts`（标签创建、层与坐标换算）、`dom/menu-text.ts`（菜单页、滚动与裁剪）。
@@ -59,7 +59,7 @@
 - 新增面板先在这里补几何和文本函数，再在 `src/ui/dom/` 实现绘制与输入。
 - **融合器预览按当前页签档位取色。** 混沌/深渊混沌预览的标题颜色和格子边框由页签档位决定；合成完成后的背包按实例真实档位显示。
 - 云存档页的状态颜色和面板几何从 `cloud-save-layout.ts` 取；账号/密码输入用 `cloud-credentials-input.ts` 的内嵌输入框，直接定位在面板对应行上，不用独立弹层。存档改名继续用 `TextPrompt`。
-- **GM 任务页搜索框贴在右栏顶部。** 输入框是挂在 `#game-frame` 的原生 `input`（`QUEST_SEARCH`：582,70,348×28），任务列表和详情从 y=104 开始；输入框有焦点时 `story-ui.ts` 的菜单键盘整块让路，Enter 打开第一条结果，Escape 只清空并 blur。画框缩放/旋转时 `story-ui.layout()` 调 `gmPanel.layoutSearch()` 重贴；输入框高度不低于 22px、字号不低于 16px，`keyCode 229` 视为输入法确认。任务名和说明统一经 `readableStoryText` 转成可读文本，搜索同时匹配原始标题和可读标题。
+- **GM 任务页搜索框在左栏上方。** 输入框是挂在 `#game-frame` 的原生 `input`（`QUEST_SEARCH`：30,8,500×46，与页签同一行），左右两栏内容从 y=70 开始；placeholder 用 `.875em` 单独缩小（约 14px），输入文字仍按画框倍率且不低于 16px。输入框有焦点时 `story-ui.ts` 的菜单键盘整块让路，Enter 打开第一条结果，Escape 只清空并 blur。画框缩放/旋转时 `story-ui.layout()` 调 `gmPanel.layoutSearch()` 重贴；输入框高度不低于 22px，`keyCode 229` 视为输入法确认。任务名和说明统一经 `readableStoryText` 转成可读文本，搜索同时匹配原始标题和可读标题。
 - **强化结果先写人话。** 普通卷轴写成「当前 +N：X% 到 +N+1，Y% 到 +N+2」；混沌卷轴写成三行结果表。概率文案统一由 `enhancement-odds-lines.ts` 生成，面板只负责画。
 - **菜单子页面保留底层。** 强化台、合成台、技能书这类从菜单进入的子页面用 `page` 渲染在 `body` 上；`surface`/`body` 继续可见，只把说明层让位，不要隐藏整层再铺纯黑遮罩。
 - **技能书页复用技能目录的图标语言。** 左框只列当前可升级的技能（4×4 图标格，一屏放下），没有可升级技能时显示「暂无可升级技能」；右框显示等级变化与下一级数值预览，确认后才消耗技能书。封印书开封后在背包结果层显示「已永久解锁」、技能名称和职业，保留其他物品格与滚动位置。

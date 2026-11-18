@@ -19,7 +19,7 @@ interface QuestSearchInputOptions {
 }
 
 /**
- * GM 任务页的搜索框。它是盖在右栏顶部的原生 input，输入任务名或任务组名后
+ * GM 任务页的搜索框。它是盖在左栏上方的原生 input，输入任务名或任务组名后
  * 由面板在右栏画出跨组结果；输入框本身只负责接收文字和键盘。
  *
  * 输入框挂在 `#game-frame` 内、使用 CSS 坐标：键盘弹出时画框跟随可视区偏移，
@@ -117,7 +117,7 @@ export class QuestSearchInput {
     if (!field) return;
     const height = Math.max(22, rect.height);
     field.style.left = `${rect.left}px`;
-    // 画框缩小后 28px 的设计高度可能低于 16px 字号所需空间；加高时保持原来的垂直中心。
+    // 画框缩小后设计高度可能低于 16px 字号所需空间；加高时保持原来的垂直中心。
     field.style.top = `${Math.max(0, rect.top - (height - rect.height) / 2)}px`;
     field.style.width = `${Math.max(1, rect.width)}px`;
     field.style.height = `${height}px`;
