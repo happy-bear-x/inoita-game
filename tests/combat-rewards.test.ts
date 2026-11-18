@@ -244,7 +244,7 @@ test('failed reward insertion rolls back kill, first boss, items, experience and
   t.mock.method(Math,'random',()=>0);
   const run=harness({enemyId:'enemy-starving-boss-wolf-1',heroLevel:10,level:6});
   const store=groundLootFor(run.session);
-  store.add('reward-map',0,0,Array.from({length:64},()=>({kind:'money' as const,amount:1})),{nowMs:0});
+  store.add('reward-map',0,0,Array.from({length:64},()=>({kind:'money' as const,amount:1})));
   store.add('another-map',0,0,[{kind:'money',amount:9}]);
   run.session.setEnemyVitals('unrelated',42,0);
   const before=run.session.captureState();

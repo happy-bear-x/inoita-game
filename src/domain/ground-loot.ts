@@ -12,7 +12,6 @@ export interface GroundDrop {
   x:number;
   y:number;
   reward:DropReward;
-  createdAtMs?:number;
   flight?:{x:number;y:number;direction:number;remainingMs:number;durationMs:number};
 }
 
@@ -46,11 +45,9 @@ export class GroundLootStore {
     for(const drop of restored.drops){this.drops.set(drop.id,drop);this.track(drop);}
     this.revision++;
   }
-  add(map:string,x:number,y:number,rewards:readonly DropReward[],options:{nowMs?:number}={}):GroundDrop[] {
-    const nowMs=options.nowMs;
+  add(map:string,x:number,y:number,rewards:readonly DropReward[]):GroundDrop[] {
     const added=rewards.map(reward=>{
-      const drop:GroundDrop={id:`ground-${++this.nextId}`,map,x,y,reward:structuredClone(reward),
-        ...(nowMs!==undefined?{createdAtMs:nowMs}:{})};
+      const drop:GroundDrop={id:`ground-${++this.nextId}`,map,x,y,reward:structuredClone(reward)};
       this.drops.set(drop.id,drop);this.track(drop);
       return structuredClone(drop);
     });

@@ -710,7 +710,7 @@ export class Session {
       catch(error){this.restoreUnchecked(before);this.pendingNotification=pending;throw error;}
     });
   }
-  /** 会话时钟（毫秒）：地面掉落的创建时间与最旧淘汰按它记录。 */
+  /** 会话时钟（毫秒）：敌人刷新期限、归队冷却和诊断按它记录。 */
   get nowMs():number { return this.gameTimeMs; }
   advanceGameTime(deltaMs:number):void { if(deltaMs>0){this.gameTimeMs+=deltaMs;this.recovery.advance(deltaMs);} }
   get resourceRecoveryDelayMs():number { return this.resourceRecovery.millisecondsUntilNextPulse-this.combatClock.fractionalMs; }
@@ -864,7 +864,7 @@ export class Session {
               (!this.bag.catalog.items[reward.item].stackable||reward.lootLevel!==undefined)
               ?{...reward,instance:this.bag.prepareDrop(reward.item,{...(reward.roll?{grade:reward.roll,sockets:reward.roll.sockets}:{}),lootLevel:reward.lootLevel})}:reward);
             rollbackLoot??=store.checkpointMap(input.map);
-            store.add(input.map,landing.x,landing.y,prepared,{nowMs:this.nowMs});
+            store.add(input.map,landing.x,landing.y,prepared);
           };
           if(result.breakable){
             add(input.x,input.y,result.breakable.rewards);

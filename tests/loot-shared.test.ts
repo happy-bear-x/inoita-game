@@ -22,9 +22,9 @@ function seeded(seed: number): () => number {
 test('ground drops share one pickup rule: whoever walks over them collects', () => {
   const store = new GroundLootStore();
   const reward: DropReward = { kind: 'money', amount: 10 };
-  store.add('map', 10, 10, [reward], { nowMs: 1_000 });
+  store.add('map', 10, 10, [reward]);
   assert.equal(store.collectNearby('map', 10, 10, () => true).length, 1);
-  store.add('map', 10, 10, [reward], { nowMs: 2_000 });
+  store.add('map', 10, 10, [reward]);
   assert.equal(store.collectNearby('map', 12, 12, () => true).length, 1, '12px 内即可拾取');
   assert.equal(store.collectNearby('map', 30, 10, () => true).length, 0, '离得远不能拾取');
 });
@@ -64,8 +64,8 @@ test('quest drops stay a single shared roll', () => {
 test('ground loot caps each map at 64, dropping the oldest first', () => {
   const reward: DropReward = { kind: 'money', amount: 1 };
   const store = new GroundLootStore();
-  store.add('map', 0, 0, Array.from({ length: 70 }, () => reward), { nowMs: 1_000 });
+  store.add('map', 0, 0, Array.from({ length: 70 }, () => reward));
   assert.equal(store.forMap('map').length, 64, '每图最多 64 件');
-  store.add('other', 0, 0, [reward], { nowMs: 2_000 });
+  store.add('other', 0, 0, [reward]);
   assert.equal(store.forMap('other').length, 1, '上限按地图分别计算');
 });

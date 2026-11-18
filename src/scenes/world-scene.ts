@@ -1778,7 +1778,7 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
     store.add(map,landing.x,landing.y,rewards.map(reward=>reward.kind==='item'&&!reward.instance&&
       (!this.app.items.items[reward.item].stackable||reward.lootLevel!==undefined)
       ?{...reward,instance:this.app.session.bag.prepareDrop(reward.item,{...(reward.roll?{grade:reward.roll,sockets:reward.roll.sockets}:{}),lootLevel:reward.lootLevel})}
-      :reward),{nowMs:this.app.session.nowMs});
+      :reward));
     if(render&&this.map?.id===map)this.refreshGroundLoot();
   }
   refreshGroundLoot():void {
