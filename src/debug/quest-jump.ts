@@ -1,8 +1,9 @@
-import type { Campaign, CampaignQuest } from '../domain/campaign.ts';
+import type { Campaign, CampaignPlacement, CampaignQuest } from '../domain/campaign.ts';
 import type { Facing, QuestStatus, TravelDestination } from '../domain/content.ts';
 import type { QuestBookState, QuestProgress } from '../domain/quest-book.ts';
 import { storyConditionReferences, type StoryCondition } from '../domain/story-condition.ts';
-import type { StoryEvent, StoryPlace } from '../domain/story-graph.ts';
+import type { StoryCommand, StoryEvent, StoryPlace } from '../domain/story-graph.ts';
+import type { StoryCastMember, StoryStage } from '../domain/story-performance.ts';
 import type { Session } from '../domain/session.ts';
 
 export type QuestStartMode = 'available' | 'active' | 'ready';
@@ -36,6 +37,8 @@ export interface QuestStartPlan {
   accept?: QuestAcceptCandidate;
   acceptAlternatives: QuestAcceptCandidate[];
   conditionPatch: QuestConditionPatch;
+  /** 接取舞台依赖的世界实体，由原始剧情里的 world/flag 命令重建。 */
+  worldCommands: StoryCommand[];
   destination?: TravelDestination;
   warnings: string[];
   /** 请求可接取，但目标没有接取入口，实际按进行中开始。 */
@@ -305,6 +308,102 @@ function satisfyNpcPlacements(campaign: Campaign, session: Session, quest: Campa
   }
 }
 
+interface AcceptStageDeclaration {
+  stage: StoryStage;
+  /** 实际演出地图；`mapFromWorld` 时取目的地或当前地图。 */
+  map?: string;
+}
+
+/** 接取脚本自身节点里的舞台声明；接取演出不会先跳到别的脚本，不需要递归 call/next。 */
+function acceptStageDeclarations(campaign: Campaign, accept: AcceptCandidate | undefined, session: Session,
+  destination: TravelDestination | undefined): AcceptStageDeclaration[] {
+  const script = accept ? campaign.scripts[accept.script] : undefined;
+  if (!script) return [];
+  const inherited = destination?.map ?? session.storyWorld.currentLocation?.map;
+  const declarations: AcceptStageDeclaration[] = [];
+  for (const node of script.nodes) {
+    const stages: StoryStage[] = [];
+    if (node.stage) stages.push(node.stage);
+    for (const action of node.presentation) if (action.type === 'stage') stages.push(action);
+    for (const stage of stages) declarations.push({ stage, map: stage.mapFromWorld ? inherited : stage.map });
+  }
+  return declarations;
+}
+
+/** 舞台 cast 引用的世界摆放：`worldEntityId` 优先，没有时按同图的角色匹配。 */
+function placementForCast(campaign: Campaign, member: StoryCastMember,
+  map: string | undefined): CampaignPlacement | undefined {
+  if (member.worldEntityId) return campaign.placements.find(placement => placement.id === member.worldEntityId);
+  if (!map || member.memberId || member.enemyId) return undefined;
+  const matches = campaign.placements.filter(placement => placement.map === map
+    && (member.characterId ? placement.characterId === member.characterId : placement.actor === member.actor));
+  return matches.find(placement => placement.x === member.x && placement.y === member.y) ?? matches[0];
+}
+
+function needsWorldPlacement(session: Session, placement: CampaignPlacement): boolean {
+  if (!session.evaluateCondition(placement.condition)) return true;
+  return session.storyWorld.isPlaced(placement.id) && !session.storyWorld.visible(placement.id);
+}
+
+/** 找真正把这个世界实体摆到目标地图的剧本节点；坐标一致时优先。 */
+function worldPlaceSources(campaign: Campaign, placement: CampaignPlacement): { script: string; node: string }[] {
+  const exact: { script: string; node: string }[] = [];
+  const sameMap: { script: string; node: string }[] = [];
+  for (const [scriptName, script] of Object.entries(campaign.scripts)) {
+    for (const node of script.nodes) {
+      let exactHit = false, mapHit = false;
+      for (const command of node.commands) {
+        if (command.type !== 'world' || command.command.kind !== 'place') continue;
+        const entity = command.command.entity;
+        if (entity.id !== placement.id || entity.map !== placement.map) continue;
+        mapHit = true;
+        if (entity.x === placement.x && entity.y === placement.y) exactHit = true;
+      }
+      if (exactHit) exact.push({ script: scriptName, node: node.id });
+      else if (mapHit) sameMap.push({ script: scriptName, node: node.id });
+    }
+  }
+  return exact.length ? exact : sameMap;
+}
+
+/** 重放来源节点的世界命令；任务、物品和队伍命令留给正式任务流程，不在调试跳转里伪造。 */
+function worldStateCommands(campaign: Campaign, sources: readonly { script: string; node: string }[]): StoryCommand[] {
+  const commands: StoryCommand[] = [];
+  const seen = new Set<string>();
+  for (const source of sources) {
+    const key = `${source.script}\0${source.node}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const node = campaign.scripts[source.script]?.nodes.find(value => value.id === source.node);
+    if (!node) continue;
+    for (const command of node.commands) if (command.type === 'world' || command.type === 'flag') commands.push(command);
+  }
+  return commands;
+}
+
+/**
+ * 接取舞台的 cast 按 `worldEntityId` 引用世界实体；正式流程里这些实体由更早的剧本用
+ * `world place` + `flag` 建立。调试跳转没有播那段上游剧情，所以要把建立实体的原始命令
+ * 通过正式命令执行器重放一遍，演出本身仍走正式管线。
+ */
+function acceptSceneWorldCommands(campaign: Campaign, session: Session, accept: AcceptCandidate | undefined,
+  destination: TravelDestination | undefined, warnings: string[]): StoryCommand[] {
+  const sources: { script: string; node: string }[] = [];
+  for (const { stage, map } of acceptStageDeclarations(campaign, accept, session, destination)) {
+    for (const member of stage.cast) {
+      const placement = placementForCast(campaign, member, map);
+      if (!placement || !needsWorldPlacement(session, placement)) continue;
+      const found = worldPlaceSources(campaign, placement);
+      if (!found.length) {
+        warnings.push(`接取舞台 ${map ?? '当前地图'} 的演员 ${member.id} 需要世界摆放 ${placement.id}，但找不到对应的剧情命令`);
+        continue;
+      }
+      sources.push(...found);
+    }
+  }
+  return worldStateCommands(campaign, sources);
+}
+
 function hasAvailableEntry(quest: CampaignQuest, accept: AcceptCandidate | undefined): boolean {
   if (accept) return true;
   const place = quest.places?.available;
@@ -330,9 +429,9 @@ export function planQuestStart(campaign: Campaign, session: Session, questId: st
   const targetStatus: QuestStatus = mode;
 
   const destination = resolveDestination(campaign, session, quest, accept, mode);
-  satisfyNpcPlacements(campaign, session, quest, destination, conditionPatch);
-
   const warnings: string[] = [];
+  satisfyNpcPlacements(campaign, session, quest, destination, conditionPatch);
+  const worldCommands = acceptSceneWorldCommands(campaign, session, accept, destination, warnings);
   if (internal) warnings.push('这是内部任务，没有可接取入口，已改为从进行中开始');
   else if (fallback) warnings.push(quest.completion === 'talk'
     ? '没有找到可接取入口，已直接放到待交付状态'
@@ -363,7 +462,7 @@ export function planQuestStart(campaign: Campaign, session: Session, questId: st
     ...(accept ? { accept: { script: accept.script, ...(accept.eventId ? { eventId: accept.eventId } : {}) } } : {}),
     acceptAlternatives: candidates.map(candidate => ({
       script: candidate.script, ...(candidate.eventId ? { eventId: candidate.eventId } : {}) })),
-    conditionPatch, ...(destination ? { destination } : {}), warnings, fallback,
+    conditionPatch, worldCommands, ...(destination ? { destination } : {}), warnings, fallback,
   };
 }
 
@@ -428,9 +527,10 @@ export function applyQuestStartPlan(session: Session, plan: QuestStartPlan): voi
   // 条件任务的状态变化可能解锁/锁住别的任务；强制集合已经在视图里生效。
   session.questBook.commit(session.questBook.plan({ type: 'refresh' }));
 
-  const commands = [
+  const commands: StoryCommand[] = [
     ...plan.conditionPatch.choices.map(entry => ({ type: 'choice' as const, choice: entry.choice, value: entry.value })),
     ...plan.conditionPatch.flags.map(entry => ({ type: 'flag' as const, flag: entry.flag, value: entry.value })),
+    ...plan.worldCommands,
   ];
   if (commands.length) session.applyStoryCommands(commands);
 

@@ -1,7 +1,39 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { playthrough } from './helpers/story-playthrough.ts';
+import { headlessContent, playthrough } from './helpers/story-playthrough.ts';
 import { applyQuestStartPlan, planQuestStart, questFocusEventIds } from '../src/debug/quest-jump.ts';
+import { parseDrops } from '../src/domain/drops.ts';
+import { prepareSceneVisit } from '../src/domain/scene-visit.ts';
+import type { Session } from '../src/domain/session.ts';
+import { parseSprings } from '../src/domain/springs.ts';
+import { resolveStoryScene } from '../src/domain/story-scene.ts';
+import type { StoryStage } from '../src/domain/story-performance.ts';
+
+const contentJson = (name: string) =>
+  JSON.parse(readFileSync(new URL(`../public/content/${name}.json`, import.meta.url), 'utf8'));
+const testDrops = parseDrops(contentJson('drops'), headlessContent.items,
+  headlessContent.battle.enemies.map(enemy => enemy.id));
+const testSprings = parseSprings(contentJson('springs'));
+
+/** 用正式进图与舞台解析流程预演接取演出。 */
+function resolveAcceptStage(session: Session, stage: StoryStage) {
+  const map = headlessContent.maps.get(stage.map)!;
+  const scene = prepareSceneVisit({
+    session, campaign: headlessContent.campaign, world: headlessContent.world,
+    battleCatalog: headlessContent.battle, drops: testDrops, springs: testSprings,
+  }, map, {
+    id: 'player', actor: headlessContent.campaign.start.actor,
+    x: stage.x, y: stage.y, facing: 'south', visible: true,
+  }, () => 0.5);
+  return resolveStoryScene(stage, scene);
+}
+
+function acceptStages(script: string): StoryStage[] {
+  return headlessContent.campaign.scripts[script].nodes
+    .flatMap(node => node.presentation)
+    .filter((action): action is StoryStage => action.type === 'stage');
+}
 
 test('quest-11 starts available from its script-only accept chain', () => {
   const h = playthrough();
@@ -250,3 +282,78 @@ test('quest focus only admits events attached to the target quest', () => {
     h.director.dispose();
   }
 });
+
+test('quest-10 replays the original world commands for its accept scene cast', () => {
+  const h = playthrough();
+  try {
+    const campaign = h.session.campaign;
+    const plan = planQuestStart(campaign, h.session, 'quest-10');
+    assert.equal(plan.accept?.eventId, 'event-47');
+    assert.equal(plan.destination?.map, 'training-dungeon-one');
+    assert.ok(plan.worldCommands.some(command => command.type === 'world'
+      && command.command.kind === 'place' && command.command.entity.id === 'quest-npc-located-npc-59'));
+    assert.ok(plan.worldCommands.some(command => command.type === 'flag'
+      && command.flag === 'quest-npc-located-npc-59' && command.value === true));
+    assert.equal(plan.worldCommands.some(command => command.type === 'quest'), false,
+      '世界状态只重放世界命令，不改任务状态');
+    assert.equal(plan.warnings.some(warning => warning.includes('找不到对应的剧情命令')), false);
+
+    h.director.holdTriggers();
+    applyQuestStartPlan(h.session, plan);
+    h.director.releaseTriggers();
+
+    assert.equal(h.session.storyWorld.isPlaced('quest-npc-located-npc-59'), true);
+    assert.equal(h.session.storyWorld.hasFlag('quest-npc-located-npc-59'), true);
+    const placement = campaign.placements.find(entry => entry.id === 'quest-npc-located-npc-59')!;
+    assert.equal(h.session.visible(placement), true);
+  } finally {
+    h.director.dispose();
+  }
+});
+
+test('quest-10 accept scene shows Lehman with the real stage pipeline', () => {
+  const h = playthrough();
+  try {
+    const plan = planQuestStart(h.session.campaign, h.session, 'quest-10');
+    h.director.holdTriggers();
+    applyQuestStartPlan(h.session, plan);
+    h.director.releaseTriggers();
+
+    const stage = acceptStages('event-47')[0]!;
+    const resolved = resolveAcceptStage(h.session, stage);
+    const lehman = resolved.scene.actors.find(actor => actor.worldEntityId === 'quest-npc-located-npc-59');
+    assert.ok(lehman);
+    assert.equal(lehman.visible, true);
+    assert.deepEqual([lehman.x, lehman.y], [200, 408]);
+    assert.equal(resolved.cast.find(member => member.id === 'story-lehman-90989efd')?.visible, true);
+  } finally {
+    h.director.dispose();
+  }
+});
+
+test('quest-153 replay follows the accept stage map instead of the destination', () => {
+  const h = playthrough();
+  try {
+    const campaign = h.session.campaign;
+    const plan = planQuestStart(campaign, h.session, 'quest-153');
+    assert.equal(plan.accept?.eventId, 'event-44');
+    assert.equal(plan.destination?.map, 'kamuran-wilderness-d37060c8');
+    assert.ok(plan.worldCommands.some(command => command.type === 'world'
+      && command.command.kind === 'place' && command.command.entity.id === 'quest-npc-located-npc-246'));
+
+    h.director.holdTriggers();
+    applyQuestStartPlan(h.session, plan);
+    h.director.releaseTriggers();
+
+    const stage = acceptStages('event-44').find(value =>
+      value.cast.some(member => member.worldEntityId === 'quest-npc-located-npc-246'))!;
+    assert.equal(stage.map, 'leap-gate-district-1da2f793');
+    const resolved = resolveAcceptStage(h.session, stage);
+    const lehman = resolved.scene.actors.find(actor => actor.worldEntityId === 'quest-npc-located-npc-246');
+    assert.ok(lehman);
+    assert.equal(lehman.visible, true);
+  } finally {
+    h.director.dispose();
+  }
+});
+

@@ -201,6 +201,7 @@ function fixture(options: { unsatisfied?: boolean; ready?: boolean; scrollGroups
       acceptAlternatives: [{ script: 'script-accept', eventId: 'event-accept' }],
       conditionPatch: { quests: [], choices: [], flags: [], completedEvents: [], removedEvents: [],
         unsatisfied: options.unsatisfied ? ['缺少接取选择'] : [] },
+      worldCommands: [],
       destination: { map: 'dungeon', x: 8, y: 9, facing: 'south' },
       warnings: [], fallback: options.ready === true,
     };
