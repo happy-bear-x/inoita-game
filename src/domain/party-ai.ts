@@ -187,15 +187,7 @@ export class PartyController {
     const becameCritical=critical&&!this.criticalAlly;
     this.criticalAlly=critical;
     if(becameCritical)this.nextCriticalScanAt=0;
-    if(this.combatController.actionState()==='approaching'){
-      if(returning)this.combatController.cancel(true);
-      else if(critical && !this.combatController.activeAction()?.skill && this.hasHealingSkill() && this.port.inCombat()){
-        const action=choosePartyAction(actor,this.selectTarget(actor),this.port,this.combatController);
-        if(action && ('rescue' in action || action.urgent)){
-          this.combatController.cancel(false);this.nextTacticsAt=0;
-        }
-      }
-    }
+    if(returning&&this.combatController.actionState()==='approaching')this.combatController.cancel(true);
     this.combatController.update();
     if(!combatStateCapabilities(actor.states??[]).canAct){
       this.clearRoute();this.follower.suspend();return;
