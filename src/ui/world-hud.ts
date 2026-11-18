@@ -89,14 +89,14 @@ export class WorldHud {
         return memberArt(context.menuPanels, context.world.actors[member.definition.actor], member.classId, member.source).partyIcon;
       }, run(actions.focus), id => sources.active() ? sources.conditions(id) : [], () => session.player, this.domUi);
     this.stick = new MoveStick(this.owner, this.hud, context.controlSkin, context.controlLayout, context.keyBindings, context.inputRouter, this.domUi);
-    this.controls = new ActionControls(this.owner, this.hud, {
+    this.controls = new ActionControls(this.owner, {
       attack: run(actions.attack), skill: run(actions.skill), item: run(actions.item), swap: run(actions.cycle)
     }, context.controlSkin, context.controlLayout, this.domUi);
     this.keyboardActions = new KeyboardActions(this.owner, context.keyBindings, {
       skill: run(actions.slot), cycle: run(actions.cycle), previousMember: run(() => actions.member(-1)), nextMember: run(() => actions.member(1))
     }, context.inputRouter);
-    this.skillHud = new ComputerSkillHud(this.owner, this.hud, context.controlSkin, this.domUi);
-    this.nameBanner = new NameBanner(this.owner, this.hud, map.name, this.domUi);
+    this.skillHud = new ComputerSkillHud(this.hud, context.controlSkin, this.domUi);
+    this.nameBanner = new NameBanner(this.owner, map.name, this.domUi);
     this.unsubscribeMode = controlSettings.subscribeMode(() => { if (this.lastState) this.sync(this.lastState); });
   }
   mountMinimap(map: WorldMap, content: HudContext['storyInterface']): void {

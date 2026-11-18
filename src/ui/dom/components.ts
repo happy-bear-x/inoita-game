@@ -172,7 +172,6 @@ export class DomButton extends DomComponent {
     this.reset();
     if (activate) this.options.action();
   }
-  activate(): void { if (this.options.enabled()) this.options.action(); }
   reset(): void {
     if (this.timer !== undefined) clearTimeout(this.timer);
     this.timer = undefined;

@@ -101,7 +101,6 @@ function digitSpriteTexture(layer:EffectLayer):{key:string;frame:string|number} 
 }
 
 /** 命中反馈由地图持有，攻击动作结束或中断不提前销毁已生成的数字。 */
-/** 命中反馈由地图持有，攻击动作结束或中断不提前销毁已生成的数字。 */
 export class CombatFeedback {
   private readonly scene:Phaser.Scene;
   private readonly catalog:BattleCatalog;
@@ -113,7 +112,6 @@ export class CombatFeedback {
   private shake?:Phaser.Tweens.Tween;
   private shakeBase?:{x:number;y:number};
   private paused=false;
-  private visible=true;
   private warmed=false;
   private numberOrder=0;
   private decorationFrame=-1;
@@ -221,7 +219,7 @@ export class CombatFeedback {
     const anchor=finishSprite,listener=()=>this.releaseNumber(slot,anchor);
     slot.finishSprite=anchor;slot.finishListener=listener;
     anchor.once('animationcomplete',listener);
-    slot.container.setVisible(this.visible);
+    slot.container.setVisible(true);
   }
   /** 镜头外超过最大特效半径的目标看不到反馈，直接跳过。 */
   private offscreen(target:CharacterVisual):boolean {
@@ -253,7 +251,7 @@ export class CombatFeedback {
     this.decorationGroups.clear();
   }
   private track(effect:Phaser.GameObjects.Container):void {
-    this.effects.add(effect);effect.setVisible(this.visible);
+    this.effects.add(effect);
     const drop=():void=>{
       this.effects.delete(effect);
       effect.off('effect-recycle',drop);effect.off('destroy',drop);
@@ -273,7 +271,7 @@ export class CombatFeedback {
     plan:ReturnType<typeof feedbackPlan>=feedbackPlan(event),options:{decorationGroup?:string}={}):void {
     if(this.offscreen(target)){
       // 震屏属于出手者自己的反馈，不跟目标是否在镜头里走。
-      if(plan.shake&&this.visible)this.startShake();
+      if(plan.shake)this.startShake();
       return;
     }
     const group=options.decorationGroup,shared=group!==undefined&&this.decorationGroupSpent(group);
@@ -284,10 +282,9 @@ export class CombatFeedback {
       this.impact(effect.name,target,effect.attached);
     }
     if(selection.digitEffect)this.showDigits(selection.digitEffect,event,target);
-    if(plan.shake&&this.visible)this.startShake();
+    if(plan.shake)this.startShake();
   }
   startShake():void {
-    if(!this.visible)return;
     this.cancelShake();
     const camera=this.scene.cameras.main,base={x:camera.followOffset.x,y:camera.followOffset.y};
     this.shakeBase=base;
@@ -298,7 +295,7 @@ export class CombatFeedback {
       onUpdate:apply,onComplete:()=>this.cancelShake()});
   }
   vibrate(durationMs:number):void {
-    if(this.visible&&this.vibrationEnabled&&typeof navigator!=='undefined')navigator.vibrate?.(durationMs);
+    if(this.vibrationEnabled&&typeof navigator!=='undefined')navigator.vibrate?.(durationMs);
   }
   cancelShake():void {
     this.shake?.stop();this.shake=undefined;
@@ -314,11 +311,6 @@ export class CombatFeedback {
       if(!slot.busy)continue;
       for(const sprite of slot.sprites)if(paused)sprite.anims.pause();else sprite.anims.resume();
     }
-  }
-  setVisible(visible:boolean):void {
-    this.visible=visible;if(!visible)this.cancelShake();
-    for(const effect of this.effects)effect.setVisible(visible);
-    for(const slot of this.numbers)slot.container.setVisible(visible&&slot.busy);
   }
   destroy():void {
     this.cancelShake();

@@ -1,5 +1,4 @@
 import type { ControlSkin } from '../../domain/control-skin.ts';
-import type { Cooldown } from '../../domain/combat.ts';
 import { SHORTCUT_SLOT_COUNT } from '../../domain/shortcut-bar.ts';
 import type { ShortcutSlot } from '../shortcut-view.ts';
 import type { ControlViewport } from '../control-layout.ts';
@@ -19,7 +18,6 @@ export class DomComputerSkillHud extends DomComponent {
   private readonly assets: DomAssets;
   private readonly failed: (error: unknown) => void;
   private page: readonly ShortcutSlot[] = [];
-  private cooldowns: Readonly<Record<string, Cooldown>> = {};
   constructor(parent: HTMLElement, skin: ControlSkin, failed: (error: unknown) => void, assets = domAssets) {
     super(parent); this.assets = assets; this.failed = failed;
     this.element.style.pointerEvents = 'auto';
@@ -41,12 +39,10 @@ export class DomComputerSkillHud extends DomComponent {
     void image.load(this.assets, file).catch(error => { if (!image.signal.aborted && (error as Error)?.name !== 'AbortError') this.failed(error); });
   }
   setPage(page: readonly ShortcutSlot[]): void { this.page = page; this.paint(); }
-  setCooldowns(cooldowns: Readonly<Record<string, Cooldown>>): void { this.cooldowns = cooldowns; this.paint(); }
   private paint(): void {
     this.cells.forEach((cell, index) => {
       const slot = this.page[index], entry = slot?.entry, item = entry?.kind === 'item';
-      // 场景统一刷新时冷却随快捷页一起送来；独立调用 `setCooldowns` 的旧入口继续从那份快照取。
-      const cooldown = slot?.cooldown ?? (entry?.kind === 'skill' ? this.cooldowns[entry.id] : undefined);
+      const cooldown = slot?.cooldown;
       cell.cooldown.update(cooldown, ICON_SIZE / 2, true);
       const cooling = !!cooldown && cooldown.remainingMs > 0;
       const usable = !!entry && !cooling && (item ? slot.quantity > 0 : slot.enabled);

@@ -57,11 +57,6 @@ export class QuestSearchInput {
     if (this.root) this.root.style.display = 'none';
   }
 
-  setRect(rect: QuestSearchInputRect): void {
-    this.ensure();
-    this.applyRect(rect);
-  }
-
   setValue(value: string): void {
     this.ensure();
     if (this.field && this.field.value !== value) this.field.value = value;

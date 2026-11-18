@@ -92,7 +92,6 @@ export class BagPage {
  get isBusy():boolean{return this.busy;}
  get cached():boolean{return this.bagPageCached;}
  get hasGrid():boolean{return !!this.bagGrid;}
- get hasDetail():boolean{return this.bagDetailOpen;}
  get hasSelection():boolean{return !!this.selectedItem;}
  get hasResult():boolean{return !!this.itemResult;}
  get operationOpen():boolean{return !!this.operation;}

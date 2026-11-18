@@ -1,5 +1,4 @@
 import type Phaser from 'phaser';
-import type { Hud } from './hud.ts';
 import type { DomLabel, DomUi } from '../ui/dom/dom-ui.ts';
 import { readSafeArea } from '../ui/viewport.ts';
 
@@ -23,7 +22,7 @@ export class NameBanner {
   private domLastAt = 0;
   private domTimer?: ReturnType<typeof setTimeout>;
 
-  constructor(scene: Phaser.Scene, _hud: Hud, mapName: string, domUi?: DomUi) {
+  constructor(scene: Phaser.Scene, mapName: string, domUi?: DomUi) {
     this.scene = scene;
     this.mapName = mapName;
     if (!domUi) return;

@@ -100,10 +100,6 @@ export class StateMarkers {
     this.actors.delete(id);
   }
 
-  retainActors(ids:ReadonlySet<string>):void{
-    for(const id of this.actors.keys())if(!ids.has(id))this.remove(id);
-  }
-
   clear():void{
     for(const id of this.actors.keys())this.remove(id);
   }

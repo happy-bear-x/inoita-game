@@ -124,7 +124,6 @@ export class UiNode {
   remove(child:UiNode,destroy=false):this{const index=this.list.indexOf(child);if(index>=0)this.list.splice(index,1);child.parentContainer=undefined;child.element.remove();if(destroy)child.destroy();return this;}
   removeAll(destroy=false):this{for(const node of [...this.list])this.remove(node,destroy);return this;}
   sendToBack(child:UiNode):this{return this.addAt(child,0);}
-  get length():number{return this.list.length;}
   setPosition(x:number,y:number):this{this.x=x;this.y=y;this.paint();return this;}
   setX(x:number):this{return this.setPosition(x,this.y);}
   setY(y:number):this{return this.setPosition(this.x,y);}
@@ -140,7 +139,6 @@ export class UiNode {
   setFlipY(value:boolean):this{this.flipY=value;this.paint();return this;}
   setBlendMode(value:number|string):this{this.element.style.mixBlendMode=value===ADDITIVE_BLEND_MODE||value==='add'?'plus-lighter':value==='multiply'||value==='screen'||value==='color-dodge'?value:'normal';return this;}
   setTint(value:number):this{this.element.style.filter=`brightness(${Math.max(...rgbChannels(value))/255})`;return this;}
-  clearTint():this{this.element.style.filter='';return this;}
   setFillStyle(color:number,alpha=1):this{this.element.style.background=`rgba(${rgbChannels(color).join(',')},${alpha})`;return this;}
   setStrokeStyle(width:number,color:number,alpha=1):this{this.element.style.outline=`${width}px solid rgba(${rgbChannels(color).join(',')},${alpha})`;return this;}
   setData(key:string,value:any):this{this.data.set(key,value);return this;}
@@ -187,7 +185,7 @@ export class UiNode {
   private paintHit():void{if(!this.hit||!this.input)return;const area=this.input.hitArea;if(this.autoHit){area.width=this.width;area.height=this.height;}
     this.hit.style.setProperty('left',`${area.x}px`);this.hit.style.setProperty('top',`${area.y}px`);
     this.hit.style.setProperty('width',`${area.width}px`);this.hit.style.setProperty('height',`${area.height}px`);}
-  destroy(_children=true):void{if(!this.active)return;this.cancelPress();this.emit('destroy');this.active=false;interactiveNodes.get(this.scene)?.delete(this);this.controller.abort();this.removeAll(true);this.parentContainer?.remove(this);this.element.remove();this.listeners.clear();this.data.clear();}
+  destroy():void{if(!this.active)return;this.cancelPress();this.emit('destroy');this.active=false;interactiveNodes.get(this.scene)?.delete(this);this.controller.abort();this.removeAll(true);this.parentContainer?.remove(this);this.element.remove();this.listeners.clear();this.data.clear();}
 }
 
 export class UiImage extends UiNode {
@@ -241,5 +239,4 @@ export class UiText extends UiNode {
   setText(value:string):this{this.value=value;this.context.font=`${this.size}px ${FONT}`;const lines=this.wrapWidth?wrapText(value,this.wrapWidth,text=>this.context.measureText(text).width):value.split('\n');this.element.textContent=lines.join('\n');const width=Math.max(0,...lines.map(line=>this.context.measureText(line).width));super.setSize(width,Math.max(1,lines.length)*(this.size+5)-5);this.element.style.textAlign=this.align;return this;}
   get text():string{return this.value;}
   setAlign(value:string):this{this.align=value;this.element.style.textAlign=value;return this;}
-  setColor(value:string):this{this.element.style.color=value;return this;}
 }

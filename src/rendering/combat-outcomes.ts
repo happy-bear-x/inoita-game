@@ -12,7 +12,6 @@ export class CombatOutcomes {
   private readonly pool: EffectPool;
   private readonly deaths = new Map<string, Phaser.Tweens.Tween>();
   private paused = false;
-  private visible = true;
   constructor(scene: Phaser.Scene, catalog: BattleCatalog) {
     this.scene = scene; this.catalog = catalog;
     this.pool = new EffectPool(scene);
@@ -26,7 +25,6 @@ export class CombatOutcomes {
   }
   private track(effect: Phaser.GameObjects.Container): void {
     this.effects.add(effect);
-    effect.setVisible(this.visible);
     const drop = (): void => {
       this.effects.delete(effect);
       effect.off('effect-recycle', drop);
@@ -76,10 +74,6 @@ export class CombatOutcomes {
     for (const tween of this.deaths.values()) if (paused) tween.pause(); else tween.resume();
     for (const effect of this.effects) for (const sprite of effect.list as Phaser.GameObjects.Sprite[])
       if (paused) sprite.anims.pause(); else sprite.anims.resume();
-  }
-  setVisible(visible: boolean): void {
-    this.visible = visible;
-    for (const effect of this.effects) effect.setVisible(visible);
   }
   destroy(): void {
     for (const tween of this.deaths.values()) tween.stop();

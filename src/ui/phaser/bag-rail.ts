@@ -12,7 +12,3 @@ export function drawBagRail(v:UiSurface,assets:Record<string,string>,x=496,paren
     v.rect(BAG_RAIL.x+dx,BAG_RAIL.rowTop+index*BAG_RAIL.rowStep+BAG_RAIL.rowHeight-1,
       BAG_RAIL.width,1,0x6b5a37,.5,parent);
 }
-
-export function drawBagRailSelection(v:UiSurface,x:number,y:number,width:number,height:number):void {
-  v.rect(x,y,width,height,0xe2c88d,.10);
-}

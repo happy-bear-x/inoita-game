@@ -1,7 +1,5 @@
 import type Phaser from 'phaser';
-import type { Hud } from '../../rendering/hud.ts';
 import type { ControlSkin } from '../../domain/control-skin.ts';
-import type { Cooldown } from '../../domain/combat.ts';
 import type { ActionControlsHandlers } from '../../rendering/action-controls.ts';
 import { UI_EVENTS } from '../../application/ui-events.ts';
 import { ControlLayoutPreferences, resolveControlLayout } from '../control-layout.ts';
@@ -25,7 +23,7 @@ export class ActionControls {
   private readonly preferences?: ControlLayoutPreferences;
   private readonly unsubscribe: () => void;
   private requested = false;
-  constructor(owner: Phaser.Scene, _hud: Hud, handlers: ActionControlsHandlers, skin: ControlSkin, preferences?: ControlLayoutPreferences, domUi?: DomUi) {
+  constructor(owner: Phaser.Scene, handlers: ActionControlsHandlers, skin: ControlSkin, preferences?: ControlLayoutPreferences, domUi?: DomUi) {
     const parent = domUi?.layer('hud');
     if (!parent) throw new Error('操作界面尚未就绪');
     this.owner = owner; this.preferences = preferences;
@@ -41,7 +39,6 @@ export class ActionControls {
   readonly resetInput = (): void => { this.view.resetInput(); };
   setShortcutPage(slots: readonly ShortcutSlot[]): void { this.view.setShortcutPage(slots); }
   snapshot(): readonly ShortcutSlot[] { return this.view.snapshot(); }
-  setCooldowns(cooldowns: Readonly<Record<string, Cooldown>>): void { this.view.setCooldowns(cooldowns); }
   setAttack(enabled: boolean, dimUnavailable = true): void { this.view.setAttack(enabled, dimUnavailable); }
   layout(): void {
     this.view.layout(controlViewport(), this.preferences?.snapshot());

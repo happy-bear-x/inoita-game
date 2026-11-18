@@ -57,7 +57,7 @@ test('world HUD binds status subscriptions and values to the session that mounte
 
 test('map controls ignore old actions and release each component exactly once',()=>{
   const f=fixture();
-  const actions=latest('ActionControls').args[2] as {attack():void};
+  const actions=latest('ActionControls').args[1] as {attack():void};
   actions.attack();assert.equal(f.called,1);
   f.deactivate();actions.attack();assert.equal(f.called,1);
   f.hud.mountMinimap({name:'map'} as never,{} as never);

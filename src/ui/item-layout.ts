@@ -25,11 +25,3 @@ export const MONEY = {
   stride:103, coin:{width:44, height:40}, digit:{x:44, y:6}, color:TEXT_COLORS.white,
   offset:{x:34, y:365}, plateOffset:{x:34, y:368, width:323},
 };
-
-/**
- * 右栏六个筛选按钮的纵向偏移。
- *
- * **保留字面值，不要改成按步长累加**：相邻差是 70/69/69/69/70，不是按钮高度 57
- * 的整数倍；按平均步长取整会得到 0/69/139/208/278/347，与实际差一位，会挪动界面。
- */
-export const SIDE_BUTTON_OFFSETS:number[] = [0, 70, 139, 208, 277, 347];
