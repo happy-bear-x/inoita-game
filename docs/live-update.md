@@ -18,7 +18,7 @@ APK 把 Vite 构建的 `dist/`（当前约 113MB、4200 多个文件）打进 as
 
 ## 页面来源
 
-- 新壳的页面 origin 固定为 `https://inoita.invalid`。2.1.0 起旧 origin（`http://127.0.0.1:47653`）下的本地存档、设置和诊断数据都不迁移；升级后本地数据从空开始，云存档仍可恢复 59 格式存档槽。
+- 新壳的页面 origin 固定为 `https://inoita.invalid`。2.1.0 起旧 origin（`http://127.0.0.1:47653`）下的本地存档、设置和诊断数据都不迁移；升级后本地数据从空开始，云存档仍可恢复 1 格式存档槽。
 - `AssetContentServer` 在 `index.html` 的 `<head>` 最前面插入 `/__native/bootstrap.js`。这个脚本在模块脚本之前定义 `__inoitaEndpoints`、`__inoitaBuildInfo` 和 `window.InotiaNative`。
 
 ## 服务端产物
@@ -107,7 +107,7 @@ npm run verify:update -- --apk apk-out/Inotia-4-2.1.0.apk --url https://catgo.on
 手装一次 APK 后验证：
 
 1. 改一句剧情 → `npm run deploy` → 重开游戏看到更新弹窗 → 下载后重载并看到新剧情。
-2. 覆盖安装 2.1.0 后，新 origin 下本地存档、设置和诊断数据从空开始；旧 origin 的 `localStorage` 留在原处但不读取、不迁移，云存档可以恢复 59 格式存档槽。
+2. 覆盖安装 2.1.0 后，新 origin 下本地存档、设置和诊断数据从空开始；旧 origin 的 `localStorage` 留在原处但不读取、不迁移，云存档可以恢复 1 格式存档槽。
 3. 关掉服务端再启动，能离线进游戏。
 4. 下载中杀进程再启动，能续传。
 5. 用一个缺文件的坏清单，确认自动回退且不再反复提示该版本。
