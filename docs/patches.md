@@ -19,6 +19,7 @@
 | ID | 类型 | 范围 | 引入 | 原因/上游 | 应用与验证 | 退役条件 | 状态 | 复核 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | P-001 | 运行时/上游 | Phaser 4.2.1 动态缓冲区 + 绘图缓冲失败清理 | `tools/patch-phaser.mjs` | 上游 PR #7420；绘图缓冲清理同脚本 | `postinstall`/`predev`/`prebuild` 自动应用；`tests/phaser-framebuffer.test.ts`；升级时核对锚点 | Phaser 包含修复或升级到已修复版本后 | active | 2026-11-17 |
+| P-002 | 存档修补 | 59 档当前地图采集点指向已被挤出的物品 | `src/application/saved-game.ts` | 旧上限会淘汰任务物品而保留生成点绑定 | 检查当前地图与访问、已分配序号和至少 64 个后续序号，只解除丢失的绑定；`tests/saved-game.test.ts` 覆盖再次生成和健康档重读 | 受旧掉落上限影响的存档兼容期结束 | active | 2026-11-18 |
 | C-001 | 内容/数据 | `event-145`/`event-341`/`event-342` 固定走位落点 | `public/content/campaign.json` / 舞台地图 | 目标格是阻挡格；`nearestWalkable` 兜底防卡死，但落点可能不是作者原意 | `npm run validate:content`；`tests/movement-world.test.ts` 及剧情测试 | 三处坐标核对/修正后 | active | 2026-11-17 |
 
 ## 存档修补标准

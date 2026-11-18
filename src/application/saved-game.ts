@@ -14,6 +14,27 @@ export interface SavedGameContent {
   campaign:Campaign;world:WorldIndex;storyClasses:StoryClassCatalog;items:ItemCatalog;
   characterStats:CharacterStatsCatalog;battleCatalog:BattleCatalog;companions:CompanionCatalog;
 }
+/** 旧版每图只留 64 件。采集物被挤出后，生成点仍保存着它的编号。 */
+function evictedQuestPickups(game:SaveGame<StoryWorldViewSnapshot>):Set<string> {
+  const {questItemGeneration:points,groundLoot,storyWorld}=game.session;
+  const evicted=new Set<string>();
+  if(game.format!==59||points.map!==game.world.location.map||points.mapVisit!==storyWorld.mapVisit||
+    !points.generators.some(point=>point.dropId))return evicted;
+  const present=new Set(groundLoot.drops.map(drop=>drop.id));
+  const bound=new Set<string>();
+  for(const point of points.generators){
+    const id=point.dropId;
+    if(!id)continue;
+    // 重复绑定交给读档校验；同一个地面物品只能属于一个生成点。
+    if(bound.has(id)){evicted.delete(id);continue;}
+    bound.add(id);
+    if(present.has(id)||point.exhausted||point.remainingFrames>0)continue;
+    const serial=Number(/^ground-([1-9]\d*)$/.exec(id)?.[1]);
+    if(Number.isSafeInteger(serial)&&Number.isSafeInteger(groundLoot.nextId)&&groundLoot.nextId-serial>=64)evicted.add(id);
+  }
+  return evicted;
+}
+
 export function prepareSavedGame(game:SaveGame<StoryWorldViewSnapshot>,content:SavedGameContent){
   if(game.format!==SAVE_FORMAT)throw new Error('存档版本不受支持');
   const selected=content.storyClasses.classes.find(entry=>entry.id===game.summary.classId);
@@ -41,7 +62,12 @@ export function prepareSavedGame(game:SaveGame<StoryWorldViewSnapshot>,content:S
   }
   const session=newStorySession(content.campaign,content.world.actors[content.campaign.start.actor],selected,
     content.items,content.characterStats,content.battleCatalog,content.companions);
-  restoreSaveGame(session,game);
+  const evicted=evictedQuestPickups(game);
+  if(evicted.size){
+    const points=structuredClone(game.session.questItemGeneration);
+    for(const point of points.generators)if(point.dropId&&evicted.has(point.dropId))delete point.dropId;
+    restoreSaveGame(session,{...game,session:{...game.session,questItemGeneration:points}});
+  }else restoreSaveGame(session,game);
   // 读取时补齐已经拥有的解锁道具领取记录：不改背包，只避免一次性掉落再给一份。
   const seeded=new Set<string>();
   for(const entry of session.bag.entries){
@@ -59,5 +85,6 @@ export function prepareSavedGame(game:SaveGame<StoryWorldViewSnapshot>,content:S
     session.party.switchControl(session.party.livingIds[0]!);
   }
   if(world.world)world.world=prepareCombatRestore(world.world,content.battleCatalog,session.party?.activeIds??[]);
+  if(evicted.size)globalThis.storyDiagnostics?.record('save-repaired-evicted-quest-pickup',{map:map.id,count:evicted.size},false);
   return {session,world,map};
 }

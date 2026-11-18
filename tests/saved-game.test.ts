@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {readFileSync} from 'node:fs';
 import {prepareSavedGame,type SavedGameContent} from '../src/application/saved-game.ts';
+import {groundLootFor} from '../src/domain/ground-loot.ts';
+import type {QuestItemSpawn} from '../src/domain/content.ts';
 import {newStorySession} from '../src/domain/story-class.ts';
 import {SAVE_FORMAT,captureSaveGame,saveSummary} from '../src/domain/save-game.ts';
 import type {StoryWorldViewSnapshot} from '../src/scenes/world-scene.ts';
@@ -108,4 +110,41 @@ test('a save from an older format is rejected before installation',()=>{
 test('a save with no living member is rejected',()=>{
   const saved=record();saved.session.hero!.health=0;
   assert.throws(()=>prepareSavedGame(saved,content),/存档没有存活队员/);
+});
+
+test('a format 59 save can regenerate a quest pickup evicted by the old ground limit',()=>{
+  const map=read<{id:string;name:string;questItemSpawns:QuestItemSpawn[]}>('maps/mines-west-section2-b1-83d7f81e');
+  const character=content.storyClasses.classes[0];
+  const questId='quest-49';
+  const campaign={...content.campaign,quests:content.campaign.quests.map(q=>q.id===questId
+    ? {...q,availableWhen:{type:'always' as const,value:true}} : q)};
+  const session=newStorySession(campaign,content.world.actors[campaign.start.actor],character,
+    content.items,content.characterStats,content.battleCatalog,content.companions);
+  const location={map:map.id,x:56,y:120,facing:'south' as const};
+  session.applyStoryCommands([{type:'travel',destination:location}]);
+  session.enterMap(map.id,map.questItemSpawns);
+  assert.equal(session.accept(questId),true);
+  session.bag.add('lumps-of-copper',4);
+  session.advanceCombatFrames(60,()=>{});
+  const ground=groundLootFor(session);
+  assert.equal(ground.pendingItemCounts().get('lumps-of-copper'),1);
+  for(let i=0;i<64;i++)ground.addFlying(map.id,location,{x:0,y:0,direction:0},'mana-gem',100);
+  ground.advance(map.id,100);
+  const world={location,generatedEntities:[]};
+  const summary=saveSummary(session,map,{name:character.name,portrait:'assets/ui/menus/character-kiyan.png'});
+  const saved=captureSaveGame(session,world,summary);
+  // 旧版对没有时间戳的采集物和药丸按插入顺序只留下最后 64 件。
+  saved.session.groundLoot.drops=saved.session.groundLoot.drops.slice(-64);
+  const unrelated=structuredClone(saved);
+  unrelated.session.questItemGeneration.generators.find(point=>point.dropId)!.dropId='ground-99999';
+  assert.throws(()=>prepareSavedGame(unrelated,content),/任务地面物品实例无效/);
+  const before=structuredClone(saved);
+  const restored=prepareSavedGame(saved,content).session;
+  assert.deepEqual(saved,before);
+  restored.enterMap(map.id,map.questItemSpawns);
+  restored.advanceCombatFrames(152*60,()=>{});
+  assert.equal(groundLootFor(restored).pendingItemCounts().get('lumps-of-copper'),1);
+  const healthy=captureSaveGame(restored,world,summary);
+  assert.deepEqual(prepareSavedGame(healthy,content).session.questItemGenerators.captureState(),healthy.session.questItemGeneration);
+  assert.deepEqual(groundLootFor(restored).forMap(map.id).filter(d=>d.reward.kind==='item'&&d.reward.item==='mana-gem'),before.session.groundLoot.drops);
 });
