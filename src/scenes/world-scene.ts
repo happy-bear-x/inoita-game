@@ -2431,8 +2431,8 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
       event => !!event.region && overlapsFootRect(pos, event.region),
       event => {
         const status = availability(event);
-        return status === 'idle' || (status === 'completed' && event.repeat === true);
-      });
+        return status === 'idle' || (status === 'completed' && event.repeat) ? status : false;
+      }, status => status === 'idle');
     const occupiedCharacters = this.occupiedCharacters;
     const near = claimStoryTrigger(triggerIndex.nearCharacters, occupiedCharacters, ({ character }) =>
       character.container.visible && nearInteractive(pos, character.container, character.actor.collision, !!character.entity.flip), ({ events }) => {

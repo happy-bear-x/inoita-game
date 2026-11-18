@@ -46,6 +46,22 @@ test('Elinia offers one destination per approach and reports the other completed
   } finally { h.director.dispose(); }
 });
 
+test('the overlapping Kamuran regions offer event 77 before replaying event 75', async () => {
+  const h = playthrough();
+  const pos = {map:'kamuran-wilderness-d37060c8', x:96, y:16, facing:'north' as const};
+  try {
+    h.session.applyStoryCommands([{type:'travel',destination:pos}]);
+    h.session.accept('quest-58');
+    h.frame('all'); await h.idle();
+    assert.equal(h.director.runtime.eventStatus('event-75'),'completed');
+    h.frame('all'); await h.idle();
+    h.session.accept('quest-59');
+    h.session.movePlayer(pos);
+    h.frame('all'); await h.idle();
+    assert.equal(h.director.runtime.eventStatus('event-77'),'completed');
+  } finally { h.director.dispose(); }
+});
+
 test('unblocking an eligible trigger plays it once without another approach', () => {
   const event = { id: 'filtered' };
   const occupied = new Set<string>();

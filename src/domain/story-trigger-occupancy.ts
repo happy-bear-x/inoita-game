@@ -4,17 +4,20 @@ export function claimStoryTrigger<E extends { id: string }, S>(
   occupied: Set<string>,
   inContact: (event: E) => boolean,
   select: (event: E) => S | false | null,
+  preferred?: (selection: S) => boolean,
 ): { event: E; selection: S } | null {
   let claimed: { event: E; selection: S } | null = null;
+  let finalChoice = false;
   for (const event of events) {
     const alreadyOccupied = occupied.has(event.id);
-    if (claimed && !alreadyOccupied) continue;
+    if (finalChoice && !alreadyOccupied) continue;
     if (!inContact(event)) { occupied.delete(event.id); continue; }
-    if (alreadyOccupied) continue;
+    if (alreadyOccupied || finalChoice) continue;
     const selection = select(event);
     if (selection === false || selection === null) continue;
-    occupied.add(event.id);
-    claimed = { event, selection };
+    finalChoice = preferred?.(selection) ?? true;
+    if (!claimed || finalChoice) claimed = { event, selection };
   }
+  if (claimed) occupied.add(claimed.event.id);
   return claimed;
 }
