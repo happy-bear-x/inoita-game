@@ -40,7 +40,7 @@ if (hasKeystore) {
 
 android {
     namespace 'io.github.sunflower9264.inoita'
-    // Cefrium 0.18.0 内置 Chromium 156；编译与打包必须用 Android 37 平台。
+    // Cefrium 0.21.0 内置 Chromium 156；编译与打包必须用 Android 37 平台。
     compileSdk 37
 
     defaultConfig {
@@ -132,7 +132,7 @@ android {
 
 dependencies {
     // 把 Chromium 156 打进 APK，页面不再依赖设备自带的 WebView。
-    implementation 'com.cefrium:cefrium-sdk:0.18.0'
+    implementation 'com.cefrium:cefrium-sdk:0.21.0'
     implementation 'androidx.core:core:1.16.0'
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'androidx.mediarouter:mediarouter:1.7.0'

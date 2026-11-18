@@ -24,6 +24,9 @@ import androidx.core.view.WindowInsetsControllerCompat;
 
 import com.cefrium.Cefrium;
 import com.cefrium.CefriumBrowser;
+import com.cefrium.CefriumChromeClient;
+import com.cefrium.CefriumNavigationClient;
+import com.cefrium.CefriumRendererTerminationStatus;
 
 import java.io.IOException;
 import java.util.Locale;
@@ -77,7 +80,7 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
     };
     private final Runnable createBrowserTask = this::createBrowser;
     private final Runnable pauseBrowserTask = () -> {
-        if (browser != null) browser.onPause();
+        if (browser != null && !browser.isClosed()) browser.onPause();
     };
     private final Runnable bootWatchdog = this::onBootWatchdog;
     private final Runnable applyDisplayRateTask = this::observeActualDisplayRate;
@@ -223,13 +226,20 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
 
     /** 把屏幕实际刷新率写进页面；页面据此在「60 档的 90 上限」「30 档跟随 vsync」和「按选项限帧」之间换算。 */
     private void notifyPageDisplayRate(float hz) {
-        if (browser == null || hz <= 0) return;
+        if (hz <= 0) return;
         String script = "window.__inoitaDisplayHz=" + hz
                 + ";window.dispatchEvent(new Event('inoita-display-rate'));";
+        evaluateOnPage(script);
+    }
+
+    /** 只在页面仍可执行脚本时调用；0.21 起对已关闭浏览器调用任何方法都会抛异常。 */
+    private void evaluateOnPage(String script) {
+        CefriumBrowser current = browser;
+        if (current == null || current.isClosed()) return;
         try {
-            browser.evaluateJavaScript(script);
+            current.evaluateJavaScript(script);
         } catch (RuntimeException error) {
-            Log.w(TAG, "通知页面刷新率失败", error);
+            Log.w(TAG, "页面脚本执行失败", error);
         }
     }
 
@@ -283,7 +293,7 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
             showFatal(getString(R.string.browser_init_failed_title), Log.getStackTraceString(error));
             return;
         }
-        browser.getSurfaceContainer().setBackgroundColor(getColor(R.color.background));
+        browser.setBackgroundColor(getColor(R.color.background));
         root.addView(browser.getSurfaceContainer(), new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
@@ -291,24 +301,30 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
         browser.setPinchToZoomEnabled(false);
         browser.setDarkMode(false);
         browser.setDialogActivity(this);
-        browser.setCallback(new CefriumBrowser.Callback() {
+        browser.setChromeClient(new CefriumChromeClient() {
             @Override
-            public void onFullscreenChanged(boolean fullscreen) {
+            public void onFullscreenChanged(CefriumBrowser source, boolean fullscreen) {
                 hideSystemBars();
             }
-
+        });
+        browser.setNavigationClient(new CefriumNavigationClient() {
             @Override
-            public void onLoadingStateChanged(boolean loading, boolean canGoBack, boolean canGoForward) {
+            public void onLoadingStateChanged(CefriumBrowser source, boolean loading,
+                                               boolean canGoBack, boolean canGoForward) {
                 if (!loading) {
                     pageReady = true;
                     if (actualDisplayRate > 0) notifyPageDisplayRate(actualDisplayRate);
                 }
             }
-        });
-        browser.setOnRenderProcessTerminatedListener((code, reason) -> {
-            // 等待新版本启动时由 UpdateManager 接管并回退；正常游玩只重建浏览器。
-            if (updateManager.onRenderProcessGone()) return;
-            root.post(this::recreateBrowser);
+
+            @Override
+            public void onRenderProcessTerminated(CefriumBrowser source,
+                                                  CefriumRendererTerminationStatus status,
+                                                  int errorCode) {
+                // 等待新版本启动时由 UpdateManager 接管并回退；正常游玩只重建浏览器。
+                if (updateManager.onRenderProcessGone()) return;
+                root.post(MainActivity.this::recreateBrowser);
+            }
         });
 
         browser.loadUrl(server.baseUrl() + "/index.html?v=" + updateManager.currentBuildId());
@@ -318,10 +334,12 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
         if (isFinishing() || isDestroyed()) return;
         pageReady = false;
         if (browser != null) {
-            try {
-                browser.close();
-            } catch (RuntimeException ignored) {
-                // 渲染进程已经退出时 close 可能失败；继续创建新实例。
+            if (!browser.isClosed()) {
+                try {
+                    browser.close();
+                } catch (RuntimeException ignored) {
+                    // 渲染进程已经退出时 close 可能失败；继续创建新实例。
+                }
             }
             browser = null;
         }
@@ -563,9 +581,9 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
 
     @Override
     protected void onPause() {
-        if (browser != null) {
+        if (browser != null && !browser.isClosed()) {
             // 先让页面跑完 pagehide（暂停场景、音频并落一次自动存档），再冻结浏览器。
-            if (pageReady) browser.evaluateJavaScript("window.dispatchEvent(new Event('pagehide'));");
+            if (pageReady) evaluateOnPage("window.dispatchEvent(new Event('pagehide'));");
             mainHandler.removeCallbacks(pauseBrowserTask);
             mainHandler.postDelayed(pauseBrowserTask, PAGE_HIDE_SETTLE_MS);
         }
@@ -576,9 +594,9 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
     protected void onResume() {
         super.onResume();
         mainHandler.removeCallbacks(pauseBrowserTask);
-        if (browser != null) {
+        if (browser != null && !browser.isClosed()) {
             browser.onResume();
-            if (pageReady) browser.evaluateJavaScript("window.dispatchEvent(new Event('pageshow'));");
+            if (pageReady) evaluateOnPage("window.dispatchEvent(new Event('pageshow'));");
         }
         if (requestedFrameRate > 0) {
             surfaceRateRetries = 0;
@@ -591,7 +609,7 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
     @Override
     @SuppressWarnings("deprecation")
     public void onBackPressed() {
-        if (browser != null && pageReady) browser.evaluateJavaScript(ESCAPE_SCRIPT);
+        if (pageReady) evaluateOnPage(ESCAPE_SCRIPT);
 
         long now = SystemClock.uptimeMillis();
         if (now - lastBackPressed <= DOUBLE_BACK_MS) {
@@ -623,10 +641,12 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
         dismissProgressDialog();
         dismissBootingDialog();
         if (browser != null) {
-            try {
-                browser.close();
-            } catch (RuntimeException ignored) {
-                // 进程退出阶段关闭失败不需要影响清理。
+            if (!browser.isClosed()) {
+                try {
+                    browser.close();
+                } catch (RuntimeException ignored) {
+                    // 进程退出阶段关闭失败不需要影响清理。
+                }
             }
             browser = null;
         }

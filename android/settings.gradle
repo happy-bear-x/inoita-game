@@ -2,7 +2,8 @@ pluginManagement {
     repositories {
         google()
         mavenCentral()
-        // Cefrium 0.18.0 只发布在 Codeberg Maven；Maven Central 最新是 0.17.1。
+        // Cefrium 官方 Maven；Codeberg 只保留当前和上一版，作为备份仓库。
+        maven { url 'https://maven.cefrium.com' }
         maven { url 'https://codeberg.org/api/packages/cefrium/maven' }
         gradlePluginPortal()
     }
@@ -12,6 +13,7 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        maven { url 'https://maven.cefrium.com' }
         maven { url 'https://codeberg.org/api/packages/cefrium/maven' }
     }
 }
