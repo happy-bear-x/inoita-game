@@ -63,7 +63,6 @@ export interface PartyActiveSnapshot {
 interface CompanionSnapshot {
   id: string;
   definitionId: string;
-  rosterSlot:number|null;
   skillLevels:Record<string,number>;
   skillCaps:Record<string,number>;
   groupSkills:readonly CompanionGroupEffect[];
@@ -200,7 +199,7 @@ export class CompanionMember {
     if(this.currentLevel===this.stats.maxLevel)this.currentExperience=0;
     if(levels){this.skills.updateLevel(this.currentLevel);this.onLevelUp?.();if(this.alive)this.recover();else this.changed();}else this.changed();return levels;
   }
-  snapshot(rosterSlot:number|null=null):CompanionSnapshot{const player=this.player;return {id:this.id,definitionId:this.definition.id,rosterSlot,
+  snapshot():CompanionSnapshot{const player=this.player;return {id:this.id,definitionId:this.definition.id,
     skillLevels:this.skills.skillLevels(),skillCaps:{...this.generated.skillCaps},groupSkills:[...this.generated.groupSkills],quality:this.definition.quality??0,
     name:this.definition.name,classId:this.definition.classId,source:this.source,elite:this.definition.elite,...player};}
   captureState():CompanionState{return structuredClone({id:this.id,definitionId:this.definition.id,source:this.source,
@@ -292,8 +291,6 @@ export class PartyRoster {
     this.activeIdsCache=value;return value;
   }
   private invalidateActiveIds():void{this.activeRevisionValue++;this.activeIdsCache=undefined;}
-  /** 已拥有伙伴的外观定义 id（不含主角）；返回只读拷贝，供素材规划使用。 */
-  ownedDefinitionIds():string[]{return [...new Set([...this.owned.values()].map(member=>member.definition.id))];}
   /** 全部已拥有成员（含候补），供技能资源规划使用。 */
   ownedMembers():CompanionMember[]{return [...this.owned.values()];}
   /** 上阵队员的资源读写入口，顺序为主角、上阵槽；候补名册不在内。 */
@@ -308,15 +305,10 @@ export class PartyRoster {
       return [{id,get player(){return member.player;},setHealth:(value:number)=>member.setHealth(value),setMana:(value:number)=>member.setMana(value)}];
     });
   }
-  /** 上阵空间槽位：0 屏幕左侧、1 屏幕右侧；名册与候补返回 undefined。 */
-  slotOf(id:string):0|1|undefined {
-    const index=this.slots.indexOf(id);
-    return index===0?0:index===1?1:undefined;
-  }
   /**
    * 跟随站位：按当前操控者重新排左右，而不是沿用固定名册槽位。
    * 上阵顺序保持主角、槽位 0、槽位 1；去掉操控者后，剩下的跟随者一人一侧。
-   * 主角不在名册槽里，固定 `slotOf('player')` 会返回 undefined，不能直接拿来做跟随侧位。
+   * 主角不在名册槽里，跟随侧位不能由主角在 slots 中的位置决定。
    */
   followSlotOf(leaderId:string,id:string):0|1|undefined {
     const followers=this.activeIds.filter(active=>active!==leaderId);
@@ -334,7 +326,7 @@ export class PartyRoster {
   }
   alive(id:string):boolean{return id==='player'?this.hero.player.health>0:this.owned.get(id)?.alive??false;}
   snapshot():PartySnapshot{const active=this.activeIds;return {active,living:this.livingIds,rosterSlots:[...this.rosterSlots],reserves:[...this.owned.keys()].filter(id=>!active.includes(id)),
-    controlled:this.selected,members:[...this.owned.values()].map(member=>{const slot=this.rosterSlots.indexOf(member.id);return member.snapshot(slot<0?null:slot);})};}
+    controlled:this.selected,members:[...this.owned.values()].map(member=>member.snapshot())};}
   /** HUD 只读上阵队员的轻量快照；不遍历候补名册，也不生成技能和成长字段。 */
   activeSnapshot():PartyActiveSnapshot {
     const active=this.activeIds,members:PartyActiveMember[]=[];
@@ -480,7 +472,6 @@ export class PartyRoster {
       for(let offset=1;offset<=order.length;offset++){const next=order[(start+offset)%order.length];if(next&&this.alive(next)){this.selected=next;break;}}this.changed();}
     return this.livingIds.length===0;
   }
-  recover():void{this.hero.recover();for(const id of this.activeIds.slice(1))this.owned.get(id)?.recover();this.selected='player';this.changed();}
   addExperience(amount:number):void{
     if(!Number.isSafeInteger(amount)||amount<0)throw new Error('经验奖励无效');
     const heroLevel=this.hero.level,reward=Math.floor(amount*(1000+(this.groupModifiers().experience??0))/1000);

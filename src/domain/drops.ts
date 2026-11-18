@@ -317,7 +317,7 @@ function pickPool(choices:readonly DropChoice[],level:number,random:()=>number):
   return undefined;
 }
 
-function pickEquipment(catalog:DropCatalog,level:number,random:()=>number,_maxItemLevel?:number):string|undefined {
+function pickEquipment(catalog:DropCatalog,level:number,random:()=>number):string|undefined {
   const classRoll=draw(random,100);
   const kind=classRoll<20?'weapon':classRoll<70?'armor':'special';
   return pickFromPool(catalog.equipment[kind],level,random)
@@ -598,7 +598,7 @@ function rollDropRule(catalog:DropCatalog,rule:EnemyDropRule,playerLevel:number,
     if(kind==='money'){
       const percent=50+draw(random,51);
       result.rewards.push({kind:'money',amount:moneyGain(Math.max(1,3+Math.floor(4*level*percent/500)))});
-    }else if(kind==='equipment')add(pickEquipment(catalog,level,random,loot?.maxItemLevel),true,false);
+    }else if(kind==='equipment')add(pickEquipment(catalog,level,random),true,false);
     else if(kind==='unique')add(pickUnique(catalog,uniqueCap,random),false,true);
     else if(kind==='fixed'){
       const roll=draw(random,FIXED_DROP_WEIGHT_TOTAL);let sum=0;

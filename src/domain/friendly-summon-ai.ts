@@ -175,11 +175,6 @@ export class FriendlySummonController {
     if(state.combat)this.combatController.restoreState(state.combat);
     if(this.path.length)this.port.followPath(this.nextWaypoint);
   }
-  update(deltaMs:number):void {
-    if(this.disposed||this.port.isPaused?.()||!Number.isFinite(deltaMs)||deltaMs<=0)return;
-    this.accumulator+=deltaMs;
-    while(this.accumulator>=LOGIC_FRAME_MS){this.accumulator-=LOGIC_FRAME_MS;this.step();}
-  }
   step():void {
     if(this.disposed||this.port.isPaused?.())return;
     this.clock+=LOGIC_FRAME_MS;this.searchedThisFrame=false;this.expandedNodes=0;
@@ -216,7 +211,7 @@ export class FriendlySummonController {
     if(result==='started'){this.clearPath();this.state='attacking';return true;}
     return false;
   }
-  targetRemoved(targetId:string,_reason:'hidden'|'inactive'='hidden'):void {
+  targetRemoved(targetId:string):void {
     this.combatController.targetRemoved(targetId);
     this.failedTargets.delete(targetId);this.checkedTargets.delete(targetId);this.fallbackTargets.delete(targetId);
     if(this.search?.targetId===targetId)this.search=undefined;
