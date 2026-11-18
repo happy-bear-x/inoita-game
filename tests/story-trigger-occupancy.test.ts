@@ -75,6 +75,23 @@ test('the five hall doors play their shared event once while the player stays in
   } finally { h.director.dispose(); }
 });
 
+test('duplicated barricades still offer each quest its own event', async () => {
+  const h = playthrough();
+  const map = 'sealed-dungeon-1-2-c824bb14';
+  const pos = {map, x:136, y:496, facing:'north' as const};
+  try {
+    h.session.applyStoryCommands([{type:'travel',destination:pos}]);
+    h.session.accept('quest-210');
+    h.session.accept('quest-325');
+    h.frame('near'); await h.idle();
+    assert.equal(h.director.runtime.eventStatus('event-246'),'completed');
+    assert.equal(h.director.runtime.eventStatus('event-351'),'idle');
+    h.session.movePlayer(pos);
+    h.frame('near'); await h.idle();
+    assert.equal(h.director.runtime.eventStatus('event-351'),'completed');
+  } finally { h.director.dispose(); }
+});
+
 test('unblocking an eligible trigger plays it once without another approach', () => {
   const event = { id: 'filtered' };
   const occupied = new Set<string>();
