@@ -1427,7 +1427,10 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
       try{this.runtime.cancel(`defeat:${key}`);}catch{}
       try{this.outcomes.cancelDeath(key);}catch{}
       try{result?.notify();}catch{}
-      if(spawn){try{session.enemyDefeated(spawn);}catch{}}
+      // 结算已经回滚。恢复生成点的血量，让名册重新生成敌人，保留再次取得任务物品和战果的机会。
+      if(phase==='settle'&&spawn){
+        try{session.setEnemyVitals(spawn.id,Math.max(1,snapshot.health),snapshot.mana);}catch{}
+      }
       try{this.removeEnemy(key);}catch{}
     }))return false;
     this.combatantsCache=undefined;

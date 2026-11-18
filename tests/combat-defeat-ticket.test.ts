@@ -183,3 +183,51 @@ test('disposing an old enemy visual preserves restored session vitals and cooldo
   assert.deepEqual(writes,[]);
   assert.deepEqual(released,['movement','visual']);
 });
+
+test('a failed death settlement keeps the one-time encounter winnable after saving and restoring', async t => {
+  const { headlessContent, playthrough } = await import('./helpers/story-playthrough.ts');
+  const { WorldEnemyRoster } = await import('../src/domain/world-enemies.ts');
+  const map = headlessContent.maps.get('werewolf-lair-43f5b4c5')!;
+  const h = playthrough();
+  let restored: ReturnType<typeof playthrough> | undefined;
+  try {
+    assert.equal(h.session.accept('quest-46'), true);
+    h.session.applyStoryCommands([{type:'travel',destination:{map:map.id,x:300,y:152,facing:'east'}}]);
+    await h.region('event-60');
+    const roster = new WorldEnemyRoster(h.session, map, [], h.session.hero!.level);
+    const spawn = roster.spawns.find(spawn => spawn.enemyId === 'enemy-head-werewolf-1')!;
+    const definition = headlessContent.battle.enemies.find(enemy => enemy.id === spawn.enemyId)!;
+    assert.equal(spawn.respawn, false);
+    const snapshot = roster.enemySnapshot(spawn.id, definition, h.session.hero!.level)!;
+    roster.setEnemyHealth(spawn.id, 0, definition);
+    t.mock.method(h.session, 'settleEnemyDefeat', () => { throw new Error('settlement failed'); });
+
+    const pendingDefeats = new PendingEnemyDefeats();
+    const host = {
+      app: { session: h.session }, hero: h.session.hero, scene: { map, refreshCombatTarget() {} },
+      roster, arena: [], pendingDefeats, memberOf: () => undefined,
+      runtime: { cancel() {} }, outcomes: { cancelDeath() {} },
+      conditions: { remove() {} }, movement: { stop() {}, setEnabled() {} }, partyControllers: [],
+      removeEnemy: (key: string) => roster.removeEnemy(key),
+    };
+    const target = { key: spawn.id, definition, presenter: { clear() {} },
+      visual: { container: { x: spawn.x, y: spawn.y, disableInteractive() {} } } };
+    assert.equal(invoke(host, 'beginEnemyDefeat', target, 'restored', snapshot), true);
+
+    assert.equal(pendingDefeats.has(spawn.id), false);
+    assert.equal(roster.completedEncounters().length, 0);
+    assert.equal(h.session.enemyVitals(spawn.id).deadUntil, undefined);
+    restored = playthrough(JSON.parse(JSON.stringify(h.session.captureState())));
+    assert.ok((restored.session.enemyVitals(spawn.id).health ?? 0) > 0);
+    await restored.defeat(definition.id);
+    const [finished] = new WorldEnemyRoster(restored.session, map, [], restored.session.hero!.level).completedEncounters();
+    assert.ok(finished);
+    await restored.director.encounterResult(finished.id, 'won', `result:${finished.id}:won`);
+    await restored.idle();
+    assert.equal(restored.session.status('quest-47'), 'ready');
+    assert.equal(restored.session.captureState().receipts.filter(receipt => receipt.quest === 'quest-46').length, 1);
+  } finally {
+    restored?.director.dispose();
+    h.director.dispose();
+  }
+});
