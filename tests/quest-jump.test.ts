@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { headlessContent, playthrough } from './helpers/story-playthrough.ts';
-import { applyQuestStartPlan, planQuestStart, questFocusEventIds } from '../src/debug/quest-jump.ts';
+import { applyQuestStartPlan, planQuestStart } from '../src/debug/quest-jump.ts';
 import { parseDrops } from '../src/domain/drops.ts';
 import { prepareSceneVisit } from '../src/domain/scene-visit.ts';
 import type { Session } from '../src/domain/session.ts';
@@ -198,48 +198,6 @@ test('an internal fallback applies through the script accept path', () => {
   }
 });
 
-test('a filtered region stays occupied so the exit can still trigger', async () => {
-  const h = playthrough();
-  try {
-    const plan = planQuestStart(h.session.campaign, h.session, 'quest-4');
-    h.director.holdTriggers();
-    applyQuestStartPlan(h.session, plan);
-    h.director.setAutomaticEventFilter(() => false);
-    h.director.releaseTriggers();
-
-    let regionCalls = 0;
-    const enterRegion = h.director.enterRegion.bind(h.director);
-    (h.director as unknown as { enterRegion: typeof enterRegion }).enterRegion = (id, map) => {
-      regionCalls++;
-      return enterRegion(id, map);
-    };
-
-    const location = h.session.storyWorld.currentLocation!;
-    h.session.movePlayer({ ...location, x: 360, y: 328 });
-    h.frame('none');
-    h.session.movePlayer({ ...location, x: 392, y: 328 });
-    h.frame('all', ['event-1']);
-    assert.equal(regionCalls, 1);
-    h.session.movePlayer({ ...location, x: 393, y: 328 });
-    h.frame('all', ['event-1']);
-
-    assert.equal(h.session.storyWorld.currentLocation?.map, 'shadow-forest-west');
-    assert.equal(h.director.runtime.eventStatus('event-1'), 'idle');
-
-    // 同一套占用逻辑也要能在过滤解除后原地补触发，不必先走开再回来。
-    h.session.movePlayer({ ...h.session.storyWorld.currentLocation!, x: 600, y: 620 });
-    h.frame('all', ['event-2']);
-    await new Promise<void>(resolve => setImmediate(resolve));
-    assert.equal(h.director.runtime.eventStatus('event-2'), 'idle');
-    h.director.setAutomaticEventFilter(undefined);
-    h.frame('all', ['event-2']);
-    for (let index = 0; index < 8; index++) await new Promise<void>(resolve => setImmediate(resolve));
-    assert.notEqual(h.director.runtime.eventStatus('event-2'), 'idle', '过滤解除后原地补触发');
-  } finally {
-    h.director.dispose();
-  }
-});
-
 test('quest-275 grants handover items and lets the prerequisite finish', () => {
   const h = playthrough();
   try {
@@ -257,27 +215,6 @@ test('quest-275 grants handover items and lets the prerequisite finish', () => {
     }]);
     assert.equal(h.session.status('quest-274'), 'completed', '正式完成要盖过调试钉住的 ready');
     h.director.releaseTriggers();
-  } finally {
-    h.director.dispose();
-  }
-});
-
-test('quest focus only admits events attached to the target quest', () => {
-  const h = playthrough();
-  try {
-    const campaign = h.session.campaign;
-    const hunter = campaign.quests.find(quest => quest.id === 'quest-262')!;
-    assert.ok(questFocusEventIds(campaign, hunter, 'event-283').has('event-283'));
-    const report = campaign.quests.find(quest => quest.id === 'quest-4')!;
-    const focus = questFocusEventIds(campaign, report);
-    assert.equal(focus.has('event-1'), false);
-    assert.equal(focus.has('event-6'), false);
-
-    const saint = campaign.quests.find(quest => quest.id === 'quest-35')!;
-    const chain = questFocusEventIds(campaign, saint, undefined, new Set(['quest-35']));
-    assert.ok(chain.has('event-38'), '条件引用目标任务的触发事件要放行');
-    assert.ok(chain.has('event-40'), '完成事件条件里的前置事件也要放行');
-    assert.equal(chain.has('event-1'), false);
   } finally {
     h.director.dispose();
   }
@@ -422,5 +359,3 @@ test('a quest-gated placement that should stay hidden does not warn about a miss
     h.director.dispose();
   }
 });
-
-

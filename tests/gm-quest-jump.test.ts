@@ -86,7 +86,7 @@ test('keeping a debug run does not restore the earlier session state', async () 
   try {
     assert.equal((await gm.startQuestDebug('quest-11')).ok, true);
     const event1 = h.session.campaign.events.find(event => event.id === 'event-1')!;
-    assert.equal(h.director.allowsAutomaticEvent(event1), false);
+    assert.equal(h.director.allowsAutomaticEvent(event1), true, '调试不再单独过滤自动事件');
     let notified = 0;
     const notify = h.director.notify.bind(h.director);
     (h.director as unknown as { notify: typeof notify }).notify = (...args) => {
@@ -144,6 +144,9 @@ test('a travel failure restores the captured session state and clears forced ava
     assert.ok(calls.includes('restore'));
     assert.ok(calls.includes('finish'));
     assert.equal(gm.questDebugState().active, false);
+    assert.equal(h.director.allowsAutomaticEvent(
+      h.session.campaign.events.find(event => event.id === 'event-1')!), true,
+      '启动失败也要清掉设置阶段的临时过滤器');
   } finally { h.director.dispose(); }
 });
 
@@ -160,18 +163,42 @@ test('starting a talk quest enters ready, seeds the delivery NPC, and completes 
   } finally { h.director.dispose(); }
 });
 
-test('a debug run suppresses unrelated formal events and clears the filter when it ends', async () => {
+test('a debug run leaves automatic events to the formal director', async () => {
   const { h, gm } = harness();
   try {
     assert.equal((await gm.startQuestDebug('quest-4')).ok, true);
     const event1 = h.session.campaign.events.find(event => event.id === 'event-1')!;
-    assert.equal(h.director.allowsAutomaticEvent(event1), false);
-    assert.equal(h.director.runtime.eventStatus('event-0'), 'completed');
-    assert.equal(await h.director.enterRegion('event-1', 'shadow-camp'), false);
-    assert.equal(h.director.runtime.eventStatus('event-1'), 'idle');
-
-    const restored = await gm.returnFromQuestDebug();
-    assert.equal(restored.ok, true, restored.reason);
     assert.equal(h.director.allowsAutomaticEvent(event1), true);
+    assert.equal(h.director.runtime.eventStatus('event-0'), 'completed');
+    assert.equal(await h.director.enterRegion('event-1', 'shadow-camp'), true);
+    assert.notEqual(h.director.runtime.eventStatus('event-1'), 'idle');
+  } finally { h.director.dispose(); }
+});
+
+test('a debug run from quest-10 follows the formal chain to quest-12', async () => {
+  const { h, gm } = harness();
+  try {
+    assert.equal((await gm.startQuestDebug('quest-10', 'ready')).ok, true);
+    assert.equal(h.session.status('quest-10'), 'ready');
+
+    assert.equal(h.session.complete('quest-10'), true);
+    await h.idle();
+    assert.equal(h.session.status('quest-10'), 'completed');
+    assert.equal(h.session.status('quest-11'), 'available');
+
+    assert.equal(h.session.accept('quest-11'), true);
+    await h.idle();
+    for (let index = 0; index < 5; index++)
+      h.session.recordQuestFact('defeat', 'enemy-wild-wolf-1', 'gm-quest-debug-test');
+    await h.idle();
+    assert.equal(h.session.status('quest-11'), 'ready');
+
+    assert.equal(h.session.complete('quest-11'), true);
+    for (let index = 0; index < 50 && h.director.runtime.eventStatus('event-15') !== 'completed'; index++)
+      await h.idle();
+
+    assert.equal(h.director.runtime.eventStatus('event-15'), 'completed');
+    assert.equal(h.session.status('quest-12'), 'ready');
+    assert.equal(gm.questDebugState().active, true, '整个过程仍在调试运行中');
   } finally { h.director.dispose(); }
 });

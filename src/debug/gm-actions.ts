@@ -20,7 +20,7 @@ import type { StoryDirector } from '../domain/story-director.ts';
 import type { QuestStatus, TravelDestination } from '../domain/content.ts';
 import type { ItemCategory } from '../domain/story-interface.ts';
 import { buildQuestCatalog, projectQuestCatalog, type QuestCatalogGroup } from './quest-catalog.ts';
-import { applyQuestStartPlan, planQuestStart, questFocusEventIds, type QuestAcceptCandidate, type QuestStartMode, type QuestStartPlan } from './quest-jump.ts';
+import { applyQuestStartPlan, planQuestStart, type QuestAcceptCandidate, type QuestStartMode, type QuestStartPlan } from './quest-jump.ts';
 import { organizedDebugInventory } from '../domain/inventory.ts';
 import { encounterSpawnId } from '../domain/world-enemies.ts';
 import { DIAGNOSTICS_REPORT_PATH, diagnosticsReportUrl } from '../application/endpoints.ts';
@@ -488,24 +488,20 @@ export function createGmActions(ports: GmPorts): GmActions {
     let before: GmStoryDebugSnapshot;
     try { before = storyDebug.capture(); }
     catch (error) { return { ok: false, reason: error instanceof Error ? error.message : String(error), plan }; }
-    const satisfied = new Set<string>([plan.questId]);
-    for (const change of plan.changedQuests) satisfied.add(change.id);
-    for (const entry of plan.conditionPatch.quests) satisfied.add(entry.id);
-    for (const [id, state] of session.quests)
-      if (state.status === 'active' || state.status === 'ready' || state.status === 'completed') satisfied.add(id);
-    const focusEvents = questFocusEventIds(campaign, plan.quest, plan.accept?.eventId, satisfied);
-    director?.setAutomaticEventFilter(event => focusEvents.has(event.id));
     try {
+      // 设置期间只临时挡住自动派发；接取剧情同步启动后立即清除，之后完全按正式条件推进。
+      director?.setAutomaticEventFilter(() => false);
       storyDebug.begin();
       applyQuestStartPlan(session, plan);
       director?.runtime.restore(session.runtimeState);
       if (plan.destination) await storyDebug.travel(plan.destination);
-      // 设置期间挡住的任务变化现在可以放行；接取剧情必须在这个保持之外开演。
-      storyDebug.releaseTriggers();
       questDebugRun = {
         questId, before, baselineCompletedCycles, startedAt: Date.now(), warnings: plan.warnings,
         ...(plan.accept?.script ? { acceptScript: plan.accept.script } : {}),
       };
+      // 释放后必须同步启动接取剧情，中间不能插入 await；显式 run 会先创建，
+      // 下一帧的区域/近身判定看到 running 就不会重复开演。
+      storyDebug.releaseTriggers();
       if (plan.accept) {
         void storyDebug.play(plan.accept).then(started => {
           if (!started && questDebugRun) questDebugRun.lastError = '接取剧情没有开演';
@@ -521,8 +517,10 @@ export function createGmActions(ports: GmPorts): GmActions {
       session.questBook.clearDebugOverrides();
       try { await storyDebug.restore(before); } catch { /* 保留原始错误 */ }
       storyDebug.finish();
-      director?.setAutomaticEventFilter(undefined);
       return { ok: false, reason: error instanceof Error ? error.message : String(error), plan };
+    } finally {
+      // 设置阶段结束；接取剧情已在 try 里同步启动，这里恢复正式自动派发。
+      director?.setAutomaticEventFilter(undefined);
     }
     }).finally(() => { questDebugStarting = false; });
   };
@@ -541,7 +539,6 @@ export function createGmActions(ports: GmPorts): GmActions {
       await storyDebug.restore(run.before);
       storyDebug.finish();
       questDebugRun = undefined;
-      director?.setAutomaticEventFilter(undefined);
       return { ok: true };
     } catch (error) {
       run.lastError = error instanceof Error ? error.message : String(error);
@@ -570,7 +567,6 @@ export function createGmActions(ports: GmPorts): GmActions {
           return { ok: true };
         } finally {
           director?.releaseTriggers();
-          director?.setAutomaticEventFilter(undefined);
           questDebugRun = undefined;
         }
       });
