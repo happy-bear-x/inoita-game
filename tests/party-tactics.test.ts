@@ -105,3 +105,14 @@ test('recovering mana by spending health and refreshing regeneration have observ
   hot.enemy.position.x=48;assert.equal(hot.skill(),'light-command');
   hot.buffs.add('leader:light-command');assert.equal(hot.skill(),undefined);
 });
+
+test('ambush waits for a basic shot even when rampage reaches the enemy',()=>{
+  const h=fixture('ambush','rampage');
+  h.port.attackRange=()=>12;
+  h.skills[0].frequency=2;
+  h.enemy.position.x=112;
+  h.attackers.set('enemy','leader');
+  assert.equal(h.skill(),undefined);
+  h.enemy.position.x=96;
+  assert.equal(h.skill(),'ambush');
+});

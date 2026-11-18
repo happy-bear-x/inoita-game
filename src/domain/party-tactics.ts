@@ -150,12 +150,15 @@ export function choosePartyAction(actor:Combatant,target:Combatant|undefined,por
       if(unit.effect==='buff'){
         for(const ally of affected){
           if(ally.team!==actor.team||port.hasBuff?.(ally.id,unit.buff))continue;
-          const foe=port.actor(port.targetOf?.(ally.id)??'');
-          const fighting=local.length>0 || foe&&port.attacking(ally.id)&&foe.team!==actor.team&&
-            distance(foe)<=range+2&&
-            attackDistance(ally.position,ally.bounds,foe.position,foe.bounds)<=port.attackRange(ally.id);
-          if(!fighting)continue;
-          if(uses.includes('buff'))support=Math.max(support,profile.costsHealth?10:pressured?8:3);
+          if(uses.includes('buff')){
+            const foe=ally.id===actor.id?target:port.actor(port.targetOf?.(ally.id)??'');
+            const inReach=(enemy:Combatant)=>attackDistance(ally.position,ally.bounds,enemy.position,enemy.bounds)<=port.attackRange(ally.id);
+            const fighting=foe && foe.team!==ally.team
+              ? inReach(foe) && (distance(foe)<=range && enemyIds.has(foe.id) || (port.attacking(ally.id) && distance(foe)<=range+2))
+              : local.some(inReach);
+            if(fighting)
+              support=Math.max(support,profile.costsHealth?10:pressured?8:3);
+          }
           if(uses.includes('defend')&&local.some(enemy=>port.targetOf?.(enemy.id)===ally.id))
             defense=Math.max(defense,12+(healthFraction(port,ally.id)<0.5?5:0));
         }
