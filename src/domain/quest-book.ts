@@ -117,9 +117,9 @@ interface QuestEvaluationView {
   conditionContext: StoryConditionContext;
   itemCount(item: string): number;
   equippedItemCount?(item: string): number;
-  /** 调试跳转期间强制保持可接取的任务；不参与状态快照。 */
+  /** 剧情跳转期间强制保持可接取的任务；不参与状态快照。 */
   forcedAvailable?: ReadonlySet<string>;
-  /** 调试跳转期间强制钉住的完整任务进度；优先于普通的可用/完成度重算。 */
+  /** 剧情跳转期间强制钉住的完整任务进度；优先于普通的可用/完成度重算。 */
   forcedProgress?: ReadonlyMap<string, QuestProgress>;
 }
 function integer(value: number, minimum: number, description: string): void {
@@ -297,9 +297,9 @@ export class QuestBook {
   private readonly restores = new WeakMap<QuestRestorePlan, QuestBookState>();
   private readonly context: () => QuestContext;
   private readonly sideQuests: ReadonlySet<string>;
-  /** 调试跳转期间强制保持可接取的任务；只活在内存里，不进状态快照、不进存档。 */
+  /** 剧情跳转期间强制保持可接取的任务；只活在内存里，不进状态快照、不进存档。 */
   private readonly forcedAvailable = new Set<string>();
-  /** 调试接取条件要求的精确任务进度；只活在内存里，不进状态快照、不进存档。 */
+  /** 跳转接取条件要求的精确任务进度；只活在内存里，不进状态快照、不进存档。 */
   private readonly forcedProgress = new Map<string, QuestProgress>();
 
   constructor(definitions: readonly QuestRules[], context: () => QuestContext, sideQuests: ReadonlySet<string>,
@@ -341,7 +341,7 @@ export class QuestBook {
     this.forcedProgress.set(id, structuredClone(progress));
     this.commit(this.plan({ type: 'refresh' }));
   }
-  /** 一次性清掉任务调试的两种内存覆盖，并重算回真实状态。 */
+  /** 一次性清掉剧情跳转的两种内存覆盖，并重算回真实状态。 */
   clearDebugOverrides(): void {
     this.forcedAvailable.clear();
     this.forcedProgress.clear();

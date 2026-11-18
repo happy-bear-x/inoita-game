@@ -66,8 +66,8 @@ export class StoryApp {
   readonly keyBindings = defaultKeyBindings;
   gmNoclip = false;
   gmSpeedMultiplier = 1;
-  /** 任务调试跳转期间暂停自动存档，避免把调试现场写进自动槽。 */
-  storyDebugActive = false;
+  /** 剧情跳转事务进行中暂停自动存档；交接后恢复并补写一次。 */
+  storyJumpActive = false;
   captureControlPreview?:()=>readonly import('./ui/phaser/action-controls.ts').ShortcutSlot[];
   readonly checkpoint = new SessionCheckpoint<StoryWorldViewSnapshot>();
   /** 三个存档槽的持久化。标题页与游戏内菜单读的是同一份，键在 `domain/save-game.ts`。 */

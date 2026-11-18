@@ -8,7 +8,7 @@ export class SessionCheckpoint<WorldState = undefined> {
   private snapshot?:CheckpointSnapshot<WorldState>;
   get available():boolean { return !!this.snapshot; }
   peek():CheckpointSnapshot<WorldState>|undefined { return this.snapshot?structuredClone(this.snapshot):undefined; }
-  /** 装回一份先前 `peek()` 出来的快照（调试跳转前后恢复）；传 `undefined` 等价于清空。 */
+  /** 装回一份先前 `peek()` 出来的快照（剧情跳转前后恢复）；传 `undefined` 等价于清空。 */
   install(snapshot:CheckpointSnapshot<WorldState>|undefined):void {
     this.snapshot=snapshot?structuredClone(snapshot):undefined;
   }

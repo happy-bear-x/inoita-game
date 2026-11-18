@@ -57,9 +57,9 @@ export class StoryDirector {
   private presentationStarted = false;
   /** 手动播放（交付、对话）期间产生的会话变化，等这次播放完全收起后再开演。 */
   private readonly deferredTriggers: (()=>void)[] = [];
-  /** 调试跳转设置期间暂停触发开演；观察表仍更新，恢复后不会把设置过程中的变化补演一遍。 */
+  /** 剧情跳转设置期间暂停触发开演；观察表仍更新，恢复后不会把设置过程中的变化补演一遍。 */
   private triggersHeld = false;
-  /** 调试运行只允许与目标任务相关的自动事件开演；显式 trigger/script 不受影响。 */
+  /** 剧情跳转设置阶段可临时关掉自动事件开演；显式 trigger/script 不受影响。 */
   private automaticEventFilter?: (event: StoryEvent) => boolean;
   private skipRequest = new AbortController();
   private context?: StoryPlaybackContext;
@@ -579,12 +579,12 @@ export class StoryDirector {
     for (const run of this.deferredTriggers.splice(0)) run();
   }
   /**
-   * 调试跳转用：暂停新的触发开演，并丢掉已经排队的手动播放后触发。
+   * 剧情跳转用：暂停新的触发开演，并丢掉已经排队的手动播放后触发。
    * 只影响 `notify` / `trigger` 与 `observeChanges` 的派发，不进入 `busy`。
    */
   holdTriggers(): void { this.triggersHeld = true; this.deferredTriggers.length = 0; }
   releaseTriggers(): void { this.triggersHeld = false; }
-  /** 调试运行用：只允许指定事件自动开演；显式 `trigger` / `script` 不受过滤影响。 */
+  /** 剧情跳转用：只允许指定事件自动开演；显式 `trigger` / `script` 不受过滤影响。 */
   setAutomaticEventFilter(filter?: (event: StoryEvent) => boolean): void { this.automaticEventFilter = filter; }
   allowsAutomaticEvent(event: StoryEvent): boolean { return this.automaticEventFilter?.(event) !== false; }
   notify(source: StoryTriggerSource, key?: string, map?: string, entity?: string): Promise<boolean> {

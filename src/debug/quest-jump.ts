@@ -402,7 +402,7 @@ function placementVisibleByFlag(condition: StoryCondition | undefined): boolean 
   }
 }
 
-/** 重放来源节点的世界命令；任务、物品和队伍命令留给正式任务流程，不在调试跳转里伪造。 */
+/** 重放来源节点的世界命令；任务、物品和队伍命令留给正式任务流程，不在剧情跳转里伪造。 */
 function worldStateCommands(campaign: Campaign, sources: readonly { script: string; node: string }[]): StoryCommand[] {
   const commands: StoryCommand[] = [];
   const seen = new Set<string>();
@@ -419,7 +419,7 @@ function worldStateCommands(campaign: Campaign, sources: readonly { script: stri
 
 /**
  * 接取舞台的 cast 按 `worldEntityId` 引用世界实体；正式流程里这些实体由更早的剧本用
- * `world place` + `flag` 建立。调试跳转没有播那段上游剧情，所以要把建立实体的原始命令
+ * `world place` + `flag` 建立。剧情跳转没有播那段上游剧情，所以要把建立实体的原始命令
  * 通过正式命令执行器重放一遍，演出本身仍走正式管线。
  */
 function acceptSceneWorldCommands(campaign: Campaign, session: Session, questId: string,
@@ -447,7 +447,7 @@ function hasAvailableEntry(quest: CampaignQuest, accept: AcceptCandidate | undef
   return !!place && place.type !== 'unavailable';
 }
 
-/** 规划一次“从可接取开始”的调试跳转；只读，不改会话。 */
+/** 规划一次“从可接取开始”的剧情跳转；只读，不改会话。 */
 export function planQuestStart(campaign: Campaign, session: Session, questId: string,
   requestedMode: QuestStartMode = 'available'): QuestStartPlan {
   const quest = questOf(campaign, questId);
@@ -461,7 +461,7 @@ export function planQuestStart(campaign: Campaign, session: Session, questId: st
   const internal = quest.completion === 'internal';
   const fallback = requestedMode === 'available' && (internal || !hasAvailableEntry(quest, accept));
   let mode: QuestStartMode = fallback ? (quest.completion === 'talk' ? 'ready' : 'active') : requestedMode;
-  // 对话任务没有进行中阶段：接取后引擎直接写 ready，调试起点也不能造出不存在的 active。
+  // 对话任务没有进行中阶段：接取后引擎直接写 ready，跳转起点也不能造出不存在的 active。
   if (mode === 'active' && quest.completion === 'talk') mode = 'ready';
   const targetStatus: QuestStatus = mode;
 
@@ -580,7 +580,7 @@ export function applyQuestStartPlan(session: Session, plan: QuestStartPlan): voi
     session.questBook.forceProgress(entry.id, patchedProgress(quest, progress, entry.status));
   }
 
-  // 调试起点补齐这批任务需要的交付物品；否则接取/完成脚本会在 handoverItems 检查处中断。
+  // 跳转起点补齐这批任务需要的交付物品；否则接取/完成脚本会在 handoverItems 检查处中断。
   const itemQuestIds = new Set<string>([...quests.keys(), ...plan.conditionPatch.quests.map(entry => entry.id)]);
   for (const id of itemQuestIds) {
     const quest = questOf(session.campaign, id);
@@ -605,7 +605,7 @@ export function applyQuestStartPlan(session: Session, plan: QuestStartPlan): voi
 
   const runtime = structuredClone(session.runtimeState);
   const removed = new Set([...plan.conditionPatch.removedEvents, ...(plan.accept?.eventId ? [plan.accept.eventId] : [])]);
-  // 任何任务调试都发生在游戏开场之后；不记录 start 事件，换图时会再次尝试播放开场。
+  // 任何剧情跳转都发生在游戏开场之后；不记录 start 事件，换图时会再次尝试播放开场。
   const startEvents = session.campaign.events
     .filter(event => event.source === 'start')
     .map(event => event.id);

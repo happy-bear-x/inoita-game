@@ -43,6 +43,8 @@ export interface SavePageHost {
   busy(): boolean;
   setItemNotice(message: string): void;
   updateNotice?():void;
+  /** 手动存档成功写入后的交接；剧情跳转用它判断“已先存档”。 */
+  afterManualSave?(ref:number):void;
   modal(): UiSurface;
   /** 弹层文字的 DOM 出口；确认框正文与按钮文字都从这里登记。 */
   modalWriter(): MenuTextWriter;
@@ -256,17 +258,21 @@ export class SavePage {
   }
 
   private writeSlot(ref: number, record: SaveGame<StoryWorldViewSnapshot>): void {
+    let saved=false;
     try {
       this.host.app.saves.write(ref, record);
       this.host.app.saveSlot = ref;
       this.host.app.audio?.ui('select');
       this.host.setItemNotice(SAVE_DONE);
+      saved=true;
     } catch (error) {
       console.warn('存档写入失败', error); this.host.setItemNotice(SAVE_FAILED);
     }
     if(this.board&&this.host.updateSaveRows&&this.host.updateNotice){
       this.host.updateSaveRows(this.board.update(ref,newestFirstSlots(slot=>this.host.app.saves.peek(slot))));this.host.updateNotice();
     }else this.host.render();
+    // 只有真正落盘才算“跳转前已存档”；写失败时调用方保留待办，让玩家换槽重试。
+    if(saved)this.host.afterManualSave?.(ref);
   }
 
   /** 删除手动存档；删掉的正是当前槽时清空 `saveSlot`。 */

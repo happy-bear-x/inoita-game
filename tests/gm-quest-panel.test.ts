@@ -5,7 +5,7 @@ import { domWindow, installMenuDom, type MenuElement } from './support/menu-dom.
 import type { Campaign, CampaignQuest } from '../src/domain/campaign.ts';
 import type { QuestGroupDefinition, QuestStatus } from '../src/domain/content.ts';
 import type { QuestProgress } from '../src/domain/quest-book.ts';
-import type { GmActions, GmQuestDebugState } from '../src/debug/gm-actions.ts';
+import type { GmActions } from '../src/debug/gm-actions.ts';
 import type { QuestCatalogEntry, QuestCatalogGroup, QuestCatalogSummary } from '../src/debug/quest-catalog.ts';
 import type { QuestStartPlan } from '../src/debug/quest-jump.ts';
 import type { MenuTextSpec } from '../src/ui/dom/menu-text.ts';
@@ -167,29 +167,18 @@ function fixture(options: { unsatisfied?: boolean; ready?: boolean; scrollGroups
     quests: Object.values(quests), questGroups: definitions, placements: [],
   } as unknown as Campaign;
 
-  let debugState: GmQuestDebugState = { active: false, completed: false };
-  let finishStart: ((value: { ok: boolean; plan?: QuestStartPlan }) => void) | undefined;
-  const startCalls: string[] = [];
-  const startModes: (string | undefined)[] = [];
-  let keepCalls = 0;
+  const jumpCalls: string[] = [];
+  const jumpModes: (string | undefined)[] = [];
   const gm = {
     digest: () => ({ quests: { active: [], ready: [] }, location: null, story: { completedEvents: 0, runs: [] } }),
     actions: () => [],
     isNoclip: () => false,
     isDoubleSpeed: () => false,
     questCatalog: () => groups,
-    questDebugState: () => debugState,
     previewQuestDebug: (questId: string) => ({
       ok: true,
       plan: planFor(questId),
     }),
-    startQuestDebug: (questId: string, mode?: string) => {
-      startCalls.push(questId);
-      startModes.push(mode);
-      return new Promise<{ ok: boolean; plan?: QuestStartPlan }>(resolve => { finishStart = resolve; });
-    },
-    returnFromQuestDebug: async () => ({ ok: true }),
-    keepQuestDebugProgress: () => { keepCalls++; debugState = { active: false, completed: false }; return { ok: true }; },
   } as unknown as GmActions;
 
   function planFor(questId: string): QuestStartPlan {
@@ -210,22 +199,19 @@ function fixture(options: { unsatisfied?: boolean; ready?: boolean; scrollGroups
   const scene = new MenuScene();
   const body = new UiSurface(scene as unknown as Phaser.Scene, 960, 480);
   let specs: MenuTextSpec[] = [];
-  const setTexts: string[] = [];
-  let active = true;
   const writer = { add: (spec: MenuTextSpec) => { specs.push(spec); } };
   let panel: GmPanel;
   const render = () => { specs = []; panel.update(body, writer); };
-  panel = new GmPanel(gm, campaign, { close: () => {}, render }, {
-    active: () => active,
+  panel = new GmPanel(gm, campaign, { close: () => {}, render,
+    requestStoryJump: (questId, mode) => { jumpCalls.push(questId); jumpModes.push(mode); } }, {
+    active: () => true,
     setText: (key, text) => {
       const spec = specs.find(value => value.key === key);
       if (spec) spec.text = text;
-      setTexts.push(text);
     },
     moveText: (key, text, y) => {
       const spec = specs.find(value => value.key === key);
       if (spec) { spec.text = text; spec.y = y; }
-      setTexts.push(text);
     },
     refresh: () => {},
   });
@@ -240,14 +226,8 @@ function fixture(options: { unsatisfied?: boolean; ready?: boolean; scrollGroups
   };
   const click = (label: string) => (button(label).getData('action') as () => void)();
   const texts = () => specs.map(spec => spec.text);
-  const answerStart = (ok: boolean) => finishStart?.({ ok, plan: planFor('q-main-1') });
   return {
-    panel, body, scene, groups, campaign, texts, specs: () => specs, button, shown, click, startCalls, startModes,
-    setTexts, get keepCalls() { return keepCalls; },
-    setActive: (value: boolean) => { active = value; },
-    setDebugState: (value: GmQuestDebugState) => { debugState = value; },
-    get debugState() { return debugState; },
-    answerStart,
+    panel, body, scene, groups, campaign, texts, specs: () => specs, button, shown, click, jumpCalls, jumpModes,
     render,
     cleanup: () => { panel.dispose(); scene.events.emit('shutdown'); },
   };
@@ -282,7 +262,7 @@ test('selecting a group shows its quests and selecting a quest shows the jump de
   assert.ok(f.texts().includes('未解锁 · 日志外'), '日志外任务带标签');
 
   f.click('任务 支线乙01');
-  f.button('从可接取开始');
+  f.button('跳到可接取');
   assert.ok(f.texts().includes('将补前置 1 个'));
   assert.ok(f.texts().includes('解锁于：主线甲'));
   assert.ok(f.texts().includes('接取剧情：event-accept（脚本 script-accept）'));
@@ -296,7 +276,7 @@ test('an unsatisfied accept condition offers the active fallback', t => {
   const f = fixture({ unsatisfied: true }); t.after(f.cleanup);
   f.click('调试页 任务');
   f.click('任务 主线甲01');
-  assert.ok(f.button('从进行中开始'));
+  assert.ok(f.button('跳到进行中'));
 });
 
 test('a talk quest starts from its ready delivery state', t => {
@@ -304,52 +284,18 @@ test('a talk quest starts from its ready delivery state', t => {
   f.click('调试页 任务');
   f.click('任务 主线甲01');
   assert.ok(f.texts().includes('没有可接取入口，会直接放到待交付状态。'));
-  f.click('从待交付开始');
-  assert.deepEqual(f.startModes, ['ready']);
+  f.click('跳到待交付');
+  assert.deepEqual(f.jumpModes, ['ready']);
 });
 
-test('a debug run shows its banner, disables other starts and can keep its progress', t => {
-  const f = fixture(); t.after(f.cleanup);
-  f.click('调试页 任务');
-  f.setDebugState({
-    active: true, questId: 'q-main-1', title: '主线甲01', status: 'active',
-    goals: [{ id: 'g1', label: '收集食材', current: 2, quantity: 5 }], completed: false,
-  });
-  f.click('任务 主线甲01');
-  assert.ok(f.texts().includes('当前调试任务：主线甲01 · 进行中'));
-  assert.ok(f.texts().includes('目标：收集食材 2/5'));
-  assert.equal(f.button('从可接取开始').input?.enabled, false, '调试进行中禁用开始按钮');
-  f.button('回到跳转前');
-  f.click('保留进度');
-  assert.equal(f.keepCalls, 1);
-  assert.ok(f.texts().includes('已保留调试进度并恢复自动存档'));
-});
-
-test('a debug run can be ended from the group list without selecting a quest', t => {
-  const f = fixture(); t.after(f.cleanup);
-  f.setDebugState({
-    active: true, questId: 'q-main-1', title: '主线甲01', status: 'active',
-    goals: [{ id: 'g1', label: '收集食材', current: 2, quantity: 5 }], completed: false,
-  });
-  f.click('调试页 任务');
-  f.click('返回任务组');
-  assert.ok(f.button('回到跳转前'));
-  assert.ok(f.button('保留进度'));
-});
-
-test('a late start result is ignored after the page closes', async t => {
+test('starting a jump asks the host to save first instead of running it directly', t => {
   const f = fixture(); t.after(f.cleanup);
   f.click('调试页 任务');
   f.click('任务 主线甲01');
-  f.click('从可接取开始');
-  assert.deepEqual(f.startCalls, ['q-main-1']);
-  assert.ok(f.setTexts.includes('正在准备任务起点…'));
-
-  f.click('调试页 状态');
-  f.setActive(false);
-  f.answerStart(true);
-  await new Promise<void>(resolve => setImmediate(resolve));
-  assert.ok(!f.setTexts.some(text => text.startsWith('已开始')), '页面关闭后不更新开始结果');
+  assert.ok(f.texts().includes('开始前会先打开存档页，保存成功后自动跳转。'));
+  f.click('跳到可接取');
+  assert.deepEqual(f.jumpCalls, ['q-main-1']);
+  assert.deepEqual(f.jumpModes, ['available']);
 });
 
 test('the GM quest search box sits at the top of the right column', t => {

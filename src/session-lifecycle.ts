@@ -15,7 +15,7 @@ import {StoryPresenter} from './rendering/story-presenter.ts';
 import {OutfitPool} from './rendering/outfit-pool.ts';
 import {StoryDirector} from './domain/story-director.ts';
 import {installStorySkipDiagnostics} from './application/game-diagnostics.ts';
-import {createGmActions, type GmStoryDebugPort, type GmStoryDebugSnapshot} from './debug/gm-actions.ts';
+import {createGmActions, type GmStoryJumpPort, type GmStoryJumpSnapshot} from './debug/gm-actions.ts';
 import type {CheckpointSnapshot} from './domain/session-checkpoint.ts';
 
 interface SessionLifecycleHooks {
@@ -209,16 +209,16 @@ export function createSessionLifecycle(app:StoryApp,hooks:SessionLifecycleHooks)
         })();
       });
     };
-    const storyDebug: GmStoryDebugPort = {
+    const storyJump: GmStoryJumpPort = {
       ready: () => !!worldScene()?.worldReady(),
-      capture: (): GmStoryDebugSnapshot => {
+      capture: (): GmStoryJumpSnapshot => {
         const scene = worldScene();
         if (!scene?.worldReady()) throw new Error('正式地图尚未就绪');
         return { session: session.captureState(), world: scene.captureStoryWorld(), checkpoint: app.checkpoint.peek() };
       },
       begin: () => {
         director.holdTriggers();
-        app.storyDebugActive = true;
+        app.storyJumpActive = true;
       },
       releaseTriggers: () => { director.releaseTriggers(); },
       closeMenu: () => { app.storyUI?.close(); },
@@ -238,7 +238,7 @@ export function createSessionLifecycle(app:StoryApp,hooks:SessionLifecycleHooks)
         await director.script(accept.script);
         return true;
       },
-      restore: async (snapshot: GmStoryDebugSnapshot) => {
+      restore: async (snapshot: GmStoryJumpSnapshot) => {
         const scene = worldScene();
         if (!scene) throw new Error('不在游戏场景里');
         // 恢复期间任务簿会变化，不能让它顺手触发剧情。
@@ -249,24 +249,24 @@ export function createSessionLifecycle(app:StoryApp,hooks:SessionLifecycleHooks)
           // await 期间可能已经回标题/读档；身份不对时不能再写全局检查点。
           if (app.session !== session || signal.aborted || app.director !== director) throw new Error('会话已经关闭');
           app.checkpoint.install(snapshot.checkpoint as CheckpointSnapshot<StoryWorldViewSnapshot> | undefined);
-          app.storyDebugActive = false;
+          app.storyJumpActive = false;
         } finally { director.releaseTriggers(); }
       },
       checkpoint: () => { worldScene()?.checkpointStoryWorld(); },
       finish: () => {
-        app.storyDebugActive = false;
+        app.storyJumpActive = false;
         director.releaseTriggers();
       },
       dispose: () => {
         session.questBook.clearDebugOverrides();
-        app.storyDebugActive = false;
+        app.storyJumpActive = false;
         director.releaseTriggers();
       },
     };
     // GM 动作层在会话装配好之后才建（它要 session 与 director）；开关关闭时**不建也不挂**，
     // 这样「默认关闭」是结构上的保证，而不是靠调用方自觉。
     app.gm = gmOn() ? createGmActions({
-      session, campaign, director, storyDebug,
+      session, campaign, director, storyJump,
       requestAutoSave: () => app.autoSave?.(),
       status: () => runtimeDiagnostics(),
       rescue: () => {

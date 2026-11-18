@@ -5,6 +5,7 @@ import type { StoryUIContext } from '../src/application/ports.ts';
 import type { Session } from '../src/domain/session.ts';
 import type { WorldIndex } from '../src/domain/content.ts';
 import type { SavePageHost } from '../src/ui/save-page.ts';
+import { AUTO_SAVE_SLOT } from '../src/domain/save-game.ts';
 
 // 存档页依赖 UiSurface 的类型与绘制边界；这里只短路 Phaser 运行时。
 const hook = registerHooks({ resolve(specifier, context, next) {
@@ -22,6 +23,7 @@ hook.deregister();
 function fixture() {
   let renders = 0, confirmations = 0, syncs = 0, notice = '';
   const written: string[] = [];
+  const savedRefs: number[] = [];
   const app = {
     saves: {
       peek: () => ({ kind: 'empty' as const }),
@@ -51,18 +53,20 @@ function fixture() {
     sync: () => { syncs += 1; },
     busy: () => false,
     setItemNotice: message => { notice = message; },
+    afterManualSave: ref => { savedRefs.push(ref); },
     modal: () => { throw new Error('测试不画弹层'); },
     modalWriter: () => ({ add: () => {} }),
     beginModal: () => {},
     scroll: () => { throw new Error('测试不画滚动区'); },
     finishScroll: () => {}
   };
-  return { page: new SavePage(host), session, app, written,
+  return { page: new SavePage(host), session, app, written, savedRefs,
     renders: () => renders, confirmations:()=>confirmations, syncs: () => syncs, notice: () => notice };
 }
 
 interface SavePageInternals {
   saveConfirm?: number;
+  saveToSlot(ref: number): void;
   loadConfirm?: number;
   deleteConfirm?: number;
   renameRef?: number;
@@ -148,6 +152,22 @@ test('存档快照与摘要仍由同一入口生成', () => {
   assert.equal(captured.record.summary.mapName, '地图');
   assert.equal(captured.record.summary.level, 5);
   assert.deepEqual(captured.record.world, { location: {} });
+});
+
+test('手动存档成功后通知宿主，自动槽和写入失败都不通知',()=>{
+  const f = fixture();
+  const internals = f.page as unknown as SavePageInternals;
+  internals.saveToSlot(2);
+  assert.deepEqual(f.written, ['write:2']);
+  assert.deepEqual(f.savedRefs, [2]);
+
+  internals.saveToSlot(AUTO_SAVE_SLOT as unknown as number);
+  assert.deepEqual(f.savedRefs, [2], '自动槽没有保存动作');
+
+  (f.app.saves as unknown as { write: () => void }).write = () => { throw new Error('存储已满'); };
+  internals.saveToSlot(3);
+  assert.deepEqual(f.savedRefs, [2], '写失败不触发跳转前的存档交接');
+  assert.equal(f.notice(), '保存失败');
 });
 
 test('存档页独立取消读档，旧结果不会覆盖新请求',async()=>{

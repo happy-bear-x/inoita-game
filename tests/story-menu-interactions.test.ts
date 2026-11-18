@@ -2509,6 +2509,30 @@ test('save page writes the loaded world into the chosen slot and asks before ove
   assert(domTexts(f).includes('保存成功'));
 });
 
+test('a story jump waits for a manual save and is cancelled by leaving the save page', t => {
+  const f=fixture();t.after(f.cleanup);
+  const jumps:string[]=[];
+  (f.app as unknown as {gm:unknown}).gm={startStoryJump:(questId:string,mode:string)=>{
+    jumps.push(`${questId}:${mode}`);return Promise.resolve({ok:true});
+  }};
+  const menu=f.menu as unknown as {requestStoryJump(q:string,m:'available'|'active'|'ready'):void;pendingStoryJump?:unknown};
+  menu.requestStoryJump('grafton-mission','available');
+  assert.equal(f.internals.page,'save');
+  assert.ok(f.internals.notice?.includes('先保存当前进度'));
+
+  // 离开存档页取消待办；之后普通保存不会执行跳转。
+  f.menu.show('bag');
+  assert.equal(menu.pendingStoryJump,undefined);
+  f.menu.show('save');f.scene.click(f.scene.button('存档槽 1'));
+  assert.deepEqual(jumps,[]);
+  f.scene.click(f.scene.button('确认'));
+
+  // 重新发起后，保存成功才执行跳转。
+  menu.requestStoryJump('grafton-mission','available');
+  f.scene.click(f.scene.button('存档槽 2'));
+  assert.deepEqual(jumps,['grafton-mission:available']);
+});
+
 /** 存档行按钮所在的滚动区；按行按钮的直接父容器匹配，顺带验证行确实画进了滚动内容。 */
 const domTexts=(f:ReturnType<typeof fixture>)=>f.domLabels.filter(label=>label.visible&&!label.removed).map(label=>label.text);
 function slotRowScroll(f:ReturnType<typeof fixture>,row:Display):ScrollArea{

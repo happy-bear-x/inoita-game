@@ -123,6 +123,8 @@ export class StoryUI {
   private page:Page='bag';private open=false;/** 从阵亡面板打开的读档页：关掉时要回到阵亡面板。 */private loadReturnToDefeat=false;private selectedMemberId='player';private questPanel?:QuestPanel;
 
   private itemNotice?:string;private busy=false;private request=new AbortController();
+  /** GM 任务页选好跳转后，等玩家在存档页保存当前进度再执行。 */
+  private pendingStoryJump?:{questId:string;mode:'available'|'active'|'ready'};
   /** 上次整页重绘时当前页依赖的数据签名；会话通知用它判断要不要重绘。 */
   private sessionSignature='';
     /** 预热时菜单还没打开，只允许这一次在关闭状态绘制。 */
@@ -193,6 +195,7 @@ export class StoryUI {
       busy:()=>this.busy,
       setItemNotice:message=>{this.itemNotice=message;},
       updateNotice:()=>this.updateItemNotice(),
+      afterManualSave:()=>this.completePendingStoryJump(),
       modal:()=>this.modal!,
       modalWriter:()=>this.saveModalWriter(),
       beginModal:(width,height)=>this.beginModal(width,height),
@@ -400,6 +403,7 @@ export class StoryUI {
   bind(session:Session,world:WorldIndex,content:StoryInterface):void{
     this.statusPage?.discardAllocation();
     this.loadReturnToDefeat=false;
+    this.pendingStoryJump=undefined;
     this.close();this.discardBagPage();this.hudButtons?.clear();this.unsubscribe?.();this.bagPage?.destroy();this.session=session;this.world=world;this.content=content;this.page='bag';this.selectedMemberId='player';this.scrollOffsets.clear();this.sessionSignature='';
     this.createBagPage(session,world,content);
     const menu=this;
@@ -602,6 +606,27 @@ export class StoryUI {
     if(!keepBag)this.bagPage?.resetView();this.keyboardFocus=undefined;this.surface?.visible(false);this.body?.visible(false);this.description?.visible(false);this.modal?.visible(false);this.shortcutScreen?.visible(false);this.backTab?.visible(false);this.backdrop?.setVisible(false);this.app.ui.resetInput();this.app.ui.lock(false,'story-menu');
     if(this.loadReturnToDefeat){this.loadReturnToDefeat=false;if(this.app.ui.defeated)this.app.ui.revealDefeat();}
   }
+  /** GM 任务页选好任务起点后先打开存档页；保存成功才真正跳转。 */
+  private requestStoryJump(questId:string,mode:'available'|'active'|'ready'):void{
+    this.show('save');
+    if(this.page!=='save')return;
+    this.pendingStoryJump={questId,mode};
+    this.notice='先保存当前进度；保存成功后自动开始剧情跳转。';
+    this.render();
+  }
+  /** 存档页写入成功后消费待办；失败原因留在存档页底部，菜单已关时交给导演错误页。 */
+  private completePendingStoryJump():void{
+    const pending=this.pendingStoryJump;
+    if(!pending)return;
+    this.pendingStoryJump=undefined;
+    const gm=this.app.gm;
+    if(!gm){this.notice='剧情跳转不可用';this.render();return;}
+    void gm.startStoryJump(pending.questId,pending.mode).then(result=>{
+      if(result.ok||!this.open||this.page!=='save')return;
+      this.notice=`跳转失败：${result.reason??'原因未记录'}`;
+      this.render();
+    });
+  }
   private releaseDebugPanel():void{
     this.gmPanel?.dispose();this.gmPanel=undefined;this.gmPanelOwner=undefined;
     this.gmTextSpecs=[];this.gmDetailTextSpecs=[];this.gmDetailOpen=false;
@@ -630,7 +655,7 @@ export class StoryUI {
     private cancelOperation():void{
     this.cancelDrag();this.request.abort();this.request=new AbortController();this.busy=false;
     if(this.page==='bag')this.bagPage?.cancel();
-    if(this.page==='save'||this.page==='load')this.savePage?.cancelPending();
+    if(this.page==='save'||this.page==='load'){this.savePage?.cancelPending();this.pendingStoryJump=undefined;}
     if(this.page==='party')this.partyPanel?.close();
     if(this.page==='crafting')this.craftingPanel?.close();
     if(this.page==='forge')this.forge=undefined;
@@ -949,7 +974,7 @@ export class StoryUI {
       // 面板按当前动作层实例缓存：同一会话里保留过滤与选中，换会话就重建。
       if(this.gmPanelOwner!==this.app.gm){
         const gm=this.app.gm;
-        this.gmPanel=new GmPanel(gm,this.session.campaign,{close:()=>this.close(),render:()=>{if(this.app.gm===gm&&this.gmPanelOwner===gm)this.updateDebugPanel();},runAction:action=>{this.busy=true;try{return action();}finally{this.busy=false;this.sessionSignature=this.sessionDataSignature()??this.sessionSignature;}}},{
+        this.gmPanel=new GmPanel(gm,this.session.campaign,{close:()=>this.close(),render:()=>{if(this.app.gm===gm&&this.gmPanelOwner===gm)this.updateDebugPanel();},runAction:action=>{this.busy=true;try{return action();}finally{this.busy=false;this.sessionSignature=this.sessionDataSignature()??this.sessionSignature;}},requestStoryJump:(questId,mode)=>this.requestStoryJump(questId,mode)},{
           itemSlot:this.app.menuPanels.assets['inventory-slot'],
           itemSelected:this.app.menuPanels.assets['inventory-selected'],
           assets:this.app.menuPanels.assets,

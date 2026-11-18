@@ -149,7 +149,7 @@ function startAutoSave(session:Session):void {
   stopAutoSave();
   const generation=autoSaveGeneration;
   const saver=new AutoSaver<StoryWorldViewSnapshot>({
-    enabled:()=>app.mode==='game'&&!app.suspended&&!!app.session&&!app.pressureMode&&!app.storyDebugActive,
+    enabled:()=>app.mode==='game'&&!app.suspended&&!!app.session&&!app.pressureMode&&!app.storyJumpActive,
     // 演出与菜单锁着时不抢写：等解锁后再写，免得存到一半的状态。
     locked:()=>app.locked||!!app.director?.busy,
     capture:()=>{const captured=app.storyUI.captureSaveRecord(lastSaveThumbnail);return captured.ok?captured.record:undefined;},
@@ -171,7 +171,7 @@ function startAutoSave(session:Session):void {
       const started=performance.now();
       const screenshot=await app.captureSaveThumbnail?.();
       // 等截图期间回标题、读档或换了会话时，不能把旧快照写进新的自动槽。
-      if(!isLatest()||generation!==autoSaveGeneration||app.session!==session||app.mode!=='game')return;
+      if(!isLatest()||generation!==autoSaveGeneration||app.session!==session||app.mode!=='game'||app.storyJumpActive)return;
       if(screenshot)game.summary.screenshot=screenshot;
       try {
         app.saves.write(AUTO_SAVE_SLOT,game);
