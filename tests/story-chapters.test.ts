@@ -36,6 +36,12 @@ test('the fusion machine collection can be completed twice using warehouse items
       assert.equal(iron().length, 5, '任务只需要五块，仓库七个原版生成点最多刷五个');
       await h.pickup('paillette');
       assert.equal(iron().length, 4);
+      if (round === 0) {
+        await h.travel('shadow-hall');
+        assert.equal(iron().length, 0, '离开仓库会收回未拾取的生成点物品');
+        await h.travel(warehouse); await h.wait(60);
+        assert.equal(iron().length, 4, '回到仓库后能够重新取得剩余物品');
+      }
       await h.wait((312 + 2 * 151) * LOGIC_FRAME_MS);
       assert.equal(iron().length, 4, '背包加地面已经够五块，刷新的生成点不再多产');
       await h.pickup('paillette', 4);
