@@ -2,12 +2,10 @@ package io.github.sunflower9264.inoita;
 
 import android.webkit.MimeTypeMap;
 
-import java.io.IOException;
-import java.net.URLDecoder;
 import java.util.Locale;
 
 /**
- * 本地资源服务的路径与响应头规则。
+ * 内容服务的路径与响应头规则。
  *
  * 和原来的 WebViewAssetLoader 一样：资源清单是权威，磁盘优先，APK assets 兜底。
  */
@@ -18,8 +16,8 @@ final class AssetPaths {
 
     private AssetPaths() {}
 
-    /** 按段解码并拒绝 .、..、反斜杠、NUL、隐藏段和空段。 */
-    static String normalize(String rawPath) {
+    /** 内容服务传入的路径已经解码，这里只按段校验，不再做一次 URL 解码。 */
+    static String normalizeDecoded(String rawPath) {
         if (rawPath == null || rawPath.isEmpty()) return null;
         String path = rawPath.charAt(0) == '/' ? rawPath.substring(1) : rawPath;
         if (path.isEmpty()) return null;
@@ -28,20 +26,12 @@ final class AssetPaths {
         String[] segments = path.split("/", -1);
         StringBuilder result = new StringBuilder(path.length());
         for (String segment : segments) {
-            if (segment.isEmpty()) return null;
-            String decoded;
-            try {
-                // URLDecoder 会把 + 当成空格；路径里 + 是字面量，先转义回来。
-                decoded = URLDecoder.decode(segment.replace("+", "%2B"), "UTF-8");
-            } catch (IllegalArgumentException | IOException error) {
-                return null;
-            }
-            if (decoded.isEmpty() || decoded.equals(".") || decoded.equals("..")) return null;
-            if (decoded.charAt(0) == '.') return null;
-            if (decoded.indexOf('/') >= 0 || decoded.indexOf('\\') >= 0
-                    || decoded.indexOf('\0') >= 0) return null;
+            if (segment.isEmpty() || segment.equals(".") || segment.equals("..")) return null;
+            if (segment.charAt(0) == '.') return null;
+            if (segment.indexOf('/') >= 0 || segment.indexOf('\\') >= 0
+                    || segment.indexOf('\0') >= 0) return null;
             if (result.length() > 0) result.append('/');
-            result.append(decoded);
+            result.append(segment);
         }
         return result.toString();
     }

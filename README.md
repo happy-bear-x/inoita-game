@@ -135,9 +135,9 @@ By project convention, automated browser runs are not started on their own. UI a
 
 ## Android app
 
-`npm run apk` packages `dist/` into the Android wrapper in `android/`. The wrapper embeds Chromium 156, so the app does not depend on the device WebView. Building needs JDK 25 on the machine and uses Gradle 9.7.1, AGP 9.4, Android SDK 37, and build-tools 37.0.0. The first run downloads the Android SDK and Gradle and creates a signing key in your home directory. `android/keystore.properties`, build caches, and build outputs are not committed. The APK is about 293 MB and targets arm64-v8a only.
+`npm run apk` packages `dist/` into the Android wrapper in `android/`. The wrapper embeds Chromium 156, so the app does not depend on the device WebView. Building needs JDK 25 on the machine and uses Gradle 9.7.1, AGP 9.4, Android SDK 37, and build-tools 37.0.0. The first run downloads the Android SDK and Gradle and creates a signing key in your home directory. `android/keystore.properties`, build caches, and build outputs are not committed. The APK is about 337 MB and targets arm64-v8a only.
 
-A hot update means the app downloads new web code and content without installing a new APK. `npm run build` generates and signs the update manifest in `dist/update/`. Run `npm run update:key` once before the first APK build. The private key is stored at `~/.config/inoita/update-signing.pem` and must be backed up separately; the public key `android/update-public-key.txt` is committed. After the first APK, web code and content changes only need a new build and deployment; the ~293 MB APK does not need to be rebuilt. Engine or Chromium upgrades still require a new APK. See [Hot updates](docs/live-update.md) for details.
+A hot update means the app downloads new web code and content without installing a new APK. `npm run build` generates and signs the update manifest in `dist/update/`. Run `npm run update:key` once before the first APK build. The private key is stored at `~/.config/inoita/update-signing.pem` and must be backed up separately; the public key `android/update-public-key.txt` is committed. After the first APK, web code and content changes only need a new build and deployment; the ~337 MB APK does not need to be rebuilt. Engine or Chromium upgrades still require a new APK. See [Hot updates](docs/live-update.md) for details.
 
 ## Credits
 

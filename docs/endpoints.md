@@ -37,13 +37,13 @@ Android/热更新壳在页面脚本之前注入：
 ```js
 globalThis.__inoitaEndpoints = {
   version: 1,
-  cloudBase: 'http://127.0.0.1:47653/__cloud',
-  diagnosticsReport: 'http://127.0.0.1:47653/__diagnostics/report'
+  cloudBase: 'https://inoita.invalid/__cloud',
+  diagnosticsReport: 'https://inoita.invalid/__diagnostics/report'
 };
 ```
 
-- APK 内由 `LocalAssetServer` 把 `/__native/bootstrap.js` 插到 `index.html` 的 `<head>` 最前面；它必须在 `diagnostics.js` 和游戏模块之前运行。网页版没有这个脚本，继续走同源。
-- APK 的 `cloudBase` 和 `diagnosticsReport` 指向本地服务；本地服务再把 `/__cloud`、`/__diagnostics/report` 代理到 `config/endpoints.json` 派生出的 HTTPS 地址。页面不写域名，也不受 CORS 影响。
+- APK 内由 `AssetContentServer` 把 `/__native/bootstrap.js` 插到 `index.html` 的 `<head>` 最前面；它必须在 `diagnostics.js` 和游戏模块之前运行。网页版没有这个脚本，继续走同源。
+- APK 的 `cloudBase` 和 `diagnosticsReport` 指向内容服务的同源地址；`/__cloud` 再代理到 `config/endpoints.json` 派生出的 HTTPS 地址，诊断由原生 `Diagnostics` 上报。页面不写域名，也不受 CORS 影响。
 - 页面唯一读取这个对象，不再读取其他地址全局变量。
 - 对象为空或字段非法时按字段降级：网页走同源；APK 本地页面没有显式云地址时显示“云存档暂不可用”，不向本地页面源发请求。
 - 云存档地址拒绝非本机 HTTP；调试机的 `localhost/127.0.0.1` HTTP 可以。诊断地址同样规则；生产使用 HTTPS。

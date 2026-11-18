@@ -2,10 +2,10 @@
 
 本仓库自身的代码使用根目录 `LICENSE`（MIT）。Android 安装包额外包含以下组件：
 
-## Cefrium SDK 0.18.0
+## Cefrium SDK 0.21.0
 
 - 用途：在 APK 内嵌 Chromium，承载游戏页面。
-- 内置引擎：Chromium 156.0.8078.80。
+- 内置引擎：Chromium 156.0.8078.96。
 - 许可：LGPL-3.0-or-later，或商业许可。完整 LGPL-3.0 文本见
   <https://www.gnu.org/licenses/lgpl-3.0.html>。
 - 源码：<https://codeberg.org/cefrium/cef-android>。

@@ -28,7 +28,7 @@
 - 游戏入口把 `StoryDirector.onSkipProgress` 接到 `installStorySkipDiagnostics`，每次跳过只写一条 `story-skip-summary`，记录逻辑完成、世界就绪与实际解锁的耗时；选择和任务确认单独标明终点。
 - **诊断先落本地日志再异步上传。** 错误类记录默认附完整快照，其他记录默认不带；需要时第三个参数传 `true`。开战/收战、换图、存读档、心跳和高频事件只带选定字段。每帧只允许 `FrameStats.frame` 做一次整数加减，不在帧回调里新建对象或读取场景状态。`storyDiagnostics.record(kind, details, withState)` 的第三个参数显式控制是否附完整快照。
 - 云存档是旁路能力：客户端构造不联网，只有打开云页/点击上传下载才请求；网络、token 或存储失败都结果化返回，不能抛到菜单或游戏循环。
-- 云存档和诊断的服务地址只从 `endpoints.ts` 解析。环境根地址在 `config/endpoints.json`：网页固定同源（空值）；Android 调试指向 `adb reverse` 的 `127.0.0.1:4003`，发布和网页生产共用 `https://catgo.online:4002`。Android 壳由 `bootstrap.js` 在页面脚本前注入本地代理地址；页面里不再另写域名或读取别的地址变量。
+- 云存档和诊断的服务地址只从 `endpoints.ts` 解析。环境根地址在 `config/endpoints.json`：网页固定同源（空值）；Android 调试指向 `adb reverse` 的 `127.0.0.1:4003`，发布和网页生产共用 `https://catgo.online:4002`。Android 壳由内置内容服务提供的 `bootstrap.js` 在页面脚本前注入同源代理地址；页面里不再另写域名或读取别的地址变量。
 - 只有 `game-audio.ts`、`game-timing.ts` import Phaser，其余文件保持纯 TypeScript。
 - 整页缩放和长按选择由 `page-interaction-guard.ts` 在入口统一拦截；viewport 声明和 `game.css` 的 `touch-action` 是第一道，Safari 的 gesture 事件、桌面 Ctrl/⌘ 缩放和右键/选择事件是兜底。输入框保留原生粘贴和选择菜单，不要在输入框上拦截。
 - 画面偏好保存在本机：帧率上限只接受 30 或 60，缺省为 60；游戏启动读取偏好，设置变化立即调整 Phaser 限帧，销毁时取消订阅。纹理批次默认自动：安卓单纹理，iOS 和桌面多纹理；单纹理/多纹理可手动覆盖，启动和设置变化时更新 `setMaxParallelTextureUnits`。画面精度接受 1/2/3 三档，缺省 1；实际倍率取档位与本机设备像素比的较小值，切档立即重配画布，不重启。帧时钟继续使用相邻交付时刻计算真实耗时。

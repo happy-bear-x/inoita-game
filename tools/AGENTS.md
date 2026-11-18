@@ -20,7 +20,7 @@
 - 同一脚本还给 `WebGLFramebufferWrapper` 构造失败补清理：登记到 renderer 之前创建失败时释放颜色纹理、绘图缓冲与绑定状态，避免重复进图累积失败资源。`tests/phaser-framebuffer.test.ts` 用运行时包中的真实构造器验证失败与成功路径。
 - `.mjs` 脚本不做类型检查；`.ts` 脚本由 Node 的类型剥离直接执行，写法保持可擦除。
 - **Android 打包工具链**：Cefrium 需要 JDK 25、Gradle 9.7.1、AGP 9.4、Android SDK 37 和 build-tools 37.0.0。`build-apk.mjs` 优先使用 `~/.local/jdk-25`，其次 `JAVA_HOME`；低于 JDK 25 直接失败。不要退回 JDK 17 / Gradle 8.7。
-- `verify-apk.mjs` 会检查 Cefrium 类、arm64 原生库、16 KB 页对齐；Cefrium 自带的 `icudtl.dat`、`*.pak`、`stored-locales/`、`cefrium/` 不参与和 `dist` 的逐文件对比。
+- `verify-apk.mjs` 会检查 Cefrium 类、内容服务类、`ACCESS_NETWORK_STATE`、arm64 原生库、16 KB 页对齐；Cefrium 自带的 `icudtl.dat`、`*.pak`、`stored-locales/`、`cefrium/` 不参与和 `dist` 的逐文件对比。
 - 改动构建、校验或打包逻辑后运行对应命令验证：`npm run build`、`npm run validate:content`、`npm run test:standalone`，APK 改动用 `npm run apk` 和 `npm run verify:apk`。
 - 生成物 `dist/`、`src/generated/*`、`tools/character-atlas-aliases.ts` 由脚本产出，内容变化后重跑对应生成命令。
 - **图集源图归档在 `asset-source/`。** 图集生成、内容构建去重、逐像素测试只从 `asset-source/` 读原图，不再去 `public/assets` 找同名文件；`public/assets` 只放运行时图集页、地图、音频和明确未进图集的例外图片。别名表 `tools/character-atlas-aliases.ts` 只给工具判断覆盖，不进入运行时包。

@@ -48,8 +48,8 @@ android {
         // Cefrium 最低 Android 10。旧的 WebView 壳是 26，换引擎后不再支持 8/9。
         minSdk 29
         targetSdk 34
-        versionCode 18
-        versionName '2.0.4'
+        versionCode 19
+        versionName '2.1.0'
         buildConfigField 'String', 'BASELINE_BUILD_ID', "\"${baselineBuildId}\""
         buildConfigField 'String', 'BASELINE_BUILT_AT', "\"${baselineBuiltAt}\""
         ndk {
@@ -138,6 +138,4 @@ dependencies {
     implementation 'androidx.mediarouter:mediarouter:1.7.0'
     implementation 'androidx.browser:browser:1.8.0'
     implementation 'org.jetbrains.kotlin:kotlin-stdlib:1.8.22'
-    // 本地资源服务：只监听 127.0.0.1，给页面送热更文件和原生端点。
-    implementation 'org.nanohttpd:nanohttpd:2.3.1'
 }

@@ -26,18 +26,19 @@ import com.cefrium.Cefrium;
 import com.cefrium.CefriumBrowser;
 import com.cefrium.CefriumChromeClient;
 import com.cefrium.CefriumNavigationClient;
+import com.cefrium.CefriumProfile;
 import com.cefrium.CefriumRendererTerminationStatus;
 
-import java.io.IOException;
 import java.util.Locale;
 
 /**
- * 自带 Chromium 156 的 WebView 壳。
+ * 自带 Chromium 156 的 Android 壳。
  *
- * 页面不再交给系统 WebView，而是由 Cefrium 内置的 Chromium 打开。页面从本地
- * 127.0.0.1 HTTP 服务加载，热更目录、云存档和诊断都走同一个 origin。
+ * 页面由 Cefrium 内置的 Chromium 打开，内容由 AssetContentServer 在进程内通过
+ * App 自己的 HTTPS origin 提供；热更目录、云存档和诊断都走同一个 origin。
  */
-public class MainActivity extends Activity implements UpdateManager.Listener {
+public class MainActivity extends Activity
+        implements UpdateManager.Listener, AssetContentServer.FrameRateListener {
 
     private static final String TAG = "InotiaCefrium";
     private static final long DOUBLE_BACK_MS = 2000;
@@ -58,7 +59,7 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
 
     private FrameLayout root;
     private CefriumBrowser browser;
-    private LocalAssetServer server;
+    private AssetContentServer contentServer;
     private UpdateManager updateManager;
     private long lastBackPressed;
     private boolean pageReady;
@@ -140,12 +141,12 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
     private void onUpdateManagerReady() {
         if (isFinishing() || isDestroyed()) return;
         try {
-            server = new LocalAssetServer(this, updateManager, this::onFrameRateRequested);
-            server.startServer();
-        } catch (IOException error) {
-            Log.e(TAG, "本地资源服务启动失败", error);
-            showFatal(getString(R.string.local_server_failed_title),
-                    getString(R.string.local_server_failed_message, LocalAssetServer.PORT));
+            contentServer = AssetContentServer.install(getApplicationContext(), updateManager);
+            contentServer.setFrameRateListener(this);
+        } catch (RuntimeException error) {
+            Log.e(TAG, "内容服务注册失败", error);
+            showFatal(getString(R.string.content_server_failed_title),
+                    getString(R.string.content_server_failed_message));
             return;
         }
         createBrowser();
@@ -164,9 +165,11 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
      * 占整数个屏幕节拍；60 帧跑在 90Hz 上会反复在 1 个和 2 个节拍之间跳。
      * 没有整数倍模式时退到不低于目标的最低模式，再没有就保持当前模式。
      */
-    private void onFrameRateRequested(int rate) {
-        if (rate != LocalAssetServer.FRAME_RATE_30
-                && rate != LocalAssetServer.FRAME_RATE_60) return;
+    @Override
+    public void onFrameRateRequested(int rate) {
+        if (isFinishing() || isDestroyed()) return;
+        if (rate != AssetContentServer.FRAME_RATE_30
+                && rate != AssetContentServer.FRAME_RATE_60) return;
         requestedFrameRate = rate;
         Display display = getWindowManager().getDefaultDisplay();
         Display.Mode current = display.getMode();
@@ -282,10 +285,10 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
     }
 
     private void createBrowser() {
-        if (isFinishing() || isDestroyed() || server == null) return;
+        if (isFinishing() || isDestroyed() || contentServer == null) return;
         pageReady = false;
         try {
-            browser = CefriumBrowser.createWithSurface(this);
+            browser = CefriumBrowser.createWithSurface(this, CefriumProfile.getDefault());
         } catch (Throwable error) {
             Log.e(TAG, "创建 CefriumBrowser 失败", error);
             CrashLog.append(this, CrashLog.CRASH_LOG_FILE,
@@ -327,7 +330,8 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
             }
         });
 
-        browser.loadUrl(server.baseUrl() + "/index.html?v=" + updateManager.currentBuildId());
+        browser.loadUrl(AssetContentServer.ORIGIN + "/index.html?v="
+                + updateManager.currentBuildId());
     }
 
     private void recreateBrowser() {
@@ -650,9 +654,9 @@ public class MainActivity extends Activity implements UpdateManager.Listener {
             }
             browser = null;
         }
-        if (server != null) {
-            server.stop();
-            server = null;
+        if (contentServer != null) {
+            contentServer.clearFrameRateListener(this);
+            contentServer = null;
         }
         if (updateManager != null) {
             updateManager.clearListener(this);

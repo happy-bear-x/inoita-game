@@ -133,9 +133,9 @@ android/            Android 自带 Chromium 156 的壳
 
 ## Android 应用与热更新
 
-`npm run apk` 会把 `dist/` 打进 `android/` 里的 Android 外壳。这个外壳自带 Chromium 156，所以应用不依赖设备上的 WebView。构建需要本机有 JDK 25，并使用 Gradle 9.7.1、AGP 9.4、Android SDK 37 和 build-tools 37.0.0；首次运行会自动下载 Android SDK 与 Gradle，并在用户目录生成签名密钥。`android/keystore.properties`、构建缓存和产物都不会进入仓库。当前 APK 约 293MB，只发 arm64-v8a。
+`npm run apk` 会把 `dist/` 打进 `android/` 里的 Android 外壳。这个外壳自带 Chromium 156，所以应用不依赖设备上的 WebView。构建需要本机有 JDK 25，并使用 Gradle 9.7.1、AGP 9.4、Android SDK 37 和 build-tools 37.0.0；首次运行会自动下载 Android SDK 与 Gradle，并在用户目录生成签名密钥。`android/keystore.properties`、构建缓存和产物都不会进入仓库。当前 APK 约 337MB，只发 arm64-v8a。
 
-热更新是指应用直接下载新的网页代码和内容，不需要重新安装 APK。`npm run build` 会生成并签名 `dist/update/` 里的更新清单。首次打包前运行 `npm run update:key`，私钥保存在 `~/.config/inoita/update-signing.pem`，必须单独备份；公钥 `android/update-public-key.txt` 随仓库提交。第一次 APK 之后，改网页层代码或内容只需重新构建和部署，不用重发约 293MB 的 APK。引擎或 Chromium 版本升级仍然必须发 APK。细则见[热更新](docs/live-update.md)。
+热更新是指应用直接下载新的网页代码和内容，不需要重新安装 APK。`npm run build` 会生成并签名 `dist/update/` 里的更新清单。首次打包前运行 `npm run update:key`，私钥保存在 `~/.config/inoita/update-signing.pem`，必须单独备份；公钥 `android/update-public-key.txt` 随仓库提交。第一次 APK 之后，改网页层代码或内容只需重新构建和部署，不用重发约 337MB 的 APK。引擎或 Chromium 版本升级仍然必须发 APK。细则见[热更新](docs/live-update.md)。
 
 ## 特别感谢
 

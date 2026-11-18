@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 默认禁止明文；只为本机调试与诊断上报放行。release 的服务地址是 HTTPS。 -->
+<!-- 默认禁止明文；只为本机调试放行。release 的服务地址是 HTTPS。 -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="false" />
     <domain-config cleartextTrafficPermitted="true">

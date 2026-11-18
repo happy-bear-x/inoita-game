@@ -105,6 +105,7 @@ try {
 
   const permissions = run(path.join(buildTools, 'aapt2'), ['dump', 'permissions', apk]).stdout;
   check('申请 INTERNET 权限（诊断上报）', /android\.permission\.INTERNET/.test(permissions));
+  check('申请 ACCESS_NETWORK_STATE 权限（引擎启动）', /android\.permission\.ACCESS_NETWORK_STATE/.test(permissions));
 
   const xmltree = run(path.join(buildTools, 'aapt2'), ['dump', 'xmltree', '--file', 'AndroidManifest.xml', apk]).stdout;
   check('锁定横屏 sensorLandscape', new RegExp(`screenOrientation[^=]*=${ANDROID_SENSOR_LANDSCAPE}\\b`).test(xmltree));
@@ -124,7 +125,8 @@ try {
   const dexText = entries.filter(name => /^classes\d*\.dex$/.test(name))
     .map(name => run('unzip', ['-p', apk, name]).stdout).join('\n');
   check('包含 Cefrium 浏览器', dexText.includes('com/cefrium/CefriumBrowser'));
-  check('包含本地资源服务', dexText.includes('LocalAssetServer'));
+  check('包含 Cefrium 内容服务', dexText.includes('com/cefrium/CefriumContentServer'));
+  check('包含内置内容服务', dexText.includes('AssetContentServer'));
   const nativeLibs = entries.filter(name => name.startsWith('lib/'));
   check('包含 arm64 Chromium 原生库', nativeLibs.some(name => name.startsWith('lib/arm64-v8a/') && name.endsWith('.so')));
   check('只打包 arm64 ABI', nativeLibs.length > 0 && nativeLibs.every(name => name.startsWith('lib/arm64-v8a/')));
@@ -193,7 +195,7 @@ try {
   const distSet = new Set(distFiles);
   const missing = distFiles.filter(name => !apkSet.has(name));
   // Cefrium 自带 Chromium 运行资源，不属于游戏内容，不参与和 dist 的逐文件对比。
-  // 0.18.0 会把引擎资源改名为 `名字+com.cefrium+`，避免和系统 WebView 撞名。
+  // 引擎资源带 `名字+com.cefrium+` 后缀，避免和系统 WebView 撞名。
   const engineAssets = ['icudtl.dat', 'resources.pak', 'chrome_100_percent.pak',
     'chrome_200_percent.pak', 'stored-locales/', 'cefrium/'];
   const isEngineAsset = name => name.endsWith('+com.cefrium+') || engineAssets.some(prefix =>

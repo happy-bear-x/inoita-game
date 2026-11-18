@@ -76,7 +76,7 @@ function output(command, args, options = {}) {
 }
 
 function resolveJavaHome() {
-  // Cefrium 0.17.1 需要 JDK 25；优先用仓库外的本机安装，其次才看 JAVA_HOME。
+  // Cefrium 0.21.0 需要 JDK 25；优先用仓库外的本机安装，其次才看 JAVA_HOME。
   const candidates = [path.join(home, '.local', 'jdk-25'), process.env.JAVA_HOME].filter(Boolean);
   for (const candidate of candidates) {
     if (fs.existsSync(path.join(candidate, 'bin/java'))) return candidate;
