@@ -35,6 +35,16 @@ test('the real party frame port plays explicit sound for the hero and mercenarie
   assert.deepEqual(order,['units','shake','vibrate:300','Bn_Hell_Sword']);
 });
 
+test('the party tactics port reads a wounded summon from its combat snapshot',()=>{
+  const host=Object.setPrototypeOf({
+    app:{session:{cooldowns:new CombatCooldownStore(()=>0)}},partyControllers:new Map(),
+    memberOf:()=>undefined,hero:{level:1},arena:[{key:'wolf',definition:{id:'wolf'}}],
+    roster:{enemySnapshot:()=>({health:9})},readResourceCapacity:()=>100
+  },WorldCombat.prototype);
+  const {port}=Reflect.get(WorldCombat.prototype,'createPartyController').call(host,'priest',{},{},null);
+  assert.deepEqual(port.vitals('wolf'),{health:9,maxHealth:100});
+});
+
 test('mercenary basic attacks use their own weapon sound instead of staying silent',()=>{
   const calls:string[][]=[];
   const host=Object.setPrototypeOf({

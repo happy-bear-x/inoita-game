@@ -2310,7 +2310,12 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
       hasCriticalAlly:()=>this.activeParty.some(key=>{
         const hp=this.memberOf(key)?.player;return !!hp && hp.health>0 && hp.health<=hp.maxHealth*0.35;
       }),
-      vitals:key=>this.memberOf(key)?.player,
+      vitals:key=>{
+        const member=this.memberOf(key);
+        if(member)return member.player;
+        const hp=this.actorHealth(key);
+        return hp && {health:hp.current,maxHealth:hp.maximum};
+      },
       attacking:key=>this.partyControllers.get(key)?.actionState()==='attacking',
       attackRange:(key=id)=>(this.partyControllers.get(key)?.basicAttackRange??controller.basicAttackRange)+this.actorAttribute(key,'attackRangeBonusUnits'),
       navigationBounds:()=>this.movement.navigation.bounds,pathBudget:this.pathBudget,
