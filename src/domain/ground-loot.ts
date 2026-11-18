@@ -1,7 +1,7 @@
 import type { DropReward } from './drops.ts';
 import type { Session } from './session.ts';
 
-/** 每张地图保留的地面掉落上限；超出时先清最早生成的。 */
+/** 每张地图保留的普通地面掉落上限；超出时先清最早生成的。 */
 const MAX_GROUND_DROPS_PER_MAP = 64;
 /** 拾取判定以脚点为中心的半格范围。 */
 const GROUND_PICKUP_RADIUS_PX = 12;
@@ -20,6 +20,8 @@ export interface GroundLootState { nextId:number; drops:GroundDrop[] }
 
 /** Ground rewards survive scene restarts because this store is tied to the story Session. */
 export class GroundLootStore {
+  private readonly isQuestDrop:(drop:GroundDrop)=>boolean;
+  constructor(isQuestDrop:(drop:GroundDrop)=>boolean=()=>false){this.isQuestDrop=isQuestDrop;}
   private nextId=0;
   private readonly drops=new Map<string,GroundDrop>();
   /** 每张地图的掉落 id；拾取、推进和视图重建只扫当前图。 */
@@ -56,12 +58,17 @@ export class GroundLootStore {
     if(added.length)this.revision++;
     return added;
   }
-  /** 队伍掉落共用一张背包，但地面总量仍要封顶：每图最多 64 件，超出淘汰最旧的。 */
+  /** 地图索引按生成顺序登记，读档和结算回滚也按保存的顺序恢复。 */
   private prune(map:string):void {
-    const onMap=this.onMap(map);
-    if(onMap.length<=MAX_GROUND_DROPS_PER_MAP)return;
-    onMap.sort((left,right)=>(left.createdAtMs??Infinity)-(right.createdAtMs??Infinity));
-    for(const drop of onMap.slice(0,onMap.length-MAX_GROUND_DROPS_PER_MAP))this.discard(drop);
+    const ids=this.byMap.get(map);
+    if(!ids||ids.size<=MAX_GROUND_DROPS_PER_MAP)return;
+    const ordinary:GroundDrop[]=[];
+    for(const id of ids){
+      const drop=this.drops.get(id)!;
+      if(!this.isQuestDrop(drop))ordinary.push(drop);
+    }
+    const excess=ordinary.length-MAX_GROUND_DROPS_PER_MAP;
+    for(let i=0;i<excess;i++)this.discard(ordinary[i]!);
   }
   private track(drop:GroundDrop):void {
     let ids=this.byMap.get(drop.map);
@@ -115,7 +122,7 @@ export class GroundLootStore {
    * 进入新地图时清掉其他地图的地面掉落；`retain` 返回 true 的保留（任务/剧情物品）。
    * 只按地图的 id 分组扫一遍，不复制掉落内容；当前地图的掉落完全不动。
    */
-  clearOtherMaps(currentMap:string,retain:(drop:GroundDrop)=>boolean):number {
+  clearOtherMaps(currentMap:string,retain=this.isQuestDrop):number {
     let removed=0;
     for(const [map,ids] of this.byMap){
       if(map===currentMap)continue;
@@ -179,6 +186,9 @@ export class GroundLootStore {
 const stores=new WeakMap<Session,GroundLootStore>();
 export function groundLootFor(session:Session):GroundLootStore {
   let store=stores.get(session);
-  if(!store){store=new GroundLootStore();stores.set(session,store);}
+  if(!store){
+    store=new GroundLootStore(drop=>drop.reward.kind==='item'&&session.bag.catalog.items[drop.reward.item]?.category==='quest');
+    stores.set(session,store);
+  }
   return store;
 }

@@ -206,3 +206,30 @@ test('a task item is collectible while another active task still needs it',()=>{
   assert.equal(scene.run.itemCount('lumps-of-copper'),6);
   assert.equal(scene.message(),'');
 });
+
+test('quest pickups survive ordinary loot overflow and complete the task after loading',()=>{
+  const {campaign,items}=readContent();
+  const quest={...campaign.quests.find((q:CampaignQuest)=>q.id==='quest-49'),availableWhen:{type:'always',value:true}};
+  const content=questOnlyContent(campaign,quest);
+  const {run}=pickupScene(content,items,4,['quest-49']);
+  run.bag.add('lumps-of-zinc',10);
+  const spawn={...point,quest:quest.id,item:'lumps-of-copper'};
+  run.enterMap('mine',[spawn]);
+  run.advanceCombatFrames(60,()=>{});
+  const store=groundLootFor(run);
+  const coins=store.add('mine',0,0,Array.from({length:70},()=>({kind:'money' as const,amount:1})));
+  const [other]=store.add('camp',0,0,[{kind:'money',amount:3}]);
+
+  const loaded=pickupScene(content,items,0,[]);
+  loaded.run.restoreState(JSON.parse(JSON.stringify(run.captureState())));
+  loaded.run.enterMap('mine',[spawn]);
+  const ground=groundLootFor(loaded.run);
+  ground.addFlying('mine',{x:0,y:0},{x:16,y:16,direction:0},'mana-gem',100);
+  assert.deepEqual(ground.forMap('mine').filter(drop=>drop.reward.kind==='money'),coins.slice(-63));
+  assert.deepEqual(ground.forMap('camp'),[other]);
+  const picked=ground.collectNearby('mine',spawn.x,spawn.y,loaded.receive);
+  assert.equal(picked.length,1);
+  loaded.run.questItemGenerators.collected(picked.map(drop=>drop.id),loaded.run.combatTick);
+  loaded.run.emit();
+  assert.equal(loaded.run.status(quest.id),'ready');
+});

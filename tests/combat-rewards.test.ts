@@ -344,3 +344,24 @@ test('failed kill settlement restores companions in place for existing world bin
   assert.equal(readOverhead().health,1,'恢复后的血量变化仍能由原血条闭包读到');
   assert.equal(ally.member.alive,true);
 });
+
+test('equipment from a kill can be picked up on a map full of mana gems', t=>{
+  t.mock.method(Math,'random',()=>0.999);
+  const run=harness({enemyId:'enemy-head-goblin-1',heroLevel:20,level:13});
+  run.pity.counters('player').uniqueMisses=24;
+  const store=groundLootFor(run.session),map='reward-map';
+  for(let i=0;i<64;i++)store.addFlying(map,{x:80,y:80},{x:100,y:100,direction:0},'mana-gem',100);
+  store.advance(map,100);
+  run.settle();
+  assert.equal(store.dropsOnMap(map).length,64);
+  const equipment=run.loot.flatMap(call=>call.rewards).find(reward=>reward.roll);
+  assert.ok(equipment?.item);
+  const picked=store.collectNearby(map,10,20,reward=>{
+    if(reward.kind!=='item'||reward.item!==equipment.item||!reward.instance)return false;
+    run.session.bag.receiveDrop(reward.instance);
+  });
+  assert.equal(picked.length,1);
+  const reward=picked[0].reward;
+  assert.ok(reward.kind==='item'&&reward.instance?.numbers);
+  assert.deepEqual(run.session.bag.entries.find(entry=>entry.item===equipment.item)?.numbers,reward.instance.numbers);
+});
