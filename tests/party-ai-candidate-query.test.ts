@@ -56,6 +56,23 @@ function enableNearby(run:ReturnType<typeof setup>):void {
   run.port.nearbyCandidates=circles=>new CombatSpatialIndex([...run.actors.values()]).within(circles);
 }
 
+test('critical allies retain a valid pursuit and rescan threats every two logic frames',()=>{
+  const h=setup();
+  h.enemy.position={x:100,y:64};h.enemy2.position={x:112,y:64};h.leader.position={x:60,y:64};
+  h.setTarget(h.enemy.id,h.leader.id);h.ai.step();
+  assert.equal(h.ai.captureState().destinationTarget,h.enemy.id);
+  h.setTarget(h.enemy.id,undefined);h.port.hasCriticalAlly=()=>true;
+  h.vitals.get(h.leader.id)!.health=20;
+  let scans=0;
+  h.port.nearbyCandidates=()=>{scans++;return [...h.actors.values()];};
+  h.ai.step();
+  assert.equal(h.ai.captureState().destinationTarget,h.enemy.id);
+  h.setTarget(h.enemy2.id,h.leader.id);
+  h.ai.step();assert.equal(scans,1);
+  h.ai.step();assert.equal(scans,2);
+  assert.equal(h.ai.captureState().destinationTarget,h.enemy2.id);
+});
+
 test('nearby threat scan matches full candidates for own range, leader leash and outside both',()=>{
   const scenario=(kind:'own'|'leader'|'outside',nearby:boolean)=>{
     const run=setup();

@@ -109,6 +109,7 @@ export class PartyController {
   private nextTacticsAt=0;
   private tacticsTarget?:string;
   private criticalAlly=false;
+  private nextCriticalScanAt=0;
   private accumulator=0;
   private clock=0;
   private nextPathAt=0;
@@ -159,7 +160,7 @@ export class PartyController {
     this.clearRoute();
   }
   private resetTactics():void {
-    this.nextTacticsAt=0;this.tacticsTarget=undefined;this.criticalAlly=false;
+    this.nextTacticsAt=0;this.tacticsTarget=undefined;this.criticalAlly=false;this.nextCriticalScanAt=0;
     this.nextRetreatAt=0;this.retreatTarget=undefined;this.failedRescue=undefined;
   }
   cancel():void {this.resetTactics();this.follower.reset();this.combatController.cancel(true);this.clearRoute();this.targetId=undefined;this.chaseProgress=undefined;
@@ -185,6 +186,7 @@ export class PartyController {
     const critical=this.port.hasCriticalAlly?.()??false;
     const becameCritical=critical&&!this.criticalAlly;
     this.criticalAlly=critical;
+    if(becameCritical)this.nextCriticalScanAt=0;
     if(this.combatController.actionState()==='approaching'){
       if(returning)this.combatController.cancel(true);
       else if(critical && !this.combatController.activeAction()?.skill && this.hasHealingSkill() && this.port.inCombat()){
@@ -236,10 +238,17 @@ export class PartyController {
     if(focused)return focused;
     if(this.clock<this.chaseRecoveryUntil){this.targetId=undefined;return undefined;}
     const current=this.targetId?this.port.actor(this.targetId):undefined;
-    if(current&&this.validTarget(actor,current)&&this.withinLeash(actor,current,leader)
-      &&this.clock-this.targetSince<PARTY_TARGET_STICKY_MS&&!this.criticalAlly)return current;
+    const retained=current&&this.validTarget(actor,current)&&this.withinLeash(actor,current,leader)?current:undefined;
+    if(this.criticalAlly){
+      if(this.clock<this.nextCriticalScanAt){
+        if(!retained)this.targetId=undefined;
+        return retained;
+      }
+      this.nextCriticalScanAt=this.clock+TACTIC_INTERVAL_MS;
+    }else if(retained&&this.clock-this.targetSince<PARTY_TARGET_STICKY_MS)return retained;
     const threat=this.nearestThreatTarget(actor,leader);
     if(threat)return this.rememberTarget(threat);
+    if(this.criticalAlly&&retained)return retained;
     this.targetId=undefined;return undefined;
   }
   private focusedTarget(actor:Combatant,leader:Combatant|undefined):Combatant|undefined {

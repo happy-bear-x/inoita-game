@@ -10,6 +10,7 @@
 - 队伍人数变化时按单位实际生命上限保持血量比例，主人派生的召唤物生命上限沿用召唤属性。
 - 敌人的一次性技能在动作开始播放时计为已使用，追近目标期间保留使用机会。
 - 佣兵按冲锋或绕后的实际可达落点评估技能覆盖，与战斗执行共用落点计算。冲锋备用落点逐像素检查身体、地形连通和沿途内容阻挡，停在最后一个可达点。
+- 队友刚进入危急状态时立即选取威胁，此后每 120ms 复查。没有新威胁时继续追击有效的原目标。
 - 技能实际选择治疗目标时才构建治疗候选名单。
 - 物品/背包：`items.ts`、`inventory.ts`、`bag.ts`、`drops.ts`、`loot-pity.ts`、`ground-loot.ts`、`crafting.ts`、`enhancement.ts`、`equipment-*.ts`、`shop.ts`、`money.ts`（金额拆分与显示文本）。
 - 队伍/召唤：`party*.ts`、`companion-progression.ts`、`friendly-summon-ai.ts`、`summon-*.ts`；召唤物的归属分组、顶替、寿命与退场在 `summon-lifecycle.ts`。
