@@ -355,7 +355,8 @@ export class StoryRuntime {
       // 调试焦点只影响自动派发；显式 start/script 不经过这里。被过滤的事件也推进游标，
       // 之后解除过滤时同一发生不会回头补演。
       if (this.port.eventAllowed?.(event) === false) continue;
-      const expectedKey=event.key??(event.source==='near'?event.nearCharacterId??event.near:event.source==='region'?event.id:undefined);
+      // 地图实体上报已选定的近身事件；旧检查点里的靠近通知只带人物编号。
+      const expectedKey = event.source === 'near' && occurrence.entity !== undefined ? event.id : event.key ??(event.source==='near'?event.nearCharacterId??event.near:event.source==='region'?event.id:undefined);
       if ((expectedKey !== undefined && expectedKey !== occurrence.key) || (event.map !== undefined && event.map !== occurrence.map)
         || (event.entity !== undefined && event.entity !== occurrence.entity) || this.handled(event, occurrence)
         || (event.condition && !this.port.evaluate(event.condition))) continue;

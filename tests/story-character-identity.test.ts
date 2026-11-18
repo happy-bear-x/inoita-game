@@ -55,7 +55,7 @@ test('near events dispatch only for the approached character, including characte
   const ui:StoryUI={async dialogue(){},async choice(_prompt,options){return options[0];},async questPopup(){},closeDialogue(){},skipDialogue(){},toast(){}};
   const director=new StoryDirector(content,session,ui,()=>{});
   try{
-    assert.equal(await director.approach('guard',undefined,'south'),true);
+    assert.equal(await director.approach(content.events[1], {id:'south-instance',actor:'guard',characterId:'south'}),true);
     assert.equal(session.storyWorld.hasFlag('south'),true);
     assert.equal(session.storyWorld.hasFlag('north'),false);
   }finally{director.dispose();}

@@ -2,17 +2,17 @@ import type { StoryEvent, StoryGraph } from './story-graph.ts';
 
 /** 索引只依赖角色的身份和可见性，不关心 Phaser 的视觉对象。 */
 interface TriggerCharacter {
-  entity: { actor: string; characterId?: string };
+  entity: { id: string; actor: string; characterId?: string };
   container: { visible: boolean };
 }
+
+interface NearCharacter<C> { id: string; character: C; events: StoryEvent[] }
 
 export interface StoryTriggerIndex<C extends TriggerCharacter> {
   /** 本图的区域事件，保持 campaign 里的原始顺序。 */
   regionEvents: StoryEvent[];
-  /** 可能在本图触发的近身事件，保持 campaign 里的原始顺序。 */
-  nearEvents: StoryEvent[];
-  /** 按 actor 分组，组内保持场景角色数组的顺序。 */
-  charactersByActor: Map<string, C[]>;
+  /** 每个地图角色的近身事件。角色顺序取自首个匹配事件，组内按剧情优先级排列。 */
+  nearCharacters: NearCharacter<C>[];
 }
 
 /**
@@ -28,16 +28,19 @@ export function buildStoryTriggerIndex<C extends TriggerCharacter>(
   characters: readonly C[],
 ): StoryTriggerIndex<C> {
   const regionEvents: StoryEvent[] = [];
-  const nearEvents: StoryEvent[] = [];
+  const nearCharacters = new Map<string, NearCharacter<C>>();
   for (const event of campaign.events ?? []) {
     if (event.source === 'region' && event.map === mapId && event.region) regionEvents.push(event);
-    else if (event.source === 'near' && event.near && (!event.map || event.map === mapId)) nearEvents.push(event);
+    if (event.source !== 'near' || (event.map && event.map !== mapId)) continue;
+    for (const character of characters) {
+      const entity = character.entity;
+      if (entity.actor !== event.near || (event.nearCharacterId && entity.characterId !== event.nearCharacterId)
+        || (event.entity && entity.id !== event.entity)) continue;
+      const group = nearCharacters.get(entity.id);
+      if (group) group.events.push(event);
+      else nearCharacters.set(entity.id, { id: entity.id, character, events: [event] });
+    }
   }
-  const charactersByActor = new Map<string, C[]>();
-  for (const character of characters) {
-    const actor = character.entity.actor;
-    const group = charactersByActor.get(actor);
-    if (group) group.push(character); else charactersByActor.set(actor, [character]);
-  }
-  return { regionEvents, nearEvents, charactersByActor };
+  for (const group of nearCharacters.values()) group.events.sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
+  return { regionEvents, nearCharacters: [...nearCharacters.values()] };
 }

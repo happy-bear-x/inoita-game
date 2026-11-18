@@ -21,6 +21,31 @@ test('the border-gateway greeter plays once per approach through the world frame
   } finally { h.director.dispose(); }
 });
 
+test('Elinia offers one destination per approach and reports the other completed quest on the next visit', async () => {
+  const h = playthrough();
+  const map = 'kiyan-s-memory-layer-2-85e3306a';
+  const beside = {map, x:232, y:200, facing:'north' as const};
+  const prompts = () => h.lines.filter(line => line.includes('接下来去消灭哪里的记忆')).length;
+  try {
+    h.session.applyStoryCommands([{type:'travel',destination:beside}, ...headlessContent.campaign.scripts['event-465'].nodes[0].commands]);
+    for (const quest of ['quest-404','quest-405']) {
+      h.session.accept(quest);
+      h.session.applyStoryCommands([{type:'quest',command:{type:'script-complete',quest}}]);
+    }
+    h.choices(['option-3','option-3']);
+    h.frame('all'); await h.idle();
+    assert.equal(prompts(),1);
+    assert.equal(h.director.runtime.eventStatus('event-469'),'completed');
+    assert.equal(h.director.runtime.eventStatus('event-470'),'idle');
+    // 演出把玩家送回远处；走开后的下一次靠近应能听到另一项任务的回报。
+    h.frame('all'); await h.idle();
+    h.session.movePlayer(beside);
+    h.frame('all'); await h.idle();
+    assert.equal(prompts(),2);
+    assert.equal(h.director.runtime.eventStatus('event-470'),'completed');
+  } finally { h.director.dispose(); }
+});
+
 test('unblocking an eligible trigger plays it once without another approach', () => {
   const event = { id: 'filtered' };
   const occupied = new Set<string>();
@@ -33,7 +58,7 @@ test('unblocking an eligible trigger plays it once without another approach', ()
 test('a consumed trigger yields to the next candidate and a new claim still clears contact that ended', () => {
   const events = [{ id: 'first' }, { id: 'second' }, { id: 'left' }];
   const occupied = new Set(['first', 'left']);
-  const claim = () => claimStoryTrigger(events, occupied, event => event.id === 'left' ? null : true, () => true);
+  const claim = () => claimStoryTrigger(events, occupied, event => event.id !== 'left', () => true);
   assert.equal(claim()?.event.id, 'second');
   assert.equal(claim(), null);
   assert.deepEqual([...occupied], ['first', 'second']);

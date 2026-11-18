@@ -226,7 +226,7 @@ export function playthrough(saved?:SessionState){
     visit={mapId:map.id,occupied,app,host:Object.assign(Object.create(WorldScene.prototype),{
       app,
       sys:{isActive:()=>true},loadingWorld:false,destroyed:false,
-      map,characters:[],near:null,occupiedTriggers:occupied,minimap:undefined,
+      map,characters:[],near:null,occupiedTriggers:occupied,occupiedCharacters:new Set<string>(),minimap:undefined,
       lastPlayerPosition:{x:location.x,y:location.y},
       player:{container:{x:location.x,y:location.y}},
       movement:{position:()=>({...session.storyWorld.currentLocation!}),body:()=>({deltaXFinal:()=>0,deltaYFinal:()=>0})},

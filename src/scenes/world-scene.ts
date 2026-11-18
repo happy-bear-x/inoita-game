@@ -184,6 +184,7 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
   private readonly encounterResults=new Set<string>();
   private baseEntities:EntityPlacement[]=[];
   private occupiedTriggers=new Set<string>();
+  private occupiedCharacters=new Set<string>();
   /** 本图的区域/近身事件与角色分组；进图和剧情投影后各建一次。 */
   private triggerIndex?:StoryTriggerIndex<Character>;
   private refreshStateSignatureValue?:string;
@@ -284,7 +285,7 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
     this.questStatuses.clear();this.questStatusVersion=undefined;this.questNoticesReady=false;
     this.prefetchTarget = undefined; this.prefetchTask = undefined;
     this.prefetchFailedTarget = undefined; this.prefetchRetryAt = 0;
-    this.baseEntities=[];this.occupiedTriggers=new Set();this.encounterResults.clear();this.triggerIndex=undefined;this.refreshStateSignatureValue=undefined;this.lastInteractionScan=undefined;this.interactionRevision=0;this.charactersRevision=0;this.interactionIndex=undefined;this.interactionIndexRevision=undefined;this.interactionIndexCharactersRevision=undefined;
+    this.baseEntities=[];this.occupiedTriggers=new Set();this.occupiedCharacters=new Set();this.encounterResults.clear();this.triggerIndex=undefined;this.refreshStateSignatureValue=undefined;this.lastInteractionScan=undefined;this.interactionRevision=0;this.charactersRevision=0;this.interactionIndex=undefined;this.interactionIndexRevision=undefined;this.interactionIndexCharactersRevision=undefined;
     this.projectedActorIds.clear();
   }
   create(): void {
@@ -1383,6 +1384,8 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
   private rebuildTriggerIndex():void {
     this.interactionRevision=(this.interactionRevision??0)+1;
     this.triggerIndex=this.map?buildStoryTriggerIndex(this.app.campaign,this.map.id,this.characters):undefined;
+    for (const id of this.occupiedCharacters)
+      if (!this.triggerIndex?.nearCharacters.some(group => group.id === id && group.character.container.visible)) this.occupiedCharacters.delete(id);
     this.rebuildInteractionIndex();
   }
   /**
@@ -2417,35 +2420,43 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     }
     this.collectGroundLoot(pos);
     this.updateInteractionTarget(); this.syncHud();
-    const triggerIndex = this.triggerIndex;
-    const director = this.app.director, occupied = this.occupiedTriggers;
-    const eligible = (event: StoryEvent): boolean => {
-      if (!director.allowsAutomaticEvent(event) || (event.condition && !this.app.session.evaluateCondition(event.condition))) return false;
-      const status = director.runtime.eventStatus(event.id);
-      return status === 'idle' || (status === 'completed' && event.repeat === true);
+    const triggerIndex = this.triggerIndex ?? buildStoryTriggerIndex(this.app.campaign, this.map!.id, this.characters);
+    const director = this.app.director;
+    const availability = (event: StoryEvent) => {
+      if (!director.allowsAutomaticEvent(event) || (event.condition && !this.app.session.evaluateCondition(event.condition))) return;
+      return director.runtime.eventStatus(event.id);
     };
-    const regionEvents = triggerIndex?.regionEvents
-      ?? this.app.campaign.events.filter(event => event.source === 'region' && event.map === this.map?.id);
-    const region = claimStoryTrigger(regionEvents, occupied,
-      event => event.region && overlapsFootRect(pos, event.region) ? true : null,
-      eligible);
-    // 近身距离按角色实际碰撞盒判断。即使本帧先触发区域，也要释放已经离开的角色占用。
-    const nearEvents = triggerIndex?.nearEvents
-      ?? this.app.campaign.events.filter(event => event.source === 'near' && event.near && (!event.map || event.map === this.map?.id));
-    const near = claimStoryTrigger(nearEvents, occupied, event => {
-      const candidates = event.near ? triggerIndex?.charactersByActor.get(event.near) : undefined;
-      return (candidates ?? this.characters).find(character => character.entity.actor === event.near
-        && (!event.nearCharacterId || character.entity.characterId === event.nearCharacterId)
-        && character.container.visible
-        && nearInteractive(pos, character.container, character.actor.collision, !!character.entity.flip)) ?? null;
-    }, event => !region && eligible(event));
-    const trigger = region ?? near;
-    if (trigger) {
+    const occupied = this.occupiedTriggers;
+    const region = claimStoryTrigger(triggerIndex.regionEvents, occupied,
+      event => !!event.region && overlapsFootRect(pos, event.region),
+      event => {
+        const status = availability(event);
+        return status === 'idle' || (status === 'completed' && event.repeat === true);
+      });
+    const occupiedCharacters = this.occupiedCharacters;
+    const near = claimStoryTrigger(triggerIndex.nearCharacters, occupiedCharacters, ({ character }) =>
+      character.container.visible && nearInteractive(pos, character.container, character.actor.collision, !!character.entity.flip), ({ events }) => {
+      if (region) return null;
+      let replay: StoryEvent | null = null;
+      for (const event of events) {
+        const status = availability(event);
+        if (status === 'idle') return event;
+        if (status === 'completed' && event.repeat) replay ??= event;
+      }
+      return replay;
+    });
+    if (region) {
       this.playStory(async () => {
-        const played = region
-          ? await director.enterRegion(region.event.id, region.event.map!)
-          : await director.approach(near!.event.near!, this.map?.id, near!.contact.entity.characterId);
-        if (!played) occupied.delete(trigger.event.id);
+        const played = await director.enterRegion(region.event.id, region.event.map!);
+        if (!played) occupied.delete(region.event.id);
+        return played;
+      });
+      return;
+    }
+    if (near) {
+      this.playStory(async () => {
+        const played = await director.approach(near.selection, near.event.character.entity, this.map?.id);
+        if (!played) occupiedCharacters.delete(near.event.id);
         return played;
       });
       return;

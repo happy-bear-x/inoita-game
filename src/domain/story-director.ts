@@ -593,12 +593,12 @@ export class StoryDirector {
   }
   start(): Promise<boolean> { return this.notify('start'); }
   enterMap(map: string): Promise<boolean> { return this.notify('map-entry', undefined, map); }
-  /**
-   * 近身触发：原版 `near_npc_field` 的判据是「玩家身边那个对象正是它」，而「身边」由
-   * `PLAYER_DoCheckNearNPC` 按曼哈顿 24 px 判定（findings 94）。相邻判定在场景侧算，
-   * 这里只把「玩家靠近了某个角色」上报给运行时的触发索引。
-   */
-  approach(actor: string, map?: string, characterId?:string): Promise<boolean> { return this.notify('near', characterId??actor, map); }
+  /** 场景与任务交互都上报选中的近身事件和实际接触的实体。 */
+  approach(event: StoryEvent, entity: Pick<EntityPlacement, 'actor' | 'characterId' | 'id'>, map?: string): Promise<boolean> {
+    if (event.source !== 'near' || event.near !== entity.actor || (event.nearCharacterId && event.nearCharacterId !== entity.characterId))
+      return Promise.resolve(false);
+    return this.notify('near', event.id, map, entity.id);
+  }
   enterRegion(id: string, map: string): Promise<boolean> { return this.notify('region', this.campaign.events.find(event=>event.id===id)?.key ?? id, map); }
   retry(): Promise<boolean> { return this.request(this.runtime.resume()); }
   encounterResult(id: string, outcome: string, resultId: string): Promise<boolean> {
@@ -686,7 +686,7 @@ export class StoryDirector {
     const status = this.session.status(quest.id);
     if (quest.interactionEvent) {
       const event = this.campaign.events.find(event => event.id === quest.interactionEvent)!;
-      await this.approach(event.near!, this.session.storyWorld.currentLocation?.map, event.nearCharacterId);
+      await this.approach(event, entity, this.session.storyWorld.currentLocation?.map);
       return;
     }
     if (status === 'available') {

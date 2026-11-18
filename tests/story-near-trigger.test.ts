@@ -55,13 +55,15 @@ test('event 351 keeps the native character and quest condition without adding a 
 test('approaching the named character plays the event; another character or a failing condition does not', async () => {
   const h = harness();
   const map = 'mist-village-clearings-c1defcd5';
+  const event = nearEvents.find(event => event.id === 'event-351')!;
+  const barricade = {id:'barricade',actor:'barricade-a1eb664e',characterId:'npc-120'};
   h.session.applyStoryCommands([{type:'travel',destination:{map,x:232,y:232,facing:'north'}}]);
-  assert.equal(await h.director.approach('barricade-a1eb664e', map), false, '任务还没接取时不上演');
+  assert.equal(await h.director.approach(event, barricade, map), false, '任务还没接取时不上演');
   h.session.accept('quest-325');
   h.session.applyStoryCommands([{ type: 'item-give', item: 'sealed-dungeon-key-1', quantity: 1 }]);
-  assert.equal(await h.director.approach('barricade-a1eb664e', 'shadow-hall','npc-121'), false, '外观相同的另一名人物不算');
-  assert.equal(await h.director.approach('barricade-a1eb664e', map, 'another-barricade'), false);
-  const played = h.director.approach('barricade-a1eb664e', map, 'npc-120');
+  assert.equal(await h.director.approach(event, {...barricade, characterId:'npc-121'}, 'shadow-hall'), false, '外观相同的另一名人物不算');
+  assert.equal(await h.director.approach(event, {...barricade, characterId:'another-barricade'}, map), false);
+  const played = h.director.approach(event, barricade, map);
   await tick();
   assert.equal(await played, true, '走到指定角色旁边即上演');
   assert.equal(h.session.itemCount('sealed-dungeon-key-1'), 0, '上演的是原版那段：交掉地下城钥匙');
