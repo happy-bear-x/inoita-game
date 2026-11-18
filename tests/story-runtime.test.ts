@@ -1,7 +1,7 @@
 import test from 'node:test';
 import { stageSnapshot } from './helpers/story-stage.ts';
 import assert from 'node:assert/strict';
-import { StoryRuntime, type StoryRuntimePort, type StoryRuntimeSnapshot, type StoryNodeCommit } from '../src/domain/story-runtime.ts';
+import { StoryExecutionBudgetError, StoryRuntime, type StoryRuntimePort, type StoryRuntimeSnapshot, type StoryNodeCommit } from '../src/domain/story-runtime.ts';
 import type { StoryGraph, StoryNode } from '../src/domain/story-graph.ts';
 const node = (id: string, exit: StoryNode['exit'] = { type: 'end' }, money = 0): StoryNode => ({ id, presentation: [], commands: money ? [{ type: 'item-give', item: 'coin', quantity: money }] : [], exit });
 const graph = (nodes: StoryNode[]): StoryGraph => ({ version: 2, scripts: { main: { entry: nodes[0].id, nodes } }, events: [{ id: 'intro', source: 'map-entry', map: 'camp', script: 'main' }] });
@@ -216,9 +216,33 @@ test('start events and entity-specific interactions use the same dispatcher', as
 });
 test('a conditional cycle that never takes its exit stops at the execution budget', async () => {
   const h = harness(graph([node('loop', { type: 'branch', condition: { type: 'always', value: true }, then: { script: 'main', node: 'loop' }, otherwise: { script: 'main', node: 'end' } }), node('end')]));
-  await assert.rejects(h.runtime.start('main'), /执行预算/);
+  h.port.currentMap = () => 'camp';
+  h.port.executionContext = () => ({ mapVisit: 7, skipping: true });
+  await assert.rejects(h.runtime.start('main'), (error: Error) => {
+    assert.match(error.message, /执行预算/);
+    assert.ok(error instanceof StoryExecutionBudgetError);
+    const details = error.details;
+    assert.equal(details.run, h.runtime.snapshot().runs[0].id);
+    assert.deepEqual([details.map, details.mapVisit, details.skipping], ['camp', 7, true]);
+    assert.equal(details.recent.length, 12);
+    assert.deepEqual(details.recent.at(-1), { script: 'main', node: 'loop' });
+    assert.deepEqual(details.next, details.recent.at(-1));
+    return true;
+  });
   assert.equal(h.runtime.busy, false); assert.equal(h.runtime.snapshot().runs[0].status, 'running');
 });
+test('an event that finishes on the final allowed step completes without a budget error', async () => {
+  const loop = node('loop', {
+    type: 'branch', condition: { type: 'always', value: true },
+    then: { script: 'main', node: 'loop' }, otherwise: { script: 'main', node: 'end' },
+  });
+  const h = harness(graph([loop, node('end')]));
+  let passes = 0;
+  h.port.evaluate = () => ++passes < 999;
+  assert.equal(await h.runtime.start('main', 'intro'), true);
+  assert.equal(h.runtime.eventStatus('intro'), 'completed');
+});
+
 test('a branch evaluates the real state after the node commands land', async () => {
   const wrong = node('wrong', { type: 'defer' });
   const data = graph([node('choose', { type: 'branch', condition: { type: 'always', value: true },

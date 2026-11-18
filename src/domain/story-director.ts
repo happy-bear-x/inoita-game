@@ -115,6 +115,7 @@ export class StoryDirector {
     this.restorationVersion = session.restorationVersion;
     this.runtime = new StoryRuntime(campaign, {
       currentMap:()=>this.session.storyWorld.currentLocation?.map,
+      executionContext: () => ({ mapVisit: this.session.storyWorld.visit, skipping: this.skipping }),
       prepare: (node, context) => this.prepare(node, context),
       capture: () => {
         this.session.adoptRuntime(this.runtime.snapshot());

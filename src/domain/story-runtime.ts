@@ -7,10 +7,23 @@ import { freezeSnapshot, storyDevMode } from './dev-mode.ts';
 
 /** 一次连续执行最多推进的剧情节点数，防止条件环让播放停不下来。 */
 const MAX_STORY_EXECUTION_STEPS = 1000;
+const STORY_EXECUTION_TRACE_SIZE = 12;
 /** 剧情 call/end 返回栈上限；超出说明内容递归过深。 */
 const MAX_STORY_CALL_DEPTH = 32;
 /** 遭遇结果记账只保留最近这么多次，避免快照无限增长。 */
 const ENCOUNTER_RESULT_HISTORY_LIMIT = 64;
+
+export class StoryExecutionBudgetError extends Error {
+  readonly details: {
+    run: string; event?: string; map?: string; mapVisit?: number; skipping?: boolean;
+    recent: StoryNodeRef[]; next?: StoryNodeRef;
+  };
+
+  constructor(details: StoryExecutionBudgetError['details']) {
+    super('剧情连续节点超过执行预算');
+    this.details = details;
+  }
+}
 
 export interface StoryOccurrence { id: string; sequence: number; source: StoryTriggerSource; key?: string; map?: string; mapVisit?: number; entity?: string }
 interface StoryRun {
@@ -57,6 +70,7 @@ export interface StoryRuntimePort {
   prepare(node: StoryNode, context: StoryPlaybackContext): Promise<void>;
   capture(): unknown;
   currentMap?():string|undefined;
+  executionContext?(): { mapVisit: number; skipping: boolean };
   present(node: StoryNode, context: StoryPlaybackContext): Promise<{ choice?: string; stage?: StoryStageSnapshot }>;
   finish(context: StoryPlaybackContext): Promise<void>;
   /** 把节点命令落到真实状态；分支节点在求值前调用，普通节点后面紧跟 `commit`。 */
@@ -398,11 +412,13 @@ export class StoryRuntime {
   }
   private async execute(id: string, signal: AbortSignal, epoch: number): Promise<boolean> {
     let committed = false;
+    const recent: StoryNodeRef[] = [];
     // 内容环仍受执行预算约束；有出口的循环也可能因条件配置永远走回原处。
     for (let steps = 0; steps < MAX_STORY_EXECUTION_STEPS; steps++) {
       this.guard(epoch, signal);
       const run = this.state.runs.find(run => run.id === id)!;
       if (run.status !== 'running') return committed;
+      recent[steps % STORY_EXECUTION_TRACE_SIZE] = run.cursor;
       const node = this.nodes.get(StoryRuntime.nodeKey(run.cursor))!;
       const context: StoryPlaybackContext = { signal, epoch, runId: id, stage: node.stage ?? run.stage };
       await this.port.prepare(node, context); this.guard(epoch, signal);
@@ -492,7 +508,13 @@ export class StoryRuntime {
         throw error;
       }
     }
-    throw new Error('剧情连续节点超过执行预算，请检查条件循环');
+    const run = this.state.runs.find(run => run.id === id);
+    if (run && run.status !== 'running') return committed;
+    const offset = MAX_STORY_EXECUTION_STEPS % STORY_EXECUTION_TRACE_SIZE;
+    throw new StoryExecutionBudgetError({
+      run: id, event: run?.eventId, map: this.port.currentMap?.(), ...this.port.executionContext?.(),
+      recent: [...recent.slice(offset), ...recent.slice(0, offset)], next: run?.cursor,
+    });
   }
   encounterResult(encounter: string, outcome: string, resultId: string): Promise<boolean> {
     if (!resultId) return Promise.reject(new Error('剧情遭遇结果必须有本次发生的标识'));

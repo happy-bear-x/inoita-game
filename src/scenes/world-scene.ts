@@ -1,3 +1,4 @@
+import { StoryExecutionBudgetError } from '../domain/story-runtime.ts';
 import { pressureEnemy } from '../domain/pressure-enemies.ts';
 import { summonLampMerchant } from '../domain/lamp-merchant.ts';
 import { domAssets } from '../ui/dom/assets.ts';
@@ -1478,7 +1479,7 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
     const message = error instanceof Error ? error.message : String(error);
     const snapshot=this.diagnosticSnapshot();
     globalThis.storyDiagnostics?.record('world-failure', { message, stack: error instanceof Error ? error.stack : undefined,
-      map: snapshot.map, player: snapshot.player, corrections: snapshot.corrections });
+      map: snapshot.map, player: snapshot.player, corrections: snapshot.corrections, storyExecution: error instanceof StoryExecutionBudgetError ? error.details : undefined });
     return message;
   }
   failure(error: unknown): void {

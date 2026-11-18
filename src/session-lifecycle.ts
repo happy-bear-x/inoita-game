@@ -1,3 +1,4 @@
+import { StoryExecutionBudgetError } from './domain/story-runtime.ts';
 import Phaser from 'phaser';
 import type {StoryApp} from './app.ts';
 import type {Session} from './domain/session.ts';
@@ -196,7 +197,7 @@ export function createSessionLifecycle(app:StoryApp,hooks:SessionLifecycleHooks)
       const message = error instanceof Error ? error.message : String(error);
       const snapshot = worldScene()?.diagnosticSnapshot();
       globalThis.storyDiagnostics?.record('story-error', { message, stack: error instanceof Error ? error.stack : undefined,
-        map: snapshot?.map, player: snapshot?.player });
+        map: snapshot?.map, player: snapshot?.player, storyExecution: error instanceof StoryExecutionBudgetError ? error.details : undefined });
       ui.error(message, () => {
         if(signal.aborted||app.session!==session)return;
         ui.loaded(); void (async () => {
