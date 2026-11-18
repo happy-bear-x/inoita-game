@@ -1,7 +1,6 @@
 import type Phaser from 'phaser';
 import type { ActorDefinition, EntityPlacement, Facing, WorldMap } from '../domain/content.ts';
 import type { Cooldown } from '../domain/combat.ts';
-import type { DropReward } from '../domain/drops.ts';
 import type { CharacterVisual } from '../rendering/characters.ts';
 import type { MovementWorld } from '../rendering/movement-world.ts';
 
@@ -18,11 +17,10 @@ export interface CombatWorldHost extends Phaser.Scene {
   handleCombatDefeat():void;
   offensiveSkillCompleted(actorId:string):void;
   preparePartyMember(id:string,signal?:AbortSignal,options?:{full?:boolean;pin?:boolean}):Promise<void>;
-  preparePlayerAppearance(signal?:AbortSignal):Promise<void>;
+  preparePlayerAppearance():Promise<void>;
   refreshCombatHud(cooldowns?:Readonly<Record<string,Cooldown>>):void;
   refreshCombatTarget():void;
   reviveMember(id:string):{ok:boolean;reason?:string};
-  spawnLootOnMap(map:string,x:number,y:number,rewards:readonly DropReward[],render?:boolean):void;
   lootLanding(map:string,x:number,y:number):{x:number;y:number};
   refreshGroundLoot():void;
   syncControlledCharacter(resetExitTrigger?:boolean):void;

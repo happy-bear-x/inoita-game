@@ -1771,7 +1771,7 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
   spawnLoot(x:number,y:number,rewards:readonly DropReward[]):void {
     if(this.map)this.spawnLootOnMap(this.map.id,x,y,rewards);
   }
-  spawnLootOnMap(map:string,x:number,y:number,rewards:readonly DropReward[],render=true):void {
+  spawnLootOnMap(map:string,x:number,y:number,rewards:readonly DropReward[]):void {
     if(!rewards.length)return;
     const landing=this.lootLanding(map,x,y);
     const store=groundLootFor(this.app.session);
@@ -1779,7 +1779,7 @@ export class WorldScene extends Phaser.Scene implements CombatWorldHost {
       (!this.app.items.items[reward.item].stackable||reward.lootLevel!==undefined)
       ?{...reward,instance:this.app.session.bag.prepareDrop(reward.item,{...(reward.roll?{grade:reward.roll,sockets:reward.roll.sockets}:{}),lootLevel:reward.lootLevel})}
       :reward));
-    if(render&&this.map?.id===map)this.refreshGroundLoot();
+    if(this.map?.id===map)this.refreshGroundLoot();
   }
   refreshGroundLoot():void {
     if(this.destroyed||!this.map)return;
@@ -2186,7 +2186,8 @@ private restoreScenePositions(snapshot:SceneSnapshot):void {
     this.rebuildTriggerIndex();
     this.refreshState();this.syncHud();
   }
-  async preparePlayerAppearance(signal:AbortSignal=this.request.signal):Promise<void>{
+  async preparePlayerAppearance():Promise<void>{
+    const signal=this.request.signal;
     const session=this.app.session,character=session.character;
     if(!character||!this.wardrobe||!this.player)return;
     const revision=session.bag.revision,skills=session.skills.version,reset=session.skills.resetVersion,request=++this.outfitRequest;

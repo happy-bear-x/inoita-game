@@ -691,19 +691,17 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
     void prepared?.catch(error=>console.warn('战斗音效准备失败',error));
   }
 
-  /** 外观容器就是物理对象，移动、攻击定位与拖放读取同一个脚底位置。 */
-  private enemyHome(placed:PlacedEnemy,position:Point,shape:NavigationShape,ignore?:NavigationActor):Point {
+  private enemyHome(placed:PlacedEnemy,position:Point,shape:NavigationShape):Point {
     const origin=this.roster.source(placed.key);
     if(!origin)return position;
-    return this.movement.navigation.nearestBody(shape,origin,ignore) ?? this.movement.navigation.nearest(shape,origin,ignore);
+    return this.movement.navigation.nearestBody(shape,origin) ?? this.movement.navigation.nearest(shape,origin);
   }
-  private buildEnemy(placed: PlacedEnemy, definition: EnemyDefinition, lease?: AssetLease, replacing?: MapEnemy): MapEnemy {
+  private buildEnemy(placed: PlacedEnemy, definition: EnemyDefinition): MapEnemy {
     const actor = definition.actor, box = actor.collision!;
-    const ignore = replacing ? this.movement!.actor(replacing.visual) : undefined;
     // 出生优先整盒：地图自带的生成点若只满足窄足底，身体会压进相邻阻挡格。
-    const position = this.movement!.navigation.nearestBody({ collision: box }, placed, ignore)
-      ?? this.movement!.navigation.nearest({ collision: box }, placed, ignore);
-    const home=this.enemyHome(placed,position,{collision:box},ignore);
+    const position = this.movement!.navigation.nearestBody({ collision: box }, placed)
+      ?? this.movement!.navigation.nearest({ collision: box }, placed);
+    const home=this.enemyHome(placed,position,{collision:box});
     const visual = createCharacter(this.scene, actor, { id: placed.key, actor: actor.id, ...position });
     // 友方召唤物与队伍同属 party，彼此不占位；可移动的召唤物和主角、佣兵一样允许地形自愈，
     // 避免被物理分离推进墙里后只能等召回。
@@ -712,7 +710,7 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
     const body = this.movement!.register(visual, definition.behavior.canMove, friendly && definition.behavior.canMove, faction);
     const presenter = new CombatPresenter(this.scene, this.app.battleCatalog, id => this.visualOf(id), () => this.combatants(), this.combatEffects);
     // 生成前就锁定这只敌人用到的全部纹理；缺任何一项都在这里失败，而不是等到播放动画时。
-    const assets = lease ?? retainLoadedSceneAssets(this.scene, this.enemyAssets(definition));
+    const assets = retainLoadedSceneAssets(this.scene, this.enemyAssets(definition));
     const enemy: MapEnemy = { key: placed.key, definition, visual, body, facing: 'south', presenter, assets,summonedBy:placed.summonedBy,
       summonTauntChance:placed.summonTauntChance,summonedBySkill:placed.summonedBySkill };
     if (position.x !== placed.x || position.y !== placed.y) this.roster.moveEnemy(placed.key, position.x, position.y);
@@ -1706,7 +1704,7 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
       moltenReflection:(event,rate)=>this.moltenReflection(event,hero,rate),holySacrificeTransfer:(event,hit,kind)=>this.holySacrificeTransfer(event,hit,kind),
       physicalSuccessEquipmentProcs:(event,hit,random)=>this.physicalSuccessEquipmentProcs(event,hit,random),
       instantRecoveryOnMiss:event=>this.instantRecoveryOnMiss(event),
-      attackProc:(event,hit,position)=>this.attackProc(event,hit,hero,position),
+      attackProc:(event,hit)=>this.attackProc(event,hit,hero),
     },targetPosition);
   }
 
@@ -1742,7 +1740,7 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
     if(selection.targetId&&selection.targetId!==controller?.selectedTargetId())controller?.setReactionTarget(selection.targetId);
     return selection.center;
   }
-  private attackProc(event:AttackContact,hit:PhysicalHit,hero:BattleCharacter,_targetPosition?:Point):void {
+  private attackProc(event:AttackContact,hit:PhysicalHit,hero:BattleCharacter):void {
     if(hit.kind==='miss')return;
     this.partyAttackProc(event,hit);
     if(hit.damage<=0)return;
@@ -2880,9 +2878,9 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
     if(requested&&targetsEnemies(action!))this.manualOffensiveSkills.set(requested,this.controlRevision);
     this.runtime.request({actorId:this.controlledId,mode:action?'manual':'normal',skill:requested});
   }
-  cancelAttack(clearEffects=false):void{
-    if(!clearEffects&&this.combatRuntime?.hasPendingBasicStrike(this.controlledId))return;
-    this.combat?.cancel(clearEffects,false);this.conditions.clearTemporary(this.controlledId);
+  cancelAttack():void{
+    if(this.combatRuntime?.hasPendingBasicStrike(this.controlledId))return;
+    this.combat?.cancel(false,false);this.conditions.clearTemporary(this.controlledId);
   }
   /** 摇杆真的移动时调用：原版移动会清当前目标，面板随之隐藏。 */
   clearTarget():void{
