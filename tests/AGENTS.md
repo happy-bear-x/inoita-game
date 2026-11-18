@@ -105,3 +105,5 @@ npm run test:standalone
 - `menu-item-drag.test.ts` 覆盖长按阈值、移动取消、多指隔离、失效定时器和拖拽资源释放；背包异步操作的关闭、换人和换会话隔离由 `story-menu-interactions.test.ts` 验证。
 - `combat-outcomes.test.ts` 覆盖死亡单在 settle/present 抛错时的清除、失败回调和 flush 不向战斗帧抛错。
 - `formal-presentation.test.ts` 覆盖全屏显示优先级、跳过补画与世界重建遮挡；`world-hud.test.ts` 覆盖一次地图访问的 HUD 装配、会话绑定与释放。
+
+佣兵战术用正式技能数据验证治疗对象、群攻覆盖和增益距离；走位用例通过战斗控制器检查受围撤步、狭路还击和走近治疗。

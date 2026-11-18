@@ -1,3 +1,4 @@
+import { rectDistance } from './rect-distance.ts';
 import { PartyFollow } from './party-follow.ts';
 import { LOGIC_FRAME_MS, type EnemyPlayableSkill } from './battle.ts';
 import { attackDistance, targetDistance } from './basic-attack.ts';
@@ -159,6 +160,7 @@ export class PartyController {
   }
   private resetTactics():void {
     this.nextTacticsAt=0;this.tacticsTarget=undefined;this.criticalAlly=false;
+    this.nextRetreatAt=0;this.retreatTarget=undefined;this.failedRescue=undefined;
   }
   cancel():void {this.resetTactics();this.follower.reset();this.combatController.cancel(true);this.clearRoute();this.targetId=undefined;this.chaseProgress=undefined;
     this.chaseRecoveryUntil=0;this.flankFailedUntil=0;this.accumulator=0;}
@@ -187,7 +189,7 @@ export class PartyController {
       if(returning)this.combatController.cancel(true);
       else if(critical && !this.combatController.activeAction()?.skill && this.hasHealingSkill() && this.port.inCombat()){
         const action=choosePartyAction(actor,this.selectTarget(actor),this.port,this.combatController);
-        if(action && ('skill' in action && action.urgent)){
+        if(action && ('rescue' in action || action.urgent)){
           this.combatController.cancel(false);this.nextTacticsAt=0;
         }
       }
@@ -205,11 +207,14 @@ export class PartyController {
     if(returning){this.targetId=undefined;this.clearRoute();this.follow(actor);return;}
     const target=this.selectTarget(actor);
     if(this.port.inCombat()){
-      if(this.clock>=this.nextTacticsAt || target?.id!==this.tacticsTarget || becameCritical){
+      const rescuing=this.destinationTarget && this.port.actor(this.destinationTarget)?.team===actor.team;
+      if(this.clock>=this.nextTacticsAt || target?.id!==this.tacticsTarget || rescuing || becameCritical){
         this.nextTacticsAt=this.clock+TACTIC_INTERVAL_MS;
         this.tacticsTarget=target?.id;
         const action=choosePartyAction(actor,target,this.port,this.combatController);
+        if(action && 'rescue' in action && this.approachForRescue(actor,action.rescue,action.range))return;
         if(action && 'skill' in action){
+          if(!action.urgent && this.retreatFromThreat(actor,target))return;
           if(this.combatController.request(action.skill,action.targetId)==='started'){
             this.clearRoute(false);this.nextTacticsAt=0;return;
           }
@@ -218,6 +223,7 @@ export class PartyController {
         // 下一次战术判断前保留当前移动，避免普攻抢占刚进入射程的技能。
         return;
       }
+      if(this.retreatFromThreat(actor,target))return;
     }
     if(target){this.chase(actor,target);return;}
     this.chaseProgress=undefined;
@@ -300,6 +306,59 @@ export class PartyController {
     return value;
   }
 
+  private failedRescue?:{ally:string;until:number};
+  private retreatTarget?:string;
+  private nextRetreatAt=0;
+  /** 走到治疗边界即可施放；绕墙时沿用同一份分帧寻路预算。 */
+  private approachForRescue(actor:Combatant,ally:Combatant,range:number):boolean {
+    const leader=this.port.leader();
+    if(!combatStateCapabilities(actor.states??[]).canMove || rectDistance(actor,ally)+2<=range
+      || (leader && targetDistance(ally.position,leader.position)>PARTY_CHASE_LEASH_PX)
+      || (this.failedRescue?.ally===ally.id && this.clock<this.failedRescue.until))return false;
+    this.followToTarget(actor,ally,range);
+    return this.failedRescue?.ally!==ally.id || this.clock>=this.failedRescue.until;
+  }
+  /** 后排只尝试能立即走通的短撤步。走廊无安全落点时可在这一帧还击。 */
+  private retreatFromThreat(actor:Combatant,target:Combatant|undefined):boolean {
+    const range=this.port.attackRange();
+    if(!target||range<=PARTY_RANGED_RANGE_UNITS||!combatStateCapabilities(actor.states??[]).canAutoApproach)return false;
+    if(this.retreatTarget){
+      const next=this.nextWaypoint();
+      if(this.retreatTarget===target.id&&next&&attackDistance(next,actor.bounds,target.position,target.bounds)<=range){
+        this.port.followPath(this.nextWaypoint);return true;
+      }
+      this.clearRoute();
+      return false;
+    }
+    if(this.clock<this.nextRetreatAt)return false;
+    const candidates=this.port.nearbyCandidates?.([{...actor.position,radius:attackRangeQueryRadius(4,actor.bounds)}])??this.port.candidates();
+    const threats=candidates.filter(enemy=>enemy.team!==actor.team && this.port.targetOf?.(enemy.id)===actor.id
+      && canTargetCombatant(actor,enemy) && attackDistance(actor.position,actor.bounds,enemy.position,enemy.bounds)<=4);
+    if(!threats.length)return false;
+    this.nextRetreatAt=this.clock+PARTY_FAILED_PATH_MS;
+    const leader=this.port.leader();
+    let goal:Point|undefined,best=Infinity;
+    // 两到六个地形格内寻找仍能射击且离队长较近的一步。每段都检查墙角和实际占位。
+    for(const distance of [24,40,48]){
+      for(let direction=0;direction<8;direction++){
+        const angle=direction*Math.PI/4;
+        const dx=Math.round(distance*Math.cos(angle)),dy=Math.round(distance*Math.sin(angle));
+        const point={x:actor.position.x+dx,y:actor.position.y+dy};
+        if(attackDistance(point,actor.bounds,target.position,target.bounds)>range)continue;
+        if(threats.some(enemy=>attackDistance(point,actor.bounds,enemy.position,enemy.bounds)<=4
+          || dx*(actor.position.x-enemy.position.x)+dy*(actor.position.y-enemy.position.y)<0))continue;
+        const leaderDistance=leader?targetDistance(point,leader.position):0;
+        if(leaderDistance>PARTY_CHASE_LEASH_PX)continue;
+        const score=leaderDistance+distance/4;
+        if(score>=best||!canTraverse(actor.position,point,p=>this.port.canStand(p)))continue;
+        best=score;goal=point;
+      }
+    }
+    if(!goal)return false;
+    this.clearRoute();
+    this.path=[goal];this.destination=goal;this.destinationTarget=target.id;this.retreatTarget=target.id;
+    this.port.followPath(this.nextWaypoint);return true;
+  }
   private chase(actor:Combatant,target:Combatant):void {
     const range=this.port.attackRange();
     if(attackDistance(actor.position,actor.bounds,target.position,target.bounds)<=range&&!this.needsFlank(actor,target)){
@@ -413,7 +472,7 @@ export class PartyController {
   }
   /** 直线能到落点时不领寻路预算；需要绕到侧翼或前方有墙时仍走 A*。 */
   private directPursuit(actor:Combatant,destination:Point,target?:Combatant):boolean {
-    if(target&&this.combatAnchor(actor,target))return false;
+    if(target&&target.team!==actor.team&&this.combatAnchor(actor,target))return false;
     const goal=this.directGoal(actor,destination,target);
     if(!canTraverse(actor.position,goal,point=>this.port.canStand(point)))return false;
     // 路径终点停在目标身体前；destination 仍记完整目标位置，用于下一次重算距离。
@@ -425,6 +484,14 @@ export class PartyController {
   private directGoal(actor:Combatant,destination:Point,target?:Combatant):Point {
     if(!target)return destination;
     const dx=destination.x-actor.position.x,dy=destination.y-actor.position.y,length=Math.hypot(dx,dy);
+    if(target.team===actor.team && this.destinationRange!==undefined){
+      // 沿直线找到第一个正式治疗能够命中的位置，避免走进队友的碰撞体。
+      const steps=Math.max(1,Math.ceil(length/4));
+      for(let i=1;i<=steps;i++){
+        const point={x:actor.position.x+dx*i/steps,y:actor.position.y+dy*i/steps};
+        if(rectDistance({position:point,bounds:actor.bounds},target)+2<=this.destinationRange)return point;
+      }
+    }
     const stop=Math.max(8,Math.hypot(target.bounds.width,target.bounds.height)/2+8);
     const remaining=length-stop;
     return remaining<=0?{...actor.position}:{x:actor.position.x+dx/length*remaining,y:actor.position.y+dy/length*remaining};
@@ -435,7 +502,7 @@ export class PartyController {
     const snapshot=this.port.navigationSnapshot?.();
     const canStand=snapshot?(point:Point)=>snapshot.canStand(point):(point:Point)=>this.port.canStand(point);
     const bounds=snapshot?.bounds??this.port.navigationBounds();
-    let anchor=target&&flank&&this.clock>=this.flankFailedUntil?this.combatAnchor(actor,target):undefined;
+    let anchor=target&&target.team!==actor.team&&flank&&this.clock>=this.flankFailedUntil?this.combatAnchor(actor,target):undefined;
     if(anchor&&!hasFlankLanding(anchor.point,actor.position,bounds,canStand)){
       this.flankFailedUntil=this.clock+PARTY_FLANK_RETRY_MS;
       anchor=undefined;
@@ -447,7 +514,8 @@ export class PartyController {
     const radius=inRange?Math.hypot(actor.bounds.width+target.bounds.width,actor.bounds.height+target.bounds.height)+range*RANGE_UNIT_PX
       :PATH_GRID_SIZE;
     this.search=createPathSearch(actor.position,{bounds,canStand,canStandXY:snapshot?.canStandXY,
-      isGoal:point=>(inRange?attackDistance(point,actor.bounds,target.position,target.bounds)<=range
+      isGoal:point=>(inRange?(target.team===actor.team?rectDistance({position:point,bounds:actor.bounds},target)+2
+        :attackDistance(point,actor.bounds,target.position,target.bounds))<=range
         :targetDistance(point,goal)<=PATH_GRID_SIZE)&&canStand(point),
       heuristic:point=>Math.max(0,targetDistance(point,goal)-radius)});
     this.stepSearch(actor,granted);
@@ -466,6 +534,7 @@ export class PartyController {
       // 侧翼锚点可能落在墙里或目标背后过不去：退回普通攻击范围目标，不能因此站着不动。
       const target=this.destinationTarget?this.port.actor(this.destinationTarget):undefined;
       const destination=this.destination,range=this.destinationRange;
+      if(target?.team===actor.team)this.failedRescue={ally:target.id,until:this.clock+PARTY_FAILED_PATH_MS};
       if(this.flanking&&target&&destination&&range!==undefined){
         this.flanking=false;
         this.flankFailedUntil=this.clock+PARTY_FLANK_RETRY_MS;
@@ -500,6 +569,7 @@ export class PartyController {
     const next=this.path[0];return next&&canTraverse(actor.position,next,point=>this.port.canStand(point))?next:undefined;
   };
   private clearRoute(stop=true):void {
+    this.retreatTarget=undefined;
     this.path=[];this.search=undefined;this.flanking=false;this.destination=undefined;
     this.destinationTarget=undefined;this.destinationRange=undefined;this.nextPathAt=0;
     if(stop)this.port.stop();
