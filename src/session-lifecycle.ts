@@ -238,6 +238,18 @@ export function createSessionLifecycle(app:StoryApp,hooks:SessionLifecycleHooks)
         await director.script(accept.script);
         return true;
       },
+      settled: async accept => {
+        // `play` 在遇到剧情战斗等待时会先返回；等这条 run 真正结束再交接，
+        // 避免在战斗前就清掉强制状态或提前恢复自动存档。
+        while (app.session === session && !signal.aborted && app.director === director) {
+          const active = director.runtime.snapshot().runs.some(run =>
+            (run.status === 'running' || run.status === 'waiting') &&
+            (accept.eventId ? run.eventId === accept.eventId
+              : run.script === accept.script || run.cursor.script === accept.script));
+          if (!active) return;
+          await new Promise<void>(resolve => setTimeout(resolve, 200));
+        }
+      },
       restore: async (snapshot: GmStoryJumpSnapshot) => {
         const scene = worldScene();
         if (!scene) throw new Error('不在游戏场景里');

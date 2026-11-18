@@ -11,10 +11,11 @@ async function waitFor(check: () => boolean): Promise<void> {
   throw new Error('等待条件超时');
 }
 
-function harness(options: { travelThrows?: boolean; holdPlay?: boolean; playThrows?: boolean } = {}) {
+function harness(options: { travelThrows?: boolean; holdPlay?: boolean; playThrows?: boolean; holdSettled?: boolean } = {}) {
   const h = playthrough();
   const calls: string[] = [];
   let releasePlay: (() => void) | undefined;
+  let releaseSettled: (() => void) | undefined;
   const snapshot = (): GmStoryJumpSnapshot => ({ session: h.session.captureState(), world: {} });
   const port: GmStoryJumpPort = {
     ready: () => true,
@@ -32,6 +33,9 @@ function harness(options: { travelThrows?: boolean; holdPlay?: boolean; playThro
       if (options.playThrows) throw new Error('剧情播放失败');
       return true;
     },
+    settled: options.holdSettled
+      ? async () => { await new Promise<void>(resolve => { releaseSettled = resolve; }); }
+      : undefined,
     restore: async before => {
       calls.push('restore');
       h.session.restoreState(before.session);
@@ -42,7 +46,7 @@ function harness(options: { travelThrows?: boolean; holdPlay?: boolean; playThro
   };
   const gm = createGmActions({ session: h.session, campaign: h.session.campaign, director: h.director, storyJump: port,
     requestAutoSave: () => calls.push('autoSave') });
-  return { h, gm, calls, release: () => releasePlay?.() };
+  return { h, gm, calls, release: () => releasePlay?.(), releaseSettled: () => releaseSettled?.(), hasSettled: () => !!releaseSettled };
 }
 
 test('the quest catalog and preview expose the ordered full list and a start plan', () => {
@@ -90,12 +94,28 @@ test('a setup failure restores the captured state and does not touch auto-save',
   } finally { h.director.dispose(); }
 });
 
-test('a story error after the jump starts keeps the jumped progress', async () => {
+test('a story error after the jump starts keeps the jumped progress but reports failure', async () => {
   const { h, gm, calls } = harness({ playThrows: true });
   try {
     const result = await gm.startStoryJump('quest-11');
-    assert.equal(result.ok, true, result.reason);
+    assert.equal(result.ok, false);
+    assert.match(result.reason ?? '', /接取剧情播放失败/);
     assert.equal(calls.includes('restore'), false, '接取剧情开演后不再回滚');
+    assert.ok(calls.includes('finish'));
+    assert.ok(calls.includes('autoSave'));
+  } finally { h.director.dispose(); }
+});
+
+test('the handoff waits until the accept story really finishes', async () => {
+  const { h, gm, calls, releaseSettled, hasSettled } = harness({ holdSettled: true });
+  try {
+    const jump = gm.startStoryJump('quest-11');
+    await waitFor(() => hasSettled());
+    assert.equal(calls.includes('finish'), false, '战斗等待期间不能先交接');
+    assert.equal(calls.includes('autoSave'), false);
+    releaseSettled();
+    const result = await jump;
+    assert.equal(result.ok, true, result.reason);
     assert.ok(calls.includes('finish'));
     assert.ok(calls.includes('autoSave'));
   } finally { h.director.dispose(); }

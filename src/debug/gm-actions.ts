@@ -44,8 +44,10 @@ export interface GmStoryJumpPort {
   releaseTriggers(): void;
   closeMenu(): void;
   travel(destination: TravelDestination): Promise<void>;
-  /** 播放接取剧情；Promise 在整段剧情结束后 resolve，返回是否真的开始播放。 */
+  /** 播放接取剧情；遇到剧情战斗等待时 Promise 会先 resolve，返回是否真的开始播放。 */
   play(accept: QuestAcceptCandidate): Promise<boolean>;
+  /** 等这段接取剧情真正结束（含战斗等待后的续播）；没有这个方法时视为 play 返回即结束。 */
+  settled?(accept: QuestAcceptCandidate): Promise<void>;
   restore(snapshot: GmStoryJumpSnapshot): Promise<void>;
   /** 交接后把当前现场记为新的回滚检查点。 */
   checkpoint?(): void;
@@ -477,17 +479,23 @@ export function createGmActions(ports: GmPorts): GmActions {
       // 释放后必须同步启动接取剧情，中间不能插入 await；显式 run 会先创建，
       // 下一帧的区域/近身判定看到 running 就不会重复开演。
       storyJump.releaseTriggers();
+      let playError: string | undefined;
       if (plan.accept) {
-        try { await storyJump.play(plan.accept); }
-        catch (error) {
-          // 接取剧情已属于正式流程，播放中出错交给导演的错误页；跳转本身不回滚。
+        try {
+          await storyJump.play(plan.accept);
+          await storyJump.settled?.(plan.accept);
+        } catch (error) {
+          // 接取剧情已属于正式流程；跳转状态不回滚，但要如实报告播放失败。
+          playError = error instanceof Error ? error.message : String(error);
           globalThis.storyDiagnostics?.record('story-jump-play-failed',
-            { quest: questId, message: error instanceof Error ? error.message : String(error) }, false);
+            { quest: questId, message: playError }, false);
         }
       } else storyJump.closeMenu();
       if (disposed) return { ok: false, reason: '会话已经关闭', plan };
       settleJump();
-      return { ok: true, plan, ...(plan.warnings.length ? { reason: plan.warnings.join('；') } : {}) };
+      const reason = [playError ? `接取剧情播放失败：${playError}（任务已跳到起点）` : '', ...plan.warnings]
+        .filter(Boolean).join('；');
+      return { ok: !playError, ...(reason ? { reason } : {}), plan };
     } finally {
       jumpInFlight = false;
     }
