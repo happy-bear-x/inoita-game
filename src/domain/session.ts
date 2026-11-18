@@ -570,7 +570,7 @@ export class Session {
       lootPity:this.lootPity.captureState(),reservedDrops:{unlockMisses:this.reservedDropMisses,claimed:[...this.claimedReservedDrops].sort()},
       partyItemChance:this.partyItemChance};
   }
-  private restoreUnchecked(restored:SessionState,quests?:QuestBookCheckpoint):void {
+  private restoreUnchecked(restored:SessionState):void {
     this.snapshotCache={};this.questProjection=undefined;this.questsProjection=undefined;
     // 回滚与校验后的恢复都走这里：状态已经过 validateInventoryState，重验只会让错误处理
     // 自己抛错、把真正的异常盖掉。
@@ -578,8 +578,7 @@ export class Session {
     if(restored.hero)this.hero!.restoreState(restored.hero);
     this.skills.restoreState(restored.skills);
     if(restored.party)this.party!.restoreState(restored.party);
-    // 批次回滚走 O(1) 检查点；存档/检查点恢复仍走带校验的 `restoreState`。
-    if(quests)this.questBook.rollbackTo(quests);else this.questBook.restoreState(restored.questBook);
+    this.questBook.restoreState(restored.questBook);
     this.storyWorld.restoreState(restored.storyWorld);
     // 选择写入次数是当前时间线的运行时计数，读档/检查点恢复后从零开始。
     // 修订号仍要推进，避免按旧次数复用的观察结果把恢复后的空表当成“没变化”。
@@ -986,9 +985,9 @@ export class Session {
   }
   definition(id:string):CampaignQuest|undefined{return this.campaign.quests.find(quest=>quest.id===id);}
   status(id:string):QuestStatus{return this.questBook?.status(id)??'locked';}
-  rewardReceiptFor(id:string,cycle?:number):QuestRewardReceipt|undefined {
+  rewardReceiptFor(id:string):QuestRewardReceipt|undefined {
     const receipt=this.receipts.get(id);
-    if(!receipt||cycle!==undefined&&receipt.cycle!==cycle)return undefined;
+    if(!receipt)return undefined;
     return structuredClone(receipt.reward);
   }
   accept(id:string):boolean {
@@ -1163,9 +1162,9 @@ export class Session {
    * 另一种是**事件授予的任务**：接取没有发布者菜单，但原版仍按 `npc_index` 指向的角色交付
    * （见 findings 109）。缺省时交付回落到 `giver`。
    */
-  deliverablesFor(actor:string,characterId?:string):CampaignQuest[] {
+  deliverablesFor(actor:string):CampaignQuest[] {
     this.refresh();
-    return this.campaign.quests.filter(quest=>this.status(quest.id)==='ready'&&this.matchesQuestActor(quest,actor,characterId,true)
+    return this.campaign.quests.filter(quest=>this.status(quest.id)==='ready'&&this.matchesQuestActor(quest,actor,undefined,true)
       &&!this.questBook.journalVisible(quest.id));
   }
   marker(actor:string,characterId?:string):QuestStatus|null {

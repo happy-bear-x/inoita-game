@@ -367,10 +367,10 @@ export class NavigationWorld {
    * 返回起点；这里要的是“离目标最近的可达落点”，让走位失败时仍然朝目标推进。
    */
   nearestReachableSettledBody(shape: NavigationShape, origin: Point, point: Point,
-    ignore?: NavigationActor, placements: readonly Placement[] = [], extra?: (point: Point) => boolean): Point | undefined {
+    ignore?: NavigationActor): Point | undefined {
     if (!shape.collision) return undefined;
-    return this.scanNearest(p => this.terrainFree(p) && this.canPlaceBody(shape, p, ignore, placements)
-      && this.sameTerrainRegion(origin, p) && (!extra || extra(p)), point);
+    return this.scanNearest(p => this.terrainFree(p) && this.canPlaceBody(shape, p, ignore)
+      && this.sameTerrainRegion(origin, p), point);
   }
   /** 整盒版就近落点：整个碰撞盒站得住，且不与现有实体重叠；地图上没有这样的位置时返回 undefined。 */
   nearestBody(shape: NavigationShape, point: Point, ignore?: NavigationActor, placements: readonly Placement[] = [],
@@ -461,9 +461,8 @@ export class NavigationWorld {
    * 强制位移落点的可走性复核：只把地形和不会移动的内容实体当障碍，忽略会移动的角色。
    * 预算耗尽按不可达处理，调用方继续找下一个落点或走方向兜底。
    */
-  reachableForPlacement(shape: NavigationShape, from: Point, to: Point,
-    ignore?: NavigationActor, maxExpanded = PLACEMENT_SEARCH_BUDGET): boolean {
-    const free = (point: Point) => this.terrainFree(point) && !this.blockedByContent(shape, point, ignore);
+  reachableForPlacement(shape: NavigationShape, from: Point, to: Point): boolean {
+    const free = (point: Point) => this.terrainFree(point) && !this.blockedByContent(shape, point);
     if (!free(from) || !free(to)) return false;
     return findPath(from, {
       bounds: this.bounds,
@@ -471,7 +470,7 @@ export class NavigationWorld {
       canStandXY: (x, y) => free({ x, y }),
       isGoal: point => Math.hypot(point.x - to.x, point.y - to.y) <= PATH_GRID_SIZE && canTraverse(point, to, free),
       heuristic: point => Math.max(0, Math.hypot(point.x - to.x, point.y - to.y) - PATH_GRID_SIZE),
-    }, maxExpanded) !== null;
+    }, PLACEMENT_SEARCH_BUDGET) !== null;
   }
   /** 惰性建立 8 px 地形连通块；建表成本只发生在第一次落点/召唤查询。 */
   private terrainLabelsAt(point: Point): number[] {
@@ -541,12 +540,12 @@ export class NavigationWorld {
     }
     return best;
   }
-  path(actor: NavigationActor, destination: Point, maxExpanded = Infinity): Point[] | null {
+  path(actor: NavigationActor, destination: Point): Point[] | null {
     if (!this.canStand(actor, destination)) return null;
     const free = (p: Point) => this.canStand(actor, p);
     const path = findPath(actor.position(), { bounds: this.bounds, canStand: free, canStandXY: (x, y) => free({ x, y }),
       isGoal: p => Math.hypot(p.x - destination.x, p.y - destination.y) <= PATH_GRID_SIZE && canTraverse(p, destination, free),
-      heuristic: p => Math.max(0, Math.hypot(p.x - destination.x, p.y - destination.y) - PATH_GRID_SIZE) }, maxExpanded);
+      heuristic: p => Math.max(0, Math.hypot(p.x - destination.x, p.y - destination.y) - PATH_GRID_SIZE) });
     if (path && (!path.length || Math.hypot(path.at(-1)!.x - destination.x, path.at(-1)!.y - destination.y) > .01)) path.push({ ...destination });
     return path;
   }

@@ -187,7 +187,7 @@ export class FlowFieldStore {
     this.budget.reset();
   }
 
-  request(key: string, goal: Point, buildQuery: () => FlowFieldQuery, seedRadius: number, now: number, minDemand = 3): FlowRoute | undefined {
+  request(key: string, goal: Point, buildQuery: () => FlowFieldQuery, seedRadius: number, now: number): FlowRoute | undefined {
     const previous = this.demand.get(key);
     const active = previous && now - previous.lastRequest <= DEMAND_WINDOW_MS ? previous.count : 0;
     this.demand.set(key, { count: active + 1, lastRequest: now });
@@ -199,7 +199,7 @@ export class FlowFieldStore {
       entry = undefined;
     }
     if (!entry) {
-      if (active + 1 < minDemand) return undefined;
+      if (active + 1 < 3) return undefined;
       entry = { search: createFlowField(goal, buildQuery(), seedRadius), complete: false, lastUsed: now, goal: { ...goal } };
       this.fields.set(key, entry);
       this.evict(now);
