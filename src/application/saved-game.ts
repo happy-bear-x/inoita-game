@@ -18,7 +18,7 @@ export interface SavedGameContent {
 function evictedQuestPickups(game:SaveGame<StoryWorldViewSnapshot>):Set<string> {
   const {questItemGeneration:points,groundLoot,storyWorld}=game.session;
   const evicted=new Set<string>();
-  if(game.format!==59||points.map!==game.world.location.map||points.mapVisit!==storyWorld.mapVisit||
+  if(points.map!==game.world.location.map||points.mapVisit!==storyWorld.mapVisit||
     !points.generators.some(point=>point.dropId))return evicted;
   const present=new Set(groundLoot.drops.map(drop=>drop.id));
   const bound=new Set<string>();
