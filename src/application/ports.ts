@@ -130,7 +130,6 @@ export interface StoryUIContext {
   combatStealthed?: (actorId:string)=>boolean;
   readonly storyClasses: StoryClassCatalog;
   readonly menuPanels: MenuPanels;
-  /** 世界地图的目的地表（原版硬编码表的导出）。 */
   /** 登记快捷键那一屏与 HUD 共用同一套圆槽素材。 */
   readonly controlSkin: ControlSkin;
   readonly shops: ShopCatalog;

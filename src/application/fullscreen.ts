@@ -2,7 +2,7 @@
  * 浏览器全屏开关。
  *
  * 全屏是浏览器能力，不是游戏状态：不写 localStorage，也不进存档。设置页按
- * `fullscreenSupported()` 决定是否显示这一项——iPhone Safari 没有 Fullscreen API；
+ * `fullscreenStatus()` 决定是否显示这一项——iPhone Safari 没有 Fullscreen API；
  * 项目自带的 Android 壳没有接宿主全屏回调（APK 本身用隐藏系统栏实现沉浸式），
  * 这两处点了都不会有反应，所以直接不显示。
  */
