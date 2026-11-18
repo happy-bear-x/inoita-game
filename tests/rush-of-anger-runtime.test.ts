@@ -56,7 +56,7 @@ function fixture(entry:Entry,weapon:Weapon,canStand:(position:{x:number;y:number
       session:{skills:configuration,party:{controlledId:'player',groupModifiers:()=>({})}},
       audio:{effect:(name:string)=>{sounds.push(name);events.push(`sound:${name}`);}},
       ui:{toast:()=>assert.fail('valid equipment rejected')}},
-    feedback:{startShake:()=>events.push('shake'),vibrate:(duration:number)=>events.push(`vibration:${duration}`)},
+    feedback:{startShake:()=>events.push('shake')},
     arena:[{key:'enemy',definition:{}}],memberOf:(id:string)=>id===casterId?member:id==='player'?hero:undefined,
     partyPassives:()=>[],enemyFighter:()=>targetFighter,roster:{isPresent:()=>true,enemySnapshot:()=>({...targetFighter,health:10000,mana:100,maxMana:100})},
     combatant:(id:string)=>actors.get(id),resolveHitReactions:()=>{},dropMana:()=>{},
@@ -144,7 +144,7 @@ test('misses and non-miss zero damage skip Rush of Anger aura and the later stun
     assert.equal(f.conditions.hasState('enemy','stun'),false);
     assert.equal(f.events.some(event=>event.startsWith('effect:')),false);
     assert.equal(f.conditions.hasBuff(f.casterId,'dark-strike'),outcome==='miss');
-    assert.ok(f.events.includes('shake'));assert.ok(f.events.includes('vibration:150'));
+    assert.ok(f.events.includes('shake'));
   }
 });
 

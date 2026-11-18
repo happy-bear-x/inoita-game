@@ -104,7 +104,6 @@ function digitSpriteTexture(layer:EffectLayer):{key:string;frame:string|number} 
 export class CombatFeedback {
   private readonly scene:Phaser.Scene;
   private readonly catalog:BattleCatalog;
-  private readonly vibrationEnabled:boolean;
   private readonly effects=new Set<Phaser.GameObjects.Container>();
   private readonly pool:EffectPool;
   private readonly numbers:NumberSlot[]=[];
@@ -118,8 +117,8 @@ export class CombatFeedback {
   private decorationBudget=DECORATION_BUDGET_PER_FRAME;
   /** 同一帧里已经出过暴击装饰的出手者；范围技能一次打中多个目标时只放一组。 */
   private readonly decorationGroups=new Set<string>();
-  constructor(scene:Phaser.Scene,catalog:BattleCatalog,vibrationEnabled=false){
-    this.scene=scene;this.catalog=catalog;this.vibrationEnabled=vibrationEnabled;
+  constructor(scene:Phaser.Scene,catalog:BattleCatalog){
+    this.scene=scene;this.catalog=catalog;
     this.pool=new EffectPool(scene);
   }
   /** 进图装配战斗时预建命中特效容器和数字容器；首次命中不再现场建对象。 */
@@ -293,9 +292,6 @@ export class CombatFeedback {
     apply();
     this.shake=this.scene.tweens.add({targets:phase,step:offsets.length,duration:offsets.length*SHAKE_STEP_MS,ease:'Linear',paused:this.paused,
       onUpdate:apply,onComplete:()=>this.cancelShake()});
-  }
-  vibrate(durationMs:number):void {
-    if(this.vibrationEnabled&&typeof navigator!=='undefined')navigator.vibrate?.(durationMs);
   }
   cancelShake():void {
     this.shake?.stop();this.shake=undefined;

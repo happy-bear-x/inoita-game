@@ -79,7 +79,7 @@ function fixture(action=skillAction(),basic?:ResolvedBasicAttack){
       playerSkill:()=>order.push('automatic-sound')}},
     scene:{facing:'east',refreshCombatTarget:()=>{},refreshCombatHud:()=>{},
       events:{emit:(name:string)=>{if(name.startsWith('basic-attack-'))order.push(name);}}},
-    feedback:{startShake:()=>order.push('shake'),vibrate:(ms:number)=>order.push(`vibrate:${ms}`)},
+    feedback:{startShake:()=>order.push('shake')},
     memberOf:(id:string)=>id==='player'?member:undefined,
     visualOf:(id:string)=>visuals.get(id),
     movement:{position:(value:ReturnType<typeof visual>)=>({x:value.container.x,y:value.container.y}),
@@ -156,7 +156,7 @@ test('failed and empty Direct targets still finish units and caster effects befo
     assert.equal(run.start(),'started');
     if(empty){run.visuals.delete('enemy');run.controller.targetRemoved('enemy');}
     run.frame(2);
-    const tail=['unit:1:player','effect:dispatch-tail','shake','vibrate:150','remove-stealth','sound:dispatch-sound'];
+    const tail=['unit:1:player','effect:dispatch-tail','shake','remove-stealth','sound:dispatch-sound'];
     assert.deepEqual(run.order.slice(-tail.length),tail);
     assert.equal(run.enemyHealth.get('enemy'),10000);
     run.frame(2);assert.equal(run.dispatches.length,1);
@@ -170,7 +170,7 @@ test('a captured projectile batch breaks stealth once at launch and never again 
   action.events.unshift({kind:'capture-targets',frame:0,target:'area',targetRangePx:100,limit:16});
   const run=fixture(action);run.learn(2);run.stealth();assert.equal(run.start(),'started');run.frame(2);
   assert.equal(run.arrivals.length,2);assert.equal(run.attempts.length,0);assert.equal(run.dispatches.length,1);
-  assert.deepEqual(run.order,['launch','launch','effect:dispatch-tail','shake','vibrate:150','remove-stealth','dark-sense:player','sound:dispatch-sound']);
+  assert.deepEqual(run.order,['launch','launch','effect:dispatch-tail','shake','remove-stealth','dark-sense:player','sound:dispatch-sound']);
   run.complete();run.stealth();run.conditions.update(60);
   const buffBefore=run.conditions.snapshot('player').find(value=>value.id==='dark-sense');
   run.arrivals[0]({x:16,y:0});run.arrivals[0]({x:16,y:0});run.arrivals[1]({x:24,y:0});
@@ -191,7 +191,7 @@ test('a lethal nested hit defers the real source death until the dispatch tail a
   });
   assert.equal(run.start(),'started');run.frame(2);
   assert.equal(run.enemyHealth.get('enemy'),9900);
-  assert.deepEqual(run.order.slice(-8),['unit:1:player','effect:dispatch-tail','shake','vibrate:150',
+  assert.deepEqual(run.order.slice(-7),['unit:1:player','effect:dispatch-tail','shake',
     'remove-stealth','dark-sense:player','sound:dispatch-sound','defeat:player']);
   assert.deepEqual(run.buffApplications,[{id:'player',sourceId:'player',strength:1009,health:0}]);
   assert.equal(run.conditions.hasBuff('player','dark-sense'),false);
@@ -209,8 +209,8 @@ test('basic direct contact happens inside Presenter dispatch and still works wit
     run.frame(basic.strikeFrame);
     assert.deepEqual(run.contacts,['enemy']);assert.equal(run.enemyHealth.get('enemy'),9900);
     assert.equal(run.conditions.hasState('player','stealthed'),!hasDispatch);
-    if(hasDispatch)assert.deepEqual(run.order.slice(-6),
-      ['damage:enemy','effect:dispatch-tail','shake','vibrate:150','remove-stealth','sound:dispatch-sound']);
+    if(hasDispatch)assert.deepEqual(run.order.slice(-5),
+      ['damage:enemy','effect:dispatch-tail','shake','remove-stealth','sound:dispatch-sound']);
     run.frame(basic.strikeFrame);assert.equal(run.contacts.length,1);
   }
 });
@@ -222,7 +222,7 @@ test('summon-only events use the same dispatch boundary without creating damage 
   assert.ok(original,'native summon-only enemy event exists');
   action.combatUnits=[];action.events=[{...structuredClone(original),frame:2,dispatch:dispatch()}];
   const run=fixture(action);run.stealth();assert.equal(run.start(),'started');run.frame(2);
-  assert.deepEqual(run.order,['summon','effect:dispatch-tail','shake','vibrate:150','remove-stealth','sound:dispatch-sound']);
+  assert.deepEqual(run.order,['summon','effect:dispatch-tail','shake','remove-stealth','sound:dispatch-sound']);
   assert.equal(run.attempts.length,0);assert.equal(run.dispatches.length,1);
 });
 

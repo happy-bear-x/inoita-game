@@ -50,7 +50,7 @@ function fixture(targets:Combatant[]=[]){
     roster:{isPresent:()=>true,enemySnapshot:(id:string)=>stats.get(id),setEnemyHealth:(id:string,value:number)=>{stats.get(id)!.health=value;}},
     resolveHitReactions:()=>{},dropMana:()=>{},syncCombatResourceLimits:()=>{},applyStateConsequences:()=>{},
     showHit:(event:SkillUnitHit,hit:PhysicalHit)=>{hits.push({event,hit});order.push(`hit:${event.targetId}:${hit.kind}:${hit.damage}`);afterHit(event,hit);},
-    feedback:{startShake:()=>order.push('shake'),vibrate:(duration:number)=>order.push(`vibration:${duration}`)},
+    feedback:{startShake:()=>order.push('shake')},
   },WorldCombat.prototype);
   const call=(name:string,...args:unknown[])=>method(name).call(host,...args);
   host.applyActorBuff=(...args:unknown[])=>{const accepted=call('applyActorBuff',...args);if(accepted)order.push(`buff:${args[0]}`);return accepted;};
@@ -85,7 +85,7 @@ test('startup needs an enemy but a started storm dispatches all five empty pulse
   assert.deepEqual(f.order,['effect:swirl-ring:default']);
   f.actors.delete('enemy');f.combat.targetRemoved('enemy');f.frame(15);f.frame(15);
   assert.deepEqual(f.attempts,[]);
-  assert.deepEqual(f.order,['effect:swirl-ring:default',...Array.from({length:5},()=>['shake','vibration:300','sound:Wa_Wheel_Wind']).flat()]);
+  assert.deepEqual(f.order,['effect:swirl-ring:default',...Array.from({length:5},()=>['shake','sound:Wa_Wheel_Wind']).flat()]);
   assert.equal(f.combat.snapshot().state,'attacking','frame 15 is the last pulse, not the animation end');
   assert.deepEqual(f.counts(),{spent:60,moves:0});
 });
@@ -157,7 +157,7 @@ test('a reflected zero-HP caster completes the current pulse and its feedback be
   f.conditions.removeState=(id,key)=>{if(id==='player'&&key==='stealthed')f.order.push('break-stealth');return remove(id,key);};
   assert.equal(f.start('first'),'started');f.frame(3);
   assert.deepEqual(f.order,['effect:swirl-ring:default','hit:player:hit:30','hit:first:hit:69','hit:second:hit:69',
-    'shake','vibration:300','break-stealth','sound:Wa_Wheel_Wind','defeat:player','clear:player']);
+    'shake','break-stealth','sound:Wa_Wheel_Wind','defeat:player','clear:player']);
   const before=[...f.order];f.frame(15);assert.deepEqual(f.order,before);
   assert.equal(f.attempts.length,2);assert.equal(f.combat.snapshot().state,'idle');
 });

@@ -1064,7 +1064,6 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
   private presenterFor(id:string):CombatPresenter|undefined{return id==='player'?this.presenter:combatActor(this.allies,id,actor=>actor.id)?.presenter??combatActor(this.arena,id,actor=>actor.key)?.presenter;}
   private skillFeedback(action:ActionPlayback,event:SkillFeedbackEvent):void {
     if(event.shake)this.feedback.startShake();
-    if(event.vibrationMs)this.feedback.vibrate(event.vibrationMs);
     // 佣兵和主角一样是玩家阵营；音效不能只给当前操控者，否则切到佣兵前他们出手全静音。
     if(event.sound&&this.memberOf(action.caster.id))this.app.audio?.effect(event.sound);
   }
@@ -1114,7 +1113,6 @@ captureStoryActors(includeEnemyAppearance=true):SceneActorState[] {
       work:()=>{
         work();
         if(definition.shake)this.feedback.startShake();
-        if(definition.vibrationMs)this.feedback.vibrate(definition.vibrationMs);
       },
       removeStealth:()=>{
         this.conditions.removeState(action.caster.id,'stealthed');
