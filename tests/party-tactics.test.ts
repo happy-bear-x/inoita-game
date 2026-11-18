@@ -4,7 +4,8 @@ import test from 'node:test';
 import { skillClips } from '../src/domain/skill-action.ts';
 import { choosePartyAction } from '../src/domain/party-tactics.ts';
 import type { PartyPort } from '../src/domain/party-ai.ts';
-import type { Combatant } from '../src/domain/combat.ts';
+import { CombatCooldownStore } from '../src/domain/combat-cooldowns.ts';
+import { CombatController, type Combatant } from '../src/domain/combat.ts';
 import type { BattleCatalog } from '../src/domain/battle.ts';
 import type { CompanionCatalog } from '../src/domain/party.ts';
 
@@ -144,6 +145,36 @@ for(const id of ['shield-bash','dark-attack']){
     assert.equal(h.skill(),undefined);
   });
 }
+
+test('close shield bash rates the enemies actually hit after returning from its lunge',()=>{
+  for(const extraX of [368,360]){
+    const h=fixture('shield-bash');
+    h.skills[0].action=battle.skills['shield-bash'].companion!.action!;
+    h.actor.position.x=320; h.enemy.position.x=336; h.second.position.x=extraX;
+    const third=character('third','enemy',extraX+4);
+    h.port.candidates().push(third);
+    for(const enemy of [h.second,third])h.attackers.set(enemy.id,h.ally.id);
+    Object.assign(h.port,{canPlaceBody:()=>true});
+    const choice=h.skill();
+    const hits:string[]=[];
+    let advance: (index:number)=>void = ()=>assert.fail('missing playback');
+    const combat=new CombatController(h.actor.id,null,{
+      ...h.port,canPlaceBody:()=>true,canStand:()=>true,canSelectSkill:()=>true,
+      cooldowns:new CombatCooldownStore(()=>0).forActor(h.actor.id),facing:()=>'east',
+      moveToward(){},stop(){},clearEffects(){},relocate:position=>{h.actor.position=position;},
+      play:(_action,frame)=>{advance=frame;return ()=>{};},
+      frame:(action,index,_contact,ready)=>{
+        for(const event of action.skill!.action.events)
+          if(event.kind==='units'&&event.frame===index)ready({event,selectedTargetId:h.enemy.id});
+      },
+      unit:hit=>{if(hit.cueIndex===0)hits.push(hit.targetId);return 'success';}
+    });
+    assert.equal(combat.request(h.skills[0],h.enemy.id),'started');
+    advance(3);
+    assert.deepEqual(hits,extraX===368?[h.enemy.id]:[h.enemy.id,h.second.id,third.id]);
+    assert.equal(choice,hits.length===1?undefined:'shield-bash');
+  }
+});
 
 test('monster scream needs an engaged enemy in the summoned creature’s actual shout',()=>{
   const h=fixture('monster-s-scream');

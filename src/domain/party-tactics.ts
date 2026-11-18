@@ -1,6 +1,6 @@
-import { attackDistance, faceTarget, PIXELS_PER_DISTANCE_UNIT, targetDistance } from './basic-attack.ts';
+import { attackDistance, PIXELS_PER_DISTANCE_UNIT, targetDistance } from './basic-attack.ts';
 import type { CombatUnit, EnemyPlayableSkill, SkillAction, SkillEffectCue } from './battle.ts';
-import { canTargetCombatant, chargeLanding, lungeLanding, rearLanding, resolveCueTargets, type SkillMovementPort, type Combatant, type CombatController } from './combat.ts';
+import { canTargetCombatant, chargeLanding, rearLanding, resolveCueTargets, type SkillMovementPort, type Combatant, type CombatController } from './combat.ts';
 import { attackRangeQueryRadius, awarenessRangeQueryRadius } from './combat-spatial-index.ts';
 import type { PartySkillUse } from './party.ts';
 import type { PartyPort } from './party-ai.ts';
@@ -51,11 +51,8 @@ function impactCaster(actor:Combatant,target:Combatant|undefined,action:SkillAct
   if(!target)return;
   if(action.charge){
     const plan=chargeLanding(actor,target,action.charge,port);
-    if(!plan)return;
-    const position=plan.close
-      ? lungeLanding(plan.destination,faceTarget(actor.position,target.position),action.charge.lungeDistancePx,port)??plan.destination
-      : plan.destination;
-    return {...actor,position};
+    // 冲锋命中帧在抵达之后；近身突进此时已回到保存的起点。
+    return plan && {...actor,position:plan.destination};
   }
   const position=rearLanding(actor,target,port);
   if(position)return {...actor,position};
