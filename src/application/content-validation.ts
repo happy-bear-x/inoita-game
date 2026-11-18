@@ -22,7 +22,7 @@ import { EQUIPMENT_SLOTS, EQUIPMENT_SLOT_ORDER, ITEM_USES, blockedNormalAcquisit
 import type { WardrobeCatalog } from '../domain/wardrobe.ts';
 import type { ShopCatalog, WeightedItem } from '../domain/shop.ts';
 import { PRIMARY_STATS, type CharacterStatsCatalog, type EnhancementRule, type ModifierRange } from '../domain/character-stats.ts';
-import type { CompanionCatalog, CompanionDefinition } from '../domain/party.ts';
+import { PARTY_SKILL_USES, type CompanionCatalog, type CompanionDefinition } from '../domain/party.ts';
 import type { CompanionGenerationRules } from '../domain/companion-progression.ts';
 import type { QuestFact } from '../domain/quest-book.ts';
 import type { StoryEncounter } from '../domain/story-world.ts';
@@ -140,7 +140,7 @@ const companionGeneration=shape<CompanionGenerationRules>({
 const companionCatalog=shape<CompanionCatalog>({definitions:record(companion),growth:record(array(object(Object.fromEntries(PRIMARY_STATS.map(key=>[key,integer]))))),
   generation:companionGeneration,groupSkills:record(object({id:text,effect:text,name:text,description:text,icon:text,value:integer,
     unit:oneOf('drop-ten-thousandth','milliseconds','percent','flag','per-thousand')})),
-  autoSkills:record(object({kind:oneOf('chance','combat-chance','heal','ally-combat','emergency-heal')}))});
+  autoSkills:record(object({uses:array(oneOf(...PARTY_SKILL_USES))}))});
 export function parseCompanions(value:unknown):CompanionCatalog{
   companionCatalog(value,'companions');return value as CompanionCatalog;
 }
@@ -164,6 +164,23 @@ export function validateCompanions(catalog:CompanionCatalog,world:WorldIndex,bat
     requireValue(skill.requiredLevels.length===skill.maxLevel&&skill.maxLevel<=battle.skills[id].normalMaxLevel,id,'佣兵技能成长不完整');
     requireValue(skill.requiredLevels.every(level=>level>=1&&level<=stats.maxLevel),id,'伙伴技能成长等级超出角色等级范围');
     requireValue(skill.requiredLevels.every((level,index)=>index===0||level>skill.requiredLevels[index-1]),id,'佣兵技能成长等级需要递增');
+  }
+  const activeSkills = new Set(battle.classes.flatMap(character =>
+    character.skills.filter(id => battle.skills[id]?.kind === 'active')));
+  for (const id of activeSkills) requireValue(catalog.autoSkills[id],id,'职业主动技能缺少自动战术用途');
+  for (const [id, {uses}] of Object.entries(catalog.autoSkills)) {
+    requireValue(activeSkills.has(id),id,'自动战术必须引用职业主动技能');
+    requireValue(uses.length && new Set(uses).size === uses.length,id,'自动战术用途必须非空且唯一');
+    const skill = battle.skills[id];
+    // 同一份用途供 AI 接管的主角和佣兵使用，两套动作都需要兑现用途。
+    for (const action of [skill.action,skill.companion?.action ?? skill.action]) {
+      const units = action?.combatUnits ?? [];
+      if (uses.includes('heal')) requireValue(units.some(unit => unit.effect === 'heal'
+        || unit.effect === 'buff' && unit.ranks.some(rank => rank.effect.periodic?.some(pulse => pulse.kind === 'healing'))),
+        id,'治疗用途缺少恢复生命效果');
+      if (uses.includes('summon')) requireValue(units.some(unit => unit.effect === 'summon')
+        || action?.events.some(event => event.kind === 'summon'),id,'召唤用途缺少召唤效果');
+    }
   }
   for(const [id,emblem] of Object.entries(catalog.generation.emblems))requireValue(emblem.qualityWeights.length===4&&emblem.qualityWeights.reduce((sum,value)=>sum+value,0)===100,id,'徽章品质概率需要合计100');
   for(const [classId,pool] of Object.entries(catalog.generation.groupPools)){

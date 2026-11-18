@@ -24,13 +24,16 @@ export interface CompanionDefinition {
   recruitable?: boolean;
   fixedSkills?: string[];
 }
+export const PARTY_SKILL_USES = ['heal','defend','control','damage','buff','summon'] as const;
+export type PartySkillUse = typeof PARTY_SKILL_USES[number];
+
 export interface CompanionCatalog {
   definitions: Record<string,CompanionDefinition>;
   /** Each row is a level's five base attributes, from level 1 through 105. */
   growth: Record<string,PrimaryAttributes[]>;
   generation: CompanionGenerationRules;
   groupSkills:Record<CompanionGroupEffect,CompanionGroupSkill>;
-  autoSkills:Record<string,{kind:'chance'|'combat-chance'|'heal'|'ally-combat'|'emergency-heal'}>;
+  autoSkills:Record<string,{uses:PartySkillUse[]}>;
 }
 export interface PartySnapshot {
   active: readonly string[];

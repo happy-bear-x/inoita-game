@@ -7245,166 +7245,291 @@
   },
   "autoSkills": {
     "dark-strike": {
-      "kind": "chance"
+      "uses": [
+        "damage"
+      ]
     },
     "phantom-clash": {
-      "kind": "chance"
+      "uses": [
+        "damage",
+        "control"
+      ]
     },
     "curse-of-screams": {
-      "kind": "ally-combat"
+      "uses": [
+        "damage",
+        "control"
+      ]
     },
     "shield-bash": {
-      "kind": "chance"
+      "uses": [
+        "damage",
+        "control"
+      ]
     },
     "firestorm": {
-      "kind": "chance"
+      "uses": [
+        "damage"
+      ]
     },
     "sword-of-hell": {
-      "kind": "chance"
+      "uses": [
+        "damage",
+        "control"
+      ]
     },
     "demon-s-shield": {
-      "kind": "chance"
+      "uses": [
+        "buff"
+      ]
     },
     "guardian-of-darkness": {
-      "kind": "combat-chance"
+      "uses": [
+        "defend"
+      ]
     },
     "molten-armor": {
-      "kind": "combat-chance"
+      "uses": [
+        "defend"
+      ]
     },
     "continuous-slash": {
-      "kind": "chance"
+      "uses": [
+        "damage"
+      ]
     },
     "spiritual-blade": {
-      "kind": "combat-chance"
+      "uses": [
+        "buff"
+      ]
     },
     "poison-touch": {
-      "kind": "combat-chance"
+      "uses": [
+        "buff"
+      ]
     },
     "assassin-s-sword": {
-      "kind": "chance"
+      "uses": [
+        "damage"
+      ]
     },
     "dark-attack": {
-      "kind": "chance"
+      "uses": [
+        "damage"
+      ]
     },
     "freeze-extreme": {
-      "kind": "chance"
+      "uses": [
+        "damage",
+        "control"
+      ]
     },
     "whist": {
-      "kind": "combat-chance"
+      "uses": [
+        "buff"
+      ]
     },
     "blade-deflection": {
-      "kind": "emergency-heal"
+      "uses": [
+        "defend"
+      ]
     },
     "energy-bodhi": {
-      "kind": "combat-chance"
+      "uses": [
+        "buff"
+      ]
     },
     "touch-of-agony": {
-      "kind": "chance"
+      "uses": [
+        "damage"
+      ]
     },
     "blood-curse": {
-      "kind": "chance"
+      "uses": [
+        "damage",
+        "control"
+      ]
     },
     "fire-offering": {
-      "kind": "chance"
+      "uses": [
+        "damage"
+      ]
     },
     "pain-overture": {
-      "kind": "chance"
+      "uses": [
+        "buff"
+      ]
     },
     "summon-hellfire": {
-      "kind": "chance"
+      "uses": [
+        "damage"
+      ]
     },
     "spell-redemption": {
-      "kind": "combat-chance"
+      "uses": [
+        "buff"
+      ]
     },
     "hell-s-pawn": {
-      "kind": "combat-chance"
+      "uses": [
+        "summon"
+      ]
     },
     "summon-bard": {
-      "kind": "combat-chance"
+      "uses": [
+        "defend"
+      ]
     },
     "monster-s-scream": {
-      "kind": "ally-combat"
+      "uses": [
+        "damage",
+        "control"
+      ]
     },
     "prayer-of-recovery": {
-      "kind": "heal"
+      "uses": [
+        "heal"
+      ]
     },
     "apostles-of-light": {
-      "kind": "combat-chance"
+      "uses": [
+        "buff",
+        "defend"
+      ]
     },
     "light-command": {
-      "kind": "combat-chance"
+      "uses": [
+        "heal"
+      ]
     },
     "celestial-armor": {
-      "kind": "combat-chance"
+      "uses": [
+        "defend"
+      ]
     },
     "blinding-flash": {
-      "kind": "emergency-heal"
+      "uses": [
+        "heal",
+        "damage",
+        "control"
+      ]
     },
     "holy-sacrifice": {
-      "kind": "ally-combat"
+      "uses": [
+        "defend"
+      ]
     },
     "divine-strike": {
-      "kind": "chance"
+      "uses": [
+        "damage"
+      ]
     },
     "hammer-of-wrath": {
-      "kind": "chance"
+      "uses": [
+        "damage",
+        "control"
+      ]
     },
     "celestial-lightning": {
-      "kind": "chance"
+      "uses": [
+        "damage"
+      ]
     },
     "multiple-shot": {
-      "kind": "chance"
+      "uses": [
+        "damage"
+      ]
     },
     "aimed-shot": {
-      "kind": "chance"
+      "uses": [
+        "damage"
+      ]
     },
     "ambush": {
-      "kind": "combat-chance"
+      "uses": [
+        "buff"
+      ]
     },
     "net-shackles": {
-      "kind": "chance"
+      "uses": [
+        "damage",
+        "control"
+      ]
     },
     "spiritual-arrow": {
-      "kind": "chance"
+      "uses": [
+        "damage"
+      ]
     },
     "rampage": {
-      "kind": "chance"
+      "uses": [
+        "damage"
+      ]
     },
     "beast-companion": {
-      "kind": "combat-chance"
+      "uses": [
+        "summon"
+      ]
     },
     "spirit-of-nature": {
-      "kind": "heal"
+      "uses": [
+        "heal",
+        "buff"
+      ]
     },
     "survival-instinct": {
-      "kind": "emergency-heal"
+      "uses": [
+        "defend"
+      ]
     },
     "rush-of-anger": {
-      "kind": "chance"
+      "uses": [
+        "damage",
+        "control"
+      ]
     },
     "shouts-of-threat": {
-      "kind": "ally-combat"
+      "uses": [
+        "damage",
+        "control"
+      ]
     },
     "armor-penetration": {
-      "kind": "chance"
+      "uses": [
+        "buff"
+      ]
     },
     "giant-blow": {
-      "kind": "chance"
+      "uses": [
+        "damage",
+        "control"
+      ]
     },
     "weapon-hitback": {
-      "kind": "heal"
+      "uses": [
+        "damage",
+        "control"
+      ]
     },
     "swirling-storm": {
-      "kind": "chance"
+      "uses": [
+        "damage"
+      ]
     },
     "blood-thirst": {
-      "kind": "combat-chance"
+      "uses": [
+        "buff"
+      ]
     },
     "storm-of-frenzy": {
-      "kind": "combat-chance"
+      "uses": [
+        "buff"
+      ]
     },
     "enrage": {
-      "kind": "combat-chance"
+      "uses": [
+        "buff"
+      ]
     }
   }
 }

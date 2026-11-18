@@ -44,6 +44,22 @@ test('companion training rejects levels outside the character range',()=>{
   training.requiredLevels[0]=0;
   assert.throws(()=>validateCompanions(catalog,{} as WorldIndex,battle,stats),/伙伴技能成长等级超出角色等级范围/);
 });
+test('party tactics cover class skills and distinguish healing from disarming',()=>{
+  const catalog = {...companions,definitions:{},autoSkills:{...companions.autoSkills}};
+  const validate = () => validateCompanions(catalog,{} as WorldIndex,battle,stats);
+  assert.deepEqual(catalog.autoSkills['weapon-hitback'].uses, ['damage','control']);
+  assert.deepEqual(catalog.autoSkills['blade-deflection'].uses, ['defend']);
+  assert.ok(catalog.autoSkills['blinding-flash'].uses.includes('heal'));
+  validate();
+  catalog.autoSkills['weapon-hitback'] = {uses:['heal']};
+  assert.throws(validate,/weapon-hitback.*治疗用途缺少恢复生命效果/);
+  delete catalog.autoSkills['weapon-hitback'];
+  assert.throws(validate,/weapon-hitback.*缺少自动战术用途/);
+  catalog.autoSkills['weapon-hitback'] = companions.autoSkills['weapon-hitback'];
+  catalog.autoSkills['unknown-skill'] = {uses:['damage']};
+  assert.throws(validate,/unknown-skill.*必须引用职业主动技能/);
+});
+
 function fixture(highLevel=true){
   const hero=new BattleCharacter('dark-knight',stats,items);
   if(highLevel)hero.addExperience(Number.MAX_SAFE_INTEGER);
