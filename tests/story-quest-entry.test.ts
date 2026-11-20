@@ -7,7 +7,6 @@ import type { ItemCatalog } from '../src/domain/items.ts';
 import { Session } from '../src/domain/session.ts';
 import { StoryDirector, type StoryUI } from '../src/domain/story-director.ts';
 import { storyConditionReferences } from '../src/domain/story-condition.ts';
-import { questJournal } from '../src/domain/quest-journal.ts';
 
 const read = <T>(name: string): T => JSON.parse(readFileSync(new URL(`../public/content/${name}.json`, import.meta.url), 'utf8')) as T;
 const campaign = read<Campaign>('campaign');
@@ -76,36 +75,6 @@ test('script admission and a native NPC menu coexist for a story quest', () => {
   assert.equal(eventOnly.completion, 'story');
   assert.ok(campaign.scripts['event-201'].nodes.some(node => node.commands.some(command => command.type === 'quest'
     && command.command.type === 'accept' && command.command.quest === eventOnly.id)));
-});
-
-test('the dormant prisoner report has no NPC or script admission and stays out of the journal', async () => {
-  // 原始任务4的+4为-1，+6为卓拉德；接取调用链见 findings/168、230。
-  const { quest, session, director } = harness('quest-4');
-  assert.equal(quest.giver, undefined);
-  assert.equal(quest.giverCharacterId, undefined);
-  assert.equal(quest.deliveryCharacterId, 'npc-40');
-  for (const [scriptId, script] of Object.entries(campaign.scripts)) {
-    for (const node of script.nodes) {
-      assert(!node.commands.some(command => command.type === 'quest'
-        && 'quest' in command.command && command.command.quest === quest.id),
-      `${scriptId}/${node.id} 不应写入这条未接入任务的状态`);
-    }
-  }
-  const fullSession = new Session(campaign, undefined, undefined, items);
-  for (const actor of Object.keys(actors)) {
-    assert(!fullSession.forActor(actor).some(candidate => candidate.id === quest.id));
-    assert(!fullSession.forActor(actor, 'npc-40').some(candidate => candidate.id === quest.id));
-  }
-  try {
-    const entity: EntityPlacement = { id: 'darius', actor: 'darius', characterId: 'npc-40', x: 40, y: 40 };
-    const before = session.status(quest.id);
-    await director.interact(entity, actors.darius);
-    assert.equal(session.status(quest.id), before, '与交付人交谈不会自动接取或完成任务');
-    assert(!questJournal(campaign, session.quests).some(group => group.entries.some(entry => entry.quest.id === quest.id)));
-    assert(!questJournal(campaign, fullSession.quests).some(group => group.entries.some(entry => entry.quest.id === quest.id)));
-  } finally {
-    director.dispose();
-  }
 });
 
 for (const [origin, successor, sameNpc] of [

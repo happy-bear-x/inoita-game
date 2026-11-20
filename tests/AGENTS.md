@@ -19,6 +19,7 @@
 
 ## 验证
 
+- `story-intake.test.ts` 使用「最后的封印」的石魔战验证遭遇在玩家当前地图出现，等待战斗的剧情能在恢复后继续。
 - `story-gated-interaction.test.ts` 覆盖七组剧情确认入口的取消后再次点击、普通交付保护与剧情结算，使用真实结界石内容验证石魔生成、击败后的主线推进，以及正常存档恢复。
 
 - `bag.test.ts` 与 `inventory.test.ts` 覆盖完整物品目录、分类数量和装备数据；任务物品来源由 `quest-drops.test.ts` 验证。

@@ -41,7 +41,7 @@ test('changes observed while held update the observation tables without dispatch
   assert.equal(dispatched, 0, '保持期间的变化不会在恢复后补派发');
 
   // 恢复后的新变化照常派发。
-  assert.equal(session.accept('quest-3'), true);
+  assert.equal(session.accept('cardinal-summons'), true);
   await tick();
   assert.ok(dispatched > 0, '恢复后新变化重新派发');
   director.dispose();

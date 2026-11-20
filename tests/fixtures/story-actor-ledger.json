@@ -1,22 +1,22 @@
 {
   "summary": {
     "maps": 416,
-    "scripts": 693,
-    "stages": 719,
-    "castMembers": 1610,
-    "placeIds": 977
+    "scripts": 678,
+    "stages": 710,
+    "castMembers": 1587,
+    "placeIds": 970
   },
   "expected": {
     "multipleSelectors": 0,
-    "characterOnly": 1268,
-    "templates": 378,
+    "characterOnly": 1253,
+    "templates": 365,
     "explicitWorldRefs": 111,
-    "mapFromWorldStages": 387,
-    "mapFromWorldCasts": 538,
-    "placeIds": 977,
+    "mapFromWorldStages": 379,
+    "mapFromWorldCasts": 519,
+    "placeIds": 970,
     "duplicatePlaceIdsAcrossMaps": 106,
     "duplicatePlaceCharacterIds": 0,
     "ambiguous": 0
   },
-  "reportHash": "87d8d42506fc74b32b51482577c02bfb4d07adbb9e93294127902f7b06822f6a"
+  "reportHash": "be6ee32d22159d1e3f13cdff459969df8be33a27b66411af8ed3d8e36de89ab6"
 }

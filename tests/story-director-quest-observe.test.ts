@@ -9,7 +9,7 @@ const campaign = JSON.parse(readFileSync(new URL('../public/content/campaign.jso
 const ui: StoryUI = { async dialogue() {}, async choice(_prompt, options) { return options[0]; }, async questPopup() {}, closeDialogue() {}, skipDialogue() {}, toast() {} };
 const presentation = { begin() {}, async execute() {}, async finish() {}, async release() {} };
 
-/** 统计 `Session.quests` 被读了几次：每读一次都要克隆并序列化全部 505 条任务状态。 */
+/** 统计 `Session.quests` 被读了几次：每读一次都要克隆并序列化整本任务簿的状态。 */
 function countQuestReads(session: Session) {
   const descriptor = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(session), 'quests')!;
   let reads = 0;

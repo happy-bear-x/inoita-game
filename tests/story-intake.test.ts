@@ -45,7 +45,8 @@ test('removing an active encounter enemy records its defeat quest goal',()=>{
 });
 
 test('a native encounter without a map condition uses the current scene and finishes after restore',async()=>{
-  const session=new Session(campaign),script='event-37',map='shadow-forest-west';
+  const session=new Session(campaign),script='event-392',map='eternal-world-3-9676ac48';
+  assert.equal(session.accept('quest-340'),true);
   const port={async prepare(){},currentMap:()=>map,capture:()=>session.captureState(),async present(){return {};},async finish(){},
     apply(commit:import('../src/domain/story-runtime.ts').StoryNodeCommit){session.applyStoryCommands(commit.commands,commit.checkpoint);},
     commit(commit:import('../src/domain/story-runtime.ts').StoryNodeCommit){session.adoptRuntime(commit.checkpoint);},
@@ -54,7 +55,7 @@ test('a native encounter without a map condition uses the current scene and fini
   const graph={version:2 as const,scripts:{[script]:campaign.scripts[script]},events:[]};
   const runtime=new StoryRuntime(graph,port);await runtime.start(script);
   const encounter=session.storyWorld.activeEncounters[0];
-  assert.equal(encounter.map,map);assert.equal(encounter.mapFromStage,undefined);assert.equal(encounter.spawns.length,4);
+  assert.equal(encounter.map,map);assert.equal(encounter.mapFromStage,undefined);assert.deepEqual(encounter.spawns.map(spawn=>spawn.enemyId),['enemy-guardian-golem-2']);
   const copy=new StoryRuntime(graph,port);copy.restore(runtime.snapshot());
   assert.equal(await copy.encounterResult(encounter.id,'won','restored-win'),true);
   assert.equal(session.storyWorld.encounter(encounter.id)?.status,'won');

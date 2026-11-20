@@ -189,7 +189,7 @@ export class StoryDirector {
   }
   private observeChanges(dispatch: boolean): void {
     const changes: { source: StoryTriggerSource; key: string }[] = [];
-    // 任务簿版本没动就说明任务状态没动：逐条序列化 505 条状态只在版本变化时才值得做，
+    // 任务簿版本没动就说明任务状态没动：逐条序列化整本任务簿的状态只在版本变化时才值得做，
     // 而 `emit` 的频率远高于任务真正变化的频率。
     const questVersion = this.session.questBook.version;
     if (questVersion !== this.observedQuestVersion) {
