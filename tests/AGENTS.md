@@ -52,6 +52,7 @@ npm run test:standalone
 - `world-skill-cache.test.ts` 验证共享技能贴图在原使用者离队后仍由后学会的主角持有，最后释放时回收；覆盖退队失败清理、迟到失败、自动反应等待资源，入队期间换装的重试，以及读档等待全队技能资源、准备失败保留原战斗现场。
 - `basic-attack-repeat.test.ts` 与 `world-runtime-review.test.ts` 验证手动对敌技能自然结束后接普攻，以及无目标、辅助技能和切人时的边界。
 
+- 剧情跳转回归遍历全部菜单任务并颠倒显示顺序，同时用正式进图、行走、战斗、交付和存读档流程验证蜘蛛巢穴的前跳与回跳。
 - `gm-actions.test.ts` 验证调试道具列表隐藏剧情人物专属装备，并保留其他职业的可穿戴装备；`gm-quest-jump.test.ts` 覆盖剧情跳转的传送、接取剧情与交接（清强制状态、检查点、自动存档），等待剧情战斗结束才交接，以及失败回滚、播放失败报告和并发拒绝；`gm-quest-panel.test.ts` 验证任务页只把跳转交给宿主先存档。
 
 - `world-effects.test.ts` 验证飞弹转向和持续效果独立保留贴图到结束；`buff-loop-renderer.test.ts` 验证首次缺图后恢复。

@@ -55,6 +55,10 @@
 
 这个示例应作为 `scripts["example-report"]` 使用，并由已经 ready 的任务交付入口调用。第一节点的对白与表现收尾成功后，奖励和 reward 游标一起提交。窗口关闭失败时，恢复会重开窗口，奖励保留一次。
 
+剧情内容用 `storyProgression.steps` 记录正式游玩顺序。一项任务用 `accept` 标出接取步骤，用 `deliver` 标出交付步骤。任务在交付前已具备条件时可用 `ready` 标出这个时点。只承担剧情连接且一直没有交付的任务列入 `ongoing`。同阶段的自由支线也各占一个位置。
+
+区域、近身、选择和战后演出用 `event` 关联正式事件。脚本交接用 `script`，普通对话沿用任务定义中的阶段地点。有多处候选地点时用 `map` 指定实际地图。演出里的选项用 `choices` 指定答案。需要从过场结束的位置继续时，用 `resumeAfterStage` 指向这一步进入待交付的任务。
+
 出口包括 next、branch、choice、call、waitEncounter、defer 和 end。branch 检查包含本节点命令结果的条件；choice 保存选择并进入对应节点；call 调用共享脚本，then 指定返回节点。共享脚本的 end 在存在调用栈时返回，无调用栈时才完成整个流程。资源校验分别检查各分支的演员状态；运行还有连续节点预算和调用层级限制。
 
 游戏命令包括 quest、talk、interaction、item-give/take/drop、money-give/take、flag、choice、party-join/leave、party-control、health、mana、equip、unequip-destroy、world、travel 和 encounter。health/mana 使用 `member` 与 `value`，后者是整数或 full；equip 使用 `member`、物品定义 `item` 和装备 `slot`，由现有穿戴规则选择背包中的实例。主角成员名是 player，剧情成员实例名是 `story-<伙伴定义ID>`。

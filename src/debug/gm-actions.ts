@@ -451,11 +451,9 @@ export function createGmActions(ports: GmPorts): GmActions {
       catch (error) { return { ok: false, reason: error instanceof Error ? error.message : String(error) }; }
       const unfinished = director?.runtime.snapshot().runs.some(run => {
         if (run.status !== 'waiting') return run.status === 'running';
-        // 离开战场后，接手的正式演出可能已推进主线，旧战斗仍在等结果。
-        // 只有回退计划会重置这段演出时，才允许从另一个地图重建它。
+        // 玩家离开战场后，跳转会一起重建这段剧情与遭遇。仍在当前地图打的战斗先打完。
         const encounter = run.waiting && session.storyWorld.encounter(run.waiting.encounter);
-        const rewind = run.eventId && plan.conditionPatch.removedEvents.includes(run.eventId);
-        return !rewind || !encounter || encounter.map === session.storyWorld.currentLocation?.map;
+        return !run.eventId || !encounter || encounter.map === session.storyWorld.currentLocation?.map;
       });
       if (unfinished) return { ok: false, reason: '当前有未结束的剧情运行，请先处理', plan };
       if (plan.mode === 'available' && plan.conditionPatch.unsatisfied.length) {

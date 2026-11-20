@@ -194,9 +194,9 @@ function fixture(options: { unsatisfied?: boolean; ready?: boolean; scrollGroups
       changedQuests: [{ id: 'q-pre', title: '前置任务', from: 'locked', to: 'completed' }],
       accept: { script: 'script-accept', eventId: 'event-accept' },
       acceptAlternatives: [{ script: 'script-accept', eventId: 'event-accept' }],
-      conditionPatch: { quests: [], choices: [], flags: [], completedEvents: [], removedEvents: [],
+      conditionPatch: { quests: [], completedQuests: [], choices: [], flags: [], completedEvents: [], removedEvents: [],
         unsatisfied: options.unsatisfied ? ['缺少接取选择'] : [] },
-      worldCommands: [],
+      worldCommands: [], storyItems: [],
       destination: { map: mode === 'ready' ? 'castle' : 'dungeon', x: 8, y: 9, facing: 'south' },
       warnings: [], fallback: options.ready === true,
     };

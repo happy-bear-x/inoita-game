@@ -334,7 +334,7 @@ test('分毫之差读档折返哈肯沙漠，消失的圣女保持交付后的�
     await h.idle();
     restored = harness({}, reloadState(h));
     const game = restored.h;
-    assert.equal(game.session.status('quest-18'), 'active');
+    assert.equal(game.session.status('quest-18'), 'completed');
     assert.equal(game.session.status('quest-24'), 'completed');
     assert.equal(game.session.status('quest-26'), 'active');
     await game.travel('hakan-desert-2-95444e0c');
@@ -345,8 +345,74 @@ test('分毫之差读档折返哈肯沙漠，消失的圣女保持交付后的�
     assert.equal(game.session.status('quest-24'), 'active');
     assert.equal(game.director.runtime.eventStatus('event-21'), 'idle');
     assert.equal(game.director.runtime.eventStatus('event-23'), 'idle');
-    assert.equal(game.session.status('quest-18'), 'active');
+    assert.equal(game.session.status('quest-18'), 'completed');
   } finally { restored?.h.director.dispose(); h.director.dispose(); }
+});
+
+test('跳到消失的圣女3后读档折返蜘蛛巢穴，往回跳才能再次迎战蜘蛛女王', async () => {
+  const first = harness();
+  let restored: ReturnType<typeof harness> | undefined;
+  try {
+    const jump = await first.gm.startStoryJump('quest-35');
+    assert.ok(jump.ok, jump.reason);
+    await first.h.idle();
+    restored = harness({}, reloadState(first.h));
+    const { h, gm } = restored;
+    const spiderMap = 'spider-s-lair-2-ba4a24b9';
+    await h.travel(spiderMap);
+    await h.region('event-27');
+    assert.equal(h.session.storyWorld.activeEncounters.length, 0);
+    assert.equal(h.director.runtime.eventStatus('event-28'), 'completed');
+    for (const id of ['quest-18', 'quest-30', 'quest-31', 'quest-33'])
+      assert.equal(h.session.status(id), 'completed', id);
+    assert.equal(h.session.status('quest-35'), 'active');
+    await h.travel('goblin-s-lair-2-49c1710f');
+    await h.region('event-35');
+    assert.equal(h.director.runtime.eventStatus('event-35'), 'completed');
+
+    const back = await gm.startStoryJump('quest-30');
+    assert.ok(back.ok, back.reason);
+    await h.idle();
+    assert.equal(h.session.status('quest-33'), 'available');
+    assert.equal(h.session.itemCount('robbie-s-special-antidote'), 1);
+    await h.travel(spiderMap);
+    await h.region('event-27');
+    assert.equal(h.session.storyWorld.activeEncounters.length, 1);
+    await h.updateWorld(await h.defeat('enemy-queen-spider-1'));
+    assert.equal(h.session.status('quest-30'), 'completed');
+    assert.equal(h.session.status('quest-31'), 'completed');
+    assert.equal(h.session.storyWorld.activeEncounters.length, 0);
+    assert.equal(h.director.runtime.eventStatus('event-27'), 'completed');
+    assert.equal(h.director.runtime.eventStatus('event-28'), 'completed');
+    assert.equal(await h.director.enterRegion('event-27', spiderMap), false);
+    assert.equal(h.session.questBook.completedCycles('quest-30'), 1);
+    await h.travel('goblin-prison-2-27ab25e1');
+    await h.talk('npc-170');
+    assert.equal(h.session.status('quest-33'), 'active');
+    h.session.applyStoryCommands([{ type: 'item-give', item: 'prison-key-2', quantity: 1 }]);
+    await h.talk('npc-170');
+    assert.equal(h.session.status('quest-33'), 'completed');
+  } finally { restored?.h.director.dispose(); first.h.director.dispose(); }
+});
+
+test('调试传送离开未打完的蜘蛛战后向前跳，战斗和任务一起推进', async () => {
+  const {h, gm} = harness();
+  try {
+    assert.ok((await gm.startStoryJump('quest-30')).ok);
+    const entrance = h.session.storyWorld.currentLocation!;
+    await h.travel('spider-s-lair-2-ba4a24b9');
+    await h.region('event-27');
+    assert.equal(h.session.storyWorld.activeEncounters.length, 1);
+    const forward = await gm.startStoryJump('quest-35');
+    assert.equal(forward.ok, false);
+    h.session.applyStoryCommands([{type:'travel', destination:entrance}]);
+    const jump = await gm.startStoryJump('quest-35');
+    assert.ok(jump.ok, jump.reason);
+    assert.equal(h.session.storyWorld.activeEncounters.length, 0);
+    assert.equal(h.director.runtime.eventStatus('event-27'), 'completed');
+    assert.equal(h.director.runtime.eventStatus('event-28'), 'completed');
+    assert.equal(h.session.status('quest-30'), 'completed');
+  } finally { h.director.dispose(); }
 });
 
 test('序幕战斗折返回影营地时沿用刺杀任务，跳回刺杀则可再次正常接取', async () => {

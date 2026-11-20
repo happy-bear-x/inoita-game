@@ -1008,6 +1008,13 @@ export class Session {
     if(!receipt)return undefined;
     return structuredClone(receipt.reward);
   }
+  /** 回到所选剧情阶段时，已领取的资产继续归玩家，后续任务重新取得正式交付资格。 */
+  retainQuestSettlements(delivered: ReadonlySet<string>):void {
+    for (const id of this.receipts.keys()) if (!delivered.has(id)) {
+      this.receipts.delete(id);
+      this.receiptRevisionValue++;
+    }
+  }
   accept(id:string):boolean {
     this.refresh();if(this.status(id)!=='available')return false;
     this.applyStoryCommands([{type:'quest',command:{type:'accept',quest:id,cycle:this.questBook.state(id)!.cycle}}]);return true;

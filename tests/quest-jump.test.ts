@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { headlessContent, playthrough } from './helpers/story-playthrough.ts';
 import { applyQuestStartPlan, planQuestStart } from '../src/debug/quest-jump.ts';
+import { validateStoryProgression } from '../src/application/content-validation.ts';
 import { parseDrops } from '../src/domain/drops.ts';
 import { prepareSceneVisit } from '../src/domain/scene-visit.ts';
 import type { Session } from '../src/domain/session.ts';
@@ -434,5 +435,71 @@ test('跳到影子沼泽的埋伏，前两次必经的兽人部落接取演出�
     assert.ok(h.session.runtimeState.completedEvents.includes('event-92'));
     assert.ok(!h.session.runtimeState.completedEvents.includes('event-93'));
     assert.equal(h.session.status('quest-111'), 'completed');
+  } finally { h.director.dispose(); }
+});
+
+test('全部任务都有可用的跳转现场，颠倒任务目录得到同一份计划', () => {
+  const h = playthrough();
+  try {
+    const campaign = h.session.campaign;
+    const reversed = { ...campaign, questGroups: [...campaign.questGroups].reverse().map(group =>
+      ({ ...group, questIds: [...group.questIds].reverse() })) };
+    const menuIds = campaign.questGroups.flatMap(group => group.questIds);
+    assert.equal(new Set(menuIds).size, 487);
+    for (const id of menuIds) {
+      const plan = planQuestStart(campaign, h.session, id);
+      assert.ok(plan.destination && headlessContent.maps.has(plan.destination.map), id);
+      assert.deepEqual(plan.conditionPatch.unsatisfied, [], id);
+      assert.deepEqual(planQuestStart(reversed, h.session, id), plan, id);
+    }
+  } finally { h.director.dispose(); }
+});
+
+test('剧情顺序校验发现漏掉的区域战斗、接取、交付、分支选择和跨图地点', () => {
+  const campaign = headlessContent.campaign, { steps, ongoing } = campaign.storyProgression;
+  const validate = (replacement: typeof steps) => validateStoryProgression({
+    ...campaign, storyProgression: { steps: replacement, ongoing } });
+  validate(steps);
+  assert.throws(() => validate(steps.filter(step => step.event !== 'event-27')), /quest-31|event-27/);
+  assert.throws(() => validate(steps.filter(step => step.event !== 'event-11')), /event-11/);
+  assert.throws(() => validate(steps.filter(step => !step.deliver?.includes('quest-18'))), /quest-18/);
+  assert.throws(() => validate([...steps, {accept:['quest-18']}]), /quest-18/);
+  assert.throws(() => validate(steps.map(step => step.event === 'event-6' ? {...step, choices: {}} : step)), /选择/);
+  assert.throws(() => validate(steps.map(step => step.event === 'event-57' ? {...step, map:'shadow-camp'} : step)), /地图/);
+});
+
+test('历史交付保留重复任务的下一轮，按所进记忆分支恢复选择', () => {
+  const h = playthrough();
+  try {
+    const {session} = h;
+    applyQuestStartPlan(session, planQuestStart(session.campaign, session, 'quest-416', 'active'));
+    assert.equal(session.storyWorld.choice('choice-21'), 'option-0');
+    assert.equal(session.status('quest-353'), 'available');
+    assert.equal(session.questBook.completedCycles('quest-353'), 1);
+    assert.equal(session.rewardReceiptFor('quest-353'), undefined);
+    assert.ok(session.accept('quest-353'));
+    assert.equal(session.status('quest-353'), 'active');
+    assert.equal(session.status('quest-499'), 'available');
+    assert.equal(session.questBook.completedCycles('quest-499'), 1);
+  } finally { h.director.dispose(); }
+});
+
+test('潜入骨之兽人部落时恢复同行的沃尔达克和伪装，重复跳转沿用同一件面具', () => {
+  const h = playthrough();
+  try {
+    const {session} = h, money = session.money, experience = session.hero!.captureState().experience;
+    h.director.holdTriggers();
+    const plan = planQuestStart(session.campaign, session, 'quest-120', 'active');
+    applyQuestStartPlan(session, plan);
+    const mask = session.bag.equipmentFor('player').head;
+    assert.ok(session.party?.get('story-mercenary-olaf'));
+    assert.equal(session.bag.equipmentItems().head, 'disguise-mask');
+    applyQuestStartPlan(session, plan);
+    assert.equal(session.bag.equipmentFor('player').head, mask);
+    assert.equal(session.money, money);
+    assert.equal(session.hero!.captureState().experience, experience);
+    applyQuestStartPlan(session, planQuestStart(session.campaign, session, 'quest-35'));
+    assert.equal(session.party?.get('story-mercenary-olaf'), undefined);
+    assert.notEqual(session.bag.equipmentItems().head, 'disguise-mask');
   } finally { h.director.dispose(); }
 });
