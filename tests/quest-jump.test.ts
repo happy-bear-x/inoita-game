@@ -423,3 +423,16 @@ test('incompatible intake conditions are reported in the preview', () => {
     assert.ok(plan.conditionPatch.unsatisfied.length);
   } finally { h.director.dispose(); }
 });
+
+test('跳到影子沼泽的埋伏，前两次必经的兽人部落接取演出均已结束', () => {
+  const h = playthrough();
+  try {
+    const plan = planQuestStart(h.session.campaign, h.session, 'quest-113');
+    assert.equal(plan.accept?.eventId, 'event-93');
+    applyQuestStartPlan(h.session, plan);
+    assert.ok(h.session.runtimeState.completedEvents.includes('event-90'));
+    assert.ok(h.session.runtimeState.completedEvents.includes('event-92'));
+    assert.ok(!h.session.runtimeState.completedEvents.includes('event-93'));
+    assert.equal(h.session.status('quest-111'), 'completed');
+  } finally { h.director.dispose(); }
+});

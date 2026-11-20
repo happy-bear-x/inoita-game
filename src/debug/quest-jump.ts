@@ -1,3 +1,4 @@
+import { questJumpHistory } from './quest-jump-history.ts';
 import type { Campaign, CampaignPlacement, CampaignQuest } from '../domain/campaign.ts';
 import type { Facing, QuestStatus, TravelDestination } from '../domain/content.ts';
 import type { QuestBookState, QuestProgress } from '../domain/quest-book.ts';
@@ -124,32 +125,37 @@ function questOf(campaign: Campaign, questId: string): CampaignQuest | undefined
   return campaign.quests.find(quest => quest.id === questId);
 }
 
-/**
- * 找出脚本里接受目标任务的位置，并把它和直接使用这条脚本的事件关联起来。
- * 优先选条件已经满足的事件，再按来源从“任务/区域/近身”到“选择/事件”排序。
- */
-function acceptCandidates(campaign: Campaign, session: Session, questId: string): AcceptCandidate[] {
-  const candidates: AcceptCandidate[] = [];
-  const seen = new Set<string>();
-  for (const [scriptName, script] of Object.entries(campaign.scripts)) {
-    for (const node of script.nodes) {
-      for (const command of node.commands) {
-        if (command.type !== 'quest' || command.command.type !== 'accept' || command.command.quest !== questId) continue;
-        const events = campaign.events.filter(event => event.script === scriptName);
-        if (!events.length) {
-          const key = `${scriptName}\0`;
-          if (!seen.has(key)) { seen.add(key); candidates.push({ script: scriptName }); }
-          continue;
-        }
-        for (const event of events) {
-          const key = `${scriptName}\0${event.id}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          candidates.push({ script: scriptName, eventId: event.id, event });
-        }
-      }
+const intakeIndexes = new WeakMap<Campaign, Map<string, AcceptCandidate[]>>();
+
+function questIntakes(campaign: Campaign): Map<string, AcceptCandidate[]> {
+  const cached = intakeIndexes.get(campaign);
+  if (cached) return cached;
+  const index = new Map<string, AcceptCandidate[]>();
+  const eventsByScript = new Map<string, StoryEvent[]>();
+  for (const event of campaign.events) {
+    const entries = eventsByScript.get(event.script) ?? [];
+    entries.push(event);
+    eventsByScript.set(event.script, entries);
+  }
+  for (const [name, script] of Object.entries(campaign.scripts)) {
+    const accepted = new Set<string>();
+    for (const node of script.nodes) for (const command of node.commands)
+      if (command.type === 'quest' && command.command.type === 'accept') accepted.add(command.command.quest);
+    if (!accepted.size) continue;
+    const events = eventsByScript.get(name);
+    const sources = events?.map(event => ({ script: name, eventId: event.id, event })) ?? [{ script: name }];
+    for (const id of accepted) {
+      const candidates = index.get(id) ?? [];
+      candidates.push(...sources);
+      index.set(id, candidates);
     }
   }
+  intakeIndexes.set(campaign, index);
+  return index;
+}
+
+function acceptCandidates(campaign: Campaign, session: Session, questId: string): AcceptCandidate[] {
+  const candidates = [...(questIntakes(campaign).get(questId) ?? [])];
   return candidates.sort((left, right) => {
     const leftReady = left.event ? (!left.event.condition || session.evaluateCondition(left.event.condition)) : false;
     const rightReady = right.event ? (!right.event.condition || session.evaluateCondition(right.event.condition)) : false;
@@ -461,30 +467,31 @@ function hasAvailableEntry(quest: CampaignQuest, accept: AcceptCandidate | undef
   return !!place && place.type !== 'unavailable';
 }
 
-// 机关、救人与次元之门战斗各有自己的触发源，不能从任务日志推断这些现场。
-// 在这段确定的正式流程中，只重建已经发生的任务写入和跨地图保留的世界摆放。
-const rescueSequence = ['event-49', 'event-50', 'event-51', 'event-57', 'event-52',
-  'event-53', 'event-54', 'event-55', 'event-19'] as const;
-
-function rescueHistory(campaign: Campaign, session: Session, intake: AcceptCandidate | undefined,
+function prepareJumpHistory(campaign: Campaign, session: Session, timeline: NonNullable<ReturnType<typeof questJumpHistory>>,
   questId: string, mode: QuestStartMode, patch: QuestConditionPatch, world: StoryCommand[]): TravelDestination | undefined {
-  const intakeIndex = rescueSequence.findIndex(id => id === intake?.eventId);
-  if (intakeIndex < 0) return;
-  const returning = questId === 'quest-40' && mode === 'ready';
-  const boundary = returning ? rescueSequence.indexOf('event-52') + 1 : intakeIndex + (mode === 'available' ? 0 : 1);
   const history: StoryCommand[] = [];
-  for (const [index, id] of rescueSequence.entries()) {
-    const event = campaign.events.find(entry => entry.id === id);
-    const script = event && campaign.scripts[event.script];
-    if (!script) throw new Error(`圣女救援行动缺少演出：${id}`);
-    const past = index < boundary;
-    (past ? patch.completedEvents : patch.removedEvents).push(id);
+  const pastScripts = new Set(timeline.past);
+  for (const name of [...timeline.past, ...timeline.future]) {
+    const script = campaign.scripts[name];
+    if (!script) throw new Error(`任务跳转的前后剧情缺少脚本：${name}`);
+    const event = campaign.events.find(entry => entry.script === name);
+    const past = pastScripts.has(name);
+    if (event) (past ? patch.completedEvents : patch.removedEvents).push(event.id);
+    // 玩家亲自交付、击败目标也能触发下一段。后续脚本自身未必再次写入这项任务。
+    if (past && event) satisfyCondition(event.condition, session, patch);
+    // 没有独立事件的接取脚本由上一项交付调用，任务定义记录其正式前置。
+    if (past && !event) {
+      for (const node of script.nodes) for (const command of node.commands)
+        if (command.type === 'quest' && command.command.type === 'accept')
+          satisfyCondition(questOf(campaign, command.command.quest)?.availableWhen, session, patch);
+    }
     for (const node of script.nodes) for (const command of node.commands) {
       if (command.type === 'quest') {
         const action = command.command;
         if (!('quest' in action) || action.quest === questId) continue;
         if (past) {
-          if (action.type === 'accept') pushQuestPatch(patch, action.quest, 'active');
+          if (action.type === 'accept') pushQuestPatch(patch, action.quest,
+            questOf(campaign, action.quest)?.completion === 'talk' ? 'ready' : 'active');
           if (action.type === 'script-complete') pushQuestPatch(patch, action.quest, 'completed');
           if (action.type === 'script-ready') pushQuestPatch(patch, action.quest, 'ready');
         } else if (action.type === 'accept' && ['active', 'ready', 'completed'].includes(session.status(action.quest))) {
@@ -507,7 +514,7 @@ function rescueHistory(campaign: Campaign, session: Session, intake: AcceptCandi
     }
   }
   world.push(...history);
-  if (returning) {
+  if (questId === 'quest-40' && mode === 'ready') {
     const stages = campaign.scripts['event-52'].nodes.flatMap(node =>
       node.presentation.filter(action => action.type === 'stage'));
     const exit = stages.at(-1);
@@ -547,6 +554,47 @@ function intakeHandovers(script: StoryScript, name: string, questId: string): st
     }
     return true;
   });
+}
+
+/** 已经接取或交付的前置任务，其必经的一次性接取演出也已经发生。 */
+function recordPriorIntakes(campaign: Campaign, quest: CampaignQuest, intake: AcceptCandidate | undefined,
+  patch: QuestConditionPatch): void {
+  const pending = new Set<string>();
+  const completed = new Set(patch.completedEvents);
+  const reopened = new Set(patch.removedEvents);
+  const sources = questIntakes(campaign);
+  const requireCondition = (condition: StoryCondition | undefined): void => {
+    if (condition?.type === 'all') condition.conditions.forEach(requireCondition);
+    if (condition?.type === 'quest' && condition.status !== 'available' && condition.status !== 'locked')
+      pending.add(condition.quest);
+  };
+  requireCondition(quest.availableWhen);
+  requireCondition(intake?.event?.condition);
+  if (intake) for (const id of intakeHandovers(campaign.scripts[intake.script], intake.script, quest.id)) pending.add(id);
+
+  for (const id of pending) {
+    if (id === quest.id) continue;
+    const earlier = questOf(campaign, id);
+    if (!earlier || earlier.repeat) continue;
+    requireCondition(earlier.availableWhen);
+    const candidates = sources.get(id);
+    // 有独立接取人或可选剧情时，不能用某条可能的路线冒充必经历史。
+    if (earlier.giverCharacterId || earlier.giver || candidates?.length !== 1) continue;
+    const source = candidates[0];
+    if (source.script === intake?.script || source.event?.repeat || (source.eventId && reopened.has(source.eventId))) continue;
+    if (source.eventId) completed.add(source.eventId);
+    for (const name of questJumpHistory(source.script, id, 'available')?.past ?? []) {
+      const event = campaign.events.find(entry => entry.script === name);
+      if (event && !event.repeat && !reopened.has(event.id)) completed.add(event.id);
+    }
+    requireCondition(source.event?.condition);
+    for (const delivered of intakeHandovers(campaign.scripts[source.script], source.script, id)) {
+      pending.add(delivered);
+      if (delivered !== quest.id && !patch.quests.some(entry => entry.id === delivered))
+        pushQuestPatch(patch, delivered, 'completed');
+    }
+  }
+  patch.completedEvents = [...completed];
 }
 
 function followsProgress(condition: StoryCondition | undefined, quests: ReadonlySet<string>, events: ReadonlySet<string>): boolean {
@@ -605,10 +653,11 @@ export function planQuestStart(campaign: Campaign, session: Session, questId: st
   const targetStatus: QuestStatus = mode;
   const conditionPatch = emptyPatch();
   const history: StoryCommand[] = [];
-  const phaseDestination = rescueHistory(campaign, session, intake, questId, mode, conditionPatch, history);
+  const timeline = questJumpHistory(intake?.script, questId, mode);
+  const phaseDestination = timeline && prepareJumpHistory(campaign, session, timeline, questId, mode, conditionPatch, history);
   satisfyCondition(quest.availableWhen, session, conditionPatch);
   if (intake) {
-    if (accept || !rescueSequence.some(id => id === intake.eventId)) satisfyCondition(intake.event?.condition, session, conditionPatch);
+    if (accept || !timeline) satisfyCondition(intake.event?.condition, session, conditionPatch);
     for (const id of intakeHandovers(campaign.scripts[intake.script], intake.script, questId)) {
       if (!accept) { pushQuestPatch(conditionPatch, id, 'completed'); continue; }
       const status = plannedContext(session, conditionPatch).questStatus(id);
@@ -617,6 +666,7 @@ export function planQuestStart(campaign: Campaign, session: Session, questId: st
       pushQuestPatch(conditionPatch, id, prior.completion === 'all' || prior.completion === 'talk' ? 'ready' : 'active');
     }
   }
+  recordPriorIntakes(campaign, quest, intake, conditionPatch);
   reopenFollowups(campaign, session, questId, intake, conditionPatch);
   if (intake?.eventId && !accept && !conditionPatch.completedEvents.includes(intake.eventId))
     conditionPatch.completedEvents.push(intake.eventId);

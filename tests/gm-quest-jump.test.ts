@@ -157,7 +157,7 @@ test('Grafton’s assassination can still be reported to Zorad', async () => {
   } finally { h.director.dispose(); }
 });
 
-test('a jump leaves automatic events to the formal director', async () => {
+test('寻找魔法师保留已播的营地演出，区域仍由正式导演派发', async () => {
   const { h, gm } = harness();
   try {
     assert.equal((await gm.startStoryJump('quest-10', 'ready')).ok, true);
@@ -165,8 +165,8 @@ test('a jump leaves automatic events to the formal director', async () => {
     assert.equal(h.director.allowsAutomaticEvent(event1), true);
     assert.equal(h.director.runtime.eventStatus('event-0'), 'completed');
     h.session.applyStoryCommands([{ type: 'travel', destination: { map: 'shadow-camp', x: 392, y: 328, facing: 'south' } }]);
-    assert.equal(await h.director.enterRegion('event-1', 'shadow-camp'), true);
-    assert.notEqual(h.director.runtime.eventStatus('event-1'), 'idle');
+    assert.equal(await h.director.enterRegion('event-1', 'shadow-camp'), false);
+    assert.equal(h.director.runtime.eventStatus('event-1'), 'completed');
   } finally { h.director.dispose(); }
 });
 
@@ -321,5 +321,48 @@ test('前往卡姆兰秘密基地从正式接取演出进入', async () => {
     assert.equal(h.director.runtime.eventStatus('event-19'), 'completed');
     assert.equal(h.session.status('quest-23'), 'active');
     assert.equal(h.session.storyWorld.currentLocation?.map, 'hakan-desert-1-f08340a0');
+  } finally { h.director.dispose(); }
+});
+
+test('分毫之差读档折返哈肯沙漠，消失的圣女保持交付后的进度', async () => {
+  const { h, gm } = harness();
+  let restored: ReturnType<typeof harness> | undefined;
+  try {
+    h.session.applyStoryCommands([{ type: 'quest', command: { type: 'accept', quest: 'quest-18' } }]);
+    const jump = await gm.startStoryJump('quest-28');
+    assert.ok(jump.ok, jump.reason);
+    await h.idle();
+    restored = harness({}, reloadState(h));
+    const game = restored.h;
+    assert.equal(game.session.status('quest-18'), 'active');
+    assert.equal(game.session.status('quest-24'), 'completed');
+    assert.equal(game.session.status('quest-26'), 'active');
+    await game.travel('hakan-desert-2-95444e0c');
+    assert.equal(await game.director.enterRegion('event-20', 'hakan-desert-2-95444e0c'), false);
+    assert.equal(game.session.status('quest-24'), 'completed');
+    const back = await restored.gm.startStoryJump('quest-24');
+    assert.ok(back.ok, back.reason);
+    assert.equal(game.session.status('quest-24'), 'active');
+    assert.equal(game.director.runtime.eventStatus('event-21'), 'idle');
+    assert.equal(game.director.runtime.eventStatus('event-23'), 'idle');
+    assert.equal(game.session.status('quest-18'), 'active');
+  } finally { restored?.h.director.dispose(); h.director.dispose(); }
+});
+
+test('序幕战斗折返回影营地时沿用刺杀任务，跳回刺杀则可再次正常接取', async () => {
+  const { h, gm } = harness();
+  try {
+    const later = await gm.startStoryJump('quest-381');
+    assert.ok(later.ok, later.reason);
+    assert.equal(h.session.status('grafton-mission'), 'active');
+    await h.travel('shadow-camp');
+    assert.equal(await h.director.enterRegion('event-1', 'shadow-camp'), false);
+    const first = await gm.startStoryJump('grafton-mission');
+    assert.ok(first.ok, first.reason);
+    assert.equal(h.session.status('grafton-mission'), 'active');
+    assert.equal(h.director.runtime.eventStatus('event-2'), 'idle');
+    await h.travel('shadow-forest-west');
+    await h.region('event-2');
+    assert.equal(h.session.status('quest-381'), 'ready');
   } finally { h.director.dispose(); }
 });
