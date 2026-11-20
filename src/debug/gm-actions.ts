@@ -492,6 +492,7 @@ export function createGmActions(ports: GmPorts): GmActions {
       }
       if (disposed) return { ok: false, reason: '会话已经关闭', plan };
       // 释放触发后同步发起播放，避免地图下一帧抢先启动其他演出。
+      const cyclesBeforeIntake = session.questBook.completedCycles(questId);
       storyJump.releaseTriggers();
       let playError: string | undefined;
       if (accept) {
@@ -509,7 +510,10 @@ export function createGmActions(ports: GmPorts): GmActions {
       settleJump();
       if (playError) return { ok: false, reason: `接取剧情播放失败：${playError}`, plan };
       const status = session.status(questId);
-      const reached = accept ? status === 'ready' || (status === 'active' && plan.quest.completion !== 'talk') : status === plan.mode;
+      const reached = accept
+        ? status === 'ready' || (status === 'active' && plan.quest.completion !== 'talk')
+          || session.questBook.completedCycles(questId) > cyclesBeforeIntake
+        : status === plan.mode;
       if (!reached) return { ok: false, reason: `「${plan.quest.title}」未进入所选阶段`, plan };
       return { ok: true, reason: plan.warnings.join('；') || undefined, plan };
     }).finally(() => { jumpStarting = false; });

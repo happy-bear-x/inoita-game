@@ -25,7 +25,7 @@
 - 待交付任务按其目标和交付清单准备物品。重复任务保留下一轮接取资格，剧情选择按实际进入的分支保存。
 - `forcedProgress` 只在自动刷新里优先；正式任务命令（accept/complete/script-ready/script-complete/reset）会先撤掉该任务的钉住，避免把刚完成的正式状态改回 ready。
 - 交接时先挡住触发，清 override 并 emit，再结束跳转事务、刷新回滚检查点并补一次自动存档；这样跳转后的进度才是新的回滚点，也不会补演正式剧情。
-- `play()` 遇到剧情战斗等待时会先返回，不能拿它的 resolve 当“接取剧情播完”；交接前必须等端口 `settled()` 确认这条 run 真正结束。已开演后遇错，保留现场并报告原因；只有实际抵达地图、演出完成、任务进入所选阶段才报告成功。
+- `play()` 遇到剧情战斗等待时会先返回，不能拿它的 resolve 当“接取剧情播完”；交接前必须等端口 `settled()` 确认这条 run 真正结束。已开演后遇错，保留现场并报告原因；抵达地图且演出完成后，用任务状态确认交接。如果任务在这次演出中已经交付，用新增的交付次数确认成功，包括打完首领后立即结束的日志外任务。
 - 跳转前由界面先让玩家在存档页手动保存当前进度，作为可读档的回滚点；动作层另存一份内存快照（`session.captureState()`、`WorldScene.captureStoryWorld()`、`SessionCheckpoint.peek()`），设置失败或接取演出未启动时恢复。跳转事务期间暂停自动存档，交接后恢复并补写一次。
 - 任务页的跳转按钮不直接改状态：`StoryUI` 先打开存档页，`SavePage` 成功写入后通过 `afterManualSave` 才调用 `startStoryJump`；离开存档页、关菜单或换会话会取消待办。agent 调 `globalThis.gm.startStoryJump` 时没有存档页，直接执行跳转。
 - 开始跳转期间用 `StoryDirector.holdTriggers()` 挡住设置过程中的任务变化自动开演；传送结束后、接取剧情启动前释放。不要用 `busy` 代替触发保持。解除保持后必须同步启动接取剧情，`releaseTriggers()` 和 `play()` 之间不能插入 `await`，否则区域/近身自动触发可能抢先；显式 run 同步创建后，下一帧的自动判定看到 `running` 不会重复。

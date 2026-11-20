@@ -145,6 +145,21 @@ test('a second jump is rejected while the accept story is still running', async 
   } finally { h.director.dispose(); }
 });
 
+test('跳进蜘蛛女王战并取胜，战后已交付也算跳转成功', async () => {
+  const {h, gm, releaseSettled, hasSettled} = harness({holdSettled:true});
+  try {
+    const jump = gm.startStoryJump('quest-31');
+    await waitFor(hasSettled);
+    assert.equal(h.session.status('quest-31'), 'active');
+    await h.updateWorld(await h.defeat('enemy-queen-spider-1'));
+    assert.equal(h.session.status('quest-31'), 'completed');
+    releaseSettled();
+    const result = await jump;
+    assert.ok(result.ok, result.reason);
+    assert.equal(h.session.questBook.completedCycles('quest-31'), 1);
+  } finally { releaseSettled(); h.director.dispose(); }
+});
+
 test('Grafton’s assassination can still be reported to Zorad', async () => {
   const { h, gm } = harness();
   try {
