@@ -36,6 +36,7 @@ import { PartyPanel } from './phaser/party-panel.ts';
 import { type InventoryView } from '../domain/inventory.ts';
 import { type EquipmentSlot, type ItemInstance } from '../domain/items.ts';
 import { GmPanel } from './phaser/gm-panel.ts';
+import type { QuestStartPlan } from '../debug/quest-jump.ts';
 import type { GmActions } from '../debug/gm-actions.ts';
 import { frameRect, readSafeArea, uiUnitScale } from './viewport.ts';
 import { ControlLayoutEditor } from './phaser/control-layout-editor.ts';
@@ -124,7 +125,7 @@ export class StoryUI {
 
   private itemNotice?:string;private busy=false;private request=new AbortController();
   /** GM 任务页选好跳转后，等玩家在存档页保存当前进度再执行。 */
-  private pendingStoryJump?:{questId:string;mode:'available'|'active'|'ready'};
+  private pendingStoryJump?:QuestStartPlan;
   /** 上次整页重绘时当前页依赖的数据签名；会话通知用它判断要不要重绘。 */
   private sessionSignature='';
     /** 预热时菜单还没打开，只允许这一次在关闭状态绘制。 */
@@ -607,24 +608,25 @@ export class StoryUI {
     if(this.loadReturnToDefeat){this.loadReturnToDefeat=false;if(this.app.ui.defeated)this.app.ui.revealDefeat();}
   }
   /** GM 任务页选好任务起点后先打开存档页；保存成功才真正跳转。 */
-  private requestStoryJump(questId:string,mode:'available'|'active'|'ready'):void{
+  private requestStoryJump(plan:QuestStartPlan):void{
     this.show('save');
     if(this.page!=='save')return;
-    this.pendingStoryJump={questId,mode};
+    this.pendingStoryJump=plan;
     this.notice='先保存当前进度；保存成功后自动开始剧情跳转。';
     this.render();
   }
-  /** 存档页写入成功后消费待办；失败原因留在存档页底部，菜单已关时交给导演错误页。 */
+  /** 存档页写入成功后消费待办；失败原因显示在存档页或地图提示中。 */
   private completePendingStoryJump():void{
     const pending=this.pendingStoryJump;
     if(!pending)return;
     this.pendingStoryJump=undefined;
     const gm=this.app.gm;
     if(!gm){this.notice='剧情跳转不可用';this.render();return;}
-    void gm.startStoryJump(pending.questId,pending.mode).then(result=>{
-      if(result.ok||!this.open||this.page!=='save')return;
-      this.notice=`跳转失败：${result.reason??'原因未记录'}`;
-      this.render();
+    void gm.startStoryJump(pending).then(result=>{
+      if(result.ok||this.app.gm!==gm)return;
+      const message=`跳转失败：${result.reason??'原因未记录'}`;
+      if(this.open&&this.page==='save'){this.notice=message;this.render();}
+      else this.app.ui.toast(message);
     });
   }
   private releaseDebugPanel():void{
@@ -974,7 +976,7 @@ export class StoryUI {
       // 面板按当前动作层实例缓存：同一会话里保留过滤与选中，换会话就重建。
       if(this.gmPanelOwner!==this.app.gm){
         const gm=this.app.gm;
-        this.gmPanel=new GmPanel(gm,this.session.campaign,{close:()=>this.close(),render:()=>{if(this.app.gm===gm&&this.gmPanelOwner===gm)this.updateDebugPanel();},runAction:action=>{this.busy=true;try{return action();}finally{this.busy=false;this.sessionSignature=this.sessionDataSignature()??this.sessionSignature;}},requestStoryJump:(questId,mode)=>this.requestStoryJump(questId,mode)},{
+        this.gmPanel=new GmPanel(gm,this.session.campaign,{close:()=>this.close(),render:()=>{if(this.app.gm===gm&&this.gmPanelOwner===gm)this.updateDebugPanel();},runAction:action=>{this.busy=true;try{return action();}finally{this.busy=false;this.sessionSignature=this.sessionDataSignature()??this.sessionSignature;}},requestStoryJump:plan=>this.requestStoryJump(plan)},{
           itemSlot:this.app.menuPanels.assets['inventory-slot'],
           itemSelected:this.app.menuPanels.assets['inventory-selected'],
           assets:this.app.menuPanels.assets,

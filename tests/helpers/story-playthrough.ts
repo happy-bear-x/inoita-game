@@ -608,7 +608,7 @@ export function playthrough(saved?:SessionState){
   };
   /** 地面掉落查询：验收工具用它核对某个生成点有没有产出。 */
   const groundDrops=(map:string)=>groundLootFor(session).forMap(map);
-  return {session,director,region,travel,useExit,approach,talk,defeat,damage,wait,pickup,idle,entities,lines,popups,actions,groundDrops,clearEnemy,frame:afterMovement,updateWorld,
+  return {session,director,region,travel,useExit,approach,talk,defeat,damage,wait,pickup,idle,landPlayer,entities,lines,popups,actions,groundDrops,clearEnemy,frame:afterMovement,updateWorld,
     recordStages:()=>{stageRecords=[];},stageRecords:()=>stageRecords??[],
     choices:(values:string[])=>{choiceQueue=values;}};
 }

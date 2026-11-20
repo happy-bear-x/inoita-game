@@ -132,7 +132,7 @@ function catalogGroup(
   };
 }
 
-function fixture(options: { unsatisfied?: boolean; ready?: boolean; scrollGroups?: boolean } = {}) {
+function fixture(options: { unsatisfied?: boolean; ready?: boolean; scrollGroups?: boolean; rescue?: boolean } = {}) {
   created.length = 0;
   const quests: Record<string, CampaignQuest> = {
     'q-main-1': quest('q-main-1', '主线甲01'),
@@ -154,6 +154,12 @@ function fixture(options: { unsatisfied?: boolean; ready?: boolean; scrollGroups
     catalogGroup(raw, [entry('q-raw', 'locked')], '主线丙'),
   ];
   const definitions: QuestGroupDefinition[] = [mainA, sideB, mainC, raw];
+  if (options.rescue) {
+    quests['quest-40'] = quest('quest-40', '单独潜入');
+    const rescue = definition('rescue', '圣女救援行动', 'main', ['quest-40']);
+    definitions.push(rescue);
+    groups.push(catalogGroup(rescue, [entry('quest-40', 'ready')]));
+  }
   if (options.scrollGroups) {
     for (let index = 0; index < 18; index++) {
       const id = `q-far-${index}`;
@@ -175,23 +181,23 @@ function fixture(options: { unsatisfied?: boolean; ready?: boolean; scrollGroups
     isNoclip: () => false,
     isDoubleSpeed: () => false,
     questCatalog: () => groups,
-    previewQuestDebug: (questId: string) => ({
+    previewQuestDebug: (questId: string, mode: QuestStartPlan['mode']) => ({
       ok: true,
-      plan: planFor(questId),
+      plan: planFor(questId, mode),
     }),
   } as unknown as GmActions;
 
-  function planFor(questId: string): QuestStartPlan {
+  function planFor(questId: string, mode: QuestStartPlan['mode']): QuestStartPlan {
     const target = campaign.quests.find(value => value.id === questId)!;
     return {
-      questId, quest: target, mode: options.ready ? 'ready' : 'available',
+      questId, quest: target, mode: options.ready ? 'ready' : mode,
       changedQuests: [{ id: 'q-pre', title: '前置任务', from: 'locked', to: 'completed' }],
       accept: { script: 'script-accept', eventId: 'event-accept' },
       acceptAlternatives: [{ script: 'script-accept', eventId: 'event-accept' }],
       conditionPatch: { quests: [], choices: [], flags: [], completedEvents: [], removedEvents: [],
         unsatisfied: options.unsatisfied ? ['缺少接取选择'] : [] },
       worldCommands: [],
-      destination: { map: 'dungeon', x: 8, y: 9, facing: 'south' },
+      destination: { map: mode === 'ready' ? 'castle' : 'dungeon', x: 8, y: 9, facing: 'south' },
       warnings: [], fallback: options.ready === true,
     };
   }
@@ -203,7 +209,7 @@ function fixture(options: { unsatisfied?: boolean; ready?: boolean; scrollGroups
   let panel: GmPanel;
   const render = () => { specs = []; panel.update(body, writer); };
   panel = new GmPanel(gm, campaign, { close: () => {}, render,
-    requestStoryJump: (questId, mode) => { jumpCalls.push(questId); jumpModes.push(mode); } }, {
+    requestStoryJump: plan => { jumpCalls.push(plan.questId); jumpModes.push(plan.mode); } }, {
     active: () => true,
     setText: (key, text) => {
       const spec = specs.find(value => value.key === key);
@@ -259,7 +265,7 @@ test('selecting a group shows its quests and selecting a quest shows the jump de
   f.click('任务组 支线乙');
   assert.ok(f.button('任务 支线乙01'));
   assert.equal(f.shown('任务 主线甲01'), undefined, '换组后旧任务不再显示');
-  assert.ok(f.texts().includes('未解锁 · 日志外'), '日志外任务带标签');
+  assert.ok(f.texts().includes('未解锁 · 日志外任务'), '日志外任务带标签');
 
   f.click('任务 支线乙01');
   f.button('跳到可接取');
@@ -396,3 +402,17 @@ test('the search box follows the menu frame after layout changes', t => {
   assert.equal(field.style.height, '92px');
 });
 
+
+test('单独潜入可分别预览两个现场，存档页收到所选现场', t => {
+  const f = fixture({ rescue: true }); t.after(f.cleanup);
+  f.click('调试页 任务');
+  f.click('任务组 圣女救援行动');
+  f.click('任务 单独潜入');
+  assert.ok(f.texts().includes('传送：dungeon (8,9)'));
+  f.click('已救出圣女，返回与莱曼汇合');
+  assert.ok(f.texts().includes('传送：castle (8,9)'));
+  f.click('跳到所选现场');
+  f.click('独自进城救人');
+  f.click('跳到所选现场');
+  assert.deepEqual(f.jumpModes, ['ready', 'available']);
+});

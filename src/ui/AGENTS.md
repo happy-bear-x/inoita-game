@@ -186,3 +186,5 @@ npm test -- tests/bag-layout.test.ts tests/choice-layout.test.ts
 
 - `skills-page.ts` 持有固定会话的技能选择、学习和初始化确认；`settings-page.ts`、`system-page.ts` 各自管理页面节点与文字；`shortcut-editor.ts` 持有一次登记的对象、分组和槽位。菜单只提供公共显示设施与导航。
 - `SavePage` 持有读档请求及忙碌状态；离开页面取消请求，迟到的旧读档失败不能覆盖新的请求或提示。手动存档成功写入后调用宿主的 `afterManualSave`，`StoryUI` 用它把“保存成功”接成剧情跳转待办；离开存档页或关闭菜单时清掉待办。
+
+- 调试任务页把已预览的现场计划交给存档页。手动保存成功后执行同一份计划，跳转失败时在当前界面显示原因。

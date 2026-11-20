@@ -27,14 +27,14 @@ function shape(catalog: QuestCatalogGroup[]): [string, string[]][] {
   return catalog.map(group => [group.definition.id, group.entries.map(entry => entry.quest.id)]);
 }
 
-test('catalog contains all 231 groups and all 496 quests exactly once', () => {
+test('catalog contains all 230 groups and all 487 quests exactly once', () => {
   const catalog = projectQuestCatalog(index, new Map());
   assert.equal(catalog.length, campaign.questGroups.length);
-  assert.equal(catalog.length, 231);
+  assert.equal(catalog.length, 230);
 
   const ids = catalog.flatMap(group => group.entries.map(entry => entry.quest.id));
-  assert.equal(ids.length, 496);
-  assert.equal(new Set(ids).size, 496);
+  assert.equal(ids.length, 487);
+  assert.equal(new Set(ids).size, 487);
   assert.deepEqual(new Set(ids), new Set(campaign.quests.map(quest => quest.id)));
   assert.deepEqual(
     new Set(catalog.map(group => group.definition.id)),
@@ -58,7 +58,7 @@ test('side groups stay interleaved at their story position instead of being appe
   const catalog = projectQuestCatalog(index, new Map());
   const at = (id: string): number => catalog.findIndex(group => group.definition.id === id);
   const side = at('native-group-12');
-  const before = at('native-group-8');
+  const before = at('native-group-6');
   const after = at('native-group-14');
 
   assert.ok(before < side && side < after, `${before} < ${side} < ${after}`);
@@ -70,7 +70,7 @@ test('side groups stay interleaved at their story position instead of being appe
   assert.ok(side < catalog.length - 1, '支线组不能全部排在目录末尾');
 });
 
-test('hidden and internal quests keep their markers and groups with no journal-visible quests stay present', () => {
+test('the rescue group follows story order and journal-hidden battle quests remain visible', () => {
   const catalog = projectQuestCatalog(index, new Map());
 
   const battle = catalog.find(group => group.definition.id === 'native-group-100');
@@ -83,11 +83,7 @@ test('hidden and internal quests keep their markers and groups with no journal-v
 
   const rescue = catalog.find(group => group.definition.id === 'native-group-7');
   assert.ok(rescue);
-  const internal = rescue.entries.find(entry => entry.quest.id === 'quest-13');
-  assert.ok(internal);
-  assert.equal(internal.hidden, false);
-  assert.equal(internal.internal, true);
-  assert.equal(rescue.summary.internal, 4);
+  assert.deepEqual(rescue.entries.map(entry => entry.quest.title), ['潜入艾伦尼城', '艾伦尼士兵的奇袭', '单独潜入', '逃出艾伦尼城']);
   assert.equal(rescue.summary.journalVisible, 4);
 });
 
@@ -120,7 +116,7 @@ test('side groups resolve the latest referenced main group as their story anchor
   assert.equal(hunter.anchorMainGroupTitle, '获得鑫迪的药');
   // 没有跨组主线引用的支线退回它前面最近的主线组，不能显示成“没有进度归属”。
   const wolf = catalog.find(group => group.definition.title === '坤特的狼狗')!;
-  assert.equal(wolf.anchorMainGroupTitle, '卡姆兰秘密基地');
+  assert.equal(wolf.anchorMainGroupTitle, '孤立的格鲁曼');
   const earlier = campaign.quests.findIndex(quest => quest.id === 'quest-195');
   const later = campaign.quests.findIndex(quest => quest.id === 'quest-215');
   assert.ok(later > earlier);
@@ -138,7 +134,7 @@ test('projecting new statuses updates entries and summaries without changing ord
 
   const activeCatalog = projectQuestCatalog(index, new Map([
     ['grafton-mission', progress('active', { objective: 0 })],
-    ['quest-14', progress('active')],
+    ['quest-39', progress('active')],
   ]));
   assert.deepEqual(shape(activeCatalog), lockedOrder);
 
@@ -149,7 +145,7 @@ test('projecting new statuses updates entries and summaries without changing ord
   assert.equal(activeOpening.current, true);
 
   const activeRescue = activeCatalog.find(group => group.definition.id === 'native-group-7')!;
-  assert.equal(activeRescue.entries.find(entry => entry.quest.id === 'quest-14')?.status, 'active');
+  assert.equal(activeRescue.entries.find(entry => entry.quest.id === 'quest-39')?.status, 'active');
   assert.equal(activeRescue.summary.active, 1);
   assert.equal(activeRescue.current, true);
 

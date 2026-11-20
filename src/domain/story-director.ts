@@ -615,8 +615,10 @@ export class StoryDirector {
     if (event) return this.request(this.runtime.start(event.script, event.id));
     return this.request(this.runtime.start(trigger.script)).then(played => { if (played) this.session.mark(trigger.id); return played; });
   }
-  async script(name?: string | null): Promise<void> { if (name) await this.request(this.runtime.start(name)); }
-  async run(work: () => Promise<void>): Promise<boolean> {
+  async script(name?: string | null): Promise<boolean> {
+    return name ? this.request(this.runtime.start(name)) : false;
+  }
+  async run(work: () => Promise<unknown>): Promise<boolean> {
     if (this.busy || this.disposed) return false;
     this.manual = new AbortController(); this.manualBusy = true; this.resetPlayback(); this.setLocked(true);
     try { await work(); this.manual.signal.throwIfAborted(); return true; }

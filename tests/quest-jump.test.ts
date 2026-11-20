@@ -92,19 +92,6 @@ test('a quest without an accept script stays available at the giver', () => {
   }
 });
 
-test('an internal quest without an available entry falls back to active', () => {
-  const h = playthrough();
-  try {
-    const campaign = h.session.campaign;
-    const plan = planQuestStart(campaign, h.session, 'quest-13');
-    assert.equal(plan.mode, 'active');
-    assert.equal(plan.fallback, true);
-    assert.ok(plan.warnings.some(warning => warning.includes('内部任务')));
-  } finally {
-    h.director.dispose();
-  }
-});
-
 test('an accept event choice condition is patched with the required choice', () => {
   const h = playthrough();
   try {
@@ -155,44 +142,62 @@ test('applying a plan keeps the running pool exactly in sync with active and rea
   }
 });
 
-test('quest-4 starts ready, seeds its gated delivery NPC, and marks the opening event complete', () => {
+test('刺杀格里普顿伯爵 can resume at the real delivery NPC in 影营地', () => {
   const h = playthrough();
   try {
-    const campaign = h.session.campaign;
-    const plan = planQuestStart(campaign, h.session, 'quest-4');
+    const plan = planQuestStart(h.session.campaign, h.session, 'grafton-mission', 'ready');
     assert.equal(plan.mode, 'ready');
-    assert.equal(plan.fallback, true);
-    assert.ok(plan.warnings.some(warning => warning.includes('待交付')));
+    assert.equal(plan.accept, undefined);
     assert.equal(plan.destination?.map, 'shadow-camp');
-    assert.equal(plan.destination?.x, 264);
-    assert.ok(plan.conditionPatch.flags.some(entry =>
-      entry.flag === 'quest-npc-located-npc-40' && entry.value === true));
-
     h.director.holdTriggers();
     applyQuestStartPlan(h.session, plan);
-    h.director.releaseTriggers();
-
-    assert.equal(h.session.status('quest-3'), 'completed');
-    assert.equal(h.session.status('quest-4'), 'ready');
-    assert.equal(h.session.storyWorld.hasFlag('quest-npc-located-npc-40'), true);
+    h.session.questBook.clearDebugOverrides();
+    assert.equal(h.session.status('grafton-mission'), 'ready');
+    assert.ok(h.session.storyWorld.hasFlag('quest-npc-located-npc-40'));
     assert.ok(h.session.runtimeState.completedEvents.includes('event-0'));
-    assert.equal(h.session.runtimeState.completedEvents.includes('event-1'), false);
-    const placement = campaign.placements.find(entry => entry.id === 'quest-npc-located-npc-40')!;
-    assert.equal(h.session.evaluateCondition(placement.condition), true);
   } finally {
     h.director.dispose();
   }
 });
 
-test('an internal fallback applies through the script accept path', () => {
+test('jump progress comes from the rescue handoff even with the menu entries reversed', () => {
   const h = playthrough();
   try {
-    const plan = planQuestStart(h.session.campaign, h.session, 'quest-13');
-    assert.equal(plan.mode, 'active');
+    const original = h.session.campaign;
+    const campaign = { ...original, questGroups: original.questGroups.map(group =>
+      ({ ...group, questIds: [...group.questIds].reverse() })) };
+    const plan = planQuestStart(campaign, h.session, 'quest-39');
+    assert.equal(plan.accept?.eventId, 'event-50');
     h.director.holdTriggers();
     applyQuestStartPlan(h.session, plan);
-    h.director.releaseTriggers();
-    assert.equal(h.session.status('quest-13'), 'active');
+    assert.equal(h.session.status('quest-43'), 'active');
+    assert.ok(!['active', 'ready', 'completed'].includes(h.session.status('quest-40')));
+    assert.ok(h.session.runtimeState.completedEvents.includes('event-49'));
+  } finally {
+    h.director.dispose();
+  }
+});
+
+test('the return to Lehman starts after the rescue with the switch open and the handoff pending', () => {
+  const h = playthrough();
+  try {
+    const plan = planQuestStart(h.session.campaign, h.session, 'quest-40', 'ready');
+    assert.equal(plan.accept, undefined);
+    assert.deepEqual(plan.destination, { map: 'inside-arnen-castle02-9a1430d7', x: 568, y: 40, facing: 'south' });
+    h.director.holdTriggers();
+    applyQuestStartPlan(h.session, plan);
+    h.session.questBook.clearDebugOverrides();
+    assert.equal(h.session.status('quest-39'), 'completed');
+    assert.equal(h.session.status('quest-40'), 'ready');
+    assert.ok(h.session.storyWorld.hasFlag('quest-npc-located-npc-93'));
+    assert.ok(!h.session.storyWorld.hasFlag('quest-npc-located-npc-121'));
+    assert.ok(h.session.runtimeState.completedEvents.includes('event-52'));
+    assert.ok(!h.session.runtimeState.completedEvents.includes('event-53'));
+    const before = planQuestStart(h.session.campaign, h.session, 'quest-40', 'available');
+    applyQuestStartPlan(h.session, before);
+    assert.equal(h.session.status('quest-39'), 'ready');
+    assert.ok(!h.session.storyWorld.hasFlag('quest-npc-located-npc-93'));
+    assert.ok(!h.session.runtimeState.completedEvents.includes('event-52'));
   } finally {
     h.director.dispose();
   }
@@ -373,4 +378,48 @@ test('a current accept-event place does not override the quest start location', 
   } finally {
     h.director.dispose();
   }
+});
+
+test('与莱曼对话 prepares the handoff also named only in the intake script', () => {
+  const h = playthrough();
+  try {
+    const before = planQuestStart(h.session.campaign, h.session, 'quest-153');
+    assert.ok(before.conditionPatch.quests.some(entry => entry.id === 'quest-389' && entry.status === 'active'));
+    const after = planQuestStart(h.session.campaign, h.session, 'quest-153', 'ready');
+    applyQuestStartPlan(h.session, after);
+    assert.equal(h.session.status('quest-389'), 'completed');
+    assert.equal(h.session.status('quest-153'), 'ready');
+    assert.ok(h.session.runtimeState.completedEvents.includes('event-44'));
+  } finally { h.director.dispose(); }
+});
+
+test('rewinding the knight pursuit reopens its recorded followups through successive handoffs', () => {
+  const h = playthrough();
+  try {
+    h.director.holdTriggers();
+    for (const quest of ['quest-146', 'quest-148', 'quest-149']) {
+      h.session.applyStoryCommands([{ type: 'quest', command: { type: 'script-complete', quest } }]);
+    }
+    h.session.runtimeState = { ...h.session.runtimeState,
+      completedEvents: ['event-19', 'event-178', 'event-179', 'event-180', 'event-181', 'event-182', 'event-183'],
+      occurrenceSequences: [[JSON.stringify(['event-181', 'region']), 8]],
+    };
+    applyQuestStartPlan(h.session, planQuestStart(h.session.campaign, h.session, 'quest-146'));
+    for (const id of ['event-178', 'event-179', 'event-180', 'event-181', 'event-182', 'event-183'])
+      assert.ok(!h.session.runtimeState.completedEvents.includes(id), id);
+    assert.equal(h.session.runtimeState.occurrenceSequences.length, 0);
+    assert.ok(h.session.runtimeState.completedEvents.includes('event-19'));
+    assert.equal(h.session.status('quest-148'), 'available');
+    assert.equal(h.session.status('quest-149'), 'available');
+  } finally { h.director.dispose(); }
+});
+
+test('incompatible intake conditions are reported in the preview', () => {
+  const h = playthrough();
+  try {
+    const campaign = h.session.campaign;
+    const plan = planQuestStart({ ...campaign, quests: campaign.quests.map(quest => quest.id !== 'quest-262'
+      ? quest : { ...quest, availableWhen: { type: 'quest', quest: 'quest-261', status: 'active' } }) }, h.session, 'quest-262');
+    assert.ok(plan.conditionPatch.unsatisfied.length);
+  } finally { h.director.dispose(); }
 });

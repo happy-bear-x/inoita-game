@@ -228,15 +228,15 @@ export function createSessionLifecycle(app:StoryApp,hooks:SessionLifecycleHooks)
         if (!scene) throw new Error('不在游戏场景里');
         if (destination.map === session.storyWorld.currentLocation?.map) session.movePlayer(destination);
         else session.applyStoryCommands([{ type: 'travel', destination }]);
-        await scene.projectStoryWorld(undefined, signal);
+        await scene.projectStoryWorld(undefined, signal, destination);
         if (app.session !== session || signal.aborted || app.director !== director) throw new Error('会话已经关闭');
+        if (!scene.worldReady() || scene.map?.id !== destination.map) throw new Error('所选阶段的地图尚未就绪');
       },
       play: async accept => {
         app.storyUI?.close();
         if (app.session !== session || signal.aborted || app.director !== director) return false;
         if (accept.eventId) return director.trigger({ id: accept.eventId, script: accept.script });
-        await director.script(accept.script);
-        return true;
+        return director.script(accept.script);
       },
       settled: async accept => {
         // `play` 在遇到剧情战斗等待时会先返回；等这条 run 真正结束再交接，

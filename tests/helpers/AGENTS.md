@@ -21,3 +21,5 @@
 npm test -- tests/story-runtime.test.ts
 npm test -- tests/story-playthrough-rewards.test.ts
 ```
+
+- 调试跳转用例传送后调用 `landPlayer`，按正式地图的角色碰撞体寻找可站立的位置，再从那里走向下一个触发点。

@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { playthrough } from './helpers/story-playthrough.ts';
+import { moneyGain } from '../src/domain/economy.ts';
+import { captureSaveGame, saveSummary } from '../src/domain/save-game.ts';
+import { prepareSavedGame } from '../src/application/saved-game.ts';
+import { headlessContent, playthrough } from './helpers/story-playthrough.ts';
 import { createGmActions, type GmStoryJumpPort, type GmStoryJumpSnapshot } from '../src/debug/gm-actions.ts';
 
 async function waitFor(check: () => boolean): Promise<void> {
@@ -11,8 +14,8 @@ async function waitFor(check: () => boolean): Promise<void> {
   throw new Error('等待条件超时');
 }
 
-function harness(options: { travelThrows?: boolean; holdPlay?: boolean; playThrows?: boolean; holdSettled?: boolean } = {}) {
-  const h = playthrough();
+function harness(options: { travelThrows?: boolean; holdPlay?: boolean; playThrows?: boolean; holdSettled?: boolean; refused?: boolean; noProgress?: boolean; wrongMap?: boolean } = {}, saved?: Parameters<typeof playthrough>[0]) {
+  const h = playthrough(saved);
   const calls: string[] = [];
   let releasePlay: (() => void) | undefined;
   let releaseSettled: (() => void) | undefined;
@@ -23,15 +26,22 @@ function harness(options: { travelThrows?: boolean; holdPlay?: boolean; playThro
     begin: () => { calls.push('begin'); h.director.holdTriggers(); },
     releaseTriggers: () => { calls.push('releaseTriggers'); h.director.releaseTriggers(); },
     closeMenu: () => calls.push('closeMenu'),
-    travel: async () => {
+    travel: async destination => {
       calls.push('travel');
       if (options.travelThrows) throw new Error('传送失败');
+      if (!options.wrongMap) {
+        h.session.applyStoryCommands([{ type: 'travel', destination }]);
+        h.landPlayer();
+      }
     },
-    play: async () => {
+    play: async accept => {
       calls.push('play');
       if (options.holdPlay) await new Promise<void>(resolve => { releasePlay = resolve; });
       if (options.playThrows) throw new Error('剧情播放失败');
-      return true;
+      if (options.refused) return false;
+      if (options.noProgress) return true;
+      if (accept.eventId) return h.director.trigger({ id: accept.eventId, script: accept.script });
+      return h.director.script(accept.script);
     },
     settled: options.holdSettled
       ? async () => { await new Promise<void>(resolve => { releaseSettled = resolve; }); }
@@ -54,7 +64,7 @@ test('the quest catalog and preview expose the ordered full list and a start pla
   try {
     const catalog = gm.questCatalog();
     assert.ok(catalog.length > 0);
-    assert.equal(catalog.flatMap(group => group.entries).length, 496);
+    assert.equal(catalog.flatMap(group => group.entries).length, 487);
     const preview = gm.previewQuestDebug('quest-11');
     assert.equal(preview.ok, true);
     assert.equal(preview.plan?.accept?.script, 'next:quest-10:quest-11');
@@ -67,7 +77,7 @@ test('a jump applies the plan, plays the accept scene and settles as normal prog
     const result = await gm.startStoryJump('quest-11');
     assert.equal(result.ok, true, result.reason);
     assert.equal(h.session.status('quest-10'), 'completed');
-    assert.equal(h.session.status('quest-11'), 'available');
+    assert.equal(h.session.status('quest-11'), 'active');
     assert.deepEqual(calls.slice(0, 5), ['capture', 'begin', 'travel', 'releaseTriggers', 'play']);
     assert.deepEqual(calls.slice(5), ['finish', 'checkpoint', 'autoSave'],
       '接取剧情播完后直接交接，不留在调试态');
@@ -135,25 +145,26 @@ test('a second jump is rejected while the accept story is still running', async 
   } finally { h.director.dispose(); }
 });
 
-test('starting a talk quest enters ready, seeds the delivery NPC, and completes by talking', async () => {
+test('Grafton’s assassination can still be reported to Zorad', async () => {
   const { h, gm } = harness();
   try {
-    const result = await gm.startStoryJump('quest-4');
+    const result = await gm.startStoryJump('grafton-mission', 'ready');
     assert.equal(result.ok, true, result.reason);
-    assert.equal(h.session.status('quest-4'), 'ready');
+    assert.equal(h.session.status('grafton-mission'), 'ready');
     assert.equal(h.session.storyWorld.hasFlag('quest-npc-located-npc-40'), true);
     await h.talk('npc-40');
-    assert.equal(h.session.status('quest-4'), 'completed');
+    assert.equal(h.session.status('grafton-mission'), 'completed');
   } finally { h.director.dispose(); }
 });
 
 test('a jump leaves automatic events to the formal director', async () => {
   const { h, gm } = harness();
   try {
-    assert.equal((await gm.startStoryJump('quest-4')).ok, true);
+    assert.equal((await gm.startStoryJump('quest-10', 'ready')).ok, true);
     const event1 = h.session.campaign.events.find(event => event.id === 'event-1')!;
     assert.equal(h.director.allowsAutomaticEvent(event1), true);
     assert.equal(h.director.runtime.eventStatus('event-0'), 'completed');
+    h.session.applyStoryCommands([{ type: 'travel', destination: { map: 'shadow-camp', x: 392, y: 328, facing: 'south' } }]);
     assert.equal(await h.director.enterRegion('event-1', 'shadow-camp'), true);
     assert.notEqual(h.director.runtime.eventStatus('event-1'), 'idle');
   } finally { h.director.dispose(); }
@@ -183,5 +194,132 @@ test('a jump from quest-10 follows the formal chain to quest-12', async () => {
 
     assert.equal(h.director.runtime.eventStatus('event-15'), 'completed');
     assert.equal(h.session.status('quest-12'), 'ready');
+  } finally { h.director.dispose(); }
+});
+
+test('a jump reports an unstarted scene or a missing quest handoff', async () => {
+  for (const options of [{ refused: true }, { noProgress: true }, { wrongMap: true }]) {
+    const { h, gm, calls } = harness(options);
+    try {
+      const result = await gm.startStoryJump('quest-11');
+      assert.equal(result.ok, false, JSON.stringify(options));
+      assert.ok(result.reason);
+      if (options.refused || options.wrongMap) {
+        assert.ok(calls.includes('restore'));
+        assert.equal(calls.includes('autoSave'), false);
+      }
+    } finally { h.director.dispose(); }
+  }
+});
+
+const castleNorthwest = 'northwest-side-of-arnen-castle-1b3a4e22';
+const castleOne = 'inside-arnen-castle01-8b6ce276';
+const castleTwo = 'inside-arnen-castle02-9a1430d7';
+
+async function escapeCastle(h: ReturnType<typeof playthrough>) {
+  await h.travel('old-sanctuary-54cffd62');
+  await h.region('event-54');
+  assert.equal(await h.damage('enemy-shin-1', 0.2), true);
+  assert.equal(h.director.runtime.eventStatus('event-19'), 'completed');
+  assert.equal(h.session.status('quest-23'), 'active');
+}
+
+for (const [id, title, after] of [
+  ['quest-43', '潜入艾伦尼城', 'quest-39'],
+  ['quest-39', '艾伦尼士兵的奇袭', 'quest-40'],
+  ['quest-40', '单独潜入', 'quest-40'],
+  ['quest-41', '逃出艾伦尼城', 'quest-23'],
+] as const) test(`从「${title}」跳转后可继续下一段正式剧情`, async () => {
+  const { h, gm } = harness();
+  try {
+    const result = await gm.startStoryJump(id);
+    assert.equal(result.ok, true, result.reason);
+    await h.idle();
+    assert.equal(h.session.status(id), 'active');
+    if (id !== after) assert.ok(['available', 'locked'].includes(h.session.status(after)));
+    if (id === 'quest-43') {
+      await h.travel(castleNorthwest);
+      await h.region('event-50');
+    } else if (id === 'quest-39') {
+      for (let i = 0; i < 8; i++) await h.defeat('enemy-arnen-sentinel-1');
+    } else if (id === 'quest-40') {
+      await h.travel(castleTwo);
+      await h.approach('npc-94');
+      assert.equal(h.director.runtime.eventStatus('event-57'), 'completed');
+      await h.region('event-52');
+    } else {
+      await escapeCastle(h);
+    }
+    assert.equal(h.session.status(after), id === after ? 'ready' : 'active');
+  } finally { h.director.dispose(); }
+});
+
+function reloadState(h: ReturnType<typeof playthrough>) {
+  const { session } = h, { battle, stats, ...content } = headlessContent;
+  const location = session.storyWorld.currentLocation!;
+  const map = content.maps.get(location.map)!;
+  const summary = saveSummary(session, map, { name: '凯恩', portrait: 'assets/ui/menus/character-kiyan.png' });
+  const save = captureSaveGame(session, { location, generatedEntities: [] }, summary);
+  return prepareSavedGame(JSON.parse(JSON.stringify(save)), { ...content, battleCatalog: battle, characterStats: stats }).session.captureState();
+}
+
+test('后期存档跳回救出圣女的现场，读档后能走回莱曼处领取一次奖励', async () => {
+  const late = harness();
+  let returned: ReturnType<typeof harness> | undefined;
+  let loaded: ReturnType<typeof playthrough> | undefined;
+  try {
+    const forward = await late.gm.startStoryJump('quest-41');
+    assert.equal(forward.ok, true, forward.reason);
+    await late.h.idle();
+    await escapeCastle(late.h);
+    returned = harness({}, reloadState(late.h));
+    const { h, gm } = returned;
+    const preview = gm.previewQuestDebug('quest-40', 'ready').plan!;
+    const back = await gm.startStoryJump(preview);
+    assert.equal(back.ok, true, back.reason);
+    assert.equal(h.session.status('quest-40'), 'ready');
+    assert.equal(h.session.storyWorld.currentLocation?.map, castleTwo);
+    assert.equal(h.director.runtime.eventStatus('event-57'), 'completed');
+    assert.equal(h.director.runtime.eventStatus('event-53'), 'idle');
+    assert.equal(h.session.storyWorld.activeEncounters.some(encounter => encounter.definitionId === 'event-54-battle'), false);
+    loaded = playthrough(reloadState(h));
+    const money = loaded.session.money;
+    await loaded.travel(castleOne);
+    await loaded.region('event-53');
+    assert.equal(loaded.session.status('quest-40'), 'completed');
+    assert.equal(loaded.session.status('quest-41'), 'active');
+    assert.equal(loaded.session.money - money, moneyGain(preview.quest.rewards!.money));
+    assert.equal(await loaded.director.enterRegion('event-53', castleOne), false);
+    assert.equal(loaded.session.money - money, moneyGain(preview.quest.rewards!.money));
+    await escapeCastle(loaded);
+  } finally {
+    loaded?.director.dispose(); returned?.h.director.dispose(); late.h.director.dispose();
+  }
+});
+
+test('追击圣女的护卫骑士从正式演出进入，并能走回广场', async () => {
+  const { h, gm } = harness();
+  try {
+    const jump = await gm.startStoryJump('quest-146');
+    assert.equal(jump.ok, true, jump.reason);
+    await h.idle();
+    assert.equal(h.director.runtime.eventStatus('event-178'), 'completed');
+    await h.travel('berkel-capital-square-3807c990');
+    await h.region('event-179');
+    await h.travel('empire-capital-alley-5-30743650');
+    await h.region('event-180');
+    assert.equal(h.session.status('quest-146'), 'completed');
+    assert.equal(h.session.status('quest-148'), 'active');
+  } finally { h.director.dispose(); }
+});
+
+test('前往卡姆兰秘密基地从正式接取演出进入', async () => {
+  const { h, gm } = harness();
+  try {
+    const jump = await gm.startStoryJump('quest-23');
+    assert.equal(jump.ok, true, jump.reason);
+    assert.equal(h.director.runtime.eventStatus('event-19'), 'completed');
+    assert.equal(h.session.status('quest-23'), 'active');
+    assert.equal(h.session.storyWorld.currentLocation?.map, 'hakan-desert-1-f08340a0');
   } finally { h.director.dispose(); }
 });

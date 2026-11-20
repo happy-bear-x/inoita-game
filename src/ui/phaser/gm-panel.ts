@@ -1,7 +1,7 @@
 import type { Campaign, CampaignQuest } from '../../domain/campaign.ts';
 import type { GmActions, GmCharacterState, GmItemEntry, GmItemFilter } from '../../debug/gm-actions.ts';
 import type { QuestCatalogEntry, QuestCatalogGroup } from '../../debug/quest-catalog.ts';
-import type { QuestStartPlan } from '../../debug/quest-jump.ts';
+import { questJumpStages, type QuestStartMode, type QuestStartPlan } from '../../debug/quest-jump.ts';
 import type { QuestStatus } from '../../domain/content.ts';
 import { INVENTORY_LABELS } from '../../domain/inventory.ts';
 import { GOLD, type ScrollArea, type UiSurface } from './widgets.ts';
@@ -22,7 +22,7 @@ interface GmPanelHooks {
   render(): void;
   runAction?<T>(action:()=>T):T;
   /** 打开存档页；保存成功后由宿主执行剧情跳转。 */
-  requestStoryJump?(questId: string, mode: 'available' | 'active' | 'ready'): void;
+  requestStoryJump?(plan: QuestStartPlan): void;
 }
 
 /** 把内容里的编号翻成名字；缺省时使用中文场景说明。 */
@@ -72,7 +72,6 @@ const QUEST_RIGHT = { x: 582, y: 70, width: 348, height: 350 } as const;
 const QUEST_SEARCH = { x: QUEST_LEFT.x, y: 8, width: 500, height: 46 } as const;
 const QUEST_CONTENT_Y = 70;
 const QUEST_DETAIL_HEIGHT = 282;
-const QUEST_DETAIL_CLIP = { top: QUEST_CONTENT_Y, bottom: QUEST_CONTENT_Y + QUEST_DETAIL_HEIGHT } as const;
 /** 没有调试任务时，右栏列表一直排到边框内沿（70..420）。 */
 const QUEST_ENTRIES_HEIGHT = QUEST_RIGHT.y + QUEST_RIGHT.height - QUEST_CONTENT_Y;
 /** 道具页：每页 40 格，按背包同款底图与选中框显示。 */
@@ -201,11 +200,13 @@ export class GmPanel {
 
   /** GM 页文字统一走 DOM；`writer` 由菜单提供，图框、按钮和滚动仍由 Phaser 画。 */
   render(body: UiSurface, writer?: MenuTextWriter): void {
+    if (this.questPreview) this.questPreview = this.previewQuest(this.questPreview.questId, this.questPreview.mode);
     this.tabButtons.clear();this.tabText=[];this.textSerial=0;
     this.writer={add:spec=>{this.tabText.push(spec);writer?.add(spec);}};
     PAGES.forEach(([page, label], index) => {
       const button=this.button(body, label, 532 + index * 108, 8, 104, 46, () => {
         if(this.page===page)return;
+        if (page === 'quests' && this.questPreview) this.questPreview = this.previewQuest(this.questPreview.questId, this.questPreview.mode);
         this.page=page;this.result='';this.hooks.render();
       }, { selected: this.page === page, fontSize: 20 }, `调试页 ${label}`);
       this.tabButtons.set(page,button);
@@ -677,14 +678,16 @@ export class GmPanel {
 
   private questEntryStatus(entry: QuestCatalogEntry): string {
     const parts = [QUEST_STATUS_LABELS[entry.status]];
-    if (entry.hidden) parts.push('日志外');
-    if (entry.internal) parts.push('内部');
+    if (entry.hidden || entry.internal) parts.push('日志外任务');
     return parts.join(' · ');
   }
 
   /** 右栏第二层：任务详情、起点预览和开始/返回按钮。 */
   private renderQuestDetail(body: UiSurface, group: QuestCatalogGroup, questId: string): void {
-    const scroll = body.scroll(QUEST_RIGHT.x, QUEST_CONTENT_Y, QUEST_RIGHT.width, QUEST_DETAIL_HEIGHT);
+    const stages = questJumpStages(questId);
+    const height = QUEST_DETAIL_HEIGHT - stages.length * 32;
+    const clip = { top: QUEST_CONTENT_Y, bottom: QUEST_CONTENT_Y + height };
+    const scroll = body.scroll(QUEST_RIGHT.x, QUEST_CONTENT_Y, QUEST_RIGHT.width, height);
     this.questDetailScroll = scroll;
     this.references.registerScroll?.('gm-quest-detail', scroll);
     const entry = group.entries.find(value => value.quest.id === questId)!;
@@ -694,7 +697,7 @@ export class GmPanel {
     const line = (text: string, size: number, color = GOLD, width = 0, gap = 3): void => {
       if (!text) return;
       this.textAt(`gm-quest-detail-${index++}`, text, QUEST_RIGHT.x, y, width, size,
-        color, 'gm-quest-detail', QUEST_DETAIL_CLIP);
+        color, 'gm-quest-detail', clip);
       const chars = width > 0 ? Math.max(1, Math.floor(width / Math.max(1, size))) : 0;
       const lines = chars ? Math.max(1, Math.ceil(Array.from(text).length / chars)) : 1;
       y += lines * (size + 5) + gap;
@@ -705,8 +708,7 @@ export class GmPanel {
       14, QUEST_STATUS_COLORS[entry.status], QUEST_RIGHT.width, 5);
     if (group.kind === 'side' && group.anchorMainGroupTitle)
       line(`解锁于：${clipText(readableStoryText(group.anchorMainGroupTitle), 20)}`, 13, '#c8bda6', QUEST_RIGHT.width, 4);
-    const tags = [entry.hidden ? '日志外' : '', entry.internal ? '内部' : ''].filter(Boolean).join(' · ');
-    if (tags) line(tags, 12, '#c8bda6', QUEST_RIGHT.width, 4);
+    if (entry.hidden || entry.internal) line('日志外任务', 12, '#c8bda6', QUEST_RIGHT.width, 4);
     if (plan?.fallback) line(plan.mode === 'ready'
       ? '没有可接取入口，会直接放到待交付状态。'
       : '没有可接取入口，只能从进行中开始。', 13, '#ffd8a0', 340, 4);
@@ -736,7 +738,7 @@ export class GmPanel {
         ? `接取剧情：${plan.accept.eventId}（脚本 ${plan.accept.script}）`
         : `接取剧情：${plan.accept.script}（无对应事件，直接播放）`, 13, '#c8bda6', 340, 4);
     } else {
-      line('接取剧情：无（传送到发布者后自己接取）', 13, '#c8bda6', 340, 4);
+      line(plan?.mode === 'available' ? '到达发布者后可接取任务。' : '从所选任务阶段继续。', 13, '#c8bda6', 340, 4);
     }
     if (plan?.destination)
       line(`传送：${plan.destination.map} (${plan.destination.x},${plan.destination.y})`, 13, '#c8bda6', 340, 4);
@@ -745,23 +747,27 @@ export class GmPanel {
       if (!warnings.some(warning => warning.includes(gap))) warnings.push(gap);
     for (const warning of warnings) line(`注意：${warning}`, 13, '#ffd8a0', 340, 2);
     line('开始前会先打开存档页，保存成功后自动跳转。', 12, '#c8bda6', 340, 2);
-    scroll.setHeight(Math.max(QUEST_DETAIL_HEIGHT, y - QUEST_CONTENT_Y + 6));
+    scroll.setHeight(Math.max(height, y - QUEST_CONTENT_Y + 6));
     scroll.scrollTop = this.questDetailOffset;
     scroll.onScroll = () => {
       this.questDetailOffset = scroll.scrollTop;
       this.references.refresh?.();
     };
 
-    // 接取剧情条件补不齐时，仍给一条退路，不能把任务卡死；对话任务只存在待交付阶段。
-    const fallback = plan?.fallback === true || plan?.mode === 'active'
-      || (plan?.conditionPatch.unsatisfied.length ?? 0) > 0;
-    const startLabel = plan?.mode === 'ready' ? '跳到待交付'
-      : fallback ? '跳到进行中' : '跳到可接取';
-    const startMode = plan?.mode === 'ready' ? 'ready' as const
-      : fallback ? 'active' as const : 'available' as const;
-    this.button(body, startLabel, QUEST_RIGHT.x, 358, QUEST_RIGHT.width, 30,
-      () => this.startStoryJump(questId, startMode),
-      { disabled: !plan, fontSize: 16 });
+    stages.forEach((stage, index) => {
+      this.button(body, stage.label, QUEST_RIGHT.x, clip.bottom + 4 + index * 32, QUEST_RIGHT.width, 28, () => {
+        this.questPreview = this.previewQuest(questId, stage.mode);
+        this.questDetailOffset = 0;
+        this.hooks.render();
+      }, { disabled: plan?.mode === stage.mode, fontSize: 15 });
+    });
+    const label = stages.length ? '跳到所选现场' : plan?.mode === 'ready' ? '跳到待交付'
+      : plan?.mode === 'active' ? '跳到进行中' : '跳到可接取';
+    this.button(body, label, QUEST_RIGHT.x, 358, QUEST_RIGHT.width, 30, () => {
+      if (!plan) return;
+      if (this.hooks.requestStoryJump) this.hooks.requestStoryJump(plan);
+      else void this.gm.startStoryJump(plan);
+    }, { disabled: !plan, fontSize: 16 });
     this.button(body, '返回任务组', QUEST_RIGHT.x, 392, QUEST_RIGHT.width, 28,
       () => this.backToQuestGroup(), { fontSize: 15 });
   }
@@ -775,9 +781,13 @@ export class GmPanel {
     return this.campaign.placements.find(placement => placement.actor === quest.giver)?.map;
   }
 
-  private previewQuest(questId: string): QuestStartPlan | undefined {
+  private previewQuest(questId: string, mode: QuestStartMode = 'available'): QuestStartPlan | undefined {
     try {
-      const result = this.gm.previewQuestDebug(questId);
+      let result = this.gm.previewQuestDebug(questId, mode);
+      if (result.plan?.mode === 'available' && result.plan.conditionPatch.unsatisfied.length) {
+        const fallback = result.plan.quest.completion === 'talk' ? 'ready' : 'active';
+        result = this.gm.previewQuestDebug(questId, fallback);
+      }
       return result.ok ? result.plan : undefined;
     } catch { return undefined; }
   }
@@ -786,12 +796,6 @@ export class GmPanel {
     this.questId = undefined; this.questPreview = undefined;
     this.questDetailOffset = 0; this.result = '';
     this.hooks.render();
-  }
-
-  /** 先切到存档页；保存成功后由宿主执行剧情跳转。 */
-  private startStoryJump(questId: string, mode: 'available' | 'active' | 'ready'): void {
-    if (this.hooks.requestStoryJump) { this.hooks.requestStoryJump(questId, mode); return; }
-    void this.gm.startStoryJump(questId, mode);
   }
 
   private perform<T>(action:()=>T):T{return this.hooks.runAction?this.hooks.runAction(action):action();}

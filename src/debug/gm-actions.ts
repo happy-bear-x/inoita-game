@@ -188,9 +188,9 @@ export interface GmActions {
   /** 全部任务组，按故事顺序混排主线/支线；任务页左栏使用。 */
   questCatalog(): QuestCatalogGroup[];
   /** 预览一次任务跳转：补哪些前置、接取剧情、目的地和警告。 */
-  previewQuestDebug(questId: string): GmResult & { plan?: QuestStartPlan };
+  previewQuestDebug(questId: string, mode?: QuestStartMode): GmResult & { plan?: QuestStartPlan };
   /** 把剧情跳到指定任务的起点，播完接取剧情后按正式流程继续。 */
-  startStoryJump(questId: string, mode?: QuestStartMode): Promise<GmResult & { plan?: QuestStartPlan }>;
+  startStoryJump(target: string | QuestStartPlan, mode?: QuestStartMode): Promise<GmResult & { plan?: QuestStartPlan }>;
   /** 穿墙（无视地形与单位碰撞）。 */
   setNoclip(enabled: boolean): GmResult;
   isNoclip(): boolean;
@@ -210,7 +210,6 @@ export function createGmActions(ports: GmPorts): GmActions {
   const questCatalogIndex = buildQuestCatalog(campaign);
   let questCatalogCache: { version: number; value: QuestCatalogGroup[] } | undefined;
   let jumpStarting = false;
-  let jumpInFlight = false;
   let disposed = false;
 
   const record = (call: string, args: readonly unknown[], result: GmResult): void => {
@@ -417,8 +416,8 @@ export function createGmActions(ports: GmPorts): GmActions {
     return value;
   };
 
-  const previewQuestDebug = (questId: string) => run('previewQuestDebug', [questId], (): GmResult & { plan?: QuestStartPlan } => {
-    try { return { ok: true, plan: planQuestStart(campaign, session, questId) }; }
+  const previewQuestDebug = (questId: string, mode?: QuestStartMode) => run('previewQuestDebug', [questId, mode], (): GmResult & { plan?: QuestStartPlan } => {
+    try { return { ok: true, plan: planQuestStart(campaign, session, questId, mode) }; }
     catch (error) { return { ok: false, reason: error instanceof Error ? error.message : String(error) }; }
   });
 
@@ -438,67 +437,83 @@ export function createGmActions(ports: GmPorts): GmActions {
     }
   };
 
-  const startStoryJump = (questId: string, mode?: QuestStartMode): Promise<GmResult & { plan?: QuestStartPlan }> => {
-    if (jumpStarting || jumpInFlight) return Promise.resolve({ ok: false, reason: '正在执行剧情跳转' });
+  const startStoryJump = (target: string | QuestStartPlan, mode?: QuestStartMode): Promise<GmResult & { plan?: QuestStartPlan }> => {
+    if (jumpStarting) return Promise.resolve({ ok: false, reason: '正在执行剧情跳转' });
     jumpStarting = true;
+    const questId = typeof target === 'string' ? target : target.questId;
     return runAsync('startStoryJump', [questId, mode], async (): Promise<GmResult & { plan?: QuestStartPlan }> => {
-    const storyJump = ports.storyJump;
-    if (!storyJump) return { ok: false, reason: '当前环境没有剧情跳转能力' };
-    if (!storyJump.ready()) return { ok: false, reason: '请等待地图加载完成' };
-    if (director?.busy) return { ok: false, reason: '剧情正在播放，请先结束当前剧情' };
-    if (director?.runtime.snapshot().runs.some(run => run.status === 'running' || run.status === 'waiting'))
-      return { ok: false, reason: '当前有未结束的剧情运行，请先处理' };
-    let plan: QuestStartPlan;
-    try { plan = planQuestStart(campaign, session, questId, mode); }
-    catch (error) { return { ok: false, reason: error instanceof Error ? error.message : String(error) }; }
-    if (plan.mode === 'available' && plan.conditionPatch.unsatisfied.length) {
-      const fallback = plan.quest.completion === 'talk' ? '从待交付开始' : '从进行中开始';
-      return { ok: false, reason: `接取剧情条件无法自动补齐：${plan.conditionPatch.unsatisfied.join('；')}；可改用“${fallback}”`, plan };
-    }
-    let before: GmStoryJumpSnapshot;
-    try { before = storyJump.capture(); }
-    catch (error) { return { ok: false, reason: error instanceof Error ? error.message : String(error), plan }; }
-    try {
-      // 设置期间只临时挡住自动派发；接取剧情同步启动后立即清除，之后完全按正式条件推进。
-      director?.setAutomaticEventFilter(() => false);
-      storyJump.begin();
-      applyQuestStartPlan(session, plan);
-      director?.runtime.restore(session.runtimeState);
-      if (plan.destination) await storyJump.travel(plan.destination);
-    } catch (error) {
-      // 先清掉强制覆盖再恢复：强制进度会把已完成状态钉住，恢复后再清就回不去了。
-      session.questBook.clearDebugOverrides();
-      try { await storyJump.restore(before); } catch { /* 保留原始错误 */ }
-      storyJump.finish();
-      return { ok: false, reason: error instanceof Error ? error.message : String(error), plan };
-    } finally {
-      director?.setAutomaticEventFilter(undefined);
-    }
-    jumpInFlight = true;
-    try {
-      // 释放后必须同步启动接取剧情，中间不能插入 await；显式 run 会先创建，
-      // 下一帧的区域/近身判定看到 running 就不会重复开演。
+      const storyJump = ports.storyJump;
+      if (!storyJump) return { ok: false, reason: '当前环境没有剧情跳转能力' };
+      if (!storyJump.ready()) return { ok: false, reason: '请等待地图加载完成' };
+      if (director?.busy) return { ok: false, reason: '剧情正在播放，请先结束当前剧情' };
+      let plan: QuestStartPlan;
+      try { plan = typeof target === 'string' ? planQuestStart(campaign, session, target, mode) : target; }
+      catch (error) { return { ok: false, reason: error instanceof Error ? error.message : String(error) }; }
+      const unfinished = director?.runtime.snapshot().runs.some(run => {
+        if (run.status !== 'waiting') return run.status === 'running';
+        // 离开战场后，接手的正式演出可能已推进主线，旧战斗仍在等结果。
+        // 只有回退计划会重置这段演出时，才允许从另一个地图重建它。
+        const encounter = run.waiting && session.storyWorld.encounter(run.waiting.encounter);
+        const rewind = run.eventId && plan.conditionPatch.removedEvents.includes(run.eventId);
+        return !rewind || !encounter || encounter.map === session.storyWorld.currentLocation?.map;
+      });
+      if (unfinished) return { ok: false, reason: '当前有未结束的剧情运行，请先处理', plan };
+      if (plan.mode === 'available' && plan.conditionPatch.unsatisfied.length) {
+        const fallback = plan.quest.completion === 'talk' ? '从待交付开始' : '从进行中开始';
+        return { ok: false, reason: `接取剧情条件无法自动补齐：${plan.conditionPatch.unsatisfied.join('；')}；可改用“${fallback}”`, plan };
+      }
+      if (!plan.destination) return { ok: false, reason: '找不到所选阶段的地点', plan };
+      let before: GmStoryJumpSnapshot;
+      try { before = storyJump.capture(); }
+      catch (error) { return { ok: false, reason: error instanceof Error ? error.message : String(error), plan }; }
+      const rollback = async (reason: string) => {
+        if (disposed) return { ok: false, reason: '会话已经关闭', plan };
+        director?.holdTriggers();
+        try {
+          session.questBook.clearDebugOverrides();
+          await storyJump.restore(before);
+        } finally { storyJump.finish(); }
+        return { ok: false, reason, plan };
+      };
+      const accept = plan.accept;
+      try {
+        director?.setAutomaticEventFilter(() => false);
+        storyJump.begin();
+        applyQuestStartPlan(session, plan);
+        director?.runtime.restore(session.runtimeState);
+        await storyJump.travel(plan.destination);
+        if (session.storyWorld.currentLocation?.map !== plan.destination.map)
+          throw new Error('未到达所选阶段的地图');
+        const event = accept?.eventId && campaign.events.find(entry => entry.id === accept.eventId);
+        if (event && event.condition && !session.evaluateCondition(event.condition))
+          throw new Error('到达现场后仍未满足接取剧情的条件');
+      } catch (error) {
+        return await rollback(error instanceof Error ? error.message : String(error));
+      } finally {
+        director?.setAutomaticEventFilter(undefined);
+      }
+      if (disposed) return { ok: false, reason: '会话已经关闭', plan };
+      // 释放触发后同步发起播放，避免地图下一帧抢先启动其他演出。
       storyJump.releaseTriggers();
       let playError: string | undefined;
-      if (plan.accept) {
+      if (accept) {
         try {
-          await storyJump.play(plan.accept);
-          await storyJump.settled?.(plan.accept);
+          if (!await storyJump.play(accept)) return rollback('接取剧情未开始');
+          await storyJump.settled?.(accept);
+          if (accept.eventId && director && director.runtime.eventStatus(accept.eventId) !== 'completed')
+            throw new Error('接取剧情未完成');
         } catch (error) {
-          // 接取剧情已属于正式流程；跳转状态不回滚，但要如实报告播放失败。
           playError = error instanceof Error ? error.message : String(error);
-          globalThis.storyDiagnostics?.record('story-jump-play-failed',
-            { quest: questId, message: playError }, false);
+          globalThis.storyDiagnostics?.record('story-jump-play-failed', { quest: questId, message: playError }, false);
         }
       } else storyJump.closeMenu();
       if (disposed) return { ok: false, reason: '会话已经关闭', plan };
       settleJump();
-      const reason = [playError ? `接取剧情播放失败：${playError}（任务已跳到起点）` : '', ...plan.warnings]
-        .filter(Boolean).join('；');
-      return { ok: !playError, ...(reason ? { reason } : {}), plan };
-    } finally {
-      jumpInFlight = false;
-    }
+      if (playError) return { ok: false, reason: `接取剧情播放失败：${playError}`, plan };
+      const status = session.status(questId);
+      const reached = accept ? status === 'ready' || (status === 'active' && plan.quest.completion !== 'talk') : status === plan.mode;
+      if (!reached) return { ok: false, reason: `「${plan.quest.title}」未进入所选阶段`, plan };
+      return { ok: true, reason: plan.warnings.join('；') || undefined, plan };
     }).finally(() => { jumpStarting = false; });
   };
 
@@ -624,7 +639,6 @@ export function createGmActions(ports: GmPorts): GmActions {
     money: () => session.money,
     dispose: () => {
       disposed = true;
-      jumpInFlight = false;
       session.questBook.clearDebugOverrides();
       director?.setAutomaticEventFilter(undefined);
       ports.storyJump?.dispose();

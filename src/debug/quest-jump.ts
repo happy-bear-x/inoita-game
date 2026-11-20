@@ -1,12 +1,22 @@
 import type { Campaign, CampaignPlacement, CampaignQuest } from '../domain/campaign.ts';
 import type { Facing, QuestStatus, TravelDestination } from '../domain/content.ts';
 import type { QuestBookState, QuestProgress } from '../domain/quest-book.ts';
-import type { StoryCondition } from '../domain/story-condition.ts';
-import type { StoryCommand, StoryEvent, StoryPlace } from '../domain/story-graph.ts';
+import { evaluateStoryCondition, type StoryCondition } from '../domain/story-condition.ts';
+import { STORY_TRIGGER_SOURCES, storyExitTargets, type StoryCommand, type StoryEvent, type StoryPlace, type StoryScript } from '../domain/story-graph.ts';
 import type { StoryCastMember, StoryStage } from '../domain/story-performance.ts';
 import type { Session } from '../domain/session.ts';
+import { encounterSpawnId } from '../domain/world-enemies.ts';
 
 export type QuestStartMode = 'available' | 'active' | 'ready';
+
+const soloInfiltrationStages: readonly { mode: QuestStartMode; label: string }[] = [
+  { mode: 'available', label: '独自进城救人' },
+  { mode: 'ready', label: '已救出圣女，返回与莱曼汇合' },
+];
+
+export function questJumpStages(questId: string): readonly { mode: QuestStartMode; label: string }[] {
+  return questId === 'quest-40' ? soloInfiltrationStages : [];
+}
 
 export interface QuestAcceptCandidate {
   script: string;
@@ -96,10 +106,6 @@ function mergePatch(target: QuestConditionPatch, source: QuestConditionPatch): v
   for (const value of source.unsatisfied) if (!target.unsatisfied.includes(value)) target.unsatisfied.push(value);
 }
 
-function groupOf(campaign: Campaign, questId: string) {
-  return campaign.questGroups.find(group => group.questIds.includes(questId));
-}
-
 function placementCovers(placement: Campaign['placements'][number], quest: CampaignQuest): boolean {
   return (placement.characterId !== undefined
     && (placement.characterId === quest.giverCharacterId || placement.characterId === quest.deliveryCharacterId))
@@ -116,13 +122,6 @@ function npcMaps(campaign: Campaign, quest: CampaignQuest): ReadonlySet<string> 
 
 function questOf(campaign: Campaign, questId: string): CampaignQuest | undefined {
   return campaign.quests.find(quest => quest.id === questId);
-}
-
-function previousGroupQuests(campaign: Campaign, questId: string): string[] {
-  const group = groupOf(campaign, questId);
-  if (!group) return [];
-  const index = group.questIds.indexOf(questId);
-  return index <= 0 ? [] : group.questIds.slice(0, index);
 }
 
 /**
@@ -171,10 +170,23 @@ function pushQuestPatch(patch: QuestConditionPatch, id: string, status: QuestSta
   else patch.quests.push({ id, status });
 }
 
+function plannedContext(session: Session, patch: QuestConditionPatch) {
+  const original = session.conditionContext();
+  return {
+    ...original,
+    questStatus: (id: string) => patch.quests.find(entry => entry.id === id)?.status ?? original.questStatus(id),
+    choice: (id: string) => patch.choices.find(entry => entry.choice === id)?.value ?? original.choice(id),
+    flag: (id: string) => patch.flags.find(entry => entry.flag === id)?.value ?? original.flag(id),
+    eventStatus: (id: string) => patch.removedEvents.includes(id) ? 'idle' as const
+      : patch.completedEvents.includes(id) ? 'completed' as const : original.eventStatus(id),
+  };
+}
+
 /** 逐叶补接取剧情自己的条件；只补这一段剧情需要的任务/选择/标志/事件。 */
 function satisfyCondition(condition: StoryCondition | undefined, session: Session, patch: QuestConditionPatch): boolean {
-  if (!condition || session.evaluateCondition(condition)) return true;
-  const context = session.conditionContext();
+  if (!condition) return true;
+  const context = plannedContext(session, patch);
+  if (evaluateStoryCondition(condition, context)) return true;
   switch (condition.type) {
     case 'always':
       if (condition.value) return true;
@@ -194,9 +206,8 @@ function satisfyCondition(condition: StoryCondition | undefined, session: Sessio
       return false;
     }
     case 'not': {
-      // 当前 `not X` 不成立，要让 X 成立。
-      const trial = clonePatch(patch);
-      if (satisfyCondition(condition.condition, session, trial)) { mergePatch(patch, trial); return true; }
+      const child = condition.condition;
+      if (child.type === 'flag') return satisfyCondition({ ...child, value: !(child.value ?? true) }, session, patch);
       patch.unsatisfied.push(`无法让否定条件成立：${condition.type}`);
       return false;
     }
@@ -204,7 +215,7 @@ function satisfyCondition(condition: StoryCondition | undefined, session: Sessio
       const current = context.questStatus(condition.quest);
       if (condition.status === 'accepted') {
         if (['active', 'ready', 'completed'].includes(current)) return true;
-        pushQuestPatch(patch, condition.quest, 'completed');
+        pushQuestPatch(patch, condition.quest, 'active');
         return true;
       }
       if (condition.status === 'settled') {
@@ -450,33 +461,184 @@ function hasAvailableEntry(quest: CampaignQuest, accept: AcceptCandidate | undef
   return !!place && place.type !== 'unavailable';
 }
 
+// 机关、救人与次元之门战斗各有自己的触发源，不能从任务日志推断这些现场。
+// 在这段确定的正式流程中，只重建已经发生的任务写入和跨地图保留的世界摆放。
+const rescueSequence = ['event-49', 'event-50', 'event-51', 'event-57', 'event-52',
+  'event-53', 'event-54', 'event-55', 'event-19'] as const;
+
+function rescueHistory(campaign: Campaign, session: Session, intake: AcceptCandidate | undefined,
+  questId: string, mode: QuestStartMode, patch: QuestConditionPatch, world: StoryCommand[]): TravelDestination | undefined {
+  const intakeIndex = rescueSequence.findIndex(id => id === intake?.eventId);
+  if (intakeIndex < 0) return;
+  const returning = questId === 'quest-40' && mode === 'ready';
+  const boundary = returning ? rescueSequence.indexOf('event-52') + 1 : intakeIndex + (mode === 'available' ? 0 : 1);
+  const history: StoryCommand[] = [];
+  for (const [index, id] of rescueSequence.entries()) {
+    const event = campaign.events.find(entry => entry.id === id);
+    const script = event && campaign.scripts[event.script];
+    if (!script) throw new Error(`圣女救援行动缺少演出：${id}`);
+    const past = index < boundary;
+    (past ? patch.completedEvents : patch.removedEvents).push(id);
+    for (const node of script.nodes) for (const command of node.commands) {
+      if (command.type === 'quest') {
+        const action = command.command;
+        if (!('quest' in action) || action.quest === questId) continue;
+        if (past) {
+          if (action.type === 'accept') pushQuestPatch(patch, action.quest, 'active');
+          if (action.type === 'script-complete') pushQuestPatch(patch, action.quest, 'completed');
+          if (action.type === 'script-ready') pushQuestPatch(patch, action.quest, 'ready');
+        } else if (action.type === 'accept' && ['active', 'ready', 'completed'].includes(session.status(action.quest))) {
+          pushQuestPatch(patch, action.quest, 'available');
+        }
+      }
+      if (command.type === 'flag') {
+        if (past) history.push(command);
+        else if (command.value !== false && session.storyWorld.hasFlag(command.flag)) {
+          world.push({ ...command, value: false });
+        }
+      }
+      if (command.type !== 'world') continue;
+      const placement = command.command;
+      if (past && (placement.kind === 'remove' || (placement.kind === 'place' && placement.scope !== 'visit')))
+        history.push(command);
+      if (!past && placement.kind === 'place' && placement.scope !== 'visit'
+        && session.storyWorld.entity(placement.entity.id)?.map === placement.entity.map)
+        world.push({ type: 'world', command: { kind: 'remove', id: placement.entity.id } });
+    }
+  }
+  world.push(...history);
+  if (returning) {
+    const stages = campaign.scripts['event-52'].nodes.flatMap(node =>
+      node.presentation.filter(action => action.type === 'stage'));
+    const exit = stages.at(-1);
+    if (!exit?.map) throw new Error('找不到救出圣女后的返回地点');
+    return { map: exit.map, x: exit.x, y: exit.y, facing: exit.facing ?? 'south' };
+  }
+}
+
+/** 所有能走到接取命令的路径，都经过这次交付（或明确检查过它已经交付）。 */
+function intakeHandovers(script: StoryScript, name: string, questId: string): string[] {
+  const nodes = new Map(script.nodes.map(node => [node.id, node]));
+  const delivered = new Set<string>();
+  for (const node of script.nodes) for (const action of node.commands)
+    if (action.type === 'quest' && action.command.type === 'script-complete' && action.command.quest !== questId)
+      delivered.add(action.command.quest);
+  return [...delivered].filter(predecessor => {
+    const pending = [script.entry], visited = new Set<string>();
+    while (pending.length) {
+      const id = pending.pop()!;
+      const node = nodes.get(id);
+      if (!node || visited.has(id)) continue;
+      visited.add(id);
+      let handedOver = false;
+      for (const action of node.commands) {
+        if (action.type !== 'quest') continue;
+        if (action.command.type === 'accept' && action.command.quest === questId) return false;
+        if (action.command.type === 'script-complete' && action.command.quest === predecessor) { handedOver = true; break; }
+      }
+      if (handedOver) continue;
+      const exit = node.exit;
+      if (exit.type === 'branch' && conditionAfterQuest(exit.condition, predecessor)) pending.push(exit.otherwise.node);
+      else for (const target of storyExitTargets(exit)) {
+        // 跨脚本调用可能在外部完成接取；未知路径不能用来判定必经的交付。
+        if (target.script !== name) return false;
+        pending.push(target.node);
+      }
+    }
+    return true;
+  });
+}
+
+function followsProgress(condition: StoryCondition | undefined, quests: ReadonlySet<string>, events: ReadonlySet<string>): boolean {
+  if (!condition) return false;
+  switch (condition.type) {
+    case 'quest': return quests.has(condition.quest) && !['available', 'locked'].includes(condition.status);
+    case 'event': return events.has(condition.event) && condition.status === 'completed';
+    case 'all': return condition.conditions.some(child => followsProgress(child, quests, events));
+    case 'any': return condition.conditions.length > 0 && condition.conditions.every(child => followsProgress(child, quests, events));
+    default: return false;
+  }
+}
+
+/** 沿原存档中实际播过的后续演出追踪交接；独立支线和其他选择分支保留各自进度。 */
+function reopenFollowups(campaign: Campaign, session: Session, questId: string, intake: AcceptCandidate | undefined,
+  patch: QuestConditionPatch): void {
+  const quests = new Set([questId]), events = new Set(patch.removedEvents);
+  const recorded = new Set([...session.runtimeState.completedEvents, ...session.runtimeState.handledOccurrences.map(([id]) => id)]);
+  const remaining = new Set(campaign.events.filter(event => recorded.has(event.id) && event.source !== 'start'
+    && event.id !== intake?.eventId && !patch.completedEvents.includes(event.id)));
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const event of remaining) {
+      const script = campaign.scripts[event.script];
+      const deliversQuest = script.nodes.some(node => node.commands.some(action => action.type === 'quest'
+        && action.command.type === 'script-complete' && quests.has(action.command.quest)));
+      if (!events.has(event.id) && !deliversQuest && !followsProgress(event.condition, quests, events)) continue;
+      remaining.delete(event);
+      events.add(event.id);
+      changed = true;
+      for (const node of campaign.scripts[event.script].nodes) for (const action of node.commands) {
+        if (action.type !== 'quest' || action.command.type !== 'accept') continue;
+        const id = action.command.quest;
+        if (quests.has(id) || patch.quests.some(entry => entry.id === id && entry.status !== 'available')) continue;
+        quests.add(id);
+        if (['active', 'ready', 'completed'].includes(session.status(id))) pushQuestPatch(patch, id, 'available');
+      }
+    }
+  }
+  patch.removedEvents = [...events];
+}
+
 /** 规划一次“从可接取开始”的剧情跳转；只读，不改会话。 */
 export function planQuestStart(campaign: Campaign, session: Session, questId: string,
   requestedMode: QuestStartMode = 'available'): QuestStartPlan {
   const quest = questOf(campaign, questId);
   if (!quest) throw new Error(`未找到任务：${questId}`);
   const candidates = acceptCandidates(campaign, session, questId);
-  const accept = candidates[0];
-  const conditionPatch = emptyPatch();
-  // 目标任务自己的 `availableWhen` 多数只引用前置任务；先补这些，接取剧情条件再覆盖。
-  satisfyCondition(quest.availableWhen, session, conditionPatch);
-  if (accept?.event) satisfyCondition(accept.event.condition, session, conditionPatch);
+  const intake = candidates[0];
   const internal = quest.completion === 'internal';
-  const fallback = requestedMode === 'available' && (internal || !hasAvailableEntry(quest, accept));
+  const fallback = requestedMode === 'available' && (internal || !hasAvailableEntry(quest, intake));
   let mode: QuestStartMode = fallback ? (quest.completion === 'talk' ? 'ready' : 'active') : requestedMode;
-  // 对话任务没有进行中阶段：接取后引擎直接写 ready，跳转起点也不能造出不存在的 active。
   if (mode === 'active' && quest.completion === 'talk') mode = 'ready';
+  const accept = mode === 'available' ? intake : undefined;
   const targetStatus: QuestStatus = mode;
-
-  const destination = resolveDestination(campaign, session, quest, accept, mode);
+  const conditionPatch = emptyPatch();
+  const history: StoryCommand[] = [];
+  const phaseDestination = rescueHistory(campaign, session, intake, questId, mode, conditionPatch, history);
+  satisfyCondition(quest.availableWhen, session, conditionPatch);
+  if (intake) {
+    if (accept || !rescueSequence.some(id => id === intake.eventId)) satisfyCondition(intake.event?.condition, session, conditionPatch);
+    for (const id of intakeHandovers(campaign.scripts[intake.script], intake.script, questId)) {
+      if (!accept) { pushQuestPatch(conditionPatch, id, 'completed'); continue; }
+      const status = plannedContext(session, conditionPatch).questStatus(id);
+      if (status !== 'available' && status !== 'locked') continue;
+      const prior = questOf(campaign, id)!;
+      pushQuestPatch(conditionPatch, id, prior.completion === 'all' || prior.completion === 'talk' ? 'ready' : 'active');
+    }
+  }
+  reopenFollowups(campaign, session, questId, intake, conditionPatch);
+  if (intake?.eventId && !accept && !conditionPatch.completedEvents.includes(intake.eventId))
+    conditionPatch.completedEvents.push(intake.eventId);
+  const destination = phaseDestination ?? resolveDestination(campaign, session, quest, accept, mode);
   const warnings: string[] = [];
   satisfyNpcPlacements(campaign, session, quest, destination, conditionPatch);
-  const worldCommands = acceptSceneWorldCommands(campaign, session, questId, accept, destination, warnings);
-  if (internal) warnings.push('这是内部任务，没有可接取入口，已改为从进行中开始');
+  const worldCommands = [...acceptSceneWorldCommands(campaign, session, questId, accept, destination, warnings), ...history];
+  if (mode === 'available') {
+    const final = clonePatch(conditionPatch);
+    pushQuestPatch(final, questId, 'available');
+    for (const command of worldCommands)
+      if (command.type === 'flag') final.flags.unshift({ flag: command.flag, value: command.value ?? true });
+    if (accept?.eventId) final.removedEvents.push(accept.eventId);
+    const context = plannedContext(session, final);
+    if (!evaluateStoryCondition(quest.availableWhen, context) || !evaluateStoryCondition(accept?.event?.condition, context))
+      conditionPatch.unsatisfied.push('合并任务与现场状态后，正式接取条件仍未满足');
+  }
+  if (internal) warnings.push('这是日志外任务，没有可接取入口，已改为从进行中开始');
   else if (fallback) warnings.push(quest.completion === 'talk'
     ? '没有找到可接取入口，已直接放到待交付状态'
     : '没有找到可接取入口，已改为从进行中开始');
-  if (candidates.length > 1) warnings.push(`找到 ${candidates.length} 个接取脚本，已选 ${accept?.script}`);
+  if (accept && candidates.length > 1) warnings.push(`找到 ${candidates.length} 个接取脚本，已选 ${accept.script}`);
   if (conditionPatch.unsatisfied.length)
     warnings.push(`接取剧情有无法自动补齐的条件：${conditionPatch.unsatisfied.join('；')}`);
   if (!destination) warnings.push('没有找到任务开始位置，跳转后停留在当前地图');
@@ -489,7 +651,6 @@ export function planQuestStart(campaign: Campaign, session: Session, questId: st
     if (from === to) return;
     changed.set(id, { id, title: definition.title, from, to });
   };
-  for (const id of previousGroupQuests(campaign, questId)) addChange(id, 'completed');
   for (const entry of conditionPatch.quests) {
     if (entry.id === questId) continue;
     addChange(entry.id, entry.status);
@@ -515,15 +676,36 @@ function fullGoals(quest: CampaignQuest): Record<string, number> {
 }
 
 function patchedProgress(quest: CampaignQuest, current: QuestProgress, status: QuestStatus): QuestProgress {
-  const base = { cycle: current.cycle, completedCycles: current.completedCycles };
-  if (status === 'completed') return { ...base, status, goals: current.goals };
-  if (status === 'ready') return { ...base, status, goals: fullGoals(quest) };
-  if (status === 'active') return { ...base, status, goals: zeroGoals(quest) };
-  if (status === 'available') return {
-    ...base, status, goals: zeroGoals(quest),
-    cycle: current.cycle + (current.status === 'completed' ? 1 : 0),
+  const base = {
+    cycle: current.cycle + (current.status === 'completed' && status !== 'completed' ? 1 : 0),
+    completedCycles: current.completedCycles,
   };
+  if (status === 'completed') return { ...base, status, goals: current.goals, completedCycles: Math.max(1, base.completedCycles) };
+  if (status === 'ready') return { ...base, status, goals: fullGoals(quest) };
   return { ...base, status, goals: zeroGoals(quest) };
+}
+
+/** 放回剧情战斗之前的现场时，一并丢弃旧实例和它留下的清场命令。 */
+function rewindEncounters(session: Session, removedEvents: ReadonlySet<string>): void {
+  const definitions = new Set<string>();
+  for (const event of session.campaign.events) {
+    if (!removedEvents.has(event.id)) continue;
+    for (const node of session.campaign.scripts[event.script].nodes)
+      if (node.exit.type === 'waitEncounter') definitions.add(node.exit.encounter.id);
+  }
+  if (!definitions.size) return;
+  const world = session.storyWorld.captureState();
+  const encounters = world.encounters.filter(entry => entry.definitionId && definitions.has(entry.definitionId));
+  if (!encounters.length) return;
+  const ids = new Set(encounters.map(encounter => encounter.id));
+  const spawns = new Set(encounters.flatMap(encounter =>
+    encounter.spawns.map(spawn => encounterSpawnId(encounter.id, spawn.id))));
+  world.encounters = world.encounters.filter(entry => !ids.has(entry.id));
+  world.entities = world.entities.filter(entity => !spawns.has(entity.id));
+  world.enemyRemovals = world.enemyRemovals?.filter(removal => !encounters.some(encounter =>
+    (!removal.map || encounter.map === removal.map) && encounter.spawns.some(spawn => spawn.enemyId === removal.enemyId)));
+  session.storyWorld.restoreState(world);
+  for (const id of spawns) session.forgetEnemyVitals(id);
 }
 
 /**
@@ -576,7 +758,7 @@ export function applyQuestStartPlan(session: Session, plan: QuestStartPlan): voi
 
   // 接取剧情要求 ready/active 时，普通刷新会按背包物品把状态改回去；把条件任务钉住。
   for (const entry of plan.conditionPatch.quests) {
-    if (entry.id === plan.questId) continue;
+    if (entry.id === plan.questId || (entry.status !== 'active' && entry.status !== 'ready')) continue;
     const quest = questOf(session.campaign, entry.id);
     const progress = session.quests.get(entry.id);
     if (!quest || !progress) continue;
@@ -584,7 +766,8 @@ export function applyQuestStartPlan(session: Session, plan: QuestStartPlan): voi
   }
 
   // 跳转起点补齐这批任务需要的交付物品；否则接取/完成脚本会在 handoverItems 检查处中断。
-  const itemQuestIds = new Set<string>([...quests.keys(), ...plan.conditionPatch.quests.map(entry => entry.id)]);
+  const itemQuestIds = new Set([plan.questId, ...plan.conditionPatch.quests
+    .filter(entry => entry.status === 'active' || entry.status === 'ready').map(entry => entry.id)]);
   for (const id of itemQuestIds) {
     const quest = questOf(session.campaign, id);
     for (const item of quest?.handoverItems ?? []) {
@@ -606,6 +789,21 @@ export function applyQuestStartPlan(session: Session, plan: QuestStartPlan): voi
     }]);
   }
 
+  if (plan.mode === 'ready' && session.status(plan.questId) !== 'ready') {
+    if (targetQuest.completion === 'all') {
+      for (const goal of targetQuest.goals.filter(goal => goal.kind === 'item')) {
+        const missing = goal.quantity - session.bag.count(goal.target);
+        if (missing > 0) session.bag.add(goal.target, missing);
+      }
+      const snapshot = session.questBook.captureState();
+      const entry = snapshot.quests.find(([id]) => id === plan.questId)!;
+      entry[1] = patchedProgress(targetQuest, entry[1], 'ready');
+      session.questBook.installTrustedState(snapshot);
+    } else {
+      session.applyStoryCommands([{ type: 'quest', command: { type: 'script-ready', quest: plan.questId } }]);
+    }
+  }
+
   const runtime = structuredClone(session.runtimeState);
   const removed = new Set([...plan.conditionPatch.removedEvents, ...(plan.accept?.eventId ? [plan.accept.eventId] : [])]);
   // 任何剧情跳转都发生在游戏开场之后；不记录 start 事件，换图时会再次尝试播放开场。
@@ -614,10 +812,15 @@ export function applyQuestStartPlan(session: Session, plan: QuestStartPlan): voi
     .map(event => event.id);
   const completed = [...new Set([...runtime.completedEvents, ...plan.conditionPatch.completedEvents, ...startEvents])]
     .filter(id => !removed.has(id));
+  const removedSequences = new Set([...removed].flatMap(id =>
+    STORY_TRIGGER_SOURCES.map(source => JSON.stringify([id, source]))));
+  rewindEncounters(session, removed);
   session.runtimeState = {
     ...runtime,
     completedEvents: completed,
+    runs: runtime.runs.filter(run => !run.eventId || !removed.has(run.eventId)),
     handledOccurrences: runtime.handledOccurrences.filter(([id]) => !removed.has(id)),
+    occurrenceSequences: runtime.occurrenceSequences.filter(([key]) => !removedSequences.has(key)),
   };
   session.emit();
 }

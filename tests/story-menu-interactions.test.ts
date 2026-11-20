@@ -2518,12 +2518,13 @@ test('save page writes the loaded world into the chosen slot and asks before ove
 
 test('a story jump waits for a manual save and is cancelled by leaving the save page', t => {
   const f=fixture();t.after(f.cleanup);
-  const jumps:string[]=[];
-  (f.app as unknown as {gm:unknown}).gm={startStoryJump:(questId:string,mode:string)=>{
-    jumps.push(`${questId}:${mode}`);return Promise.resolve({ok:true});
+  const plan={questId:'grafton-mission',mode:'available'};
+  const jumps:unknown[]=[];
+  (f.app as unknown as {gm:unknown}).gm={startStoryJump:(preview:unknown)=>{
+    jumps.push(preview);return Promise.resolve({ok:true});
   }};
-  const menu=f.menu as unknown as {requestStoryJump(q:string,m:'available'|'active'|'ready'):void;pendingStoryJump?:unknown};
-  menu.requestStoryJump('grafton-mission','available');
+  const menu=f.menu as unknown as {requestStoryJump(preview:typeof plan):void;pendingStoryJump?:unknown};
+  menu.requestStoryJump(plan);
   assert.equal(f.internals.page,'save');
   assert.ok(f.internals.notice?.includes('先保存当前进度'));
 
@@ -2535,9 +2536,10 @@ test('a story jump waits for a manual save and is cancelled by leaving the save 
   f.scene.click(f.scene.button('确认'));
 
   // 重新发起后，保存成功才执行跳转。
-  menu.requestStoryJump('grafton-mission','available');
+  menu.requestStoryJump(plan);
   f.scene.click(f.scene.button('存档槽 2'));
-  assert.deepEqual(jumps,['grafton-mission:available']);
+  assert.deepEqual(jumps,[plan]);
+  assert.equal(jumps[0],plan);
 });
 
 /** 存档行按钮所在的滚动区；按行按钮的直接父容器匹配，顺带验证行确实画进了滚动内容。 */
