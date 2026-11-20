@@ -991,6 +991,7 @@ export class Session {
    * 仍按剧情保持隐藏。否则剧情战斗清场后，已做完目标的任务会找不到人交付。
    */
   private releaseReadyQuestActors():void{
+    if(!this.storyWorld.hasVisitAbsences)return;
     const placements=this.campaign.placements;
     for(const id of this.questBook.runningQuestIds){
       if(this.questBook.status(id)!=='ready')continue;
@@ -1395,8 +1396,8 @@ export class Session {
     // 任务簿检查点是 O(1) 的状态根引用；背包/世界/操控角色变化都可能经由 `refresh` 间接刷新
     // 任务状态，所以每个非空批次都把它纳入回滚集。
     touched.add('questBook');
-    // 待交付任务会在批次末尾清掉交付人身上的临时缺席；把剧情世界一并纳入回滚基线。
-    if(this.questBook.runningQuestIds.some(id=>this.questBook.status(id)==='ready'))touched.add('storyWorld');
+    // 这批命令也可能让任务首次就绪；交付人的临时缺席和任务进度一起回滚。
+    if(this.storyWorld.hasVisitAbsences)touched.add('storyWorld');
     if(checkpoint)touched.add('runtimeSnapshot');
     // 外部交互触发的提交也要能在取消演出时回滚；导演自己的延迟提交由回执负责，不重复记录。
     if(!options.deferFinalize)this.recordPerformance(touched);

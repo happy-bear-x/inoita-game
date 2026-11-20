@@ -176,6 +176,10 @@ export class StoryWorldState {
   private absentVisitKey(map:string,actor:string,characterId:string|undefined,visit:number):string{
     return JSON.stringify(['absent-actor-visit',visit,map,characterId??actor]);
   }
+  get hasVisitAbsences():boolean {
+    for(const flag of this.flags)if(flag.startsWith('["absent-actor-visit",'))return true;
+    return false;
+  }
   actorVisible(map:string,actor:string,characterId?:string,visit=this.mapVisit):boolean{
     return !this.flags.has(this.absentKey(map,actor,characterId))
       && !this.flags.has(this.absentVisitKey(map,actor,characterId,visit));

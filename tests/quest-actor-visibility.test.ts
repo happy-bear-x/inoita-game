@@ -2,6 +2,27 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { headlessContent, playthrough } from './helpers/story-playthrough.ts';
 
+test('取消让任务首次进入待交付的剧情时，恢复交付人原先的临时缺席', () => {
+  const h = playthrough();
+  try {
+    const {session} = h, map = 'snow-fey-village-b6acd59c', id = 'npc-574';
+    h.director.holdTriggers();
+    session.applyStoryCommands([{type:'travel', destination:{map, x:552, y:528, facing:'north'}}]);
+    assert.ok(session.accept('quest-351'));
+    for (const enemy of ['enemy-frost-werewolf-1','enemy-iceshell-turtle-1']) session.recordQuestFact('defeat',enemy);
+    session.applyStoryCommands([{type:'world', command:{kind:'remove-character', map, characterId:id, all:false}}]);
+    assert.equal(session.storyWorld.actorVisible(map,id), false);
+    const receipt = session.applyStoryCommands([{type:'quest', command:{type:'fact', fact:{
+      kind:'defeat', target:'enemy-purification-cave-watcher-1', occurrence:{source:'last-enemy',sequence:1},
+    }}}], undefined, {deferFinalize:true});
+    assert.equal(session.status('quest-351'), 'ready');
+    assert.equal(session.storyWorld.actorVisible(map,id), true);
+    receipt.rollback();
+    assert.equal(session.status('quest-351'), 'active');
+    assert.equal(session.storyWorld.actorVisible(map,id), false);
+  } finally { h.director.dispose(); }
+});
+
 test('a ready quest actor is restored after a story clears the map in the same visit', async () => {
   const h = playthrough();
   try {
