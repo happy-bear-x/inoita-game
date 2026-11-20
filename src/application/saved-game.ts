@@ -8,7 +8,6 @@ import type {CharacterStatsCatalog} from '../domain/character-stats.ts';
 import type {BattleCatalog} from '../domain/battle.ts';
 import type {CompanionCatalog} from '../domain/party.ts';
 import type {StoryWorldViewSnapshot} from './world-snapshot.ts';
-import {migrateFormat2Save} from './saved-game-format-2.ts';
 import {validateSceneSnapshot} from '../domain/scene-snapshot.ts';
 
 export interface SavedGameContent {
@@ -17,7 +16,6 @@ export interface SavedGameContent {
 }
 export function prepareSavedGame(game:SaveGame<StoryWorldViewSnapshot>,content:SavedGameContent){
   if(!isReadableSaveFormat(game.format))throw new Error('存档版本不受支持');
-  if(game.format===2)game=migrateFormat2Save(game);
   const selected=content.storyClasses.classes.find(entry=>entry.id===game.summary.classId);
   if(!selected)throw new Error('存档记录的职业在当前内容里不存在');
   const world=structuredClone(game.world),location=world?.location;

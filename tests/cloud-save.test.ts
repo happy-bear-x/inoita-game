@@ -57,7 +57,7 @@ test('lock and retry messages name the number of attempts and the wait',()=>{
 
 test('save formats distinguish readable, future and obsolete versions',()=>{
   assert.equal(saveFormatStatus(SAVE_FORMAT),'ok');
-  assert.equal(saveFormatStatus(2),'ok');
+  assert.equal(saveFormatStatus(SAVE_FORMAT-1),'obsolete');
   assert.equal(saveFormatStatus(SAVE_FORMAT+1),'future');
   assert.equal(saveFormatStatus(SAVE_FORMAT-2),'obsolete');
   assert.equal(saveFormatStatus(SAVE_FORMAT-0.5),'unknown');

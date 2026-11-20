@@ -379,11 +379,10 @@ test('older development saves enter the same empty-slot class flow',()=>{
   f.click('开始游戏');f.click('存档槽 2');assert.deepEqual(f.events,['new']);
 });
 
-test('format 2 resumes from the title and format 1 enters the empty-slot flow',()=>{
-  for(const [format,expected] of [[2,'load:1'],[1,'new']] as const){
+test('the title resumes format 1 and starts a new game from an empty slot',()=>{
+  for(const [raw,expected] of [[JSON.stringify({...JSON.parse(saved()),format:1}),'load:1'],[undefined,'new']] as const){
     const f=fixture();
-    const raw=JSON.parse(saved());raw.format=format;
-    f.entries.set('inotia4.story.v1.slot1',JSON.stringify(raw));
+    if(raw)f.entries.set('inotia4.story.v1.slot1',raw);
     f.click('开始游戏');f.click('存档槽 2');assert.deepEqual(f.events,[expected]);
   }
 });

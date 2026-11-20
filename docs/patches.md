@@ -12,7 +12,7 @@
 | 内容/数据 | 剧情坐标、掉落表 | 改 `public/content/`，跑 `validate:content` 和剧情测试；不用代码兜底代替内容修复 | 根因内容修好 |
 | 普通 bug | 今天的修复 | 一个 bug 一个提交；先写失败用例；修根因；清理死代码/临时诊断 | 修复完成即结束 |
 
-当前写入格式 3，读取格式 2 时先迁移到格式 3。比 2 更早的存档显示为空槽，更新的格式显示为不可读取。
+首次发行从空槽开始，读写格式 1。比 1 更早的存档显示为空槽，更新的格式显示为不可读取。
 
 ## Active / 待处理补丁
 
@@ -20,7 +20,6 @@
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | P-001 | 运行时/上游 | Phaser 4.2.1 动态缓冲区 + 绘图缓冲失败清理 | `tools/patch-phaser.mjs` | 上游 PR #7420；绘图缓冲清理同脚本 | `postinstall`/`predev`/`prebuild` 自动应用；`tests/phaser-framebuffer.test.ts`；升级时核对锚点 | Phaser 包含修复或升级到已修复版本后 | active | 2026-11-17 |
 | C-001 | 内容/数据 | `event-145`/`event-341`/`event-342` 固定走位落点 | `public/content/campaign.json` / 舞台地图 | 目标格是阻挡格；`nearestWalkable` 兜底防卡死，但落点可能不是作者原意 | `npm run validate:content`；`tests/movement-world.test.ts` 及剧情测试 | 三处坐标核对/修正后 | active | 2026-11-17 |
-| M-001 | 兼容/迁移 | 存档格式 2 到 3 | `src/application/saved-game-format-2.ts` | 旧档保存了整本任务簿与旧演出引用 | `tests/saved-game.test.ts`、`tests/save-game.test.ts`、云存档测试 | 格式 2 退出读取范围 | active | 2026-11-20 |
 
 ## 存档修补标准
 

@@ -83,7 +83,7 @@ npm run test:standalone
 - `mercenary-skills.test.ts`、`mercenary-skill-unlocks.test.ts`、存档和菜单测试覆盖佣兵手动加点、主角学习规则、招募上限、解锁资格、技能书突破、免费初始化、历史补点与成员隔离；战斗缓存测试验证初始化只清理对应成员。主角初始化继续验证初始技能和快捷栏恢复。
 - `mercenary-skills.test.ts` 同时验证剧情伙伴自动成长提示与实际升级一致，以及成长门槛不超过角色等级范围。
 
-- `saved-game.test.ts` 覆盖格式 2 迁移、清理旧引用后继续击败第八名哨兵，以及再次读档时保留交付回执和奖励。
+- `saved-game.test.ts` 覆盖格式 1 读档、继续击败第八名哨兵，以及再次读档时保留交付回执和奖励。
 - `story-scene`、`story-stage-isolation` 与 `saved-game` 覆盖主角收放武器的正常/跳过路径、同图保留、地图重载恢复默认和当前格式读回。
 
 - `mercenary-skill-unlocks.test.ts` 覆盖六职业封印书的永久共享、候补与未来佣兵继承、抽取去重、失败回滚和检查点恢复；存档与菜单用例覆盖共享资格、等级保留和背包控件复用。

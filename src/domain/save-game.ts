@@ -2,10 +2,10 @@ import type { Session, SessionState } from './session.ts';
 
 /** 手动存档槽：原版三个，体验版扩到十个，方便反复测任务时保进度。 */
 export const MANUAL_SAVE_SLOT_COUNT = 10;
-/** 新存档写入格式 3，读取入口兼容格式 2。 */
-export const SAVE_FORMAT = 3;
+/** 首次发行的存档格式。 */
+export const SAVE_FORMAT = 1;
 export function isReadableSaveFormat(format: unknown): format is number {
-  return format === SAVE_FORMAT || format === 2;
+  return format === SAVE_FORMAT;
 }
 
 /** 云存档导入时的格式分类：能读、比当前新、比当前旧、版本不合法。 */
