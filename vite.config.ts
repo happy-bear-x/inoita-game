@@ -146,7 +146,7 @@ function versionPublicAssets(assetVersion: string): Plugin {
 
 /**
  * 开发服务默认直接读 public/content，不走构建期的动画贴图合并，所以同样的场景
- * 在 4003 会比 4002/APK 多加载重复纹理。这个插件在 serve 时用同一个
+ * 在 4003 会比生产/APK 多加载重复纹理。这个插件在 serve 时用同一个
  * `buildContent` 生成临时内容目录，`/content/*.json` 优先返回编译结果；内容变动
  * 自动重建，构建失败则回退源内容。代码仍从源码加载，只有内容走构建规则。
  */
@@ -230,7 +230,7 @@ function devBuiltContent(): Plugin {
   };
 }
 
-// 4002 固定由打包静态服务提供；开发服务改到 4003，两者可同时运行。
+// 生产入口由打包静态服务提供；开发服务用 4003，两者可同时运行。
 // base 用相对路径，dist/ 支持独立部署到站点根目录或子目录。
 export default defineConfig(({ command }) => {
   const root = path.dirname(fileURLToPath(import.meta.url));

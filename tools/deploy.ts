@@ -12,8 +12,8 @@ import { readUpdatePublicKey } from './update-key.ts';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-/** 线上入口：nginx 终止 TLS 后转发到本机 4004 的静态服务。 */
-const DEFAULT_DEPLOY_URL = 'https://catgo.online:4002';
+/** 线上入口：nginx 终止 TLS 后转发到本机 4014 的静态服务。 */
+const DEFAULT_DEPLOY_URL = 'https://catgo.online';
 /** 构建刚替换 dist 时服务可能短暂不可用：最多探测 5 次，重试间隔 300 ms。 */
 const BUILD_PROBE_ATTEMPTS = 5;
 const BUILD_PROBE_RETRY_DELAY_MS = 300;
@@ -61,7 +61,7 @@ async function remoteBuild(base: string): Promise<{ meta?: BuildMeta; error?: st
 }
 
 function parseArgs(argv: string[]): { base: string; skipBuild: boolean } {
-  // 本机 4002 现在由 nginx 终止 TLS，再转发到 127.0.0.1:4004 的静态服务。
+  // 线上入口由 nginx 终止 TLS，再转发到本机静态服务。
   let base = process.env.STORY_DEPLOY_URL ?? DEFAULT_DEPLOY_URL, skipBuild = false;
   for (let index = 0; index < argv.length; index += 1) {
     const value = argv[index]!;

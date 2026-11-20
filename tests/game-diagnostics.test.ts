@@ -31,7 +31,7 @@ function client(storage = new Map<string, string>(), brokenStorage = false,
   const timeouts: { id: number; callback: () => void }[] = [];
   let now = 1000, nextTimeout = 1, online = true;
   class Clock extends Date { static override now() { return now; } }
-  const document = { currentScript: { src: 'http://localhost:4002/diagnostics.js' }, visibilityState: 'visible',
+  const document = { currentScript: { src: 'https://catgo.online/diagnostics.js' }, visibilityState: 'visible',
     addEventListener: (event: string, callback: (...args: unknown[]) => void) => documentEvents.on(event, callback) };
   const sandbox = {
     document, console: { error: (...args: unknown[]) => originals.push(args),

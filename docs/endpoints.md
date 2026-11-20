@@ -6,8 +6,8 @@
 
 ## 决定
 
-- **网页始终同源**：页面从哪个域名和端口打开，接口就请求到同一处。本地 4003、生产 4002 都不需要地址配置。
-- **生产共用一个 HTTPS 基座**：云存档和诊断都走 `https://catgo.online:4002`。
+- **网页始终同源**：页面从哪个域名和端口打开，接口就请求到同一处。本地 4003、生产 443 都不需要地址配置。
+- **生产共用一个 HTTPS 基座**：云存档和诊断都走 `https://catgo.online`。
 - **Android/热更新由宿主注入**：页面脚本运行前写入 `__inoitaEndpoints`；热更新包不写 API 域名。
 - **路径固定**：云存档 `/__cloud`，诊断 `/__diagnostics/report`；环境只配置服务根地址。
 
@@ -21,7 +21,7 @@
   "environments": {
     "web": { "serverBaseUrl": "" },
     "androidDebug": { "serverBaseUrl": "http://127.0.0.1:4003" },
-    "androidRelease": { "serverBaseUrl": "https://catgo.online:4002" }
+    "androidRelease": { "serverBaseUrl": "https://catgo.online" }
   }
 }
 ```
@@ -72,6 +72,6 @@ globalThis.__inoitaEndpoints = {
 
 ## 部署
 
-- 先更新服务端代码并重启 4004，让 `/__cloud` 真正挂上；只替换网页 `dist/` 不会改变 Node 进程里已加载的中间件。
-- nginx 继续把 4002 的请求转发到 127.0.0.1:4004；生产客户端统一使用 `https://catgo.online:4002`。
+- 先更新服务端代码并重启 4014，让 `/__cloud` 真正挂上；只替换网页 `dist/` 不会改变 Node 进程里已加载的中间件。
+- nginx 把 443 的请求转发到 127.0.0.1:4014；客户端统一使用 `https://catgo.online`。
 - Android/热更新壳切换注入契约的改动由打包会话完成；网页端不依赖 Android 的注入。

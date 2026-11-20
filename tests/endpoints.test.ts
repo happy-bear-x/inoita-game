@@ -30,8 +30,8 @@ test('endpoint config keeps web same-origin and production on HTTPS', () => {
   });
   assert.deepEqual(endpointsFromBase(config.environments.androidRelease!.serverBaseUrl), {
     version: 1,
-    cloudBase: `https://catgo.online:4002${CLOUD_PATH}`,
-    diagnosticsReport: `https://catgo.online:4002${DIAGNOSTICS_REPORT_PATH}`,
+    cloudBase: `https://catgo.online${CLOUD_PATH}`,
+    diagnosticsReport: `https://catgo.online${DIAGNOSTICS_REPORT_PATH}`,
   });
 });
 
@@ -67,7 +67,7 @@ test('runtime endpoints require version 1 and keep each valid field independentl
 
 test('endpoint config rejects insecure or malformed bases', () => {
   assert.equal(endpointConfigProblem(''), undefined);
-  assert.equal(endpointConfigProblem('https://catgo.online:4002'), undefined);
+  assert.equal(endpointConfigProblem('https://catgo.online'), undefined);
   assert.equal(endpointConfigProblem('http://127.0.0.1:4003'), undefined);
   assert.match(endpointConfigProblem('http://cloud.example') ?? '', /HTTPS/);
   assert.match(endpointConfigProblem('javascript:alert(1)') ?? '', /HTTPS/);

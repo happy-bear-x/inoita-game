@@ -101,7 +101,7 @@ dist/update/
 npm run build
 npm run apk
 npm run verify:apk
-npm run verify:update -- --apk apk-out/Inotia-4-2.1.0.apk --url https://catgo.online:4002
+npm run verify:update -- --apk apk-out/Inotia-4-2.1.0.apk --url https://catgo.online
 ```
 
 手装一次 APK 后验证：

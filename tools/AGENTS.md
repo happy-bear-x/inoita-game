@@ -45,5 +45,5 @@ npm run validate:content
 npm run test:content-build
 npm test -- tests/cloud-save-store.test.ts tests/cloud-save-service.test.ts
 npm test -- tests/update-manifest.test.ts tests/serve-built.test.ts
-npm run verify:update -- --apk apk-out/Inotia-4-1.0.0.apk --url https://catgo.online:4002
+npm run verify:update -- --apk apk-out/Inotia-4-1.0.0.apk --url https://catgo.online
 ```

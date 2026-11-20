@@ -37,7 +37,7 @@ Phaser 4.2.1 + TypeScript 的艾诺迪亚4重制版。源码、内容、素材�
 - **剧情独立创作**。`public/content/campaign.json` 是剧情、任务和角色摆放的源文件；新增字段先定义游戏含义、单位和消费方式，内容加载和构建共用校验器。
 - **名字用游戏里的概念**。动画叫 `walk-east`、`idle-south`，地图属性叫 `blocked`、`exits`、`entities`，剧情行为叫 `dialogue`、`choice`。
 - **存档只读当前格式**。正式版只接受当前 `SAVE_FORMAT`（2）；更旧的格式按空槽处理，更新的格式按不可读取处理。结构变化时升格式，同时保留上一版为可读并在读取入口迁移，补当前格式到新格式的迁移和旧档测试。读取范围在 `src/domain/save-game.ts`，读取校验在 `src/application/saved-game.ts`。
-- **服务地址分开发与部署**。网页始终同源，页面不写域名；Android 壳由内置内容服务在页面脚本前注入 `__inoitaEndpoints` 和原生桥。环境根地址只维护 `config/endpoints.json`：Android 调试用 `adb reverse` 指向本机 4003，发布和网页生产共用 `https://catgo.online:4002`；云存档 `/__cloud`、诊断 `/__diagnostics/report` 路径固定。热更新检查地址从同一根地址派生 `/update/latest.json`，自测通道用 `/update/latest-staging.json`；下载走原生 HTTP，不需要 CORS。细则见 `config/AGENTS.md`、`src/application/AGENTS.md`、`android/AGENTS.md`。
+- **服务地址分开发与部署**。网页始终同源，页面不写域名；Android 壳由内置内容服务在页面脚本前注入 `__inoitaEndpoints` 和原生桥。环境根地址只维护 `config/endpoints.json`：Android 调试用 `adb reverse` 指向本机 4003，发布和网页生产共用 `https://catgo.online`；云存档 `/__cloud`、诊断 `/__diagnostics/report` 路径固定。热更新检查地址从同一根地址派生 `/update/latest.json`，自测通道用 `/update/latest-staging.json`；下载走原生 HTTP，不需要 CORS。细则见 `config/AGENTS.md`、`src/application/AGENTS.md`、`android/AGENTS.md`。
 
 ## 3. 测试与验证
 
@@ -64,21 +64,22 @@ npm test -- tests/example.test.ts
 
 | 端口 | 服务 | 启动方式 | 地址 |
 |---|---|---|---|
-| 4002 | HTTPS 入口（nginx 终止 TLS，转发到 4004） | 系统 nginx | https://catgo.online:4002/ |
-| 4004 | 打包后的静态服务（`dist/`，仅本机） | `npm run serve` | http://127.0.0.1:4004/ |
+| 443 | HTTPS 入口（nginx 终止 TLS，转发到 4014） | 系统 nginx | https://catgo.online/ |
+| 4014 | 生产打包静态服务（`dist/`，仅本机） | `inoita-game-v2.service` | http://127.0.0.1:4014/ |
+| 4004 | 本地打包静态服务（`dist/`，仅本机，`npm run serve` 默认端口） | `npm run serve` | http://127.0.0.1:4004/ |
 | 4003 | Vite 开发服务（代码读源码，内容按生产规则编译） | `npm run dev` | http://localhost:4003/ |
 
 端口上已经有监听就说明服务已经启动，直接访问即可，不要再起一个。重复启动只会撞端口失败。不确定当前跑着什么时先看：
 
 ```bash
-ss -ltnp | grep -E '4002|4003|4004'
+ss -ltnp | grep -E '4003|4004|4014'
 ```
 
-在根目录运行 `npm run build` 生成 `dist/`；`npm run deploy` 会做类型检查、构建，并通过 `https://catgo.online:4002` 核对正在提供的版本。4004 静态服务直接读磁盘，构建完成即生效，不需要重启；只有静态服务自身改动才需要重启。
+在根目录运行 `npm run build` 生成 `dist/`；`npm run deploy` 会做类型检查、构建，并通过 `https://catgo.online` 核对正在提供的版本。4014 静态服务直接读磁盘，构建完成即生效，不需要重启；只有静态服务自身改动才需要重启。
 
-本地调试用 4003；4002/4004 是部署链路。Android 调试通过 `adb reverse tcp:4003 tcp:4003` 复用 4003，不把开发地址写进 release 包。
+本地调试用 4003；生产部署链路是 443 → 4014，4004 是本地打包静态服务的默认端口。Android 调试通过 `adb reverse tcp:4003 tcp:4003` 复用 4003，不把开发地址写进 release 包。
 
-4003 的代码仍从源码加载；`/content` 请求由开发服务用 `buildContent` 生成临时目录后提供，内容改动自动重建，所以素材口径与 4002/APK 一致——同样的场景不会因为开发模式多加载重复贴图。
+4003 的代码仍从源码加载；`/content` 请求由开发服务用 `buildContent` 生成临时目录后提供，内容改动自动重建，所以素材口径与生产/APK 一致——同样的场景不会因为开发模式多加载重复贴图。
 
 ## 5. 目录导航
 
@@ -154,7 +155,7 @@ npm run verify:update              # 核对 APK 基线与线上清单的差量
 
 **先问四个数：** 这件事多久做一次、每次碰多少对象、每次造多少临时对象、占多少内存。只要有一项随玩家进度增长，就改成缓存、索引、降频、复用或上限。
 
-**不用等基线才动手。** 按上面的类别先改，一次只改一类，单独提交；改完在 4002/APK 上实测，确认没有把别的指标弄坏。各目录已有的索引、版本缓存和素材占用登记继续沿用，具体机制见对应 `AGENTS.md`。
+**不用等基线才动手。** 按上面的类别先改，一次只改一类，单独提交；改完在线上入口/APK 上实测，确认没有把别的指标弄坏。各目录已有的索引、版本缓存和素材占用登记继续沿用，具体机制见对应 `AGENTS.md`。
 
 ### Phaser 动态缓冲区补丁（验证中）
 

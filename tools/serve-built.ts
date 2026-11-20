@@ -15,7 +15,7 @@ const META_CACHE_MS = 250;
 const COMPRESSION_LIMIT = 32 * 1024 * 1024;
 const COMPRESSION_MIN_BYTES = 1024;
 
-/** 打包静态服务的默认端口；4002 的 HTTPS 入口转发到这里。 */
+/** 打包静态服务的默认端口；生产由 nginx 的 443 入口转发到本机 4014。 */
 const DEFAULT_SERVE_PORT = 4004;
 const MAX_PORT = 65535;
 /** 构建替换 dist 的瞬间会短暂读不到文件，重试前等 75 ms。 */

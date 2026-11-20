@@ -90,7 +90,7 @@ function createLogStream(directory, file, limitBytes, olderCount) {
   };
 }
 
-/** 开发服务与 4002 打包静态服务共用。JSONL 每行一条记录，并按错误/会话分流。 */
+/** 开发服务与打包静态服务共用。JSONL 每行一条记录，并按错误/会话分流。 */
 export function createDiagnosticMiddleware(root) {
   const directory = path.join(root, '.diagnostics');
   const streams = {
