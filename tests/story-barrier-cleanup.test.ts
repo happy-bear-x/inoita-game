@@ -45,3 +45,17 @@ test('event-51 clears the boulders that event-50 placed over the castle exit', (
     .filter(entity => entity.characterId === 'npc-134' || entity.characterId === 'npc-303'), [],
   '事件 51 收尾后出口巨石必须全部消失');
 });
+
+test('event-316 leaves the snow fey village hunter available on the next visit', () => {
+  const village = map('snow-fey-village-b6acd59c');
+  const state = new StoryWorldState();
+  state.apply({ kind: 'travel', destination: { map: village.id, x: 552, y: 528, facing: 'south' } });
+  const visible = () => state.projectEntities(village.id, village.entities, campaign.placements)
+    .filter(entity => entity.characterId === 'npc-574');
+  assert.equal(visible().length > 0, true, '战斗前阿诺德在村里');
+  for (const command of worldCommands('event-316')) state.apply(command);
+  assert.deepEqual(visible(), [], '战斗中要撤下猎手');
+  state.apply({ kind: 'travel', destination: { map: 'eternal-snowy-forest-1-e60f16ff', x: 104, y: 8, facing: 'south' } });
+  state.apply({ kind: 'travel', destination: { map: village.id, x: 552, y: 528, facing: 'south' } });
+  assert.equal(visible().length > 0, true, '离开再回来，猎手要能重新出现交接 quest-351');
+});

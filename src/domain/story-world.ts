@@ -163,7 +163,23 @@ export class StoryWorldState {
     this.revisionValue++;this.encounterRevisionValue++;
   }
   exitEnabled(map:string,exit:MapExit):boolean{return this.exits.get(storyExitId(map,exit))!==false;}
-  actorVisible(map:string,actor:string,characterId?:string):boolean{return !this.flags.has(JSON.stringify(['absent-actor',map,characterId??actor]));}
+  /**
+   * 「角色不在场」有两种寿命：
+   * - `absent-actor`：原版 `0x26`/`0x27` 的地图清除名单，离开再回来也不生成；
+   * - `absent-actor-visit`：原版 `0x28` 的 leave 只撤下当前地图实例，新一次进图静态人物会重新生成。
+   * 之前的实现把两种都写成永久标记，导致剧情清场时被撤下的任务 NPC 再也回不来
+   * （quest-351 的阿诺德被雪之精灵村的战斗移除后无法交付）。
+   */
+  private absentKey(map:string,actor:string,characterId?:string):string{
+    return JSON.stringify(['absent-actor',map,characterId??actor]);
+  }
+  private absentVisitKey(map:string,actor:string,characterId:string|undefined,visit:number):string{
+    return JSON.stringify(['absent-actor-visit',visit,map,characterId??actor]);
+  }
+  actorVisible(map:string,actor:string,characterId?:string,visit=this.mapVisit):boolean{
+    return !this.flags.has(this.absentKey(map,actor,characterId))
+      && !this.flags.has(this.absentVisitKey(map,actor,characterId,visit));
+  }
   enemyAvailable(map:string,enemyId:string):boolean{return !this.flags.has(JSON.stringify(['absent-enemy',map,enemyId]));}
   projectEntities(map:string,base:readonly EntityPlacement[],definitions:readonly EntityPlacement[]=base,visit=this.mapVisit):EntityPlacement[]{
     const projected=new Map<string,EntityPlacement>();
@@ -173,13 +189,13 @@ export class StoryWorldState {
       if(placementAuthority(entity)!=='registered'&&located.has(entity.characterId??entity.actor))continue;
       const stored=this.entities.get(entity.id);
       const override=stored?.mapVisit!==undefined&&stored.mapVisit!==visit?undefined:stored;
-      if(override?.removed||(override?.map&&override.map!==map)||!this.actorVisible(map,override?.actor??entity.actor,override?.characterId??entity.characterId))continue;
+      if(override?.removed||(override?.map&&override.map!==map)||!this.actorVisible(map,override?.actor??entity.actor,override?.characterId??entity.characterId,visit))continue;
       projected.set(entity.id,{...entity,...override});
     }
     for(const entity of this.entities.values()){
       if(entity.removed||entity.map!==map||entity.mapVisit!==undefined&&entity.mapVisit!==visit
         ||placementAuthority(entity)!=='registered'&&located.has(entity.characterId??entity.actor)
-        ||!entity.actor||!this.actorVisible(map,entity.actor,entity.characterId)||entity.x===undefined||entity.y===undefined||projected.has(entity.id))continue;
+        ||!entity.actor||!this.actorVisible(map,entity.actor,entity.characterId,visit)||entity.x===undefined||entity.y===undefined||projected.has(entity.id))continue;
       projected.set(entity.id,{...definitions.find(definition=>definition.id===entity.id),...entity,actor:entity.actor,x:entity.x,y:entity.y});
     }
     return [...projected.values()];
@@ -216,8 +232,10 @@ export class StoryWorldState {
         // 任何可见登记都会把角色明确摆出来，撤销这张图上「角色不在场」的旧标记：
         // 事件常先 remove-character 再在后面的节点里重新登记（event-162 → event-163 的波西娅）。
         // 访问作用域同样要撤销，否则重新登场的过场角色会被上一次移除的静态标记挡住。
-        if(entity.visible!==false&&entity.characterId)
-          this.flags.delete(JSON.stringify(['absent-actor',entity.map,entity.characterId]));
+        if(entity.visible!==false&&entity.characterId){
+          this.flags.delete(this.absentKey(entity.map,entity.actor,entity.characterId));
+          this.flags.delete(this.absentVisitKey(entity.map,entity.actor,entity.characterId,this.mapVisit));
+        }
         return;
       }
       case 'remove-character':{
@@ -231,10 +249,14 @@ export class StoryWorldState {
         // 地图静态摆放不在 `entities` 表里。只要本图这个角色已经没有任何可见的剧情实例，
         // 就记「本图缺少该角色」：场景刷新会同时隐藏静态副本并停掉碰撞。
         // 只在还有剧情实例留下时不记，避免 `all:false` 误伤同图的其他副本。
+        // `all:true` 对应原版按 ID 清场（0x25），是永久的地图清除；`all:false` 对应 leave
+        // （0x28），只撤下当前进图的静态副本，离开再回来由地图重新生成。
         if(command.characterId){
           const remaining=[...this.entities.values()].some(entity=>entity.characterId===command.characterId
             &&entity.map===command.map&&!entity.removed);
-          if(!remaining)this.flags.add(JSON.stringify(['absent-actor',command.map,command.characterId]));
+          if(!remaining)this.flags.add(command.all
+            ? this.absentKey(command.map,command.characterId,command.characterId)
+            : this.absentVisitKey(command.map,command.characterId,command.characterId,this.mapVisit));
         }
         return;
       }
@@ -245,7 +267,11 @@ export class StoryWorldState {
       case 'actor-visibility':case 'enemy-availability':{
         const key=command.kind==='actor-visibility'?JSON.stringify(['absent-actor',command.map,command.characterId??command.actor]):JSON.stringify(['absent-enemy',command.map,command.enemyId]);
         const available=command.kind==='actor-visibility'?command.visible:command.available;
-        if(available)this.flags.delete(key);else this.flags.add(key);return;
+        if(available){
+          this.flags.delete(key);
+          if(command.kind==='actor-visibility')
+            this.flags.delete(this.absentVisitKey(command.map,command.actor,command.characterId,this.mapVisit));
+        }else this.flags.add(key);return;
       }
       case 'exit':this.exits.set(command.id,command.enabled);return;
       case 'flag':if(command.value)this.flags.add(command.id);else this.flags.delete(command.id);return;
@@ -255,6 +281,11 @@ export class StoryWorldState {
         if(this.location?.map!==command.destination.map)this.mapVisit++;
         for(const entity of this.entities.values())if(entity.mapVisit!==undefined&&entity.mapVisit!==this.mapVisit)this.entities.delete(entity.id);
         for(const [id,enemy] of this.enemyLocations)if(enemy.mapVisit!==undefined&&enemy.mapVisit!==this.mapVisit)this.enemyLocations.delete(id);
+        // 只属于上一次进图的静态缺席随转场过期；永久清除名单（absent-actor）继续保留。
+        for(const flag of [...this.flags])if(flag.startsWith('["absent-actor-visit"')){
+          const value=JSON.parse(flag) as unknown[];
+          if(value[1]!==this.mapVisit)this.flags.delete(flag);
+        }
         this.location={...command.destination};return;
       }
       case 'encounter':{

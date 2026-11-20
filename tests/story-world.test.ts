@@ -224,3 +224,18 @@ test('restoring a snapshot rebuilds the active encounter index',()=>{
   assert.throws(()=>restored.restoreState(duplicate),/重复/);
   assert.deepEqual(restored.activeEncounters.map(encounter=>encounter.id),before,'校验失败时不改动活动索引');
 });
+
+test('a leave removal only hides static copies for the current map visit',()=>{
+  const world=new StoryWorldState(),at=(map:string)=>({map,x:8,y:8,facing:'south' as const});
+  const base=[{id:'static-hunter',actor:'hunter',characterId:'npc-574',x:8,y:8}];
+  world.apply({kind:'travel',destination:at('village')});
+  world.apply({kind:'remove-character',characterId:'npc-574',map:'village',all:false});
+  assert.equal(world.actorVisible('village','hunter','npc-574'),false);
+  assert.deepEqual(world.projectEntities('village',base),[]);
+  const restored=new StoryWorldState();restored.restoreState(world.captureState());
+  assert.equal(restored.actorVisible('village','hunter','npc-574'),false,'同一进图读档后仍要挡住静态副本');
+  world.apply({kind:'travel',destination:at('forest')});
+  world.apply({kind:'travel',destination:at('village')});
+  assert.equal(world.actorVisible('village','hunter','npc-574'),true,'新一次进图静态人物重新生成');
+  assert.deepEqual(world.projectEntities('village',base).map(entity=>entity.id),['static-hunter']);
+});
