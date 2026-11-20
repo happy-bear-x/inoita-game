@@ -359,3 +359,18 @@ test('a quest-gated placement that should stay hidden does not warn about a miss
     h.director.dispose();
   }
 });
+
+test('a current accept-event place does not override the quest start location', () => {
+  const h = playthrough();
+  try {
+    // event-341/342 的 place 是 current（跟随前置任务完成位置），不能把跳转起点留在当前图。
+    assert.deepEqual(planQuestStart(h.session.campaign, h.session, 'quest-307').destination,
+      { map: 'hunter-s-house-41096fbb', x: 232, y: 152, facing: 'south' });
+    assert.equal(planQuestStart(h.session.campaign, h.session, 'quest-306').destination?.map,
+      'eternal-snowy-forest-2-b7e43e5f');
+    assert.equal(planQuestStart(h.session.campaign, h.session, 'quest-317').destination?.map,
+      'eternal-snowy-forest-3-d519c1d9');
+  } finally {
+    h.director.dispose();
+  }
+});

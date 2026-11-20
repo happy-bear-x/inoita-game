@@ -13,6 +13,7 @@
 - GM 任务页显示全部任务组，按 `campaign.quests` 的故事顺序混排主线和支线；`quest-catalog.ts` 负责顺序和状态投影，`quest-jump.ts` 负责前置/接取条件与起点规划，`gm-actions.ts` 只编排流程。
 - 剧情跳转期间 `QuestBook.forcedAvailable` 让目标任务保持可接取，`forcedProgress` 钉住接取条件里要求 ready/active 的前置任务；两者都不进入状态快照或存档，跳转交接（接取剧情播完）和会话关闭时用 `clearDebugOverrides()` 一起清空。
 - 起点状态由任务自己的完成方式决定：`completion: 'talk'` 的零目标任务只能从 `ready` 开始，规划结果归一成 `ready`，目的地取 `places.ready`；应用计划时先放成可接取，再走真实的 `quest accept` 命令，让任务簿自己写 ready、周期、运行池和接取物品。内部任务放成锁定，接取命令带 `source: 'script'`。
+- 接取事件指定具体地点时，调试跳转以该地点为起点。事件沿用当前地图（`current`）时，先取目标任务在所选阶段的地点；阶段地点也无法确定时才沿用玩家的位置。
 - 目的地上发布者/交付者的 placement 条件要一起补进计划。像卓拉德在影营地需要 `quest-npc-located-npc-40` flag，漏补时任务虽然到了待交付，NPC 却不会出现。
 - 接取脚本舞台 cast 引用的世界实体也要补：`worldEntityId` 优先，没有时按舞台地图的 `characterId`/`actor` 找 placement；再到剧本里找同图（必要时同坐标）的 `world place` 命令，重放该节点的 `world` + `flag` 命令。世界登记在别的地图或已移除时同样要重放；条件要求目标任务已完成的事件属于未来，不能当来源。`mapFromWorld` 用目的地/当前地图，所以舞台切图（如 quest-153 的 `event-44` 在 leap-gate-district、目的地却是 kamuran-wilderness）也覆盖。只重放世界状态，不重放任务、物品和队伍命令，也不播上游演出；只有 `flag`/`always` 类摆放找不到来源时才写 `plan.warnings`。
 - 执行剧情跳转时，把所有 `source: 'start'` 事件写入 `completedEvents`；跳转后的现场已经过了游戏开场，换图不能再触发起始事件。

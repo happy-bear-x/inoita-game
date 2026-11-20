@@ -284,12 +284,15 @@ function resolveDestination(campaign: Campaign, session: Session, quest: Campaig
   const current = session.storyWorld.currentLocation;
   const place = accept?.event?.place;
   const location = current ? { ...current } : undefined;
-  const eventSpot = spotOf(place, location);
+  // 接取事件的 `place` 常是 `current`（它继承前置任务完成时的位置），不能拿它当任务起点；
+  // 这种情况下优先用任务自己的阶段地点，只有任务也没有具体地点时才留在当前图。
+  const eventSpot = place?.type === 'current' ? undefined : spotOf(place, location);
   const stagePlace = mode === 'available'
     ? quest.places?.available
     : mode === 'ready' ? quest.places?.ready ?? quest.places?.active : quest.places?.active;
   const stageSpot = spotOf(stagePlace, location, npcMaps(campaign, quest));
-  const spot = eventSpot ?? stageSpot ?? giverSpot(campaign, session, quest);
+  const spot = eventSpot ?? stageSpot ?? (place?.type === 'current' ? location : undefined)
+    ?? giverSpot(campaign, session, quest);
   if (!spot) {
     // `places.available.type === 'current'`：留在当前地图。
     if (current) return { map: current.map, x: current.x, y: current.y, facing: current.facing };
