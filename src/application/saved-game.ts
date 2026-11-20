@@ -1,5 +1,5 @@
 import {newStorySession,type StoryClassCatalog} from '../domain/story-class.ts';
-import {SAVE_FORMAT,restoreSaveGame,type SaveGame} from '../domain/save-game.ts';
+import {isReadableSaveFormat,restoreSaveGame,type SaveGame} from '../domain/save-game.ts';
 import {prepareCombatRestore} from '../domain/combat-snapshot.ts';
 import type {Campaign} from '../domain/campaign.ts';
 import type {WorldIndex} from '../domain/content.ts';
@@ -8,6 +8,7 @@ import type {CharacterStatsCatalog} from '../domain/character-stats.ts';
 import type {BattleCatalog} from '../domain/battle.ts';
 import type {CompanionCatalog} from '../domain/party.ts';
 import type {StoryWorldViewSnapshot} from './world-snapshot.ts';
+import {migrateFormat2Save} from './saved-game-format-2.ts';
 import {validateSceneSnapshot} from '../domain/scene-snapshot.ts';
 
 export interface SavedGameContent {
@@ -15,7 +16,8 @@ export interface SavedGameContent {
   characterStats:CharacterStatsCatalog;battleCatalog:BattleCatalog;companions:CompanionCatalog;
 }
 export function prepareSavedGame(game:SaveGame<StoryWorldViewSnapshot>,content:SavedGameContent){
-  if(game.format!==SAVE_FORMAT)throw new Error('存档版本不受支持');
+  if(!isReadableSaveFormat(game.format))throw new Error('存档版本不受支持');
+  if(game.format===2)game=migrateFormat2Save(game);
   const selected=content.storyClasses.classes.find(entry=>entry.id===game.summary.classId);
   if(!selected)throw new Error('存档记录的职业在当前内容里不存在');
   const world=structuredClone(game.world),location=world?.location;

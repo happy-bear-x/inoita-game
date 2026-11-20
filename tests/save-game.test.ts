@@ -83,8 +83,8 @@ test('damaged slots stay unreadable while an older development format displays E
   assert.deepEqual(slots.inspect(0),{ kind:'empty' });
 });
 
-test('a format older than the current one is obsolete and displays EMPTY until overwritten',()=>{
-  const slots=new SaveSlots<World>(memory()),session=createSession(),legacy=record(session);legacy.format=SAVE_FORMAT-1;
+test('a format older than the migration window is obsolete and displays EMPTY until overwritten',()=>{
+  const slots=new SaveSlots<World>(memory()),session=createSession(),legacy=record(session);legacy.format=1;
   slots.write(1,legacy);
   assert.equal(slots.inspect(1).kind,'empty');
   slots.write(1,record(session));
@@ -211,7 +211,7 @@ test('raw cloud import distinguishes versions and writes the cloud name without 
   const game=JSON.parse(raw.raw) as Record<string,unknown>;
   storage.setItem('inotia4.story.v1.slot1',JSON.stringify({...game,format:SAVE_FORMAT+1}));
   assert.equal(slots.readRaw(1).kind,'future');
-  storage.setItem('inotia4.story.v1.slot2',JSON.stringify({...game,format:SAVE_FORMAT-1}));
+  storage.setItem('inotia4.story.v1.slot2',JSON.stringify({...game,format:1}));
   assert.equal(slots.readRaw(2).kind,'obsolete');
   storage.setItem('inotia4.story.v1.slot3','{broken');
   assert.equal(slots.readRaw(3).kind,'unreadable');
@@ -222,7 +222,7 @@ test('raw cloud import distinguishes versions and writes the cloud name without 
   const renamed=slots.peek(0);
   assert.equal(renamed.kind==='ok'?renamed.summary.name:undefined,'云端名','以云端原文的名字为准');
   assert.throws(()=>slots.writeRaw(0,JSON.stringify({...game,format:SAVE_FORMAT+1})),/更新游戏/);
-  assert.throws(()=>slots.writeRaw(0,JSON.stringify({...game,format:SAVE_FORMAT-1})),/过旧/);
+  assert.throws(()=>slots.writeRaw(0,JSON.stringify({...game,format:1})),/过旧/);
   const kept=slots.peek(0);
   assert.equal(kept.kind==='ok'?kept.summary.name:undefined,'云端名','失败的导入不覆盖原槽');
 });

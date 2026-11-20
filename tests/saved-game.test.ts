@@ -100,7 +100,7 @@ test('current saves retain explicit hero posture', () => {
 });
 
 test('a save from an older format is rejected before installation',()=>{
-  const saved=record();saved.format=SAVE_FORMAT-1;
+  const saved=record();saved.format=1;
   assert.throws(()=>prepareSavedGame(saved,content),/存档版本不受支持/);
 });
 
@@ -108,4 +108,69 @@ test('a save from an older format is rejected before installation',()=>{
 test('a save with no living member is rejected',()=>{
   const saved=record();saved.session.hero!.health=0;
   assert.throws(()=>prepareSavedGame(saved,content),/存档没有存活队员/);
+});
+
+test('format 2 keeps the sentinels already defeated, resumes the quest and settles its reward once',()=>{
+  const old=structuredClone(record());
+  old.format=2;
+  const {questBook,runtime}=old.session;
+  const sentinels=questBook.quests.find(([id])=>id==='quest-39')![1];
+  sentinels.status='active';sentinels.goals.objective=7;
+  questBook.runningQuestIds.push('quest-39','quest-13');
+  for(const number of [3,4,13,14,15,16,17,27,147]){
+    questBook.quests.push([`quest-${number}`,{status:number===13?'active':'locked',goals:{},cycle:0,completedCycles:0}]);
+  }
+  old.session.trackedQuest='quest-13';
+  old.session.receipts.push({quest:'quest-4',cycle:0,reward:{experience:0,money:0,items:[]}});
+  runtime.sequence=3;
+  runtime.runs.push({id:'story:1',script:'event-592',cursor:{script:'event-592',node:'done'},status:'completed',occurrence:'manual:1'});
+  const encounter='story:2:done:event-37-battle';
+  runtime.runs.push({id:'story:2',cursor:{script:'event-37',node:'done'},status:'waiting',occurrence:'manual:2',
+    waiting:{encounter,outcomes:{won:{script:'event-37',node:'battle-won'}}}});
+  old.session.storyWorld.encounters.push({id:encounter,definitionId:'event-37-battle',status:'active',map:old.summary.mapId,spawns:[]});
+  runtime.encounterResults.push('result:story:3:done:event-39-battle:won','result:story:4:done:event-38-battle:won');
+  runtime.completedEvents.push('event-24','event-23');
+  runtime.handledOccurrences.push(['event-24','obsolete'],['event-23','retained']);
+  runtime.occurrenceSequences.push(['["event-24","quest"]',2],['["event-23","region"]',3]);
+  runtime.pendingOccurrences.push({occurrence:{id:'next',source:'quest',key:'quest-39',sequence:8},nextEventIndex:10},
+    {occurrence:{id:'gone',source:'quest',key:'quest-27',sequence:9},nextEventIndex:0});
+  const before=structuredClone(old);
+  const {session,world}=prepareSavedGame(old,content),state=session.captureState();
+  assert.deepEqual(old,before);
+  assert.equal(state.trackedQuest,undefined);
+  assert.equal(state.questBook.quests.length,487);
+  assert.deepEqual(state.questBook.runningQuestIds,['quest-39']);
+  assert.equal(state.receipts.length,0);
+  assert.deepEqual(state.runtime.runs,[]);
+  assert.deepEqual(state.runtime.encounterResults,['result:story:4:done:event-38-battle:won']);
+  assert.deepEqual(state.storyWorld.encounters,[]);
+  assert.deepEqual(state.runtime.completedEvents,['event-23']);
+  assert.deepEqual(state.runtime.handledOccurrences,[['event-23','retained']]);
+  assert.deepEqual(state.runtime.occurrenceSequences,[['["event-23","region"]',3]]);
+  assert.deepEqual(state.runtime.pendingOccurrences,[{occurrence:{id:'next',source:'quest',key:'quest-39',sequence:8},nextEventIndex:9}]);
+  assert.deepEqual(world,old.world);
+  session.recordStoryDefeat('enemy-arnen-sentinel-1');
+  assert.equal(session.status('quest-39'),'ready');
+  const money=session.money;
+  assert.equal(session.complete('quest-39'),true);
+  const reward=session.rewardReceiptFor('quest-39')!;
+  assert.ok(reward.money>0);
+  assert.equal(session.money,money+reward.money);
+  const saved=captureSaveGame(session,world,old.summary);
+  assert.equal(saved.format,SAVE_FORMAT);
+  for(const format of [2,3]){
+    const restored=prepareSavedGame({...saved,format},content).session;
+    assert.equal(restored.status('quest-39'),'completed');
+    assert.deepEqual(restored.rewardReceiptFor('quest-39'),reward);
+    assert.equal(restored.complete('quest-39'),false);
+    assert.equal(restored.money,money+reward.money);
+  }
+});
+
+test('save migration scopes removal to known format 2 content and preserves other validation',()=>{
+  for(const [format,quest] of [[2,'unknown-quest'],[3,'quest-13']] as const){
+    const saved=structuredClone(record());saved.format=format;
+    saved.session.questBook.quests.push([quest,{status:'locked',goals:{},cycle:0,completedCycles:0}]);
+    assert.throws(()=>prepareSavedGame(saved,content),/任务快照引用未知任务/);
+  }
 });

@@ -68,13 +68,14 @@ test('backup uploads valid slots, skips obsolete ones, and reports future and da
     'inotia4.story.v1.slot0':save(),
     'inotia4.story.v1.slot1':save(SAVE_FORMAT+1),
     'inotia4.story.v1.slot2':'{broken',
-    'inotia4.story.v1.slot3':save(SAVE_FORMAT-1),
+    'inotia4.story.v1.slot3':save(1),
+    'inotia4.story.v1.slot4':save(2),
   });
   const slots=new SaveSlots(s),cloud=cloudStub();
   const result=await backupLocalSaves({cloud:cloud.port,saves:slots,confirm:async()=>true});
-  assert.equal(result.total,3);
-  assert.equal(result.completed,1);
-  assert.deepEqual(cloud.uploads.map(item=>item.slot),[0]);
+  assert.equal(result.total,4);
+  assert.equal(result.completed,2);
+  assert.deepEqual(cloud.uploads.map(item=>item.slot),[0,4]);
   assert.deepEqual(result.failures.map(item=>item.slot).sort(),[1,2]);
   assert.equal(result.ok,false);
 });
