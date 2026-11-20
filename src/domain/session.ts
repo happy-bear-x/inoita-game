@@ -705,7 +705,7 @@ export class Session {
     if(new Set(restored.factSequences.map(([id])=>id)).size!==restored.factSequences.length||restored.factSequences.some(([id,value])=>!id||!Number.isSafeInteger(value)||value<0))throw new Error('检查点任务事实序号无效');
     const before=this.captureState(),pending=this.pendingNotification;
     this.batchNotifications(()=>{
-      try{this.restoreUnchecked(restored);this.refresh();this.restoreRevision++;this.emit();}
+      try{this.restoreUnchecked(restored);this.refresh();this.releaseReadyQuestActors();this.restoreRevision++;this.emit();}
       catch(error){this.restoreUnchecked(before);this.pendingNotification=pending;throw error;}
     });
   }
@@ -985,6 +985,24 @@ export class Session {
   }
   definition(id:string):CampaignQuest|undefined{return this.campaign.quests.find(quest=>quest.id===id);}
   status(id:string):QuestStatus{return this.questBook?.status(id)??'locked';}
+  /**
+   * 任务已经待交付时，发布者/交付人不能被本次进图的临时剧情缺席挡住。
+   * 只清访问级缺席（原版 0x28 leave）；永久清除名单（原版 0x26）
+   * 仍按剧情保持隐藏。否则剧情战斗清场后，已做完目标的任务会找不到人交付。
+   */
+  private releaseReadyQuestActors():void{
+    const placements=this.campaign.placements;
+    for(const id of this.questBook.runningQuestIds){
+      if(this.questBook.status(id)!=='ready')continue;
+      const quest=this.definition(id);if(!quest)continue;
+      for(const [actor,characterId] of [[quest.giver,quest.giverCharacterId],[quest.delivery,quest.deliveryCharacterId]] as const){
+        if(!characterId)continue;
+        for(const placement of placements)if(placement.characterId===characterId)
+          this.storyWorld.clearVisitAbsence(placement.map,actor??characterId,characterId);
+      }
+    }
+  }
+
   rewardReceiptFor(id:string):QuestRewardReceipt|undefined {
     const receipt=this.receipts.get(id);
     if(!receipt)return undefined;
@@ -1370,6 +1388,8 @@ export class Session {
     // 任务簿检查点是 O(1) 的状态根引用；背包/世界/操控角色变化都可能经由 `refresh` 间接刷新
     // 任务状态，所以每个非空批次都把它纳入回滚集。
     touched.add('questBook');
+    // 待交付任务会在批次末尾清掉交付人身上的临时缺席；把剧情世界一并纳入回滚基线。
+    if(this.questBook.runningQuestIds.some(id=>this.questBook.status(id)==='ready'))touched.add('storyWorld');
     if(checkpoint)touched.add('runtimeSnapshot');
     // 外部交互触发的提交也要能在取消演出时回滚；导演自己的延迟提交由回执负责，不重复记录。
     if(!options.deferFinalize)this.recordPerformance(touched);
@@ -1440,7 +1460,7 @@ export class Session {
         if(this.runtimeSnapshot.runs.some(run=>run.waiting)||commands.some(command=>command.type==='encounter'))
           this.validateStoryLinks(this.storyWorld.captureState(),this.runtimeSnapshot);
         // 收尾补齐最后一条命令造成的任务差异，再认领投影，避免随后的 emit 再算一遍。
-        this.refresh();this.recordQuestProjection();this.emit();
+        this.refresh();this.releaseReadyQuestActors();this.recordQuestProjection();this.emit();
       }catch(error){
         this.restoreStoryCommandBaseline(touched,baseline);this.pendingNotification=pending;throw error;
       }

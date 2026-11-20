@@ -180,6 +180,11 @@ export class StoryWorldState {
     return !this.flags.has(this.absentKey(map,actor,characterId))
       && !this.flags.has(this.absentVisitKey(map,actor,characterId,visit));
   }
+  /** 清掉这次进图的临时缺席；永久清除名单（absent-actor）按剧情保持。 */
+  clearVisitAbsence(map:string,actor:string,characterId?:string):boolean{
+    if(!this.flags.delete(this.absentVisitKey(map,actor,characterId,this.mapVisit)))return false;
+    this.revisionValue++;return true;
+  }
   enemyAvailable(map:string,enemyId:string):boolean{return !this.flags.has(JSON.stringify(['absent-enemy',map,enemyId]));}
   projectEntities(map:string,base:readonly EntityPlacement[],definitions:readonly EntityPlacement[]=base,visit=this.mapVisit):EntityPlacement[]{
     const projected=new Map<string,EntityPlacement>();
